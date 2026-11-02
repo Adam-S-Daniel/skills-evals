@@ -1,13 +1,374 @@
 {
- "alerts": [],
+ "alerts": [
+  {
+   "fixture": "evals/rename-pdfs",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "rename-pdfs",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/rename-pdfs is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/rename-pdfs",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "rename-pdfs",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/rename-pdfs is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/pdf-ocr-audit",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "pdf-ocr-audit",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/pdf-ocr-audit is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/pdf-ocr-audit",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "pdf-ocr-audit",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/pdf-ocr-audit is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/cms-stuck-pr-triage",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "cms-stuck-pr-triage",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/cms-stuck-pr-triage is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/cms-stuck-pr-triage",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "cms-stuck-pr-triage",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/cms-stuck-pr-triage is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/post-failure-comment",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "post-failure-comment",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/post-failure-comment is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/post-failure-comment",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "post-failure-comment",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/post-failure-comment is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/admin-config-render",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "admin-config-render",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/admin-config-render is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/admin-config-render",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "admin-config-render",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/admin-config-render is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/code-quality",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "code-quality",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/code-quality is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/code-quality",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "code-quality",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/code-quality is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/ci-watcher-loops",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "ci-watcher-loops",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/ci-watcher-loops is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/ci-watcher-loops",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "ci-watcher-loops",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/ci-watcher-loops is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/editorial-label-audit",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "editorial-label-audit",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/editorial-label-audit is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/editorial-label-audit",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "editorial-label-audit",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/editorial-label-audit is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/consumer-repo-provisioning",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "consumer-repo-provisioning",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/consumer-repo-provisioning is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/consumer-repo-provisioning",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "consumer-repo-provisioning",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/consumer-repo-provisioning is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/ci-job-performance/browser-cache",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "ci-job-performance",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/ci-job-performance/browser-cache is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/ci-job-performance/browser-cache",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "ci-job-performance",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/ci-job-performance/browser-cache is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/git-identity",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/git-identity is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/git-identity",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/git-identity is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/secret-name",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/secret-name is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/secret-name",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/secret-name is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/swallowed-failure",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/swallowed-failure is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/swallowed-failure",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/swallowed-failure is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/wrong-branch",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/wrong-branch is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/debug-github-workflows/wrong-branch",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "debug-github-workflows",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/debug-github-workflows/wrong-branch is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/closed-duplicate",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/closed-duplicate is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/closed-duplicate",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/closed-duplicate is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/closing-keywords",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/closing-keywords is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/closing-keywords",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/closing-keywords is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/issue-hygiene",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/issue-hygiene is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/issue-hygiene",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/issue-hygiene is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/stamps-skip-quotes",
+   "kind": "not-schedulable",
+   "model": "claude-opus-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/stamps-skip-quotes is not scheduled: no context.",
+   "url": null
+  },
+  {
+   "fixture": "evals/vendor-release-impact-issues/stamps-skip-quotes",
+   "kind": "not-schedulable",
+   "model": "claude-sonnet-5-5",
+   "name": "vendor-release-impact-issues",
+   "reason": "no context",
+   "subject": "skill",
+   "text": "The task evals/vendor-release-impact-issues/stamps-skip-quotes is not scheduled: no context.",
+   "url": null
+  }
+ ],
  "coverage": {
-  "as_of": "2026-11-01T15:17:17Z",
-  "covered": 24,
+  "as_of": null,
+  "covered": 25,
   "gap": 0,
   "skipped": 11,
-  "total": 35
+  "total": 36
  },
- "generated_at": "2026-11-01T21:58:01Z",
+ "generated_at": "2026-11-02T17:45:47Z",
  "guidance": {
   "sections": [
    {
@@ -23,7 +384,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 27,
+     "position": 26,
      "scheduled": true
     },
     "runs": [],
@@ -48,7 +409,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 6,
+     "position": 5,
      "scheduled": true
     },
     "runs": [
@@ -148,7 +509,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 9,
+     "position": 8,
      "scheduled": true
     },
     "runs": [],
@@ -173,7 +534,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 28,
+     "position": 27,
      "scheduled": true
     },
     "runs": [],
@@ -198,7 +559,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 4,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -254,19 +615,56 @@
     "alone_verdict": "insufficient",
     "bytes": 1197,
     "confidence": {
-     "helps": 0.0,
-     "no_help": 0.0
+     "helps": null,
+     "no_help": null
     },
     "current_text_runs": 2,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
-     "band": "missing",
+     "band": "near",
      "due": null,
-     "position": 1,
+     "position": 28,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-02T17:42:29Z",
+      "cli_version": "2.1.316",
+      "fixture": "dispatch-email-input",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.30534145500000004,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.2540356,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.1215666,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.299289,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T174114Z-ac5242/guidance/data-exposure-in-ci/20261102T174229Z/report.md"
+     },
      {
       "at": "2026-11-01T13:03:09Z",
       "cli_version": "2.1.316",
@@ -328,7 +726,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 14,
+     "position": 13,
      "scheduled": true
     },
     "runs": [],
@@ -353,7 +751,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 7,
+     "position": 6,
      "scheduled": true
     },
     "runs": [],
@@ -378,7 +776,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 24,
+     "position": 23,
      "scheduled": true
     },
     "runs": [],
@@ -494,6 +892,31 @@
    },
    {
     "alone_verdict": null,
+    "bytes": 324,
+    "confidence": {
+     "helps": null,
+     "no_help": null
+    },
+    "current_text_runs": 0,
+    "heading": "PR descriptions open with a TLDR",
+    "id": "pr-tldr",
+    "next_test": {
+     "band": null,
+     "due": null,
+     "position": null,
+     "scheduled": false
+    },
+    "runs": [],
+    "skip_reason": "Enforced mechanically by agent-checks' pr-tldr check, whose refusal message teaches the rule when a PR breaks it.",
+    "stakes": {
+     "level": "normal"
+    },
+    "status": "skipped",
+    "verdict": null,
+    "verdict_reason": null
+   },
+   {
+    "alone_verdict": null,
     "bytes": 875,
     "confidence": {
      "helps": null,
@@ -505,7 +928,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 13,
+     "position": 12,
      "scheduled": true
     },
     "runs": [],
@@ -530,7 +953,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 10,
+     "position": 9,
      "scheduled": true
     },
     "runs": [],
@@ -555,7 +978,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 26,
+     "position": 25,
      "scheduled": true
     },
     "runs": [],
@@ -580,7 +1003,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 12,
+     "position": 11,
      "scheduled": true
     },
     "runs": [],
@@ -605,7 +1028,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 8,
+     "position": 7,
      "scheduled": true
     },
     "runs": [],
@@ -630,7 +1053,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 2,
+     "position": 1,
      "scheduled": true
     },
     "runs": [
@@ -695,7 +1118,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 3,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
@@ -760,7 +1183,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -825,7 +1248,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 23,
+     "position": 22,
      "scheduled": true
     },
     "runs": [],
@@ -850,7 +1273,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 22,
+     "position": 21,
      "scheduled": true
     },
     "runs": [],
@@ -875,7 +1298,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 25,
+     "position": 24,
      "scheduled": true
     },
     "runs": [],
@@ -900,7 +1323,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 11,
+     "position": 10,
      "scheduled": true
     },
     "runs": [],
@@ -925,7 +1348,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 15,
+     "position": 14,
      "scheduled": true
     },
     "runs": [],
@@ -950,7 +1373,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 16,
+     "position": 15,
      "scheduled": true
     },
     "runs": [],
@@ -975,7 +1398,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 17,
+     "position": 16,
      "scheduled": true
     },
     "runs": [],
@@ -1000,7 +1423,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 18,
+     "position": 17,
      "scheduled": true
     },
     "runs": [],
@@ -1025,7 +1448,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 19,
+     "position": 18,
      "scheduled": true
     },
     "runs": [],
@@ -1050,7 +1473,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 20,
+     "position": 19,
      "scheduled": true
     },
     "runs": [],
@@ -1075,7 +1498,7 @@
     "next_test": {
      "band": "missing",
      "due": null,
-     "position": 21,
+     "position": 20,
      "scheduled": true
     },
     "runs": [],
@@ -1089,7 +1512,7 @@
    }
   ]
  },
- "newest_run": "2026-11-01T21:55:29Z",
+ "newest_run": "2026-11-02T17:42:29Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -1180,10 +1603,10 @@
    "description": "Understand and safely change how the Decap /admin config is built \u2014 the gem-shipped admin machinery, the build-time render hook, the site-owned collections seam, the window.CMS_* identity injection, and the base_collections opt-out. Use when editing theme/admin/* (config.base.yml, the JS/HTML shells, the reviews dashboards), changing the render hook or its CLI mirror, debugging why /admin renders wrong/missing collections or wrong identity, adding a per-site collection, or hiding the platform's built-in collections. Trigger on mentions of \"admin config\", \"config.base.yml\", \"render-decap-config\", \"decap_config_hook\", \"collections.site.yml\", \"base_collections\", \"CMS_REPO / window.CMS_*\", or \"/admin shows the wrong collections\".",
    "name": "admin-config-render",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 1,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -1252,7 +1675,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -1264,10 +1687,10 @@
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
    "name": "ci-job-performance",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 12,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -1461,10 +1884,10 @@
    "description": "Patterns for setting up reliable agent self-feedback when waiting on long-running GitHub Actions workflows in this repo (cms-publish-loop-host, deploy-production, e2e matrix). The default temptation \u2014 `RUN=$(gh workflow run X && gh run list --jq ...)` chained into a polling `until` loop \u2014 silently breaks because both commands' stdout concatenate into the variable. Use the patterns here when chaining \"wait for PR merge \u2192 trigger workflow \u2192 watch completion\" or any multi-step CI poll. Trigger when the user asks to watch a workflow, set up a feedback loop, monitor PR completion, or any \"let me know when X finishes\" task that involves the gh CLI.",
    "name": "ci-watcher-loops",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 2,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -1489,10 +1912,10 @@
    "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
    "name": "cms-stuck-pr-triage",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 3,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -1517,10 +1940,10 @@
    "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
    "name": "code-quality",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 4,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -1573,10 +1996,10 @@
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 13,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -1877,10 +2300,10 @@
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 5,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -2517,7 +2940,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -2861,10 +3284,10 @@
    "description": "Diagnose and fix Decap's persistent \"Decap CMS is adding labels to N of your Editorial Workflow entries\" dialog, which appears (and never clears) on /admin \u2014 on prod AND every preview deploy. Use when an editor reports that dialog, when the Workflow tab churns, or when setting up the daily audit that catches the condition. Covers the cause (an open cms/* PR missing its decap-cms/<status> label), the audit script + reusable workflow \u2014 which SELF-HEALS by applying the missing label since v0.1.48 \u2014 the e2e guard, and the manual escalation path for when self-heal fails. Trigger on \"adding labels dialog\", \"editorial workflow dialog stuck\", \"label migration\", \"decap-cms/draft label\", \"editorial-label-audit\", or \"audit-editorial-labels\".",
    "name": "editorial-label-audit",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 6,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -2891,7 +3314,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -3224,6 +3647,34 @@
    "verdict_reason": "a cell is insufficient or missing"
   },
   {
+   "bundle": "adam-coding-anywhere",
+   "confidence": {
+    "helps": null,
+    "no_help": null
+   },
+   "current_text_runs": 0,
+   "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
+   "name": "fan-out-triage",
+   "next_test": {
+    "band": null,
+    "due": null,
+    "position": null,
+    "scheduled": false
+   },
+   "registry": "adam-agentskills",
+   "runs": [],
+   "skip_reason": null,
+   "stakes": {
+    "level": "normal"
+   },
+   "status": "covered",
+   "usage": {
+    "invocations": 0
+   },
+   "verdict": null,
+   "verdict_reason": null
+  },
+  {
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
@@ -3263,7 +3714,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -3523,7 +3974,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -3804,7 +4255,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4190,10 +4641,10 @@
    "description": "Audit PDF files to determine whether OCR (optical character recognition) is needed to make them fully text-searchable. Use this skill whenever the user asks about PDF searchability, OCR status, whether PDFs have embedded text, which PDFs are scans, or wants to audit/inventory a folder of PDFs for text extraction readiness. Also triggers for: \"which PDFs need OCR\", \"are my PDFs searchable\", \"do these PDFs have text layers\", \"audit my PDFs\", \"find scanned PDFs\".",
    "name": "pdf-ocr-audit",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 7,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [],
@@ -4220,7 +4671,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 1,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4246,10 +4697,10 @@
    "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
    "name": "post-failure-comment",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 9,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [],
@@ -4302,10 +4753,10 @@
    "description": "Rename already-searchable PDFs in a specified folder to descriptive, date-prefixed names, proposing each name from the PDF's own content and prompting for per-file confirmation or edit before applying. Use after running `ocr-pdfs` to clean up scanner-output filenames like \"Scan from 2024-03-15.pdf\", \"QuickScan_001.pdf\", or \"Document(47).pdf\" \u2014 or for any folder of PDFs that already have text layers but unhelpful filenames. Triggers: \"rename my pdfs\", \"clean up pdf filenames\", \"rename searchable pdfs\", \"give my pdfs descriptive names\", \"rename scanned pdfs\", \"tidy pdf names\".",
    "name": "rename-pdfs",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 10,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [],
@@ -4330,9 +4781,9 @@
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
-    "band": "near",
+    "band": "missing",
     "due": null,
-    "position": 19,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -4653,9 +5104,9 @@
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
-    "band": "near",
+    "band": "missing",
     "due": null,
-    "position": 20,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -4990,10 +5441,10 @@
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
-    "band": "missing",
+    "band": null,
     "due": null,
-    "position": 11,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -5294,7 +5745,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 21,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -5594,9 +6045,9 @@
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
-    "band": "near",
+    "band": "missing",
     "due": null,
-    "position": 22,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6003,7 +6454,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 23,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6968,13 +7419,13 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "4e785f5af1d5250b5173926cc596334195dfd175",
-  "results_commit": "24758374c3e7bd6b5c226ccb8dd692ab8c503594"
+  "repository_commit": "1dbcb7e669fe7acd71565f86f003102c077c6606",
+  "results_commit": "322321b2b67df5d613e171661e1ba91e01872d3e"
  },
  "usage": {
-  "from": "2026-09-07T00:00:00Z",
-  "sessions_scanned": 2523,
+  "from": "2026-09-14T00:00:00Z",
+  "sessions_scanned": 2566,
   "surface": "local",
-  "to": "2026-11-01T16:37:09Z"
+  "to": "2026-11-02T16:37:13Z"
  }
 }
