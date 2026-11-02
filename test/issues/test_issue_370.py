@@ -40,7 +40,7 @@ sys.path.insert(0, str(TEST_DIR))
 import cli_json  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
-from arm_test_env import install_arm_test_environment  # noqa: E402
+from arm_test_env import install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
 #: `IngestTests.edited`: remove the key instead of setting it.
@@ -419,6 +419,7 @@ class MeasuredTests(Checks):
         "reasons": {}}
 
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.workspace = Path(tempfile.mkdtemp(prefix="workspace-"))

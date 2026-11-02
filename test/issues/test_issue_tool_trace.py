@@ -74,7 +74,7 @@ def cli_reply(payload: object, returncode: int = 0) -> subprocess.CompletedProce
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import arm_test_environment, install_arm_test_environment  # noqa: E402
+from arm_test_env import arm_test_environment, install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -310,6 +310,7 @@ class BoundTests(unittest.TestCase):
 
 class RunAgentTraceTests(unittest.TestCase):
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)

@@ -98,7 +98,7 @@ def agent_reply(model_usage=None, session="sess-1") -> dict:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from arm_test_env import install_arm_test_environment  # noqa: E402
+from arm_test_env import install_arm_test_environment, route_cli_through_subprocess_run  # noqa: E402
 
 
 @install_arm_test_environment
@@ -417,6 +417,7 @@ class AggregateTests(unittest.TestCase):
 class RunAgentEffortTests(unittest.TestCase):
 
     def setUp(self):
+        route_cli_through_subprocess_run(self, run_eval)
         self.workspace = Path(tempfile.mkdtemp(prefix="workspace-"))
         self.addCleanup(shutil.rmtree, self.workspace, ignore_errors=True)
         # A multi-turn arm persists its session under HOME; keep it scratch.

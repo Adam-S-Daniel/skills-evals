@@ -2509,10 +2509,12 @@ class TestIssue97(unittest.TestCase):
          "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
-        # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
-        # is the whole of S1-a: round 2 validated the second and not the first.
-        ("harness/run_eval.py", "run_agent", "subprocess.run", "timeout"):
-            (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
+        # The agent CLI's spawn (#594: in its own session, its group ended
+        # after). run_agent hands it `args.timeout or fixture.get("timeout_s",
+        # 600)`, BOTH halves checked in run_agent too (S1-a: round 2 validated
+        # the second and not the first); the sink checks whatever it is given.
+        ("harness/run_eval.py", "_run_in_own_session", "<popen>.communicate",
+         "timeout"): (1, (("sink", "timeout"),)),
         # The sink moved out of `score()` when main's #81 work extracted the
         # CLI call into `_run_judge_cli` — one function now hands a timeout
         # to subprocess for BOTH judge modes, absolute and pairwise, and it
@@ -3051,7 +3053,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "git_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
-        ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
+        ("harness/run_eval.py", "_run_in_own_session"): ("param", "timeout"),
         ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
         ("harness/workspace_git.py", "_invoke"): ("param", "timeout"),
         ("harness/workspace_git.py", "_wait"): ("param", "timeout"),
@@ -3115,8 +3117,6 @@ class TestIssue97(unittest.TestCase):
                 kwargs["ctx"] = types.SimpleNamespace(**{knob: value})
             elif kind == "fixture":
                 kwargs["fixture"] = {knob: value, "setup": "true"}
-            elif kind == "arm":
-                kwargs["arm"] = {"name": "without_skill", knob: value}
         if name == "_sandbox_prefix":
             return fn(tmp, tmp, {})
         if name == "_ruby_prefix":
@@ -3144,8 +3144,12 @@ class TestIssue97(unittest.TestCase):
             return fn(tmp, "p", "", model=None, **kwargs)
         if name == "run_setup":
             return fn(tmp, kwargs["fixture"])
-        if name == "run_agent":
-            return fn(tmp, "p", kwargs["arm"])
+        if name == "_run_in_own_session":
+            # Popen is the spawn counter or a MagicMock here, whose pid the
+            # group helper refuses; never signal a real process anyway.
+            with mock.patch("os.killpg"), mock.patch("os.kill"):
+                return fn(["true"], cwd=tmp, capture_output=True, text=True,
+                          env={}, **kwargs)
         if rel == "harness/workspace_git.py" and name == "_invoke":
             return fn(["version"], cwd=tmp, home=tmp, **kwargs)
         if rel == "harness/workspace_git.py" and name == "_wait":

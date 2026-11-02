@@ -52,11 +52,13 @@ import math
 import os
 import re
 import shutil
+import signal
 import stat
 import statistics
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from fractions import Fraction
 from pathlib import Path
@@ -2319,10 +2321,19 @@ _CLI_PROFILE_TREES = (".cc-writes", "backups", "bridge-spawn", "projects",
 # the given size in bytes; anything else at that path is a change. The lock
 # is a directory the CLI creates and removes, exempt only while empty.
 _BUILTIN_PLUGIN_STORE = "plugins/store/cc-plugin-*_builtin-" + "[0-9a-f]" * 12 + ".json"
+# The CLI's account plugin sync stamps each synced set's directory, possibly
+# after the arm's CLI returned (#594): seen locally recreating a cleaned pair
+# profile. Like the skills one below, it is a timestamp and loads nothing.
+_PLUGINS_SYNCED_MARKER = "plugins/synced/*/.last-complete-round"
+# Markers whose `*` must stay within one path segment (fnmatch's crosses `/`):
+# `plugins/` is where plugins load from, so a `.last-complete-round` deeper
+# down, beside a plugin's own files, is not the sync's stamp.
+_ONE_SEGMENT_MARKERS = frozenset({_PLUGINS_SYNCED_MARKER})
 _CLI_PROFILE_MARKERS = {
     ".claude.json": None, ".claude.json.tmp.*": None,
     "plugins/cache/*/.orphaned_at": 4096,
     "skills/synced/*/.last-complete-round": 4096,
+    _PLUGINS_SYNCED_MARKER: 4096,
     # The trusted fleet-memory hook appends this detached delivery receipt,
     # possibly after delivery returned. It loads no CLI configuration. The
     # writer checks 1 MiB before its last append of at most 4096 bytes.
@@ -2400,6 +2411,8 @@ def _exempt(path: Path, rel: str, trees, markers, empty_dirs) -> bool:
         return True
     st = os.lstat(path)
     for pattern, limit in markers.items():
+        if pattern in _ONE_SEGMENT_MARKERS and rel.count("/") != pattern.count("/"):
+            continue
         if fnmatch.fnmatchcase(rel, pattern):
             # The receipt writer also refuses foreign-owned or hard-linked
             # files; such a path is not its trusted bookkeeping.
@@ -2704,6 +2717,109 @@ def install_skill(workspace: Path, arm: dict) -> dict | None:
     return None
 
 
+# How long the agent CLI's leftover process group gets between SIGTERM and
+# SIGKILL, and how often it is checked meanwhile (#594).
+_GROUP_TERM_GRACE_S = 5.0
+_GROUP_POLL_S = 0.05
+
+
+def _group_states(pgid: int, proc_root: str = "/proc") -> list[str] | None:
+    """The state letter (`R`, `S`, `Z`, ...) of every process in group
+    `pgid`, read from `<proc_root>/<pid>/stat`; None when `proc_root` cannot
+    be listed (no /proc), so the caller cannot tell and keeps waiting."""
+    try:
+        pids = [name for name in os.listdir(proc_root) if name.isdigit()]
+    except OSError:
+        return None
+    states = []
+    for pid in pids:
+        try:
+            with open(os.path.join(proc_root, pid, "stat"), "rb") as stream:
+                stat_line = stream.read().decode("ascii", "replace")
+            # `pid (comm) state ppid pgrp ...`: comm may hold spaces and
+            # parentheses, so the fields start after the LAST ')'.
+            fields = stat_line[stat_line.rindex(")") + 1:].split()
+            if int(fields[2]) == pgid:
+                states.append(fields[0])
+        except (OSError, ValueError, IndexError):
+            continue  # gone since the listing, or not a stat line
+    return states
+
+
+def _kill_process_group(pgid, *, grace: float = _GROUP_TERM_GRACE_S,
+                        poll: float = _GROUP_POLL_S, clock=time.monotonic,
+                        pause=time.sleep, states=_group_states) -> None:
+    """SIGTERM whatever is left of process group `pgid` (an agent CLI started
+    in its own session), then SIGKILL it if anything is still there after
+    `grace` seconds of `clock`, checking every `poll` seconds (`pause`). The
+    wait ends early once every member is a zombie (`states`): a zombie
+    still answers `killpg(pgid, 0)`, and in a PID namespace nobody may reap
+    it.
+
+    Refuses, before any signal, a group that is not an int greater than 1 or
+    is the harness's own (its pid or its group): 0 would be the harness's
+    group, 1 init's, and -1 every process the harness may signal (a mocked
+    pid once became `kill(-1, SIGKILL)` and killed every session). A group
+    that is already gone, or not the harness's to signal, is left alone.
+
+    What it ends is everything the arm's CLI left in its group, including
+    the fleet-memory hook's detached delivery receipt writer when the CLI
+    ran that hook in an arm's profile: intended, since that scratch profile
+    is discarded with the arm. A writer that calls setsid() itself has left
+    the group and is not reached; the profile markers' exemption and
+    `_in_place_scratch`'s removal of a markers-only leftover cover it."""
+    if (type(pgid) is not int or pgid <= 1
+            or pgid in (os.getpid(), os.getpgrp())):
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        deadline = clock() + grace
+        while clock() < deadline:
+            pause(poll)
+            os.killpg(pgid, 0)
+            members = states(pgid)
+            # Non-empty: a /proc from another PID namespace lists no member,
+            # and all([]) would end the wait before a living writer's SIGKILL.
+            if members and all(state == "Z" for state in members):
+                return
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        # Empty (the usual case) or emptied while waiting; a group the
+        # harness may not signal is not the one it started.
+        return
+
+
+def _run_in_own_session(cmd: list, *, cwd, capture_output: bool, text: bool,
+                        timeout, env) -> subprocess.CompletedProcess:
+    """`subprocess.run` with the same arguments, result and TimeoutExpired,
+    but the child is started in its own session, and its process group,
+    whatever the CLI left running in it, is ended (`_kill_process_group`)
+    however the call ends (#594): a detached child otherwise outlives its arm
+    and writes into the next one's profile."""
+    guidance.check_timeout(timeout, "run_eval._run_in_own_session(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
+    pipe = subprocess.PIPE if capture_output else None
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=pipe, stderr=pipe,
+                            text=text, start_new_session=True)
+    try:
+        with proc:
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # As subprocess.run: the child is killed and reaped, and the
+                # output read so far stays on the exception.
+                proc.kill()
+                proc.wait()
+                raise
+            except BaseException:
+                proc.kill()
+                raise
+            return subprocess.CompletedProcess(proc.args, proc.poll(), stdout, stderr)
+    finally:
+        # With start_new_session the child's pid is its group's id.
+        _kill_process_group(proc.pid)
+
+
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     """Run the agent under test (the Claude Code CLI, headless) on the workspace.
 
@@ -2941,8 +3057,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             calls.append([])
             clocked.append({"started": _now()})
             try:
-                result = subprocess.run(turn_cmd, cwd=workspace, capture_output=True,
-                                        text=True, timeout=timeout, env=env)
+                result = _run_in_own_session(turn_cmd, cwd=workspace,
+                                             capture_output=True, text=True,
+                                             timeout=timeout, env=env)
                 clocked[-1]["ended"] = _now()
             except OSError as exc:
                 # E2BIG and the like: the CLI never started.
@@ -5577,10 +5694,47 @@ def _in_place_pair(plan: dict | None):
         shutil.rmtree(parent, ignore_errors=True)
 
 
+# What a late CLI writer may leave in a cleaned pair profile (#594): the
+# profile markers that carry a size cap. `.claude.json` (uncapped) is the
+# previous arm's CLI state, not a late stamp, and still refuses.
+_LATE_MARKERS = {pattern: limit for pattern, limit in _CLI_PROFILE_MARKERS.items()
+                 if limit is not None}
+
+
+def _only_late_markers(config: Path) -> bool:
+    """Whether a leftover pair profile holds at least one `_LATE_MARKERS`
+    file, each exempt as `_exempt` judges it, and nothing else but the
+    directories leading to them. Anything unreadable is not."""
+    def refuse(error: OSError) -> None:
+        raise error
+
+    found = False
+    try:
+        if os.path.islink(config) or not os.path.isdir(config):
+            return False
+        for current, dirs, files in os.walk(config, onerror=refuse):
+            for name in dirs:
+                if os.path.islink(os.path.join(current, name)):
+                    return False
+            for name in files:
+                path = Path(current) / name
+                if not _exempt(path, path.relative_to(config).as_posix(), (),
+                               _LATE_MARKERS, ()):
+                    return False
+                found = True
+    except OSError:
+        return False
+    return found
+
+
 def _in_place_scratch(plan: dict) -> Path:
     # The reserved profile parent is write-denied; keep writable workspaces
     # and tool temporary files outside it.
-    if os.path.lexists(plan["_pair_config"]):
+    config = plan["_pair_config"]
+    if os.path.lexists(config) and _only_late_markers(Path(config)):
+        # A late writer's stamps only (#594): nothing of the previous arm.
+        shutil.rmtree(config, ignore_errors=True)
+    if os.path.lexists(config):
         raise delivery.DeliveryError("install_collision", "a previous arm's profile was not cleaned")
     return Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
 
@@ -7404,6 +7558,51 @@ def _valid_timestamp(value: str) -> bool:
     return True
 
 
+def _exit_on_signal(signum, _frame):
+    """Turn SIGTERM or SIGHUP into SystemExit(128 + signum), so the `finally`
+    blocks run: above all `_run_in_own_session`'s, which kills the agent CLI
+    and ends its group. Started in its own session (#594), the CLI no longer
+    gets a signal aimed at the harness's group (a runner's cancel, GNU
+    timeout, a hangup), and without this it would outlive the harness and
+    keep spending until its own timeout.
+
+    Both signals are ignored from here on, so a repeated SIGTERM cannot cut
+    short the cleanup this one started (the group's SIGKILL, the usage
+    record's write)."""
+    for each in (signal.SIGTERM, signal.SIGHUP):
+        try:
+            signal.signal(each, signal.SIG_IGN)
+        except (ValueError, OSError):
+            pass
+    raise SystemExit(128 + signum)
+
+
+def _exiting_on_signals(run):
+    """Decorate main(): install `_exit_on_signal` for SIGTERM and SIGHUP for
+    the call, and put the previous handlers back after it, so a test that
+    calls main() in-process keeps its own. Only main() installs them, never
+    an import; off the main thread (where signal.signal refuses) they are
+    left as they are."""
+    @functools.wraps(run)
+    def wrapped(*args, **kwargs):
+        previous = {}
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            try:
+                previous[signum] = signal.signal(signum, _exit_on_signal)
+            except ValueError:
+                break
+        try:
+            return run(*args, **kwargs)
+        finally:
+            for signum, handler in previous.items():
+                # None: a handler set outside Python, which cannot be put back.
+                if handler is not None:
+                    signal.signal(signum, handler)
+    return wrapped
+
+
+# Outermost, so the usage record is finished on a signal too.
+@_exiting_on_signals
 @_ending_the_run
 def main() -> int:
     parser = argparse.ArgumentParser()
