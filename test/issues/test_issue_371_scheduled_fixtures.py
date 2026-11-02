@@ -151,6 +151,23 @@ REMEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
         "evals/review-bash-ci-reliability/test-runner-assertions",
         "evals/workflow-path-audit/required-check-routing",
         "evals/writing-adrs/bootstrap")}
+# Re-measured 2026-11-02 the same way after the skills-doctor fixtures moved
+# from adam-agentskills 2a322dde to its `main` at 064652db, the repo-settings
+# fixture from 19378e8d to 56c9dac9, and github-actions-sha-pinning from
+# adamdaniel.ai 8074d5a3 to 67b5e002, guidance proven at 5ca459fc. Each
+# context now deploys adam-agentskills main's digest of its subject.
+_ADAM_AGENTSKILLS_NOW = (25512, 7447, 688780)
+_REPO_SETTINGS_NOW = (25512, 7447, 688780)
+_ADAMDANIEL_AI_NOW = (25512, 14803, 861762)
+REMEASURED.update({
+    **{f"evals/skills-doctor/{name}": (_ADAM_AGENTSKILLS_NOW,) * 2
+       for name in ("bucketed-account-store", "one-row-rejects-the-lock",
+                    "personal-copy-outranks-repo", "ssh-remote-is-durable")},
+    "evals/github-actions-repo-settings/drift-diagnosis": (_REPO_SETTINGS_NOW,) * 2,
+    "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI_NOW,) * 2,
+    # adamdaniel.ai ddf1c992 -> da05fc6b (after its #4569 lock re-pin).
+    "evals/platform-release-and-bump": ((25512, 14803, 875774),) * 2,
+})
 MEASURED_KEYS = ("guidance_bytes", "skill_catalog_bytes", "skill_payload_bytes")
 HEADROOM = 1.25
 

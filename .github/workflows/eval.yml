@@ -29,6 +29,13 @@
 #   boundary just the same as a maintainer's own push: treat it as trusted,
 #   or drop the key.
 #
+# * In-place arms (ADR 0012) run with the fixture's deployed context (the
+#   context repository's guidance and the skills its skills.lock deploys)
+#   under bypassPermissions with the key in env. So repo-settings and
+#   wsl-automation, like the other checked-out repos, are inside the trust
+#   boundary: write access to their default branches is equivalent to key
+#   access.
+#
 # * _agent-guidance is now inside that same boundary, and this is new with
 #   the guidance subject (#97). A guidance fixture's `with` arm delivers a
 #   payload assembled from that repo's agents-md/base.md into the agent's
@@ -118,7 +125,7 @@
 #   class name, and refresh_models.py is written to produce nothing else. The
 #   token-exchange failure output below is a separate pre-existing path.
 #
-# * All five checkouts (distinct repositories) use `persist-credentials: false`;
+# * All seven checkouts (distinct repositories) use `persist-credentials: false`;
 #   the plan and publisher repeat this repo on fresh runners. Write auth is
 #   injected only in the steps that write — the `roster` job's
 #   roster-proposal step (its tracking issue only; since round 7 it pushes
@@ -1485,6 +1492,8 @@ jobs:
         with:
           repository: Adam-S-Daniel/adam-agentskills
           path: adam-agentskills
+          # Full history: the context resolver reads pinned revisions.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out cms-platform registry (side-by-side)
@@ -1492,6 +1501,8 @@ jobs:
         with:
           repository: Adam-S-Daniel/cms-platform
           path: cms-platform
+          # Full history: the context resolver reads pinned revisions.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out adamdaniel.ai registry (side-by-side)
@@ -1499,6 +1510,8 @@ jobs:
         with:
           repository: Adam-S-Daniel/adamdaniel.ai
           path: adamdaniel.ai
+          # Full history: the context resolver reads pinned revisions.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out _agent-guidance (side-by-side)
@@ -1510,6 +1523,29 @@ jobs:
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
+          # Full history: the context resolver reads pinned revisions and
+          # walks this repo's origin/main ancestry.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out repo-settings (in-place context)
+        # Read-only deployed context for in-place fixtures (ADR 0012), NOT a
+        # skill registry: never passed as --registry.
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/repo-settings
+          path: repo-settings
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out wsl-automation (in-place context)
+        # Read-only deployed context for in-place fixtures (ADR 0012), NOT a
+        # skill registry: never passed as --registry.
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/wsl-automation
+          path: wsl-automation
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node
@@ -1560,6 +1596,28 @@ jobs:
           [[ "${version%% *}" == "$latest" ]] || { echo "::error::claude on PATH is not the npm latest just installed"; exit 1; }
           echo "harness: Claude Code ${version} (npm latest)"
           { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
+
+      # The arm runs with the CLI sandbox required (`sandbox.enabled` and
+      # `failIfUnavailable` in harness/run_eval.py's arm settings), which
+      # needs bubblewrap and socat. The runner image ships neither, so every
+      # arm ended in `sandbox_unavailable` within seconds (run 41493765048).
+      # Ubuntu's AppArmor denies unprivileged user namespaces, so grant that
+      # to /usr/bin/bwrap alone, as ci.yml does for the scorer sandbox. This
+      # runs before the token exchange, so no credential exists yet.
+      - name: Provide bubblewrap and socat for the arm sandbox
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends bubblewrap socat
+          if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
+            printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '}' \
+              | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          /usr/bin/bwrap --ro-bind / / --unshare-pid --unshare-net --unshare-ipc \
+            --unshare-uts --proc /proc --dev /dev --die-with-parent -- /usr/bin/true
+          command -v socat >/dev/null
 
       - name: Set up Python
         uses: actions/setup-python@v7.1.0
@@ -1779,8 +1837,12 @@ jobs:
           # its arms and judge exactly as every run before the harness default
           # became `auto` (#71), so the badge window stays like-for-like. Moving
           # it to `auto` is an owner decision, not a side effect.
+          # Same rule as the routine (scripts/plan_scheduled_evals.py): a
+          # top-level `context` mapping in fixture.yaml means in_place.
+          pairing="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import plan_scheduled_evals as p; print("in_place" if p.declares_context(sys.argv[1]) else "isolation")' "$fixture")"
           python3 harness/run_eval.py "$fixture" \
             --arm both \
+            --pairing "$pairing" \
             --permission-mode bypassPermissions \
             --run-billing api --run-runner actions --run-location cloud \
             --guidance ../_agent-guidance \

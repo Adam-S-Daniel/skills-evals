@@ -18,6 +18,7 @@ import json
 import re
 import sys
 import tempfile
+import shutil
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -154,10 +155,13 @@ class ShapeAndMathTests(unittest.TestCase):
 
     def test_top_level_keys_and_types(self):
         d = self.doc
-        self.assertEqual(sorted(d), ["alerts", "coverage", "generated_at", "guidance",
+        self.assertEqual(sorted(d), ["alerts", "broken_unknown", "context_drift_unknown",
+                                     "coverage", "generated_at", "guidance",
                                      "newest_run", "policy", "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
+        # No evals/scheduled.yml, so no fixture is in the #544/#545 scope.
+        self.assertEqual((d["broken_unknown"], d["context_drift_unknown"]), (0, 0))
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")
@@ -335,6 +339,32 @@ class PrivacyTests(unittest.TestCase):
             self.assertEqual(explorer_data.main([*args, "--repository-commit", "main"]), 2)
         self.assertEqual(explorer_data.main([*args, "--repository-commit", SHA_A]), 0)
         self.assertEqual(json.loads(out.read_text())["schema_version"], 1)
+
+
+class RemovedSectionsTests(unittest.TestCase):
+    """#557 (Adam, 2026-11-02): the page lists every removed section with its
+    date and a link to its removal pull request, whose Revert button
+    restores it."""
+
+    def test_remove_entries_are_listed_newest_first(self):
+        root = Path(tempfile.mkdtemp(prefix="removed-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "docs").mkdir()
+        (root / "docs" / "guidance-impact.md").write_text(
+            "# Guidance impact\n\n## Entry format\n\ntext\n\n"
+            "## 2026-11-20 — bravo — remove\n- Motivation: m\n\n"
+            "## 2026-11-18 — alpha — add\n- Motivation: m\n\n"
+            "## 2026-11-10 — charlie — remove\n- Motivation: m\n", encoding="utf-8")
+        removed = explorer_data.removed_sections(root)
+        self.assertEqual([(r["id"], r["date"]) for r in removed],
+                         [("bravo", "2026-11-20"), ("charlie", "2026-11-10")])
+        self.assertEqual(removed[0]["reverse_url"],
+                         "https://github.com/Adam-S-Daniel/_agent-guidance/pulls"
+                         "?q=is%3Apr+head%3Aretire-guidance%2Fbravo")
+
+    def test_no_checkout_or_file_lists_nothing(self):
+        self.assertEqual(explorer_data.removed_sections(None), [])
+        self.assertEqual(explorer_data.removed_sections(Path("/nonexistent-dir")), [])
 
 
 class GuidanceTests(unittest.TestCase):

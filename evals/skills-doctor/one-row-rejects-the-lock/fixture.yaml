@@ -46,10 +46,14 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # In-place context (ADR 0012): the same block as `bucketed-account-store`.
 # The budget measures the context repository at its revision, not the
 # fixture, so every fixture of this skill shares it.
+# Re-pinned 2026-11-02 to adam-agentskills main 064652db (it deploys
+# adam-agentskills main's copy of the subject), guidance proven at 5ca459fc.
+# Budgets unchanged; today's figures are REMEASURED in
+# test/issues/test_issue_371_scheduled_fixtures.py.
 context:
   repository: Adam-S-Daniel/adam-agentskills
-  revision: 2a322dde20fcd4ac98e214795b1453e941c529f8
-  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  revision: 064652dbb5d599058e6fd0d88f61995de6967b4a
+  guidance_revision: 5ca459fc6aa270f204cab3d67603fc0e5699b3d7
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 7644

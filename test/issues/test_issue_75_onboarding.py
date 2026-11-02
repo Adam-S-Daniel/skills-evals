@@ -64,10 +64,12 @@ class TestIssue75Onboarding(unittest.TestCase):
             metadata = fixture["context"]
             context.validate_context(fixture, "fixture.yaml")
             self.assertEqual(metadata["repository"], "Adam-S-Daniel/repo-settings")
+            # Re-pinned 2026-11-02 from 19378e8d / 5d2ed452 to repo-settings
+            # main, which deploys adam-agentskills main's copy of the skill.
             self.assertEqual(metadata["revision"],
-                             "19378e8ddd8fa291cd74b4a24cd6389734cba747")
+                             "56c9dac9d044a13aa376664eb5f95aec6fc73dd5")
             self.assertEqual(metadata["guidance_revision"],
-                             "5d2ed452358dd2eb215d27c80760a0e6b09c13b7")
+                             "5ca459fc6aa270f204cab3d67603fc0e5699b3d7")
         self.assertEqual(drift["context"], self.fixture["context"])
         self.assertEqual(self.fixture["context"]["budget"], {
             "guidance_bytes": 30598, "skill_catalog_bytes": 7634,

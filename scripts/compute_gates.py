@@ -499,20 +499,16 @@ def flag_registries(values: list[str] | None) -> dict:
 
 
 def tested_digest(registries: dict, skill, url) -> str | None:
-    """The skill's `tested_digest` as on main: its one copy in `registries`
-    (the fixture's `registry:` one, when it names one), digested as
-    harness/delivery.py digests a registry skill; None when it is not
-    unique or not readable."""
+    """The skill's `tested_digest` as on main: its one copy per
+    run_eval.main_copy (the fixture's `registry:` one, when it names one),
+    digested as harness/delivery.py digests a registry skill; None when it is
+    not unique or not readable."""
     if not isinstance(skill, str) or not run_eval._SKILL_NAME_RE.fullmatch(skill):
         return None
     try:
-        if url is not None:
-            entry = run_eval.registry_for_url(registries, str(url))
-            registries = {entry["name"]: entry}
-        matches = delivery._registry_matches(registries, None, skill)
-        if len(matches) != 1:
-            return None
-        files, _modes = delivery._tree_files(matches[0][2])
+        _identity, _bundle, path = run_eval.main_copy(
+            registries, skill, None if url is None else str(url))
+        files, _modes = delivery._tree_files(path)
     except (ValueError, OSError, delivery.DeliveryError, context.ContextError):
         return None
     return context._file_digest(files)
