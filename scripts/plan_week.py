@@ -600,17 +600,32 @@ def _level(block, field: str) -> float:
         and not isinstance(value, bool) else 0.0
 
 
+#: The start of gates._classify's reason for a cell that is not judge-carried
+#: and still needs a usable judge to retire (test_issue_guidance_focus checks
+#: it against harness/gates.py's own text).
+JUDGE_NEEDED_REASON = ("the objective interval is not tight enough yet, and the "
+                       "judge is needed to remove")
+
+
 def retire_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to no-benefit, as a share of the decision
     level: the no-help confidence of the figures that decide it. A
     judge-carried cell's judge, min'd with its objective's when it has an
     objective block; any other cell's objective min'd with its judge's. No
-    judge block gives 0 either way: a cell that is not judge-carried cannot
-    retire without a usable judge (gates._classify), so a cell whose
-    conditional judge was skipped stays at 0 however tight its objective."""
+    judge block gives 0 for a judge-carried cell, and for any other cell
+    whose reason says the judge is still needed; a cell whose judge was
+    skipped only because the with arm was ahead reads its objective."""
     judge, objective = cell.get("judge"), cell.get("objective")
     if not isinstance(judge, dict):
-        return 0.0
+        # #557 (2026-11-02): an in-situ cell whose every missing judge figure
+        # was skipped because the with arm was ahead is decided on its
+        # objective alone. gates._classify marks only the other case, where
+        # the judge is still needed, with JUDGE_NEEDED_REASON; a judge-carried
+        # cell always needs its judge.
+        if cell.get("judge_carried") \
+                or str(cell.get("reason") or "").startswith(JUDGE_NEEDED_REASON):
+            return 0.0
+        return _level(objective, "no_help_confidence") / level
     if cell.get("judge_carried") and not isinstance(objective, dict):
         return _level(judge, "no_help_confidence") / level
     return min(_level(objective, "no_help_confidence"),

@@ -305,21 +305,21 @@ the two sections nearest one until those decide.
   mean, so three trials cut the runs a verdict needs but not its cost (the
   2026-11-02 design review measured it equal or worse in trial-equivalents).
 - **Today** (results branch at 3d68f1c, 2026-11-02): 29 sections, 64 in-situ
-  cells on the two roster models, 24 counted runs in all. Only 2 cells have a
-  judge block, and neither is judge-carried, so every section's retire
-  progress is 0: the focus is
+  cells on the two roster models, 24 counted runs in all. Before #557's
+  with-ahead rule only 2 cells had a judge block, so every section's retire
+  progress read 0 and the focus was
   `anything-you-name-gets-its-link` (8 cells, keep progress 0.144) and
   `agent-contribution-markers` (score 0, first of the two-cell sections with
   the most counted runs, by id), 10 fires in focus and 51 in the guidance
   rest.
-- **Known limits.** A cell that is not judge-carried needs a usable judge to
-  retire, and a conditional judge call is skipped on a run whose with arm
-  is already ahead, so most such cells today cannot reach a usable judge on
-  their current content: they score 0 for retire, and their section stays
-  eligible only through keep progress. That is a gate question for #565's
-  owner, not the planner's. The explorer's test queue reads no pull
-  requests, so it can show a focus place for a section whose removal pull
-  request is open, which the planner would not focus.
+- **Known limits.** A cell that is not judge-carried still needs a usable
+  judge to retire unless every judge call it is missing was skipped because
+  the with arm was ahead (#557, 2026-11-02): such a cell is decided on its
+  objective, and its retire progress reads the objective's. A cell whose
+  reason says the judge is still needed scores 0 for retire, and its section
+  stays eligible only through keep progress. The explorer's test queue reads
+  no pull requests, so it can show a focus place for a section whose removal
+  pull request is open, which the planner would not focus.
 
 **Stakes** (Adam, 2026-11-01). `evals/stakes.yml` gives a skill or guidance
 section a stakes level from what it is for, with a one-line reason; a

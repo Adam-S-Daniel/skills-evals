@@ -112,13 +112,39 @@ class ScoreTests(unittest.TestCase):
                                            objective=conf(0.8))]), 0.0)
 
     def test_a_cell_that_is_not_judge_carried_needs_a_judge_to_retire(self):
-        # A tight objective with no judge block cannot retire (gates._classify
-        # needs a usable judge), so it scores 0, however near the objective is.
-        self.assertEqual(self.score([gcell("s", "a", objective=conf(0.89))]), 0.0)
+        # A tight objective with no judge block, whose reason says the judge
+        # is still needed, cannot retire (gates._classify), so it scores 0.
+        needed = plan_week.JUDGE_NEEDED_REASON + ": the judge figure needs ..."
+        self.assertEqual(self.score([gcell("s", "a", objective=conf(0.89),
+                                           reason=needed)]), 0.0)
         self.assertAlmostEqual(self.score([gcell("s", "a", objective=conf(0.81),
                                                  judge=conf(0.63))]), 0.63 / 0.90, 12)
         # An absent field in a present block counts as 0.
         self.assertEqual(self.score([gcell("s", "a", objective={}, judge=conf(0.63))]), 0.0)
+
+    def test_a_with_ahead_judge_skip_is_decided_on_the_objective(self):
+        # #557: every missing judge figure was a with-ahead skip, so
+        # gates._classify decides on the objective and gives the plain
+        # "not tight enough" reason; retire progress reads the objective.
+        self.assertAlmostEqual(self.score([gcell(
+            "s", "a", objective=conf(0.72),
+            reason="the interval is not tight enough yet")]), 0.72 / 0.90, 12)
+
+    def test_the_judge_needed_reason_is_gates_own_text(self):
+        # The planner matches gates._classify's reason by its start, so the
+        # literal must still be in harness/gates.py (read with ast, so a
+        # comment or docstring does not count).
+        import ast
+        source = (Path(plan_week.__file__).resolve().parent.parent
+                  / "harness" / "gates.py").read_text(encoding="utf-8")
+        texts = []
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.JoinedStr):
+                texts.append("".join(v.value for v in node.values
+                                     if isinstance(v, ast.Constant)))
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                texts.append(node.value)
+        self.assertTrue(any(t.startswith(plan_week.JUDGE_NEEDED_REASON) for t in texts))
 
     def test_retire_is_the_weakest_cell_and_keep_the_strongest(self):
         cells = [near("s", 0.8, "a"), near("s", 0.3, "b")]
