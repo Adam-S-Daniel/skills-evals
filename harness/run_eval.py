@@ -73,6 +73,7 @@ import run_canary  # noqa: E402
 from harness_repo import _git_out, harness_clone_root, harness_git_common_dir  # noqa: E402
 import context  # noqa: E402
 import delivery  # noqa: E402
+import fleet_hooks  # noqa: E402
 import guidance_violations  # noqa: E402
 import judge_policy  # noqa: E402
 from scorers import judge, objective  # noqa: E402
@@ -1895,7 +1896,8 @@ HARNESS_TEMP_PREFIXES = (
     "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
     "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
     ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-",
-    "session-miner-", "lesson-classify-")
+    "session-miner-", "lesson-classify-",
+    "fleet-hooks-modules-")
 
 
 def _harness_temp_rules(tmp_root: Path, workspace: Path | None,
@@ -1963,7 +1965,8 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                          profiles=None, outputs=(), additional_profiles=(),
                          tmp_root: Path | None = None,
                          mountinfo: str | None = None,
-                         readable_plugins=()) -> dict:
+                         readable_plugins=(), fleet_hooks_dir: Path | None = None,
+                         fleet_hooks_modules: Path | None = None) -> dict:
     """The settings every agent arm runs under, as one JSON object.
 
     `checkouts` are the run's registry and guidance checkouts; `session_dir`
@@ -1974,6 +1977,10 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     `mountinfo` to `host_mountinfo()`. A host-filesystem alias is denied
     whole, and PATH entries under one are dropped (`path_without_aliases`)
     before any carve-out is considered.
+    `fleet_hooks_dir` is a hooked arm's frozen hook set (#535): write-denied
+    like the configuration directories, and its guard is the arm's one
+    PreToolUse hook. `fleet_hooks_modules`, the plan's markdown-it install
+    the set's copy came from, is write-denied too.
     Raises ArmReadIsolationError when the read rules cannot be built safely.
     """
     home = Path(home if home is not None else Path.home()).resolve()
@@ -2013,6 +2020,10 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
     keep = Path(session_dir).resolve() if session_dir else None
     config_dirs = (_agent_config_dirs(workspace, config_dir)
                    if workspace is not None else [])
+    for frozen_dir in (fleet_hooks_dir, fleet_hooks_modules):
+        if frozen_dir is not None:
+            config_dirs += [path for path in dict.fromkeys(
+                (Path(frozen_dir), Path(frozen_dir).resolve())) if path not in config_dirs]
     protected = [*_SYSTEM_ROOTS,
                  *(Path(e).resolve() for e in path_env.split(os.pathsep)
                    if e and os.path.isabs(e))]
@@ -2037,7 +2048,7 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
                      else _read_rules(_glob_escape(str(path)))):
             if rule not in read_rules:
                 read_rules.append(rule)
-    return {
+    settings = {
         "sandbox": {
             "enabled": True,
             # Refuse to start rather than run commands unsandboxed.
@@ -2068,6 +2079,9 @@ def arm_sandbox_settings(checkouts=(), *, home: Path | None = None,
               for rule in (f"Edit(/{_glob_escape(str(path))})",
                            f"Edit(/{_glob_escape(str(path))}/**)"))]},
     }
+    if fleet_hooks_dir is not None:
+        settings["hooks"] = fleet_hooks.guard_hooks(fleet_hooks_dir)
+    return settings
 
 
 def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
@@ -2075,7 +2089,9 @@ def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
                         config_dir: Path | None = None, outputs=(), *,
                         path_env: str | None = None,
                         mountinfo: str | None = None,
-                        additional_profiles=(), readable_plugins=()) -> list[str]:
+                        additional_profiles=(), readable_plugins=(),
+                        fleet_hooks_dir: Path | None = None,
+                        fleet_hooks_modules: Path | None = None) -> list[str]:
     """The CLI flags that put an agent arm behind `arm_sandbox_settings`
     (`path_env`, the arm's own PATH, and `mountinfo` default as there).
     Raises ArmReadIsolationError (`settings_too_large`) past
@@ -2084,7 +2100,9 @@ def arm_isolation_flags(checkouts=(), session_dir: Path | None = None,
         checkouts, session_dir=session_dir, workspace=workspace,
         config_dir=config_dir, outputs=outputs, additional_profiles=additional_profiles,
         readable_plugins=readable_plugins, path_env=path_env,
-        mountinfo=mountinfo), sort_keys=True, separators=(",", ":"))
+        mountinfo=mountinfo, fleet_hooks_dir=fleet_hooks_dir,
+        fleet_hooks_modules=fleet_hooks_modules),
+        sort_keys=True, separators=(",", ":"))
     if len(settings.encode()) > MAX_SETTINGS_BYTES:
         raise ArmReadIsolationError(
             f"the arm's --settings is {len(settings.encode())} bytes, over "
@@ -2965,10 +2983,13 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             for skill in (path / "skills").iterdir():
                 delivery._tree_files(skill)
             readable_plugins.append(path)
+        hooks_dir = Path(arm["fleet_hooks_dir"]) if arm.get("fleet_hooks_dir") else None
         isolation = arm_isolation_flags(checkouts, session_dir, workspace, config_dir,
                                         outputs, additional_profiles=scratch_profiles,
                                         readable_plugins=readable_plugins,
-                                        path_env=env.get("PATH", ""), mountinfo=mountinfo)
+                                        path_env=env.get("PATH", ""), mountinfo=mountinfo,
+                                        fleet_hooks_dir=hooks_dir,
+                                        fleet_hooks_modules=arm.get("fleet_hooks_modules"))
     except (ArmReadIsolationError, delivery.DeliveryError, OSError, ValueError) as exc:
         if not isinstance(exc, ArmReadIsolationError):
             return {"error": "read_rules_unsafe", "detail": "plugin read boundary could not be verified"}
@@ -3051,6 +3072,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         # What the harness installed (a with_skill arm's skill), before the
         # agent's first turn.
         config_before = _agent_config_snapshot(workspace, config_dir, shared_profile)
+        # A hooked arm's frozen hook set (#535), write-denied above.
+        hooks_before = fleet_hooks.tree_digest(hooks_dir) if hooks_dir is not None else None
         for index, text in enumerate(texts):
             label = f"follow-up {index} of {len(texts) - 1}: " if index else ""
             turn_cmd = cmd
@@ -3138,6 +3161,9 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # describes, and project settings reload mid-session.
             written = _agent_config_written(workspace, config_before, config_dir,
                                             shared_profile)
+            if not written and hooks_dir is not None \
+                    and fleet_hooks.tree_digest(hooks_dir) != hooks_before:
+                written = f"{fleet_hooks.DIRNAME}/ (the frozen fleet hooks)"
             if written:
                 return traced({"error": "agent_wrote_agent_config",
                                "detail": f"{label}the agent wrote {written}",
@@ -5598,12 +5624,20 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
     plan = {"frozen": frozen, "subject": subject, "repositories": repositories,
             "candidate_paths": ([Path(candidate).resolve() if kind == "skill" else
                                  Path(candidate).resolve().parent] if candidate else [])}
+    if fixture.get(FLEET_HOOKS_KEY) is True:
+        # The hooks the context deployed, proven against it (#535); both arms
+        # of every trial get this one set.
+        plan["fleet_hooks"] = fleet_hooks.freeze(frozen, repositories,
+                                                 guidance_subject=kind == "guidance")
     _check_context_summary(plan)
     # Prove every context metadata fence before any CLI/version call.
     try:
         repositories.used_paths()
     except ArmReadIsolationError as exc:
         raise delivery.DeliveryError("context_git_metadata_unknown", str(exc)) from exc
+    if "fleet_hooks" in plan:
+        # Last, as the one step that needs the network, and once per plan.
+        plan["fleet_hooks_modules"] = fleet_hooks.install_modules(plan["fleet_hooks"])
     return plan
 
 
@@ -5649,7 +5683,7 @@ def _in_place_record(plan: dict, role: str) -> dict:
     proof = manifest["guidance"]
     expected = delivery.expected_skills(frozen, skill_subject, role)
     payload = delivery.guidance_payload(frozen, section_subject, role)
-    return {
+    record = {
         "pairing": "in_place",
         "role": role,
         "context": {
@@ -5677,6 +5711,11 @@ def _in_place_record(plan: dict, role: str) -> dict:
                         "guidance_digest": hashlib.sha256(payload).hexdigest(),
                         "subject_present": role == "with"},
     }
+    if "fleet_hooks" in plan:
+        # The hook set both arms received (#535), which compute_gates pools
+        # by; absent for an unhooked run, so its record is as before.
+        record["context"]["fleet_hooks_digest"] = plan["fleet_hooks"].digest
+    return record
 
 
 @contextmanager
@@ -5746,6 +5785,13 @@ def _in_place_scratch(plan: dict) -> Path:
     return Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
 
 
+def _fleet_hooks_arm(plan: dict, scratch: Path) -> dict:
+    """The arm key `run_agent` protects and guards a hooked arm by."""
+    return ({"fleet_hooks_dir": str(scratch / fleet_hooks.DIRNAME),
+             "fleet_hooks_modules": str(plan["fleet_hooks_modules"])}
+            if "fleet_hooks" in plan else {})
+
+
 def _clean_in_place_config(plan: dict | None) -> None:
     if plan is not None and "_pair_config" in plan:
         shutil.rmtree(plan["_pair_config"], ignore_errors=True)
@@ -5795,7 +5841,33 @@ def _prepare_in_place(role: str, fixture: dict, seed: Path, plan: dict,
     env = guidance.agent_env(workspace=workspace, home=home, tmpdir=tmpdir,
                              config_dir=config, env_spec=fixture.get("env"))
     assert_stand_ins_on_path(workspace, env, fixture.get("env"))
+    if "fleet_hooks" in plan:
+        # The arm's own read-only copy, outside `ws/` and `tmp/`, reached
+        # from the agent's environment only and only from a fleet remote, as
+        # ADR 0020's installer reaches it (#535). Harness Git never sees it:
+        # it strips `GIT_*` and reads no global or system config.
+        directory = scratch / fleet_hooks.DIRNAME
+        fleet_hooks.materialize(plan["fleet_hooks"], directory, plan["fleet_hooks_modules"])
+        _add_fleet_origin(workspace, frozen.manifest["repository"])
+        env.update(fleet_hooks.agent_env(directory))
     return workspace, env, delivered
+
+
+def _add_fleet_origin(workspace: Path, repository: str) -> None:
+    """Give a hooked arm's workspace the `origin` a clone of its context
+    repository has, so the fleet include matches as on a real machine. The
+    sandbox has no network, so it is never reached. A workspace that already
+    has an `origin` (a seed's own) is refused rather than left unhooked."""
+    config = workspace / ".git" / "config"
+    text = config.read_text(encoding="utf-8")
+    if re.search(r'^\s*\[\s*remote\s+"origin"\s*\]', text, re.MULTILINE | re.IGNORECASE):
+        raise delivery.DeliveryError(
+            "fleet_hooks_origin_exists", "the workspace already has an `origin` remote, "
+            "so the fleet hooks' remote-scoped include cannot be proven to match")
+    config.write_text(text + f'[remote "origin"]\n\turl = https://github.com/{repository}.git\n'
+                      "\tfetch = +refs/heads/*:refs/remotes/origin/*\n", encoding="utf-8")
+    # The baseline covers `.git/config`: record it again with the remote.
+    workspace_git.seal(workspace)
 
 
 # ---------------------------------------------------------------------------
@@ -6074,6 +6146,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         else:
             if scratch is not None:
                 workspace_git.release(scratch / "ws")
+                fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
                 shutil.rmtree(scratch, ignore_errors=True)
                 _clean_in_place_config(plan)
             raise
@@ -6084,6 +6157,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                        effort=effort, agent_model=agent_model)
         if scratch is not None:
             workspace_git.release(scratch / "ws")
+            fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
             shutil.rmtree(scratch, ignore_errors=True)
         elif isinstance(exc, SetupFailedError):
             shutil.rmtree(exc.workspace, ignore_errors=True)
@@ -6118,6 +6192,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "setting_sources": IN_PLACE_SETTING_SOURCES,
                 "env_override": env_override,
                 "session_scratch": str(scratch),
+                **_fleet_hooks_arm(plan, scratch),
                 "read_denied": [*arm_config["read_denied"],
                                 *plan["repositories"].used_paths(),
                                 *plan.get("candidate_paths", [])]})
@@ -6284,6 +6359,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "models_used": agent_models, **extra}
     finally:
         workspace_git.release(workspace)
+        if scratch is not None:
+            fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
         shutil.rmtree(scratch if scratch is not None else workspace, ignore_errors=True)
         _clean_in_place_config(plan)
 
@@ -6930,7 +7007,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         if plan is not None:
             arm_config.update({"pairing": "in_place", "pair_parent": str(plan["_pair_parent"]),
                                "verified_plugin_roots": [str(p) for p in delivery.plugins_root(
-                                   Path(env["CLAUDE_CONFIG_DIR"])).iterdir() if p.is_dir()]})
+                                   Path(env["CLAUDE_CONFIG_DIR"])).iterdir() if p.is_dir()],
+                               **_fleet_hooks_arm(plan, scratch)})
             arm_config["read_denied"] = [*arm_config["read_denied"],
                                          *plan["repositories"].used_paths(),
                                 *plan.get("candidate_paths", [])]
@@ -7071,6 +7149,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 "guidance_violations": counts}
     finally:
         workspace_git.release(scratch / "ws")
+        fleet_hooks.unlock(scratch / fleet_hooks.DIRNAME)
         shutil.rmtree(scratch, ignore_errors=True)
         _clean_in_place_config(plan)
 

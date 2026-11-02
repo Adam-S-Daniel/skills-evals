@@ -608,7 +608,8 @@ class ReadDenySettingsTests(_TempLayout):
             "trusted-git-", "scaffold-", "scaffold-context-", "claude-probe-home-",
             "skill-edit-guard-", "propose-skill-edit-", "scoring-guidance-",
             "scoring-skill-", "mine-real-work-", ".scaffold-", ".gh-label-",
-            ".gh-timeline-", "usage-census-", "session-miner-", "lesson-classify-")]
+            ".gh-timeline-", "usage-census-", "session-miner-", "lesson-classify-",
+            "fleet-hooks-modules-")]
         self.assertEqual(settings["sandbox"]["filesystem"], {
             "denyRead": [str(self.worktree), str(self.clone), str(self.repos),
                          str(self.registry), str(self.guidance), str(results),
@@ -1101,7 +1102,7 @@ class ReviewedTempPrefixTests(_TempLayout):
         "scaffold-", "scaffold-context-", "claude-probe-home-", "skill-edit-guard-",
         "propose-skill-edit-", "scoring-guidance-", "scoring-skill-", "mine-real-work-",
         ".scaffold-", ".gh-label-", ".gh-timeline-", "usage-census-",
-        "session-miner-", "lesson-classify-")
+        "session-miner-", "lesson-classify-", "fleet-hooks-modules-")
 
     def test_all_reviewed_tmpdir_prefixes_are_denied_to_commands_and_file_tools(self):
         for prefix in self.PREFIXES:
