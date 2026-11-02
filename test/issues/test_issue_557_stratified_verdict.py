@@ -115,14 +115,25 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(len(v["runs_used"]), 40)
         self.assertEqual(v["verdict"], "retire")
 
-    def test_an_errored_trial_in_an_unused_stratum_still_blocks_removal(self):
-        lone = series("with", [(80, 80, 80)], FLAT_JUDGE, start=30, skill="sec",
-                      fixture="fx", ctx=OLD, pair=OLD)[0]
+    def test_an_errored_trial_scores_zero_and_does_not_block_removal(self):
+        # T3's review: at the run counts a guidance verdict needs, one errored
+        # trial must not block a cell for good. It scores 0 on every check of
+        # its arm, so it is a bad result, never one left out.
+        runs = stratum(MAIN, FLAT, FLAT)
+        lone = runs[0]
         lone["trials"][0] = {**lone["trials"][0], "scored": False, "errored": True,
                              "checks": {}, "judge": None}
-        lone["pair"], lone["path"] = "in_situ", lone["path"] + "#err"
-        v = verdict(stratum(MAIN, FLAT, FLAT) + [lone])
-        self.assertEqual(v["cells"][0]["class"], "insufficient")
+        v = verdict(runs)
+        cell = v["cells"][0]
+        self.assertEqual(cell["errored_trials"], 1)
+        self.assertNotIn("errored", cell["reason"])
+        self.assertLess(cell["with"]["mean_of_run_means"], cell["without"]["mean_of_run_means"])
+
+    def test_an_anomalous_run_still_blocks_removal(self):
+        runs = stratum(MAIN, FLAT, FLAT)
+        runs[0]["trials"][0] = {**runs[0]["trials"][0], "checks": {}}
+        runs[0]["fixture_checks"] = True
+        self.assertEqual(verdict(runs)["cells"][0]["class"], "insufficient")
 
     def test_a_judge_unusable_in_one_rest_is_unusable(self):
         skipped = stratum(OLD, FLAT[:4], FLAT[:4], judges=(None, None), conditional=True)

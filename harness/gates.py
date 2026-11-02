@@ -966,9 +966,10 @@ def classify_strata(strata: dict, policy: dict, judge_carried: bool) -> dict:
 
     A stratum is USED when it has a counted run on each arm. The class is
     `_classify` over the used strata (counts pooled, deltas stratified),
-    with `cell_priors` over the used strata's runs. An agent-errored trial
-    or a run skipped as anomalous ANYWHERE in the cell's current-content
-    runs, used or not, keeps it from `no-benefit`, as in `classify_cell`.
+    with `cell_priors` over the used strata's runs. A run skipped as
+    anomalous ANYWHERE in the cell's current-content runs, used or not,
+    keeps it from `no-benefit`, as in `classify_cell`; an agent-errored
+    trial scores 0 on every check of its arm and does not block.
     There is no separate confirmation beside the rest on main (Adam,
     2026-11-02): the pooled bounds decide."""
     every = [r for s in strata.values() for role in ("with", "without") for r in s[role]]
@@ -996,13 +997,17 @@ def classify_strata(strata: dict, policy: dict, judge_carried: bool) -> dict:
     full = _classify(with_runs, without_runs, policy, judge_carried, cell_priors(used_runs),
                      strata=pairs or None)
     cls, reason = full["class"], full["reason"]
-    errored = sum(r["numbers"]["errored_trials"] for r in every)
-    if cls == "no-benefit" and (errored or NO_CHECKS_REASON in skipped):
-        cls, reason = "insufficient", (f"{cls} on the numbers, but the cell has "
-                                       f"{errored} agent-errored trial(s) or a run "
+    # An agent-errored trial already scores 0 on every check of its arm
+    # (`run_numbers`), so it counts as a bad result, never as one left out;
+    # unlike `classify_cell` it does not also block removal, which at the
+    # run counts a guidance verdict needs would block a cell for good
+    # (#557, T3's planner review). A run skipped as anomalous still does.
+    if cls == "no-benefit" and NO_CHECKS_REASON in skipped:
+        cls, reason = "insufficient", (f"{cls} on the numbers, but the cell has a run "
                                        "skipped as anomalous, so it cannot retire")
     return {**full, "class": cls, "reason": reason, "judge_carried": judge_carried,
-            "skipped": skipped, "strata": used, "used_runs": used_runs}
+            "skipped": skipped, "strata": used, "used_runs": used_runs,
+            "errored_trials": sum(r["numbers"]["errored_trials"] for r in every)}
 
 
 # ---------------------------------------------------------------------------
