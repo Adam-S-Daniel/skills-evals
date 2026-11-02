@@ -313,11 +313,13 @@ def subject_confidence(verdict: dict) -> dict:
     return {"helps": max(helps), "no_help": min(no_help)}
 
 
-#: The eval bands the page lists as the test queue, in the planner's order.
-QUEUE_BANDS = ("safety", "missing", "near", "recheck")
+#: The eval bands the page lists as the test queue, in the planner's order
+#: (plan_week.BANDS without its improve and bare bands).
+QUEUE_BANDS = ("safety", "missing", "near", "focus", "recheck", "guidance-rest")
 
 
-def test_queue(cells: list, model_weights: dict, now) -> dict:
+def test_queue(cells: list, model_weights: dict, now,
+               guidance_policy: dict | None = None) -> dict:
     """{(kind, name): {"position", "band", "due"}} for every subject with a
     scheduled cell: `position` (1 = next) is the subject's first cell in the
     planner's eval bands, in `plan_week.allocate`'s order before the budget
@@ -326,10 +328,15 @@ def test_queue(cells: list, model_weights: dict, now) -> dict:
     neither when no test is planned. `scheduled` is False (from the caller)
     for a subject with no fixture on `evals/scheduled.yml`. The
     budget decides how far down the queue a sweep gets, so this is an order,
-    not a date."""
-    cells = [c for c in cells if c.get("schedulable", True)]
+    not a date. `guidance_policy` (the verdict document's) sets the levels
+    the planner's guidance focus is normalized by; open removal pull
+    requests are not read here, so a section whose removal is open can
+    still show a focus place the planner would not give it."""
+    # The focus's blocking rule reads every cell of a section, held ones too.
     ctx = {"cells": cells, "model_weights": model_weights, "removal_prs": [],
+           "guidance_policy": guidance_policy,
            "reservation": 1.0, "overrun": 1.0, "points_per_usd": None}
+    cells = [c for c in cells if c.get("schedulable", True)]
     bands, _work = plan_week.eval_items(ctx, now)
 
     def key(cell_or_item):
@@ -406,7 +413,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     queue, cells = {}, []
     if (evals_dir / "scheduled.yml").is_file():
         cells = plan_week.eval_cells(evals_dir, gates_doc, [], now)
-        queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now)
+        queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now,
+                           gates_doc.get("guidance_policy"))
     counts, usage_window = usage_counts(tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)

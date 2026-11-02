@@ -49,10 +49,45 @@ THE BANDS (rule D), in order:
      then the cheaper model (every run can decide a cell: harness/gates.py
      checks a confidence sequence after each one).
   Bands 2 and 3 skip every cell of a skill or guidance section whose
-  verdict is already `keep` (one confident benefit decides it; band 5
+  verdict is already `keep` (one confident benefit decides it; band 6
   re-checks it), and order the cheaper model first within a tie (Adam,
   2026-10-31: Sonnet first, Opus only while that has not settled it).
-  4. improvements, at least 20%: improve fires for eligible skills and
+  They hold skill cells only: an undecided guidance cell (class missing or
+  insufficient) goes to band 4 or band 8.
+  4. guidance focus, at least 15% (`guidance_focus`; Adam's rule,
+     2026-11-02 18:42 UTC: remove a section at 90% confidence it does not
+     improve results by 0.15 or more): the undecided cells of the
+     GUIDANCE_FOCUS_SECTIONS (2) eligible sections nearest a verdict.
+       progress: a cell's retire progress is the no-help confidence of
+         what decides it, over `retire_confidence` (the verdict document's
+         `guidance_policy`, else DEFAULT_RETIRE_CONFIDENCE): a
+         judge-carried cell's judge, min'd with its objective's when it
+         has one; any other cell's objective min'd with its judge's. No
+         judge block is 0 either way (gates._classify retires no cell
+         without a usable judge). Its keep progress is the larger helps
+         confidence of the two over `benefit_confidence` (it understates
+         the per-check Holm keep). An absent value is 0.
+       score: max(min over the section's cells of retire progress, max
+         over them of keep progress), since it retires only when every
+         cell clears and keeps on one; ties by fewer cells (a smaller
+         section is nearer a verdict for the same runs, deliberately), more
+         counted runs, then section id.
+       eligible: its verdict is open (`insufficient` or none: keep, every
+         retire verdict, shorten-or-merge, ceiling and cannot-discriminate
+         are not), some cell would plan a fire (schedulable, stakes not
+         `none`, not fixture-broken), no removal pull request is open in
+         _agent-guidance, and no cell is BLOCKING: its no-benefit was
+         overruled by an errored trial or an anomalous skip, or it is
+         ceiling or cannot-discriminate with BLOCKING_MIN_RUNS (3) counted
+         runs on each arm. More runs on the current content cannot move a
+         blocking cell toward removal.
+     Within it the higher-scored section goes first, then its binding
+     cell: the lowest retire progress, or, when the section's score came
+     from the keep side, the highest keep progress; then the cheaper
+     model. The plan records the sections as
+     `guidance_focus`. There is no stall rule: a section that never gets
+     closer holds its slot until its verdict or content changes.
+  5. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
        use: a skill's usage weight (harness/skill_usage.py, `skill_weights`:
@@ -69,13 +104,13 @@ THE BANDS (rule D), in order:
          known cost. With none known, the median of the known estimates
          across candidates, else the improve charge (neutral, like use).
      Each ranking row records whether use and cost were known.
-  5. re-checks: decided cells whose newest run is over 8 weeks old (4
+  6. re-checks: decided cells whose newest run is over 8 weeks old (4
      weeks for a high-stakes subject).
   STAKES (evals/stakes.yml, scripts/stakes.py; Adam, 2026-11-01): within
-  bands 2, 3 and 5 a high-stakes subject's cells go first, before the
-  band's own order; a `none` subject (a named check enforces it) plans no
-  eval fire at all. Every other subject is `normal`.
-  6. bare baselines (ADR 0012, bare baseline addendum; Adam, 2026-10-27:
+  bands 2, 3, 4, 6 and 8 a high-stakes subject's cells go first, before
+  the band's own order; a `none` subject (a named check enforces it) plans
+  no eval fire at all. Every other subject is `normal`.
+  7. bare baselines (ADR 0012, bare baseline addendum; Adam, 2026-10-27:
      "one time per model per version of model"): one fire with `arms:
      bare`, `BARE_TRIALS` trials, per (scheduled fixture that runs in place,
      roster model) that has never had one, heaviest model first, with no
@@ -84,6 +119,10 @@ THE BANDS (rule D), in order:
      bare fire for it that succeeded or is still running (its run title);
      a refused or failed fire is not done. A new roster model id gets its
      own; nothing is repeated on a clock.
+  8. guidance rest: every other undecided guidance cell, with no minimum
+     share, so only room every other band leaves, in band 3's order
+     (fewest runs, so missing cells first, then the cheaper model). When
+     the 30-fire cap binds, a section outside the focus can wait weeks.
 
 Each band first gets its minimum share of the room left after safety;
 what is left then goes to the bands in order. Within a band ties break on
@@ -188,7 +227,8 @@ summary, since a git hook may serve them better.
 OUTPUT. `--out` gets the whole plan as JSON, including `improve_ranking`
 (every candidate, skill or guidance section, by value, highest first and
 unknown last, with its use, headroom, cost, whether use and cost were known,
-and eligibility) and `guidance` (a per-section status like `skills`); each
+and eligibility), `guidance` (a per-section status like `skills`) and
+`guidance_focus` (the focused sections with their scores, band 4); each
 fire entry carries its `value` (null for an eval fire; the matrix legs do
 not). `--ranking-out` gets the ranking alone (public-safe: skill names and
 section ids), which the weekly workflow uploads as the `improve-ranking`
@@ -275,8 +315,33 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
-SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
-BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
+SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
+BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
+#: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
+#: 18:42 UTC: remove a section at 90% confidence it does not improve results
+#: by 0.15 or more). Every section had a missing cell and runs were spread
+#: over all of them, so none came near a verdict; the focus spends guidance
+#: fires on the sections nearest one. Fires stay at one trial: the harness
+#: refuses `--trials > 1` for a guidance fixture, and trials collapse into
+#: one run mean, so three cost as much per verdict (2026-11-02 design
+#: review).
+GUIDANCE_FOCUS_SECTIONS = 2
+#: The decision levels a cell's progress is normalized by when the verdict
+#: document carries no `guidance_policy` (evals/gate-policy.yml's).
+DEFAULT_RETIRE_CONFIDENCE = 0.90
+DEFAULT_BENEFIT_CONFIDENCE = 0.85
+#: The verdicts more runs on the current content may still change: every
+#: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
+#: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
+FOCUS_VERDICTS = (None, "insufficient")
+#: A cell more runs on the current content cannot move toward removal: one
+#: whose no-benefit was overruled by an agent-errored trial or a run skipped
+#: as anomalous (gates.classify_cell's reason), or a ceiling or
+#: cannot-discriminate cell with at least this many counted runs on each
+#: arm (under it one more run can still change the class).
+BLOCKING_REASON = "no-benefit on the numbers, but the cell has"
+BLOCKING_CLASSES = ("ceiling", "cannot-discriminate")
+BLOCKING_MIN_RUNS = 3
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
 #: workflow's `section` pattern refuses its id.
@@ -497,7 +562,7 @@ def bare_cost(cell: dict | None, ctx: dict) -> float:
 
 
 def bare_items(ctx: dict) -> list:
-    """Band 6's fires: one per ctx["bare"] entry, {fixture, model, skill},
+    """Band 7's fires: one per ctx["bare"] entry, {fixture, model, skill},
     the in-place cells with no bare run yet."""
     weights = ctx["model_weights"]
     cells = {(c["fixture"], c["model"]): c for c in ctx["cells"]}
@@ -528,16 +593,131 @@ def recheck_after(cell: dict) -> timedelta:
     return RECHECK_AFTER_HIGH if cell.get("stakes") == "high" else RECHECK_AFTER
 
 
+def _level(block, field: str) -> float:
+    """A confidence block's `field`, 0 when the block or value is absent."""
+    value = block.get(field) if isinstance(block, dict) else None
+    return float(value) if isinstance(value, (int, float)) \
+        and not isinstance(value, bool) else 0.0
+
+
+def retire_progress(cell: dict, level: float) -> float:
+    """How near a guidance cell is to no-benefit, as a share of the decision
+    level: the no-help confidence of the figures that decide it. A
+    judge-carried cell's judge, min'd with its objective's when it has an
+    objective block; any other cell's objective min'd with its judge's. No
+    judge block gives 0 either way: a cell that is not judge-carried cannot
+    retire without a usable judge (gates._classify), so a cell whose
+    conditional judge was skipped stays at 0 however tight its objective."""
+    judge, objective = cell.get("judge"), cell.get("objective")
+    if not isinstance(judge, dict):
+        return 0.0
+    if cell.get("judge_carried") and not isinstance(objective, dict):
+        return _level(judge, "no_help_confidence") / level
+    return min(_level(objective, "no_help_confidence"),
+               _level(judge, "no_help_confidence")) / level
+
+
+def keep_progress(cell: dict, level: float) -> float:
+    """How near a guidance cell is to benefit, as a share of the decision
+    level: the larger of its objective's and its judge's helps confidence.
+    It understates the per-check (Holm) keep route, which has no single
+    confidence to read."""
+    return max(_level(cell.get("objective"), "helps_confidence"),
+               _level(cell.get("judge"), "helps_confidence")) / level
+
+
+def _produces_item(cell: dict) -> bool:
+    """Whether `eval_items` would plan a fire for this undecided cell: it
+    is schedulable, its subject is not stakes `none`, and it is not a
+    missing cell whose fires came back empty (a fixture-broken item)."""
+    return cell.get("schedulable", True) and cell.get("stakes", "normal") != "none" \
+        and cell["class"] in ("missing", "insufficient") \
+        and not (cell["class"] == "missing" and cell["empty_fires"] >= BROKEN_AFTER_FIRES)
+
+
+def _blocking(cell: dict) -> bool:
+    """A cell more runs on the current content cannot move (BLOCKING_REASON)."""
+    return str(cell.get("reason") or "").startswith(BLOCKING_REASON) \
+        or (cell["class"] in BLOCKING_CLASSES
+            and (cell.get("with_counted") or 0) >= BLOCKING_MIN_RUNS
+            and (cell.get("without_counted") or 0) >= BLOCKING_MIN_RUNS)
+
+
+def guidance_focus(ctx: dict) -> tuple:
+    """([{section, score}], {section: progress}) for the guidance focus,
+    from the eval cells alone (module docstring, band 4). A section's score
+    is max(min over its cells of retire progress, max over its cells of
+    keep progress): it retires only when every cell clears, and keeps on
+    one. Eligible: its verdict is still open (FOCUS_VERDICTS), some cell
+    would plan a fire (`_produces_item`), no removal pull request is open
+    for it (ctx["guidance_removal_prs"]) and no cell is blocking (every
+    cell, held ones too). The top GUIDANCE_FOCUS_SECTIONS by score, then
+    fewer cells (a smaller section is nearer a verdict for the same runs,
+    deliberately), then more counted runs, then section id. `progress` maps
+    each focused section to its place in that order, the side its score
+    came from ("keep" or "retire") and the levels used."""
+    policy = ctx.get("guidance_policy") or {}
+    retire_level = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
+    benefit_level = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
+    removals = set(ctx.get("guidance_removal_prs") or ())
+    sections: dict = {}
+    for cell in ctx["cells"]:
+        if cell.get("section"):
+            sections.setdefault(cell["section"], []).append(cell)
+    ranked = []
+    for section, cells in sections.items():
+        if section in removals or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells) \
+                or not any(_produces_item(c) for c in cells) or any(_blocking(c) for c in cells):
+            continue
+        retire = min(retire_progress(c, retire_level) for c in cells)
+        keep = max(keep_progress(c, benefit_level) for c in cells)
+        runs = sum((c.get("with_counted") or 0) + (c.get("without_counted") or 0) for c in cells)
+        ranked.append((-max(retire, keep), len(cells), -runs, section, keep > retire))
+    ranked.sort()
+    chosen = ranked[:GUIDANCE_FOCUS_SECTIONS]
+    return ([{"section": r[3], "score": -r[0]} for r in chosen],
+            {r[3]: {"position": place, "side": "keep" if r[4] else "retire",
+                    "retire_level": retire_level, "benefit_level": benefit_level}
+             for place, r in enumerate(chosen)})
+
+
+def _guidance_item(cell: dict, item: dict, focused: dict, keys: tuple, bands: dict) -> None:
+    """Band an undecided guidance cell's fire (in place): `focus` for a
+    focused section, the higher-scored section first, then by the cell's
+    own progress on the side the section's score came from (the binding
+    cell first: lowest retire progress, or highest keep progress), then the
+    cheaper model. Sections go first because the two sides' progress do not
+    compare: a keep-side cell's would sort before every retire-side cell.
+    `guidance-rest` for any other section, in the old near order (fewest
+    runs, then the cheaper model), so a missing cell leads. High stakes
+    first in both."""
+    rank, least, price = keys
+    focus = focused.get(cell["section"])
+    if focus is None:
+        bands["guidance-rest"].append({**item, "band": "guidance-rest",
+                                       "order": (rank, least, price, -item["weight"])})
+        return
+    if focus["side"] == "keep":
+        progress = -keep_progress(cell, focus["benefit_level"])
+    else:
+        progress = retire_progress(cell, focus["retire_level"])
+    bands["focus"].append({**item, "band": "focus",
+                           "order": (rank, focus["position"], progress, price)})
+
+
 def eval_items(ctx: dict, now: datetime) -> tuple:
     """(fires by band, work items) for the eval cells. A subject (skill or
     guidance section) already kept plans no missing or near fire: one
     confident benefit keeps it, so more runs cannot change the verdict
     until its re-check. Within a band the cheaper model goes first (Adam,
     2026-10-31: Sonnet first, Opus only while the cheaper runs have not
-    settled it), then the heavier-used model."""
+    settled it), then the heavier-used model. An undecided guidance cell
+    enters neither missing nor near: `focus` for a section of
+    `guidance_focus`, `guidance-rest` otherwise (`_guidance_item`)."""
     weights = ctx["model_weights"]
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
+    _focus, focused = guidance_focus(ctx)
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
@@ -572,9 +752,13 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
                 if cell.get("section"):
                     broken["section"] = cell["section"]
                 work.append(broken)
+            elif cell.get("section"):
+                _guidance_item(cell, item, focused, (rank, least, price), bands)
             else:
                 bands["missing"].append({**item, "band": "missing",
                                          "order": (rank, price, -item["weight"])})
+        elif cell["class"] == "insufficient" and cell.get("section"):
+            _guidance_item(cell, item, focused, (rank, least, price), bands)
         elif cell["class"] == "insufficient":
             bands["near"].append({**item, "band": "near",
                                   "order": (rank, least, price, -item["weight"])})
@@ -626,7 +810,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     """(improve fires, work items, per-skill status, per-section guidance
     status, improve ranking). Candidates, skills and guidance sections, are
     ranked by value = use x headroom / cost (module docstring, THE BANDS
-    item 4); improve fires and guidance work items follow that order, and
+    item 5); improve fires and guidance work items follow that order, and
     needs-fixtures and needs-harder-fixtures items stay ordered by skill
     usage weight, heaviest first (`neutral_weights` of ctx["skill_weights"]),
     then train headroom."""
@@ -899,6 +1083,7 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
             "points_per_usd": ctx.get("points_per_usd"), "fires": fires,
             "unplanned": {band: len(items) for band, items in bands.items()},
+            "guidance_focus": guidance_focus(ctx)[0],
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
@@ -1097,12 +1282,25 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 "empty_fires": sum(1 for t in fired.get((fixture, model), [])
                                    if newest_time is None or t > newest_time)
                 if cls == "missing" else 0})
+            if section is not None:
+                # What the guidance focus reads (`guidance_focus`): the
+                # cell's confidence blocks, its reason and its COUNTED runs
+                # per arm (the arm summaries' `runs`; `with_runs` above
+                # counts every pooled run, skipped ones included).
+                arms = {role: (cell or {}).get(role) for role in ("with", "without")}
+                cells[-1].update({
+                    "objective": (cell or {}).get("objective"),
+                    "judge": (cell or {}).get("judge"),
+                    "judge_carried": bool((cell or {}).get("judge_carried")),
+                    "reason": (cell or {}).get("reason"),
+                    **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
+                       for role, arm in arms.items()}})
     return cells
 
 
 def bare_cells(evals_dir: Path, gates_doc: dict, fire_runs: list) -> list:
     """{fixture, model, skill} for each (scheduled skill fixture that runs in
-    place, roster model) with no bare run yet (module docstring, band 6):
+    place, roster model) with no bare run yet (module docstring, band 7):
     none in the verdict document's `bare_runs` and no bare fire for it that
     succeeded or is still running. A guidance fixture has none: its arms are
     its own."""
@@ -1469,6 +1667,11 @@ def gather(args, now: datetime) -> dict:
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
+            # The guidance focus's inputs (`guidance_focus`): its decision
+            # levels, a separate top-level key of the verdict document, and
+            # the sections whose removal pull request is open.
+            "guidance_policy": gates_doc.get("guidance_policy"),
+            "guidance_removal_prs": gremoval,
             "cells": cells, "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
@@ -1515,6 +1718,9 @@ def summary_lines(plan: dict) -> list:
                                    or "none"))
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
+    lines.append("Guidance focus: " + (", ".join(
+        f"{f['section']} ({f['score']:.3f})" for f in plan.get("guidance_focus", []))
+        or "none"))
     lines.append("Hook candidates (mostly checklist or rules sections): "
                  + (", ".join(plan.get("hook_candidates", [])) or "none"))
     lines += ["", "Improve ranking (value = use × headroom ÷ cost)", ""]
