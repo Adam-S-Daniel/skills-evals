@@ -44,10 +44,12 @@ trigger a commit.
   `adam-coding-anywhere:workflow-path-audit`, and an old prefix such as
   `adam:` or `adam-local:`, count as the bare skill name.
 - **Allowlist, then `other`.** A skill name is published only when this repo
-  already names it publicly: a skill fixture under `evals/`, or an
-  `evals/non-coverage.yml` row for a registry that is not private. Every other
-  Skill tool call counts under `other`; a typed command that is not an
-  allowlisted skill (`/clear`) is not counted at all.
+  already names it publicly: a skill fixture under `evals/` or an
+  `evals/non-coverage.yml` row, in either case only when its registry is not
+  private. Every other Skill tool call counts under `other`, private-registry
+  skills included, and the planner reads their weight as unknown, never 0; a
+  typed command that is not an allowlisted skill (`/clear`) is not counted at
+  all.
 - **Blind spots.** Cloud sessions are not in local transcripts. A skill loaded
   without the Skill tool (read straight from its `SKILL.md`) is not counted.
   Local eval sessions do not inflate the counts: `local_eval.py` runs a
