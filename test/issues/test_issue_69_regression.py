@@ -289,6 +289,53 @@ class SuspectTests(unittest.TestCase):
         self.assertEqual(verdict_of(series("a", [4, 4, 4, 2, 2, 2]))["suspects"], [])
 
 
+class CommitFieldTests(unittest.TestCase):
+    """Each row names the checkout HEADs its windows' runs recorded."""
+
+    @staticmethod
+    def sha(day):
+        return f"{day:040x}"
+
+    def stamped(self, days=(1, 2, 3, 4, 5, 6), skip=()):
+        runs = series("a", [4, 4, 4, 2, 2, 2])
+        for r in runs:
+            day = int(r["timestamp"][6:8])
+            if r["role"] == "with" and day in days and day not in skip:
+                r["run"] = {"harness_commit": self.sha(day)}
+        return runs
+
+    def test_rows_carry_first_and_last_of_both_windows(self):
+        commits = verdict_of(self.stamped())["commits"]
+        self.assertEqual(commits, {
+            "previous": {"skills_evals_commit_first": self.sha(1),
+                         "skills_evals_commit_last": self.sha(3)},
+            "current": {"skills_evals_commit_first": self.sha(4),
+                        "skills_evals_commit_last": self.sha(6)}})
+
+    def test_a_run_without_a_commit_yields_null(self):
+        runs = self.stamped(skip=(1, 6))
+        runs[0]["run"] = {}
+        commits = verdict_of(runs)["commits"]
+        self.assertIsNone(commits["previous"]["skills_evals_commit_first"])
+        self.assertEqual(commits["previous"]["skills_evals_commit_last"], self.sha(3))
+        self.assertIsNone(commits["current"]["skills_evals_commit_last"])
+        bare = verdict_of(series("a", [4, 4, 4, 2, 2, 2]))["commits"]
+        self.assertEqual(set(bare["current"].values()), {None})
+
+    def test_an_insufficient_row_still_has_the_fields(self):
+        row = verdict_of(series("a", [4, 4]))
+        self.assertEqual(row["verdict"], "insufficient")
+        self.assertEqual(row["commits"]["previous"]["skills_evals_commit_first"], None)
+
+    def test_suspects_ignore_the_commits_and_order_does_not_matter(self):
+        runs = self.stamped()
+        self.assertEqual(verdict_of(runs)["suspects"], [])
+        self.assertEqual(verdict_of(list(reversed(runs))), verdict_of(runs))
+        changed = [{**r, "tested_digest": "new"} if r["timestamp"] > stamp(3) else r
+                   for r in runs]
+        self.assertEqual(verdict_of(changed)["suspects"], ["skill content changed"])
+
+
 class SubjectVerdictTests(unittest.TestCase):
     def test_precedence(self):
         order = [("regressed", "lost-delta", "improved", "stable", "insufficient"),

@@ -48,6 +48,14 @@ VERDICTS, the first that matches:
    least `lost_delta_min_previous`.
 4. `stable`.
 
+COMMITS (informational). Each row's `commits` holds, for the `previous` and
+the `current` window, `skills_evals_commit_first` and `skills_evals_commit_last`:
+the `run.harness_commit` of the window's oldest and newest `with` run (by run
+timestamp), or null when the run did not record one. These are the skills-evals
+checkout HEADs the runs recorded, NOT proof that `harness/` changed between
+them (a workstation run may name a non-main sha). They feed no verdict and no
+suspect and are not rendered in issues.
+
 A subject's verdict (one per skill or section) is `regressed` if any row
 regressed, else `lost-delta`, else `improved`, else `stable`, else
 `insufficient`. Deterministic: sorted rows, no NaN or infinity.
@@ -174,6 +182,16 @@ def _entry(run: dict) -> dict:
             "arm_context_digest": run["arm_context_digest"]}
 
 
+def _commit_range(runs: list) -> dict:
+    """The recorded checkout HEADs of the oldest and newest of `runs`
+    (ordered oldest first); None where a run did not record one."""
+    def commit(run):
+        block = run.get("run", {})
+        return block.get("harness_commit") if isinstance(block, dict) else None
+    return {"skills_evals_commit_first": commit(runs[0]) if runs else None,
+            "skills_evals_commit_last": commit(runs[-1]) if runs else None}
+
+
 def _suspects(subject: str, previous: list, current: list) -> list:
     """What differs between the two windows of the `with` role."""
     if not previous or not current:
@@ -214,6 +232,8 @@ def _row(subject: str, ident: str, fixture, model: str, pair, runs: list,
            "windows": {"previous": [_entry(r) for r in previous],
                        "current": [_entry(r) for r in current]},
            "suspects": _suspects(subject, previous, current),
+           "commits": {"previous": _commit_range(previous),
+                       "current": _commit_range(current)},
            "boundary": {"after": previous[-1]["timestamp"] if previous else None,
                         "before": current[0]["timestamp"] if current else None}}
     objective_before, objective_after = _figures(previous, "run_mean"), \
