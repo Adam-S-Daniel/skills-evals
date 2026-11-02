@@ -167,7 +167,10 @@ Three layers enforce it:
    after it must also stay under `stop_when_account_above`: one limit for
    fires and runs, so no fire starts that the in-run stop would end at once
    (Adam, 2026-11-01). If the GitHub API cannot be read, the
-   fire is refused. The log shows numbers only.
+   fire is refused. The log shows numbers only. A refusal (exit 3) ends the
+   run `cancelled` through the workflow's `end-refused` job (#524), so a
+   surplus planned fire is neither red nor counted as a fire; an error
+   (exit 1) still fails closed and red.
 3. **The weekly plan** (`scripts/plan_week.py`, see "The weekly plan"
    below). The Tuesday sweep spends the room left at each fire's historical
    cost; when nothing fits, the dispatch job is skipped.

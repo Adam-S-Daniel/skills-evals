@@ -738,7 +738,10 @@ class GuardTests(unittest.TestCase):
 
     def test_check_refuses_over_the_cap(self):
         code, out, _ = self.main("check", lambda now: (8, 8))
-        self.assertEqual(code, 1)
+        # A refusal is the planned outcome for a surplus fire (#524), apart
+        # from an error's exit 1; the fire workflow ends it cancelled.
+        self.assertEqual(code, guard.REFUSED_EXIT)
+        self.assertEqual(guard.REFUSED_EXIT, 3)
         self.assertIn(guard.REFUSAL, out)
 
     def test_fits_prints_the_count(self):
@@ -1216,7 +1219,7 @@ class ImproveCoverageTests(unittest.TestCase):
             return code
         # Two charges alone are over the 30-point cap; covered, they are 5.
         self.assertEqual(run(lambda now: [self.SNAP - timedelta(days=1)] * 2), 0)
-        self.assertEqual(run(None), 1)
+        self.assertEqual(run(None), guard.REFUSED_EXIT)
 
     def test_improve_starts_reads_successful_improve_fires_in_the_window(self):
         def row(n, title, when, conclusion="success"):
@@ -1500,8 +1503,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("if", step)
         self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
                                        "MODE": "${{ steps.validate.outputs.mode }}"})
-        self.assertEqual(step["run"], "python3 scripts/allowance_guard.py check "
-                                      "--results-tree eval-results-branch --mode \"$MODE\"")
+        self.assertIn("python3 scripts/allowance_guard.py check "
+                      "--results-tree eval-results-branch --mode \"$MODE\"", step["run"])
         self.assertLess(ids.index("validate"), at)
         self.assertLess(at, ids.index("snapshot"))
         self.assertLess(at, names.index("Fire the eval routine"))

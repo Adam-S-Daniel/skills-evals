@@ -11,7 +11,9 @@ this script is the layer that runs BEFORE any spend:
          and a refusal stops the fire. A fire may go only when
          spent + pending + one run's reservation <= weekly_cap, where a
          usable account reading can bound spent plus pending (2026-11-01,
-         below).
+         below). A refusal exits 3 and an unreadable spend exits 1 (#524:
+         a refusal is the planned outcome for a surplus fire, so its run
+         ends cancelled; an error stays red).
   fits   prints how many more fires fit now; scripts/plan_week.py spends
          `room` itself, at each fire's historical cost, so the weekly sweep
          plans only what fits.
@@ -226,6 +228,11 @@ IMPROVE_FIRE_UNITS = 12
 IMPROVE_MAX_RUN = timedelta(hours=2)
 #: The fire modes charged `improve_charge`, held all week (see above).
 IMPROVE_MODES = ("improve", "guidance-improve")
+# A refusal exits 3, apart from 1 (an unreadable spend, fail closed): the
+# weekly planner plans surplus fires at their historical cost, so the guard
+# refusing one at full reservation is the planned outcome (#524). The fire
+# workflow ends a refused run cancelled; an error stays red.
+REFUSED_EXIT = 3
 REFUSAL = ("::error::the weekly eval allowance cap would be exceeded by this "
            "fire; nothing was fired (evals/budget.yml, #68)")
 
@@ -915,7 +922,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None,
         return 0
     if not check(state, args.mode):
         print(REFUSAL)
-        return 1
+        return REFUSED_EXIT
     if args.mode not in IMPROVE_MODES and fits(state) < 1:
         print("allowed as the one refresh fire: its results bring a newer account reading")
     return 0
