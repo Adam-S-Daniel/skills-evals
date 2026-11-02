@@ -57,6 +57,11 @@ if turn == int(os.environ.get("GF_TURN", "1")):
         os.makedirs(".git/info", exist_ok=True)
         with open(".git/info/attributes", "w") as fh:
             fh.write("* filter=x\\n")
+    elif mode == "placeholder":
+        open(".git/config.worktree", "w").close()
+    elif mode == "worktree":
+        with open(".git/config.worktree", "w") as fh:
+            fh.write(driver)
     elif mode == "commit":
         with open("work.txt", "w") as fh:
             fh.write("work\\n")
@@ -159,6 +164,21 @@ class WorkspaceGitConfigTests(unittest.TestCase):
         self.assertNotIn("error", self.run_arm("config", turn=2))
         self.log.unlink()
         self.assertNotIn("error", self.run_arm("config", followups=()))
+
+    def test_the_sandboxs_empty_mount_point_is_not_a_change(self):
+        # One sandboxed Bash call leaves a 0-byte `.git/config.worktree`
+        # (workspace_git._sandbox_placeholder, measured); it sets nothing.
+        self.assertNotIn("error", self.run_arm("placeholder"))
+        self.log.unlink()
+        (self.ws / ".git" / "config.worktree").unlink()
+        out = self.run_arm("worktree")
+        self.assertEqual(out.get("error"), "agent_wrote_agent_config", out)
+        self.assertIn("git:.git/config.worktree", out["detail"])
+
+    def test_a_path_outside_the_workspace_is_named_by_its_role(self):
+        out = self.run_arm("global")
+        self.assertIn("git:~/.gitconfig", out["detail"])
+        self.assertNotIn(str(self.home), out["detail"])
 
     def test_include_targets_resolve_as_git_resolves_them(self):
         git(self.ws, "config", "include.path", "rel.cfg")

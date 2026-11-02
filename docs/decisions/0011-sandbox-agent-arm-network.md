@@ -393,9 +393,15 @@ An independent review of the merged decision found four routes around it.
   `agent_wrote_agent_config` before the next launch
   (`run_eval._workspace_git_snapshot`). The last turn and one-turn arms are
   not held to it: no launch follows, and the harness's own git reads the
-  workspace only through `workspace_git`'s private, hardened copy. An agent
-  whose task legitimately rewrites `.git/config` mid-arm (`git remote add`,
-  `git push -u`) would fail a follow-up; no multi-turn fixture's task does.
+  workspace only through `workspace_git`'s private, hardened copy. The
+  empty file the sandbox leaves as a mount point for a protected path that
+  did not exist (`workspace_git._sandbox_placeholder`, a 0-byte
+  `.git/config.worktree`) reads as absent; any content still differs. A
+  path outside the workspace is named by its role (`~/.gitconfig`) in the
+  published detail. Sandboxed Bash cannot write `.git/config` itself, so
+  `git remote add` or `git push -u` already fail there; an agent running
+  `git config --global` would fail a follow-up, and no multi-turn fixture's
+  task does.
 - **Claude in Chrome is a browser outside the sandbox**, and
   `--strict-mcp-config` does not remove it (`CLAUDE_CODE_ENABLE_CFC` or the
   account default turns it on, CLI 2.1.292). Every turn passes `--no-chrome`,

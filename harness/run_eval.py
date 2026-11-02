@@ -2590,6 +2590,10 @@ def _config_snapshot(root: Path, label: str, trees=(), markers=None,
     return out
 
 
+# A watched file larger than this is recorded by size and inode, not read.
+_SNAPSHOT_MAX_FILE_BYTES = 16 * 1024 * 1024
+
+
 def _path_dir_snapshot(path: Path, label: str) -> dict[str, bytes]:
     """Everything under one of the arm's PATH directories (#606), by
     `label`-prefixed relative path: each entry's mode with a file's SHA-256 or
@@ -2614,16 +2618,21 @@ def _path_dir_snapshot(path: Path, label: str) -> dict[str, bytes]:
         if stat.S_ISDIR(info.st_mode):
             return b"dir:" + mode
         if stat.S_ISREG(info.st_mode):
+            if info.st_size > _SNAPSHOT_MAX_FILE_BYTES:
+                # Never read whole: a sparse file costs nothing to make.
+                return b"file:" + mode + f"<{info.st_size} bytes, inode {info.st_ino}>".encode()
             try:
                 return b"file:" + mode + hashlib.sha256(item.read_bytes()).digest()
             except OSError:
-                return b"<unreadable>"
+                return b"<unreadable>:" + mode
         return b"other:" + mode + str(stat.S_IFMT(info.st_mode)).encode()
 
     try:
         out = {label: entry(path)}
     except FileNotFoundError:
         return {label: b"<absent>"}
+    except OSError:
+        return {label: b"<unreadable>"}
     if not out[label].startswith(b"dir:"):
         return out
     for current, dirs, files in os.walk(path):
@@ -2633,11 +2642,15 @@ def _path_dir_snapshot(path: Path, label: str) -> dict[str, bytes]:
                 out[f"{label}/{(rel_dir / name).as_posix()}"] = entry(Path(current) / name)
             except FileNotFoundError:
                 out[f"{label}/{(rel_dir / name).as_posix()}"] = b"<vanished>"
+            except OSError:
+                out[f"{label}/{(rel_dir / name).as_posix()}"] = b"<unreadable>"
     return out
 
 
 # Git follows at most this many nested includes (config.c MAX_INCLUDE_DEPTH).
 _GIT_INCLUDE_DEPTH = 10
+# One `git config --file` read of an agent-controlled file: a hang guard.
+GIT_INCLUDE_TIMEOUT_S = 10
 
 
 def _git_include_targets(config: Path, home: str | None) -> list[Path]:
@@ -2647,15 +2660,21 @@ def _git_include_targets(config: Path, home: str | None) -> list[Path]:
     whether or not the target exists yet: a target created later is how a
     filter driver would arrive. Read with `git config --file`, which runs
     nothing from the file, under no system or global configuration."""
-    if not config.is_file():
-        return []
+    guidance.check_timeout(GIT_INCLUDE_TIMEOUT_S, "run_eval._git_include_targets(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
+    try:
+        if not config.is_file():
+            return []
+    except OSError:
+        return [config.parent / "<unreadable includes>"]
     env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent",
            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
     try:
         result = subprocess.run(
             [workspace_git.GIT, "config", "--file", str(config), "--null", "--get-regexp",
              r"^include(if\..*)?\.path$"],
-            capture_output=True, env=env, timeout=10)
+            capture_output=True, env=env, stdin=subprocess.DEVNULL,
+            timeout=GIT_INCLUDE_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired):
         return [config.parent / "<unreadable includes>"]
     if result.returncode not in (0, 1):
@@ -2695,15 +2714,26 @@ def _workspace_git_snapshot(workspace: Path, env: dict) -> dict[str, bytes]:
     try:
         info = os.lstat(dot)
         out["git:.git"] = f"{info.st_dev}:{info.st_ino}:{info.st_mode:o}".encode()
+        if not stat.S_ISDIR(info.st_mode):
+            # A gitfile (or a link) names the git directory in its content.
+            out.update(_path_dir_snapshot(dot, "git:.git (content)"))
     except FileNotFoundError:
         out["git:.git"] = b"<absent>"
+    except OSError:
+        out["git:.git"] = b"<unreadable>"
     home = env.get("HOME")
     configs = [dot / "config", dot / "config.worktree"]
+    # Outside the workspace a path is labeled by its role: the detail is
+    # published, and a real HOME's path is not the reader's business.
+    roles: dict[Path, str] = {}
     if env.get("GIT_CONFIG_GLOBAL"):
-        configs.append(Path(env["GIT_CONFIG_GLOBAL"]))
+        roles[Path(env["GIT_CONFIG_GLOBAL"])] = "$GIT_CONFIG_GLOBAL"
     elif home:
-        xdg = env.get("XDG_CONFIG_HOME") or str(Path(home) / ".config")
-        configs += [Path(home) / ".gitconfig", Path(xdg) / "git" / "config"]
+        xdg = env.get("XDG_CONFIG_HOME")
+        roles[Path(home) / ".gitconfig"] = "~/.gitconfig"
+        roles[Path(xdg or Path(home) / ".config") / "git" / "config"] = (
+            "$XDG_CONFIG_HOME/git/config" if xdg else "~/.config/git/config")
+    configs += list(roles)
     watched = [*configs, dot / "commondir", dot / "info" / "attributes"]
     pending = [(path, 0) for path in configs]
     while pending:
@@ -2714,11 +2744,22 @@ def _workspace_git_snapshot(workspace: Path, env: dict) -> dict[str, bytes]:
             if target not in watched:
                 watched.append(target)
                 pending.append((target, depth + 1))
-    for path in watched:
-        label = (f"git:{path.relative_to(root).as_posix()}"
-                 if _within(path, root) else f"git:{path}")
-        if path.is_dir() and not path.is_symlink():
-            out[label] = b"<directory>"
+    for number, path in enumerate(watched):
+        label = (f"git:{path.relative_to(root).as_posix()}" if _within(path, root)
+                 else f"git:{roles[path]}" if path in roles
+                 else f"git:include {number} outside the workspace")
+        try:
+            if path.is_dir() and not path.is_symlink():
+                out[label] = b"<directory>"
+                continue
+        except OSError:
+            out[label] = b"<unreadable>"
+            continue
+        if workspace_git._sandbox_placeholder(path):
+            # The empty mount point the sandbox leaves for a protected path
+            # that did not exist (`.git/config.worktree`, measured): it sets
+            # nothing, so it reads as absent. Any content still differs.
+            out[label] = b"<absent>"
             continue
         out.update(_path_dir_snapshot(path, label))
     return out
