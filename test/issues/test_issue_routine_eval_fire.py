@@ -101,9 +101,11 @@ SKILL = "writing-adrs"
 HOLDOUT = "supersede"
 PROPOSAL = "proposals/2026-10-26/example-skill__new-skill.json"
 ISSUE_PROPOSAL = "issue-proposals/2026-10-26/example-skill__new-skill.json"
-LESSONS_IF = ("steps.validate.outputs.mode == 'draft' "
+# Every step after the allowance check also skips a refused fire (#524).
+GATE = "steps.allowance.outputs.refused != 'true' && "
+LESSONS_IF = (GATE + "steps.validate.outputs.mode == 'draft' "
               "&& startsWith(steps.validate.outputs.proposal, 'proposals/')")
-ISSUES_IF = ("steps.validate.outputs.mode == 'draft' "
+ISSUES_IF = (GATE + "steps.validate.outputs.mode == 'draft' "
              "&& startsWith(steps.validate.outputs.proposal, 'issue-proposals/')")
 ISSUES_API = ("repos/Adam-S-Daniel/adam-agentskills/issues"
               "?labels=skill-proposal&state=open&per_page=100")
@@ -207,8 +209,47 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(self.doc.get("permissions"),
                          {"contents": "read", "actions": "read"})
         for name, job in self.doc["jobs"].items():
+            if name == "end-refused":
+                continue  # the one job that may cancel its run (#524)
             self.assertNotIn("permissions", job,
                              f"job {name} must not widen the workflow's permissions")
+
+    def test_every_step_after_the_allowance_check_skips_a_refused_fire(self):
+        # A refused fire (guard exit 3, #524) must start nothing after the
+        # check: no checkout of other repos, no token, no fire.
+        ids = [s.get("id") for s in self.steps]
+        at = ids.index("allowance")
+        later = self.steps[at + 1:]
+        self.assertTrue(later)
+        for s in later:
+            self.assertIn("steps.allowance.outputs.refused != 'true'",
+                          str(s.get("if", "")), s["name"])
+
+    def test_the_allowance_step_maps_exit_3_to_refused(self):
+        s = self.steps[[x.get("id") for x in self.steps].index("allowance")]
+        run = s["run"]
+        self.assertIn("scripts/allowance_guard.py check", run)
+        self.assertIn("|| rc=$?", run)
+        self.assertIn('[ "$rc" -eq 3 ]', run)
+        self.assertIn('echo "refused=true" >> "$GITHUB_OUTPUT"', run)
+        self.assertNotIn("${{", run)
+
+    def test_the_refusal_ends_the_run_cancelled_not_red_or_green(self):
+        jobs = self.doc["jobs"]
+        self.assertEqual(self.job["outputs"],
+                         {"refused": "${{ steps.allowance.outputs.refused }}"})
+        end = jobs["end-refused"]
+        self.assertEqual(end["needs"], "fire")
+        self.assertEqual(end["if"], "needs.fire.outputs.refused == 'true'")
+        self.assertEqual(end["permissions"], {"actions": "write"})
+        self.assertNotIn("write", str(self.doc["permissions"]))
+        for name, job in jobs.items():
+            if name != "end-refused":
+                self.assertNotIn("write", str(job.get("permissions", "")), name)
+        run = "\n".join(s["run"] for s in end["steps"])
+        self.assertIn('gh run cancel "$GITHUB_RUN_ID"', run)
+        self.assertIn("exit 1", run)
+        self.assertNotIn("${{", run)
 
     def test_only_the_default_branch_copy_can_fire(self):
         self.assertEqual(
@@ -280,7 +321,7 @@ class WorkflowShapeTests(unittest.TestCase):
         for i in (mint, checkout):
             self.assertEqual(self.steps[i]["if"], LESSONS_IF)
         self.assertEqual(self.steps[build]["if"],
-                         "steps.validate.outputs.mode == 'draft'")
+                         GATE + "(steps.validate.outputs.mode == 'draft')")
         step = self.steps[mint]
         self.assertTrue(step["uses"].startswith("actions/create-github-app-token@"))
         self.assertEqual(step["with"], {
@@ -371,7 +412,8 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertLess(ids.index("validate"), snap)
         self.assertLess(snap, fire)
         step = self.steps[snap]
-        self.assertEqual(step["if"], "steps.validate.outputs.mode == 'scaffold'")
+        self.assertEqual(step["if"],
+                         GATE + "(steps.validate.outputs.mode == 'scaffold')")
         # The read-only job token for the GitHub reads, the validated
         # candidate, and nothing else: never the bearer.
         self.assertEqual(step["env"], {

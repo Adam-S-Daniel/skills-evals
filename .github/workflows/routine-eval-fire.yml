@@ -113,7 +113,10 @@ name: Fire eval routine
 #   persistent/eval-results, counts this workflow's successful runs in the
 #   same window with the job's token (hence `actions: read`), and refuses the
 #   fire unless spent + pending + this run's reservation stays within
-#   evals/budget.yml's weekly_cap. An API error refuses too (fail closed). Its
+#   evals/budget.yml's weekly_cap. An API error refuses too (fail closed). A
+#   refusal (exit 3) ends the run `cancelled` via the `end-refused` job (#524),
+#   so a surplus planned fire is neither red nor counted as a fire; an error
+#   (exit 1) still fails closed and red. Its
 #   log line is numbers only. See docs/how-it-works.md, "The weekly allowance
 #   guard".
 # * No retry: the fire API has no idempotency key, so a retry after a lost
@@ -254,6 +257,8 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      refused: ${{ steps.allowance.outputs.refused }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -614,7 +619,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ steps.validate.outputs.mode }}
-        run: python3 scripts/allowance_guard.py check --results-tree eval-results-branch --mode "$MODE"
+        run: |
+          set -euo pipefail
+          rc=0
+          python3 scripts/allowance_guard.py check --results-tree eval-results-branch --mode "$MODE" || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "refused=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::the weekly allowance guard refused this fire; ending the run cancelled (#524)"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
 
       # The fleet pin (Adam, 2026-10-06: "Pin to fleet owners (Recommended)"):
       # the candidate's owner must be in SYNC_OWNERS and its name in
@@ -622,7 +638,7 @@ jobs:
       # miner reads them. A public repository; no credentials are kept.
       # Guidance-improve mode reads its section's manifest row from it too.
       - name: Check out _agent-guidance (the fleet registry)
-        if: steps.validate.outputs.mode == 'scaffold' || steps.validate.outputs.mode == 'guidance-improve'
+        if: steps.allowance.outputs.refused != 'true' && (steps.validate.outputs.mode == 'scaffold' || steps.validate.outputs.mode == 'guidance-improve')
         uses: actions/checkout@v7.0.1
         with:
           repository: Adam-S-Daniel/_agent-guidance
@@ -634,7 +650,7 @@ jobs:
       # `skipped` (propose_guidance_edit's load_row), so a section the
       # proposer would refuse never starts a session. Fixed text only.
       - name: Check the guidance section's manifest row
-        if: steps.validate.outputs.mode == 'guidance-improve'
+        if: steps.allowance.outputs.refused != 'true' && (steps.validate.outputs.mode == 'guidance-improve')
         env:
           SECTION: ${{ steps.validate.outputs.section }}
           HOLDOUT: ${{ steps.validate.outputs.holdout }}
@@ -654,7 +670,7 @@ jobs:
       # candidate), so without this such a fire spends its whole run before
       # rejecting (2026-10-28, run 20261028T213124Z-65c174). Numbers only.
       - name: Check the guidance section's train headroom
-        if: steps.validate.outputs.mode == 'guidance-improve'
+        if: steps.allowance.outputs.refused != 'true' && (steps.validate.outputs.mode == 'guidance-improve')
         env:
           SECTION: ${{ steps.validate.outputs.section }}
         run: |
@@ -671,7 +687,7 @@ jobs:
       # status, never the issue's text.
       - name: Compute the issue snapshot
         id: snapshot
-        if: steps.validate.outputs.mode == 'scaffold'
+        if: steps.allowance.outputs.refused != 'true' && (steps.validate.outputs.mode == 'scaffold')
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE: ${{ steps.validate.outputs.candidate }}
@@ -691,7 +707,8 @@ jobs:
       - name: Mint the read-only token for the lessons
         id: lessons-token
         if: >-
-          steps.validate.outputs.mode == 'draft'
+          steps.allowance.outputs.refused != 'true'
+          && steps.validate.outputs.mode == 'draft'
           && startsWith(steps.validate.outputs.proposal, 'proposals/')
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -706,7 +723,8 @@ jobs:
       # skills-evals#423, ADR 0015). Credentials not kept.
       - name: Check out the lessons (adam-agentskills-private)
         if: >-
-          steps.validate.outputs.mode == 'draft'
+          steps.allowance.outputs.refused != 'true'
+          && steps.validate.outputs.mode == 'draft'
           && startsWith(steps.validate.outputs.proposal, 'proposals/')
         uses: actions/checkout@v7.0.1
         with:
@@ -727,7 +745,8 @@ jobs:
       - name: Convert the skill-proposal issues
         id: issue-proposals
         if: >-
-          steps.validate.outputs.mode == 'draft'
+          steps.allowance.outputs.refused != 'true'
+          && steps.validate.outputs.mode == 'draft'
           && startsWith(steps.validate.outputs.proposal, 'issue-proposals/')
         env:
           GH_TOKEN: ${{ github.token }}
@@ -753,7 +772,7 @@ jobs:
       # never echoes the file.
       - name: Build the draft payload
         id: draft-payload
-        if: steps.validate.outputs.mode == 'draft'
+        if: steps.allowance.outputs.refused != 'true' && (steps.validate.outputs.mode == 'draft')
         env:
           RUN_ID: ${{ steps.validate.outputs.run_id }}
           PROPOSAL: ${{ steps.validate.outputs.proposal }}
@@ -776,6 +795,7 @@ jobs:
           echo "file=${out}" >> "$GITHUB_OUTPUT"
 
       - name: Fire the eval routine
+        if: steps.allowance.outputs.refused != 'true'
         env:
           FIRE_URL: https://api.anthropic.com/v1/claude_code/routines/trig_014cqgegCtJUqXYjAKmkr4J5/fire
           EVAL_ROUTINE_FIRE_BEARER: ${{ secrets.EVAL_ROUTINE_FIRE_BEARER }}
@@ -1021,3 +1041,28 @@ jobs:
               echo "- Results branch: \`claude/eval-${RUN_ID}\`"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # A refused fire (the guard's exit 3, #524) is the planned outcome for a
+  # surplus fire, so it must end neither red (the run-health audit files issues
+  # on failure) nor success (every consumer counts a success run as a real
+  # fire). Cancelling the run ends it `cancelled`, which none of them counts.
+  # actions: write lives on this job alone.
+  end-refused:
+    needs: fire
+    if: needs.fire.outputs.refused == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error::could not cancel the refused run"
+            exit 1
+          fi
+          # Stay in progress so the cancellation lands on this job too.
+          sleep 60
