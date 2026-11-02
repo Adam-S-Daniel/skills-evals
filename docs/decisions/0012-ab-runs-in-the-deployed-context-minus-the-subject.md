@@ -281,7 +281,8 @@ until the last:
    container ships Ubuntu's Git 2.43 (adam-agentskills ADR 0020), and its
    setup script is not in this repository: it needs the zlib, OpenSSL and
    libcurl headers and then `bash scripts/dev_setup.sh --build-git
-   /usr/local`, which builds the pinned release from kernel.org's tarball
+   /usr/local`, which builds the pinned Git 2.56.0 (the release ADR 0020's
+   installer snippet builds) from kernel.org's tarball
    after checking its sha256.
 2. The frozen hook set and its proof (`fleet_hooks_unproven`).
 3. Injection inside the arm sandbox.

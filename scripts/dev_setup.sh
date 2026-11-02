@@ -26,8 +26,8 @@
 set -euo pipefail
 
 GIT_MIN=2.54
-GIT_PIN=2.55.0
-GIT_PIN_SHA256=457fdb04dc8728e007d4688695e6912e6f680727920f2a40bf11eacc17505357
+GIT_PIN=2.56.0
+GIT_PIN_SHA256=26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3
 GIT_PIN_URL="https://mirrors.edge.kernel.org/pub/software/scm/git/git-${GIT_PIN}.tar.xz"
 
 PIP_PINS=(
