@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-02T22:59:50Z",
+ "generated_at": "2026-11-02T23:02:13Z",
  "guidance": {
   "removed": [
    {
@@ -1394,7 +1394,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T22:56:59Z",
+ "newest_run": "2026-11-02T22:59:35Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -1504,7 +1504,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -1613,7 +1613,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -1811,7 +1811,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -1856,17 +1856,39 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
    "name": "cms-stuck-pr-triage",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 1,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
-   "runs": [],
+   "runs": [
+    {
+     "at": "2026-11-02T22:59:35Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T225745Z-c8d097/cms-stuck-pr-triage/20261102T225935Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.26071579999999994,
+      "judge_mean": 8.4,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.3857217,
+      "judge_mean": 9.2,
+      "trials": 1
+     }
+    }
+   ],
    "skip_reason": null,
    "stakes": {
     "level": "normal"
@@ -1875,8 +1897,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": null,
-   "verdict_reason": null
+   "verdict": "insufficient",
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": null,
@@ -1891,7 +1913,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 2,
+    "position": 1,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2254,7 +2276,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -3240,7 +3262,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4636,7 +4658,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4665,7 +4687,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4774,7 +4796,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -5098,7 +5120,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -5438,7 +5460,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -7417,8 +7439,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "2b128f7461ffe1354a0c57a618e602690abb2758",
-  "results_commit": "13a286bc914f2cc9c14ae4589954b1c75f73c360"
+  "repository_commit": "9415eb3a9d232d75f2b56fbfc6a0292a9c6f55c2",
+  "results_commit": "43d6754ac0befe48fa1ef8e343dd42948fc610a6"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
