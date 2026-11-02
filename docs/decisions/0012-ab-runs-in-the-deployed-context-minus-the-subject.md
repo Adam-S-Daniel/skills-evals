@@ -1,6 +1,8 @@
 # ADR 0012: An A/B runs both arms in the context the subject deploys into, and removes only the subject
 
 - **Status:** accepted (2026-10-07). Nothing is built yet.
+- **Amended 2026-11-02:** keep-or-remove runs test main's copy of a skill
+  subject (see "Addendum: main's copy").
 - **Issue:** none; raised in review of the first scaffolded real-work fixture
   ([#329](https://github.com/Adam-S-Daniel/skills-evals/pull/329)).
 - **Decider:** Adam (2026-10-07), approving the proposal as described:
@@ -185,6 +187,73 @@ How it is built:
 - A bare fire is one run to the weekly allowance guard, as any eval fire is.
   The weekly plan reserves it as one arm: its cell's mean cost per arm
   trial, times its three trials.
+
+## Addendum: main's copy (Adam, 2026-11-02)
+
+Decision (Adam, 2026-11-02, option 1 of the design later filed as skills-evals#548): keep-or-remove runs test main's copy of the subject skill, not the copy the context repository deployed; the without arm still has the subject removed.
+
+The decision was recorded in the design log the day #548 was filed; the
+build is [skills-evals#559](https://github.com/Adam-S-Daniel/skills-evals/issues/559),
+on the shared resolver `run_eval.main_copy` and the summary keys
+`subject_source` and `subject_revision` that
+[#560](https://github.com/Adam-S-Daniel/skills-evals/pull/560) added.
+
+### Consequences of the build
+
+- **Skill subjects only.** This replaces the 2026-10-07 "Subject version:
+  Deployed by default" answer above for skill subjects only; guidance
+  subjects still test the deployed section, and `--subject-candidate` still
+  replaces the subject. That answer stays as recorded.
+- **cms-platform skills are measured at cms-platform main.** A skill from
+  the cms-platform registry is tested as it stands on cms-platform main,
+  which consumer sites get once a cms-platform release containing it ships
+  and they bump to it. Verdicts are about text that will ship, ahead of the
+  release a site runs today. Settled from the decision on 2026-11-02 (the
+  #559 comment).
+- **A skill edit pauses pooling.** compute_gates digests main's copy when the
+  gates run, and a run records main's copy when it fired. After a skill edit
+  on main neither arm pools (the without arm pairs with a current with group)
+  until a new with run lands.
+- **The refusals.** Each is a named configuration error before any paid
+  call, checked in this order: `invalid_registry_field` (a fixture
+  `registry:` that is not a URL string); `resolve_skill_subject`'s own;
+  `registry_mismatch` (an adopted subject whose fixture `registry:` is not
+  the registry the context deploys it from); `main_copy`'s
+  (`registry_unknown`, `registry_checkout_missing`, `main_copy_missing`
+  when the skill moved to another registry, `main_copy_ambiguous`);
+  `main_bundle_mismatch` (main's copy is in another bundle);
+  `unsafe_path`; `main_copy_mismatch` (an added subject whose resolved copy
+  is not main's); `registry_checkout_unversioned` (the registry checkout is
+  not the top level of its own Git repository, or has no HEAD);
+  `registry_checkout_dirty` (the skill directory differs from HEAD in a
+  path, a mode or a byte, or HEAD holds something other than a regular
+  file there); `registry_checkout_not_main`; the catalog and
+  `candidate_identity_mismatch` checks on main's copy; `budget_exceeded`.
+- **`subject_source: main` means the checkout's HEAD.** It is checked against
+  `refs/remotes/origin/main` when that ref exists and refused when they
+  differ; without the ref, HEAD is recorded as is.
+- **Empty fires, fixture-broken, and the 14-day retry.** The routine's fire
+  succeeds once the fire API accepts it, so a refused run looks like a
+  successful fire that produced nothing. `scripts/plan_week.py` counts such
+  empty fires per cell: successful non-bare eval fires that started after the
+  cell's newest run on that model, are at least `FIRE_RESULT_WINDOW` old,
+  started within `RETRY_AFTER` (14 days) and no earlier than
+  `EMPTY_FIRES_SINCE` (fires under the new delivery only). At
+  `BROKEN_AFTER_FIRES` (2) the cell becomes a `fixture-broken` work item and
+  is not fired; once those fires are 14 days old they stop counting and the
+  cell is tried again. A fire still waiting for its result holds the cell
+  back from a second fire.
+- **The first regression rows after the switch compare copies, not an
+  edit.** The previous window of with runs tested the deployed copy, the
+  next one main's, so a first regression row on a fixture whose context
+  deployed an older copy compares the deployed copy with main's, not a skill
+  edit.
+- **A description that grows can exceed a thin budget.** Main's copy is
+  sized into the with arm, so a skill-description growth can push a thin
+  catalog budget over: the cms-platform fixtures have 156 bytes of catalog
+  headroom. The run then refuses `budget_exceeded` (naming main's copy and
+  its commit), and the cell becomes a fixture-broken item after two fires.
+  Raising a budget is a reviewed PR.
 
 ## Consequences
 

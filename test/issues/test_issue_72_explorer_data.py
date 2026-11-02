@@ -155,15 +155,16 @@ class ShapeAndMathTests(unittest.TestCase):
 
     def test_top_level_keys_and_types(self):
         d = self.doc
-        self.assertEqual(sorted(d), ["alerts", "broken_unknown", "context_drift_unknown",
+        # No `broken_unknown`: #544's alert is retired (#559).
+        self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
                                      "coverage", "fires_without_results", "generated_at",
                                      "guidance", "newest_run", "policy", "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
-        # No evals/scheduled.yml, so no fixture is in the #544/#545 scope.
-        # ... nor in #555's: no fire file either, so the summary is unknown.
+        # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
+        # #555's: no fire file either, so the summary is unknown.
         self.assertIsNone(d["fires_without_results"])
-        self.assertEqual((d["broken_unknown"], d["context_drift_unknown"]), (0, 0))
+        self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")

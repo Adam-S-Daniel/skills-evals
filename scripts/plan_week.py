@@ -43,8 +43,7 @@ THE BANDS (rule D), in order:
      default branches (ADR 0010 decision 1).
   2. missing evidence, at least 30%: cells with no run on their model,
      cheaper model first, then heaviest model usage (usage/latest.json on the results branch;
-     equal weights without it). A cell with two successful fires and still
-     no run becomes a `fixture-broken` work item and leaves the queue.
+     equal weights without it).
   3. near a decision, at least 20%: insufficient cells, fewest runs first,
      then the cheaper model (every run can decide a cell: harness/gates.py
      checks a confidence sequence after each one).
@@ -52,6 +51,20 @@ THE BANDS (rule D), in order:
   verdict is already `keep` (one confident benefit decides it; band 5
   re-checks it), and order the cheaper model first within a tie (Adam,
   2026-10-31: Sonnet first, Opus only while that has not settled it).
+  EMPTY FIRES (#559). A cell bound for band 2, 3 or 5 with
+  BROKEN_AFTER_FIRES (2) empty fires becomes a `fixture-broken` work item
+  and enters no band. An empty fire is a successful non-bare eval fire for
+  the cell that started after the cell's newest run of any role or digest
+  on its model (gates' `newest_on_model`; any fire when it has none), at
+  least FIRE_RESULT_WINDOW (2 hours) ago, within RETRY_AFTER (14 days, so a
+  broken cell is retried once its fires age out) and not before
+  EMPTY_FIRES_SINCE (fires under the delivery before main's copy say
+  nothing). A refused run counts: the fire workflow succeeds once the fire
+  API accepts, so fixture-broken means "no run after two fires", whatever
+  the cause. A cell whose verdict document lacks `newest_on_model` counts
+  none (fail safe). Safety cells are exempt. Every band, safety included,
+  skips a cell with a PENDING fire: one younger than FIRE_RESULT_WINDOW,
+  successful or still running, with no run on the cell since it started.
   4. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
      potential value first: value = use x headroom / cost, ties by name.
@@ -275,6 +288,15 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
+#: Only empty fires this recent count, so a fixture-broken cell is retried
+#: once its fires age out instead of staying broken for good (#559).
+RETRY_AFTER = timedelta(days=14)
+#: Empty fires before this are not counted. Runs test main's copy of a skill
+#: from #559 on, which adds refusals (registry_checkout_dirty, ...) and
+#: clears others, so fires made under the old delivery say nothing about
+#: whether the cell can produce a run now; the first sweep after the change
+#: judges only fires made under it.
+EMPTY_FIRES_SINCE = datetime(2026, 11, 3, tzinfo=timezone.utc)
 SHARES = (("missing", 0.30), ("near", 0.20), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "improve", "recheck", "bare")
 IMPROVE_TRIALS = 3
@@ -534,7 +556,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     confident benefit keeps it, so more runs cannot change the verdict
     until its re-check. Within a band the cheaper model goes first (Adam,
     2026-10-31: Sonnet first, Opus only while the cheaper runs have not
-    settled it), then the heavier-used model."""
+    settled it), then the heavier-used model.
+
+    A cell bound for the missing, near or recheck band with at least
+    BROKEN_AFTER_FIRES `empty_fires` is a `fixture-broken` work item
+    instead and enters no band: a refusal that keeps recurring (an upstream
+    edit can cause one at any time) would otherwise re-fire it on every
+    sweep. A safety cell is exempt, since a removal pull request must keep
+    its evidence slot. A `pending` cell, whose last fire may still land a
+    run, plans no fire in any band, safety included."""
     weights = ctx["model_weights"]
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
@@ -555,32 +585,33 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         least = min(cell["with_runs"], cell["without_runs"])
         newest = _stamp_time(cell["newest"])
         kept = cell.get("verdict") == "keep"
+        due = newest is not None and now - newest >= recheck_after(cell)
         if not cell.get("section") and cell["skill"] in removal:
-            bands["safety"].append({**item, "band": "safety", "order": ()})
+            band, order = "safety", ()
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
             # tested again.
-            if newest is not None and now - newest >= recheck_after(cell):
-                bands["recheck"].append({**item, "band": "recheck",
-                                         "order": (rank, newest.timestamp())})
+            band, order = ("recheck", (rank, newest.timestamp())) if due else (None, None)
         elif cell["class"] == "missing":
-            if cell["empty_fires"] >= BROKEN_AFTER_FIRES:
-                broken = {"kind": "fixture-broken", "change_type": "fixture",
-                          "skill": cell["skill"], "fixture": cell["fixture"],
-                          "model": cell["model"], "route": "issue"}
-                if cell.get("section"):
-                    broken["section"] = cell["section"]
-                work.append(broken)
-            else:
-                bands["missing"].append({**item, "band": "missing",
-                                         "order": (rank, price, -item["weight"])})
+            band, order = "missing", (rank, price, -item["weight"])
         elif cell["class"] == "insufficient":
-            bands["near"].append({**item, "band": "near",
-                                  "order": (rank, least, price, -item["weight"])})
-        elif newest is not None and now - newest >= recheck_after(cell):
-            bands["recheck"].append({**item, "band": "recheck",
-                                     "order": (rank, newest.timestamp())})
+            band, order = "near", (rank, least, price, -item["weight"])
+        elif due:
+            band, order = "recheck", (rank, newest.timestamp())
+        else:
+            band, order = None, None
+        if band is None:
+            continue
+        if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
+            broken = {"kind": "fixture-broken", "change_type": "fixture",
+                      "skill": cell["skill"], "fixture": cell["fixture"],
+                      "model": cell["model"], "route": "issue"}
+            if cell.get("section"):
+                broken["section"] = cell["section"]
+            work.append(broken)
+        elif not cell.get("pending"):
+            bands[band].append({**item, "band": band, "order": order})
     return bands, work
 
 
@@ -1041,22 +1072,47 @@ def real_work_rows(evals_dir: Path) -> list:
 
 def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
     """One cell per scheduled fixture x roster model, with its gates class,
-    run counts, newest run, mean cost per run and empty successful fires, and
+    run counts, newest run, mean cost per run, `empty_fires`, `pending`, and
     `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
     stays in the list for the cost statistics; `eval_items` plans none of it.
-    A `subject: any` row makes no cell (`real_work_rows` lists it)."""
+    A `subject: any` row makes no cell (`real_work_rows` lists it).
+
+    Both fire counts are against the gates cell's `newest_on_model`, the
+    newest run of ANY role or digest on that model, not the pooled newest: a
+    fire that landed a run that does not pool still produced something.
+      * `empty_fires`: successful non-bare eval fires that started after it
+        (no bound when it is None: the cell has no run on its model), at
+        least FIRE_RESULT_WINDOW ago, within RETRY_AFTER and at or after
+        EMPTY_FIRES_SINCE. A gates cell without the key (a verdict document
+        from before it) or with an unreadable one counts 0: it fails safe,
+        never fixture-broken on a guess. A cell the verdict document does not list has no run at all,
+        so it has no bound.
+      * `pending`: a successful or still running non-bare eval fire that
+        started after it and less than FIRE_RESULT_WINDOW ago, so its run
+        may still land. Without the key any such fire is pending: holding a
+        cell for at most FIRE_RESULT_WINDOW is cheaper than a second fire.
+    A refused run counts as empty: routine-eval-fire.yml concludes `success`
+    once the fire API accepts, so fixture-broken means "no run after n fires",
+    whatever the cause."""
     committed = schedule.committed_fixtures(evals_dir.parent)
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
-    fired: dict = {}
+    finished: dict = {}
+    young: dict = {}
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
         started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
-        # A bare fire runs one arm, never the cell's pair: not an empty fire.
-        if title and title["mode"] == "eval" and not title["bare"] and title["model"] \
-                and started and run.get("conclusion") == "success" \
-                and now - started >= FIRE_RESULT_WINDOW:
-            key = (title["target"], title["model"])
-            fired.setdefault(key, []).append(started)
+        # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
+        if not (title and title["mode"] == "eval" and not title["bare"] and title["model"]
+                and started):
+            continue
+        key = (title["target"], title["model"])
+        running = run.get("status") not in (None, "completed")
+        if now - started < FIRE_RESULT_WINDOW:
+            if running or run.get("conclusion") == "success":
+                young.setdefault(key, []).append(started)
+        elif run.get("conclusion") == "success" and now - started <= RETRY_AFTER \
+                and started >= EMPTY_FIRES_SINCE:
+            finished.setdefault(key, []).append(started)
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
     for fixture in scheduled:
@@ -1082,8 +1138,16 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
             cost = cell.get("cost_usd") if cell else None
             arm_trials = sum(r.get("scored_trials") or 0 for r in entries)
             newest = stamps[-1] if stamps else None
-            newest_time = _stamp_time(newest)
             cls = cell["class"] if cell else "missing"
+            raw = cell.get("newest_on_model") if cell else None
+            bound = _stamp_time(raw)
+            # An unreadable stamp is as unknown as an absent key.
+            known = cell is None or ("newest_on_model" in cell
+                                     and (raw is None or bound is not None))
+            after = [t for t in finished.get((fixture, model), [])
+                     if bound is None or t > bound]
+            waiting = [t for t in young.get((fixture, model), [])
+                       if not known or bound is None or t > bound]
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
@@ -1094,9 +1158,7 @@ def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime)
                 "usd_per_fire": cost / len(stamps) if cost is not None and stamps else None,
                 "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
                 else None,
-                "empty_fires": sum(1 for t in fired.get((fixture, model), [])
-                                   if newest_time is None or t > newest_time)
-                if cls == "missing" else 0})
+                "empty_fires": len(after) if known else 0, "pending": bool(waiting)})
     return cells
 
 
