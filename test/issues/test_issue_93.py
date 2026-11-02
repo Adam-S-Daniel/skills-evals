@@ -75,8 +75,10 @@ class ConsumerBumpFixtureTests(unittest.TestCase):
         fixture = load_fixture(EVAL)
         self.assertEqual(fixture["context"], {
             "repository": "Adam-S-Daniel/adamdaniel.ai",
-            "revision": "ddf1c9929fb4e9087bc9c9920213a478f8cbdda4",
-            "guidance_revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
+            # Re-pinned 2026-11-02 from ddf1c992 / b0abbe7d to adamdaniel.ai
+            # main, which deploys main's copy of the subject.
+            "revision": "da05fc6b724cba6cb27d7d92591866b10b99c969",
+            "guidance_revision": "5ca459fc6aa270f204cab3d67603fc0e5699b3d7",
             "budget": {
                 "guidance_bytes": 31374,
                 "skill_catalog_bytes": 17522,

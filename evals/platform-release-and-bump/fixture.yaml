@@ -19,10 +19,14 @@
 # guidance/catalog/payload bytes were 25099/14017/882787; limits are each
 # ceil(measured * 1.25). The v0.1.104 instrument above is pinned independently
 # from this deployed-context snapshot.
+# Re-pinned 2026-11-02 to adamdaniel.ai main da05fc6b (its lock now deploys
+# main's copy of the subject); the instrument above stays pinned on its own.
+# Guidance proven at 5ca459fc. Budgets unchanged; today's figures are
+# REMEASURED in test/issues/test_issue_371_scheduled_fixtures.py.
 context:
   repository: Adam-S-Daniel/adamdaniel.ai
-  revision: ddf1c9929fb4e9087bc9c9920213a478f8cbdda4
-  guidance_revision: b0abbe7dc97eca0a2624bfa9695b0d98b774cef2
+  revision: da05fc6b724cba6cb27d7d92591866b10b99c969
+  guidance_revision: 5ca459fc6aa270f204cab3d67603fc0e5699b3d7
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 17522
