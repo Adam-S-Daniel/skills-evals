@@ -243,15 +243,17 @@ running at a sweep's end expires, or 50 minutes on) to spend room that fires cos
 [ADR 0010 addendum](decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md#decision-4-addendum-2026-10-26)).
 It computes the retirement verdicts over the results branch, then plans
 eval fires (one reviewed fixture from `evals/scheduled.yml` on one roster
-model) and improve fires (one skill, with a fixed holdout) in six bands:
+model) and improve fires (one skill, with a fixed holdout) in eight bands:
 
 1. **Safety**: every cell of a skill with an open removal pull request.
-2. **Missing evidence** (at least 30% of the room): cells with no run,
+2. **Missing evidence** (at least 30% of the room): skill cells with no run,
    heaviest-used model first. A cell whose fires twice produced nothing
-   becomes a "fixture broken" work item instead.
-3. **Near a decision** (at least 20%): cells fewest runs short of their next
-   look.
-4. **Improvements** (at least 20%): skills with four or more fixtures, train
+   becomes a "fixture broken" work item instead (a guidance cell too).
+3. **Near a decision** (at least 20%): skill cells fewest runs short of
+   their next look.
+4. **Guidance focus** (at least 15%): the undecided guidance cells (no run,
+   or not yet decided) of the two sections nearest a verdict, below.
+5. **Improvements** (at least 20%): skills with four or more fixtures, train
    headroom, a check that fails often but can pass, no retirement verdict,
    and no pause, ordered by potential value: expected uses over four weeks
    times train headroom, per allowance point an improve run costs (three
@@ -271,9 +273,9 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
-5. **Re-checks**: decided cells not measured for eight weeks (four for a
+6. **Re-checks**: decided cells not measured for eight weeks (four for a
    high-stakes subject).
-6. **Bare baselines** (no minimum share, only the room left): one fire with
+7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
    ([ADR 0012 addendum](decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md#bare-baseline-addendum-adam-2026-10-27),
@@ -282,13 +284,75 @@ model) and improve fires (one skill, with a fixed holdout) in six bands:
    run already ingested, or a bare fire that succeeded or is still running,
    counts as done; a new roster model gets its own. Bare runs are listed
    apart (`bare_runs` in the verdict document) and never pooled into a cell.
+8. **Guidance rest** (no minimum share): every other undecided guidance
+   cell, cells with no run first. It gets only what every other band leaves,
+   so when the 30-fire cap binds a section outside the focus can wait weeks.
+
+**The guidance focus** (`guidance_focus` in `scripts/plan_week.py`; Adam's
+rule, 2026-11-02 18:42 UTC: a section is removed at 90% confidence that it
+does not improve results by 0.15 or more). Guidance fires used to spread over
+every section's cells, so none came near a verdict; the focus spends them on
+the two sections nearest one until those decide.
+
+- **Progress.** A cell's *retire progress* is the no-help confidence of the
+  figures that decide it, divided by `retire_confidence` from the verdict
+  document's `guidance_policy` (0.90 when absent): for a judge-carried cell
+  its judge's, min'd with its objective's when it has objective checks; for
+  any other cell its objective's min'd with its judge's. A cell with no
+  judge block scores 0, since `harness/gates.py` retires no cell without a
+  usable judge. Its *keep progress* is the larger of its objective's and its
+  judge's helps confidence divided by `benefit_confidence` (0.85 when
+  absent); that understates the per-check (Holm) keep route, which has no
+  single confidence to read. An absent value is 0.
+- **Score.** A section's score is the larger of its weakest cell's retire
+  progress (it retires only when every cell clears) and its strongest cell's
+  keep progress (one benefit keeps it). Ties go to the section with fewer
+  cells, deliberately, since a smaller section reaches a verdict on fewer
+  runs; then to more counted runs; then to the section id.
+- **Eligibility.** The section's verdict is still `insufficient` (or it has
+  none): keep, every retire verdict, `shorten-or-merge`, ceiling and
+  cannot-discriminate are not focused. At least one of its cells must be
+  able to plan a fire (schedulable, stakes not `none`, not a "fixture
+  broken" missing cell), no `retire-guidance/<section>` pull request may be
+  open in _agent-guidance, and no cell may be BLOCKING: one whose no-benefit
+  was overruled by an agent-errored trial or a run skipped as anomalous, or
+  a ceiling or cannot-discriminate cell with at least three counted runs on
+  each arm. More runs on the current content cannot move a blocking cell
+  toward removal; under three runs one more can still change its class.
+- **Order.** The higher-scored section's fires go first; within a section the
+  binding cell first (the lowest retire progress, or the highest keep
+  progress when the score came from the keep side), then the cheaper model.
+  The plan records the two sections, with their scores, as `guidance_focus`,
+  and the job summary names them. There is no stall rule: the 2026-11-02
+  design review found one could not be built from the fire history without
+  benching healthy sections.
+- **One trial.** Focused fires stay at one trial. The harness refuses
+  `--trials > 1` for a guidance fixture, and trials collapse into one run
+  mean, so three trials cut the runs a verdict needs but not its cost (the
+  2026-11-02 design review measured it equal or worse in trial-equivalents).
+- **Today** (results branch at 3d68f1c, 2026-11-02): 29 sections, 64 in-situ
+  cells on the two roster models, 24 counted runs in all. Before #557's
+  with-ahead rule only 2 cells had a judge block, so every section's retire
+  progress read 0 and the focus was
+  `anything-you-name-gets-its-link` (8 cells, keep progress 0.144) and
+  `agent-contribution-markers` (score 0, first of the two-cell sections with
+  the most counted runs, by id), 10 fires in focus and 51 in the guidance
+  rest.
+- **Known limits.** A cell that is not judge-carried still needs a usable
+  judge to retire unless every judge call it is missing was skipped because
+  the with arm was ahead (#557, 2026-11-02): such a cell is decided on its
+  objective, and its retire progress reads the objective's. A cell whose
+  reason says the judge is still needed scores 0 for retire, and its section
+  stays eligible only through keep progress. The explorer's test queue reads
+  no pull requests, so it can show a focus place for a section whose removal
+  pull request is open, which the planner would not focus.
 
 **Stakes** (Adam, 2026-11-01). `evals/stakes.yml` gives a skill or guidance
 section a stakes level from what it is for, with a one-line reason; a
 subject with no row is `normal`. A `high` subject prevents irreversible or
-public harm: its cells go first within the missing, near and re-check
-bands, and it is re-checked after four weeks. A `none` subject needs no eval
-because a check enforces it everywhere it applies: its row must name that
+public harm: its cells go first within the missing, near, guidance focus,
+re-check and guidance rest bands, and it is re-checked after four weeks. A
+`none` subject needs no eval because a check enforces it everywhere it applies: its row must name that
 check as `<owner>/<repo>:<path>`, and the plan fires nothing for it.
 `scripts/stakes.py --check` refuses an unknown field, a name with no fixture
 directory here (so no private skill name can land in the public file), a

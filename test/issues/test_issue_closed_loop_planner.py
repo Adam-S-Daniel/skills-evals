@@ -887,7 +887,15 @@ class PlanCommandTests(unittest.TestCase):
             matrix = json.loads(lines[0].removeprefix("matrix="))
             self.assertEqual(lines[1], f"count={len(matrix['include'])}")
             self.assertGreater(len(matrix["include"]), 0)
-            self.assertTrue(all(row["band"] == "missing" for row in matrix["include"]))
+            # On an empty tree every cell is missing: a skill's goes to the
+            # missing band, a guidance section's to the focus (two sections)
+            # or the guidance rest, never to missing.
+            guided: dict = {}
+            for row in matrix["include"]:
+                guided.setdefault(row["eval_key"].startswith("guidance/"), set()).add(
+                    row["band"])
+            self.assertEqual(guided.get(False), {"missing"})
+            self.assertLessEqual(guided.get(True, set()), {"focus", "guidance-rest"})
             for row in matrix["include"]:
                 plan_week.validate_fire({"MODE": row["mode"], "ARMS": row["arms"],
                                          "FIXTURE": row["fixture"],
@@ -982,10 +990,11 @@ class GuidanceFixtureTests(unittest.TestCase):
                  {**cell("evals/guidance/s/x", "heavy", "missing", empty=2), "skill": "",
                   "section": "s"}]
         # A removal PR named like the section is a skill's, not this cell's.
+        # A missing guidance cell enters the focus, never the missing band.
         plan = plan_week.build_plan(ctx(cells=cells, removal_prs=[section, ""]), NOW)
         self.assertEqual([(f["band"], f["mode"], f["fixture"], f["eval_key"])
                           for f in plan["fires"]],
-                         [("missing", "eval", GUIDANCE_FIXTURE,
+                         [("focus", "eval", GUIDANCE_FIXTURE,
                            "guidance/anything-you-name-gets-its-link/handoff")])
         self.assertEqual(plan["matrix"]["include"][0]["skill"], "")
         self.assertEqual(plan["work"], [{"kind": "fixture-broken", "change_type": "fixture",
@@ -1299,6 +1308,45 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(got["finding-your-unknowns"]["holdout"], "")
         self.assertEqual(got["finding-your-unknowns"]["verdict"], "insufficient")
         self.assertNotIn("_delivery", got)
+
+    def test_guidance_contexts_pool_every_rest_of_guidance_as_the_gate_does(self):
+        # #557: the gate pools an in-situ cell's current-content runs across
+        # every rest of the guidance (strata), so the improve evidence must
+        # count a run beside a minority rest too, not only `_joint_context`'s
+        # largest same-rest group.
+        section = "anything-you-name-gets-its-link"
+        expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t"}
+                    for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
+
+        def run(name, role, checks, rest, stamp):
+            return {"skill": section, "fixture": name, "model": "m", "role": role,
+                    "pair": "in_situ", "tested_digest": "t",
+                    "fixture_digest": f"fd-{name}", "arm_context_digest": rest,
+                    "pair_key": rest, "timestamp": stamp, "path": f"{name}-{stamp}",
+                    "trials": [trial(checks)]}
+        runs = [run("done-summary", "with", {"a": True, "b": True}, "rest-1", "20261020T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-1",
+                    "20261020T000000Z"),
+                run("done-summary", "with", {"a": True, "b": True}, "rest-1", "20261021T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-1",
+                    "20261021T000000Z"),
+                # The minority rest: its with-arm run fails both checks.
+                run("done-summary", "with", {"a": False, "b": False}, "rest-2",
+                    "20261022T000000Z"),
+                run("done-summary", "without", {"a": False, "b": False}, "rest-2",
+                    "20261022T000000Z")]
+        doc = {"roster_models": ["m"], "guidance": {section: {"verdict": "insufficient"}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            with mock.patch.object(plan_week_compute_gates, "build_index",
+                                   return_value={"guidance_runs": runs}), \
+                 mock.patch.object(plan_week_compute_gates, "expected_guidance",
+                                   return_value=expected):
+                got = plan_week.guidance_contexts(ROOT / "evals", tree, "20261026T120000Z",
+                                                  doc, tree)
+        # 4 of 6 with-arm checks passed over both rests: headroom 1/3. The
+        # largest group alone (rest-1) would read 0.
+        self.assertAlmostEqual(got[section]["evidence"]["headroom"], 1 / 3)
 
     def test_the_fire_check_refuses_a_section_with_no_train_headroom(self):
         # 2026-10-28: a hand-dispatched guidance-improve fire on a section at
@@ -1760,7 +1808,7 @@ class DocsTests(unittest.TestCase):
         self.assertIn("one time per model\nper version of model", text)
         self.assertIn("Ablation, the in-place pair of decision 1, stays the main approach", text)
         doc = (ROOT / "docs/how-it-works.md").read_text()
-        self.assertIn("6. **Bare baselines**", doc)
+        self.assertIn("7. **Bare baselines**", doc)
         self.assertIn("bare-baseline-addendum-adam-2026-10-27", doc)
 
     def test_adr_0010_records_the_2026_10_26_addendum(self):
