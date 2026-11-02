@@ -2,11 +2,11 @@
 
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
-| adam-agentskills | 21 | 13 | 8 | 0 |
+| adam-agentskills | 22 | 14 | 8 | 0 |
 | cms-platform | 13 | 10 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 3 | 1 | 0 | 2 |
-| **Total** | 38 | 25 | 11 | 2 |
+| **Total** | 39 | 26 | 11 | 2 |
 
 ## adam-agentskills
 
@@ -17,6 +17,7 @@
 | adam-coding-anywhere | ci-job-performance | covered | 1 |  |
 | adam-coding-anywhere | debug-github-workflows | covered | 4 |  |
 | adam-coding-anywhere | disarm-inherited-reach | covered | 1 |  |
+| adam-coding-anywhere | fan-out-triage | covered | 4 |  |
 | adam-coding-anywhere | github-actions-repo-settings | covered | 1 |  |
 | adam-coding-anywhere | review-bash-ci-reliability | covered | 5 |  |
 | adam-coding-anywhere | skills-doctor | covered | 4 |  |
@@ -68,6 +69,6 @@ None.
 
 ## Fixture metadata readiness
 
-- Fixtures: 92; draft: 11.
-- Context declared: 25; missing: 67; guidance unproven: 0.
+- Fixtures: 96; draft: 11.
+- Context declared: 25; missing: 71; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
