@@ -1,0 +1,269 @@
+{
+  "skill": "rename-pdfs",
+  "arm": "without_skill",
+  "timestamp": "20261102T215230Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.06454850000000001,
+    "num_turns": 6,
+    "duration_ms": 20344,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 12429,
+      "cache_read_input_tokens": 122920,
+      "output_tokens": 2116,
+      "output_tokens_details": {
+        "thinking_tokens": 652
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 12429
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 273,
+          "cache_read_input_tokens": 24256,
+          "cache_creation_input_tokens": 619,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 619,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "inbox-renamed-per-convention",
+      "passed": false,
+      "detail": "missing: 20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf, 20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf, 20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf, 20260303-Bill-Example Utilities Ltd-Account 9002.pdf; unexpected: .claude, 20260131-Statement-Example Utilities Ltd-January 2026.pdf, 20260214-Invoice-Example Utilities Ltd-Water Service January 2026.pdf, 20260303-Bill-Example Utilities Ltd-Electric Service February 2026.pdf, Scan_20260306_071455.pdf"
+    },
+    {
+      "id": "inbox-content-preserved",
+      "passed": true,
+      "detail": "content preserved by digest (6 file(s))"
+    },
+    {
+      "id": "statement-date-ranged",
+      "passed": false,
+      "detail": "inbox/20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf: not found"
+    },
+    {
+      "id": "invoice-dated-from-body",
+      "passed": false,
+      "detail": "inbox/20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf: not found"
+    },
+    {
+      "id": "receipt-left-alone",
+      "passed": true,
+      "detail": "inbox/20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf: digest matches"
+    },
+    {
+      "id": "image-only-scan-left-alone",
+      "passed": true,
+      "detail": "inbox/Scan_20260118_161230.pdf: digest matches"
+    },
+    {
+      "id": "duplicate-bills-disambiguated",
+      "passed": false,
+      "detail": "inbox/20260303-Bill-Example Utilities Ltd-Account 9002.pdf: not found; inbox/20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf: not found"
+    },
+    {
+      "id": "nothing-outside-inbox",
+      "passed": true,
+      "detail": "./ matches the expected listing (1 entries)"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 2116,
+      "cache_read_input_tokens": 122920,
+      "cache_creation_input_tokens": 12429,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "a6a009fe8ab46a3b328dfa46712f53490290400666c793346b3569d3cb77ffb3",
+  "judge_conditional": true,
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41531872854",
+    "session_id": null,
+    "harness_commit": "5db83eda832e65568ea73dab6a0d1c754789adbf",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-02T21:52:30Z",
+    "ended_at": "2026-11-02T21:53:38Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.17945,
+      "agent_usd": 0.17945,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0067071000000000075,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-02T21:53:15Z",
+      "ended_at": "2026-11-02T21:53:38Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-02T21:53:16Z",
+          "ended_at": "2026-11-02T21:53:33Z",
+          "duration_ms": 17794,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 1,
+          "started_at": "2026-11-02T21:53:33Z",
+          "ended_at": "2026-11-02T21:53:38Z",
+          "duration_ms": 4181,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 2,
+        "duration_ms": 21975,
+        "num_turns": 6,
+        "cost_usd": 0.06454850000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 2116,
+            "cache_read_input_tokens": 122920,
+            "cache_creation_input_tokens": 12429,
+            "cost_usd": 0.06454850000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 12429,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
