@@ -41,12 +41,12 @@
 # A failed fetch in step 0 (the repository does not answer, or the clone
 # fails; a branch that does not exist is not a failure) never blocks the
 # public publish either: once the results clone exists, the previous public
-# usage/weekly-local.json's cloud rows and cloud source, and its local
-# skill-digest rows and their source (#562), are carried forward verbatim
-# (they are already public), each unless its source was read more than 14
-# days ago; the summary says "cloud: carried forward" and "skill copies:
-# carried forward" (or "not read"), and the script exits 1 at the end like a
-# private failure.
+# usage/weekly-local.json's cloud rows and cloud source, and its local and
+# cloud skill-digest rows, each with its source (#562), are carried forward
+# verbatim (they are already public), each unless its source was read more
+# than 14 days ago; the summary says "cloud: carried forward", "skill copies:
+# carried forward" and "cloud skill copies: carried forward" (or "not read"),
+# and the script exits 1 at the end like a private failure.
 #
 # Transcript roots: ~/.claude/projects, and under WSL also every existing
 # Windows-side root (/mnt/c/Users/*/.claude/projects) and every Cowork root
@@ -238,10 +238,10 @@ git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$BRANCH" "$U
   || { echo "usage census: could not clone the $BRANCH branch" >&2; exit 1; }
 
 # A failed fetch of the private branch: carry the previous public file's cloud
-# rows and local skill-digest rows, each with its source, into this run's
-# file (skill_usage.carry), so the publish below goes ahead with them instead
-# of dropping what is already public. Decided here because the previous file
-# is in the results clone. One fixed phrase per carried part.
+# guidance rows and local and cloud skill-digest rows, each with its source,
+# into this run's file (skill_usage.carry), so the publish below goes ahead
+# with them instead of dropping what is already public. Decided here because
+# the previous file is in the results clone. One fixed phrase per carried part.
 cloud_note=""
 if [ "$private_fetch" = failed ]; then
   cloud_note="$("$PY" - "$tmp/src/harness" "$tmp/results/usage/weekly-local.json" \
@@ -259,7 +259,7 @@ if any(count is not None for count in carried.values()):
 print("; ".join(f"{label}: " + ("not read" if count is None else "carried forward")
                 for label, count in carried.items()))
 PY
-  )" || cloud_note="cloud: not read; skill copies: not read"
+  )" || cloud_note="cloud: not read; skill copies: not read; cloud skill copies: not read"
 fi
 
 # The last gate on the public weekly file (#562): nothing is staged when it
@@ -397,7 +397,8 @@ Field reference: skills-evals `evals/usage/CENSUS.md`, "Private usage events".
 - **No ruleset.** This repository is private, and rulesets cannot protect a
   branch of it on this plan, so nothing guards it against deletion or a force
   push. Do not delete it.
-- cloud-* files are written by cloud hooks and cannot be regenerated; a re-created branch loses them.
+- cloud-* files and the shards under events/<month>/cloud-skills/ are written by cloud hooks and cannot be regenerated; a re-created branch loses them.
+- A cloud-skills shard holds one line per skill use a cloud session uploaded, from its main transcript and subagent transcripts: records seen, never complete.
 README
     created=1
   else
@@ -418,8 +419,9 @@ PY
   # anything else (and so never anything under lessons/).
   while IFS= read -r path; do
     [ -n "$path" ] || continue
-    # cloud-* files belong to cloud hooks; this machine never writes one.
-    if [[ "$path" =~ ^events/[0-9]{4}-[0-9]{2}/cloud-[^/]*\.jsonl$ ]]; then
+    # cloud-* files, and the per-session shards under cloud-skills/
+    # (#562 PR B), belong to cloud hooks; this machine never writes one.
+    if [[ "$path" =~ ^events/[0-9]{4}-[0-9]{2}/cloud-[^/]*(/[0-9a-f]{16})?\.jsonl$ ]]; then
       private_fail "unexpected staged paths"
       return 1
     fi

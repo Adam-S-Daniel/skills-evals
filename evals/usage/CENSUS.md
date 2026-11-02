@@ -165,7 +165,8 @@ week from the private records (below) and published as:
   row's. `sessions` is the distinct sessions for that row (never summed
   across weeks).
 - *Which copy.* Each use's id is resolved once across the store's machine
-  files (`events/*/<machine>.jsonl`; `cloud-*` files are not read here): a
+  files (`events/*/<machine>.jsonl`; `cloud-*` files are not read here) and
+  its cloud shards (below): a
   non-null `digest` beats null, two different non-null digests publish as
   `unknown:conflict`, an id the store does not hold yet takes this run's
   record, and a stored id is final. A stored line whose `digest` is not 64
@@ -211,6 +212,51 @@ week from the private records (below) and published as:
   by that source's `to` like the cloud rows, and the summary says `skill
   copies: carried forward` (or `not read`). The sum rule is not re-checked
   on carried rows; the old `to` shows they are stale.
+
+### Cloud skill copies
+
+#562 PR B, from `_agent-guidance` ADR 0036. A cloud session's Stop hook
+(`guidance-load-record.sh`, phase 2) uploads one line per skill use, read from
+the main transcript and subagent transcripts, to
+`events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl` on the private branch: one
+shard per session (the stem is `sha256(session id)[:16]`), each use in the
+month of its own `ts`.
+
+```
+{"v": 1, "id", "ts", "kind": "skill", "surface": "cloud", "session", "cli",
+ "name", "base_kind", "registry", "ref", "digest", "digest_null_reason"}
+```
+
+- *Read strictly.* Only a month directory `YYYY-MM` and a 16-hex stem are
+  read, never through a link. A line must have exactly these keys: `v` 1,
+  `id` `[A-Za-z0-9_-]{1,128}`, `ts` UTC with `Z` in the shard's month,
+  `session` equal to the stem, `cli` null or a version, `name` a skill name
+  (or the hook's `invalid`), `base_kind` one of `BASE_KINDS`, `registry` null
+  or `owner/repo`, `ref` null or 40 hex, and either a 64-hex `digest` with a
+  null reason or a null `digest` with one of the eight reasons. Any other
+  line is skipped whole. There is no `machine` key.
+- *Rows.* `skill-digest` rows with `surface: "cloud"`, by the same chain as
+  local (`unknown:<reason>`, `unlisted-registry`, `unverified-commit`, or the
+  prefix), one use per distinct id of an allowlisted skill (`other` gets no
+  row). An id that is also in this run's records or in a machine file (a
+  session teleported to a durable machine) counts once, as local, and its
+  lines resolve together. Source `{surface: "cloud", scope: "skill-records",
+  from, to, events_scanned}`, `from` being the later of the window's start
+  and the Monday of the earliest shard line's week; present only when the
+  store was read and holds at least one well-formed shard line (before the
+  hook ships, cloud copies are unknown, not zero).
+- *Coverage is records seen, never complete.* Uses after a session's last
+  successful upload die with the container, and a session that cannot reach
+  the private repository records nothing.
+- *No cloud `skill` rows.* The totals stay local-only, so the dashboard's
+  skill counts do not change; adding cloud totals is Adam's call.
+- *`ref`.* The hook records it where it has one (a plugin-cache
+  `gitCommitSha`, a user-skills install record's ref) and null otherwise; a
+  stale fleet copy of the hook records `ref: null` until its next sync. A
+  40-hex `ref` must be on a branch of the mirror, as for local records.
+- *Carry.* A failed store fetch carries the previous file's cloud
+  `skill-digest` rows and source like the local ones; the summary says
+  `cloud skill copies: carried forward` (or `not read`).
 
 ## Transcript roots
 
@@ -335,10 +381,11 @@ private repository: branch `persistent/usage-events` of
   `id` being the SHA-256 of the machine name and the raw log line. `runner`
   is the sanitized digest above, null when absent or malformed. Hook lines
   already merged keep their bytes; nothing is back-filled.
-- **Reserved `cloud-` machine prefix.** Files `events/*/cloud-*.jsonl` are
-  written by cloud hooks, never by this census: `merge_events` refuses a
-  machine name starting with `cloud-` (ValueError), the publish script refuses
-  to stage any such file, and `hook_block_report.py` skips them when loading.
+- **Reserved `cloud-` machine prefix.** Files `events/*/cloud-*.jsonl` and
+  the shards `events/*/cloud-skills/<16 hex>.jsonl` are written by cloud
+  hooks, never by this census: `merge_events` refuses a machine name starting
+  with `cloud-` (ValueError), the publish script refuses to stage any such
+  file, and `hook_block_report.py` skips them when loading.
   They cannot be regenerated; a re-created branch loses them.
 - **Merge.** By `id`: existing lines are kept as they are, new ids are added,
   each file stays sorted by `ts`. A commit (`usage events [skip ci]`) is made

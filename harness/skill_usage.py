@@ -61,6 +61,14 @@ or after its source's `from`, the `skill-digest` invocations sum to the
 `events_scanned` (the uses counted); absent means unknown, not zero.
 `check_public` is the last gate before the file is published.
 
+CLOUD `skill-digest` rows (#562 PR B) have `surface: "cloud"` and their own
+`skill-records` source with `surface: "cloud"`. They count the uses cloud
+sessions uploaded (one per distinct id, a use also recorded locally counted
+only as local), so for each name and week their invocations equal the
+distinct cloud ids counted. Coverage is records seen, never complete: uses
+after a session's last successful upload are lost with the container. There
+are no cloud `skill` rows, so no sum rule ties them to one.
+
 `week` is the Monday (UTC) of the ISO week. Rows are sorted by week, kind,
 name, repo. `sessions` is the number of distinct transcript files that invoked the
 name that week; `sessions_scanned` is how many transcript files were read
@@ -206,10 +214,10 @@ def _sort_key(entry: dict) -> tuple:
 #: the document last published (#562 generalized #536's cloud-only carry):
 #: (summary label, source scope, row kinds, surface). Each entry is matched by
 #: scope AND surface and aged by its own source's `to`, so a local guidance
-#: row is never carried. PR B adds ("cloud skill copies", DIGEST_SCOPE,
-#: (DIGEST_KIND,), SURFACE_CLOUD).
+#: row is never carried.
 CARRIED = (("cloud", CLOUD_SCOPE, SESSION_KINDS, SURFACE_CLOUD),
-           ("skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_LOCAL))
+           ("skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_LOCAL),
+           ("cloud skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_CLOUD))
 
 
 def carry(previous, new: dict, max_age_days: int = 14) -> dict:
