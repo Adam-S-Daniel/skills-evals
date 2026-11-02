@@ -558,6 +558,12 @@ def check_key(check_id) -> str:
     return json.dumps(check_id, sort_keys=True)
 
 
+#: The reason run_eval records when it skips a pair's judge because the with
+#: arm is strictly ahead on the objective (harness/run_eval.py
+#: `JUDGE_SKIPPED`).
+JUDGE_SKIP_WITH_AHEAD = "objective-decided"
+
+
 def trial_record(summary: dict) -> dict:
     """What a cell needs from one trial summary, or MalformedSummary. A
     cost that is not a finite number from 0 up is unknown."""
@@ -595,9 +601,15 @@ def trial_record(summary: dict) -> dict:
         figure = judge.get("dimensions_mean") if pairwise else judge.get("overall")
         if figure is not None and not (_is_number(figure) and 0 <= figure <= 10):
             raise MalformedSummary("judge figure is not a number from 0 to 10")
-    return {**out, "scored": True, "infrastructure": False, "errored": False,
-            "checks": {check_key(c.get("id")): c["passed"] for c in checks},
-            "judge": figure, "pairwise": pairwise}
+    record = {**out, "scored": True, "infrastructure": False, "errored": False,
+              "checks": {check_key(c.get("id")): c["passed"] for c in checks},
+              "judge": figure, "pairwise": pairwise}
+    if isinstance(judge, dict) and judge.get("status") == "skipped" \
+            and judge.get("reason") == JUDGE_SKIP_WITH_AHEAD:
+        # run_eval's conditional judge skipped this pair because its with arm
+        # was strictly ahead on the objective (#557 reads it; nothing else).
+        record["judge_skipped_with_ahead"] = True
+    return record
 
 
 def run_numbers(trials: list, judge_unconditional: bool, check_ids=(),
@@ -847,6 +859,17 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                         "a removal needs")
         return done("no-benefit", cls_reason)
 
+    def with_ahead_skips_only():
+        """Every counted run of both arms either has its judge figure, or has
+        none only because every scored trial records a with-ahead skip."""
+        for run in with_runs + without_runs:
+            if run["numbers"]["judge_mean"] is not None:
+                continue
+            judged = [t for t in run["trials"] if t.get("scored") or t.get("errored")]
+            if not judged or not all(t.get("judge_skipped_with_ahead") for t in judged):
+                return False
+        return True
+
     judge_words = ("the judge figure needs a judged run on each arm, and every "
                    "counted run judged when any judge call was conditional")
     if judge_carried:
@@ -883,6 +906,27 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     if objective_ceiling:
         return done("ceiling", "both arms' pass rate at or above "
                     f"{policy['ceiling_fraction']}")
+    if not judge_ok and strata is not None and with_ahead_skips_only():
+        # In-situ guidance (#557, T3's review): every missing judge figure is
+        # a conditional skip made because the with arm was strictly ahead on
+        # the objective, so no figure was lost for any other reason and the
+        # objective alone decides a removal. The judged runs left are a
+        # sample biased toward no benefit, so they may still keep, never
+        # remove.
+        if wj and oj:
+            judged = delta(wj, oj, priors["judge"], policy["judge_margin"], "judge_mean")
+            if judged["benefit_lower"] > 0:
+                out["judge"] = judged
+                return done("benefit", "judge delta's lower bound is above 0, on the "
+                            "runs the conditional judge was called for")
+        if objective_ceiling:
+            return done("ceiling", "both arms' pass rate at or above "
+                        f"{policy['ceiling_fraction']}")
+        if out["objective"]["retire_upper"] < policy["objective_margin"]:
+            return no_benefit("the objective delta's upper bound is under its margin, and "
+                              "every skipped judge call was skipped because the with arm "
+                              "was ahead")
+        return done("insufficient", "the interval is not tight enough yet")
     if not judge_ok:
         return done("insufficient", "the objective interval is not tight enough "
                     f"yet, and the judge is needed to remove: {judge_words}")
