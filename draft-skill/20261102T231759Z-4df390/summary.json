@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "run_id": "20261102T231759Z-4df390",
+  "decision": "rejected",
+  "reasons": [
+    "the skill adds nothing: summed objective pass rate: with_skill 4.000, without_skill 4.000"
+  ],
+  "subject": "tool-edit",
+  "plugin": "adam-coding-anywhere",
+  "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
+  "registry_sha": "caba66346563710860d46d293b147d5630a5436e",
+  "evidence_count": 19,
+  "trials": 1,
+  "triage": {
+    "mechanical": false,
+    "reason": "The Edit tool already refuses an unread or stale file with its own error, so a hook adds no refusal; the loss is the agent retrying blindly instead of re-reading, which no commit, push or CI check can see."
+  },
+  "fixtures": {
+    "format-then-edit": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "tokens": 189428.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "tokens": 189387.0
+      }
+    },
+    "generator-then-edit": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 5,
+        "total": 5,
+        "pass_rate": 1.0,
+        "tokens": 189518.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 5,
+        "total": 5,
+        "pass_rate": 1.0,
+        "tokens": 188899.0
+      }
+    },
+    "multi-file-version": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "tokens": 111979.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "tokens": 111634.0
+      }
+    },
+    "repeated-text": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 148108.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 111202.0
+      }
+    }
+  },
+  "skill_creator_commit": "2a40fd2e7c52207aa903bd33fc4c65716126966e",
+  "tokens_basis": "model_usage_total"
+}
