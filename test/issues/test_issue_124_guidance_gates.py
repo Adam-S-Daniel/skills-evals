@@ -813,7 +813,8 @@ def pair_runs(pair, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JU
     return runs
 
 
-EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1"}}
+# `main_rest` (#557): the in-situ runs below ran beside the rest on main.
+EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1", "main_rest": "rest"}}
 
 
 class GuidanceVerdictTests(unittest.TestCase):
@@ -846,10 +847,13 @@ class GuidanceVerdictTests(unittest.TestCase):
         v = self.verdict(pair_runs("in_situ", FLAT[:1], FLAT[:1]) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("insufficient", "insufficient"))
         self.assertEqual(v["alone"]["verdict"], "keep")
-        # Three runs, on priors measured over both pairs' runs, retire in
-        # situ (no fixed looks, 2026-10-31), and the alone benefit makes it
-        # shorten-or-merge.
+        # Three runs no longer retire in situ (#557): a cell's prior is its
+        # own, and under 20 degrees of freedom it is the 0.25 fallback.
         v = self.verdict(pair_runs("in_situ", FLAT[:3], FLAT[:3]) + alone)
+        self.assertEqual(v["in_situ_verdict"], "insufficient")
+        # Twenty, confirmed beside the rest on main, retire in situ, and the
+        # alone benefit makes it shorten-or-merge.
+        v = self.verdict(pair_runs("in_situ", FLAT, FLAT) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("retire", "shorten-or-merge"))
 
     def test_runs_of_the_other_pair_never_enter_a_cell(self):
@@ -980,7 +984,11 @@ class ComputeGuidanceTests(unittest.TestCase):
         edited = {**self.digests, "rest": "e" * 64}
         self.two_halves(self.digests, edited)
         self.assertEqual(self.cell_runs("alone"), (20, 20))
-        self.assertEqual(self.cell_runs(), (12, 12))  # in-situ keeps the rest key
+        # In situ pools both rests as two strata (#557), and the key names them.
+        self.assertEqual(self.cell_runs(), (20, 20))
+        key = self.compute()["guidance"]["bravo"]["cells"][0]["key"]
+        self.assertEqual(sorted(key["strata"]), sorted([self.digests["rest"], "e" * 64]))
+        self.assertEqual(key["main_rest"], self.digests["rest"])
 
     def test_alone_runs_with_another_section_payload_do_not_pool(self):
         # Same section extent, different file intro: the arm loaded other text.
@@ -1050,7 +1058,9 @@ def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=N
     roster = ["model-a", "model-b"]
     cells = [{"fixture": "fx", "model": m, "class": (classes or {}).get(m, "no-benefit"),
               "with": {"runs": 10}, "without": {"runs": 10},
-              "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2}}
+              "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2},
+              # Confirmed beside the rest on main (#557).
+              "confirmed": True, "key": {"main_rest": "r" * 64}}
              for m in roster]
     return {"schema_version": 1, "as_of": "20261020T000000Z", "roster_models": roster,
             "skills": {}, "guidance_retirement_mode": mode,

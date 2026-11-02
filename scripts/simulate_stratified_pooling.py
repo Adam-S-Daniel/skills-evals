@@ -52,13 +52,19 @@ ceiling beside a mid-range main rest) made it anti-conservative (#546
 review round 1, now a scenario here).
 
 KNOWN LIMITS (#546 review round 2), for whoever wires this into a verdict:
-  * the keep side is not shown safe when the shared prior is pooled from
-    OTHER cells at the ceiling: a reviewer's probe with such a history gave
-    stratified false keeps of 34-46% against 22-25% for one pooled stratum;
+  * the keep side needs a PER-CELL prior (harness/gates.py `cell_priors`,
+    which is this simulation's default, no history): with a prior pooled
+    from other cells at the ceiling a reviewer's probe gave stratified false
+    keeps of 34-46%, against 0.4-1.7% per cell with frozen old strata at the
+    ceiling inside the cell;
+  * the 2.5% holds per version of the rest of the guidance: each new
+    version starts a fresh confirmation sequence, so the chances add up
+    over a section's lifetime (the same holds for the rule before #557);
   * the main-rest half relies on the classifier's ceiling, floor and
-    cannot-discriminate rules, which this simulation does not apply: a
-    0/1 stratum with both arms constant meets the df guard and falls to the
-    1e-4 floor (1 check at 0.97/0.92 retired 30% of the time without them);
+    cannot-discriminate rules (a 0/1 stratum with both arms constant meets
+    the df guard and falls to the 1e-4 floor): the intersection here applies
+    them to the main rest, and two scenarios sit next to the ceiling and
+    the floor;
   * a keep is the union of its routes, gated here per route, and the judge
     route is not simulated; each pass is judged on the point estimate.
 
@@ -98,6 +104,16 @@ RETIRE = [
      [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
     ("3 checks, old rests at the ceiling", 3, (0.55, 0.50),
      [(0.97, 0.97, 30), (0.95, 0.97, 30)], 60),
+    # Round 2: a 0/1 stratum with both arms constant falls to the variance
+    # floor, so the ceiling and floor rules are what keep these safe.
+    ("1 check, main rest near the ceiling", 1, (0.97, 0.92),
+     [(0.92, 0.92, 10)], 60),
+    ("1 check, main rest near the floor", 1, (0.15, 0.10),
+     [(0.10, 0.10, 10)], 60),
+    ("1 check, main rest just under the ceiling", 1, (0.89, 0.84),
+     [(0.84, 0.84, 10)], 60),
+    ("1 check, main rest just over the floor", 1, (0.20, 0.15),
+     [(0.15, 0.15, 10)], 60),
     ("3 checks, unequal old rests 4x40, main above margin", 3, (0.76, 0.70),
      [(0.70, 0.70, 40), (0.60, 0.70, 40), (0.65, 0.70, 40), (0.70, 0.75, 40)], 60),
 ]
@@ -108,6 +124,9 @@ RETIRE = [
 POWER = [
     ("3 checks, two old rests", 3, (0.70, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 60),
     ("1 check, two old rests", 1, (0.70, 0.70), [(0.70, 0.70, 10), (0.60, 0.70, 10)], 60),
+    # A burst at one frozen guidance revision (#557): how many runs it needs.
+    ("burst, 3 checks, 100 runs", 3, (0.70, 0.70), [], 100),
+    ("burst, 3 trials x 3 checks, 60 runs", 9, (0.70, 0.70), [], 60),
 ]
 
 #: name, checks per trial, strata [p] (with == without), total runs.
@@ -163,11 +182,13 @@ def retire_rep(args) -> tuple:
     for pw, po, n in old:
         strata.append(([_mean(_run(rng, pw, checks)) for _ in range(n)],
                        [_mean(_run(rng, po, checks)) for _ in range(n)]))
-    mw, mo = [], []
+    mw, mo, cw, co = [], [], [], []
     hit, first = [False, False, False], None
     for look in range(1, horizon + 1):
-        mw.append(_mean(_run(rng, main[0], checks)))
-        mo.append(_mean(_run(rng, main[1], checks)))
+        cw.append(_run(rng, main[0], checks))
+        co.append(_run(rng, main[1], checks))
+        mw.append(_mean(cw[-1]))
+        mo.append(_mean(co[-1]))
         groups = [g for s in strata for g in s] + [mw, mo]
         prior = _prior(history, groups)
         all_strata = strata + [(mw, mo)]
@@ -177,9 +198,17 @@ def retire_rep(args) -> tuple:
         own_prior = gates.pooled_variance([mw, mo], gates.GUIDANCE_PRIOR_MIN_DF,
                                           gates.GUIDANCE_FALLBACK_PRIOR_VARIANCE)
         own = gates.confidence_sequence(mw, mo, level, own_prior, strength)[1] < margin
-        if combined and own and first is None:
+        # The classifier's per-stratum rules run first and only block a
+        # removal: the main rest at the ceiling, at the floor, or with a check
+        # that fails in every trial of both arms.
+        rates = (_mean(mw), _mean(mo))
+        blocked = (all(r >= POLICY["ceiling_fraction"] for r in rates)
+                   or all(r <= POLICY["floor_fraction"] for r in rates)
+                   or any(not any(t[c] for t in cw + co) for c in range(checks)))
+        confirmed = combined and own and not blocked
+        if confirmed and first is None:
             first = look
-        hit[0] |= combined and own
+        hit[0] |= confirmed
         hit[1] |= combined
         hit[2] |= own
         if all(hit):
