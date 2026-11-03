@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T07:04:18Z",
+ "generated_at": "2026-11-03T07:11:32Z",
  "guidance": {
   "removed": [
    {
@@ -9164,7 +9164,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T07:02:21Z",
+ "newest_run": "2026-11-03T07:09:40Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9274,7 +9274,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9425,7 +9425,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -9665,7 +9665,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 21,
+    "position": 20,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9758,7 +9758,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11525,7 +11525,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12034,7 +12034,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12337,7 +12337,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 17,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12640,7 +12640,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13106,21 +13106,42 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.9469475613534195,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Audit PDF files to determine whether OCR (optical character recognition) is needed to make them fully text-searchable. Use this skill whenever the user asks about PDF searchability, OCR status, whether PDFs have embedded text, which PDFs are scans, or wants to audit/inventory a folder of PDFs for text extraction readiness. Also triggers for: \"which PDFs need OCR\", \"are my PDFs searchable\", \"do these PDFs have text layers\", \"audit my PDFs\", \"find scanned PDFs\".",
    "name": "pdf-ocr-audit",
    "next_test": {
-    "band": "missing",
-    "due": null,
-    "position": 5,
+    "band": null,
+    "due": "2026-12-29T07:09:40Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T07:09:40Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T070758Z-372c4e/pdf-ocr-audit/20261103T070940Z/report.md",
+     "with": {
+      "checks_passed": 11,
+      "checks_total": 13,
+      "cost_usd": 0.17533430000000003,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 13,
+      "cost_usd": 0.100163,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:23:07Z",
      "cli_version": "2.1.316",
@@ -13151,8 +13172,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": null,
@@ -13167,7 +13188,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13218,7 +13239,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13298,7 +13319,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13370,7 +13391,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13757,7 +13778,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14202,7 +14223,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14589,7 +14610,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15342,7 +15363,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16329,7 +16350,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "524c489bae2383ba13c1c36015b52827fd1d89ea"
+  "results_commit": "7fb575e3981f65ba9c3a755388eebb9d80199285"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
