@@ -50,7 +50,7 @@ $GITHUB_OUTPUT):
   pr-body  --staged DIR --run-id ID --sha SHA --branch NAME
            [--mode draft|auto]                          (body on stdout)
   merge-mode --tree DIR --plugin NAME --skill NAME [--policy FILE]   (mode=, mode_reason=)
-  fire-check SKILL [--holdout NAME]                     (no output; exit 0 or 1)
+  fire-check SKILL [--holdout NAME] [--trigger-only]    (no output; exit 0 or 1)
 
 `prepare` builds the whole registry change on a clean checkout of
 adam-agentskills' default branch tip, holding no credential: the patch
@@ -69,13 +69,26 @@ that review. A skill's text is not runtime, whatever its plugin holds.
 routine-draft-skill-gate.yml, so one policy file switches every loop gate
 that writes adam-agentskills.
 
+A TRIGGER-ONLY record (`"mode": "trigger-only"`, skills-evals#662: only
+skill-creator's description loop ran, on the skill's reviewed
+`evals/<skill>/trigger-eval-set.json`) has no split, baseline or candidate.
+It must name that set, present as a regular file on the default branch
+instead of fixtures, and `check_trigger_only` re-verifies its acceptance from
+its own counts (a held-out pass-rate gain of at least TRIGGER_ONLY_MIN_GAIN,
+no should-not-trigger drop) rather than trusting its status. `apply` then
+refuses any change to the SKILL.md body, and `impact_entry` records the
+trigger counts. Any other `mode` value is rejected.
+
 `fire-check` is the other end: `routine-eval-fire.yml` runs it before the
 fire bearer exists, so a skill the loop would refuse never starts a routine
 session. It reuses the loop's own resolution (`skill_fixtures`,
 `load_fixtures`, `MIN_FIXTURES`) and harness/registries.yml, read-only and
 offline. The loop's last step, finding `<skill>/SKILL.md` in the registry
 checkout, needs that checkout, which the fire job does not have, so that
-step stays the routine's.
+step stays the routine's. `--trigger-only` checks a trigger-only fire
+instead: an empty holdout, the committed reviewed set the loop's own loader
+and `trigger_only_set` accept, any number of fixtures (zero included), and
+adam-agentskills as every fixture's registry.
 """
 
 from __future__ import annotations
@@ -166,7 +179,27 @@ RECORD_REQUIRED = ("schema", "skill", "timestamp", "registry", "split",
                    "description_half", "body_half", "table", "files")
 RECORD_ALLOWED = RECORD_REQUIRED + (
     "local_exhibit", "no_judge", "min_gain", "models", "runs", "trigger_set",
-    "phase", "exit_code", "decision", "tokens_basis", "heldout_screen")
+    "phase", "exit_code", "decision", "tokens_basis", "heldout_screen",
+    "mode", "trigger_only")
+#: propose_skill_edit.improve_trigger_only()'s record keys (skills-evals#662):
+#: the ones an accepted trigger-only record must carry, and the only others
+#: it may (its refusal and decision fields). No split, baseline or
+#: candidate: no task fixture was measured.
+TRIGGER_MODE = "trigger-only"
+TRIGGER_RECORD_REQUIRED = ("schema", "skill", "timestamp", "mode",
+                           "local_exhibit", "registry", "models", "trigger_set",
+                           "description_half", "trigger_only", "status",
+                           "reasons", "files")
+TRIGGER_RECORD_ALLOWED = TRIGGER_RECORD_REQUIRED + ("phase", "exit_code", "decision")
+#: The held-out trigger pass-rate gain a trigger-only record must show,
+#: re-verified from its counts (propose_skill_edit.TRIGGER_ONLY_MIN_GAIN;
+#: a test holds the two equal). Adam, 2026-11-03, the #662 decision card.
+TRIGGER_ONLY_MIN_GAIN = 0.15
+#: A trigger-only record's reviewed query set, under evals/<skill>/
+#: (propose_skill_edit.TRIGGER_SET_FILE).
+TRIGGER_SET_FILE = "trigger-eval-set.json"
+TRIGGER_COUNT_KEYS = ("test_passed", "test_total", "should_not_passed",
+                      "should_not_total")
 #: The values a record's `tokens_basis` may take (propose_skill_edit's
 #: TOKENS_BASIS and TOKENS_BASIS_LEGACY); a record without one predates it.
 TOKENS_BASES = ("model_usage_total", "usage_main_loop")
@@ -232,7 +265,15 @@ def bounded(value, where: str, depth: int = 0) -> None:
 
 
 def check_record(doc, where: str, repo: str) -> dict:
-    ingest._object(doc, where, RECORD_ALLOWED, RECORD_REQUIRED)
+    trigger = isinstance(doc, dict) and "mode" in doc
+    if trigger and doc["mode"] != TRIGGER_MODE:
+        raise Rejected(f"{where}: unknown mode")
+    if isinstance(doc, dict) and "trigger_only" in doc and not trigger:
+        raise Rejected(f"{where}: a trigger_only block needs mode trigger-only")
+    if trigger:
+        ingest._object(doc, where, TRIGGER_RECORD_ALLOWED, TRIGGER_RECORD_REQUIRED)
+    else:
+        ingest._object(doc, where, RECORD_ALLOWED, RECORD_REQUIRED)
     bounded(doc, where)
     if doc["schema"] != 1 or isinstance(doc["schema"], bool):
         raise Rejected(f"{where}: unknown schema")
@@ -249,7 +290,8 @@ def check_record(doc, where: str, repo: str) -> dict:
     if not isinstance(doc["timestamp"], str) \
             or not ingest.TIMESTAMP_RE.fullmatch(doc["timestamp"]):
         raise Rejected(f"{where}: bad timestamp")
-    ingest._integer(doc["trials"], f"{where}: trials", 1, ingest.MAX_TRIALS)
+    if not trigger:
+        ingest._integer(doc["trials"], f"{where}: trials", 1, ingest.MAX_TRIALS)
     reasons = doc["reasons"]
     if not isinstance(reasons, list) or not reasons \
             or not all(isinstance(r, str) for r in reasons):
@@ -269,6 +311,16 @@ def check_record(doc, where: str, repo: str) -> dict:
             or ".." in registry["skill_md"].split("/"):
         raise Rejected(f"{where}: registry skill_md is not this skill's "
                        "SKILL.md")
+    found = {"skill": skill, "registry_sha": registry["sha"],
+             "skill_md": registry["skill_md"]}
+
+    if trigger:
+        check_trigger_only(doc["trigger_only"], where)
+        trigger_set = Path(repo) / "evals" / skill / TRIGGER_SET_FILE
+        if trigger_set.is_symlink() or not trigger_set.is_file():
+            raise Rejected(f"{where}: skill has no reviewed trigger eval set "
+                           "under evals/ on the default branch")
+        return found
 
     split = doc["split"]
     ingest._object(split, f"{where}: split",
@@ -291,8 +343,59 @@ def check_record(doc, where: str, repo: str) -> dict:
     if not (Path(repo) / "evals" / skill).is_dir():
         raise Rejected(f"{where}: skill has no evals/ directory on the "
                        "default branch")
-    return {"skill": skill, "registry_sha": registry["sha"],
-            "skill_md": registry["skill_md"]}
+    return found
+
+
+def check_trigger_only(block, where: str) -> None:
+    """Re-verify a trigger-only record's acceptance from its own counts
+    (propose_skill_edit.decide_trigger_only's rule), so a record whose
+    status says accepted while its numbers do not is never applied: the same
+    held-out and should-not-trigger totals on both sides, a held-out
+    pass-rate gain of at least TRIGGER_ONLY_MIN_GAIN, and no fewer
+    should-not-trigger passes. Fixed-text rejections only."""
+    where = f"{where}: trigger_only"
+    ingest._object(block, where, ("min_gain", "original", "best", "gain"),
+                   ("min_gain", "original", "best", "gain"))
+    for side in ("original", "best"):
+        counts = block[side]
+        ingest._object(counts, f"{where}: {side}", TRIGGER_COUNT_KEYS,
+                       TRIGGER_COUNT_KEYS)
+        for key in TRIGGER_COUNT_KEYS:
+            ingest._integer(counts[key], f"{where}: {side}", 0, 10 ** 6)
+        if counts["test_passed"] > counts["test_total"] \
+                or counts["should_not_passed"] > counts["should_not_total"]:
+            raise Rejected(f"{where}: more queries passed than were run")
+    original, best = block["original"], block["best"]
+    if original["test_total"] < 1 or original["test_total"] != best["test_total"] \
+            or original["should_not_total"] != best["should_not_total"]:
+        raise Rejected(f"{where}: the original and the best were not measured "
+                       "on the same queries")
+    total = original["test_total"]
+    gain = (best["test_passed"] - original["test_passed"]) / total
+    if not ingest.is_number(block["gain"]) or isinstance(block["gain"], bool) \
+            or abs(block["gain"] - gain) > 1e-9:
+        raise Rejected(f"{where}: gain disagrees with its counts")
+    if not ingest.is_number(block["min_gain"]) or isinstance(block["min_gain"], bool):
+        raise Rejected(f"{where}: min_gain is not a number")
+    if gain < TRIGGER_ONLY_MIN_GAIN and abs(gain - TRIGGER_ONLY_MIN_GAIN) > 1e-12:
+        raise Rejected(f"{where}: held-out trigger accuracy rose by less than "
+                       "the minimum gain")
+    if best["should_not_passed"] < original["should_not_passed"]:
+        raise Rejected(f"{where}: fewer should-not-trigger queries passed")
+
+
+def is_trigger_record(staged: Path) -> bool:
+    """Whether the staged summary.json is a trigger-only record. No staged
+    record (an `apply` run by hand on a bare patch) is not one; an
+    unreadable one is refused rather than read as either."""
+    path = staged / "summary.json"
+    if not path.exists():
+        return False
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        raise Rejected("the staged record is unreadable") from None
+    return isinstance(doc, dict) and doc.get("mode") == TRIGGER_MODE
 
 
 def check_patch(text: str, where: str, skill_md: str) -> None:
@@ -437,11 +540,20 @@ def _frontmatter(text: str, where: str) -> dict:
     return data
 
 
+def _body(text: str) -> str:
+    """A SKILL.md's text after its frontmatter (`_frontmatter` has already
+    found the closing `---`)."""
+    return text[text.index("\n---\n", 3) + len("\n---\n"):]
+
+
 def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     """Apply the staged patch to a registry checkout at `tree`. Only
     `skill_md` may change, and only its frontmatter's `description` may
     change there (propose_skill_edit.set_description's rule: the name is
-    fixed, the description is the trigger half's, and nothing else moves)."""
+    fixed, the description is the trigger half's, and nothing else moves).
+    For a trigger-only record (skills-evals#662) the body may not change
+    either: only the description loop ran, so the description is all it can
+    have measured."""
     if not SKILL_MD_RE.fullmatch(skill_md) or ".." in skill_md.split("/"):
         raise Rejected("skill_md is not a registry SKILL.md path")
     cursor = tree
@@ -452,7 +564,9 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     target = tree / skill_md
     if not target.is_file():
         raise Rejected(f"{skill_md!r}: not in the registry checkout")
-    before = _frontmatter(target.read_text(encoding="utf-8"), skill_md)
+    trigger = is_trigger_record(staged)
+    before_text = target.read_text(encoding="utf-8")
+    before = _frontmatter(before_text, skill_md)
     patch = str((staged / "skill.patch").resolve())
     for args in (("apply", "--check", patch), ("apply", patch)):
         # Raw git is fine here (#343): the gate's own registry checkout at a recorded sha, never an agent-touched
@@ -462,7 +576,11 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
         if result.returncode != 0:
             raise Rejected("the patch does not apply to the registry at the "
                            "recorded sha")
-    after = _frontmatter(target.read_text(encoding="utf-8"), skill_md)
+    after_text = target.read_text(encoding="utf-8")
+    after = _frontmatter(after_text, skill_md)
+    if trigger and _body(after_text) != _body(before_text):
+        raise Rejected(f"{skill_md!r}: a trigger-only patch changes the body; "
+                       "only the description may change")
     if {k: v for k, v in after.items() if k != "description"} \
             != {k: v for k, v in before.items() if k != "description"} \
             or ("description" in after) != ("description" in before):
@@ -625,6 +743,19 @@ def eval_numbers(record: dict) -> str:
     return "; ".join(parts)
 
 
+def trigger_numbers(record: dict) -> str:
+    """The Eval line's numbers for a trigger-only record. Every value is a
+    validated integer (check_trigger_only), so nothing the model wrote
+    reaches the registry's text. The `a/b` pass counts and the run id are
+    what adam-agentskills' scripts/check_skill_gates.py accepts as RAN."""
+    o, b = record["trigger_only"]["original"], record["trigger_only"]["best"]
+    return (f"held-out trigger queries passed, original -> candidate: "
+            f"{o['test_passed']}/{o['test_total']} -> "
+            f"{b['test_passed']}/{b['test_total']}; should-not-trigger passed: "
+            f"{o['should_not_passed']}/{o['should_not_total']} -> "
+            f"{b['should_not_passed']}/{b['should_not_total']}")
+
+
 def impact_entry(record: dict, plugin: str, run_id: str, versions: tuple,
                  purpose_added: bool, mode: str) -> str:
     stamp = record["timestamp"]
@@ -634,6 +765,21 @@ def impact_entry(record: dict, plugin: str, run_id: str, versions: tuple,
     outcome = ("auto-merges once required checks pass, with no human review "
                "(ADR 0021, Adam's 2026-10-26 decision)." if mode == "auto"
                else "draft pull request; a person merges or closes it.")
+    if record.get("mode") == TRIGGER_MODE:
+        return (f"## {date} — {plugin}/{skill} — edit\n\n"
+                f"- Motivation: skills-evals trigger-only improvement run "
+                f"`{run_id}`: the skill rarely triggers, and skill-creator's "
+                "description loop found a description that passed more "
+                "held-out trigger queries "
+                "([skills-evals#662](https://github.com/Adam-S-Daniel/skills-evals/issues/662)).\n"
+                f"- Change: SKILL.md description rewritten by the trigger-only "
+                f"improvement loop, body unchanged{added}; bundle `{plugin}` "
+                f"{versions[0]} -> {versions[1]}, by skills-evals' "
+                "`routine-improve-gate.yml`.\n"
+                f"- Eval: run `{run_id}`, skill-creator's description loop on "
+                f"`evals/{skill}/{TRIGGER_SET_FILE}` in the eval routine (a "
+                f"local exhibit, not badge input): {trigger_numbers(record)}.\n"
+                f"- Outcome: {outcome}\n")
     return (f"## {date} — {plugin}/{skill} — edit\n\n"
             f"- Motivation: skills-evals improvement run `{run_id}`: train "
             "checks failed, and `scripts/propose_skill_edit.py`'s acceptance "
@@ -845,6 +991,13 @@ FIRE_NOT_ROUTINE_REGISTRY = (f"input 'skill' is not an {REGISTRY_NAME} skill "
                              "(harness/registries.yml), the one registry the "
                              "routine checks out")
 FIRE_BAD_HOLDOUT = "input 'holdout' names no nested fixture of that skill"
+FIRE_TRIGGER_HOLDOUT = "input 'holdout' must be empty in trigger-only mode"
+FIRE_NOT_A_SKILL_NAME = "input 'skill' is not a skill name"
+FIRE_NO_TRIGGER_SET = ("input 'skill' has no committed regular "
+                       "evals/<skill>/trigger-eval-set.json on the default branch")
+FIRE_TRIGGER_SET_UNUSABLE = (
+    "the skill's trigger-eval-set.json is not a reviewed set the trigger-only "
+    "loop accepts (its shape, its per-class minimum, or a split lacking a class)")
 
 
 def _fire_too_few() -> str:
@@ -853,9 +1006,62 @@ def _fire_too_few() -> str:
             "fixtures, the loop's minimum")
 
 
-def fire_check(skill: str, holdout: str) -> None:
+def fire_check_trigger_only(skill: str, holdout: str) -> None:
+    """fire-check for a trigger-only fire (skills-evals#662): no holdout, a
+    committed regular `evals/<skill>/trigger-eval-set.json` that the loop's
+    own loader and `trigger_only_set` accept, and every nested fixture that
+    names a registry naming adam-agentskills. Any number of fixtures, zero
+    included: the loop measures none."""
+    import propose_skill_edit as loop  # noqa: PLC0415 — only fire-check needs it
+    run_eval = loop.run_eval
+    if holdout:
+        raise Rejected(FIRE_TRIGGER_HOLDOUT)
+    if not NAME_RE.fullmatch(skill) or skill in (".", ".."):
+        raise Rejected(FIRE_NOT_A_SKILL_NAME)
+    rel = f"{skill}/{loop.TRIGGER_SET_FILE}"
+    path = loop.EVALS_DIR / skill / loop.TRIGGER_SET_FILE
+    if (loop.EVALS_DIR / skill).is_symlink() or path.is_symlink() \
+            or not path.is_file():
+        raise Rejected(FIRE_NO_TRIGGER_SET)
+    # Committed, as a regular file: git's index entry, read from the
+    # checkout the loop itself reads (the fire job's default branch).
+    try:
+        entry = ingest.git(str(loop.EVALS_DIR), "ls-files", "-s", "-z", "--", rel)
+    except Rejected:
+        raise Rejected(FIRE_NO_TRIGGER_SET) from None
+    entries = entry.split(b"\0")[:-1]
+    if len(entries) != 1 or not entries[0].startswith((b"100644 ", b"100755 ")):
+        raise Rejected(FIRE_NO_TRIGGER_SET)
+    try:
+        loop.trigger_only_set(path)
+    except loop.Refusal:
+        raise Rejected(FIRE_TRIGGER_SET_UNUSABLE) from None
+    registries = run_eval.resolve_registries(None, None, loop.REPO_ROOT)
+    for name in run_eval.nested_fixture_names(loop.EVALS_DIR / skill):
+        try:
+            fixture = run_eval.load_fixture(loop.EVALS_DIR / skill / name)
+        except (OSError, yaml.YAMLError, run_eval.guidance.GuidanceError):
+            raise Rejected(FIRE_NOT_A_SKILL) from None
+        url = fixture.get("registry") if isinstance(fixture, dict) else None
+        if url is None:
+            continue
+        try:
+            found = run_eval.registry_for_url(registries, url) \
+                if isinstance(url, str) else None
+        except ValueError:
+            found = None
+        if not found or found["name"] != REGISTRY_NAME or found["url"] != REGISTRY_URL:
+            raise Rejected(FIRE_NOT_ROUTINE_REGISTRY)
+
+
+def fire_check(skill: str, holdout: str, trigger_only: bool = False) -> None:
     """Refuse a skill or holdout the improvement loop would refuse, as far as
-    the committed fixtures and harness/registries.yml can tell."""
+    the committed fixtures and harness/registries.yml can tell. With
+    `trigger_only`, the trigger-only loop's checks instead
+    (`fire_check_trigger_only`)."""
+    if trigger_only:
+        fire_check_trigger_only(skill, holdout)
+        return
     import propose_skill_edit as loop  # noqa: PLC0415 — only fire-check needs it
     run_eval = loop.run_eval
     try:
@@ -921,10 +1127,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("fire-check")
     p.add_argument("skill")
     p.add_argument("--holdout", default="")
+    p.add_argument("--trigger-only", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "fire-check":
-            fire_check(args.skill, args.holdout)
+            fire_check(args.skill, args.holdout, args.trigger_only)
             return 0
         if args.command == "resolve":
             result = resolve(args.event_name, args.event_path)

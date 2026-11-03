@@ -780,3 +780,50 @@ the skill has its own `hooks/` or `bin/`, or a hook file, manifest or
 settings file of its plugin names a path under `skills/<skill>/`. The
 required `plugin-runtime-approval` check still gates every pull request, so
 anything the gate does hold waits for the owner whatever this decides.
+
+## Trigger-only improve mode addendum (2026-11-03)
+
+Adam, 2026-11-03, on a decision card for
+[skills-evals#662](https://github.com/Adam-S-Daniel/skills-evals/issues/662):
+"Build a trigger-only improve fire": a fire that runs only skill-creator's
+description loop and is accepted when held-out trigger accuracy rises by
+0.15 or more with no drop on should-not-trigger queries, its pull request
+merging like any other loop pull request.
+
+Why: the planner's trigger lane finds skills that almost never trigger
+(usage weight at most `TRIGGER_MAX_WEIGHT`) and, for those with a reviewed
+`evals/<skill>/trigger-eval-set.json`, wanted a description fix. An
+ordinary improve run cannot give one: it stops at "no train headroom"
+before its trigger half whenever the skill already passes its own
+fixtures, and it needs at least three fixtures, which a rarely used skill
+often lacks. So the item sat as "needs routine prompt change" with
+nothing to run it.
+
+What it is:
+
+- Fire mode stays `improve`, with a new dispatch input `trigger_only`
+  (`true` sends `"trigger_only": true` as the payload's last key; the
+  default payload is unchanged). The run title is `Fire eval routine:
+  improve trigger <skill>`, so `improve_outcomes.py` counts it as an
+  improve attempt of that skill: it shares the cooldown, the stop rule,
+  the improve charge and the improve cap, and the planner never plans it
+  beside an ordinary improve fire for the same skill (both would write
+  `eval-improve/<skill>`).
+- `propose_skill_edit.py --trigger-only --trigger-eval-set FILE` needs no
+  fixtures. The set must hold at least `TRIGGER_ONLY_MIN_CLASS` (8)
+  queries of each class, so skill-creator's 0.4 split holds out at least
+  three of each. It runs the loop once and compares `history[0]` (the
+  original description) with the entry the loop picked as best:
+  accepted when the held-out pass rate rose by at least
+  `TRIGGER_ONLY_MIN_GAIN` (0.15) and no fewer should-not-trigger queries
+  pass (train plus held-out). The best is picked on the same held-out
+  queries it is judged on, an optimistic bias the 0.15 margin and the
+  should-not-trigger floor are there to absorb.
+- `routine-improve-gate.yml` takes the same three files. `improve_gate.py`
+  checks a `mode: trigger-only` record against its own key set, re-derives
+  the acceptance from its counts, and refuses a patch that moves anything
+  in SKILL.md but the description.
+- A skill in the lane without a set gets a `needs-trigger-set` issue for
+  the fleet worker; a pull request that adds exactly that one file, valid
+  by the loop's own reader and size floor, merges itself through
+  `fixture-pr-gate.yml` (repo-settings ADR 0018).

@@ -139,7 +139,11 @@ class PickTests(unittest.TestCase):
         # baseline addendum), never in scaffold mode.
         bare = "${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}"
         self.assertIn(bare, doc["run-name"])
-        rendered = doc["run-name"].replace(bare, "")
+        # Likewise ` trigger`, for a trigger-only improve fire (skills-evals#662).
+        trigger = ("${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' "
+                   "&& ' trigger' || '' }}")
+        self.assertIn(trigger, doc["run-name"])
+        rendered = doc["run-name"].replace(bare, "").replace(trigger, "")
         rendered = rendered.replace("${{ inputs.mode }}", "scaffold")
         # A scaffold fire sends no model, so the folded title ends in a space.
         rendered = rendered.replace("${{ inputs.model }}", "")

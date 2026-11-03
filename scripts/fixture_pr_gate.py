@@ -38,6 +38,17 @@ merge base to the head (git plumbing only; nothing from the branch runs):
   fixture), and that change only appends entries for the new directories;
 * at most MAX_FILE_BYTES per file and MAX_TOTAL_BYTES in all.
 
+A TRIGGER SET (skills-evals#662) answers a `needs-trigger-set` issue
+instead. ELIGIBLE then means the whole diff is exactly ONE added regular,
+non-executable file (mode 100644), `evals/<skill>/trigger-eval-set.json`
+for the issue's skill, absent on the base and the merge base, at most
+MAX_FILE_BYTES, that propose_skill_edit.load_trigger_eval_set accepts and
+that, after the loop's own normalization (whitespace collapsed, a repeated
+query dropped), holds at least propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
+queries of each class and leaves both of skill-creator's splits with both
+classes (`trigger_set_problems`). The blob is read with `git cat-file` as
+data and parsed as JSON; nothing from the branch runs.
+
 Output, for $GITHUB_OUTPUT: `lane=`, `eligible=`, `issue=`, `reason=` (fixed
 text, never file content). Exit 0 on any decision; exit 2 on bad input.
 """
@@ -56,6 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import yaml  # noqa: E402
 
 import draft_new_skill  # noqa: E402
+import propose_skill_edit  # noqa: E402
 
 AUTHOR = "Adam-S-Daniel"
 LABEL = "agent-authored"
@@ -66,7 +78,10 @@ MAX_TOTAL_BYTES = 5_000_000
 _REF = re.compile(r"\b(?:refs|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+"
                   r"(?:(?:https://github\.com/)?Adam-S-Daniel/skills-evals(?:/issues/|#)|#)"
                   r"([1-9][0-9]{0,6})\b", re.I)
-_NEED = re.compile(r"<!-- skills-evals:(needs-fixtures|needs-harder-fixtures):(\S+) -->")
+_NEED = re.compile(r"<!-- skills-evals:(needs-fixtures|needs-harder-fixtures|needs-trigger-set)"
+                   r":(\S+) -->")
+TRIGGER_NEED = "needs-trigger-set"
+_SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
@@ -129,11 +144,76 @@ def _appended(before: str, after: str, allowed: set, check) -> set:
     return paths
 
 
+def _changes(repo: Path, merge_base: str, source: str) -> list:
+    """(new mode, new blob sha, status, path) per change from `merge_base`
+    to `source`, from `git diff --raw`."""
+    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-abbrev", merge_base, source)
+    fields = raw.split(b"\0")
+    changes = []
+    for i in range(0, len(fields) - 1, 2):
+        meta, path = fields[i].decode(), fields[i + 1].decode("utf-8", "replace")
+        parts = meta.lstrip(":").split()
+        changes.append((parts[1], parts[3], parts[4], path))
+    return changes
+
+
+def trigger_set_ok(data: bytes) -> bool:
+    """Whether `data` is a trigger set the trigger-only loop would take:
+    propose_skill_edit.load_trigger_eval_set's shape, then, deduplicated by
+    whitespace-collapsed query as the loop does, at least
+    TRIGGER_ONLY_MIN_CLASS queries of each class and no split problem."""
+    try:
+        items = propose_skill_edit.parse_trigger_eval_set(
+            data, propose_skill_edit.TRIGGER_SET_FILE)
+    except propose_skill_edit.Refusal:
+        return False
+    clean, seen = [], set()
+    for item in items:
+        query = " ".join(item["query"].split())
+        if query not in seen:
+            seen.add(query)
+            clean.append({"query": query, "should_trigger": item["should_trigger"]})
+    least = propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
+    if sum(i["should_trigger"] for i in clean) < least \
+            or sum(not i["should_trigger"] for i in clean) < least:
+        return False
+    return not propose_skill_edit.trigger_set_problems(
+        propose_skill_edit.trigger_split_counts(clean))
+
+
+def classify_trigger_set(repo: Path, base: str, source: str, skill: str, out: dict) -> dict:
+    """The needs-trigger-set half of `classify` (module docstring, A
+    TRIGGER SET): fixed-text reasons, never file content."""
+    def refuse(why: str) -> dict:
+        return {**out, "reason": why}
+
+    if not _SKILL.fullmatch(skill):
+        return refuse("the issue names no valid skill")
+    path = f"evals/{skill}/{propose_skill_edit.TRIGGER_SET_FILE}"
+    merge_base = _git(repo, "merge-base", base, source).decode().strip()
+    changes = _changes(repo, merge_base, source)
+    if len(changes) != 1:
+        return refuse("a trigger-set pull request must change exactly one file")
+    mode, sha, status, changed = changes[0]
+    if status != "A" or mode != "100644" or changed != path:
+        return refuse("the change is not the skill's new trigger set as a regular file")
+    if _git(repo, "ls-tree", merge_base, "--", path).strip() \
+            or _git(repo, "ls-tree", base, "--", path).strip():
+        return refuse("the trigger set already exists on the base")
+    if int(_git(repo, "cat-file", "-s", sha).decode().strip()) > MAX_FILE_BYTES:
+        return refuse("a file is over the size cap")
+    if not trigger_set_ok(_git(repo, "cat-file", "blob", sha)):
+        return refuse("the trigger set is not a valid set with enough queries of each class")
+    return {**out, "eligible": True, "reason": f"adds the trigger set for {skill}"}
+
+
 def classify(repo: Path, base: str, source: str, pr: dict, issues: list) -> dict:
     lane, number, kind, key, reason = need_of(pr, issues)
     out = {"lane": lane, "eligible": False, "issue": number or "", "reason": reason}
     if not lane:
         return out
+    if kind == TRIGGER_NEED:
+        return classify_trigger_set(repo, base, source, key, out)
 
     def refuse(why: str) -> dict:
         return {**out, "reason": why}
@@ -142,13 +222,7 @@ def classify(repo: Path, base: str, source: str, pr: dict, issues: list) -> dict
     subject = key.split("/", 1)[1] if section else key
     prefix = f"evals/guidance/{subject}/" if section else f"evals/{subject}/"
     merge_base = _git(repo, "merge-base", base, source).decode().strip()
-    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-abbrev", merge_base, source)
-    fields = raw.split(b"\0")
-    changes = []
-    for i in range(0, len(fields) - 1, 2):
-        meta, path = fields[i].decode(), fields[i + 1].decode("utf-8", "replace")
-        parts = meta.lstrip(":").split()
-        changes.append((parts[1], parts[3], parts[4], path))  # new mode, new sha, status, path
+    changes = _changes(repo, merge_base, source)
     new_dirs, others, total = set(), {}, 0
     for mode, sha, status, path in changes:
         if path in ("evals/scheduled.yml", "evals/unscheduled.yml") and status == "M":

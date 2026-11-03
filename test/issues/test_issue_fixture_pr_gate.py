@@ -176,6 +176,92 @@ class FixturePrGateTests(unittest.TestCase):
                          ["lane=true", "eligible=true", "issue=42"])
 
 
+def trigger_set(positive=10, negative=10, **extra):
+    items = [{"query": f"Please record why we chose option {i}", "should_trigger": True}
+             for i in range(positive)]
+    items += [{"query": f"Summarize meeting notes number {i}", "should_trigger": False}
+              for i in range(negative)]
+    return json.dumps(items, indent=2) + "\n"
+
+
+SET_PATH = "evals/writing-adrs/trigger-eval-set.json"
+
+
+class TriggerSetGateTests(unittest.TestCase):
+    """skills-evals#662: a needs-trigger-set issue is answered by one new
+    evals/<skill>/trigger-eval-set.json and nothing else."""
+
+    # The same scratch repository as FixturePrGateTests, without its tests.
+    setUp, tearDown = FixturePrGateTests.setUp, FixturePrGateTests.tearDown
+    write, commit, judge = FixturePrGateTests.write, FixturePrGateTests.commit, \
+        FixturePrGateTests.judge
+    add_skill_fixture = FixturePrGateTests.add_skill_fixture
+
+    def judge_set(self, issues=None):
+        return self.judge(issues=issues or [issue(kind="needs-trigger-set")])
+
+    def test_one_valid_new_trigger_set_is_eligible(self):
+        self.write(SET_PATH, trigger_set())
+        result = self.judge_set()
+        self.assertEqual((result["lane"], result["eligible"], result["issue"]), (True, True, 42))
+        self.assertEqual(result["reason"], "adds the trigger set for writing-adrs")
+        # The repository's own example set passes the same check.
+        self.assertTrue(gate.trigger_set_ok(
+            (ROOT / SET_PATH).read_bytes()))
+
+    def test_anything_else_is_not_eligible(self):
+        minimum = gate.propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
+        cases = {
+            "a second file": lambda: (self.write(SET_PATH, trigger_set()),
+                                      self.write("evals/writing-adrs/notes.md", "a\n")),
+            "bad JSON": lambda: self.write(SET_PATH, "[{"),
+            "not the shape": lambda: self.write(SET_PATH, json.dumps(
+                [{"query": "x", "should_trigger": "true"}] * 20)),
+            "one class": lambda: self.write(SET_PATH, trigger_set(negative=0)),
+            "too small": lambda: self.write(SET_PATH, trigger_set(minimum - 1, minimum)),
+            # Duplicates count once, as the loop dedupes them.
+            "duplicates": lambda: self.write(SET_PATH, json.dumps(
+                [{"query": "Record why", "should_trigger": True}] * minimum
+                + [{"query": f"Other {i}", "should_trigger": False}
+                   for i in range(minimum)])),
+            "wrong skill": lambda: self.write("evals/other-skill/trigger-eval-set.json",
+                                              trigger_set()),
+            "wrong name": lambda: self.write("evals/writing-adrs/triggers.json",
+                                             trigger_set()),
+            "a fixture instead": lambda: self.add_skill_fixture(),
+        }
+        for name, change in cases.items():
+            with self.subTest(case=name):
+                git(self.repo, "checkout", "-q", "-B", "pr", "main")
+                change()
+                result = self.judge_set()
+                self.assertTrue(result["lane"])
+                self.assertFalse(result["eligible"], name)
+
+    def test_an_executable_set_is_not_eligible(self):
+        self.write(SET_PATH, trigger_set())
+        (self.repo / SET_PATH).chmod(0o755)
+        self.assertFalse(self.judge_set()["eligible"])
+
+    def test_an_existing_set_is_not_eligible(self):
+        git(self.repo, "checkout", "-q", "main")
+        self.write(SET_PATH, trigger_set())
+        self.commit("existing set")
+        git(self.repo, "checkout", "-q", "-B", "pr", "main")
+        self.write(SET_PATH, trigger_set(12, 12))
+        self.assertFalse(self.judge_set()["eligible"])
+        # Added on the base after the branch point: also refused.
+        git(self.repo, "checkout", "-q", "-B", "pr2", "main~1")
+        self.write(SET_PATH, trigger_set())
+        self.commit("change")
+        self.assertFalse(gate.classify(self.repo, "main", "pr2", pr(),
+                                       [issue(kind="needs-trigger-set")])["eligible"])
+
+    def test_a_fixture_need_issue_does_not_admit_a_trigger_set(self):
+        self.write(SET_PATH, trigger_set())
+        self.assertFalse(self.judge(issues=[issue()])["eligible"])
+
+
 class FixturePrWorkflowTests(unittest.TestCase):
     def load(self, name):
         return yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))

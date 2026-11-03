@@ -14,7 +14,11 @@ name: Weekly routine evals
 #   decision 4 addendum): no human in the loop. So is guidance-improve mode
 #   (ADR 0005, "Routine guidance improve mode addendum"): an eligible
 #   _agent-guidance section is an improve-band fire, one at a time, sent
-#   `trials=3` like an improve fire.
+#   `trials=3` like an improve fire. So is the trigger lane
+#   (skills-evals#662): a rarely used skill with a reviewed
+#   evals/<skill>/trigger-eval-set.json is an improve fire sent
+#   `trigger_only=true` and no holdout, which runs only skill-creator's
+#   description loop; one with no set is a `needs-trigger-set` work item.
 # * The plan job reads the whole results branch (ingested runs, the usage
 #   census) and the three public registries as data, computes the
 #   retirement verdicts as scripts/compute_gates.py does, and reads the
@@ -260,20 +264,24 @@ jobs:
           retention-days: 30
           if-no-files-found: error
       # Issue-routed work items for the work-issues job: lost fires
-      # (fixture-broken cells, routine outages) and fixture needs
-      # (needs-fixtures, needs-harder-fixtures, #659), plus the skills and
-      # sections whose headroom the plan measured, the only ones whose
-      # fixture-need issue may close. Public by construction: a private cell
-      # enters no band, an outage names no fixture, and a fixture need names
-      # only an adam-agentskills skill or a guidance section.
+      # (fixture-broken cells, routine outages), fixture needs
+      # (needs-fixtures, needs-harder-fixtures, #659) and trigger sets to
+      # write (needs-trigger-set, #662), plus the skills and sections whose
+      # headroom the plan measured and the skills its trigger lane judged
+      # (`triggers`), the only ones whose issue may close. Public by
+      # construction: a private cell enters no band, an outage names no
+      # fixture, a fixture need names only an adam-agentskills skill or a
+      # guidance section, and the trigger lane never judges a private skill.
       - name: Extract the issue-routed work items
         run: |
           set -euo pipefail
           jq '{routine_down: (.routine_down == true),
                subjects: {skills: [(.skills // {}) | to_entries[] | select(.value.headroom != null) | .key],
-                          guidance: [(.guidance // {}) | to_entries[] | select(.value.headroom != null) | .key]},
+                          guidance: [(.guidance // {}) | to_entries[] | select(.value.headroom != null) | .key],
+                          triggers: [(.triggers // {}) | keys[]]},
                work: [.work[] | select(.kind == "fixture-broken" or .kind == "routine-outage"
-                                       or .kind == "needs-fixtures" or .kind == "needs-harder-fixtures")]}' \
+                                       or .kind == "needs-fixtures" or .kind == "needs-harder-fixtures"
+                                       or .kind == "needs-trigger-set")]}' \
             "$RUNNER_TEMP/plan.json" > "$RUNNER_TEMP/work-items.json"
       - name: Upload the issue-routed work items
         uses: actions/upload-artifact@v7.0.2
@@ -294,8 +302,8 @@ jobs:
   # LOST FIRES (Adam, 2026-11-03: "addressed so in the future it won't
   # require special detection and intervention"): one issue per
   # fixture-broken cell and routine outage the plan lists, and one
-  # `agent-ready` issue per fixture need (#659), closed when the plan stops
-  # listing it (scripts/work_item_issues.py). The planner has
+  # `agent-ready` issue per fixture need (#659) or trigger set to write
+  # (#662), closed when the plan stops listing it (scripts/work_item_issues.py). The planner has
   # already re-fired a lost fire once, so an issue means a second loss.
   work-issues:
     needs: plan
@@ -437,6 +445,7 @@ jobs:
           SKILL: ${{ matrix.skill }}
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
+          TRIGGER_ONLY: ${{ matrix.trigger_only }}
         run: python3 scripts/plan_week.py validate-fire
       # A leg whose fixture was unscheduled after the plan exits 0 with
       # fire=false and skips the rest. A cap still full when the sweep's
@@ -461,6 +470,7 @@ jobs:
           SKILL: ${{ matrix.skill }}
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
+          TRIGGER_ONLY: ${{ matrix.trigger_only }}
         run: |
           set -euo pipefail
           case "$MODE" in
@@ -478,8 +488,17 @@ jobs:
                       --raw-field "model=$MODEL" --raw-field "arms=$ARMS"
                       --raw-field "trials=$trials") ;;
             improve)
-              fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
-                      --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;
+              # A trigger-only fire (the trigger lane, #662) sends no holdout;
+              # validate-fire refused one that carried any.
+              if [ "${TRIGGER_ONLY:-}" = "true" ]; then
+                fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
+                        --raw-field holdout= --raw-field arms=both --raw-field trials=3
+                        --raw-field trigger_only=true)
+              else
+                fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
+                        --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3
+                        --raw-field trigger_only=false)
+              fi ;;
             guidance-improve)
               fields=(--raw-field mode=guidance-improve --raw-field "section=$SECTION"
                       --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3) ;;
