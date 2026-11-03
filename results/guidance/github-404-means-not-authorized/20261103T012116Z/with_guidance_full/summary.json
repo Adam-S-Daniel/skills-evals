@@ -1,0 +1,276 @@
+{
+  "arm": "with_guidance_full",
+  "timestamp": "20261103T012116Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0795208,
+    "num_turns": 5,
+    "duration_ms": 15928,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 21218,
+      "cache_read_input_tokens": 140958,
+      "output_tokens": 1236,
+      "output_tokens_details": {
+        "thinking_tokens": 60
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 21218
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 343,
+          "cache_read_input_tokens": 33048,
+          "cache_creation_input_tokens": 616,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 616,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "repository-probed",
+      "passed": true,
+      "detail": ".gh/calls.log matches"
+    },
+    {
+      "id": "access-named-not-deletion",
+      "passed": true,
+      "detail": "STATUS.md matches"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 1236,
+      "cache_read_input_tokens": 140958,
+      "cache_creation_input_tokens": 21218,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "github-404-means-not-authorized",
+  "mode": "full",
+  "bytes": 25562,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v6784347f, 25562 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "PXWKTJXN-8864"
+  },
+  "fixture_name": "private-repo-404",
+  "guidance_digests": {
+    "section": "28a18b7cf1e04e7e48f740b8fa1ba552f93ba0f322e9b84073ad901ac459f305",
+    "rest": "d9f0724c31a9ec00cfe840299fa95ea86b925c46d686d2665d04cb1d3a439387",
+    "section_payload": "c7cac030eb5a8384bb572eb219d90f6d94fbc98da9ffcd756c1ebab167c63e91"
+  },
+  "fixture_digest": "bed4864bca3d1695cc51d1a0154e66ccec7242b8482d419f3f32046f8b225e5d",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 25427,
+        "sha256": "52e3bd554fbdb272a42e629fe552b076d671f7193be2a5e806b4f1bc9181ab28"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41557705869",
+    "session_id": null,
+    "harness_commit": "beb7cbb47bcce8cb6ac946bbd162e354ae2ed61d",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T01:21:16Z",
+    "ended_at": "2026-11-03T01:22:21Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3265132,
+      "agent_usd": 0.2404682,
+      "judge_usd": 0,
+      "guard_usd": 0.086045,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0744669,
+      "calls_with_cost": 8,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T01:21:45Z",
+      "ended_at": "2026-11-03T01:22:05Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-03T01:21:45Z",
+          "ended_at": "2026-11-03T01:21:48Z",
+          "duration_ms": 2536,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T01:21:48Z",
+          "ended_at": "2026-11-03T01:22:05Z",
+          "duration_ms": 16808,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 16808,
+        "num_turns": 5,
+        "cost_usd": 0.0795208,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 1236,
+            "cache_read_input_tokens": 140958,
+            "cache_creation_input_tokens": 21218,
+            "cost_usd": 0.0795208
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 21218,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 2536,
+        "num_turns": 1,
+        "cost_usd": 0.033965,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8385,
+            "cache_creation_input_tokens": 13197,
+            "cost_usd": 0.033965
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13197,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
