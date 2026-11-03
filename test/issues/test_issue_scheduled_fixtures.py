@@ -372,7 +372,8 @@ class TestScheduledFixtures(unittest.TestCase):
                     "roster": {"contents": "read", "id-token": "write", "issues": "write"},
                     "disarm": {"contents": "read", "pull-requests": "write"},
                     "roster-pr": {"contents": "read", "pull-requests": "write", "issues": "write"},
-                    "roster-wait": {"contents": "read", "pull-requests": "write"}}
+                    "roster-wait": {"contents": "read", "pull-requests": "write"},
+                    "failure-watch": {"issues": "write"}}
         self.assertEqual({name: job["permissions"] for name, job in workflow["jobs"].items()}, expected)
         secrets = []
         for name, job in workflow["jobs"].items():

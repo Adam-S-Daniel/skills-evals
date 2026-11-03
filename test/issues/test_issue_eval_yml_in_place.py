@@ -208,7 +208,7 @@ def simulate(jobs, *, count, roster_only=False, plan_result="success",
         else:
             raise AssertionError("cycle in needs")
         pending.remove(name)
-        ctx = {"functions": {"cancelled": lambda: False},
+        ctx = {"functions": {"cancelled": lambda: False, "always": lambda: True},
                "inputs.roster_only": roster_only, "github.ref": ref}
         for need in needs:
             ctx[f"needs.{need}.result"] = results[need]
@@ -218,7 +218,9 @@ def simulate(jobs, *, count, roster_only=False, plan_result="success",
         results[name] = "success" if ran else "skipped"
         if name == "roster-wait":
             outputs[name] = {"cleared": "true" if ran else ""}
-    return {name for name, result in results.items() if result == "success"} - {"plan"}
+    # `failure-watch` (skills-evals#664) runs on every main run, to report
+    # results; it mints nothing, so it is left out of "which jobs run".
+    return {name for name, result in results.items() if result == "success"} - {"plan", "failure-watch"}
 
 
 class WorkflowGatesTests(unittest.TestCase):
@@ -269,7 +271,7 @@ class WorkflowGatesTests(unittest.TestCase):
                 self.assertEqual(ran, {"roster", "disarm", "roster-pr"})
 
     def test_a_fixture_left_runs_the_whole_graph_as_before(self):
-        self.assertEqual(simulate(self.jobs, count="2"), set(self.jobs) - {"plan"})
+        self.assertEqual(simulate(self.jobs, count="2"), set(self.jobs) - {"plan", "failure-watch"})
         # Off `main`: no roster PR jobs, but the eval and publish still run.
         self.assertEqual(simulate(self.jobs, count="1", ref="refs/heads/other"),
                          {"roster", "eval", "publish"})
