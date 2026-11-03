@@ -31,6 +31,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PLACEHOLDER_ID = "none"
 HB_FIXED_WINDOW = timedelta(days=7)
+EVALS_URL = "https://github.com/Adam-S-Daniel/skills-evals"  # fixture_queue.py numbers every issue and PR in this repo
+FQ_KINDS = {"needs-fixtures": "new fixtures", "needs-harder-fixtures": "harder fixtures", "needs-trigger-set": "trigger set"}
 
 
 def iso(dt):
@@ -861,6 +863,47 @@ def half_built(dump, now):
                      "closed_at": None}], summary
 
 
+def fixture_queue(explorer, now):
+    """(request rows, summary rows) for the Self-improvement loop tab: each fixture request followed to its PRs and fixtures."""
+    queue = explorer.get("fixture_queue") if isinstance(explorer, dict) else None
+    queue = queue if isinstance(queue, dict) else None
+    q = queue or {}
+    fixtures = q.get("fixtures") or []
+    rows = []
+    for req in q.get("requests") or []:
+        mine = [f for f in fixtures if str(f.get("request")) == str(req.get("issue"))]
+        prs = req.get("prs") or []
+        latest = max(prs, key=lambda p: p.get("number") or 0) if prs else None
+        opened = parse(req.get("opened_at"))
+        is_open = req.get("state") == "open"
+        rows.append({
+            "key": str(req.get("issue")), "issue_url": f"{EVALS_URL}/issues/{req.get('issue')}",
+            "kind": FQ_KINDS.get(req.get("kind"), req.get("kind") or "unknown"), "subject": req.get("subject"),
+            "state": req.get("state"), "opened": opened.date().isoformat() if opened else None,
+            "age_days": (now - opened).total_seconds() / 86400 if opened and is_open else None,
+            "closed_at": req.get("closed_at"), "prs": len(prs),
+            "pr_url": f"{EVALS_URL}/pull/{latest['number']}" if latest else "",
+            "merged": any(p.get("state") == "merged" or p.get("merged_at") for p in prs),
+            "fixtures": len(mine), "real_work": sum(1 for f in mine if f.get("origin_kind") == "real-work"),
+            "runs": sum(f.get("runs") or 0 for f in mine), "cost_usd": sum(f.get("cost_usd") or 0 for f in mine),
+            "opened_at": req.get("opened_at")})
+    # Open requests first, oldest first within each group.
+    rows.sort(key=lambda r: (r["state"] != "open", r["opened_at"] or ""))
+    for r in rows:
+        del r["opened_at"]
+    findings = q.get("findings") or []
+    totals = q.get("totals") or {}
+    summary = [{"key": "all", **{k: totals.get(k) for k in (
+        "requests_open", "requests_closed", "prs_merged", "fixtures_real_work", "fixtures_invented",
+        "fixture_runs", "cost_points", "cost_usd")},
+        "findings": len(findings), "findings_high": sum(1 for f in findings if f.get("severity") == "high"),
+        "status": "not-reported" if queue is None else "attention" if findings else "ok",
+        "generated_at": q.get("generated_at")}]
+    return rows or [{"key": PLACEHOLDER_ID, "issue_url": None, "kind": None, "subject": None, "state": None, "opened": None,
+                     "age_days": None, "closed_at": None, "prs": None, "pr_url": "", "merged": None, "fixtures": None,
+                     "real_work": None, "runs": None, "cost_usd": None}], summary
+
+
 # --- main ----------------------------------------------------------------------
 
 def build(results, inputs, config, now):
@@ -892,6 +935,7 @@ def build(results, inputs, config, now):
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now)
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
+    out["fixture_requests"], out["fixture_queue_summary"] = fixture_queue(explorer, now)
     if os.path.exists(loop_cfg):
         (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
          out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
