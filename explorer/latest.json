@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T22:39:35Z",
+  "generated_at": "2026-11-03T22:42:04Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T22:38:28Z",
+ "generated_at": "2026-11-03T22:40:50Z",
  "guidance": {
   "removed": [
    {
@@ -10094,7 +10094,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T22:35:05Z",
+ "newest_run": "2026-11-03T22:37:59Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -13875,7 +13875,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
@@ -13886,6 +13886,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:37:59Z",
+     "cli_version": "2.1.317",
+     "fixture": "keyword-lookalikes",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T223348Z-b5e925/fan-out-triage/20261103T223759Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1680147,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 7,
+      "cost_usd": 0.1272477,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:07:34Z",
      "cli_version": "2.1.317",
@@ -22111,7 +22132,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
-  "results_commit": "fe1be4bf4a8a4432cb34b28bcb5cb2e2973a5844"
+  "results_commit": "dd1387ba87ae796b84c5ca87861b30e1481e5989"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
