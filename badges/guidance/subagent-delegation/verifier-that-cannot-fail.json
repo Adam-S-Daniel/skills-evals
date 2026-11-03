@@ -1,6 +1,6 @@
 {
   "color": "green",
   "label": "guidance eval: subagent-delegation/verifier-that-cannot-fail",
-  "message": "with 2/2 vs without 1.5/2 \u00b7 n=4 \u00b7 2026-11-03",
+  "message": "with 2/2 vs without 1.6/2 \u00b7 n=5 \u00b7 2026-11-03",
   "schemaVersion": 1
 }
