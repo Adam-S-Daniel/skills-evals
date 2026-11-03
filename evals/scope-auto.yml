@@ -10,4 +10,39 @@
 # row whose reason starts "Auto scope ("; a guidance fixture has none.
 # test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
 # is also scheduled. Edit by script, not by hand.
-rows: []
+rows:
+  - path: evals/windows-elevation-from-wsl
+    rule: "zero-use"
+    since: "2026-11-03"
+    fixture_digest: "9ec62ae0821446d59a1636f9ab394d993837fb30b4629e3b8c4da92ca112829d"
+    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Local N=3 judged baseline 2026-10-05 (Claude Code 2.1.289, skills-evals c1bf71c), 0 errors: objective with 7/7 vs without 6/7, ranges 7-7 vs 6-6; judge 8.6 vs 7.53, ranges 8.4-8.8 vs 7.4-7.6."
+  - path: evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure
+    rule: "ceiling"
+    since: "2026-11-03"
+    fixture_digest: "d43eebccb684a6f01157e3f2f2da81859c287dd009e0ed25596e23abe06d6aa3"
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
+  - path: evals/guidance/subagent-delegation/verifier-that-cannot-fail
+    rule: "ceiling"
+    since: "2026-11-03"
+    fixture_digest: "f24eea38ea433be35fc21f226b413441dfe2b3b64ec9bd0488303592c9121af1"
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
+  - path: evals/pdf-ocr-audit
+    rule: "zero-use"
+    since: "2026-11-03"
+    fixture_digest: "f7289d44b712798af677f11cabafd0a5e5e2d44365048477757ef1e4336f1b78"
+    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#83)."
+  - path: evals/tool-powershell/preview-before-delete
+    rule: "zero-use"
+    since: "2026-11-03"
+    fixture_digest: "70b70c7a707cd1d4ad74703836a592637834ab3dc669039b69684fd3d5dc0877"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/protected-path-cleanup
+    rule: "zero-use"
+    since: "2026-11-03"
+    fixture_digest: "3df2e870831f1be78a6eed9fcc4d97589feea6725a6a9db2248449b50d51a3bb"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/silent-exit-one
+    rule: "zero-use"
+    since: "2026-11-03"
+    fixture_digest: "2c7cd149048598cfc9a7824f661e2b451a0d3d58cfb73952a35c99a4a4ca438d"
+    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
