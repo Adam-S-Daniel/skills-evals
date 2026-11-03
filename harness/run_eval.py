@@ -6850,6 +6850,53 @@ def _aggregate_arm(arm_name: str, item: dict, args: argparse.Namespace,
     return written, stats
 
 
+# ---------------------------------------------------------------------------
+# Errored arms in the log. "Runner-level error in arm(s): X" named the arm
+# and nothing else, and a cloud reader cannot download the diagnostics
+# artifact, so each errored trial also prints its CLASS: the summary's error
+# type and the API's HTTP status when the detail carries one. Never the
+# detail itself: it can hold API or stderr text.
+ERROR_TYPE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+_API_STATUS_RE = re.compile(r"\bAPI Error: ([1-5][0-9]{2})\b")
+#: HTTP statuses an immediate retry can clear: timeout, rate limit, server
+#: errors and the API's "overloaded".
+TRANSIENT_STATUSES = frozenset({408, 429, 500, 502, 503, 504, 529})
+#: Error types whose run may be API-side: the CLI reported an error result,
+#: or exited non-zero.
+API_ERROR_TYPES = ("agent_error", "nonzero_exit")
+
+
+def error_class(error: dict | None) -> dict | None:
+    """`{"type", "status"}` of one trial's error, content-free;
+    None for no error. An unexpected type string reads as `unknown`."""
+    if not error:
+        return None
+    raw_type = error.get("type")
+    kind = (raw_type if isinstance(raw_type, str) and ERROR_TYPE_RE.fullmatch(raw_type)
+            else "unknown")
+    detail = error.get("detail")
+    match = _API_STATUS_RE.search(detail) if isinstance(detail, str) else None
+    return {"type": kind, "status": int(match.group(1)) if match else None}
+
+
+def describe_error_class(cls: dict) -> str:
+    text = cls["type"]
+    if cls["status"] is not None:
+        text += f", HTTP {cls['status']}"
+    return text
+
+
+def is_transient(error: dict | None) -> bool:
+    """A timeout, or an API-side error with a retryable HTTP status."""
+    cls = error_class(error)
+    if cls is None:
+        return False
+    if cls["type"] == "timeout":
+        return True
+    return cls["type"] in API_ERROR_TYPES and cls["status"] in TRANSIENT_STATUSES
+
+
+
 def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                     args: argparse.Namespace, timestamp: str,
                     selection: tuple | None, *,
@@ -6876,16 +6923,27 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
     arm_dir = _unit_dir(args.results_dir, fixture["skill"], timestamp,
                         item["name"]) / arm_name
     label = {"fixture": item["name"]} if item["name"] else {}
+
+    def trial(out_dir: Path, extra: dict) -> dict:
+        result = _run_arm(arm_name, fixture, item["seed"], registries, args,
+                          timestamp, selection, out_dir=out_dir, extra=extra,
+                          plan=plan, hold=hold)
+        # --retry-transient (eval.yml): one more attempt for a timeout or a
+        # retryable API status, in a clean trial directory, so the summary
+        # on disk is the retry's alone. An errored trial queued no judge call.
+        if getattr(args, "retry_transient", False) and is_transient(result.get("error")):
+            print(f"retrying {item['name'] + '/' if item['name'] else ''}{arm_name} "
+                  f"once after {describe_error_class(error_class(result['error']))}")
+            shutil.rmtree(out_dir, ignore_errors=True)
+            result = _run_arm(arm_name, fixture, item["seed"], registries, args,
+                              timestamp, selection, out_dir=out_dir, extra=extra,
+                              plan=plan, hold=hold)
+        return result
+
     if args.trials == 1:
-        results = [_run_arm(arm_name, fixture, item["seed"], registries,
-                            args, timestamp, selection, out_dir=arm_dir,
-                            extra={**label, "n": 1}, plan=plan, hold=hold)]
+        results = [trial(arm_dir, {**label, "n": 1})]
     else:
-        results = [_run_arm(arm_name, fixture, item["seed"], registries,
-                            args, timestamp, selection,
-                            out_dir=arm_dir / f"{TRIAL_DIR_PREFIX}{index}",
-                            extra={**label, "trial": index}, plan=plan,
-                            hold=hold)
+        results = [trial(arm_dir / f"{TRIAL_DIR_PREFIX}{index}", {**label, "trial": index})
                    for index in range(1, args.trials + 1)]
     written, stats = _aggregate_arm(arm_name, item, args, timestamp)
     return {"arm": arm_name, "models_used": _union(written, "models_used"),
@@ -7834,6 +7892,10 @@ def _run_guidance(args: argparse.Namespace, fixture: dict,
     errored_arms = [s["arm"] for s in arm_summaries if s["error"]]
     if errored_arms:
         print(f"Runner-level error in arm(s): {', '.join(errored_arms)}")
+        for arm_summary in arm_summaries:
+            cls = error_class(arm_summary["error"])
+            if cls is not None:
+                print(f"  {arm_summary['arm']}: {describe_error_class(cls)}")
         return 2
     return 0
 
@@ -8195,6 +8257,10 @@ def main() -> int:
                              "`harness` block; the judge does not take it")
     parser.add_argument("--no-judge", action="store_true",
                         help="skip judge scoring (wins over --judge)")
+    parser.add_argument("--retry-transient", action="store_true",
+                        help="run an arm's trial once more when it errored "
+                             "with a timeout or a retryable API status (408, "
+                             "429, 5xx, 529); eval.yml passes it")
     parser.add_argument("--judge", default="auto", choices=("auto", "always"),
                         help="auto (default): a with/without pair is judged "
                              "only when the objective result does not already "
@@ -8756,6 +8822,7 @@ def main() -> int:
     # always was: an arm whose mean is over the survivors is not the
     # measurement that was asked for.
     errored_arms = []
+    error_lines = []
     for item, arms in outcomes:
         for arm in arms:
             stats = arm["stats"]
@@ -8763,6 +8830,11 @@ def main() -> int:
                 continue
             label = (f"{item['name']}/{arm['arm']}" if item["name"]
                      else arm["arm"])
+            for index, result in enumerate(arm["results"], start=1):
+                cls = error_class(result.get("error"))
+                if cls is not None:
+                    where = f"{label} trial {index}" if args.trials > 1 else label
+                    error_lines.append(f"  {where}: {describe_error_class(cls)}")
             if args.trials > 1:
                 label += f" ({stats['errors']} of {stats['n']} trials)"
             errored_arms.append(label)
@@ -8771,6 +8843,8 @@ def main() -> int:
               "calls after it were not started (see usage.budget_stop)")
     if errored_arms:
         print(f"Runner-level error in arm(s): {', '.join(errored_arms)}")
+        for line in error_lines:
+            print(line)
         return 2
     return 0
 

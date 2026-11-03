@@ -1928,12 +1928,16 @@ jobs:
           # leg again, refused every in-place fixture before the mint
           # (skills-evals#587), so only fixtures that ARE isolation pairs
           # reach here; nothing is downgraded to isolation.
+          # `--retry-transient`: one more attempt for an arm trial that hit a
+          # timeout or a retryable API status; an errored arm prints its
+          # error class (type and HTTP status), never its detail.
           python3 harness/run_eval.py "$fixture" \
             --arm both \
             --trials "$trials" \
             "${model_args[@]}" \
             --pairing isolation \
             --permission-mode bypassPermissions \
+            --retry-transient \
             --run-billing api --run-runner actions --run-location cloud \
             --guidance ../_agent-guidance \
             --registry adam-agentskills=../adam-agentskills \
