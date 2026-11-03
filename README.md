@@ -159,6 +159,11 @@ evals/
     shifted-draft/
     single-file/
     three-files/
+  tool-powershell/         # A/B eval drafted from a lesson: 4 fixtures
+    preview-before-delete/
+    protected-path-cleanup/
+    silent-exit-one/
+    whatever-works-pressure/
   red-ci-adamdaniel-ai/    # A/B eval drafted from a lesson: 4 fixtures
     concurrency-cancel/
     paths-required/
