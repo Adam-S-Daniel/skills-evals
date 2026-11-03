@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MhDx9Pzkdywf2thadaqNAo",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -n -B2 -A4 concurrency .github/workflows/*",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MhDx9Pzkdywf2thadaqNAo",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nls: cannot access '.github/workflows': No such file or directory\ngrep: .github/workflows/*: No such file or directory",
+      "output_chars": 258,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UjpCb52kqUzxtGD42exK3b",
+      "name": "Bash",
+      "input": "git ls-files | head -30; find . -path ./node_modules -prune -o \\( -name '*.yml' -o -name '*.yaml' \\) -print | grep -i -E 'workflow|github' | head",
+      "input_chars": 145,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UjpCb52kqUzxtGD42exK3b",
+      "is_error": false,
+      "output": "README.md\nworkflows/ci.yml\n./workflows/ci.yml",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YSUe7NyPx2Bm78mitsvf1S",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml README.md",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YSUe7NyPx2Bm78mitsvf1S",
+      "is_error": false,
+      "output": "name: CI\non:\n  pull_request:\n    types: [opened, synchronize, labeled]\nconcurrency:\n  group: ci-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"run the site tests\"\n# example-site\n`test` in workflows/ci.yml is a required status check...",
+      "output_chars": 433,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KxExtvCTaUpMhSAUFsYHdT",
+      "name": "Bash",
+      "input": "node -e \"require('yaml');console.log('ok')\" 2>&1 | tail -1; python3 -c \"import yaml;print('pyyaml ok')\" 2>&1|tail -1",
+      "input_chars": 116,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KxExtvCTaUpMhSAUFsYHdT",
+      "is_error": false,
+      "output": "Node.js v22.23.4\npyyaml ok",
+      "output_chars": 26,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FHD3mjiYUdSaR9Yh5JBvF2",
+      "name": "Bash",
+      "input": "cat > workflows/ci.yml <<'EOF'\nname: CI\n# `test` is a required check. Do not add a concurrency group: when two runs\n# start for one head sha, a cancelled run can win the context and block the\n# merge....",
+      "input_chars": 1171,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FHD3mjiYUdSaR9Yh5JBvF2",
+      "is_error": false,
+      "output": "  File \"<path>\", line 157, in createTests\n    self.test = loader.discover(self.start, self.pattern, self.top)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"<path>\", line 332, in discover\n    raise ImportError('Start directory is not importable: %r' % start_dir)\nImportEr...",
+      "output_chars": 450,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EAGkqbBCXgyqZ15GPKWdWA",
+      "name": "Bash",
+      "input": "python3 -m unittest tests/test_ci_workflow.py -v 2>&1 | tail -8; echo \"exit ${PIPESTATUS[0]}\"",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EAGkqbBCXgyqZ15GPKWdWA",
+      "is_error": false,
+      "output": "test_no_concurrency_group (tests.test_ci_workflow.RequiredCheckTest.test_no_concurrency_group) ... ok\ntest_trigger_types_do_not_double_fire (tests.test_ci_workflow.RequiredCheckTest.test_trigger_types_do_not_double_fire) ... ok\n\n----------------------------------------------------------------------\n...",
+      "output_chars": 332,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XeyH88AiUYx64Q8zcZXYZX",
+      "name": "Bash",
+      "input": "cp workflows/ci.yml $TMPDIR/new.yml && git show HEAD:workflows/ci.yml > workflows/ci.yml && python3 -m unittest tests/test_ci_workflow.py 2>&1 | tail -3; cp $TMPDIR/new.yml workflows/ci.yml; python3 -...",
+      "input_chars": 251,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XeyH88AiUYx64Q8zcZXYZX",
+      "is_error": false,
+      "output": "Ran 2 tests in 0.001s\n\nFAILED (failures=2)\n\nOK",
+      "output_chars": 46,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
