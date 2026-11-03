@@ -21,10 +21,15 @@ registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
 # this headroom is also what a longer description has to fit in. 14 eligible
 # guidance revisions matched the shipped bytes; the pin is the newest (then
 # the smallest SHA).
+# Re-pinned 2026-11-03 from 8074d5a3 (2026-10-10, flagged by the explorer's
+# context-drift alert and older than the fleet hook runner) to main at
+# 2dcf61ff, guidance proven at 570544a8 (26 eligible revisions matched; the
+# newest was chosen). Measured then: context 25528, 14803, 875774; with arm
+# 25528, 15395, 882224 bytes. Both fit the limits below, which are unchanged.
 context:
   repository: Adam-S-Daniel/adamdaniel.ai
-  revision: 8074d5a38862594ae056651994ad110900d484ec
-  guidance_revision: 59416cbc87b5231ae36ef1b9d99790cbdcc60b6d
+  revision: 2dcf61ff3ca6c691124b1f531ef407f7fb2e80d9
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 18308
