@@ -197,7 +197,7 @@ jobs:
   #
   # Before each pass, its own step runs `retire_skill.py --withdraw-stale`:
   # every open loop removal pull request (`retire-skill/` or
-  # `retire-guidance/` head, `agent-authored`, opened by the eval-improve
+  # `retire-guidance/` head, `agent-authored`, opened by the skills-evals-improve
   # App, not `on-hold`) whose subject's current verdict no longer supports
   # an automatic removal is disarmed, commented on, closed (branch kept) and
   # recorded in the subject's retirement issue; while the mode is `proposal`
