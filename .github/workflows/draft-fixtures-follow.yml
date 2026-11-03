@@ -14,7 +14,8 @@ name: Follow drafted-skill fixtures
 # When that token was missing the gate falls back to the job token and warns;
 # this workflow then restarts the held checks.
 #
-# Every 30 minutes (and on dispatch) it lists the open, non-draft pull
+# Every 30 minutes, after every ingest and on dispatch, it lists the
+# open, non-draft pull
 # requests here whose head branch is `draft-skill-fixtures/<subject>` and
 # looks up the skill's pull request, `draft-skill/<subject>` in
 # adam-agentskills:
@@ -41,12 +42,20 @@ name: Follow drafted-skill fixtures
 #   fixtures pull request (a person is meant to read it) is left alone.
 # * Every value reaches a `run:` block through `env`, never as an expression;
 #   a response body is never printed.
-# * Default branch only; schedule and dispatch, no push or pull_request
+# * Default branch only; workflow_run, schedule and dispatch, no push or
+#   pull_request
 #   trigger, so no path filter and no required check.
 # * No `concurrency` group: a run held in a group would cancel the pending
 #   one, and every run is idempotent (a second arming is a no-op).
 
 on:
+  # After every ingest too: this repository's cron is unreliable (the
+  # schedule never fired in the first half hour after this file landed, and
+  # skills-evals#618 waited on a hand dispatch), while ingests keep coming
+  # as long as the evals run.
+  workflow_run:
+    workflows: [Ingest routine eval results]
+    types: [completed]
   schedule:
     - cron: "7,37 * * * *"
   workflow_dispatch:
