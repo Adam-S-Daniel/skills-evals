@@ -583,7 +583,13 @@ Other unattributed failures stay records with no proposal, and the subject
    One proposal:
    the most evidence, then the newest, then by name; never a subject that
    is already a skill, already has `evals/<subject>/`, or was drafted
-   before (any `claude/draft-skill-*` branch). It dispatches
+   before (any `claude/draft-skill-*` branch). A rejection that measured
+   nothing is the exception: the subject is drafted again, up to three
+   such tries. The miner names subjects by cluster (`tool-<tool>-<word>`,
+   `red-ci-<repo>`), so a signal that keeps producing skills that add
+   nothing would come back under new names. Once two siblings in one
+   family (`tool-<tool>`, or `red-ci`) were measured and rejected, with
+   none accepted, the rest of that family is not drafted. It dispatches
    `routine-eval-fire.yml` in draft mode only when one fire fits the
    weekly allowance guard.
 2. **Triage, hooks first** (Adam, 2026-10-26: "I want the first choice to
@@ -607,7 +613,13 @@ Other unattributed failures stay records with no proposal, and the subject
    branch without running it. Accepted: a draft pull request in
    adam-agentskills with the skill, then a draft pull request here with
    only `evals/<subject>/` and its README layout line (merge the skill
-   first). The skill's branch carries what the registry's checks read (the
+   first). In `improve_merge_mode: auto` both are ready instead. The
+   fixtures pull request is opened with the roster App token, because
+   GitHub holds every run of a pull request opened by `github-actions[bot]`
+   at `action_required` and `test` would never run (#618). The gate never
+   turns auto-merge on for it: `draft-fixtures-follow.yml` (every 30
+   minutes) does, only after the skill's pull request has merged, and also
+   restarts the checks of one the job-token fallback opened. The skill's branch carries what the registry's checks read (the
    bundle version, the README table, the layout pin in
    `scripts/plugin_layout.json`, a `docs/skill-impact.md` entry, a
    `skills.lock` re-pin), and the gate runs the registry's own
