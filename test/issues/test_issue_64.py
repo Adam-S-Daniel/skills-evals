@@ -991,7 +991,7 @@ class PublicationWorkflow(unittest.TestCase):
                           calls())
             self.assertIn(["checkout", "-B", "persistent/eval-results",
                            "origin/persistent/eval-results"], calls())
-            self.assertTrue((checkout / "coverage" / "2026-10-08T05-41-00Z.json").is_file())
+            self.assertTrue((checkout / "fixture-census" / "2026-10-08T05-41-00Z.json").is_file())
 
             result = run(push_file, GITHUB_TOKEN="example")
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1006,9 +1006,9 @@ class PublicationWorkflow(unittest.TestCase):
     def test_publisher_rejects_unsafe_checkout_outputs_before_any_write(self):
         prepare = next(s for s in self.workflow["jobs"]["coverage-publish"]["steps"]
                        if s["name"] == "Prepare persistent results commit")
-        destinations = ("coverage/latest.json", "coverage/2026-10-08T05-41-00Z.json",
-                        "coverage/latest.md", "badges/coverage.json")
-        cases = [(path, kind) for path in ("coverage", "badges", *destinations)
+        destinations = ("fixture-census/latest.json", "fixture-census/2026-10-08T05-41-00Z.json",
+                        "fixture-census/latest.md", "badges/fixture-census.json")
+        cases = [(path, kind) for path in ("fixture-census", "badges", *destinations)
                  for kind in ("symlink", "dangling", "wrong-type")]
         for unsafe_path, kind in cases:
             with self.subTest(path=unsafe_path, kind=kind), \
@@ -1031,12 +1031,12 @@ class PublicationWorkflow(unittest.TestCase):
                 outside = root / "outside"
                 outside.mkdir()
                 for name in ("latest.json", "2026-10-08T05-41-00Z.json",
-                             "latest.md", "coverage.json", "sentinel"):
+                             "latest.md", "fixture-census.json", "sentinel"):
                     (outside / name).write_text("outside sentinel\n", encoding="utf-8")
                 outside_before = {p.name: p.read_bytes() for p in outside.iterdir()}
                 missing = root / "missing-outside"
                 target = missing if kind == "dangling" else (
-                    outside if unsafe_path in ("coverage", "badges") else outside / "sentinel")
+                    outside if unsafe_path in ("fixture-census", "badges") else outside / "sentinel")
                 bin_dir = root / "bin"
                 bin_dir.mkdir()
                 log = root / "git-log.jsonl"

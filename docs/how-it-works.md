@@ -1034,6 +1034,8 @@ branch, which carries generated data only and is treated as untrusted input:
 | `badges/<fixture>.json` | the shields.io badge over the last five runs, rendered at the top of the README |
 | `roster/latest.json` | the computed roster and proposal from the latest run (an exhibit, read by no decision) |
 | `usage/latest.json` | the usage census |
+| `coverage/latest.json`, `coverage/<run id>.json`, `badges/coverage.json` | the redacted skill coverage census and its badge, written only by `skill-coverage.yml` (`scripts/scaffold_skill_gaps.py`); the explorer reads `publication.as_of` from it |
+| `fixture-census/latest.json`, `fixture-census/<timestamp>.json`, `fixture-census/latest.md`, `badges/fixture-census.json` | the fixture census and its badge, written only by `propagation.yml`'s `coverage-publish` job (#660) |
 | `propagation/` | historical: the retired account-store audit's last result (no longer updated) |
 
 The most recent real run at the time of writing is
