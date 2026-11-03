@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T13:11:19Z",
+ "generated_at": "2026-11-03T13:25:31Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T13:08:50Z",
+ "newest_run": "2026-11-03T13:23:05Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -15710,11 +15710,11 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL \u2014 Register-ScheduledTask / Set-ScheduledTask on a RunLevel=HighestAvailable task, a service change (Set-Service, Stop-Service, New-Service), an LSA rights grant such as \"Log on as a batch job\" (SeBatchLogonRight, secedit, ntrights), an HKLM registry write, or any other change to Windows state from a WSL session. Use it BEFORE attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
@@ -15725,6 +15725,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T13:23:05Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T132102Z-4babbd/windows-elevation-from-wsl/20261103T132305Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.3126194,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.28775931,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:28:36Z",
      "cli_version": "2.1.316",
@@ -17607,7 +17628,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "798b8ed53750877de7a79572c08ad9bf7e8cd7e3",
-  "results_commit": "475c550f8eef61075da6c7ee42d1eb622c9a3feb"
+  "results_commit": "8b2fe3b13955ff92f71580561843eeff0685921c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
