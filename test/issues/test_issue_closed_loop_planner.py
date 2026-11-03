@@ -689,36 +689,6 @@ class BandTests(unittest.TestCase):
                                         private),
                 {"zz-private-skill": None, "zz-public-skill": 0})
 
-    def test_agent_check_lessons_lead_the_work_list(self):
-        lessons = [{"schema_version": 1, "id": "L-2", "subject": "s2", "kind": "agent-check",
-                    "evidence_count": 2, "examples": [], "check_sketch": "x"},
-                   {"schema_version": 1, "id": "L-5", "subject": "s5", "kind": "agent-check",
-                    "evidence_count": 5},
-                   {"schema_version": 1, "id": "L-x", "subject": "s", "kind": "skill-edit",
-                    "evidence_count": 9},
-                   {"schema_version": 1, "id": "bad id", "subject": "s", "kind": "agent-check",
-                    "evidence_count": 9},
-                   {"schema_version": 1, "id": "L-0", "subject": "s", "kind": "agent-check",
-                    "evidence_count": True}, "junk"]
-        plan = plan_week.build_plan(ctx(skills={"few": skill(fixtures=2)}, lessons=lessons), NOW)
-        self.assertEqual([(w["kind"], w.get("id")) for w in plan["work"]],
-                         [("agent-check", "L-5"), ("agent-check", "L-2"),
-                          ("needs-fixtures", None)])
-        self.assertEqual(plan["work"][0]["change_type"], "agent-check")
-        self.assertNotIn("check_sketch", plan["work"][1])
-        lines = "\n".join(plan_week.summary_lines(plan))
-        self.assertIn("agent-check 2", lines)
-        self.assertNotIn("s5", lines)
-
-    def test_read_lessons_skips_unreadable_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            (base / "a").mkdir()
-            (base / "a" / "one.json").write_text('{"id": "x"}')
-            (base / "bad.json").write_text("{")
-            self.assertEqual(plan_week.read_lessons(base), [{"id": "x"}])
-        self.assertEqual(plan_week.read_lessons(None), [])
-
 
 CHECKLIST_SKILL = """---
 name: example-checks
@@ -988,6 +958,61 @@ class DispatchLegTests(unittest.TestCase):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**gleg, **change})
 
+    GOOD_LEG = {"MODE": "eval", "ARMS": "both", "FIXTURE": "evals/writing-adrs/bootstrap",
+                "EVAL_KEY": "writing-adrs/bootstrap", "MODEL": "claude-opus-5-5",
+                "SKILL": "", "HOLDOUT": ""}
+    # Committed under evals/ but listed in evals/unscheduled.yml.
+    UNSCHEDULED_LEG = {"FIXTURE": "evals/browser-testing", "EVAL_KEY": "browser-testing"}
+
+    def run_validate_fire(self, leg):
+        """main(["validate-fire"]) under `leg`'s env: (exit code, GITHUB_OUTPUT, stdout)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "out"
+            output.write_text("")
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, {**leg, "GITHUB_OUTPUT": str(output)}), \
+                    contextlib.redirect_stdout(stdout):
+                code = plan_week.main(["validate-fire"])
+            return code, output.read_text(), stdout.getvalue()
+
+    def test_a_fixture_unscheduled_after_the_plan_is_stale_not_an_error(self):
+        leg = {**self.GOOD_LEG, **self.UNSCHEDULED_LEG}
+        with self.assertRaises(plan_week.PlanStale):
+            plan_week.validate_fire(leg)
+        code, output, stdout = self.run_validate_fire(leg)
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "fire=false\n")
+        self.assertIn("::notice::", stdout)
+        self.assertNotIn("::error::", stdout)
+
+    def test_a_valid_leg_writes_fire_true(self):
+        code, output, _ = self.run_validate_fire(self.GOOD_LEG)
+        self.assertEqual((code, output), (0, "fire=true\n"))
+
+    def test_an_unknown_fixture_is_still_a_plain_plan_error(self):
+        leg = {**self.GOOD_LEG, "FIXTURE": "evals/no-such-skill/x", "EVAL_KEY": "no-such-skill/x"}
+        with self.assertRaises(plan_week.PlanError) as caught:
+            plan_week.validate_fire(leg)
+        self.assertNotIsInstance(caught.exception, plan_week.PlanStale)
+        code, output, stdout = self.run_validate_fire(leg)
+        self.assertEqual(code, 1)
+        self.assertEqual(output, "")
+        self.assertIn("::error::", stdout)
+
+    def test_the_dispatch_steps_follow_the_revalidation_output(self):
+        doc = yaml.safe_load(
+            (ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+        steps = {s["name"]: s for s in doc["jobs"]["dispatch"]["steps"]}
+        self.assertEqual(steps["Revalidate the planned fire"].get("id"), "valid")
+        gate = "steps.valid.outputs.fire == 'true'"
+        self.assertIn(gate, steps["Wait until a fire slot is free"]["if"])
+        self.assertIn(gate, steps["Dispatch the validated fire"]["if"])
+        self.assertIn("steps.slot.outputs.open == 'true'",
+                      steps["Dispatch the validated fire"]["if"])
+        # The spacing step needs the slot step's output, which a skipped slot
+        # step never sets.
+        self.assertEqual(steps["Space the next fire"]["if"], "steps.slot.outputs.open == 'true'")
+
 
 class PlanCommandTests(unittest.TestCase):
     """The step's own command on the real evals directory, an empty results
@@ -1197,7 +1222,7 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(plan["improve_ranking"], [{
             "subject": "skill", "name": "a", "value": 4 * 0.5 / cost, "use": 4,
             "use_known": True, "headroom": 0.5, "cost": cost, "cost_known": True,
-            "eligible": True, "reasons": []}])
+            "eligible": True, "reasons": [], "lesson_evidence": 0}])
         improve = [f for f in plan["fires"] if f["mode"] == "improve"]
         self.assertEqual([f["value"] for f in improve], [4 * 0.5 / cost])
         self.assertIsNone(plan["fires"][0]["value"] if plan["fires"][0]["mode"] == "eval"

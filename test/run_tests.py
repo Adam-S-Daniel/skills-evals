@@ -4324,13 +4324,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # emits reviewed selections without receiving evaluation credentials.
         self.assertEqual(
             sorted(doc["jobs"]),
-            ["disarm", "eval", "plan", "publish", "roster", "roster-pr", "roster-wait"],
-            "eval.yml must have exactly these seven jobs — a new job needs "
+            ["disarm", "eval", "failure-watch", "plan", "publish", "roster", "roster-pr",
+             "roster-wait"],
+            "eval.yml must have exactly these eight jobs — a new job needs "
             "its own exact-permissions row here and in "
             "test_eval_workflow_keeps_its_security_posture")
         self.assertEqual(
             doc["jobs"]["plan"].get("permissions"), {"contents": "read"},
             "the planner reads committed fixtures and never exchanges a credential")
+        self.assertEqual(
+            doc["jobs"]["failure-watch"].get("permissions"), {"issues": "write"},
+            "the failure watch (skills-evals#664) holds only issues: write")
         self.assertEqual(
             doc.get("permissions"), {},
             "eval.yml's workflow-level permissions must be {} — every scope "
@@ -4451,7 +4455,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                    for k, v in (j.get("permissions") or {}).items()))
         # ADR 0004: `roster-wait` (pull-requests: write, for its disarm)
         # is the fifth, and runs no agent either.
-        self.assertEqual(writers, ["disarm", "publish", "roster", "roster-pr", "roster-wait"])
+        # `failure-watch` (issues: write, skills-evals#664) is the sixth.
+        self.assertEqual(writers, ["disarm", "failure-watch", "publish", "roster", "roster-pr", "roster-wait"])
         for name in writers:
             for step in doc["jobs"][name]["steps"]:
                 self.assertNotIn("run_eval.py", step.get("run") or "")
@@ -6938,11 +6943,13 @@ class TestIssue67(unittest.TestCase):
         # `actions` or `contents: write` any more; the roster App's token
         # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
-        # Exactly seven jobs (ADR 0008 adds the read-only planner), so an
+        # Exactly eight jobs (ADR 0008 adds the read-only planner; #664 the failure watch), so an
         # additional job cannot go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
-                         ["disarm", "eval", "plan", "publish", "roster", "roster-pr",
-                          "roster-wait"])
+                         ["disarm", "eval", "failure-watch", "plan", "publish", "roster",
+                          "roster-pr", "roster-wait"])
+        # skills-evals#664: the failure watch holds only `issues: write`.
+        self.assertEqual(doc["jobs"]["failure-watch"]["permissions"], {"issues": "write"})
         self.assertEqual(doc["jobs"]["plan"]["permissions"], {"contents": "read"})
         # Round 7 (ADR 0003): `roster` no longer pushes, so contents: read.
         self.assertEqual(doc["jobs"]["roster"]["permissions"],

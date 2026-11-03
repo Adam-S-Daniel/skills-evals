@@ -12,7 +12,9 @@ name: Fixture supply
 #   would refuse or already has (a fixture, a `claude/scaffold-<id>` branch,
 #   or a successful scaffold fire within REFIRE_AFTER_DAYS, read from the
 #   fire workflow's run titles), ranks the rest by their subject skills
-#   (fewest fixtures first), and cuts the list to what fits: at most
+#   (most session-miner `fixture-candidate` lesson evidence first, read
+#   from adam-agentskills-private's persistent/lessons as counts only,
+#   #657; then fewest fixtures), and cuts the list to what fits: at most
 #   MAX_IN_FLIGHT (3) routine sessions at once, counting fires of the last
 #   45 minutes (the guard's PENDING_FULL_HOLD) as still running, and the weekly allowance guard's room
 #   (scripts/allowance_guard.py; it fails closed). `dispatch` fires them one
@@ -140,16 +142,54 @@ jobs:
             echo "::error::could not list the recent fires; planning no fire"
             exit 1
           fi
+      # The session miner's fixture-candidate lessons (#657) rank candidates
+      # for a skill that failed in real sessions first. Data only, from
+      # adam-agentskills-private's persistent/lessons with the same read-only
+      # token: pick reads the newest day's fixture-candidate proposals for an
+      # evidence count per public skill and nothing else. No branch picks
+      # without them; a lookup error fails the job (closed).
+      - name: Look for the lessons branch
+        id: lessons-branch
+        env:
+          LESSONS_TOKEN: ${{ steps.fleet-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$LESSONS_TOKEN" | base64 -w0)"
+          rc=0
+          git -c "http.extraHeader=Authorization: basic $auth" ls-remote --exit-code --heads \
+            https://github.com/Adam-S-Daniel/adam-agentskills-private.git persistent/lessons \
+            > /dev/null || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "no persistent/lessons branch yet: picking without lessons"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          [ "$rc" -eq 0 ] || exit "$rc"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+      - name: Check out the lessons (adam-agentskills-private)
+        if: steps.lessons-branch.outputs.present == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/lessons
+          path: private-lessons
+          persist-credentials: false
+          sparse-checkout: lessons/proposals
+          token: ${{ steps.fleet-token.outputs.token }}
       - name: Pick candidates within the routine's limit and the weekly allowance
         id: pick
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          lessons=()
+          if [ -d private-lessons/lessons/proposals ]; then
+            lessons=(--lessons private-lessons/lessons/proposals)
+          fi
           python3 scripts/scaffold_real_work.py pick \
             --candidates "$RUNNER_TEMP/candidates.json" \
             --branches "$RUNNER_TEMP/branches.txt" --fired "$RUNNER_TEMP/fired.txt" \
-            --results-tree eval-results-branch --max 3 > "$RUNNER_TEMP/pick.out"
+            --results-tree eval-results-branch --max 3 "${lessons[@]}" > "$RUNNER_TEMP/pick.out"
           cat "$RUNNER_TEMP/pick.out" >> "$GITHUB_OUTPUT"
 
   dispatch:

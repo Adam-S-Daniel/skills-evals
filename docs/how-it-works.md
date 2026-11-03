@@ -455,8 +455,8 @@ nothing (with the reason in the job summary) while the App's secrets are unset
 or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
-`routine-outage`, and `agent-check` items read from lesson proposals) are
-listed in the plan, not fired; each carries a `change_type`. A skill run
+`routine-outage`) are listed in the plan, not fired; each carries a
+`change_type`. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such
@@ -829,6 +829,18 @@ fixture candidate that a fixture writer turns into an eval. The layout and
 schema are in that repo's `lessons/README.md`. Commands: DESIGN.md, "Lessons
 from real sessions".
 
+Who reads each kind (#657), always the newest day's directory and, but for
+`new-skill`, only a per-skill evidence count (`scripts/lesson_evidence.py`),
+so no excerpt reaches this repository:
+
+| Kind | Reader |
+|---|---|
+| `new-skill` | `routine-draft-skill.yml` (draft mode, below) |
+| `fixture-candidate` | `routine-fixture-supply.yml`: `scaffold_real_work.py pick` ranks real-work candidates for a skill with this evidence first |
+| `skill-edit` | `routine-eval-weekly.yml`: `plan_week.py --lessons` multiplies that public skill's improve value by up to 2 |
+| `agent-check` | _agent-guidance's fleet worker (its ADR 0027), not this repository |
+| `memory-note`, `guidance-edit` | _agent-guidance's memory curation; it does not read them yet |
+
 ### Guidance section retirement (#124)
 
 The same job also reads an `_agent-guidance` checkout. Five sections have
@@ -864,9 +876,16 @@ The rules, in order:
 - **Ceiling.** A scheduled fixture with at least 4 runs after its directory's
   last commit whose without arm (guidance: `full_minus_section`) passes 0.85
   or more of its checks on average, and, when that arm has judge figures,
-  scores 8.5 or more, cannot show a gain. Paused.
+  scores 8.5 or more, cannot show a gain. Paused. The rule reads each roster
+  model's cell on its own: every model needs 4 runs of its own that trip it,
+  because the gate decides per model and a pooled mean can hide a model with
+  room to gain.
 - **Floor.** The same runs, both arms (guidance: `full` and
-  `full_minus_section`) at 0.10 or less. Paused.
+  `full_minus_section`) at 0.10 or less, on every roster model. Paused.
+- **Keep guard.** Neither rule pauses a subject whose explorer verdict is
+  `keep` or whose confidence that it helps is 0.5 or more. A skill fixture's
+  pause drops its cells from the gate, so it could take a keep with it and
+  leave a removal.
 - **Zero use.** A skill with no use in the last 8 weeks
   (`skill_usage.zero_use`, local surface only for the two local-only plugins
   in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
@@ -877,8 +896,9 @@ The rules, in order:
   it is never paused for zero use, and an earlier zero-use pause of it resumes.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
-  the one recorded at the pause; a zero-use pause ends when `zero_use` is
-  false.
+  the one recorded at the pause, when the subject is now kept, or when its
+  runs no longer trip the rule per model; a zero-use pause ends when
+  `zero_use` is false.
 
 A pause removes the path from `evals/scheduled.yml`, records it in
 `evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume

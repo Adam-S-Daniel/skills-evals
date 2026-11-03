@@ -225,9 +225,11 @@ class TestTheJobGraph(_Scripts):
     """The new order: roster -> disarm -> roster-pr (publish + arm) ->
     roster-wait -> eval -> publish. Asserted on the parsed `needs:`."""
 
-    def test_the_jobs_are_exactly_these_seven(self):
+    def test_the_jobs_are_exactly_these_eight(self):
+        # `failure-watch` (skills-evals#664) is the eighth: it only reports.
         self.assertEqual(sorted(self.jobs),
-                         ["disarm", "eval", "plan", "publish", "roster", "roster-pr", "roster-wait"])
+                         ["disarm", "eval", "failure-watch", "plan", "publish", "roster",
+                          "roster-pr", "roster-wait"])
 
     def test_each_jobs_needs(self):
         self.assertEqual(_needs(self.jobs["plan"]), [])
@@ -266,7 +268,10 @@ class TestTheJobGraph(_Scripts):
                               "beside an armed roster pull request")
         # Nothing depends on `publish`, and `roster-pr` depends on no job
         # that runs after it.
+        # (Except `failure-watch`, which only reports on every job's result.)
         for name, job in self.jobs.items():
+            if name == "failure-watch":
+                continue
             with self.subTest(job=name):
                 self.assertNotIn("publish", _needs(job))
         self.assertFalse({"eval", "publish", "roster-wait"} & _ancestors(self.jobs, "roster-pr"))
@@ -577,7 +582,9 @@ class TestTheGates(_Scripts):
         # status-check function (`cancelled()`), so they are evaluated —
         # and skipped on `cleared != 'true'` — rather than implicitly
         # skipped or implicitly run. Nothing marks the failure as ignorable.
-        dependents = sorted(n for n, j in self.jobs.items() if "roster-wait" in _needs(j))
+        # `failure-watch` (skills-evals#664) also needs it, only to report.
+        dependents = sorted(n for n, j in self.jobs.items()
+                            if "roster-wait" in _needs(j) and n != "failure-watch")
         self.assertEqual(dependents, ["eval", "publish"])
         for name in dependents:
             with self.subTest(job=name):
