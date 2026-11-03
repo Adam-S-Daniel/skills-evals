@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019ThaacQm1KPTR9oDDSxu1c",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019ThaacQm1KPTR9oDDSxu1c",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011JVwZJEUUQ9M9Nph6J1fTS",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md; ls docs/decisions; cat scripts/retry.sh; git log --oneline | head; git status --short; grep -rn -i retry --include=* . -l --exclude-dir=.git | head",
+      "input_chars": 177,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011JVwZJEUUQ9M9Nph6J1fTS",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code comment would do the job.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from `0001` and zero-padded to four di...",
+      "output_chars": 2733,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VT1vUsjtC3PfFZMhJiFBrz",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003*.md; head -20 CHANGELOG.md; grep -n -i retry README.md",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VT1vUsjtC3PfFZMhJiFBrz",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 856,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xphz2HzPUanMhQgAnvoNnu",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-cap-retries-at-5-with-exponential-backoff.md <<'EOF'\n# 0004. Cap retries at 5 attempts with exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 2026-03 outage (PR #4...",
+      "input_chars": 1848,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xphz2HzPUanMhQgAnvoNnu",
+      "is_error": false,
+      "output": "diff --git a/docs/decisions/README.md b/docs/decisions/README.md\nindex f1454d8..a76631e 100644\n--- a/docs/decisions/README.md\n+++ b/docs/decisions/README.md\n@@ -21,3 +21,4 @@ these sections, in this order:\n | [0001](0001-cache-order-status-in-redis.md) | Cache order status in Redis, not in-process m...",
+      "output_chars": 1273,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
