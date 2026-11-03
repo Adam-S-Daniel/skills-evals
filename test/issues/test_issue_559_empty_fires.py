@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -319,6 +320,20 @@ class OutageFixture:
     # The 2026-11-01 burst's clock times, shifted past EMPTY_FIRES_SINCE.
     BURST = [(5, 43, 29), (5, 44, 42), (5, 45, 55), (6, 4, 12), (6, 5, 23), (6, 6, 37)]
     MINUTE = timedelta(minutes=1)
+
+    def setUp(self):
+        # The live schedule changes as the eval scope pass pauses fixtures,
+        # so add FIXTURES to whatever it lists instead of relying on them.
+        real = plan_week.schedule.scheduled_fixtures
+
+        def scheduled(path, committed):
+            listed = real(path, committed)
+            return listed + [f for f in self.FIXTURES if f not in listed]
+
+        patcher = mock.patch.object(plan_week.schedule, "scheduled_fixtures", scheduled)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        super().setUp()
 
     def at(self, hour, minute, second=0, day=0):
         return (self.DAY + timedelta(days=day)).replace(hour=hour, minute=minute,
