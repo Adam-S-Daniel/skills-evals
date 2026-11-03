@@ -41,6 +41,12 @@
 # write token,
 # opens nothing while another loop pull request is open there, and acts only
 # from the scheduled workflow, never a dispatched or pull-request run.
+# Since 2026-11-03 (Adam: "Judge them by the removal rule"), for skills and
+# guidance alike, a cell at the ceiling (ceiling_fraction, judge_ceiling) is
+# decided by the margins like any other and only names the ceiling in its
+# reason; a cell whose arms both pass at most floor_fraction over
+# harness/gates.py FLOOR_MIN_RUNS runs each is set aside as a broken fixture
+# and left out of the verdict.
 skills:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -49,11 +55,6 @@ skills:
   check_confidence: 0.85
   min_cli_versions: 2
   prior_strength: 4
-  # Since 2026-11-03 (Adam: "Judge them by the removal rule") a cell at the
-  # ceiling is decided by the margins above like any other and only names
-  # the ceiling in its reason; a cell whose arms both pass at most
-  # floor_fraction over harness/gates.py FLOOR_MIN_RUNS runs each is set
-  # aside as a broken fixture and left out of the verdict.
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
@@ -84,11 +85,6 @@ guidance:
   check_confidence: 0.85
   min_cli_versions: 2
   prior_strength: 4
-  # Since 2026-11-03 (Adam: "Judge them by the removal rule") a cell at the
-  # ceiling is decided by the margins above like any other and only names
-  # the ceiling in its reason; a cell whose arms both pass at most
-  # floor_fraction over harness/gates.py FLOOR_MIN_RUNS runs each is set
-  # aside as a broken fixture and left out of the verdict.
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
