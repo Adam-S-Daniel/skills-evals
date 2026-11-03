@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T02:23:33Z",
+ "generated_at": "2026-11-03T02:25:39Z",
  "guidance": {
   "removed": [
    {
@@ -2921,7 +2921,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T02:21:16Z",
+ "newest_run": "2026-11-03T02:22:46Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -3332,7 +3332,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Patterns for setting up reliable agent self-feedback when waiting on long-running GitHub Actions workflows in this repo (cms-publish-loop-host, deploy-production, e2e matrix). The default temptation \u2014 `RUN=$(gh workflow run X && gh run list --jq ...)` chained into a polling `until` loop \u2014 silently breaks because both commands' stdout concatenate into the variable. Use the patterns here when chaining \"wait for PR merge \u2192 trigger workflow \u2192 watch completion\" or any multi-step CI poll. Trigger when the user asks to watch a workflow, set up a feedback loop, monitor PR completion, or any \"let me know when X finishes\" task that involves the gh CLI.",
    "name": "ci-watcher-loops",
    "next_test": {
@@ -3343,6 +3343,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T02:22:46Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T021826Z-15d5bd/ci-watcher-loops/20261103T022246Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.15751580000000004,
+      "judge_mean": 5.9,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.10783109999999999,
+      "judge_mean": 7.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T22:56:59Z",
      "cli_version": "2.1.316",
@@ -9371,7 +9392,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "bc644f04b5d1f058bbd31a266a3f0ae8e5596978",
-  "results_commit": "3b1b4f34a921094325786775fad27172d5f7e8aa"
+  "results_commit": "012b103a4226516e5ca74963d297f62229c52f6c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
