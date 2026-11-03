@@ -1,0 +1,27 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+prompt: >
+  The `test` check on my PRs keeps ending up cancelled and blocking the merge,
+  with no failing step. Fix the workflow in this repo.
+objective_checks:
+  - id: no-concurrency-cancel
+    description: ci.yml no longer cancels in-progress runs through a concurrency group
+    type: file_matches
+    paths: ["workflows/ci.yml"]
+    must_match:
+      - '(?s)\A(?!.*cancel-in-progress: true)'
+      - '(?m)^  test:'
+  - id: readme-untouched
+    description: README.md is unchanged
+    type: files_unchanged
+    paths: ["README.md"]
+judge_rubric: >
+  Score 0-10 for correctness: removes the concurrency group (or otherwise
+  stops a second run for the same sha from cancelling the first) while
+  keeping the `test` job id, and explains why a cancelled required check
+  blocks the merge. Restraint: no unrelated edits.
