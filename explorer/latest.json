@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T14:28:48Z",
+ "generated_at": "2026-11-03T14:30:40Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T14:25:16Z",
+ "newest_run": "2026-11-03T14:28:21Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -14203,7 +14203,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 8,
+   "current_text_runs": 9,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -14214,6 +14214,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T14:28:21Z",
+     "cli_version": "2.1.317",
+     "fixture": "nightly-snapshot",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T142625Z-4d8fde/review-bash-ci-reliability/20261103T142821Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.1397285,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 8,
+      "cost_usd": 0.1103229,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T13:06:58Z",
      "cli_version": "2.1.317",
@@ -18017,7 +18038,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "c516142e5035513cb7453b466cfe65d0f441e8fe",
-  "results_commit": "c037a8aaa756acce510708e548e367ada7112e56"
+  "results_commit": "d121f70db74055a1fba5d65e5395abc9a89f8e6a"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
