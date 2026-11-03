@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T18:35:33Z",
+  "generated_at": "2026-11-03T18:39:50Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T18:31:44Z",
+ "generated_at": "2026-11-03T18:38:30Z",
  "guidance": {
   "removed": [
    {
@@ -9697,7 +9697,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T18:26:41Z",
+ "newest_run": "2026-11-03T18:28:41Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -15538,7 +15538,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -15549,6 +15549,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T18:28:41Z",
+     "cli_version": "2.1.317",
+     "fixture": "release-pipeline",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T181031Z-a0f09c/review-bash-ci-reliability/20261103T182841Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 11,
+      "cost_usd": 0.8734578,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 11,
+      "cost_usd": 0.7882182,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T17:47:28Z",
      "cli_version": "2.1.317",
@@ -20153,8 +20174,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "8f6351af9677c042c104f20bc09bd104706ed16e",
-  "results_commit": "c182cc754eedefc9b2db0f837e9c3b4c30881ead"
+  "repository_commit": "cdbf6eb24ed24f0edf66f2f28b9e271665205642",
+  "results_commit": "37af5bfbb1987dbd80b83eb769b7bbf72fa00005"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
