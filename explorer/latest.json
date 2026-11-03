@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T18:49:59Z",
+  "generated_at": "2026-11-03T18:53:46Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T18:47:27Z",
+ "generated_at": "2026-11-03T18:51:50Z",
  "guidance": {
   "removed": [
    {
@@ -9697,7 +9697,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T18:44:45Z",
+ "newest_run": "2026-11-03T18:47:07Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -10400,7 +10400,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 2,
+    "position": 1,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11042,17 +11042,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 16,
+   "current_text_runs": 17,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T18:47:07Z",
+     "cli_version": "2.1.317",
+     "fixture": "wrong-branch",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T183439Z-9ffd2b/debug-github-workflows/20261103T184707Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.3556768,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.27209639999999996,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T16:57:06Z",
      "cli_version": "2.1.317",
@@ -13478,7 +13499,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13834,7 +13855,7 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.5497626847308201,
+    "helps": 0.8576649040151786,
     "no_help": 0.0
    },
    "copies": {
@@ -13849,17 +13870,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 23,
+   "current_text_runs": 24,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 1,
+    "band": null,
+    "due": "2026-12-01T18:40:13Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T18:45:36Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T182223Z-b99a1a/github-actions-sha-pinning/20261103T184536Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.44894887000000006,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 10,
+      "cost_usd": 0.368919395,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T18:40:13Z",
      "cli_version": "2.1.317",
@@ -14648,8 +14690,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": "adam-coding-local",
@@ -14982,7 +15024,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -15168,7 +15210,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16320,7 +16362,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16945,7 +16987,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20238,7 +20280,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "cdbf6eb24ed24f0edf66f2f28b9e271665205642",
-  "results_commit": "2ab37b3b4f5a90c342b9e7c522121d971aabf883"
+  "results_commit": "29a005b9dd2d66ba21845e3512bed9b5b83e463f"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
