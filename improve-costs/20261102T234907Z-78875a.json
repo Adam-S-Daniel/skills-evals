@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261102T234907Z-78875a",
+ "mode": "guidance-improve",
+ "target": "data-exposure-in-ci",
+ "exit_code": 1,
+ "outcome": "rejected",
+ "stage_reached": "candidate",
+ "trial_summaries": 48,
+ "agent_calls": 48,
+ "judge_calls": 47,
+ "agent_usd": 5.723102399999999,
+ "judge_usd": 1.3598100000000002,
+ "guard_usd": 2.6758805,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 24,
+   "usd": 4.879178099999999
+  },
+  "candidate": {
+   "trials": 24,
+   "usd": 4.8796148
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.70939225,
+  "input_tokens": 2,
+  "output_tokens": 3299
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-1"
+ },
+ "busy_seconds": 1524.0,
+ "span_seconds": 1584.43,
+ "snapshots": 144,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-02T23:50:27.198000Z",
+  "utilization": 0.25,
+  "resets_at": 1794243600
+ },
+ "last": {
+  "at": "2026-11-03T00:16:51.628000Z",
+  "utilization": 0.26,
+  "resets_at": 1794243600
+ },
+ "delta": 0.010000000000000009,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-03T00:17:12.424570Z"
+}
