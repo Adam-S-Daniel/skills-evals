@@ -836,5 +836,87 @@ class CloudGuidanceTests(unittest.TestCase):
             self.assertEqual(new["sources"], local["sources"])
 
 
+class CloudUseTests(unittest.TestCase):
+    """`weight` adds cloud `skill-digest` uses; `counted_from` and `zero_use`
+    say whether a surface was counted back to the window's start."""
+
+    # NOW is in W36; a 4-week window starts Monday 2026-08-10.
+    GEN = "2026-09-04T06:00:00Z"
+    LOCAL_SOURCE = {"surface": "local", "scope": "transcripts",
+                    "from": "2026-07-01T00:00:00Z", "to": GEN, "sessions_scanned": 5}
+
+    @staticmethod
+    def cloud_source(floor):
+        return skill_usage.digest_source(floor, NOW, 3, skill_usage.SURFACE_CLOUD)
+
+    def doc(self, rows=(), cloud_from=datetime(2026, 7, 20, tzinfo=timezone.utc),
+            local=True, generated=GEN):
+        sources = [dict(self.LOCAL_SOURCE)] if local else []
+        if cloud_from is not None:
+            sources.append(self.cloud_source(cloud_from))
+        return {"generated_at": generated, "schema": 1, "sources": sources,
+                "rows": list(rows)}
+
+    def cloud_row(self, name="finding-unknowns", n=2, week="2026-08-31"):
+        return skill_usage.digest_row(week, name, None, "unknown:gone", n, 1,
+                                      skill_usage.SURFACE_CLOUD)
+
+    def test_weight_adds_cloud_digest_invocations(self):
+        doc = self.doc([skill_usage.row("2026-W36", "skill", "finding-unknowns", 3, 1),
+                        self.cloud_row(n=2)])
+        self.assertEqual(skill_usage.weight(doc, "finding-unknowns", NOW), 5)
+
+    def test_weight_ignores_local_digest_rows_and_other_windows(self):
+        doc = self.doc([skill_usage.row("2026-W36", "skill", "finding-unknowns", 3, 1),
+                        skill_usage.digest_row("2026-08-31", "finding-unknowns", None,
+                                               "unknown:gone", 3, 1),
+                        self.cloud_row(n=7, week="2026-08-03"),
+                        self.cloud_row(name="workflow-path-audit", n=9)])
+        self.assertEqual(skill_usage.weight(doc, "finding-unknowns", NOW), 3)
+
+    def test_counted_from_local(self):
+        self.assertEqual(skill_usage.counted_from(self.doc(), skill_usage.SURFACE_LOCAL),
+                         datetime(2026, 7, 1, tzinfo=timezone.utc))
+
+    def test_counted_from_cloud_is_a_week_after_the_source_from(self):
+        self.assertEqual(skill_usage.counted_from(self.doc(), skill_usage.SURFACE_CLOUD),
+                         datetime(2026, 7, 27, tzinfo=timezone.utc))
+
+    def test_counted_from_is_none_when_unknown(self):
+        self.assertIsNone(skill_usage.counted_from(
+            self.doc(cloud_from=None), skill_usage.SURFACE_CLOUD))
+        self.assertIsNone(skill_usage.counted_from(
+            self.doc(local=False), skill_usage.SURFACE_LOCAL))
+        self.assertIsNone(skill_usage.counted_from(self.doc(), "other"))
+        bad = self.doc()
+        bad["sources"][0]["from"] = "yesterday"
+        self.assertIsNone(skill_usage.counted_from(bad, skill_usage.SURFACE_LOCAL))
+
+    def test_zero_use_is_unknown_without_a_fresh_document(self):
+        self.assertIsNone(skill_usage.zero_use(None, "finding-unknowns", NOW))
+        stale = self.doc(generated="2026-08-01T00:00:00Z")
+        self.assertIsNone(skill_usage.zero_use(stale, "finding-unknowns", NOW))
+
+    def test_zero_use_is_unknown_when_a_surface_is_not_covered(self):
+        missing = self.doc(cloud_from=None)
+        self.assertIsNone(skill_usage.zero_use(missing, "finding-unknowns", NOW))
+        # Cloud counted from 2026-08-17 + 7 days, after the window start 08-10.
+        recent = self.doc(cloud_from=datetime(2026, 8, 17, tzinfo=timezone.utc))
+        self.assertIsNone(skill_usage.zero_use(recent, "finding-unknowns", NOW))
+
+    def test_zero_use_true_when_covered_and_unused(self):
+        doc = self.doc([self.cloud_row(name="workflow-path-audit")])
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
+
+    def test_zero_use_false_for_a_cloud_only_use(self):
+        doc = self.doc([self.cloud_row()])
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
+
+    def test_zero_use_local_surface_ignores_a_missing_cloud_source(self):
+        doc = self.doc(cloud_from=None)
+        self.assertIs(skill_usage.zero_use(
+            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)), True)
+
+
 if __name__ == "__main__":
     unittest.main()
