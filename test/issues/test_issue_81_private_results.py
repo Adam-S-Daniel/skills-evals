@@ -161,11 +161,17 @@ class PlannerKeepsPrivateSkillsOutOfPublicOutputs(unittest.TestCase):
         self.assertNotIn("adam-writing-style", out)
         self.assertIn("rename-pdfs", out)
 
-    def test_its_fixtures_are_still_scheduled_cells(self):
-        rows = yaml.safe_load((ROOT / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
-        paths = {row["path"] for row in rows}
+    def test_its_fixtures_are_off_the_schedule_with_a_reason(self):
+        # The 2026-11-03 scope decision moved adam-writing-style to owner
+        # review: its fixtures stay on disk, unscheduled, each with a reason.
+        def paths(name):
+            rows = yaml.safe_load((ROOT / "evals" / name).read_text(encoding="utf-8"))["fixtures"]
+            return {row["path"]: row.get("reason") for row in rows}
+        scheduled, unscheduled = paths("scheduled.yml"), paths("unscheduled.yml")
         for name in ("proposal-bio", "recruiter-reply", "self-appraisal-opening"):
-            self.assertIn(f"evals/adam-writing-style/{name}", paths)
+            path = f"evals/adam-writing-style/{name}"
+            self.assertNotIn(path, scheduled)
+            self.assertTrue(unscheduled.get(path))
 
 
 if __name__ == "__main__":
