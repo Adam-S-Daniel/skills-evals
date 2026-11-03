@@ -2,23 +2,23 @@
   "include_private_names": false,
   "problems": [],
   "publication": {
-    "as_of": "2026-11-02T18:41:54Z",
-    "guidance_revision": "5c3774829967daa05e6d35c0a5855737e3f7c989",
+    "as_of": "2026-11-03T08:54:33Z",
+    "guidance_revision": "908913675f78b789b3b53c55d97836b99b94beab",
     "public_registry_revisions": {
-      "adam-agentskills": "d5f3da1997b6a3cf12661e7a934df5e80650af60",
-      "adamdaniel.ai": "6ce7b6648a185360b485c79a9a2860fa410afb11",
-      "cms-platform": "cd59b51fc1a2f1bcc2b3145e4eded27273d9f12e"
+      "adam-agentskills": "6dd9b1efb1b6b96b8842e21145136a6105359ded",
+      "adamdaniel.ai": "24ab320e620f3e84f0a9c9e5519dc00376031c69",
+      "cms-platform": "77510f78ac0fc3231bb5a77f69a6535629b435cc"
     },
-    "repository_revision": "168f4d8b5d2fb7d37e6f4fb9df78810c7e4cead1",
-    "run_id": "41501364541"
+    "repository_revision": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
+    "run_id": "41606700600"
   },
   "registries": [
     {
       "counts": {
-        "covered": 14,
+        "covered": 16,
         "gap": 0,
         "skipped": 8,
-        "total": 22
+        "total": 24
       },
       "layout": "plugins/*/skills/*/SKILL.md",
       "name": "adam-agentskills",
@@ -83,6 +83,14 @@
         },
         {
           "bundle": "adam-coding-anywhere",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "red-ci-adamdaniel-ai",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
           "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
@@ -136,6 +144,14 @@
           "registry": "adam-agentskills",
           "skill": "sync-cc-settings-between-wsl-and-windows",
           "status": "skipped"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "tool-powershell",
+          "status": "covered"
         },
         {
           "bundle": "adam-coding-local",
@@ -362,9 +378,9 @@
   ],
   "schema": 1,
   "totals": {
-    "covered": 26,
+    "covered": 28,
     "gap": 2,
     "skipped": 11,
-    "total": 39
+    "total": 41
   }
 }
