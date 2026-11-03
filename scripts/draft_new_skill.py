@@ -28,14 +28,21 @@ HOOKS FIRST (Adam, 2026-10-26): every lesson is triaged in this order.
      `hook-first`, and pushes a branch whose record is `decision:
      "hook-first"` with a `check_sketch`. The gate opens an issue (body from
      `issue-body`, machine-readable) for the agent-checks lane.
-  2. Only if it cannot, a skill: drafted with Anthropic's skill-creator at
+  2. Upstream first (Adam, 2026-11-03): before triage the routine lists the
+     skills Anthropic already ships (harness/upstream_skills.yml plus its own
+     live listing). If one already does what the proposal asks it drafts
+     nothing, runs `upstream-covered`, and pushes a branch whose record is
+     `decision: "upstream-covered"`. The gate acts on no such record, so no
+     PR or issue follows, and the subject is final. `select`, `measure` and
+     the gate's `validate` refuse a subject that is itself an upstream name.
+  3. Only if it cannot, a skill: drafted with Anthropic's skill-creator at
      SKILL_CREATOR_COMMIT, with four fixtures, measured by `measure`. The
      record carries `triage: {mechanical: false, reason}` so a reviewer sees
      why it is not a hook. When the agent-checks lane declines a hook
      proposal (it closes the issue as not planned), `select --hook-declined`
      makes the subject eligible again, the payload says `hook_declined`,
      the routine skips triage, and the reason is DECLINED_REASON.
-  3. Guidance text last, and never from here.
+  4. Guidance text last, and never from here.
 
 Subcommands (`key=value` lines are for $GITHUB_OUTPUT and hold validated
 values only):
@@ -58,6 +65,7 @@ values only):
                issue-proposals/ one)
   fire-check --payload FILE        (no output; exit 0 or 1)
   hook-first --payload FILE --proposal-json FILE --results DIR
+  upstream-covered --payload FILE --skill NAME --reason TEXT --results DIR
   measure   --staging DIR --registry adam-agentskills=DIR --ref SHA
             --payload FILE --trials N --results DIR
             (exit 0 accepted, 1 rejected, 2 refused; a staging-shape
@@ -115,6 +123,7 @@ sys.path.insert(0, str(HARNESS_DIR))
 import context  # noqa: E402
 import improve_gate  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
+import upstream_skills  # noqa: E402
 from ingest_routine_results import Rejected  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -184,7 +193,7 @@ BRANCH_RE = re.compile(rf"claude/draft-skill-(?P<run_id>{ingest.RUN_ID})")
 BRANCH_SHAPE = "claude/draft-skill-<run id>"
 SOURCE_ROOT = "draft-skill"
 REMOTE_PREFIX = "refs/remotes/origin/"
-DECISIONS = ("accepted", "rejected", "hook-first")
+DECISIONS = ("accepted", "rejected", "hook-first", "upstream-covered")
 
 REGISTRY_NAME = improve_gate.REGISTRY_NAME
 REGISTRY_URL = improve_gate.REGISTRY_URL
@@ -238,7 +247,13 @@ HOOK_RECORD_KEYS = ("schema", "run_id", "decision", "subject",
                     "evidence_count", "proposal", "check_sketch")
 
 SKILL_TITLE = "# New skill: {subject}"
+UPSTREAM_RECORD_KEYS = ("schema", "run_id", "decision", "subject",
+                        "evidence_count", "proposal", "upstream", "reason")
+UPSTREAM_SOURCES = (*upstream_skills.GROUPS, "live")
+UPSTREAM_REASON_MAX = 1000
+UPSTREAM_REFUSAL = "the subject duplicates an Anthropic or Claude Code bundled skill"
 HOOK_TITLE = "# Hook first: {subject}"
+UPSTREAM_TITLE = "# Upstream covered: {subject}"
 MARKER = "<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"
 EVALS_TREE = "https://github.com/Adam-S-Daniel/skills-evals/tree/{sha}"
 TARGET_BRANCH = "draft-skill/{subject}"
@@ -707,12 +722,12 @@ def family_closed(subject: str, drafted: dict[str, set[str]]) -> bool:
 def eligibility(subject: str, drafted: dict[str, set[str]],
                 declined: set[str]) -> tuple[bool, bool]:
     """(eligible, via a declined hook proposal). A skill record (accepted or
-    rejected) is final; a rejection that measured nothing is not, until
+    rejected) and an upstream-covered record are final; a rejection that measured nothing is not, until
     MAX_UNMEASURED of them; a hook-first record holds the subject until the
     agent-checks lane declines it; a subject in a closed family
     (`family_closed`) is not drafted."""
     decisions = drafted.get(subject, set())
-    if decisions & {"accepted", "rejected"}:
+    if decisions & {"accepted", "rejected", "upstream-covered"}:
         return False, False
     if family_closed(subject, drafted):
         return False, False
@@ -743,6 +758,7 @@ def select(lessons: Path, registries: dict[str, Path], evals: Path,
     issue-proposals/, all ranked together."""
     drafted = parse_drafted(drafted_file)
     declined = parse_subjects(declined_file)
+    upstream = upstream_skills.load()
     sources = [(lessons, "proposals")] + [(root, ISSUE_SOURCE)
                                           for root in issue_roots or []]
     candidates, skipped = [], 0
@@ -763,7 +779,8 @@ def select(lessons: Path, registries: dict[str, Path], evals: Path,
             subject = doc["subject"]
             eligible, via_decline = eligibility(subject, drafted, declined)
             if not eligible or any(skill_exists(r, subject) for r in registries.values()) \
-                    or (evals / subject).exists():
+                    or (evals / subject).exists() \
+                    or upstream_skills.upstream_source(subject, upstream):
                 continue
             candidates.append(((-doc["evidence_count"],
                                 -parse_date(doc["last_seen"]).toordinal(),
@@ -1003,6 +1020,45 @@ def hook_first(payload_path: Path, sketch_path: Path, results: Path) -> dict:
     write_json(out / "summary.json", record)
     (out / "report.md").write_text(report, encoding="utf-8")
     return {"decision": "hook-first", "subject": proposal["subject"],
+            "run_id": doc["run_id"]}
+
+
+def upstream_report(subject: str, evidence_count: int, name: str, reason: str) -> str:
+    return "\n".join([
+        UPSTREAM_TITLE.format(subject=subject), "",
+        "The draft loop found that a skill Anthropic already ships does what "
+        "this lesson asks, so it drafted no skill and no fixtures. The loop "
+        "never evaluates, improves or duplicates an Anthropic skill.", "",
+        f"Drafted from a redacted lesson with {evidence_count} pieces of evidence.", "",
+        "## Covered by", "",
+        f"- Skill: `{name}`",
+        f"- Why: {one_line(reason)}", ""])
+
+
+def upstream_covered(payload_path: Path, name: str, reason: str, results: Path) -> dict:
+    try:
+        doc = load_payload(payload_path)
+    except Rejected as exc:
+        raise Refused(str(exc)) from None
+    if not SUBJECT_RE.fullmatch(name):
+        raise Refused("--skill is not a skill name")
+    if not text_ok(reason, UPSTREAM_REASON_MAX):
+        raise Refused(f"--reason is not text of at most {UPSTREAM_REASON_MAX} characters")
+    proposal = doc["proposal"]
+    source = upstream_skills.upstream_source(name) or "live"
+    report = upstream_report(proposal["subject"], proposal["evidence_count"], name, reason)
+    if text_problem(report):
+        raise Refused("--reason: the report would carry a closing keyword, an "
+                      "@mention or a code fence; reword it")
+    record = {"schema": 1, "run_id": doc["run_id"], "decision": "upstream-covered",
+              "subject": proposal["subject"],
+              "evidence_count": proposal["evidence_count"], "proposal": proposal,
+              "upstream": {"name": name, "source": source}, "reason": reason}
+    out = run_dir(results, doc["run_id"])
+    out.mkdir(parents=True)
+    write_json(out / "summary.json", record)
+    (out / "report.md").write_text(report, encoding="utf-8")
+    return {"decision": "upstream-covered", "subject": proposal["subject"],
             "run_id": doc["run_id"]}
 
 
@@ -1259,6 +1315,8 @@ def measure(staging: Path, registry_flag: str, ref: str, payload_path: Path,
             archived = loop.archive_registry(checkout, ref, scratch / "registry")
         except loop.Refusal:
             raise Refused("the registry checkout cannot archive that commit") from None
+        if upstream_skills.upstream_source(subject):
+            return finish([UPSTREAM_REFUSAL])
         if skill_exists(archived, subject):
             return finish(["the subject already exists as a skill in the "
                            "registry at that commit"])
@@ -1324,7 +1382,7 @@ def _arm_record(arm, where: str) -> None:
 
 
 def check_record(doc, run_id: str) -> dict:
-    """A branch's summary.json, any of the three decisions."""
+    """A branch's summary.json, any of the four decisions."""
     where = "summary.json"
     if not isinstance(doc, dict):
         raise Rejected(f"{where}: not an object")
@@ -1332,7 +1390,8 @@ def check_record(doc, run_id: str) -> dict:
     decision = doc.get("decision")
     if decision not in DECISIONS:
         raise Rejected(f"{where}: decision is not one of {list(DECISIONS)}")
-    keys = HOOK_RECORD_KEYS if decision == "hook-first" else SKILL_RECORD_KEYS
+    keys = {"hook-first": HOOK_RECORD_KEYS,
+            "upstream-covered": UPSTREAM_RECORD_KEYS}.get(decision, SKILL_RECORD_KEYS)
     if set(doc) != set(keys):
         raise Rejected(f"{where}: not exactly the {decision} record's keys")
     if doc["schema"] != 1 or type(doc["schema"]) is not int:
@@ -1343,7 +1402,7 @@ def check_record(doc, run_id: str) -> dict:
         raise Rejected(f"{where}: bad subject")
     if not value_ok(PROPOSAL_SCHEMA["evidence_count"], doc["evidence_count"]):
         raise Rejected(f"{where}: bad evidence_count")
-    if decision == "hook-first":
+    if decision in ("hook-first", "upstream-covered"):
         try:
             proposal = check_payload_proposal(doc["proposal"])
         except Rejected:
@@ -1351,7 +1410,18 @@ def check_record(doc, run_id: str) -> dict:
         if proposal["subject"] != doc["subject"] \
                 or proposal["evidence_count"] != doc["evidence_count"]:
             raise Rejected(f"{where}: proposal does not match the record")
-        check_sketch(doc["check_sketch"])
+        if decision == "hook-first":
+            check_sketch(doc["check_sketch"])
+            return doc
+        upstream = doc["upstream"]
+        if not isinstance(upstream, dict) or set(upstream) != {"name", "source"} \
+                or not isinstance(upstream["name"], str) \
+                or not SUBJECT_RE.fullmatch(upstream["name"]) \
+                or upstream["source"] not in UPSTREAM_SOURCES:
+            raise Rejected(f"{where}: upstream is not exactly a name and a source")
+        if not text_ok(doc["reason"], UPSTREAM_REASON_MAX):
+            raise Rejected(f"{where}: reason is not text of at most "
+                           f"{UPSTREAM_REASON_MAX} characters")
         return doc
     check_triage(doc["triage"])
     if decision == "accepted" and doc["plugin"] not in PLUGINS:
@@ -1437,7 +1507,8 @@ def validate(repo: str, base: str, source: str, branch: str,
     decision, subject = doc["decision"], doc["subject"]
     expected = {"accepted": {"summary.json", "report.md", "skill.patch"},
                 "rejected": {"summary.json"},
-                "hook-first": {"summary.json", "report.md"}}[decision]
+                "hook-first": {"summary.json", "report.md"},
+                "upstream-covered": {"summary.json", "report.md"}}[decision]
     if set(own) != expected or (decision != "accepted" and others):
         raise Rejected(f"a {decision} record's branch adds files other than "
                        f"{sorted(expected)}")
@@ -1458,7 +1529,8 @@ def validate(repo: str, base: str, source: str, branch: str,
 
     if "report.md" in own:
         report = ingest.decode_text(own["report.md"], "report.md")
-        title = (HOOK_TITLE if decision == "hook-first" else SKILL_TITLE)
+        title = {"hook-first": HOOK_TITLE, "upstream-covered": UPSTREAM_TITLE}.get(
+            decision, SKILL_TITLE)
         if report.split("\n", 1)[0] != title.format(subject=subject):
             raise Rejected("report.md does not open with its title for this subject")
         problem = text_problem(report)
@@ -1480,6 +1552,9 @@ def validate(repo: str, base: str, source: str, branch: str,
             raise Rejected("; ".join(problems[:5]))
         if registry is None or not registry.is_dir():
             raise Rejected(f"an accepted record needs the {REGISTRY_NAME} checkout")
+        if upstream_skills.upstream_source(subject):
+            raise Rejected(f"{UPSTREAM_REFUSAL}: "
+                           f"{upstream_skills.upstream_source(subject)}")
         if skill_exists(registry, subject) or any(
                 registry.glob(f"plugins/*/skills/{subject}")):
             raise Rejected(f"the subject already exists in {REGISTRY_NAME}")
@@ -1862,6 +1937,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     p.add_argument("--payload", required=True, type=Path)
     p.add_argument("--proposal-json", required=True, type=Path)
     p.add_argument("--results", required=True, type=Path)
+    p = sub.add_parser("upstream-covered")
+    p.add_argument("--payload", required=True, type=Path)
+    p.add_argument("--skill", required=True)
+    p.add_argument("--reason", required=True)
+    p.add_argument("--results", required=True, type=Path)
     p = sub.add_parser("measure")
     p.add_argument("--staging", required=True, type=Path)
     p.add_argument("--registry", required=True)
@@ -1927,6 +2007,9 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
             result = issue_proposals(args.issues, args.out)
         elif args.command == "hook-first":
             result = hook_first(args.payload, args.proposal_json, args.results)
+        elif args.command == "upstream-covered":
+            result = upstream_covered(args.payload, args.skill, args.reason,
+                                      args.results)
         elif args.command == "resolve":
             result = ingest.resolve(args.event_name, args.event_path,
                                     BRANCH_RE, BRANCH_SHAPE)

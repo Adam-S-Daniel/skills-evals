@@ -129,7 +129,19 @@ Setup, in the skills-evals checkout:
   refused_env_names, exactly as IMPROVE MODE does, and run every
   draft_new_skill.py command below with those names unset.
 
-1. TRIAGE, hooks first (Adam: "I want the first choice to be git hooks
+1. UPSTREAM CHECK (Adam, 2026-11-03: no redundant creations of Anthropic
+   skills, nor of Claude bundled ones). Before any triage, list the
+   upstream skills available in this session: the names in
+   harness/upstream_skills.yml, every directory under
+   ~/.claude/skills/synced/*/, and the bundled skills in your own skill
+   listing. If one already does what the proposal asks, draft nothing and
+   run `python3 scripts/draft_new_skill.py upstream-covered --payload
+   PAYLOAD --skill <name> --reason "<why, in one or two sentences>"
+   --results $RUNNER/results`, then go to step 6. If none does, continue.
+   (A proposal whose own subject is an upstream name is refused by
+   measure.)
+
+1b. TRIAGE, hooks first (Adam: "I want the first choice to be git hooks
    whenever possible"). Skip this step when PAYLOAD has "hook_declined":
    true; then the triage is {"mechanical": false, "reason": "declined by
    the agent-checks lane"}. Otherwise read the _agent-guidance checkout's
@@ -193,6 +205,6 @@ Setup, in the skills-evals checkout:
    $RUNNER/selfcheck`. If it refuses, fix the branch's shape only. Push the
    branch. Never open a pull request or an issue; the gate does.
 
-Print one line last: "RESULT: draft <hook-first|accepted|rejected|refused>
+Print one line last: "RESULT: draft <hook-first|upstream-covered|accepted|rejected|refused>
 <subject> claude/draft-skill-<run_id>".
 

@@ -1,0 +1,23 @@
+# Skills made by Anthropic, which the self-improvement loop never touches
+# (Adam, 2026-11-03: "Agreed: no loops on or redundant creations of Anthropic skills--
+# and same for Claude bundled skills"). The loop does not evaluate, improve,
+# trim, retire or draft any of them, and the draft loop never creates a skill
+# that duplicates one. docs/decisions/0005-improvement-loop-reuses-skill-creator.md
+# ("Upstream skills are background, never subjects") records the decision;
+# harness/upstream_skills.py reads this file and test/issues/test_issue_upstream_skills.py
+# keeps the rule.
+#
+# This list is a SNAPSHOT, measured 2026-11-03 in a cloud session running
+# Claude Code 2.1.317. Upstream adds skills without notice, so the draft
+# routine also checks the live list (its own skill listing and
+# ~/.claude/skills/synced/*/) before it drafts.
+#
+# anthropic_account: Anthropic's claude.ai account skills, synced as
+#   `anthropic-skills:<name>`.
+# claude_code_bundled: skills bundled in Claude Code itself.
+#
+# Each name is lowercase words joined by hyphens, and each group is sorted.
+# A name may appear in both groups (deep-research does).
+schema: 1
+anthropic_account: [artifact-emulator, built-in-browser, chrome-browser, computer-use, deep-research, doc-coauthoring, docs, docx, google-workspace, import-memory, learn, pdf, pptx, skill-creator, theme-factory, web-artifacts-builder, xlsx]
+claude_code_bundled: [artifact-capabilities, artifact-diagramming, batch, claude-api, code-review, dataviz, debug, deep-research, design, design-sync, doctor, fewer-permission-prompts, init, keybindings-help, loop, plugin-authoring, run, run-skill-generator, schedule, security-review, session-start-hook, simplify, skill-doctor, slides, update-config, verify, workflow-authoring]
