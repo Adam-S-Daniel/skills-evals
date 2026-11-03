@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T19:37:34Z",
+  "generated_at": "2026-11-03T19:41:45Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T19:35:55Z",
+ "generated_at": "2026-11-03T19:39:29Z",
  "guidance": {
   "removed": [
    {
@@ -9780,7 +9780,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T19:31:03Z",
+ "newest_run": "2026-11-03T19:34:09Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -11146,17 +11146,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 20,
+   "current_text_runs": 21,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 2,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T19:34:09Z",
+     "cli_version": "2.1.317",
+     "fixture": "git-identity",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T190747Z-781d93/debug-github-workflows/20261103T193409Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.11776339999999999,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.08588870000000001,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T19:26:49Z",
      "cli_version": "2.1.317",
@@ -14893,7 +14914,7 @@
      "local": null
     },
     "loaded": [],
-    "main": "0c0c37bc9619",
+    "main": "58fe55ea81f7",
     "window": {
      "from": "2026-10-26",
      "to": "2026-11-03"
@@ -15212,7 +15233,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -15398,7 +15419,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16613,7 +16634,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17238,7 +17259,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20573,7 +20594,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "30602b3ea2d7263476ea291a637b7aae19509883"
+  "results_commit": "173b10601ac0eee6f11d99cdf06026454d69fcb9"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
