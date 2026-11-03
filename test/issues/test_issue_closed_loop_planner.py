@@ -61,15 +61,21 @@ BARE_EXPRESSION = "${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare'
 #: The trigger-only conditional (skills-evals#662).
 TRIGGER_EXPRESSION = ("${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' "
                       "&& ' trigger' || '' }}")
+#: The description trim conditional (skills-evals#687).
+TRIM_EXPRESSION = ("${{ inputs.mode == 'improve' && inputs.trim_description == 'true' "
+                   "&& ' trim' || '' }}")
 
 
 def render_title(template, **inputs):
     """The fire workflow's `run-name` as GitHub renders it for `inputs`:
-    the bare and trigger conditionals, then each `${{ inputs.<name> }}`."""
+    the bare, trigger and trim conditionals, then each `${{ inputs.<name> }}`."""
     bare = " bare" if inputs.get("mode") == "eval" and inputs.get("arms") == "bare" else ""
     trigger = (" trigger" if inputs.get("mode") == "improve"
                and inputs.get("trigger_only") == "true" else "")
-    text = template.replace(BARE_EXPRESSION, bare).replace(TRIGGER_EXPRESSION, trigger)
+    trim = (" trim" if inputs.get("mode") == "improve"
+            and inputs.get("trim_description") == "true" else "")
+    text = (template.replace(BARE_EXPRESSION, bare).replace(TRIGGER_EXPRESSION, trigger)
+            .replace(TRIM_EXPRESSION, trim))
     return re.sub(r"\$\{\{ inputs\.(\w+) \}\}", lambda m: inputs.get(m.group(1), ""), text)
 
 
@@ -78,15 +84,15 @@ class TitleAndOutcomeTests(unittest.TestCase):
     def test_titles_parse_strictly(self):
         self.assertEqual(io_mod.parse_title("Fire eval routine: improve writing-adrs "),
                          {"mode": "improve", "target": "writing-adrs", "model": None,
-                          "bare": False, "trigger": False})
+                          "bare": False, "trigger": False, "trim": False})
         self.assertEqual(io_mod.parse_title(
             "Fire eval routine: eval evals/writing-adrs/bootstrap claude-opus-5-5"),
             {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
-             "model": "claude-opus-5-5", "bare": False, "trigger": False})
+             "model": "claude-opus-5-5", "bare": False, "trigger": False, "trim": False})
         self.assertEqual(io_mod.parse_title(
             "Fire eval routine: eval bare evals/writing-adrs/bootstrap claude-opus-5-5"),
             {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
-             "model": "claude-opus-5-5", "bare": True, "trigger": False})
+             "model": "claude-opus-5-5", "bare": True, "trigger": False, "trim": False})
         # A skill named `bare` is still a skill, not a marker.
         self.assertEqual(io_mod.parse_title("Fire eval routine: improve bare ")["target"],
                          "bare")
@@ -110,7 +116,7 @@ class TitleAndOutcomeTests(unittest.TestCase):
         self.assertNotIn("${{", render(mode="eval"))
         self.assertEqual(io_mod.parse_title(render(mode="improve", skill="writing-adrs")),
                          {"mode": "improve", "target": "writing-adrs", "model": None,
-                          "bare": False, "trigger": False})
+                          "bare": False, "trigger": False, "trim": False})
         self.assertEqual(io_mod.parse_title(render(mode="eval", fixture="evals/x",
                                                    model="claude-opus-5-5"))["model"],
                          "claude-opus-5-5")
@@ -119,7 +125,7 @@ class TitleAndOutcomeTests(unittest.TestCase):
         self.assertEqual(io_mod.parse_title(render(mode="eval", arms="bare", fixture="evals/x",
                                                    model="claude-opus-5-5")),
                          {"mode": "eval", "target": "evals/x", "model": "claude-opus-5-5",
-                          "bare": True, "trigger": False})
+                          "bare": True, "trigger": False, "trim": False})
         for arms in ("with", "without"):
             self.assertFalse(io_mod.parse_title(render(mode="eval", arms=arms,
                                                        fixture="evals/x"))["bare"])
@@ -1354,11 +1360,11 @@ class ImproveValueTests(unittest.TestCase):
             "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "",
             "fixture": "", "eval_key": "", "model": "", "skill": "", "section": "sec",
             "holdout": "guidance/sec/zzz", "trigger_only": "false",
-            "change_type": "guidance-edit", "cost": 0.1})
+            "trim_description": "false", "change_type": "guidance-edit", "cost": 0.1})
         self.assertEqual(plan["matrix"]["include"], [{
             "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "", "fixture": "", "eval_key": "",
             "model": "", "skill": "", "section": "sec", "holdout": "guidance/sec/zzz",
-            "trigger_only": "false"}])
+            "trigger_only": "false", "trim_description": "false"}])
         self.assertEqual(plan["guidance"], {"sec": {
             "eligible": True, "reasons": [], "headroom": 0.4, "fixtures": 4}})
         self.assertEqual(plan["skills"], {})

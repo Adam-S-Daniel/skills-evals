@@ -32,7 +32,13 @@ name: Fire eval routine
 #   is `fire-check --trigger-only` (the committed set the loop accepts, any
 #   number of fixtures, all naming adam-agentskills), and the payload gains
 #   `trigger_only: true` as its last key only then. It is still improve
-#   mode: the same branch, gate, outcomes and allowance charge.
+#   mode: the same branch, gate, outcomes and allowance charge. A fourth,
+#   `trim_description` (false by default; skills-evals#687), is improve
+#   mode only and never true with `trigger_only`: true runs the description
+#   trim loop (a description of at most 400 characters, measured on every
+#   fixture), `holdout` must be empty, the check is `fire-check --trim` (the
+#   ordinary fixture check), and the payload gains `trim_description: true`
+#   as its last key only then; same branch, gate, outcomes and charge.
 #   `guidance-improve` (ADR 0005, "Routine guidance improve mode addendum")
 #   sends exactly five: run_id, mode, section, trials and holdout (null when
 #   empty), and the routine runs scripts/propose_guidance_edit.py on that
@@ -150,7 +156,8 @@ name: Fire eval routine
 # * The run's title (`run-name`) names the mode, ` bare` after it for an
 #   eval fire with `arms: bare` (so the weekly planner can tell which
 #   (fixture, model) bare runs were fired), ` trigger` after it for a
-#   trigger-only improve fire, the one target input of that
+#   trigger-only improve fire or ` trim` for a description trim, the one
+#   target input of that
 #   mode (fixture, candidate, skill or section) and the model when one is
 #   given. It is the only place the runs API exposes a dispatch's inputs, so
 #   scripts/improve_outcomes.py reads improve and guidance-improve attempts
@@ -162,7 +169,7 @@ name: Fire eval routine
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
 run-name: >-
-  Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' && ' trigger' || '' }}
+  Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' && ' trigger' || '' }}${{ inputs.mode == 'improve' && inputs.trim_description == 'true' && ' trim' || '' }}
   ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}${{ inputs.section }}
   ${{ inputs.model }}
 
@@ -237,6 +244,15 @@ on:
           Improve mode only: true runs only skill-creator's description loop
           on the skill's reviewed evals/<skill>/trigger-eval-set.json
           (skills-evals#662).
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      trim_description:
+        description: >-
+          Improve mode only: true shortens the skill's description to at most
+          400 characters, accepted only if no fixture does worse
+          (skills-evals#687).
         required: false
         type: choice
         options: ["false", "true"]
@@ -316,7 +332,8 @@ jobs:
                      (.inputs.section // ""),
                      (.inputs.model // ""), (.inputs.proposal // ""),
                      (.inputs.hook_declined // "false"),
-                     (.inputs.trigger_only // "false")]
+                     (.inputs.trigger_only // "false"),
+                     (.inputs.trim_description // "false")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
@@ -343,6 +360,7 @@ jobs:
           proposal="$(jq -r '.inputs.proposal // ""' "$event")"
           hook_declined="$(jq -r '.inputs.hook_declined // "false"' "$event")"
           trigger_only="$(jq -r '.inputs.trigger_only // "false"' "$event")"
+          trim_description="$(jq -r '.inputs.trim_description // "false"' "$event")"
           arms="$(jq -r '.inputs.arms' "$event")"
           trials="$(jq -r '.inputs.trials' "$event")"
 
@@ -376,6 +394,24 @@ jobs:
           fi
           if [ "$trigger_only" = true ] && [ -n "$holdout" ]; then
             echo "::error::input 'holdout' must be empty when 'trigger_only' is true"
+            exit 1
+          fi
+          case "$trim_description" in
+            false|true) ;;
+            *)
+              echo "::error::input 'trim_description' must be false or true"
+              exit 1 ;;
+          esac
+          if [ "$trim_description" = true ] && [ "$mode" != improve ]; then
+            echo "::error::input 'trim_description' may be true in improve mode only"
+            exit 1
+          fi
+          if [ "$trim_description" = true ] && [ "$trigger_only" = true ]; then
+            echo "::error::inputs 'trim_description' and 'trigger_only' may not both be true"
+            exit 1
+          fi
+          if [ "$trim_description" = true ] && [ -n "$holdout" ]; then
+            echo "::error::input 'holdout' must be empty when 'trim_description' is true"
             exit 1
           fi
 
@@ -541,9 +577,16 @@ jobs:
             # trigger-only loop's rules instead: no holdout, a committed
             # reviewed evals/<skill>/trigger-eval-set.json the loop accepts,
             # any number of fixtures, every one naming adam-agentskills.
+            # A description trim (skills-evals#687) takes the ordinary
+            # fixture check with no holdout: it is measured on every fixture.
             if [ "$trigger_only" = true ]; then
               if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout= --trigger-only; then
                 echo "::error::input 'skill' is refused by the trigger-only loop's check"
+                exit 1
+              fi
+            elif [ "$trim_description" = true ]; then
+              if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout= --trim; then
+                echo "::error::input 'skill' is refused by the description trim's fixture check"
                 exit 1
               fi
             elif ! python3 scripts/improve_gate.py fire-check "$skill" --holdout="$holdout"; then
@@ -580,6 +623,7 @@ jobs:
             echo "proposal=${proposal}"
             echo "hook_declined=${hook_declined}"
             echo "trigger_only=${trigger_only}"
+            echo "trim_description=${trim_description}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
@@ -588,7 +632,7 @@ jobs:
           if [ "$mode" = scaffold ]; then
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
           elif [ "$mode" = improve ]; then
-            echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none}, trigger_only: ${trigger_only} (arms is not sent)"
+            echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none}, trigger_only: ${trigger_only}, trim_description: ${trim_description} (arms is not sent)"
           elif [ "$mode" = guidance-improve ]; then
             echo "mode: guidance-improve, section: ${section}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
           elif [ "$mode" = draft ]; then
@@ -856,6 +900,7 @@ jobs:
           PROPOSAL: ${{ steps.validate.outputs.proposal }}
           HOOK_DECLINED: ${{ steps.validate.outputs.hook_declined }}
           TRIGGER_ONLY: ${{ steps.validate.outputs.trigger_only }}
+          TRIM_DESCRIPTION: ${{ steps.validate.outputs.trim_description }}
           ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
           DRAFT_PAYLOAD_FILE: ${{ steps.draft-payload.outputs.file }}
         run: |
@@ -892,15 +937,18 @@ jobs:
             improve)
               # Exactly five keys; an empty holdout is null, never "". A
               # trigger-only fire adds `trigger_only: true` as a sixth, last
-              # key, only then, so every other improve payload is byte for
-              # byte what it was.
+              # key, only then, and a description trim `trim_description:
+              # true` likewise (validate refused both at once), so every
+              # other improve payload is byte for byte what it was.
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg skill "$SKILL" \
                 --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
                 --arg trigger_only "${TRIGGER_ONLY:-false}" \
+                --arg trim_description "${TRIM_DESCRIPTION:-false}" \
                 '{text: ({run_id: $run_id, mode: "improve", skill: $skill, trials: $trials,
                           holdout: (if $holdout == "" then null else $holdout end)}
                          + (if $trigger_only == "true" then {trigger_only: true} else {} end)
+                         + (if $trim_description == "true" then {trim_description: true} else {} end)
                          | tojson)}')" ;;
             guidance-improve)
               # Exactly five keys; an empty holdout is null, never "".
@@ -1047,7 +1095,7 @@ jobs:
               echo "### Eval routine fired (improve mode)"
               echo
               echo "- Run id: \`${RUN_ID}\`"
-              echo "- Skill: \`${SKILL}\`, trials: \`${TRIALS}\`, trigger-only: \`${TRIGGER_ONLY:-false}\`"
+              echo "- Skill: \`${SKILL}\`, trials: \`${TRIALS}\`, trigger-only: \`${TRIGGER_ONLY:-false}\`, description trim: \`${TRIM_DESCRIPTION:-false}\`"
               if [ -n "$HOLDOUT" ]; then
                 echo "- Holdout: \`${HOLDOUT}\`"
               else

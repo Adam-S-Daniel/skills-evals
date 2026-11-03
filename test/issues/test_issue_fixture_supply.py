@@ -145,7 +145,11 @@ class PickTests(unittest.TestCase):
         trigger = ("${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' "
                    "&& ' trigger' || '' }}")
         self.assertIn(trigger, doc["run-name"])
-        rendered = doc["run-name"].replace(bare, "").replace(trigger, "")
+        # And ` trim`, for a description trim (skills-evals#687).
+        trim = ("${{ inputs.mode == 'improve' && inputs.trim_description == 'true' "
+                "&& ' trim' || '' }}")
+        self.assertIn(trim, doc["run-name"])
+        rendered = doc["run-name"].replace(bare, "").replace(trigger, "").replace(trim, "")
         rendered = rendered.replace("${{ inputs.mode }}", "scaffold")
         # A scaffold fire sends no model, so the folded title ends in a space.
         rendered = rendered.replace("${{ inputs.model }}", "")

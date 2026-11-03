@@ -50,7 +50,8 @@ $GITHUB_OUTPUT):
   pr-body  --staged DIR --run-id ID --sha SHA --branch NAME
            [--mode draft|auto]                          (body on stdout)
   merge-mode --tree DIR --plugin NAME --skill NAME [--policy FILE]   (mode=, mode_reason=)
-  fire-check SKILL [--holdout NAME] [--trigger-only]    (no output; exit 0 or 1)
+  fire-check SKILL [--holdout NAME] [--trigger-only | --trim]
+                                                        (no output; exit 0 or 1)
 
 `prepare` builds the whole registry change on a clean checkout of
 adam-agentskills' default branch tip, holding no credential: the patch
@@ -77,7 +78,16 @@ instead of fixtures, and `check_trigger_only` re-verifies its acceptance from
 its own counts (a held-out pass-rate gain of at least TRIGGER_ONLY_MIN_GAIN,
 no should-not-trigger drop) rather than trusting its status. `apply` then
 refuses any change to the SKILL.md body, and `impact_entry` records the
-trigger counts. Any other `mode` value is rejected.
+trigger counts. A TRIM record (`"mode": "trim"`, skills-evals#687: only the
+description was shortened, to at most TRIM_MAX_CHARS characters, and
+measured on every fixture) gets its own key sets; `check_trim` re-derives
+its acceptance from its `trim` block's per-fixture counts with the loop's
+rule (propose_skill_edit.decide_trim, its constants mirrored here), `apply`
+refuses a body change or a resulting description over the cap, `prepare`
+also removes the skill's `length-limit` waiver from the registry's
+`scripts/skills_waivers.yml` (`remove_length_waiver`; nothing when there is
+none), and `impact_entry` records the fixture counts. Any other `mode` value
+is rejected.
 
 `fire-check` is the other end: `routine-eval-fire.yml` runs it before the
 fire bearer exists, so a skill the loop would refuse never starts a routine
@@ -88,7 +98,9 @@ checkout, needs that checkout, which the fire job does not have, so that
 step stays the routine's. `--trigger-only` checks a trigger-only fire
 instead: an empty holdout, the committed reviewed set the loop's own loader
 and `trigger_only_set` accept, any number of fixtures (zero included), and
-adam-agentskills as every fixture's registry.
+adam-agentskills as every fixture's registry. `--trim` checks a trim fire:
+an empty holdout and the ordinary check's fixtures (at least MIN_FIXTURES,
+one registry, adam-agentskills), since a trim is measured on them.
 """
 
 from __future__ import annotations
@@ -200,6 +212,30 @@ TRIGGER_ONLY_MIN_GAIN = 0.15
 TRIGGER_SET_FILE = "trigger-eval-set.json"
 TRIGGER_COUNT_KEYS = ("test_passed", "test_total", "should_not_passed",
                       "should_not_total")
+#: propose_skill_edit.improve_trim()'s record keys (skills-evals#687): the
+#: ones an accepted trim record must carry, and the only others it may.
+TRIM_MODE = "trim"
+TRIM_RECORD_REQUIRED = ("schema", "skill", "timestamp", "mode", "local_exhibit",
+                        "registry", "models", "trials", "description", "trim",
+                        "status", "reasons", "files")
+TRIM_RECORD_ALLOWED = TRIM_RECORD_REQUIRED + ("no_judge", "runs", "phase",
+                                             "exit_code", "decision")
+TRIM_BLOCK_KEYS = ("max_chars", "original_chars", "candidate_chars", "rule",
+                   "tolerance_checks", "fixture_drop_checks", "baseline", "candidate")
+#: The trim rule, mirrored from propose_skill_edit (TRIM_MAX_CHARS,
+#: TRIM_TOLERANCE_CHECKS, TRIM_FIXTURE_DROP_CHECKS, TRIM_RULE; a test holds
+#: them equal): adam-agentskills' 400-character description cap, no fewer
+#: objective passes summed over every fixture, and at most one lost pass on
+#: any one fixture.
+TRIM_MAX_CHARS = 400
+TRIM_TOLERANCE_CHECKS = 0
+TRIM_FIXTURE_DROP_CHECKS = 1
+TRIM_RULE = "aggregate-noninferior-per-fixture-drop-1"
+#: The registry's waiver file and the waiver a trim retires (adam-agentskills
+#: scripts/check_skills.py: a waiver matching no finding fails its build, so
+#: the trim's pull request must remove it in the same change).
+WAIVERS_FILE = "scripts/skills_waivers.yml"
+LENGTH_WAIVER_CLASS = "length-limit"
 #: The values a record's `tokens_basis` may take (propose_skill_edit's
 #: TOKENS_BASIS and TOKENS_BASIS_LEGACY); a record without one predates it.
 TOKENS_BASES = ("model_usage_total", "usage_main_loop")
@@ -265,13 +301,16 @@ def bounded(value, where: str, depth: int = 0) -> None:
 
 
 def check_record(doc, where: str, repo: str) -> dict:
-    trigger = isinstance(doc, dict) and "mode" in doc
-    if trigger and doc["mode"] != TRIGGER_MODE:
+    mode = doc.get("mode") if isinstance(doc, dict) else None
+    if isinstance(doc, dict) and "mode" in doc and mode not in (TRIGGER_MODE, TRIM_MODE):
         raise Rejected(f"{where}: unknown mode")
+    trigger, trim = mode == TRIGGER_MODE, mode == TRIM_MODE
     if isinstance(doc, dict) and "trigger_only" in doc and not trigger:
         raise Rejected(f"{where}: a trigger_only block needs mode trigger-only")
     if trigger:
         ingest._object(doc, where, TRIGGER_RECORD_ALLOWED, TRIGGER_RECORD_REQUIRED)
+    elif trim:
+        ingest._object(doc, where, TRIM_RECORD_ALLOWED, TRIM_RECORD_REQUIRED)
     else:
         ingest._object(doc, where, RECORD_ALLOWED, RECORD_REQUIRED)
     bounded(doc, where)
@@ -320,6 +359,12 @@ def check_record(doc, where: str, repo: str) -> dict:
         if trigger_set.is_symlink() or not trigger_set.is_file():
             raise Rejected(f"{where}: skill has no reviewed trigger eval set "
                            "under evals/ on the default branch")
+        return found
+    if trim:
+        check_trim(doc, where)
+        if not (Path(repo) / "evals" / skill).is_dir():
+            raise Rejected(f"{where}: skill has no evals/ directory on the "
+                           "default branch")
         return found
 
     split = doc["split"]
@@ -384,18 +429,86 @@ def check_trigger_only(block, where: str) -> None:
         raise Rejected(f"{where}: fewer should-not-trigger queries passed")
 
 
-def is_trigger_record(staged: Path) -> bool:
-    """Whether the staged summary.json is a trigger-only record. No staged
-    record (an `apply` run by hand on a bare patch) is not one; an
-    unreadable one is refused rather than read as either."""
+def _count(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def check_trim(doc: dict, where: str) -> None:
+    """Re-verify a trim record's acceptance from its own `trim` block
+    (propose_skill_edit.decide_trim's rule), so a record whose status says
+    accepted while its numbers do not is never applied: the rule and its
+    constants are this gate's, the candidate's description is non-empty and
+    at most TRIM_MAX_CHARS characters (its `candidate_chars` agreeing), the
+    original was over the cap, both sides list the same fixtures with
+    integer counts and equal totals, the summed passes do not fall by more
+    than TRIM_TOLERANCE_CHECKS, and no fixture falls by more than
+    TRIM_FIXTURE_DROP_CHECKS. Fixed-text rejections only."""
+    block = doc["trim"]
+    where = f"{where}: trim"
+    ingest._object(block, where, TRIM_BLOCK_KEYS, TRIM_BLOCK_KEYS)
+    if block["rule"] != TRIM_RULE or block["max_chars"] != TRIM_MAX_CHARS \
+            or block["tolerance_checks"] != TRIM_TOLERANCE_CHECKS \
+            or block["fixture_drop_checks"] != TRIM_FIXTURE_DROP_CHECKS \
+            or any(isinstance(block[k], bool) for k in
+                   ("max_chars", "tolerance_checks", "fixture_drop_checks")):
+        raise Rejected(f"{where}: not this gate's trim rule")
+    description = doc["description"]
+    ingest._object(description, f"{where}: description", ("original", "candidate"),
+                   ("original", "candidate"))
+    candidate, original = description["candidate"], description["original"]
+    if not isinstance(candidate, str) or not isinstance(original, str):
+        raise Rejected(f"{where}: description is not two strings")
+    if not 1 <= len(candidate) <= TRIM_MAX_CHARS or "\n" in candidate \
+            or candidate != " ".join(candidate.split()) \
+            or block["candidate_chars"] != len(candidate) \
+            or not _count(block["candidate_chars"]):
+        raise Rejected(f"{where}: the candidate description is not within the cap")
+    if block["original_chars"] != len(original) or not _count(block["original_chars"]) \
+            or len(original) <= TRIM_MAX_CHARS:
+        raise Rejected(f"{where}: the original description was not over the cap")
+    baseline, cand = block["baseline"], block["candidate"]
+    if not isinstance(baseline, dict) or not isinstance(cand, dict) or not baseline \
+            or set(baseline) != set(cand) \
+            or not all(isinstance(n, str) and NAME_RE.fullmatch(n) for n in baseline):
+        raise Rejected(f"{where}: the sides do not list the same fixtures")
+    for side in (baseline, cand):
+        for name, counts in side.items():
+            ingest._object(counts, f"{where}: fixture", ("passed", "total"),
+                           ("passed", "total"))
+            if not _count(counts["passed"]) or not _count(counts["total"]) \
+                    or counts["passed"] > counts["total"] or counts["total"] < 1:
+                raise Rejected(f"{where}: a fixture's counts are not checks passed of run")
+    if any(baseline[n]["total"] != cand[n]["total"] for n in baseline):
+        raise Rejected(f"{where}: a fixture ran different checks on the two sides")
+    before = sum(c["passed"] for c in baseline.values())
+    after = sum(c["passed"] for c in cand.values())
+    if after < before - TRIM_TOLERANCE_CHECKS:
+        raise Rejected(f"{where}: the candidate passed fewer checks in aggregate")
+    if any(baseline[n]["passed"] - cand[n]["passed"] > TRIM_FIXTURE_DROP_CHECKS
+           for n in baseline):
+        raise Rejected(f"{where}: a fixture lost more checks than the rule allows")
+
+
+def staged_mode(staged: Path) -> str | None:
+    """The staged summary.json's `mode` (None for an ordinary record, or for
+    no staged record: an `apply` run by hand on a bare patch). An unreadable
+    record is refused rather than read as any mode."""
     path = staged / "summary.json"
     if not path.exists():
-        return False
+        return None
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError):
         raise Rejected("the staged record is unreadable") from None
-    return isinstance(doc, dict) and doc.get("mode") == TRIGGER_MODE
+    mode = doc.get("mode") if isinstance(doc, dict) else None
+    return mode if isinstance(mode, str) else None
+
+
+def is_trigger_record(staged: Path) -> bool:
+    """Whether the staged summary.json is a trigger-only record. No staged
+    record (an `apply` run by hand on a bare patch) is not one; an
+    unreadable one is refused rather than read as either."""
+    return staged_mode(staged) == TRIGGER_MODE
 
 
 def check_patch(text: str, where: str, skill_md: str) -> None:
@@ -553,7 +666,9 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     fixed, the description is the trigger half's, and nothing else moves).
     For a trigger-only record (skills-evals#662) the body may not change
     either: only the description loop ran, so the description is all it can
-    have measured."""
+    have measured. Nor for a trim record (skills-evals#687), whose resulting
+    description must also be at most TRIM_MAX_CHARS characters, read back
+    from the patched frontmatter as adam-agentskills' checker reads it."""
     if not SKILL_MD_RE.fullmatch(skill_md) or ".." in skill_md.split("/"):
         raise Rejected("skill_md is not a registry SKILL.md path")
     cursor = tree
@@ -564,7 +679,8 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     target = tree / skill_md
     if not target.is_file():
         raise Rejected(f"{skill_md!r}: not in the registry checkout")
-    trigger = is_trigger_record(staged)
+    mode = staged_mode(staged)
+    trigger, trim = mode == TRIGGER_MODE, mode == TRIM_MODE
     before_text = target.read_text(encoding="utf-8")
     before = _frontmatter(before_text, skill_md)
     patch = str((staged / "skill.patch").resolve())
@@ -581,6 +697,13 @@ def apply(staged: Path, tree: Path, skill_md: str) -> dict:
     if trigger and _body(after_text) != _body(before_text):
         raise Rejected(f"{skill_md!r}: a trigger-only patch changes the body; "
                        "only the description may change")
+    if trim and _body(after_text) != _body(before_text):
+        raise Rejected(f"{skill_md!r}: a trim patch changes the body; "
+                       "only the description may change")
+    if trim and (not isinstance(after.get("description"), str)
+                 or not 1 <= len(after["description"]) <= TRIM_MAX_CHARS):
+        raise Rejected(f"{skill_md!r}: the trimmed description is not within the "
+                       f"{TRIM_MAX_CHARS}-character cap")
     if {k: v for k, v in after.items() if k != "description"} \
             != {k: v for k, v in before.items() if k != "description"} \
             or ("description" in after) != ("description" in before):
@@ -756,8 +879,109 @@ def trigger_numbers(record: dict) -> str:
             f"{b['should_not_passed']}/{b['should_not_total']}")
 
 
+def trim_numbers(record: dict) -> str:
+    """The Eval line's numbers for a trim record: per fixture, objective
+    passes baseline -> candidate, then the sum. Every value is a validated
+    fixture name or integer (check_trim), so nothing the model wrote reaches
+    the registry's text; the `a/b -> c/d` counts and the run id are what
+    adam-agentskills' scripts/check_skill_gates.py accepts as RAN."""
+    block = record["trim"]
+    names = sorted(block["baseline"])
+    parts = [f"{n} {_score(block['baseline'][n])} -> {_score(block['candidate'][n])}"
+             for n in names]
+    before = sum(block["baseline"][n]["passed"] for n in names)
+    after = sum(block["candidate"][n]["passed"] for n in names)
+    total = sum(block["baseline"][n]["total"] for n in names)
+    return "; ".join(parts) + f"; all fixtures {before}/{total} -> {after}/{total}"
+
+
+def remove_length_waiver(tree: Path, skill_md: str) -> bool:
+    """Remove the registry's `length-limit` waiver for `skill_md` from
+    WAIVERS_FILE, as text, so every comment and every other entry stays
+    byte for byte. True when one was removed; False, with the file left
+    alone, when the file or the entry is absent (the cap may have been met
+    another way).
+
+    The entry is the list item under `waivers:` whose `klass` is
+    LENGTH_WAIVER_CLASS, `registry` REGISTRY_NAME and `path` `skill_md`. An
+    item runs from its `  - ` line to the last non-blank, non-comment line
+    before the next item at the same indent or the end of the list, so a
+    comment above the next item stays with it. The result is loaded again
+    and must equal the original with exactly that one entry gone (an empty
+    list is written `waivers: []`); anything else, two matching entries
+    included, is Rejected."""
+    path = _no_symlink(tree, WAIVERS_FILE)
+    if not path.is_file():
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+        doc = yaml.safe_load(text)
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        raise Rejected(f"{WAIVERS_FILE}: unreadable") from None
+    waivers = doc.get("waivers") if isinstance(doc, dict) else None
+    if not isinstance(waivers, list):
+        raise Rejected(f"{WAIVERS_FILE}: has no waivers list")
+    target = {"klass": LENGTH_WAIVER_CLASS, "registry": REGISTRY_NAME, "path": skill_md}
+    matches = [i for i, w in enumerate(waivers) if isinstance(w, dict)
+               and all(w.get(k) == v for k, v in target.items())]
+    if not matches:
+        return False
+    if len(matches) > 1:
+        raise Rejected(f"{WAIVERS_FILE}: more than one length-limit waiver names "
+                       "the skill")
+    lines = text.splitlines(keepends=True)
+    key = next((i for i, line in enumerate(lines) if re.match(r"waivers:\s*(#.*)?$", line)),
+               None)
+    if key is None:
+        raise Rejected(f"{WAIVERS_FILE}: the waivers list is not in block style")
+    items, end = [], len(lines)
+    for i in range(key + 1, len(lines)):
+        line = lines[i]
+        if line.startswith("  - "):
+            items.append(i)
+        elif line.strip() and not line.lstrip().startswith("#") and not line.startswith("   "):
+            end = i
+            break
+
+    def last_content(start: int, stop: int) -> int:
+        last = start
+        for j in range(start, stop):
+            if lines[j].strip() and not lines[j].lstrip().startswith("#"):
+                last = j
+        return last + 1
+
+    spans = [(start, last_content(start, items[n + 1] if n + 1 < len(items) else end))
+             for n, start in enumerate(items)]
+    found = None
+    for start, stop in spans:
+        try:
+            item = yaml.safe_load("".join(lines[start:stop]))
+        except yaml.YAMLError:
+            continue
+        if isinstance(item, list) and len(item) == 1 and item[0] == waivers[matches[0]]:
+            if found is not None:
+                raise Rejected(f"{WAIVERS_FILE}: the waiver's text is ambiguous")
+            found = (start, stop)
+    if found is None:
+        raise Rejected(f"{WAIVERS_FILE}: the waiver's lines could not be found")
+    new_lines = lines[:found[0]] + lines[found[1]:]
+    if len(waivers) == 1:
+        new_lines[key] = "waivers: []\n"
+    new = "".join(new_lines)
+    try:
+        after = yaml.safe_load(new)
+    except yaml.YAMLError:
+        raise Rejected(f"{WAIVERS_FILE}: removing the waiver broke the file") from None
+    expected = {**doc, "waivers": waivers[:matches[0]] + waivers[matches[0] + 1:]}
+    if after != expected:
+        raise Rejected(f"{WAIVERS_FILE}: removing the waiver changed more than "
+                       "that one entry")
+    path.write_text(new, encoding="utf-8")
+    return True
+
+
 def impact_entry(record: dict, plugin: str, run_id: str, versions: tuple,
-                 purpose_added: bool, mode: str) -> str:
+                 purpose_added: bool, mode: str, waiver_removed: bool = False) -> str:
     stamp = record["timestamp"]
     date = f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}"
     skill = record["skill"]
@@ -765,6 +989,24 @@ def impact_entry(record: dict, plugin: str, run_id: str, versions: tuple,
     outcome = ("auto-merges once required checks pass, with no human review "
                "(ADR 0021, Adam's 2026-10-26 decision)." if mode == "auto"
                else "draft pull request; a person merges or closes it.")
+    if record.get("mode") == TRIM_MODE:
+        t = record["trim"]
+        waiver = (f"; its `length-limit` waiver removed from `{WAIVERS_FILE}`"
+                  if waiver_removed else "")
+        return (f"## {date} — {plugin}/{skill} — edit\n\n"
+                f"- Motivation: skills-evals description trim run `{run_id}`: the "
+                f"description was over the {t['max_chars']}-character listing cap, "
+                "waived until the improve lane trimmed it "
+                "([skills-evals#687](https://github.com/Adam-S-Daniel/skills-evals/issues/687)).\n"
+                f"- Change: SKILL.md description shortened from {t['original_chars']} "
+                f"to {t['candidate_chars']} characters by the trim loop, body "
+                f"unchanged{added}{waiver}; bundle `{plugin}` {versions[0]} -> "
+                f"{versions[1]}, by skills-evals' `routine-improve-gate.yml`.\n"
+                f"- Eval: run `{run_id}`, objective checks passed on every fixture, "
+                f"baseline -> candidate, {record['trials']} trial(s) per fixture in "
+                f"the eval routine (a local exhibit, not badge input): "
+                f"{trim_numbers(record)}.\n"
+                f"- Outcome: {outcome}\n")
     if record.get("mode") == TRIGGER_MODE:
         return (f"## {date} — {plugin}/{skill} — edit\n\n"
                 f"- Motivation: skills-evals trigger-only improvement run "
@@ -867,6 +1109,10 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
 
     apply(staged, tree, skill_md)
     record = json.loads((staged / "summary.json").read_text(encoding="utf-8"))
+    trim = isinstance(record, dict) and record.get("mode") == TRIM_MODE
+    # A trim retires the skill's length-limit waiver in the same change: the
+    # registry's checker fails on a waiver that matches no finding.
+    waiver_removed = remove_length_waiver(tree, skill_md) if trim else False
     purpose = _no_symlink(tree, f"{skill_dir}/PURPOSE.md")
     purpose_added = not purpose.exists()
     if purpose_added:
@@ -879,14 +1125,16 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
     except (OSError, UnicodeDecodeError):
         raise Rejected(f"cannot read {IMPACT_FILE}") from None
     impact.write_text(insert_entry(text, impact_entry(
-        record, plugin, run_id, versions, purpose_added, mode)), encoding="utf-8")
+        record, plugin, run_id, versions, purpose_added, mode, waiver_removed)),
+        encoding="utf-8")
     _no_symlink(tree, README)
     _registry_script(tree, "scripts/generate_readme_table.py")
     if subprocess.run([sys.executable, "scripts/generate_readme_table.py"],
                       cwd=tree, capture_output=True, check=False).returncode:
         raise Rejected("the registry's README table did not regenerate")
     ingest.git(repo, "add", "-A", "--", skill_dir, IMPACT_FILE, README,
-               *(f"plugins/{plugin}/{name}" for name in MANIFESTS))
+               *(f"plugins/{plugin}/{name}" for name in MANIFESTS),
+               *([WAIVERS_FILE] if waiver_removed else []))
     ingest.git(repo, *COMMIT_IDENTITY, "commit", "-q", "-m",
                f"Edit {plugin}/{skill} from improvement run {run_id}\n\n"
                "skills-evals' improvement loop measured the edit and accepted "
@@ -922,7 +1170,10 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
         raise Rejected("the registry's scripts changed files they were not "
                        "asked to")
     allowed = {IMPACT_FILE, README, LOCK,
-               *(f"plugins/{plugin}/{name}" for name in MANIFESTS)}
+               *(f"plugins/{plugin}/{name}" for name in MANIFESTS),
+               # Only a trim may touch the waiver file, and only to remove
+               # its own waiver (remove_length_waiver).
+               *([WAIVERS_FILE] if waiver_removed else [])}
     changed = ingest.git(repo, "diff", "--no-renames", "--name-only", "-z",
                          base, "HEAD").decode().split("\0")[:-1]
     stray = [p for p in changed
@@ -995,6 +1246,8 @@ FIRE_TRIGGER_HOLDOUT = "input 'holdout' must be empty in trigger-only mode"
 FIRE_NOT_A_SKILL_NAME = "input 'skill' is not a skill name"
 FIRE_NO_TRIGGER_SET = ("input 'skill' has no committed regular "
                        "evals/<skill>/trigger-eval-set.json on the default branch")
+FIRE_TRIM_HOLDOUT = "input 'holdout' must be empty in trim mode"
+FIRE_TRIM_AND_TRIGGER = "a fire is trim or trigger-only, never both"
 FIRE_TRIGGER_SET_UNUSABLE = (
     "the skill's trigger-eval-set.json is not a reviewed set the trigger-only "
     "loop accepts (its shape, its per-class minimum, or a split lacking a class)")
@@ -1054,14 +1307,21 @@ def fire_check_trigger_only(skill: str, holdout: str) -> None:
             raise Rejected(FIRE_NOT_ROUTINE_REGISTRY)
 
 
-def fire_check(skill: str, holdout: str, trigger_only: bool = False) -> None:
+def fire_check(skill: str, holdout: str, trigger_only: bool = False,
+               trim: bool = False) -> None:
     """Refuse a skill or holdout the improvement loop would refuse, as far as
     the committed fixtures and harness/registries.yml can tell. With
     `trigger_only`, the trigger-only loop's checks instead
-    (`fire_check_trigger_only`)."""
+    (`fire_check_trigger_only`). With `trim` (skills-evals#687), the holdout
+    must be empty and the fixtures pass the same checks as an ordinary fire:
+    the trim loop measures every one of them."""
+    if trigger_only and trim:
+        raise Rejected(FIRE_TRIM_AND_TRIGGER)
     if trigger_only:
         fire_check_trigger_only(skill, holdout)
         return
+    if trim and holdout:
+        raise Rejected(FIRE_TRIM_HOLDOUT)
     import propose_skill_edit as loop  # noqa: PLC0415 — only fire-check needs it
     run_eval = loop.run_eval
     try:
@@ -1127,11 +1387,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("fire-check")
     p.add_argument("skill")
     p.add_argument("--holdout", default="")
-    p.add_argument("--trigger-only", action="store_true")
+    flags = p.add_mutually_exclusive_group()
+    flags.add_argument("--trigger-only", action="store_true")
+    flags.add_argument("--trim", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.command == "fire-check":
-            fire_check(args.skill, args.holdout, args.trigger_only)
+            fire_check(args.skill, args.holdout, args.trigger_only, args.trim)
             return 0
         if args.command == "resolve":
             result = resolve(args.event_name, args.event_path)
