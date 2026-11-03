@@ -460,6 +460,34 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('diff', cwd=self.repo)
 
+    def test_the_refusal_names_what_changed(self):
+        # 2026-11-03: an in-place arm failed with only "baseline
+        # configuration, info, or hooks changed" and no trace survived, so
+        # nothing said which entry moved. The refusal now names it.
+        import workspace_git
+        cases = [
+            ("info/attributes", lambda: (self.repo / '.git' / 'info' / 'attributes').write_bytes(b''),
+             r"'info/attributes' added \(0 bytes [0-9a-f]{12}\)"),
+            ("config", lambda: self.raw('config', 'user.name', 'changed'),
+             r"'config' changed \(\d+ bytes [0-9a-f]{12} -> \d+ bytes [0-9a-f]{12}\)"),
+            ("hook", lambda: shutil.copyfile(self.script, self.repo / '.git' / 'hooks' / 'pre-commit'),
+             r"'hooks/pre-commit' added"),
+            ("exclude", lambda: (self.repo / '.git' / 'info' / 'exclude').unlink(),
+             r"'info/exclude' removed"),
+        ]
+        for name, change, pattern in cases:
+            with self.subTest(name=name):
+                workspace_git.seal(self.repo)
+                self.addCleanup(workspace_git.release, self.repo)
+                change()
+                with self.assertRaisesRegex(
+                        RuntimeError,
+                        r'workspace_git_tampered: baseline configuration, info, or hooks '
+                        r'changed: .*' + pattern):
+                    run_eval._git('diff', cwd=self.repo)
+                workspace_git.release(self.repo)
+        self.assertFalse(self.marker.exists())
+
     def test_baseline_git_directory_replaced(self):
         import workspace_git
         workspace_git.seal(self.repo)

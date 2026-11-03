@@ -131,6 +131,72 @@ def _digest(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _baseline_entries(gitdir: Path) -> dict[str, str]:
+    """What the baseline digests cover, entry by entry, to name what changed
+    when they differ: `.git`'s identity, `config`, and each file or directory
+    under `info/` and `hooks/` (size and a short content hash for a file).
+    Read only to explain a refusal; never compared to decide one."""
+    out: dict[str, str] = {}
+    try:
+        identity = gitdir.lstat()
+        out['.git'] = f'{identity.st_dev}:{identity.st_ino}'
+    except OSError:
+        out['.git'] = 'missing'
+
+    def describe(path: Path) -> str:
+        try:
+            info = path.lstat()
+        except OSError:
+            return 'missing'
+        if stat.S_ISLNK(info.st_mode):
+            return 'symlink'
+        if stat.S_ISDIR(info.st_mode):
+            return 'directory'
+        if not stat.S_ISREG(info.st_mode):
+            return 'special file'
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return 'unreadable'
+        return f'{len(data)} bytes {hashlib.sha256(data).hexdigest()[:12]}'
+
+    out['config'] = describe(gitdir / 'config')
+    for part in ('info', 'hooks'):
+        root = gitdir / part
+        if not os.path.lexists(root):
+            continue
+        out[part] = describe(root)
+        if out[part] != 'directory':
+            continue
+        for entry in sorted(root.rglob('*')):
+            out[f'{part}/{entry.relative_to(root)}'] = describe(entry)
+    return out
+
+
+_CHANGE_LIMIT = 10
+
+
+def _describe_change(before: dict[str, str] | None, after: dict[str, str]) -> str:
+    """`before` against `after` as a short list: which entry was added,
+    removed or changed, and its new shape. Empty when there is no record."""
+    if before is None:
+        return ''
+    changes = []
+    for name in sorted(set(before) | set(after)):
+        old, new = before.get(name), after.get(name)
+        if old == new:
+            continue
+        if old is None:
+            changes.append(f'{name!r} added ({new})')
+        elif new is None:
+            changes.append(f'{name!r} removed')
+        else:
+            changes.append(f'{name!r} changed ({old} -> {new})')
+    if len(changes) > _CHANGE_LIMIT:
+        changes = changes[:_CHANGE_LIMIT] + [f'and {len(changes) - _CHANGE_LIMIT} more']
+    return '; '.join(changes)
+
+
 def _env(home: Path) -> dict[str, str]:
     return {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'XDG_CONFIG_HOME': str(home),
             'LC_ALL': 'C', 'GIT_CONFIG_NOSYSTEM': '1',
@@ -240,7 +306,8 @@ def _refuse_redirects(gitdir: Path) -> None:
 
 
 def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
-              baseline: tuple | None = None) -> list[tuple[str, str]]:
+              baseline: tuple | None = None,
+              baseline_entries: dict[str, str] | None = None) -> list[tuple[str, str]]:
     gitdir = workspace / '.git' if baseline is not None else _metadata(workspace)
     try:
         identity = gitdir.lstat()
@@ -266,7 +333,9 @@ def _validate(workspace: Path, private: Path, timeout: float | _Deadline,
         current = (identity.st_dev, identity.st_ino, _digest(gitdir / 'config'),
                    _digest(gitdir / 'info'), _digest(gitdir / 'hooks'))
         if current != baseline:
-            _refuse('baseline configuration, info, or hooks changed')
+            change = _describe_change(baseline_entries, _baseline_entries(gitdir))
+            _refuse('baseline configuration, info, or hooks changed'
+                    + (f': {change}' if change else ''))
     return entries
 
 
@@ -319,6 +388,7 @@ class _Context:
         self.private = _private_dir()
         self.gitdir = self.private / 'metadata'
         self.baseline = None
+        self.baseline_entries: dict[str, str] | None = None
         self.root_identity: tuple[int, int] | None = None
         self.saved_files: dict[str, bytes] = {}
         self.saved_dirs: list[str] = []
@@ -335,6 +405,7 @@ class _Context:
 
     def restore(self, source: '_Context') -> None:
         self.baseline = source.baseline
+        self.baseline_entries = source.baseline_entries
         self.gitdir.mkdir()
         for relative in source.saved_dirs:
             (self.gitdir / relative).mkdir(parents=True, exist_ok=True)
@@ -418,6 +489,7 @@ def seal(workspace: Path) -> None:
                             _digest(workspace / '.git' / 'config'),
                             _digest(workspace / '.git' / 'info'),
                             _digest(workspace / '.git' / 'hooks'))
+        context.baseline_entries = _baseline_entries(workspace / '.git')
         context.remember()
         context.close()
         _CONTEXTS[str(logical)] = context
@@ -841,7 +913,8 @@ def validate(workspace: Path) -> None:
     private = _private_dir()
     try:
         _validate(Path(workspace).resolve(), private, DEFAULT_TIMEOUT_S,
-                  stored.baseline if stored else None)
+                  stored.baseline if stored else None,
+                  stored.baseline_entries if stored else None)
     finally:
         shutil.rmtree(private, ignore_errors=True)
 
@@ -869,6 +942,7 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
         context.restore(stored)
     elif stored is not None:
         context.baseline = stored.baseline
+        context.baseline_entries = stored.baseline_entries
     try:
         if args and args[0] == 'init':
             if os.path.lexists(workspace / '.git'):
@@ -902,7 +976,8 @@ def run(*args: str, cwd: Path, timeout: float = DEFAULT_TIMEOUT_S,
             return result
         reads_work_tree = (not args or (args[0] not in _NO_WORK_TREE_READS
                            and args[:2] != ('worktree', 'list')))
-        entries = _validate(workspace, context.private, deadline, context.baseline)
+        entries = _validate(workspace, context.private, deadline, context.baseline,
+                            context.baseline_entries)
         if _metadata(workspace) == workspace and (not args or args[0] not in {'rev-parse', 'remote', 'log', 'show', 'worktree'}):
             _refuse('bare metadata supports read-only inspection')
         if not use_baseline:
