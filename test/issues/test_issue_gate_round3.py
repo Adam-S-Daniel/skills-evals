@@ -300,7 +300,7 @@ class AtCapTests(unittest.TestCase):
         self.assertIs(classify(CAP + 3, 50, 50, cli=self.ONE)["at_cap"], True)
 
     def test_a_capped_cell_reaches_the_planner_as_a_work_item_not_a_fire(self):
-        from test_issue_559_empty_fires import MODEL, NOW, SKILL_FIXTURE, one
+        from test_issue_559_empty_fires import MODEL, NOW, ROUTINE_GIT, SKILL_FIXTURE, one
         from test_issue_closed_loop_planner import ctx
         skill, fixture = SKILL_FIXTURE.split("/")[1:]
         for n, at_cap in ((CAP - 1, False), (CAP, True)):
@@ -308,7 +308,7 @@ class AtCapTests(unittest.TestCase):
             verdict = gates.retirement({"runs": runs}, [MODEL], skill, POLICY,
                                        expect(fixture))
             doc = {"roster_models": [MODEL], "skills": {skill: verdict}}
-            got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW), SKILL_FIXTURE)
+            got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW, ROUTINE_GIT), SKILL_FIXTURE)
             self.assertEqual((got["class"], got["at_cap"]), ("insufficient", at_cap))
             plan = plan_week.build_plan(ctx(cells=[got], room=1.0), NOW)
             fired = [(f["fixture"], f["model"]) for f in plan["fires"]]

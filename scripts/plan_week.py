@@ -2184,9 +2184,10 @@ def _landed_runs(cell: dict | None) -> list | None:
     return None if None in times else times
 
 
-def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime) -> list:
+def eval_cells(evals_dir: Path, gates_doc: dict, fire_runs: list, now: datetime,
+               routine_git: str | None = None) -> list:
     """The cells of `eval_cells_and_outages`."""
-    return eval_cells_and_outages(evals_dir, gates_doc, fire_runs, now)[0]
+    return eval_cells_and_outages(evals_dir, gates_doc, fire_runs, now, routine_git)[0]
 
 
 def judge_empty_fires(fires: list, since: datetime) -> list:
