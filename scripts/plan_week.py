@@ -199,12 +199,15 @@ and only from the policy's `start`. `batch_state` decides it each plan:
     (`fit_batch`). Candidates are the subjects with a schedulable cell,
     never a private skill, whose status is open (`batch_subjects`: verdict
     open, no removal pull request, no blocking cell, some cell would plan a
-    fire). Carried members first; then the kinds take turns, each ranked
-    high stakes first, then most used, then the longest without a run
-    (never run first), then name. Each is priced at its cells with headroom
-    x `pairs_per_cell` x its model's measured cost per pair (`pair_costs`);
-    one that alone would overflow the room left waits, and a cheaper one
-    after it can still join. Never empty while a subject waits.
+    fire). Carried members first; then the kinds take turns, skills ranked
+    most used first, then high stakes, guidance sections (no per-section
+    use) high stakes first; then the longest without a run (never run
+    first), then name. Each cell with headroom is charged its remaining
+    observations, min(`pairs_per_cell`, the gate's `max_runs_per_cell` -
+    the observations it has), at its model's measured cost per observation
+    (`pair_costs`: points per paired run); a subject that alone would
+    overflow the room left waits, and a cheaper one after it can still join.
+    Never empty while a subject waits.
   lifetime: a batch stays until every member has left `open` (decided,
     blocked, stalled or gone) or it is due (`period_days` after its start),
     whichever is first. Then the next one starts at once: the old batch's
@@ -1222,33 +1225,35 @@ def addition_histories(registries: dict, guidance: Path | None) -> dict:
 
 
 def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> dict:
-    """{roster model: mean allowance fraction per pair}: over the routine
-    runs of the last `window` whose cost_estimate.json carries `points` and
-    whose validated paired records (`records`, compute_gates.build_index's
-    `runs` and `guidance_runs`, any content digest) are all on one model,
-    their points over their pairs. A pair is one trial of each arm, so a
-    run's pairs are its larger arm's scored trials. Judge and guard calls are
-    in a run's points, so they are in the mean. A model with no such run is
+    """{roster model: mean allowance fraction per observation}: over the
+    routine runs of the last `window` whose cost_estimate.json carries
+    `points` and whose validated paired records (`records`,
+    compute_gates.build_index's `runs` and `guidance_runs`, any content
+    digest) are all on one model, their points over their observations. An
+    observation is what the gate counts toward `max_runs_per_cell`: one
+    paired run (a with run and a without run at one path), whatever its
+    trial count, so a 3-trial run costs its own measured points. A guidance
+    fire's `alone` pair is read for contrast, not counted in its cell, so
+    only its `in_situ` pair is an observation. Judge and guard calls are in a
+    run's points, so they are in the mean. A model with no such run is
     absent."""
     runs: dict = {}
     for record in records:
         parts = str(record.get("path", "")).split("/")
         if parts[0] != guard.DEST_ROOT or len(parts) < 2:
             continue
-        entry = runs.setdefault(parts[1], {"models": set(), "trials": {}, "newest": None})
+        entry = runs.setdefault(parts[1], {"models": set(), "roles": {}, "newest": None})
         entry["models"].add(record.get("model"))
-        trials = record.get("trials") if isinstance(record.get("trials"), list) else []
-        role = record.get("role")
-        entry["trials"][role] = entry["trials"].get(role, 0) + sum(
-            1 for t in trials if isinstance(t, dict) and t.get("scored") is True)
+        if record.get("pair") in (None, "in_situ"):
+            entry["roles"].setdefault(record["path"], set()).add(record.get("role"))
         at = _stamp_time(record.get("timestamp"))
         if at is not None and (entry["newest"] is None or at > entry["newest"]):
             entry["newest"] = at
     points: dict = {}
-    pairs: dict = {}
+    observations: dict = {}
     for run_id, entry in sorted(runs.items()):
-        pair_count = max(entry["trials"].values(), default=0)
-        if len(entry["models"]) != 1 or None in entry["models"] or pair_count <= 0 \
+        count = sum(1 for roles in entry["roles"].values() if {"with", "without"} <= roles)
+        if len(entry["models"]) != 1 or None in entry["models"] or count <= 0 \
                 or entry["newest"] is None or not now - window <= entry["newest"] <= now:
             continue
         try:
@@ -1262,22 +1267,44 @@ def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> d
             continue
         (model,) = entry["models"]
         points[model] = points.get(model, 0.0) + cost
-        pairs[model] = pairs.get(model, 0) + pair_count
-    return {model: points[model] / pairs[model] for model in points}
+        observations[model] = observations.get(model, 0) + count
+    return {model: points[model] / observations[model] for model in points}
 
 
-def subject_cost(cells: list, costs: dict, pairs_per_cell: float) -> float | None:
+def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
+                 cap: int | None = None) -> float | None:
     """A subject's expected cost to a verdict, in allowance fractions: over
     its cells with headroom (`_produces_item`: undecided, schedulable, not
-    fixture-broken, so its fixtures with headroom x roster models), each
-    cell's model's measured mean cost per pair (the dearest measured model
-    for one with none) times `pairs_per_cell`. None when no model's cost is
+    fixture-broken), each cell's model's measured mean cost per observation
+    (the dearest measured model for one with none) times the observations
+    it still needs: min(`pairs_per_cell`, `cap` - the gate's own count of
+    its observations, `pairs`), at least 0. `cap` is the gate policy's
+    `max_runs_per_cell` (None: no cap). None when no model's cost is
     measured."""
     if not costs:
         return None
     dearest = max(costs.values())
-    return sum(costs.get(c["model"], dearest) * pairs_per_cell
-               for c in cells if _produces_item(c))
+    total = 0.0
+    for cell in cells:
+        if not _produces_item(cell):
+            continue
+        remaining = pairs_per_cell
+        if cap is not None:
+            done = cell.get("pairs")
+            done = done if isinstance(done, int) and not isinstance(done, bool) else 0
+            remaining = min(remaining, cap - done)
+        total += costs.get(cell["model"], dearest) * max(0.0, remaining)
+    return total
+
+
+def gate_cap(ctx: dict, kind: str) -> int | None:
+    """`max_runs_per_cell` from evals/gate-policy.yml, as the verdict
+    document carries it: its `guidance` block for a section (the `skills`
+    block when the document has none), its `skills` block for a skill. None
+    when absent."""
+    block = (ctx.get("guidance_policy") if kind == "guidance" else None) or ctx.get("policy")
+    cap = block.get("max_runs_per_cell") if isinstance(block, dict) else None
+    return cap if isinstance(cap, int) and not isinstance(cap, bool) else None
 
 
 def read_batch(tree: Path) -> dict | None:
@@ -1416,13 +1443,16 @@ def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) 
     wait."). Pure. Returns {carried, picks, waiting, fit}.
 
     Carried members stay whatever they cost, and their cost counts first.
-    The candidates, open subjects not carried, are ranked per kind: high
-    stakes first, then most used (a skill's usage weight, `neutral_weights`
-    of ctx["skill_weights"]; guidance has no per-section use, so its sections
-    tie), then the longest without a run (never run first), then name. The
-    kinds take turns, so neither kind's list starves the other. A candidate
-    joins while its kind is under its target size and its expected cost
-    (`subject_cost`) fits the room the budget has left (equal fits); one that
+    The candidates, open subjects not carried, are ranked per kind. Skills:
+    most used first (the usage weight, `neutral_weights` of
+    ctx["skill_weights"]), then high stakes, then the longest without a run
+    (never run first), then name. Guidance has no per-section use, so its
+    sections rank high stakes first, then the longest without a run, then
+    name. The kinds take turns, so neither kind's list starves the other. A
+    candidate joins while its kind is under its target size and its expected
+    cost (`subject_cost`, the remaining observations of its cells with
+    headroom up to the gate's `max_runs_per_cell`) fits the room the budget
+    has left (equal fits); one that
     alone would overflow the room is skipped, so a cheaper later one can
     still join. When no cost is measured (no ctx["batch_pair_costs"]) or no
     budget is known, the fit picks by target size alone and says so. When
@@ -1439,7 +1469,8 @@ def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) 
     priced = bool(costs) and budget is not None and pairs is not None
 
     def cost_of(kind, name):
-        return subject_cost(by_subject.get((kind, name), []), costs, pairs) if priced else None
+        return subject_cost(by_subject.get((kind, name), []), costs, pairs,
+                            gate_cap(ctx, kind)) if priced else None
 
     carried = [{"kind": m["kind"], "subject": m["subject"], "joined": m["joined"],
                 "cost": cost_of(m["kind"], m["subject"])} for m in carry]
@@ -1452,8 +1483,10 @@ def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) 
     floor_time = datetime.min.replace(tzinfo=timezone.utc)
     ranked = {}
     for kind in BATCH_KINDS:
-        ranked[kind] = [name for _r, _w, _n, name in sorted(
-            (info["rank"], -(weights.get(name, 0.0) if kind == "skill" else 0.0),
+        # Skills: most used first, then stakes. Guidance has no per-section
+        # use, so stakes stay first there.
+        ranked[kind] = [name for _w, _r, _n, name in sorted(
+            (-(weights.get(name, 0.0) if kind == "skill" else 0.0), info["rank"],
              info["newest"] or floor_time, name)
             for (k, name), info in subjects.items()
             if k == kind and info["status"] == "open" and (k, name) not in taken)]

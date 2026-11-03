@@ -19,9 +19,11 @@
 #     (plan_week.batch_rates), sizing the batch at `multiplier` x that rate,
 #     at least 1 per kind; an unreadable history falls back to `rates` below,
 #     and the record says so;
-#   * prices each candidate at its cells with headroom x `pairs_per_cell` x
-#     its model's measured cost per pair over `cost_window_days`, and takes
-#     the most-used first while the total stays within the budget:
+#   * prices each candidate's cells with headroom at their remaining
+#     observations (`pairs_per_cell`, capped by gate-policy.yml's
+#     max_runs_per_cell less what each cell has) x its model's measured cost
+#     per observation over `cost_window_days`, and takes the most-used
+#     first while the total stays within the budget:
 #     budget.yml's weekly_cap x period_days / 7 (0.25 x 2 = 50 points from
 #     the 2026-11-09 reset). A subject too dear for the room left is skipped
 #     and waits; a cheaper one after it can still join.
@@ -62,16 +64,20 @@ rates:
 # (3 skills merged 2026-11-01 to 11-03), long enough to hold a few additions.
 rate_window_days: 28
 
-# Expected pairs (one trial of each arm) a cell with headroom takes to reach
-# a verdict. Source: /mnt/project-files/reports/gate-threshold-sweep-2026-11-03.md
+# Expected observations a cell with headroom takes to reach a verdict. An
+# observation is what the gate counts toward max_runs_per_cell (in
+# evals/gate-policy.yml): one fire, one paired run, whatever its trial
+# count. Source: /mnt/project-files/reports/gate-threshold-sweep-2026-11-03.md
 # in the project's files, "Points per new subject, including parked ones",
-# no adaptive layer: 10.5 points for a subject of 1 fixture x 2 models at
-# 3-trial run costs of 0.45 (Opus) and 0.25 (Sonnet) points. 10.5 / (0.45 +
-# 0.25) = 15 runs per cell, x 3 trials = 45 pairs per cell.
-pairs_per_cell: 45
+# no adaptive layer: 10.5 points for a subject of 1 fixture x 2 models, each
+# observation priced at 0.45 (Opus) + 0.25 (Sonnet) = 0.70 points for one
+# observation on each model. 10.5 / 0.70 = 15 observations per cell (the
+# sweep's 3-trial price is per observation already, so it is not multiplied
+# by trials again). The planner charges a cell min(this, max_runs_per_cell
+# - the observations it has), at least 0.
+pairs_per_cell: 15
 
 # The window of routine runs whose cost_estimate.json gives each roster
-# model's mean cost per pair, judge included (plan_week.pair_costs). On
-# 2026-11-03, over 287 ingested pairs: about 0.00125 of the allowance per
-# Opus pair and 0.0004 per Sonnet pair.
+# model's mean cost per observation (the run's measured points over its
+# paired runs), judge included (plan_week.pair_costs).
 cost_window_days: 14

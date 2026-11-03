@@ -404,26 +404,35 @@ rates. Only the weekly workflow passes the policy (`--batch-policy`).
     guidance 0.5) and the record says so. The target size per kind is
     max(1, 3 x rate, half rounded up).
   - prices each subject at its cells with headroom (undecided, schedulable,
-    not fixture-broken) x `pairs_per_cell` (45, from the 2026-11-03 gate
-    threshold sweep) x its model's mean cost per pair: the points in
-    `cost_estimate.json` over the scored pairs of the routine runs of the
-    last `cost_window_days` (14), judge included.
+    not fixture-broken). Each is charged its remaining observations,
+    min(`pairs_per_cell`, `max_runs_per_cell` from `gate-policy.yml` less
+    the observations the gate already counts in it), at least 0, times its
+    model's mean cost per observation. An observation is one fire, one
+    paired run whatever its trial count, as the gate counts it. The cost per
+    observation is the points in `cost_estimate.json` over the paired runs
+    of the routine runs of the last `cost_window_days` (14), judge included
+    (a guidance fire's `alone` pair is not an observation of its cell).
+    `pairs_per_cell` is 15: the 2026-11-03 gate threshold sweep's 10.5
+    points per new subject over 0.70 points per observation on both models.
   - takes candidates while their total stays within the budget,
     `budget.yml`'s `weekly_cap` x the period's weeks (0.25 x 2 = 50
     points); a total equal to the budget fits. Carried members stay first
-    and count first. Then the kinds take turns, each in its own order: high
-    stakes first, then most used (a skill's usage weight; guidance has no
-    per-section use, so sections tie), then the longest without a run, then
-    name. A subject that alone would overflow the room left is skipped and
-    waits; a cheaper one after it can still join. If nothing would join
-    while subjects wait, the cheapest joins over budget, so the batch is
-    never empty. With no measured cost the fit picks by target size alone.
+    and count first. Then the kinds take turns. Skills go most used first
+    (the usage weight), then high stakes, then the longest without a run,
+    then name. Guidance has no per-section use signal, so sections go high
+    stakes first, then the longest without a run, then name. A subject that
+    alone would overflow the room left is skipped and waits; a cheaper one
+    after it can still join. If nothing would join while subjects wait, the
+    cheapest joins over budget, so the batch is never empty. With no
+    measured cost the fit picks by target size alone.
   - **Today** (2026-11-03, results branch at cba7b38): skills 4 added
-    since the layout pin of 2026-10-26 (3.37 a week, target 10), sections 3 in 28 days (0.75 a
-    week, target 2); 0.00144 of the allowance per Opus pair and 0.00061 per
-    Sonnet pair, so one fixture on both models is about 9.2 points. The
-    fitted batch is one skill and one four-fixture high-stakes section,
-    46.1 of 50 points; 27 subjects wait.
+    since the layout pin of 2026-10-26 (3.37 a week, target 10), sections
+    3 in 28 days (0.75 a week, target 2); 0.00152 of the allowance per Opus
+    observation and 0.00064 per Sonnet one, so a fixture with no runs yet
+    on both models is about 3.2 points. The fitted batch is 9 skills (one
+    with two fixtures) and 2 sections (one the four-fixture, high-stakes
+    `data-exposure-in-ci`), 48.6 of 50 points; 18 subjects wait: 13
+    sections past the guidance target size and 5 skills for the budget.
 - **What it changes.** While a batch is open the missing, near, focus and
   guidance-rest bands take only its members' cells, and every guidance
   member is in the focus. Safety, re-checks, improvements and bare

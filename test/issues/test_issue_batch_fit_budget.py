@@ -33,9 +33,9 @@ START = datetime(2026, 11, 9, 17, 0, 0, tzinfo=timezone.utc)
 NOW = START + timedelta(hours=1)
 WEEK = timedelta(weeks=1)
 # Exact binary fractions, so sums at the budget compare exactly.
-PAIR = 1 / 64          # allowance fraction per pair on model "heavy"
-PAIRS = 4.0            # pairs per cell
-CELL = PAIR * PAIRS    # 0.0625: one cell with headroom
+PAIR = 1 / 64          # allowance fraction per observation on model "heavy"
+PAIRS = 4.0            # observations per cell (`pairs_per_cell`)
+CELL = PAIR * PAIRS    # 0.0625: one cell with headroom and no observations yet
 POLICY = {"start": START, "period": timedelta(days=14), "multiplier": 3.0,
           "rates": {"skill": 0.75, "guidance": 0.5}, "rate_window": timedelta(days=28),
           "pairs_per_cell": PAIRS, "cost_window": timedelta(days=14)}
@@ -393,14 +393,27 @@ class RecordTests(unittest.TestCase):
 
 
 class CostTests(unittest.TestCase):
-    """Each roster model's measured cost per pair, from cost_estimate.json."""
+    """Each roster model's measured cost per observation (one paired run, as
+    the gate counts it), from cost_estimate.json."""
 
-    def run_record(self, run_id, model, role, scored, stamp="20261105T120000Z"):
-        return {"path": f"routine-results/{run_id}/skill/{stamp}", "model": model,
-                "role": role, "timestamp": stamp,
-                "trials": [{"scored": True}] * scored + [{"scored": False}]}
+    def run_record(self, run_id, model, role, scored, stamp="20261105T120000Z", pair=None):
+        record = {"path": f"routine-results/{run_id}/skill/{stamp}", "model": model,
+                  "role": role, "timestamp": stamp,
+                  "trials": [{"scored": True}] * scored + [{"scored": False}]}
+        if pair is not None:
+            record["pair"] = pair
+        return record
 
-    def test_points_over_pairs_per_model(self):
+    def costs(self, records, points):
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            for run_id, value in points.items():
+                (tree / "routine-results" / run_id).mkdir(parents=True)
+                (tree / "routine-results" / run_id / "cost_estimate.json").write_text(
+                    json.dumps({"schema_version": 1, "points": value}))
+            return plan_week.pair_costs(records, tree, NOW, timedelta(days=14))
+
+    def test_points_over_observations_per_model(self):
         records = [self.run_record("r1", "heavy", "with", 3),
                    self.run_record("r1", "heavy", "without", 3),
                    self.run_record("r2", "heavy", "with", 1),
@@ -412,25 +425,97 @@ class CostTests(unittest.TestCase):
                    self.run_record("r4", "light", "without", 1),
                    # Outside the window.
                    self.run_record("r5", "heavy", "with", 1, stamp="20261001T120000Z"),
+                   self.run_record("r5", "heavy", "without", 1, stamp="20261001T120000Z"),
                    # No points in its estimate.
                    self.run_record("r6", "light", "with", 1),
+                   self.run_record("r6", "light", "without", 1),
                    # No estimate at all.
                    self.run_record("r7", "light", "with", 1),
+                   self.run_record("r7", "light", "without", 1),
                    # Not a routine run.
                    {**self.run_record("r8", "heavy", "with", 1),
                     "path": "results/r8/skill/x"}]
-        points = {"r1": 0.006, "r2": 0.002, "r3": 0.001, "r4": 0.5, "r5": 0.5, "r6": None,
-                  "r8": 0.5}
-        with tempfile.TemporaryDirectory() as tmp:
-            tree = Path(tmp)
-            for run_id, value in points.items():
-                (tree / "routine-results" / run_id).mkdir(parents=True)
-                (tree / "routine-results" / run_id / "cost_estimate.json").write_text(
-                    json.dumps({"schema_version": 1, "points": value}))
-            costs = plan_week.pair_costs(records, tree, NOW, timedelta(days=14))
+        costs = self.costs(records, {"r1": 0.006, "r2": 0.002, "r3": 0.001, "r4": 0.5,
+                                     "r5": 0.5, "r6": None, "r8": 0.5})
         self.assertEqual(set(costs), {"heavy", "light"})
-        self.assertAlmostEqual(costs["heavy"], 0.008 / 4)
-        self.assertAlmostEqual(costs["light"], 0.001 / 2)
+        # Two observations on heavy (r1, r2), one on light (r3).
+        self.assertAlmostEqual(costs["heavy"], 0.008 / 2)
+        self.assertAlmostEqual(costs["light"], 0.001)
+
+    def test_a_three_trial_run_is_one_observation_at_its_own_points(self):
+        # The gate counts a fire, not its trials: a 3-trial run's measured
+        # points are the price of one observation, never divided by 3.
+        records = [self.run_record("r1", "heavy", "with", 3),
+                   self.run_record("r1", "heavy", "without", 3)]
+        self.assertEqual(self.costs(records, {"r1": 0.0045}), {"heavy": 0.0045})
+
+    def test_a_guidance_fires_alone_pair_is_not_an_observation(self):
+        records = [self.run_record("g1", "heavy", role, 1, pair=pair)
+                   for pair in ("in_situ", "alone") for role in ("with", "without")]
+        # Same path for both pairs, as a guidance fire writes them.
+        self.assertEqual(self.costs(records, {"g1": 0.003}), {"heavy": 0.003})
+        # A run with only one arm is no observation.
+        self.assertEqual(self.costs([self.run_record("g2", "heavy", "with", 1)],
+                                    {"g2": 0.003}), {})
+
+
+class RemainingRunTests(unittest.TestCase):
+    """A cell is charged only the observations it still needs."""
+
+    def test_a_cell_is_charged_its_remaining_observations_up_to_the_cap(self):
+        costs = {"heavy": PAIR}
+        cases = [(0, PAIRS), (30, PAIRS), (37, 3.0), (40, 0.0), (55, 0.0)]
+        for done, charged in cases:
+            with self.subTest(done=done):
+                self.assertEqual(plan_week.subject_cost(
+                    [scell("x", cls="insufficient", pairs=done)], costs, PAIRS, cap=40),
+                    charged * PAIR)
+
+    def test_the_cap_is_read_from_the_gate_policy(self):
+        self.assertEqual(plan_week.gate_cap({"policy": GATE_POLICY}, "skill"),
+                         GATE_POLICY["max_runs_per_cell"])
+        guidance = {**GATE_POLICY, "max_runs_per_cell": 7}
+        context = {"policy": GATE_POLICY, "guidance_policy": guidance}
+        self.assertEqual(plan_week.gate_cap(context, "guidance"), 7)
+        self.assertEqual(plan_week.gate_cap(context, "skill"), GATE_POLICY["max_runs_per_cell"])
+        self.assertEqual(plan_week.gate_cap({"policy": GATE_POLICY}, "guidance"),
+                         GATE_POLICY["max_runs_per_cell"])
+        self.assertIsNone(plan_week.gate_cap({}, "skill"))
+
+    def test_the_fit_charges_remaining_observations(self):
+        cap = GATE_POLICY["max_runs_per_cell"]
+        # "nearly" needs 1 more observation; "fresh" needs PAIRS.
+        cells = [scell("nearly", cls="insufficient", pairs=cap - 1), scell("fresh")]
+        batch = plan_week.batch_state(ctx(cells, budget=CELL + PAIR,
+                                          weights={"nearly": 1, "fresh": 1}), NOW)
+        self.assertEqual(names(batch), [("skill", "fresh"), ("skill", "nearly")])
+        self.assertEqual([m["cost"] for m in batch["record"]["members"]], [CELL, PAIR])
+        self.assertEqual(batch["record"]["fit"]["total"], CELL + PAIR)
+
+
+class UsageOrderTests(unittest.TestCase):
+    """Most used first, as Adam said; stakes only within equal use."""
+
+    def test_skills_rank_use_before_stakes(self):
+        cells = [scell("vital", stakes="high"), scell("popular"), scell("vital-too",
+                                                                        stakes="high")]
+        weights = {"vital": 1, "popular": 9, "vital-too": 1}
+        batch = plan_week.batch_state(ctx(cells, budget=2 * CELL, weights=weights), NOW)
+        # Equal use: high stakes, then name.
+        self.assertEqual(names(batch), [("skill", "popular"), ("skill", "vital")])
+        self.assertEqual([w["subject"] for w in batch["record"]["waiting"]], ["vital-too"])
+
+    def test_stakes_break_a_tie_in_use(self):
+        cells = [scell("a-normal"), scell("z-high", stakes="high")]
+        batch = plan_week.batch_state(ctx(cells, budget=CELL,
+                                          weights={"a-normal": 4, "z-high": 4}), NOW)
+        self.assertEqual(names(batch), [("skill", "z-high")])
+
+    def test_guidance_keeps_stakes_first(self):
+        old = (NOW - timedelta(days=30)).strftime(plan_week.STAMP)
+        cells = [gcell("g-normal"), gcell("g-high", stakes="high", newest=old)]
+        batch = plan_week.batch_state(ctx(cells, budget=CELL), NOW)
+        self.assertEqual(names(batch), [("guidance", "g-high")])
 
 
 class PolicyTests(unittest.TestCase):
@@ -439,7 +524,8 @@ class PolicyTests(unittest.TestCase):
         policy = plan_week.load_batch_policy(ROOT / "evals/batch-policy.yml")
         self.assertEqual(policy["rate_window"], timedelta(days=28))
         self.assertEqual(policy["cost_window"], timedelta(days=14))
-        self.assertEqual(policy["pairs_per_cell"], 45.0)
+        # 10.5 points per subject / 0.70 points per observation on both models.
+        self.assertEqual(policy["pairs_per_cell"], 15.0)
         self.assertEqual(policy["rates"], {"skill": 0.75, "guidance": 0.5})
 
     def test_malformed_fit_settings_stop_the_plan(self):
