@@ -33,12 +33,12 @@ The explicit context in [fixture.yaml](fixture.yaml) follows
 [ADR 0012](../../docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md).
 It names [skills-evals](https://github.com/Adam-S-Daniel/skills-evals) as a
 representative Python repository for this general pre-implementation skill,
-at [revision 9db7bb3956453f32705d3f9db672900714b3c216](https://github.com/Adam-S-Daniel/skills-evals/commit/9db7bb3956453f32705d3f9db672900714b3c216).
+at [revision e6e9496b878f4d7b07f0bea08ef6920250de1e21](https://github.com/Adam-S-Daniel/skills-evals/commit/e6e9496b878f4d7b07f0bea08ef6920250de1e21).
 The resolver proved that
-[guidance revision b0abbe7dc97eca0a2624bfa9695b0d98b774cef2](https://github.com/Adam-S-Daniel/_agent-guidance/commit/b0abbe7dc97eca0a2624bfa9695b0d98b774cef2)
+[guidance revision 570544a88f7499f38538cb61fbec91935a657b53](https://github.com/Adam-S-Daniel/_agent-guidance/commit/570544a88f7499f38538cb61fbec91935a657b53)
 reproduces the managed guidance bytes shipped at that repository revision;
 the pin is an exact byte match, not an inferred latest revision. The measured
-guidance is 25099 bytes. The committed limit is 31374 bytes, rounded up with
+guidance is 25528 bytes (re-pinned 2026-11-03; it was 25099 at the first pin). The committed limit is 31374 bytes, rounded up with
 25% headroom. There is no `skills.lock` at the pinned repository revision,
 so there are no adopted skill bundles: catalog and payload measurements are
 both zero, with limits of 1 byte each (the schema minimum). Under ADR 0012,

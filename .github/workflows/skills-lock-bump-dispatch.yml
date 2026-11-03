@@ -1,0 +1,122 @@
+name: Dispatch the fleet's skills.lock bump
+
+# _agent-guidance's skills-lock-bump.yml re-pins every consumer's skills.lock
+# onto the registry's current commit. A registry change needs two of its runs
+# to reach a consumer: one proposes the bump, a later one sweeps it in once
+# the consumer's checks are green. It is scheduled every six hours, but GitHub
+# starts about one of those scheduled runs a day, so consumers lagged registry
+# changes by days (_agent-guidance#413).
+#
+# This workflow sends that run a `repository_dispatch` (event type
+# `skills-lock-bump`) when adam-agentskills' main has changed, and the cron
+# there stays as the backstop. It runs here because skills-evals already holds
+# a credential that reaches _agent-guidance (the eval-improve App, repo-settings
+# ADR 0014), and adam-agentskills holds none: a repository dispatch needs only
+# Contents: write, which that App already has, so no new grant is made.
+#
+# When it dispatches, after every ingest and on dispatch:
+#
+#   * adam-agentskills' main HEAD was committed after the SECOND-newest
+#     skills-lock-bump run started. Every registry change then gets two
+#     runs, one to propose and one to sweep, and stops there.
+#   * no skills-lock-bump run is queued or in progress, and none started in
+#     the last 30 minutes, so a consumer's checks have time to report before
+#     the sweep reads them (ADR 0015's addendum there).
+#
+# * The decision is scripts/skills_lock_bump_due.sh, the default branch's
+#   copy; nothing from a pull request runs.
+# * Tokens: the job token reads (both repositories are public). The
+#   eval-improve App token is minted for _agent-guidance alone, only when a
+#   dispatch is due, and used by the one call that sends it.
+# * Every value reaches a `run:` block through `env`; a response body is never
+#   printed.
+# * Default branch only; workflow_run and dispatch. No push or pull_request
+#   trigger, so no path filter and no required check. No schedule: this
+#   repository's cron is unreliable, and ingests keep coming while the evals
+#   run; when they stop, the cron in _agent-guidance still runs.
+# * No `concurrency` group: a run held in a group would cancel the pending
+#   one, and two runs at once send at most two dispatches, which the bump's
+#   own concurrency group collapses.
+
+on:
+  workflow_run:
+    workflows: [Ingest routine eval results]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  dispatch:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Decide whether a bump run is due
+        id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: Adam-S-Daniel/adam-agentskills
+          GUIDANCE: Adam-S-Daniel/_agent-guidance
+        run: |
+          set -euo pipefail
+          runs="$RUNNER_TEMP/bump-runs.json"
+          committed=""
+          if gh api "repos/${GUIDANCE}/actions/workflows/skills-lock-bump.yml/runs?per_page=10" > "$runs" 2>/dev/null; then
+            committed="$(gh api "repos/${REGISTRY}/commits/main" --jq '.commit.committer.date' 2>/dev/null)" || committed=""
+          fi
+          verdict="$(scripts/skills_lock_bump_due.sh "$runs" "$committed" "$(date -u +%s)" 2>/dev/null)" || verdict=""
+          case "$verdict" in
+            due)
+              echo "due: the registry's main changed at ${committed}, after the second-newest bump run"
+              echo "due=true" >> "$GITHUB_OUTPUT" ;;
+            "not due: "*)
+              echo "$verdict"
+              echo "- ${verdict}" >> "$GITHUB_STEP_SUMMARY"
+              echo "due=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::warning::could not read the bump runs or the registry's main; nothing is dispatched"
+              echo "due=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Mint the eval-improve App token for _agent-guidance
+        id: token
+        if: steps.due.outputs.due == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: _agent-guidance
+          permission-contents: write
+
+      - name: Send the dispatch
+        if: steps.due.outputs.due == 'true'
+        env:
+          APP_TOKEN: ${{ steps.token.outputs.token }}
+          GUIDANCE: Adam-S-Daniel/_agent-guidance
+        run: |
+          set -euo pipefail
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*)
+              echo "::warning::the eval-improve App token is unavailable; nothing is dispatched, and the cron in _agent-guidance still runs"
+              echo "- not dispatched: no App token" >> "$GITHUB_STEP_SUMMARY"
+              exit 0 ;;
+          esac
+          if GH_TOKEN="$APP_TOKEN" gh api -X POST "repos/${GUIDANCE}/dispatches" \
+               -f event_type=skills-lock-bump > /dev/null 2>&1; then
+            echo "dispatched skills-lock-bump"
+            echo "- dispatched skills-lock-bump in _agent-guidance" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::the repository dispatch to _agent-guidance was refused"
+            exit 1
+          fi

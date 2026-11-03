@@ -172,6 +172,17 @@ REMEASURED.update({
     # adamdaniel.ai ddf1c992 -> da05fc6b (after its #4569 lock re-pin).
     "evals/platform-release-and-bump": ((25512, 14803, 875774),) * 2,
 })
+# Re-measured 2026-11-03 through `run_eval._in_place_plan` after the three
+# added-skill fixtures moved off pins older than the fleet hook runner:
+# embeddable-tool-pages to adamdaniel.ai 2dcf61ff, windows-elevation-from-wsl
+# to wsl-automation 50d66105 and finding-unknowns to skills-evals e6e9496b,
+# guidance proven at 570544a8 for all three, main's copy from adam-agentskills
+# 6dd9b1ef. No budget moved.
+REMEASURED.update({
+    "evals/embeddable-tool-pages": ((25528, 14803, 875774), (25528, 15395, 882224)),
+    "evals/windows-elevation-from-wsl": ((25528, 7447, 688780), (25528, 7987, 698461)),
+    "evals/finding-unknowns": ((25528, 0, 0), (25528, 763, 14235)),
+})
 # REMEASURED is a recorded snapshot, not something this module can recompute.
 # Since skills-evals#559 the with arm tests main's copy of an adopted subject,
 # not the deployed one. Re-measured 2026-11-02 through `run_eval._in_place_plan`

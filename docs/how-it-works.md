@@ -354,6 +354,37 @@ the two sections nearest one until those decide.
   no pull requests, so it can show a focus place for a section whose removal
   pull request is open, which the planner would not focus.
 
+**The two-week batch** (THE BATCH in `scripts/plan_week.py`; Adam's
+steady-state goal, 2026-11-02: at 25% of the weekly allowance, every two
+weeks pick a batch of skills and guidance sections numbering about three
+times the historical weekly addition rate, bring them all to a verdict, then
+start the next). `evals/batch-policy.yml` sets the start (the 2026-11-09
+17:00 UTC reset, when the cap returns to 25%), the 14-day period, the
+multiplier (3) and the weekly addition rates (skills 0.75, guidance 0.5), so
+a batch holds 2 skills and 2 sections. Only the weekly workflow passes the
+policy (`--batch-policy`).
+
+- **What it changes.** While a batch is open the missing, near, focus and
+  guidance-rest bands take only its members' cells, and every guidance
+  member is in the focus. Safety, re-checks, improvements and bare
+  baselines are unchanged.
+- **Who joins.** Open subjects only: verdict still open, no removal pull
+  request, no blocking cell, and some cell that would plan a fire. Never a
+  private skill. High stakes first, then the longest without a run.
+- **When it turns over.** When every member has left `open` (decided,
+  blocked, stalled or gone), or at the due time, whichever is first. Open
+  members are carried into the next batch first; new picks fill the rest.
+  Blocked and stalled members are dropped: their work items (fixture-broken,
+  ceiling) are the next step, not more runs.
+- **Where it lives.** `batches/current.json` and `batches/<number>.json` on
+  `persistent/eval-results`, written by the weekly workflow's
+  `batch-publish` job only when a plan starts a batch. Each record lists the
+  previous batch's members with their final status. The job summary names
+  the batch, each member's status and how many cells wait outside it.
+- **The explorer** queues only the published batch's members in those
+  bands. A finished batch stays published until the next sweep replaces it,
+  so for that gap the page shows the old batch's queue.
+
 **Stakes** (Adam, 2026-11-01). `evals/stakes.yml` gives a skill or guidance
 section a stakes level from what it is for, with a one-line reason; a
 subject with no row is `normal`. A `high` subject prevents irreversible or

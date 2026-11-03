@@ -267,8 +267,8 @@ class TestIssue78(unittest.TestCase):
         parsed = yaml.safe_load((EVAL / "fixture.yaml").read_text(encoding="utf-8"))
         expected = {
             "repository": "Adam-S-Daniel/skills-evals",
-            "revision": "9db7bb3956453f32705d3f9db672900714b3c216",
-            "guidance_revision": "b0abbe7dc97eca0a2624bfa9695b0d98b774cef2",
+            "revision": "e6e9496b878f4d7b07f0bea08ef6920250de1e21",
+            "guidance_revision": "570544a88f7499f38538cb61fbec91935a657b53",
             "budget": {"guidance_bytes": 31374, "skill_catalog_bytes": 954,
                        "skill_payload_bytes": 15565},
         }
