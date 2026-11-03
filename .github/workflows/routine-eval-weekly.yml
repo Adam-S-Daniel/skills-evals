@@ -366,7 +366,12 @@ jobs:
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git config user.name "skills-evals real-eval bot"
           git config user.email "skills-evals@users.noreply.github.com"
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5 6; do
+            # Other publishers push this branch every minute or two, so wait
+            # (about 2, 4, 8, 16 and 32 s plus jitter) before each retry.
+            if [ "$attempt" -gt 1 ]; then
+              sleep $(( (1 << attempt) + RANDOM % 5 ))
+            fi
             git fetch origin refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results
             git checkout -B persistent/eval-results origin/persistent/eval-results
             if [ -L batches ] || { [ -e batches ] && [ ! -d batches ]; }; then
@@ -393,7 +398,7 @@ jobs:
             fi
             echo "Push attempt $attempt failed; retrying from a fresh fetch." >&2
           done
-          echo "Could not publish batches/current.json after 3 attempts." >&2
+          echo "Could not publish batches/current.json after 6 attempts." >&2
           exit 1
 
   dispatch:

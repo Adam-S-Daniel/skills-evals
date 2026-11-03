@@ -33,7 +33,7 @@ name: Ingest routine eval results
 # * No `concurrency` group: GitHub keeps only the newest pending run in a
 #   group, so a burst of pushes would cancel ingests silently. A push that
 #   loses a race to eval.yml's publish is rebuilt on the new tip and retried
-#   (three attempts); each run writes only its own run id's directory.
+#   (six attempts with backoff); each run writes only its own run id's directory.
 # * The source branch is NOT deleted after ingest: that is an owner decision
 #   still open.
 # * Improve cost records (#572 part 1, 2026-11-02): the routine pushes
@@ -149,7 +149,12 @@ jobs:
           tree="$RUNNER_TEMP/results-tree"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           refspec="+refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results"
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5 6; do
+            # Other publishers push this branch every minute or two, so wait
+            # (about 2, 4, 8, 16 and 32 s plus jitter) before each retry.
+            if [ "$attempt" -gt 1 ]; then
+              sleep $(( (1 << attempt) + RANDOM % 5 ))
+            fi
             git fetch --no-tags origin "$refspec"
             if [ -d "$tree" ]; then
               git worktree remove --force "$tree"
@@ -203,5 +208,5 @@ jobs:
             fi
             echo "push attempt ${attempt} was rejected; rebuilding on the new tip"
           done
-          echo "::error::could not push to persistent/eval-results after 3 attempts"
+          echo "::error::could not push to persistent/eval-results after 6 attempts"
           exit 1
