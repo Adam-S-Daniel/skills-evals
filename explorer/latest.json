@@ -14,8 +14,8 @@
   "sweeps": [
    {
     "end": "2026-10-31T13:05:58Z",
-    "fires": 3,
-    "start": "2026-10-31T13:03:22Z"
+    "fires": 2,
+    "start": "2026-10-31T13:04:45Z"
    },
    {
     "end": "2026-11-01T06:06:37Z",
@@ -34,9 +34,9 @@
    }
   ],
   "window_days": 14,
-  "without_results": 11
+  "without_results": 10
  },
- "generated_at": "2026-11-03T13:45:04Z",
+ "generated_at": "2026-11-03T13:47:19Z",
  "guidance": {
   "removed": [
    {
@@ -62,9 +62,9 @@
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
-     "band": "guidance-rest",
+     "band": "focus",
      "due": null,
-     "position": 24,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
@@ -1485,7 +1485,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 8,
+     "position": 6,
      "scheduled": true
     },
     "runs": [
@@ -1731,10 +1731,10 @@
     "heading": "Workstation layout",
     "id": "workstation-layout",
     "next_test": {
-     "band": "focus",
+     "band": null,
      "due": null,
-     "position": 2,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -2923,10 +2923,10 @@
     "heading": "Read before you start",
     "id": "read-before-you-start",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 12,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -3171,10 +3171,10 @@
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 6,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -3421,7 +3421,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 21,
+     "position": 10,
      "scheduled": true
     },
     "runs": [
@@ -4055,7 +4055,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 11,
+     "position": 8,
      "scheduled": true
     },
     "runs": [
@@ -4303,7 +4303,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 9,
+     "position": 7,
      "scheduled": true
     },
     "runs": [
@@ -4588,7 +4588,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 23,
+     "position": 12,
      "scheduled": true
     },
     "runs": [
@@ -4872,9 +4872,9 @@
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
      "band": null,
-     "due": "2026-12-29T02:24:26Z",
+     "due": null,
      "position": null,
-     "scheduled": true
+     "scheduled": false
     },
     "runs": [
      {
@@ -5158,7 +5158,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 7,
+     "position": 5,
      "scheduled": true
     },
     "runs": [
@@ -5406,7 +5406,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 5,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -6126,9 +6126,9 @@
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
-     "band": "guidance-rest",
+     "band": "focus",
      "due": null,
-     "position": 4,
+     "position": 1,
      "scheduled": true
     },
     "runs": [
@@ -6415,7 +6415,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 20,
+     "position": 9,
      "scheduled": true
     },
     "runs": [
@@ -6698,10 +6698,10 @@
     "heading": "Skills ecosystem",
     "id": "skills-ecosystem",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 19,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -6948,7 +6948,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 22,
+     "position": 11,
      "scheduled": true
     },
     "runs": [
@@ -7194,10 +7194,10 @@
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 10,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -7479,10 +7479,10 @@
     "heading": "Docker",
     "id": "section-docker",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 13,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -7727,10 +7727,10 @@
     "heading": ".NET / C#",
     "id": "section-dotnet",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 14,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -7975,10 +7975,10 @@
     "heading": "Go",
     "id": "section-go",
     "next_test": {
-     "band": "focus",
+     "band": null,
      "due": null,
-     "position": 1,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -8223,10 +8223,10 @@
     "heading": "JavaScript",
     "id": "section-javascript",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 15,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -8471,10 +8471,10 @@
     "heading": "Python",
     "id": "section-python",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 16,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -8719,10 +8719,10 @@
     "heading": "Rust",
     "id": "section-rust",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 17,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -8967,10 +8967,10 @@
     "heading": "TypeScript",
     "id": "section-typescript",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 18,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T13:32:25Z",
+ "newest_run": "2026-11-03T13:44:07Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9306,18 +9306,18 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 0,
    "description": "Understand and safely change how the Decap /admin config is built \u2014 the gem-shipped admin machinery, the build-time render hook, the site-owned collections seam, the window.CMS_* identity injection, and the base_collections opt-out. Use when editing theme/admin/* (config.base.yml, the JS/HTML shells, the reviews dashboards), changing the render hook or its CLI mirror, debugging why /admin renders wrong/missing collections or wrong identity, adding a per-site collection, or hiding the platform's built-in collections. Trigger on mentions of \"admin config\", \"config.base.yml\", \"render-decap-config\", \"decap_config_hook\", \"collections.site.yml\", \"base_collections\", \"CMS_REPO / window.CMS_*\", or \"/admin shows the wrong collections\".",
    "name": "admin-config-render",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 5,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -9394,7 +9394,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": null,
@@ -9718,18 +9718,18 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 0,
    "description": "Patterns for setting up reliable agent self-feedback when waiting on long-running GitHub Actions workflows in this repo (cms-publish-loop-host, deploy-production, e2e matrix). The default temptation \u2014 `RUN=$(gh workflow run X && gh run list --jq ...)` chained into a polling `until` loop \u2014 silently breaks because both commands' stdout concatenate into the variable. Use the patterns here when chaining \"wait for PR merge \u2192 trigger workflow \u2192 watch completion\" or any multi-step CI poll. Trigger when the user asks to watch a workflow, set up a feedback loop, monitor PR completion, or any \"let me know when X finishes\" task that involves the gh CLI.",
    "name": "ci-watcher-loops",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 20,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -9806,7 +9806,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": null,
@@ -9821,7 +9821,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9883,18 +9883,18 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 0,
    "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
    "name": "code-quality",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 21,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -9971,7 +9971,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": "adam-non-coding-local",
@@ -10404,7 +10404,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11632,18 +11632,18 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 0,
    "description": "Diagnose and fix Decap's persistent \"Decap CMS is adding labels to N of your Editorial Workflow entries\" dialog, which appears (and never clears) on /admin \u2014 on prod AND every preview deploy. Use when an editor reports that dialog, when the Workflow tab churns, or when setting up the daily audit that catches the condition. Covers the cause (an open cms/* PR missing its decap-cms/<status> label), the audit script + reusable workflow \u2014 which SELF-HEALS by applying the missing label since v0.1.48 \u2014 the e2e guard, and the manual escalation path for when self-heal fails. Trigger on \"adding labels dialog\", \"editorial workflow dialog stuck\", \"label migration\", \"decap-cms/draft label\", \"editorial-label-audit\", or \"audit-editorial-labels\".",
    "name": "editorial-label-audit",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 12,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -11699,7 +11699,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": null,
@@ -11714,7 +11714,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12213,18 +12213,18 @@
   {
    "bundle": "adam-anything-anywhere",
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 0,
    "description": "Surface and resolve the ambiguities in a task before, during, and after implementation \u2014 the blind-spot pass, the self-interview, reference-driven specs, implementation notes, and a post-hoc explainer or quiz. Use at the start of any non-trivial build, when working in an unfamiliar codebase or a new domain, when acceptance criteria are subjective (\"make it feel polished\", \"clean this up\"), when a plan keeps needing rework mid-implementation, or when the user says \"help me find my unknowns\", \"what am I missing\", \"poke holes in this\", \"what haven't I thought about\". Also use after a change lands, to produce the explainer or comprehension check that proves the work is understood.",
    "name": "finding-unknowns",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 8,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -12511,7 +12511,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -12526,7 +12526,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13482,7 +13482,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 9,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13554,7 +13554,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 10,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13670,13 +13670,13 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 8,
+   "current_text_runs": 4,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13874,7 +13874,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13982,13 +13982,13 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 10,
+   "current_text_runs": 8,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14537,13 +14537,13 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 8,
+   "current_text_runs": 4,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15045,13 +15045,13 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 8,
+   "current_text_runs": 6,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected (for example a Remove-Item on a system or VM-storage path). Covers getting the real error out of the first failure, the two-strikes stop rule, treating a policy block as a decision to report rather than a bug to route around, and previewing deletions before running them. For \"Access is denied\" from powershell.exe inside WSL, use windows-elevation-from-wsl instead.",
    "name": "tool-powershell",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15270,7 +15270,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16143,17 +16143,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 7,
+   "current_text_runs": 4,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T13:44:07Z",
+     "cli_version": "2.1.317",
+     "fixture": "required-check-routing",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T134218Z-d68eee/workflow-path-audit/20261103T134407Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 8,
+      "cost_usd": 0.1843528,
+      "judge_mean": 6.4,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.137572,
+      "judge_mean": 8.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T12:46:21Z",
      "cli_version": "2.1.317",
@@ -16725,7 +16746,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17732,8 +17753,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "1a3778a5081652ef246bb1360a1d240ec8cb509e",
-  "results_commit": "e4d3cf1b5e7311720f222182aca59b2697f710e2"
+  "repository_commit": "9508a90dcf05bce94a2aa3e47c9eba8a8e815332",
+  "results_commit": "d090bdc653c9182d0168b92df7ee32f53902b318"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
