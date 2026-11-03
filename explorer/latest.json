@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T09:49:01Z",
+ "generated_at": "2026-11-03T09:50:42Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T09:41:49Z",
+ "newest_run": "2026-11-03T09:47:17Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9457,21 +9457,42 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": 0.0,
+    "helps": 1.0,
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
    "name": "ci-job-performance",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 16,
+    "band": null,
+    "due": "2026-12-29T03:05:49Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T09:47:17Z",
+     "cli_version": "2.1.317",
+     "fixture": "browser-cache",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T094521Z-bfcc71/ci-job-performance/20261103T094717Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.249356,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.10960750000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T04:09:32Z",
      "cli_version": "2.1.317",
@@ -9691,8 +9712,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": null,
@@ -9707,7 +9728,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 21,
+    "position": 20,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9800,7 +9821,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9872,7 +9893,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 22,
+    "position": 21,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11621,7 +11642,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 17,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13508,7 +13529,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13706,7 +13727,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17103,7 +17124,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "ed3aee27b5e93c0991c6904ec6f82f353aae88cf",
-  "results_commit": "bf2b310dd363a08f1bb2b82c46dc39d3ae16bae7"
+  "results_commit": "9a3c8eed13d83f682b321138c3e0fc21fce7f75e"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
