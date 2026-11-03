@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012JhavYBL8gJZEK777ftArX",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -n -B2 -A6 -E \"concurrency|timeout-minutes|^name:|^on:|  test:\" .github/workflows/*.yml | head -150",
+      "input_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012JhavYBL8gJZEK777ftArX",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nls: cannot access '.github/workflows': No such file or directory\ngrep: .github/workflows/*.yml: No such file or directory",
+      "output_chars": 250,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01McS6XNGHeRSGPGS5KLy1ie",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; find . -path ./.git -prune -o \\( -name \"*.yml\" -o -name \"*.yaml\" \\) -print | head -30; ls -a",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01McS6XNGHeRSGPGS5KLy1ie",
+      "is_error": false,
+      "output": "e9f3ab8 initial commit\n./workflows/ci.yml\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nworkflows",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YRaLDsVYdYqtqqC2aTeBsM",
+      "name": "Bash",
+      "input": "cat -A workflows/ci.yml | sed 's/\\$$//' ; cat README.md; ls workflows",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YRaLDsVYdYqtqqC2aTeBsM",
+      "is_error": false,
+      "output": "name: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo \"slow end-to-end suite\"\n# example-site\n`test` is the required status check. Its end-to-end suite sometimes passes the\n10 minute wall and the check then shows `cancelled`, which ...",
+      "output_chars": 324,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014NYUo7VGBx7QiizLsdChxw",
+      "name": "Bash",
+      "input": "cat > workflows/ci.yml <<'EOF'\nname: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    # Backstop only. A job-level timeout reports `cancelled`, which blocks the\n    # merge for good...",
+      "input_chars": 552,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014NYUo7VGBx7QiizLsdChxw",
+      "is_error": false,
+      "output": "{'runs-on': 'ubuntu-latest', 'timeout-minutes': 30, 'steps': [{'timeout-minutes': 25, 'run': 'echo \"slow end-to-end suite\"'}]}\n workflows/ci.yml | 8 ++++++--\n 1 file changed, 6 insertions(+), 2 deletions(-)",
+      "output_chars": 206,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
