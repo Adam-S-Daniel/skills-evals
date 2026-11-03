@@ -1676,10 +1676,36 @@ def layout_line(subject: str, comment: str) -> str:
     return f"  {subject}/".ljust(27) + f"# {comment}"
 
 
+#: Adam's 2026-11-02 rule (test_issue_371_scheduled_fixtures.py): a skill
+#: fixture is on evals/scheduled.yml or listed in this file with a reason.
+UNSCHEDULED_FILE = "evals/unscheduled.yml"
+#: The reason an isolation pair (no `context:`) is listed, the same words the
+#: earlier drafted and hand-listed fixtures carry.
+ISOLATION_REASON = ("Isolation pair with no context: its runs cannot pool "
+                    "(ADR 0012); convert with a context before scheduling.")
+CONTEXT_REASON = ("Drafted by the draft loop with a context and no readiness "
+                  "note yet: add one and move it to scheduled.yml.")
+
+
+def unscheduled_entries(by_fixture: dict[str, dict[str, bytes]], subject: str) -> str:
+    """The unscheduled.yml rows for a drafted skill's fixtures, one per
+    fixture, with the reason its shape gives."""
+    rows = []
+    for name in sorted(by_fixture):
+        doc = yaml.safe_load(by_fixture[name]["fixture.yaml"].decode("utf-8"))
+        reason = CONTEXT_REASON if isinstance(doc, dict) and doc.get("context") \
+            else ISOLATION_REASON
+        rows.append(f"  - path: evals/{subject}/{name}\n"
+                    f"    reason: {json.dumps(reason)}\n")
+    return "".join(rows)
+
+
 def fixtures_apply(staged: Path, tree: Path) -> dict:
     """In a skills-evals checkout: the staged fixtures at evals/<subject>/,
-    and the README's layout entry the suite requires of every eval directory
-    (test_every_eval_directory_is_named_in_the_readmes_layout)."""
+    the README's layout entry the suite requires of every eval directory
+    (test_every_eval_directory_is_named_in_the_readmes_layout), and one
+    UNSCHEDULED_FILE row per fixture (test_issue_371_scheduled_fixtures.py):
+    a drafted fixture is not scheduled until someone writes its readiness."""
     record = staged_record(staged, "accepted")
     subject = record["subject"]
     source = staged / "evals" / subject
@@ -1703,6 +1729,12 @@ def fixtures_apply(staged: Path, tree: Path) -> dict:
                   if "evals/" in b and "harness/" in b), None)
     if index is None or anchor not in blocks[index]:
         raise Rejected("README.md has no layout block with a real-work/ entry")
+    _no_symlink_on(tree, UNSCHEDULED_FILE)
+    unscheduled = tree / UNSCHEDULED_FILE
+    listed = unscheduled.read_text(encoding="utf-8") if unscheduled.is_file() else ""
+    if not listed.startswith("#") or "\nfixtures:\n" not in listed \
+            or f"path: evals/{subject}/" in listed:
+        raise Rejected(f"{UNSCHEDULED_FILE} is missing, malformed or already lists the subject")
     entry = [layout_line(subject, f"A/B eval drafted from a lesson: "
                          f"{len(by_fixture)} fixtures")]
     entry += [f"    {name}/" for name in sorted(by_fixture)]
@@ -1712,7 +1744,9 @@ def fixtures_apply(staged: Path, tree: Path) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     readme.write_text("```".join(blocks), encoding="utf-8")
-    return {"subject": subject, "files": str(len(files) + 1)}
+    unscheduled.write_text(listed + ("" if listed.endswith("\n") else "\n")
+                           + unscheduled_entries(by_fixture, subject), encoding="utf-8")
+    return {"subject": subject, "files": str(len(files) + 2)}
 
 
 # ---------------------------------------------------------------------------
