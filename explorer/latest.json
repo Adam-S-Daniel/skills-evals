@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T14:15:42Z",
+ "generated_at": "2026-11-03T14:27:22Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T14:12:24Z",
+ "newest_run": "2026-11-03T14:25:16Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13849,7 +13849,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 4,
+   "current_text_runs": 5,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -13860,6 +13860,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T14:25:16Z",
+     "cli_version": "2.1.317",
+     "fixture": "paths-required",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T142320Z-5aceb2/red-ci-adamdaniel-ai/20261103T142516Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.13679209999999997,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.0945911,
+      "judge_mean": 9.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T09:31:31Z",
      "cli_version": "2.1.317",
@@ -17975,7 +17996,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "c516142e5035513cb7453b466cfe65d0f441e8fe",
-  "results_commit": "abfea02f6012e10ed4fd55c29c166dd2a687a6a1"
+  "results_commit": "f04b60def4b4c70c6a7446b50bc82076f2f40789"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
