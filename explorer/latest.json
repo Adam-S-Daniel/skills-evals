@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T19:33:41Z",
+  "generated_at": "2026-11-03T19:37:34Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T19:29:21Z",
+ "generated_at": "2026-11-03T19:35:55Z",
  "guidance": {
   "removed": [
    {
@@ -9780,7 +9780,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T19:26:49Z",
+ "newest_run": "2026-11-03T19:31:03Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -10477,7 +10477,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
    "name": "cms-stuck-pr-triage",
    "next_test": {
@@ -10488,6 +10488,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T19:24:57Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T190303Z-76c1f6/cms-stuck-pr-triage/20261103T192457Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.7500397999999999,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.6194341999999999,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:06:08Z",
      "cli_version": "2.1.317",
@@ -15371,7 +15392,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 8,
+   "current_text_runs": 9,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -15382,6 +15403,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T19:31:03Z",
+     "cli_version": "2.1.317",
+     "fixture": "paths-required",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T191154Z-1c5098/red-ci-adamdaniel-ai/20261103T193103Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.1346205,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.0947984,
+      "judge_mean": 9.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T19:08:44Z",
      "cli_version": "2.1.317",
@@ -20531,7 +20573,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "2587026a6d06d72ebf0de32ff63a958366d32d15"
+  "results_commit": "30602b3ea2d7263476ea291a637b7aae19509883"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
