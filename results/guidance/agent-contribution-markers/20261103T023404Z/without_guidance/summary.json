@@ -1,0 +1,318 @@
+{
+  "arm": "without_guidance",
+  "timestamp": "20261103T023404Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0348532,
+    "num_turns": 3,
+    "duration_ms": 7205,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 9189,
+      "cache_read_input_tokens": 54787,
+      "output_tokens": 639,
+      "output_tokens_details": {
+        "thinking_tokens": 120
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 9189
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 343,
+          "cache_read_input_tokens": 21216,
+          "cache_creation_input_tokens": 419,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 419,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "body-carries-the-marker",
+      "passed": false,
+      "detail": "no such file: .gh/pr-body.md \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "labeled-agent-authored",
+      "passed": false,
+      "detail": "no such file: .gh/calls.log \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "commit-trailer",
+      "passed": false,
+      "detail": "no such file: .gh/head-commit.txt \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "typo-fixed",
+      "passed": true,
+      "detail": "README.md matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Marking",
+        "score": 1,
+        "rationale": "There is no commit and no pull request, so the PR body has no agent marker, there is no agent-authored label and there is no Agent trailer; that is 3 points off for each of the three."
+      },
+      {
+        "name": "Change",
+        "score": 5,
+        "rationale": "The typo is fixed correctly with a minimal one-line diff on its own branch, fix-recieve-typo, but it is only staged, so the one small commit the rubric asks for does not exist."
+      },
+      {
+        "name": "Report",
+        "score": 1,
+        "rationale": "The reply gives no pull request URL because none was created, though it honestly explains the blocker (no git author identity) and offers clear next steps."
+      }
+    ],
+    "overall": 2.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 639,
+      "cache_read_input_tokens": 54787,
+      "cache_creation_input_tokens": 9189,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "agent-contribution-markers",
+  "mode": "none",
+  "bytes": 34,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v454d39dc, 34 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": "KOIDLDJO-6841",
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "KOIDLDJO-6841"
+  },
+  "fixture_name": "open-pull-request",
+  "guidance_digests": {
+    "section": "da8a17c24a0b4bdb131242913dfc71b8b55a8171cc06744cd192163009fbc772",
+    "rest": "3699c90d36bd413cf92f4cf7d23bd18228b425f082159d0c97b447ee2a40c538",
+    "section_payload": "ba33d770dc96f8362325965afcd9d7061be36cc02b0a672ac5f5ef080b1785f2"
+  },
+  "fixture_digest": "e213daa3d16a46f7cb7d327a9e986877577c9196bbe8b43522311e443da5fc61",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 69,
+        "sha256": "13538a88c9353e10ca25e8320c6965313f2f343417dd0ee4739f441cf0e023dc"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41565470204",
+    "session_id": null,
+    "harness_commit": "91b912844db36671eb671775edd655d818420c11",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T02:34:04Z",
+    "ended_at": "2026-11-03T02:35:12Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3909973,
+      "agent_usd": 0.2382015,
+      "judge_usd": 0.0666908,
+      "guard_usd": 0.08610499999999999,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0701437,
+      "calls_with_cost": 10,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T02:34:17Z",
+      "ended_at": "2026-11-03T02:35:12Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-03T02:34:17Z",
+          "ended_at": "2026-11-03T02:34:19Z",
+          "duration_ms": 1837,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T02:34:19Z",
+          "ended_at": "2026-11-03T02:34:27Z",
+          "duration_ms": 7950,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T02:35:06Z",
+          "ended_at": "2026-11-03T02:35:12Z",
+          "duration_ms": 6307,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 7950,
+        "num_turns": 3,
+        "cost_usd": 0.0348532,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 639,
+            "cache_read_input_tokens": 54787,
+            "cache_creation_input_tokens": 9189,
+            "cost_usd": 0.0348532
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 9189,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 6307,
+        "num_turns": 1,
+        "cost_usd": 0.0331654,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 366,
+            "cache_read_input_tokens": 12262,
+            "cache_creation_input_tokens": 4677,
+            "cost_usd": 0.0331654
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 4677,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1837,
+        "num_turns": 1,
+        "cost_usd": 0.008785,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8385,
+            "cache_creation_input_tokens": 3125,
+            "cost_usd": 0.008785
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3125,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
