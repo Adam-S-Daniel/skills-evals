@@ -1,0 +1,77 @@
+diff --git a/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/PURPOSE.md b/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/PURPOSE.md
+new file mode 100644
+--- /dev/null
++++ b/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/PURPOSE.md
+@@ -0,0 +1,24 @@
++# Purpose: red-ci-adamdaniel-ai
++
++Maintenance context only; never loaded at inference.
++
++## The lesson it answers
++
++A miner found 54 sessions in one site repo where an agent pushed, saw red CI
++and either read only the run's overall conclusion or fixed the wrong repo.
++Typical invented shapes: a cancelled required check taken for a code failure,
++a stub's green trusted on a mixed pull request, a pin left behind after a
++platform version bump, and a missing secret mistaken for a broken workflow.
++
++## Triage
++
++Not a git hook: the failure exists only after the push, and sorting the cause
++needs judgment over job logs. The proposal's examples were redacted evidence;
++nothing here is copied from them. All fixture data is invented.
++
++## Decisions made without a person to ask
++
++- Scoped to the one repo family the evidence names, not CI in general; the
++  registry already has debug-github-workflows for the general case.
++- The table lists causes the repo's own AGENTS.md documents, so it can go
++  stale when that file changes; revisit then.
+diff --git a/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/SKILL.md b/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/SKILL.md
+new file mode 100644
+--- /dev/null
++++ b/plugins/adam-coding-anywhere/skills/red-ci-adamdaniel-ai/SKILL.md
+@@ -0,0 +1,43 @@
++---
++name: red-ci-adamdaniel-ai
++description: Triage red or blocked CI on a pull request in a Jekyll/Decap consumer site repo whose machinery lives in a platform repo (adamdaniel.ai and cms-platform). Use when a push or PR shows a failing, cancelled or never-reporting check, a BLOCKED PR with green checks, a pin-consistency failure, or a scheduled workflow failing at setup. Read the failing JOBS, name the cause, and fix it in the repo that owns it.
++---
++
++# Red CI in a platform-consumer site repo
++
++The site repo holds content, identity and thin workflow callers. The machinery
++(reusable workflows, the e2e harness, the admin UI, the pin checks) lives in
++the platform repo and arrives by a pinned version. So a red check is usually
++one of six causes, and the fix often belongs in the other repo.
++
++## 1. Read the jobs, not the run
++
++A run's conclusion hides which job went red. List the run's jobs and steps
++(`gh run view <id> --json jobs`) and name the first failed job and step. Then
++read that job's log. Report what you parsed, never what a watch command's exit
++code suggested.
++
++## 2. Sort the cause
++
++| What the job shows | Cause | Fix |
++|---|---|---|
++| `cancelled` on a required check, a newer run exists for the same head | superseded run, or a `timeout-minutes` wall (GitHub reports a timeout as `cancelled`) | Re-run that one job; do not edit code. A cancelled required context blocks the merge until a success replaces it. |
++| Green `e2e / e2e` on a PR that also touched code paths | the instant-green stub satisfied the context before the real run reported | Treat green as unverified; wait for the real run to finish. |
++| Pin-consistency job lists a reference at an old version | the platform version is named in many places and one was left behind | Bump every reference together with the platform-bump flow; never edit one pin by hand. |
++| Failure at `Set up job`, or a missing secret or variable message | environment: a secret or repo variable is unset or expired | Name the secret or variable for the owner to set. Do not change the workflow or skip the leg. |
++| PR `BLOCKED`, every check green | the branch is behind its base, or a required context is not published | Update the branch from its base and wait for the checks to re-run; confirm the required context is one something emits. |
++| A test fails on a platform-owned file (admin UI, harness, theme) | the defect is in the platform repo | Change it there and ship a release; the site repo only bumps the pin afterwards. |
++
++## 3. Rules that hold
++
++- Never skip, disable or quarantine a test to turn a check green.
++- Never push an empty commit or close and reopen a PR to kick CI.
++- Do not re-vendor platform files into the site repo.
++- A 404 from GitHub on a private repo means "not visible to this token".
++- Say which jobs you read and which you could not.
++
++## 4. Write the triage down
++
++When asked for a triage, give: the failing job and step by name, the cause
++class from the table, the one action that fixes it, and the repo that owns the
++fix. Keep it to those four things.

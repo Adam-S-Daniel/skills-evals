@@ -1,0 +1,5 @@
+run 2002 workflow=cross-post.yml event=schedule conclusion=failure
+  job cross-post: failure
+    step "Set up job": failure
+      Error: Input required and not supplied: EXAMPLE_ACCESS_TOKEN
+      (secret is not defined for this repository)

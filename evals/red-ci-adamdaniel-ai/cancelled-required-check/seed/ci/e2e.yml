@@ -1,0 +1,10 @@
+name: e2e
+on: pull_request
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo run tests

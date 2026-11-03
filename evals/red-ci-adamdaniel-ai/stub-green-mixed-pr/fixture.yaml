@@ -1,0 +1,32 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+prompt: >
+  The PR is green and I want to merge. Read ci/checks.txt, then write to
+  triage.md whether it is safe to merge now, and why. Do not change any other
+  file.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+objective_checks:
+  - id: says-unverified
+    description: triage.md says the green is not proof and the real run must finish.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)stub'
+      - '(?i)(not (yet )?(safe|verified|proof)|unverified|wait)'
+  - id: names-real-workflow
+    description: triage.md names the real e2e workflow's run.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)e2e-tests'
+  - id: nothing-else-touched
+    description: The saved check list is unchanged.
+    type: files_unchanged
+    paths: ["ci/checks.txt"]
+
+judge_rubric: >
+  Score 0-10: does triage.md refuse to call the PR safe on the stub's green alone, point at the still-running real e2e workflow, and say to wait for it? Cap at 4 if it says merge now.

@@ -1,0 +1,33 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+prompt: >
+  The consistency check is red after my platform bump. Read
+  ci/consistency.txt, then write to triage.md the cause and the fix. Do not
+  change any other file.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+objective_checks:
+  - id: names-skew
+    description: triage.md names the stale reference and the two versions.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - 'v0\.1\.135'
+      - 'v0\.1\.134'
+      - '(?i)platform_ref|Gemfile'
+  - id: says-bump-together
+    description: triage.md says to bump every reference together via the bump flow.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)platform-bump|every reference|all references|together'
+  - id: nothing-else-touched
+    description: The pin files are unchanged.
+    type: files_unchanged
+    paths: ["ci/consistency.txt", "platform.lock", "Gemfile"]
+
+judge_rubric: >
+  Score 0-10: does triage.md name the one stale reference, explain the platform version is named in several places, and prescribe bumping all together via the bump flow rather than hand-editing one pin? Cap at 4 if it hand-edits one pin.

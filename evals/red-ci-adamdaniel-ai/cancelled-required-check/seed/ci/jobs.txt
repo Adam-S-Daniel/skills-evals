@@ -1,0 +1,5 @@
+run 1001  conclusion=failure  head=9f3c2a1  branch=fix/footer-link
+  job lint / lint        success   14s
+  job build / build      success   41s
+  job e2e / e2e          cancelled 6m02s   (step "Run Playwright": cancelled)
+run 1002  status=in_progress  head=9f3c2a1  (same head, queued after 1001 started)

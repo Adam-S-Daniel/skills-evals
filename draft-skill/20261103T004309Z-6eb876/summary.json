@@ -1,0 +1,100 @@
+{
+  "schema": 1,
+  "run_id": "20261103T004309Z-6eb876",
+  "decision": "accepted",
+  "reasons": [
+    "every one of 4 fixtures has results for both arms",
+    "with_skill passed every objective check on 3 of 4 fixtures",
+    "summed objective pass rate: with_skill 3.750, without_skill 3.667"
+  ],
+  "subject": "red-ci-adamdaniel-ai",
+  "plugin": "adam-coding-anywhere",
+  "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
+  "registry_sha": "caba66346563710860d46d293b147d5630a5436e",
+  "evidence_count": 54,
+  "trials": 1,
+  "triage": {
+    "mechanical": false,
+    "reason": "Red CI after a push cannot be refused at commit or push time: the failure appears only after the push, and telling a superseded run from a real failure, or a stub's green from the real lane's, needs reading job output and judging it."
+  },
+  "fixtures": {
+    "cancelled-required-check": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 115299.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 112860.0
+      }
+    },
+    "missing-secret": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 4,
+        "pass_rate": 0.75,
+        "tokens": 114446.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 4,
+        "total": 4,
+        "pass_rate": 1.0,
+        "tokens": 111978.0
+      }
+    },
+    "pin-skew": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 114653.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 2,
+        "total": 3,
+        "pass_rate": 0.6666666666666666,
+        "tokens": 148448.0
+      }
+    },
+    "stub-green-mixed-pr": {
+      "run_eval_exit": 0,
+      "with_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 112861.0
+      },
+      "without_skill": {
+        "n": 1,
+        "errors": 0,
+        "passed": 3,
+        "total": 3,
+        "pass_rate": 1.0,
+        "tokens": 112414.0
+      }
+    }
+  },
+  "skill_creator_commit": "2a40fd2e7c52207aa903bd33fc4c65716126966e",
+  "tokens_basis": "model_usage_total"
+}

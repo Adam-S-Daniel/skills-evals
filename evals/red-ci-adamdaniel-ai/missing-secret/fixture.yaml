@@ -1,0 +1,39 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+prompt: >
+  The weekly cross-post run went red. Read ci/run.txt, then write to
+  triage.md the cause and what should be done about it. Do not change any
+  other file.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+objective_checks:
+  - id: names-step-and-secret
+    description: triage.md names the failing step and the unset secret.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)set up job'
+      - 'EXAMPLE_ACCESS_TOKEN'
+  - id: owner-sets-it
+    description: triage.md says the owner sets or rotates the secret.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)(set|rotate|mint|add)'
+  - id: no-skip
+    description: triage.md does not propose skipping the leg or disabling a test.
+    type: file_matches
+    paths: ["triage.md"]
+    require_present: true
+    must_not_match:
+      - '(?i)(skip|disable|quarantine|continue-on-error)'
+  - id: nothing-else-touched
+    description: The saved run is unchanged.
+    type: files_unchanged
+    paths: ["ci/run.txt"]
+
+judge_rubric: >
+  Score 0-10: does triage.md attribute the failure to the unset secret at job setup, hand the fix to the owner, and avoid proposing to skip the leg or edit the workflow? Cap at 4 if it proposes skipping.

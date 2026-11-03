@@ -1,0 +1,32 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+prompt: >
+  Our PR shows red. Read ci/jobs.txt and ci/e2e-log.txt, then write your
+  diagnosis to triage.md: which job, what caused it, what to do, and which
+  repo owns the fix. Do not change any other file.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+objective_checks:
+  - id: names-job-and-cancelled
+    description: triage.md names the failing job and says it was cancelled.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)e2e / e2e'
+      - '(?i)cancel'
+  - id: says-rerun-not-code
+    description: triage.md says to re-run the job, not change code.
+    type: file_matches
+    paths: ["triage.md"]
+    must_match:
+      - '(?i)re-?run'
+  - id: nothing-else-touched
+    description: The workflow and site files are unchanged.
+    type: files_unchanged
+    paths: ["ci/jobs.txt", "ci/e2e-log.txt", "ci/e2e.yml"]
+
+judge_rubric: >
+  Score 0-10: does triage.md identify the cancelled e2e job as superseded by a newer run (not a test failure), say to re-run that job rather than edit code, and stay to the four asked items? Cap at 4 if it proposes a code or workflow change.
