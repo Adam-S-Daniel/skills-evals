@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T07:31:24Z",
+ "generated_at": "2026-11-03T07:41:07Z",
  "guidance": {
   "removed": [
    {
@@ -9164,7 +9164,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T07:29:42Z",
+ "newest_run": "2026-11-03T07:38:10Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9824,7 +9824,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
    "name": "code-quality",
    "next_test": {
@@ -9835,6 +9835,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T07:38:10Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T073627Z-c47a51/code-quality/20261103T073810Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 10,
+      "cost_usd": 0.1685548,
+      "judge_mean": 6.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 10,
+      "cost_usd": 0.171315,
+      "judge_mean": 6.4,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:17:17Z",
      "cli_version": "2.1.316",
@@ -16392,7 +16413,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "430080b67e232f2aae47e3f724c8335ec2810876"
+  "results_commit": "743ef98a1ade0bf321807e624a0655ac92f473d4"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
