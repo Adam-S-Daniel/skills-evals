@@ -25,7 +25,13 @@
 #     above 1 - `objective_margin` cannot show the margin: it parks as
 #     `ceiling`, does not vote on removal and is not fired again; it needs a
 #     harder fixture. A retire verdict beside one is only a proposal. A
-#     harm test (D < 0) runs at such cells, so a harmful one is no-benefit.
+#     harm test (D < 0) runs at such cells, so a harmful one is no-benefit,
+#     and the cell parks only when a no-harm test (D > -margin) agrees.
+#   * `max_runs_high_cell` (20): a cell whose without arm is above
+#     1 - `objective_margin` and still undecided after this many pairs stops
+#     being fired as `ceiling-unconfirmed`. It does not vote either, so a
+#     retire verdict beside it is a proposal. A budget rule: a bound at 0.95
+#     needs about 28 pairs, at 0.90 more than the cap.
 #   * A cell that reaches `max_runs_per_cell` (40) pairs with neither test
 #     decided has `no-clear-effect`, which can only PROPOSE a removal. An
 #     automatic removal needs two or more cells with headroom, every one
@@ -34,7 +40,8 @@
 #     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
 #     figure the explorer shows). Single checks no longer keep on their own.
 #   * Removals still need runs on `min_cli_versions` (2) Claude Code
-#     versions.
+#     versions: a removal decides at the first pair where its test is at
+#     its level and the pairs so far span them.
 #   * In-situ guidance cells decide on runs beside the current rest of the
 #     guidance only.
 #
@@ -67,6 +74,7 @@ skills:
   retire_confidence: 0.90
   min_cli_versions: 2
   max_runs_per_cell: 40
+  max_runs_high_cell: 20
   floor_fraction: 0.10
   retirement_mode: proposal
 # Guidance sections (skills-evals#124): the same verdict over each section's
@@ -84,5 +92,6 @@ guidance:
   retire_confidence: 0.90
   min_cli_versions: 2
   max_runs_per_cell: 40
+  max_runs_high_cell: 20
   floor_fraction: 0.10
   retirement_mode: proposal

@@ -10,7 +10,7 @@ an auto-merging removal pull request in adam-agentskills.
 verdict there is `retire`, and this script re-checks what that verdict
 means before acting: every (fixture, roster model) cell of the cells'
 fixtures crossed with the gates file's roster models present exactly once,
-every one `no-benefit`, `no-clear-effect`, `ceiling` or
+every one `no-benefit`, `no-clear-effect`, `ceiling`, `ceiling-unconfirmed` or
 `cannot-discriminate`, and at least one `no-benefit` or `no-clear-effect`
 (a cell with headroom; harness/gates.py, THE VERDICT). Any field of the
 wrong type is a refusal, never a crash or a pass.
@@ -197,6 +197,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import yaml  # noqa: E402
 
 import compute_gates  # noqa: E402
+import gates  # noqa: E402
 import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
@@ -224,7 +225,8 @@ GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance reached this 
                          "(the GitHub App token was not minted)")
 #: The cell classes a `retire` verdict may hold, and those with headroom,
 #: of which it needs one (harness/gates.py, THE VERDICT).
-RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "ceiling", "cannot-discriminate")
+RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "ceiling", "ceiling-unconfirmed",
+                       "cannot-discriminate")
 HEADROOM_CLASSES = ("no-benefit", "no-clear-effect")
 NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
                  "GitHub App token was not minted)")
@@ -367,7 +369,8 @@ def retiring(gates: dict) -> str | None:
     for c in cells:
         if not isinstance(c, dict) or c.get("class") not in RETIRE_CELL_CLASSES:
             raise RetireError(f"{skill}: a retire verdict with a cell that is not "
-                              "no-benefit, no-clear-effect, ceiling or "
+                              "no-benefit, no-clear-effect, ceiling, "
+                              "ceiling-unconfirmed or "
                               "cannot-discriminate")
         fixture = c.get("fixture")
         if not (fixture is None or isinstance(fixture, str) and NAME_RE.fullmatch(fixture)) \
@@ -831,21 +834,21 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
             f"workflow.\n\n{AGENT_MARKER}\n")
 
 
-#: Headroom cells, every one `no-benefit`, an automatic removal needs
-#: (harness/gates.py AUTO_MIN_HEADROOM_CELLS).
-AUTO_MIN_HEADROOM_CELLS = 2
+#: Headroom cells, every one `no-benefit`, an automatic removal needs: the
+#: gates' own constant, one source (round 2's m1).
+AUTO_MIN_HEADROOM_CELLS = gates.AUTO_MIN_HEADROOM_CELLS
 
 
 def cells_allow_auto(verdict: dict) -> bool:
     """Whether a `retire` verdict's cells allow an automatic removal, derived
     here rather than trusted from its `removal` field (the review's m3): at
     least AUTO_MIN_HEADROOM_CELLS headroom cells, every one `no-benefit`,
-    and no `ceiling` cell beside them."""
+    and no parked cell (`gates.PARKED_CLASSES`) beside them."""
     cells = [c for c in verdict.get("cells") or [] if isinstance(c, dict)]
     headroom = [c for c in cells if c.get("class") in HEADROOM_CLASSES]
     return (len(headroom) >= AUTO_MIN_HEADROOM_CELLS
             and all(c["class"] == "no-benefit" for c in headroom)
-            and not any(c.get("class") == "ceiling" for c in cells))
+            and not any(c.get("class") in gates.PARKED_CLASSES for c in cells))
 
 
 def proposal_only(verdict: dict) -> str | None:

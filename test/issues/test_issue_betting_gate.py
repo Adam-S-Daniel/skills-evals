@@ -186,9 +186,16 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(result["verdict"], "ceiling")
         self.assertNotIn("removal", result)
         self.assertFalse(result["cells"][0]["headroom"])
-        # Until the ceiling test rejects, a high without arm is not parked.
-        early = self.verdict(self.arms(top[:20], top[:20], "model-a"), ["model-a"])
+        # Until the ceiling test rejects, a high without arm is not parked...
+        early = self.verdict(self.arms(top[:19], top[:19], "model-a"), ["model-a"])
         self.assertEqual(early["cells"][0]["class"], "insufficient")
+        # ...and at `max_runs_high_cell` pairs undecided it stops as
+        # `ceiling-unconfirmed` (round 2's M2), which does not vote either.
+        stop = self.verdict(self.arms(top[:20], top[:20], "model-a")
+                            + self.arms(top[:20], top[:20], "model-b"))
+        self.assertEqual([c["class"] for c in stop["cells"]],
+                         ["ceiling-unconfirmed"] * 2)
+        self.assertEqual(stop["verdict"], "ceiling")
 
     def test_a_three_pair_ceiling_never_parks_a_cell_or_frees_an_auto_removal(self):
         # Round 1's C1, the reviewer's direct repro: three perfect pairs on
@@ -223,11 +230,21 @@ class VerdictTests(unittest.TestCase):
         result = gates.retirement({"runs": pairs("a", 40) + pairs("b", 40)}, ["model-a"],
                                   "demo", POLICY, expect)
         self.assertEqual([c["class"] for c in result["cells"]], ["no-benefit", "no-benefit"])
-        self.assertIn("harm test rejected", result["cells"][0]["reason"])
+        self.assertIn("harm test decided at pair 7", result["cells"][0]["reason"])
         self.assertEqual(result["verdict"], "retire")
         self.assertIn(result["removal"], ("auto", "proposal"))
-        # It is found long before the ceiling test could park the cell.
-        self.assertLess(result["cells"][0]["harm_at"], 10)
+        # It is found long before the ceiling test could park the cell, at
+        # the retire level 0.90 (a looser level would cross sooner), and it
+        # needs no ceiling bound: at 10 pairs the ceiling has not rejected.
+        self.assertEqual(result["cells"][0]["harm_at"], 7)
+        self.assertEqual(result["cells"][0]["harm_at"],
+                         gates.first_crossing(gates.harm_wealth([-0.55] * 40), 0.10))
+        self.assertGreater(gates.first_crossing(gates.harm_wealth([-0.55] * 40), 0.10),
+                           gates.first_crossing(gates.harm_wealth([-0.55] * 40), 0.5))
+        short = gates.retirement({"runs": pairs("a", 10) + pairs("b", 10)}, ["model-a"],
+                                 "demo", POLICY, expect)
+        self.assertIsNone(short["cells"][0]["ceiling_at"])
+        self.assertEqual([c["class"] for c in short["cells"]], ["no-benefit", "no-benefit"])
 
     def test_a_keep_and_remove_tie_keeps(self):
         # Both tests rejecting at the same pair: the keep wins (the review's
@@ -271,19 +288,90 @@ class VerdictTests(unittest.TestCase):
         # The planner sees it as blocking: more runs cannot move it.
         self.assertTrue(plan_week._blocking({**result, "class": "insufficient"}))
 
-    def test_cli_versions_count_only_the_pairs_that_decided(self):
-        # Round 1's m1: a no-benefit decided on one CLI version is not
-        # rescued by a later pair on a second version.
-        flat = [(80, 80, 80)] * (FLAT_DECIDES + 1)
-        clis = [CLIS[0]] * FLAT_DECIDES + [CLIS[1]]
-        with_runs = [series("with", [p], start=i, cli=c)[0]
-                     for i, (p, c) in enumerate(zip(flat, clis))]
-        without_runs = [series("without", [p], start=i, cli=c)[0]
-                        for i, (p, c) in enumerate(zip(flat, clis))]
-        result = cell(with_runs, without_runs, policy=POLICY)
-        self.assertEqual(result["objective"]["remove_at"], FLAT_DECIDES)
-        self.assertEqual(result["class"], "insufficient", result["reason"])
-        self.assertIn("1 CLI version(s) in the pairs it decided on", result["reason"])
+    def test_a_removal_decides_at_a_stopping_time_over_cli_versions(self):
+        # Round 2's C1, replacing round 1's m1 test that enshrined the bug: a
+        # removal decides at the first pair where the test's wealth is at
+        # its level AND the pairs so far span 2 CLI versions. Ville bounds
+        # that stopping time as it bounds the first crossing.
+        def run(cells):
+            with_runs = [series("with", [(w,)], start=i, cli=c)[0]
+                         for i, (w, _, c) in enumerate(cells)]
+            without_runs = [series("without", [(o,)], start=i, cli=c)[0]
+                            for i, (_, o, c) in enumerate(cells)]
+            return cell(with_runs, without_runs, policy=POLICY)
+        v1 = [(80, 80, CLIS[0])] * FLAT_DECIDES
+        # A flat pair on the second version, wealth still at the level: decided.
+        decided = run(v1 + [(80, 80, CLIS[1])])
+        self.assertEqual((decided["class"], decided["objective"]["remove_at"],
+                          decided["remove_decided_at"]), ("no-benefit", FLAT_DECIDES, 19))
+        self.assertIn("decided at pair 19 (crossed at 18)", decided["reason"])
+        # A D = +1 pair on the second version knocks the wealth under its
+        # level: round 1's m1 worry, a late pair rescuing a one-version
+        # decision, still cannot happen.
+        knocked = run(v1 + [(100, 0, CLIS[1])])
+        self.assertEqual(knocked["class"], "insufficient", knocked["reason"])
+        self.assertIsNone(knocked["remove_decided_at"])
+
+    def test_round_two_cli_repros_reach_no_benefit(self):
+        # Round 2's C1 repros: each stayed `insufficient` (and was fired)
+        # forever because its first crossing was on one CLI version.
+        def pairs(fixture, n, without, with_, cli, start=0):
+            return [r for i in range(start, start + n) for r in
+                    (series("without", [(without,)], start=i, fixture=fixture, cli=cli(i))[0],
+                     series("with", [(with_,)], start=i, fixture=fixture, cli=cli(i))[0])]
+        two = {k: dict(EXPECT[""]) for k in "ab"}
+        # Flat, 65 pairs, v1 for the first 25.
+        flat = (pairs("a", 65, 50, 50, lambda i: CLIS[i >= 25])
+                + pairs("b", 65, 50, 50, lambda i: CLIS[i >= 125], start=100))
+        result = gates.retirement({"runs": flat}, ["model-a"], "demo", POLICY, two)
+        self.assertEqual([(c["class"], c["remove_decided_at"]) for c in result["cells"]],
+                         [("no-benefit", 26)] * 2)
+        self.assertEqual(result["verdict"], "retire")
+        # Clearly harmful (D = -0.5), v1 for the first 10 pairs, then mixed.
+        mixed = lambda i: CLIS[0] if i % 100 < 10 else CLIS[i % 2 == 0]  # noqa: E731
+        harmful = pairs("a", 40, 70, 20, mixed) + pairs("b", 40, 70, 20, mixed, start=100)
+        result = gates.retirement({"runs": harmful}, ["model-a"], "demo", POLICY, two)
+        self.assertEqual([(c["class"], c["remove_decided_at"]) for c in result["cells"]],
+                         [("no-benefit", 11)] * 2)
+        # Harm at the ceiling (100 vs 40), v1 for 30 pairs then v2: the harm
+        # test decides on the first v2 pair, never earlier.
+        one = {"a": dict(EXPECT[""])}
+        for n, want in ((30, ("insufficient", None)), (60, ("no-benefit", 31))):
+            runs = pairs("a", n, 100, 40, lambda i: CLIS[i >= 30])
+            got = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, one)
+            c = got["cells"][0]
+            self.assertEqual((c["class"], c["harm_decided_at"]), want, c["reason"])
+
+    def test_a_ceiling_parks_only_when_the_no_harm_test_rejects(self):
+        # Round 2's M1, the reviewer's repro: without 100/100, with 85/100
+        # (D = -0.15). The ceiling test rejects at pair 18, but the no-harm
+        # test (H0: E[D] <= -margin) cannot, so the cell is fired on and the
+        # harm test decides at pair 20.
+        def runs(n):
+            return series("with", [(85,)] * n) + series("without", [(100,)] * n)
+        for n, want in ((18, "insufficient"), (19, "insufficient"), (20, "no-benefit")):
+            c = cell(runs(n)[:n], runs(n)[n:], policy=POLICY)
+            self.assertEqual(c["class"], want, (n, c["reason"]))
+            self.assertIsNone(c["noharm_at"])
+        self.assertEqual(cell(runs(20)[:20], runs(20)[20:], policy=POLICY)["ceiling_at"], 18)
+        # Equal arms at the top park at pair 18, the no-harm test with them.
+        top = series("with", [(100,)] * 18) + series("without", [(100,)] * 18)
+        c = cell(top[:18], top[18:], policy=POLICY)
+        self.assertEqual((c["class"], c["ceiling_at"], c["noharm_at"]), ("ceiling", 18, 18))
+
+    def test_a_ceiling_unconfirmed_cell_never_frees_an_auto_removal(self):
+        # Round 2's M2: beside two no-benefit cells, a stopped high cell
+        # makes the removal a proposal, as a ceiling cell does.
+        def pairs(fixture, n, without, with_, start):
+            return (series("with", [(with_,)] * n, start=start, fixture=fixture)
+                    + series("without", [(without,)] * n, start=start, fixture=fixture))
+        expect = {k: dict(EXPECT[""]) for k in "abc"}
+        runs = pairs("a", 20, 90, 90, 0) + pairs("b", 18, 50, 50, 30) \
+            + pairs("c", 18, 50, 50, 60)
+        result = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, expect)
+        self.assertEqual([c["class"] for c in result["cells"]],
+                         ["ceiling-unconfirmed", "no-benefit", "no-benefit"])
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
 
     def test_one_headroom_cell_proposes_and_two_may_remove(self):
         one = self.verdict(self.arms(FLAT, FLAT, "model-a"), ["model-a"])
@@ -324,6 +412,33 @@ class PlannerTests(unittest.TestCase):
         self.assertIn({"kind": "fixture-ceiling", "change_type": "fixture", "skill": "a",
                        "fixture": "evals/a", "model": "heavy", "route": "issue"},
                       plan["work"])
+
+    def test_parked_and_frozen_cells_are_not_fired(self):
+        from test_issue_closed_loop_planner import NOW, cell as pcell, ctx
+        item = {"kind": "fixture-ceiling", "change_type": "fixture", "skill": "a",
+                "fixture": "evals/a", "model": "heavy", "route": "issue"}
+        # Round 2's M2: a stopped high cell is parked as a ceiling cell is.
+        cells = [pcell("evals/a", "heavy", "ceiling-unconfirmed", runs=20),
+                 pcell("evals/a", "light", "insufficient", runs=1)]
+        plan = plan_week.build_plan(ctx(cells=cells, room=1.0), NOW)
+        self.assertEqual([(f["fixture"], f["model"]) for f in plan["fires"]],
+                         [("evals/a", "light")])
+        self.assertIn(item, plan["work"])
+        # Round 2's m6: a kept subject's parked cell asks for nothing.
+        for cls in ("ceiling", "ceiling-unconfirmed"):
+            kept = [{**pcell("evals/a", "heavy", cls, runs=20), "verdict": "keep"}]
+            self.assertNotIn(item, plan_week.build_plan(ctx(cells=kept, room=1.0),
+                                                        NOW)["work"])
+        # Round 2's C1: an undecided cell at `max_runs_per_cell` pairs is
+        # frozen: it is not fired and it blocks its subject.
+        frozen = {**pcell("evals/a", "heavy", "insufficient", runs=CAP), "at_cap": True,
+                  "pairs": CAP}
+        plan = plan_week.build_plan(ctx(cells=[frozen], room=1.0), NOW)
+        self.assertEqual(plan["fires"], [])
+        self.assertTrue(plan_week._blocking(frozen))
+        self.assertFalse(plan_week._blocking({**frozen, "at_cap": False}))
+        self.assertEqual(plan_week.batch_subjects({"cells": [frozen]})
+                         [("skill", "a")]["status"], "blocked")
 
 
 class BetPriorTests(unittest.TestCase):

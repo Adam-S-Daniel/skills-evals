@@ -884,7 +884,8 @@ def subject_confidence(verdict: dict) -> dict:
     ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
           if isinstance(t, dict) and t.get("route") == "objective"
           and isinstance(t.get("p"), (int, float))]
-    voting = [c for c in cells if c.get("class") not in ("ceiling", "cannot-discriminate")]
+    voting = [c for c in cells if c.get("class") not in ("ceiling", "ceiling-unconfirmed",
+                                                         "cannot-discriminate")]
     no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in voting]
     return {"helps": max(0.0, 1 - family * min(ps)) if ps else 0.0,
             "no_help": min(no_help) if no_help else None}

@@ -302,3 +302,54 @@ Known limits it left:
   effect size, and 18 to remove identical arms, so each returns to
   `insufficient` and is measured again rather than carrying a keep the new
   bound cannot support.
+
+### Adversarial round 2 (2026-11-03)
+
+The second round found that round 1's CLI rule had opened a worse hole:
+versions were counted only over the pairs up to a test's first crossing,
+which never moves, so a removal first reached inside one Claude Code
+release could never decide, and the planner fired the cell forever. Pairs
+arrive in bursts, and most cells carried one version. A removal (or harm)
+now decides at a stopping time: the first pair at which the test's wealth
+is at its level AND the pairs so far span two versions. Ville's inequality
+bounds that stopping time as it bounds the first crossing, and a late pair
+that knocks the wealth under the level does not decide. A cell whose pairs
+reach the 40-pair cap undecided is no longer fired, and blocks its subject.
+
+It also found that a perfect without arm let the ceiling test park a cell
+at pair 18, before the harm test could show a harm of up to about 0.17. A
+cell now parks as `ceiling` only when a no-harm test (D above minus the
+margin, at 90%) rejects too; equal arms pass it with the ceiling, so the
+clean case costs nothing.
+
+**The budget trade-off (round 2's M2).** A valid ceiling bound costs pairs:
+at 90%, a perfect without arm needs at least 15 and the implementation 18;
+0.95 about 28; 0.90 does not decide inside the cap. 32 cells on the data of
+2026-11-03 sat above 0.85 with 1 to 4 pairs, on the order of 500 to 1,100
+more paired fires for a class that does not vote. So a cell whose without
+arm is above 1 minus the margin and undecided after `max_runs_high_cell`
+(20) pairs stops being fired and ends `ceiling-unconfirmed`: it does not
+vote, a retire verdict beside it is only a proposal, and it becomes a
+fixture-ceiling work item. The cost is that such a cell hides a harm the
+harm test had not shown by pair 20 (about D = -0.15 and milder at a perfect
+without arm); a subject whose cells all end that way is `ceiling`, never
+removed or proposed. That is the price of not spending the batch on cells
+that cannot vote, and only a harder fixture lifts it.
+
+Known limits it left:
+
+- *A second route around errored trials for guidance* (round 2's m3,
+  extending round 1's m5). In-situ guidance cells do not let an
+  agent-errored trial block removal, and with-arm timeouts at a perfect
+  without arm drive D negative, so the harm test, not only the remove test,
+  can reach `no-benefit` on them, and with two such cells an automatic
+  removal.
+- *Keep is compared with the remove test only* (round 2's m5). A cell keeps
+  when the keep test crossed no later than the remove test, even if the
+  harm test crossed earlier still. Both crossing needs D near 0 with errors
+  on both sides, and the order errs toward keep.
+- *Two removal routes per cell* (round 2's m2). `no-benefit` is the union of
+  the remove test and, at high cells, the harm test, so its worst-case
+  level is twice alpha; the simulations found no measurable excess at
+  D at or above the margin, and a harm rejection also shows D below the
+  margin.

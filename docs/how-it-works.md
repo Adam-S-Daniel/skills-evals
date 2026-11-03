@@ -282,10 +282,14 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
 
 Two rules from the 2026-11-03 gate change apply across the bands. A cell
 whose verdict class is `ceiling` (a bound on its without arm shows a mean
-above 1 minus the margin, so it cannot show the gain) plans no fire in any
-band but safety, re-checks included, and becomes a "fixture ceiling" work
-item: it needs a harder fixture, not more runs. It does not block its
-subject: the subject's other cells keep being measured. And the cheaper
+above 1 minus the margin, so it cannot show the gain) or
+`ceiling-unconfirmed` (its without arm is high but undecided after 20
+pairs) plans no fire in any band but safety, re-checks included, and
+becomes a "fixture ceiling" work item, unless its subject is already kept:
+it needs a harder fixture, not more runs. It does not block its subject:
+the subject's other cells keep being measured. An undecided cell that has
+reached the 40-pair cap is not fired either (its window is frozen) and
+blocks its subject. And the cheaper
 model goes first: in the missing, near, focus and guidance-rest bands a
 cell waits while its subject's cell of the same fixture on a model with a
 lower known cost is still open (`cheaper_first`). A keep on the cheaper
@@ -330,8 +334,10 @@ the two sections nearest one until those decide.
   none): keep, every retire verdict, `shorten-or-merge` and
   cannot-discriminate and `ceiling` are not focused. (A `ceiling` cell is
   one whose ceiling test, a betting bound on the without arm's run means at
-  90%, shows a mean above 1 minus the margin: at least 18 pairs, more as
-  the arm drops below 1.0. It is parked and does not vote on removal, and a
+  90%, shows a mean above 1 minus the margin, and whose no-harm test shows
+  the section costs less than the margin there: at least 18 pairs, more as
+  the arm drops below 1.0. A high cell undecided after 20 pairs is
+  `ceiling-unconfirmed`. Both are parked and do not vote on removal, and a
   section whose every cell is parked is `ceiling`. A `cannot-discriminate`
   cell is one whose arms
   both pass almost nothing over three pairs, left out of the verdict as a
@@ -343,8 +349,9 @@ the two sections nearest one until those decide.
   skipped as anomalous, or a cannot-discriminate cell with at least three
   counted runs on each arm. More runs on the current content cannot move a
   blocking cell toward removal; under three runs one more can still change
-  its class. A `ceiling` cell does not block: it is parked, and the
-  section's other cells are still measured.
+  its class. An undecided cell at the 40-pair cap blocks too. A parked cell
+  does not block: it is not fired, and the section's other cells are still
+  measured.
 - **Order.** The higher-scored section's fires go first; within a section the
   binding cell first (the lowest retire progress, or the highest keep
   progress when the score came from the keep side), then the cheaper model,
@@ -600,8 +607,12 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   margin (a sample mean is not enough: three perfect pairs once parked a
   cell for good). It is `ceiling`: it does not vote on removal, the planner
   stops firing it without blocking the subject's other cells, and a subject
-  whose every cell is at the ceiling is `ceiling`. A retire verdict beside
-  a ceiling cell is only a proposal.
+  whose every cell is at the ceiling is `ceiling`. It parks only when a
+  no-harm test (D above minus the margin, at 90%) agrees, so the margin
+  cannot hide a harm. A cell whose without arm is high but undecided after
+  20 pairs (`max_runs_high_cell`) stops being fired as
+  `ceiling-unconfirmed`, which does not vote either. A retire verdict
+  beside either is only a proposal.
 - *Harm.* A cell whose without arm is high is also tested for harm (D below
   0 at 90%). A harmful cell is `no-benefit`, never hidden as a ceiling: it
   needs no headroom to show harm.
@@ -612,9 +623,10 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   more such cells, every one no-benefit; one headroom cell, or any
   no-clear-effect or ceiling cell, makes it a proposal (`removal: proposal`
   in the verdict), and `scripts/retire_skill.py` re-derives that from the
-  cells rather than trusting the field. Removals also need runs on two
-  Claude Code versions among the pairs the removal decided on, and a skill
-  cell with an agent-errored trial supports no removal at all.
+  cells rather than trusting the field. A removal decides at the first pair
+  where its test is at its level and the pairs so far span two Claude Code
+  versions, and a skill cell with an agent-errored trial supports no
+  removal at all.
 - *The judge* is reported beside each cell and does not vote; single
   checks no longer keep on their own.
 - *Current content only.* A cell decides on runs of the skill and fixture

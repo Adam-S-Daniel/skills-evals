@@ -155,7 +155,8 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(POLICY, {
             "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.80,
             "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 40,
-            "floor_fraction": 0.10, "retirement_mode": "proposal"})
+            "max_runs_high_cell": 20, "floor_fraction": 0.10,
+            "retirement_mode": "proposal"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -182,7 +183,9 @@ class PolicyTests(unittest.TestCase):
                          ("max_runs_per_cell", "true"), ("objective_margin", -0.1),
                          # A margin of 1 leaves the removal test no stake.
                          ("objective_margin", 1), ("judge_margin", 11),
-                         ("floor_fraction", 1)):
+                         ("floor_fraction", 1), ("max_runs_high_cell", 0),
+                         # Round 2's M2: the high-cell stop is inside the cap.
+                         ("max_runs_high_cell", 41)):
             with self.assertRaises(gates.GatePolicyError, msg=f"{key}={bad}"):
                 gates.parse_gate_policy(self._text(**{key: bad}))
 
@@ -338,7 +341,7 @@ class CellTests(unittest.TestCase):
         runs = flat_cell(cli=CLIS[0])
         result = cell(runs[:FLAT_DECIDES], runs[FLAT_DECIDES:])
         self.assertEqual(result["class"], "insufficient")
-        self.assertIn("1 CLI version(s) in the pairs it decided on, under the 2",
+        self.assertIn("not been at its level on pairs spanning 2 CLI versions (1 so far)",
                       result["reason"])
         self.assertEqual(cell(runs[:FLAT_DECIDES], runs[FLAT_DECIDES:],
                               policy={**TEST_POLICY, "min_cli_versions": 1})["class"],
@@ -476,15 +479,18 @@ class CellTests(unittest.TestCase):
         self.assertAlmostEqual(result["without_mean"], 1.0, places=12)
         # The removal test rejected by then; the ceiling still parks it.
         self.assertIsNotNone(result["objective"]["remove_at"])
+        self.assertEqual(result["noharm_at"], 18)
         # A without arm at 0.90 is above the floor but too near it for the
-        # bound within the cap: it never votes, and at the cap it has no
-        # clear effect, which can only propose.
+        # bound: it never votes, and at `max_runs_high_cell` (20) pairs it
+        # stops as `ceiling-unconfirmed` (round 2's M2).
         near = [(90, 90, 90)] * 40
-        result = cell(series("with", near[:30]), series("without", near[:30]))
+        result = cell(series("with", near[:19]), series("without", near[:19]))
         self.assertEqual(result["class"], "insufficient")
         self.assertIsNotNone(result["objective"]["remove_at"])
-        self.assertEqual(cell(series("with", near), series("without", near))["class"],
-                         "no-clear-effect")
+        for n in (20, 40):
+            self.assertEqual(cell(series("with", near[:n]),
+                                  series("without", near[:n]))["class"],
+                             "ceiling-unconfirmed")
         # Exactly 1 - margin has headroom.
         edge = [(85, 85, 85)] * 30
         self.assertEqual(cell(series("with", edge), series("without", edge))["class"],

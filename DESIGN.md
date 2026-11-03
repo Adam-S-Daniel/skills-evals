@@ -2660,11 +2660,14 @@ variance prior). A cell shows no benefit when its test shows D below 0.15
 cell's keep test shows D above 0 at 80% (`benefit_confidence`), split over a
 family of fixed size m = fixtures on main x roster models (Bonferroni,
 #578's per-subject keep). A cell whose without arm a betting bound at 90%
-shows above 1 minus the margin is `ceiling` and does not vote (a harm test
-runs there too, so a harmful cell is no-benefit); one undecided after 40
-pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only propose a
-removal; an automatic removal needs two or more headroom cells, all
-no-benefit, and no ceiling cell. The judge is reported and does not vote (`judge_margin` 1.5
+shows above 1 minus the margin, with a no-harm test agreeing, is `ceiling`
+and does not vote (a harm test runs there too, so a harmful cell is
+no-benefit); a high cell undecided after 20 pairs (`max_runs_high_cell`)
+stops as `ceiling-unconfirmed`, which does not vote either; one undecided
+after 40 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
+propose a removal; a removal decides once its test is at its level on pairs
+spanning two CLI versions; an automatic removal needs two or more headroom
+cells, all no-benefit, and no parked cell. The judge is reported and does not vote (`judge_margin` 1.5
 on its 0-to-10 scale sets only its reported figure). The alone pair keeps
 its per-cell keep for the twist above. An agent-errored trial counts 0 and
 does not block a guidance removal. `harness/gates.py`'s docstring is the

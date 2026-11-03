@@ -704,13 +704,17 @@ class VerdictTests(Base):
         # that do not allow it (a no-clear-effect cell, a ceiling cell, or
         # one headroom cell) is lowered to the issue, never trusted.
         registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
-        for swap in ("no-clear-effect", "ceiling", "one"):
+        # The auto rule's cell count is the gates' own constant (round 2).
+        self.assertIs(retire_skill.AUTO_MIN_HEADROOM_CELLS, gates_module.AUTO_MIN_HEADROOM_CELLS)
+        for swap in ("no-clear-effect", "ceiling", "ceiling-unconfirmed", "one", "lone"):
             with self.subTest(swap=swap):
                 doc = gates_doc("auto")
                 cells = doc["skills"][SKILL]["cells"]
-                if swap == "one":
+                if swap in ("one", "lone"):
+                    # One headroom cell beside a ceiling, or beside broken
+                    # fixtures only: under AUTO_MIN_HEADROOM_CELLS either way.
                     for c in cells[1:]:
-                        c["class"] = "ceiling"
+                        c["class"] = "ceiling" if swap == "one" else "cannot-discriminate"
                 else:
                     cells[0]["class"] = swap
                 action = retire_skill.plan(doc, registries, FakeGitHub().gh,

@@ -77,8 +77,10 @@ THE BANDS (rule D), in order:
          no-clear-effect was overruled by an errored trial or an anomalous
          skip, or it is cannot-discriminate with BLOCKING_MIN_RUNS (3)
          counted runs on each arm. More runs on the current content cannot
-         move a blocking cell toward removal. A ceiling cell does not block:
-         it is not fired, and the section's other cells still are.
+         move a blocking cell toward removal, nor an `insufficient` cell at
+         `max_runs_per_cell` pairs (gates' `at_cap`). A ceiling or
+         ceiling-unconfirmed cell does not block: it is not fired, and the
+         section's other cells still are.
      Within it the higher-scored section goes first, then its binding
      cell: the lowest retire progress, or, when the section's score came
      from the keep side, the highest keep progress; then the cheaper
@@ -471,13 +473,16 @@ FOCUS_VERDICTS = (None, "insufficient")
 #: whose no-benefit or no-clear-effect was overruled by an agent-errored
 #: trial or a run skipped as anomalous (gates.classify_cell's reason), or a
 #: cannot-discriminate cell with at least this many counted runs on each
-#: arm (under it one more run can still change the class). A `ceiling` cell
-#: is not blocking (the review's M2): it only does not vote, and the
-#: subject's other cells must stay measured.
+#: arm (under it one more run can still change the class), or an
+#: `insufficient` cell at `max_runs_per_cell` pairs (`at_cap`, round 2's C1).
+#: A parked cell (PARKED_CLASSES) is not blocking (round 1's M2): it only
+#: does not vote, and the subject's other cells must stay measured.
 BLOCKING_REASON = "no-benefit on the numbers, but the cell has"
 BLOCKING_REASONS = (BLOCKING_REASON, "no-clear-effect on the numbers, but the cell has")
 BLOCKING_CLASSES = ("cannot-discriminate",)
 BLOCKING_MIN_RUNS = 3
+#: The cell classes that are parked, not fired (harness/gates.py).
+PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed")
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
 #: workflow's `section` pattern refuses its id.
@@ -790,8 +795,12 @@ def _produces_item(cell: dict) -> bool:
 
 
 def _blocking(cell: dict) -> bool:
-    """A cell more runs on the current content cannot move (BLOCKING_REASON)."""
+    """A cell more runs on the current content cannot move: BLOCKING_REASON,
+    a BLOCKING_CLASSES cell with BLOCKING_MIN_RUNS, or an undecided cell
+    whose pairs reached `max_runs_per_cell` (gates' `at_cap`, round 2's C1:
+    its window is frozen)."""
     return str(cell.get("reason") or "").startswith(BLOCKING_REASONS) \
+        or (cell.get("at_cap") is True and cell["class"] == "insufficient") \
         or (cell["class"] in BLOCKING_CLASSES
             and (cell.get("with_counted") or 0) >= BLOCKING_MIN_RUNS
             and (cell.get("without_counted") or 0) >= BLOCKING_MIN_RUNS)
@@ -1046,9 +1055,12 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     enters neither missing nor near: `focus` for a section of
     `guidance_focus`, `guidance-rest` otherwise (`_guidance_band`).
 
-    A `ceiling` cell (harness/gates.py) plans no fire in any band but
-    safety, re-checks included: it is a `fixture-ceiling` work item, since
-    only a harder fixture can let it vote.
+    A `ceiling` or `ceiling-unconfirmed` cell (harness/gates.py) plans no
+    fire in any band but safety, re-checks included: it is a
+    `fixture-ceiling` work item (none when its subject is kept), since only a
+    harder fixture can let it vote. An `insufficient` cell whose pairs
+    reached `max_runs_per_cell` (`at_cap`) plans no fire either: its window
+    is frozen.
 
     CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
     allocation): in the missing, near, focus and guidance-rest bands a cell
@@ -1092,16 +1104,22 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         due = newest is not None and now - newest >= recheck_after(cell)
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
-        elif cell["class"] == "ceiling":
-            # Parked (harness/gates.py rule 4): its without arm leaves no room
-            # to show the margin, so no fire, re-checks included, can move
-            # it. It needs a harder fixture.
-            parked = {"kind": "fixture-ceiling", "change_type": "fixture",
-                      "skill": cell["skill"], "fixture": cell["fixture"],
-                      "model": cell["model"], "route": "issue"}
-            if cell.get("section"):
-                parked["section"] = cell["section"]
-            work.append(parked)
+        elif cell["class"] in PARKED_CLASSES:
+            # Parked (harness/gates.py PARKED_CLASSES): its without arm leaves
+            # no room to show the margin, so no fire, re-checks included, can
+            # move it. It needs a harder fixture, unless its subject is
+            # already kept (round 2's m6: then nothing is asked of it).
+            if not kept:
+                parked = {"kind": "fixture-ceiling", "change_type": "fixture",
+                          "skill": cell["skill"], "fixture": cell["fixture"],
+                          "model": cell["model"], "route": "issue"}
+                if cell.get("section"):
+                    parked["section"] = cell["section"]
+                work.append(parked)
+            band, order = None, None
+        elif cell.get("at_cap") is True and cell["class"] == "insufficient":
+            # Round 2's C1: `max_runs_per_cell` pairs freeze the window, so
+            # another fire cannot change the class. It is blocking instead.
             band, order = None, None
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
@@ -2023,6 +2041,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "class": cls, "verdict": verdict.get("verdict"),
                 # Gates' pair count and reason (`cheaper_first`, `_blocking`).
                 "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
+                "at_cap": (cell or {}).get("at_cap") is True,
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),

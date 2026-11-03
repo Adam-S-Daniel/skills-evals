@@ -586,13 +586,16 @@ class BandTests(unittest.TestCase):
                            **blocker, "usd_per_arm_trial": 0.1}]
                 self.assertEqual(
                     plan_week.cheaper_first(priced, plan_week.model_costs(priced)), set())
-        # One pair under the bound, an open cheaper cell still holds it.
-        priced = [{**cell("evals/a", "heavy", "insufficient", runs=1), "usd_per_arm_trial": 1.0},
-                  {**cell("evals/a", "light", "insufficient", runs=3), "usd_per_arm_trial": 0.1,
-                   "reason": "neither test has rejected yet",
-                   "pairs": plan_week.CHEAPER_FIRST_MAX_PAIRS - 1}]
-        self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)),
-                         {id(priced[0])})
+        # The bound is 10 pairs, a literal (round 2: a test that read the
+        # constant let any value pass): at 9 the cheaper cell still holds.
+        for pairs, held in ((9, True), (10, False)):
+            priced = [{**cell("evals/a", "heavy", "insufficient", runs=1),
+                       "usd_per_arm_trial": 1.0},
+                      {**cell("evals/a", "light", "insufficient", runs=3),
+                       "usd_per_arm_trial": 0.1, "reason": "neither test has rejected yet",
+                       "pairs": pairs}]
+            self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)),
+                             {id(priced[0])} if held else set(), pairs)
 
     def test_historical_cost_is_clamped_and_breaks_ties(self):
         c = ctx(points_per_usd=0.01)
