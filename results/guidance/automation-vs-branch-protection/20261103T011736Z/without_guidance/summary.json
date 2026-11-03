@@ -1,0 +1,318 @@
+{
+  "arm": "without_guidance",
+  "timestamp": "20261103T011736Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.037418,
+    "num_turns": 3,
+    "duration_ms": 9263,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 9643,
+      "cache_read_input_tokens": 54685,
+      "output_tokens": 783,
+      "output_tokens_details": {
+        "thinking_tokens": 158
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 9643
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 301,
+          "cache_read_input_tokens": 21283,
+          "cache_creation_input_tokens": 806,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 806,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "no-concurrency-group",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "required-test-off-labeled",
+      "passed": false,
+      "detail": ".github/workflows/ci.yml contains /\\blabeled\\b/"
+    },
+    {
+      "id": "e2e-label-still-runs",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Required check",
+        "score": 4,
+        "rationale": "There is no concurrency group, but `test` and `e2e` still share one workflow whose triggers include `labeled`, so the trigger sets are not disjoint; a label event now creates a skipped `test` check on the head SHA, and GitHub treats a skipped required check as passing, which could hide an earlier failed run."
+      },
+      {
+        "name": "Behavior",
+        "score": 9,
+        "rationale": "Adding the `e2e` label still starts the e2e job, and `test` still runs on opened, synchronize and reopened; the agent also stopped other labels from starting a duplicate e2e run on a PR that already has the label."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff changes only `.github/workflows/ci.yml` and leaves the ruleset and the rest of the repository alone."
+      }
+    ],
+    "overall": 7.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.316 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 783,
+      "cache_read_input_tokens": 54685,
+      "cache_creation_input_tokens": 9643,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "automation-vs-branch-protection",
+  "mode": "none",
+  "bytes": 34,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (vdf85b140, 34 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": "JBYNBUUK-2454",
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "JBYNBUUK-2454"
+  },
+  "fixture_name": "required-check-concurrency",
+  "guidance_digests": {
+    "section": "016bc78adde52d86e5b5700753bc199c02d19dbfcc1b13b10a32ca0d932b08b8",
+    "rest": "945350a19ec0696ef0d24901d6b12ba90ac254b36350d4c57edfbbdf064f29f7",
+    "section_payload": "bff493deb890351b72920dece526cb1ebf7e8a6b3803383eec58c5dbb8ef1786"
+  },
+  "fixture_digest": "f5c856ca9211b37f956dc81e64d4ff5450ab05b209f92fb8de04ce8d76c3f5e4",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 69,
+        "sha256": "5149b983cd94e2ee7592308f79ee724b86dc325b20a716dd65685e8c9f827fff"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41557705869",
+    "session_id": null,
+    "harness_commit": "beb7cbb47bcce8cb6ac946bbd162e354ae2ed61d",
+    "cli_version": "2.1.316 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T01:17:36Z",
+    "ended_at": "2026-11-03T01:19:15Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.4856611,
+      "agent_usd": 0.22633789999999998,
+      "judge_usd": 0.1732882,
+      "guard_usd": 0.086035,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0642546,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T01:17:52Z",
+      "ended_at": "2026-11-03T01:19:15Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-03T01:17:52Z",
+          "ended_at": "2026-11-03T01:17:55Z",
+          "duration_ms": 3231,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T01:17:55Z",
+          "ended_at": "2026-11-03T01:18:05Z",
+          "duration_ms": 10339,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T01:19:06Z",
+          "ended_at": "2026-11-03T01:19:15Z",
+          "duration_ms": 8903,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 10339,
+        "num_turns": 3,
+        "cost_usd": 0.037418,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 783,
+            "cache_read_input_tokens": 54685,
+            "cache_creation_input_tokens": 9643,
+            "cost_usd": 0.037418
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 9643,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 8903,
+        "num_turns": 1,
+        "cost_usd": 0.0429458,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 771,
+            "cache_read_input_tokens": 12239,
+            "cache_creation_input_tokens": 5014,
+            "cost_usd": 0.0429458
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 5014,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 3231,
+        "num_turns": 1,
+        "cost_usd": 0.008785,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8385,
+            "cache_creation_input_tokens": 3125,
+            "cost_usd": 0.008785
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3125,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
