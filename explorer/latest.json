@@ -14,8 +14,8 @@
   "sweeps": [
    {
     "end": "2026-10-31T13:05:58Z",
-    "fires": 1,
-    "start": "2026-10-31T13:05:58Z"
+    "fires": 2,
+    "start": "2026-10-31T13:04:45Z"
    },
    {
     "end": "2026-11-01T06:06:37Z",
@@ -34,9 +34,9 @@
    }
   ],
   "window_days": 14,
-  "without_results": 9
+  "without_results": 10
  },
- "generated_at": "2026-11-03T16:13:10Z",
+ "generated_at": "2026-11-03T16:17:04Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:08:59Z",
+ "newest_run": "2026-11-03T16:14:29Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9895,7 +9895,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 2,
+    "position": 4,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -10499,7 +10499,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12768,7 +12768,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14027,7 +14027,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -14170,7 +14170,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14545,7 +14545,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15184,7 +15184,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15724,18 +15724,18 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 7,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected (for example a Remove-Item on a system or VM-storage path). Covers getting the real error out of the first failure, the two-strikes stop rule, treating a policy block as a decision to report rather than a bug to route around, and previewing deletions before running them. For \"Access is denied\" from powershell.exe inside WSL, use windows-elevation-from-wsl instead.",
    "name": "tool-powershell",
    "next_test": {
-    "band": null,
+    "band": "near",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 2,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -15959,7 +15959,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "no fixture on main"
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -16540,18 +16540,18 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 2,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL \u2014 Register-ScheduledTask / Set-ScheduledTask on a RunLevel=HighestAvailable task, a service change (Set-Service, Stop-Service, New-Service), an LSA rights grant such as \"Log on as a batch job\" (SeBatchLogonRight, secedit, ntrights), an HKLM registry write, or any other change to Windows state from a WSL session. Use it BEFORE attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
-    "band": null,
+    "band": "near",
     "due": null,
-    "position": null,
-    "scheduled": false
+    "position": 3,
+    "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -16901,7 +16901,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "no fixture on main"
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -17528,7 +17528,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
@@ -17539,6 +17539,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:14:29Z",
+     "cli_version": "2.1.317",
+     "fixture": "existing-convention",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T161247Z-2155b6/writing-adrs/20261103T161429Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.330637,
+      "judge_mean": 9.1,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.32822680000000004,
+      "judge_mean": 9.1,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:55:51Z",
      "cli_version": "2.1.317",
@@ -18646,8 +18667,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "e69fe5c7354a16bcad15778bc8e130e4b2f1b0f4",
-  "results_commit": "fdd168768a4dd6c7d0f98e4e5e2b669cfdbf1a62"
+  "repository_commit": "3e52c5d97d51e35d0ad6171e6dd8737982da2253",
+  "results_commit": "a82e9dfeeded7bb38bb29cce0150f7d716092223"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
