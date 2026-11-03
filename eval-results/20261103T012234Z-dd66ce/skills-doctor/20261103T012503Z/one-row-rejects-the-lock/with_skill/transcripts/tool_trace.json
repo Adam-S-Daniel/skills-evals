@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015J8D1MLns365Z4TzVsKEHo",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 134,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015J8D1MLns365Z4TzVsKEHo",
+      "is_error": false,
+      "output": "<path>\ntotal 24\ndrwxr-xr-x 5 root root 4096 Nov  3 01:25 .\ndrwx------ 6 root root 4096 Nov  3 01:25 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:21 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:21 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  3 01:25 .claude\ndrwxr-xr-x 8 root root 4096 Nov  3 01:25 .gi...",
+      "output_chars": 1200,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ct6n8MyaivQtitpqNvxaY1",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; cat session/session-start.txt; cat session/skills.lock; find .claude -type f",
+      "input_chars": 129,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ct6n8MyaivQtitpqNvxaY1",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-service, 2026-10-20\n\nCopied out of the container before it was recycled.\n\n- `session/skills.lock` \u2014 the lock committed in example-service, exactly as\n  the session read it.\n- `session/session-start.txt` \u2014 every line the session printed at start.\n\nThe hook...",
+      "output_chars": 1853,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BAVgAQYxSB5unDp7w9MYsr",
+      "name": "Bash",
+      "input": "cd <path>; grep -nP '[^\\x20-\\x7e]' skills.lock; grep -o 'sha256:[0-9a-fA-F]*' skills.lock | awk '{print length($0)\": \"$0}'; cd ..; git log --oneline | head",
+      "input_chars": 190,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BAVgAQYxSB5unDp7w9MYsr",
+      "is_error": false,
+      "output": "71: sha256:a2b7b75cdd9f7221d53ef65450c8b1e019dd57795dd148cdd1fb0a6632fefb71\n71: sha256:5f9179dea6c1b868ec63ee8522b6e9adfde3809fb87430d3424e305338ac40a1\n71: sha256:ed287e83e05359b206cbd0871d4dbac1e4a17749b3c65164a7b535b295cc20dc\n71: sha256:F38269BAFE46F03CF2D28236FBC4A9D1EB8C4C16AA4159022FE00A1AF5A52...",
+      "output_chars": 326,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019bUmRkdecLGnPGoVXuQTup",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019bUmRkdecLGnPGoVXuQTup",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

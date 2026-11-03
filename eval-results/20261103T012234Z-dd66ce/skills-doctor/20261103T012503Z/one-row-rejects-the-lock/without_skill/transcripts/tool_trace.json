@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015v2KZWqPy2BbD7dMHczLNu",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git status --short | head; find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 128,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015v2KZWqPy2BbD7dMHczLNu",
+      "is_error": false,
+      "output": "total 24\ndrwxr-xr-x 5 root root 4096 Nov  3 01:25 .\ndrwx------ 6 root root 4096 Nov  3 01:25 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:21 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:21 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  3 01:25 .claude\ndrwxr-xr-x 8 root root 4096 Nov  3 01:25 .git\ncrw-r...",
+      "output_chars": 1166,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JSpKGKKWkkMf2UX3uEgThR",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; echo ----; cat session/session-start.txt; echo ----; cat session/skills.lock; find .claude",
+      "input_chars": 143,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JSpKGKKWkkMf2UX3uEgThR",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-service, 2026-10-20\n\nCopied out of the container before it was recycled.\n\n- `session/skills.lock` \u2014 the lock committed in example-service, exactly as\n  the session read it.\n- `session/session-start.txt` \u2014 every line the session printed at start.\n\nThe hook...",
+      "output_chars": 1890,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QRCRSynZ5iWmjvdhxCzdbB",
+      "name": "Bash",
+      "input": "cd <path>; grep -o 'sha256:[^\"]*' session/skills.lock | awk '{print length($0)-7, ($0 ~ /^sha256:[0-9a-f]{64}$/ ? \"ok\":\"BAD\"), $0}'; grep -nP '[^\\x00-\\x7F]' session/skills.lock",
+      "input_chars": 203,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QRCRSynZ5iWmjvdhxCzdbB",
+      "is_error": false,
+      "output": "64 ok sha256:a2b7b75cdd9f7221d53ef65450c8b1e019dd57795dd148cdd1fb0a6632fefb71\n64 ok sha256:5f9179dea6c1b868ec63ee8522b6e9adfde3809fb87430d3424e305338ac40a1\n64 ok sha256:ed287e83e05359b206cbd0871d4dbac1e4a17749b3c65164a7b535b295cc20dc\n64 BAD sha256:F38269BAFE46F03CF2D28236FBC4A9D1EB8C4C16AA4159022FE0...",
+      "output_chars": 312,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KdyT4Sdibz8VTCBFXgJLNA",
+      "name": "Bash",
+      "input": "cd <path>; cat > FINDINGS.md <<'EOF'\n# Findings: why no locked skills loaded\n\nSkills affected: 4 of 4\n\nCause: `adam-coding-anywhere/workflow-path-audit` in `session/skills.lock`. Its digest is upperca...",
+      "input_chars": 1918,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KdyT4Sdibz8VTCBFXgJLNA",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
