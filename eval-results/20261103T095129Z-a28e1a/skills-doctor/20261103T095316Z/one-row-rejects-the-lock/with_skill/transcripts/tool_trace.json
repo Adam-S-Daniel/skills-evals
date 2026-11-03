@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gx587bJV1ZcWbE4dkReTcT",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gx587bJV1ZcWbE4dkReTcT",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/session-start.txt\n./session/skills.lock\n./.zshrc\n./.bash_profile\n./.mcp.json\n./.gi...",
+      "output_chars": 318,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hsia2x8PjJ1RQ3aAMPBJ6z",
+      "name": "Bash",
+      "input": "cat README.md; echo ----; cat session/session-start.txt; echo ----; cat session/skills.lock; git log --oneline | head",
+      "input_chars": 117,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hsia2x8PjJ1RQ3aAMPBJ6z",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-service, 2026-10-20\n\nCopied out of the container before it was recycled.\n\n- `session/skills.lock` \u2014 the lock committed in example-service, exactly as\n  the session read it.\n- `session/session-start.txt` \u2014 every line the session printed at start.\n\nThe hook...",
+      "output_chars": 1886,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RLQxBfBhJpAcLAGJhFf456",
+      "name": "Bash",
+      "input": "python3 -I -c \"\nimport json,re,sys\nd=json.load(open('session/skills.lock'))\nfor k,v in d['skills'].items(): print(k, len(v), bool(re.fullmatch(r'sha256:[0-9a-f]{64}',v)))\nfor k,v in d.items():\n  if is...",
+      "input_chars": 452,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RLQxBfBhJpAcLAGJhFf456",
+      "is_error": true,
+      "output": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: The server-side auto mode classifier judged this action dangerous (it gave no explanation). If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to acco...",
+      "output_chars": 1093,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L65zSWTZcdUrC4tnwcTGk3",
+      "name": "Bash",
+      "input": "grep -o '\"sha256:[^\"]*\"' session/skills.lock | awk '{print length($0)-2, $0}'; grep -nP '[^\\x00-\\x7f]' session/skills.lock || echo \"ascii only\"",
+      "input_chars": 143,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L65zSWTZcdUrC4tnwcTGk3",
+      "is_error": false,
+      "output": "71 \"sha256:a2b7b75cdd9f7221d53ef65450c8b1e019dd57795dd148cdd1fb0a6632fefb71\"\n71 \"sha256:5f9179dea6c1b868ec63ee8522b6e9adfde3809fb87430d3424e305338ac40a1\"\n71 \"sha256:ed287e83e05359b206cbd0871d4dbac1e4a17749b3c65164a7b535b295cc20dc\"\n71 \"sha256:F38269BAFE46F03CF2D28236FBC4A9D1EB8C4C16AA4159022FE00A1AF5...",
+      "output_chars": 318,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GboyfQQt3pa3fTshoABar1",
+      "name": "Bash",
+      "input": "ls <path> 2>&1; grep -rn -i 'sha256\\|lowercase\\|invalid JSON\\|bad field' <path> 2>&1 | head -20",
+      "input_chars": 345,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GboyfQQt3pa3fTshoABar1",
+      "is_error": false,
+      "output": "PURPOSE.md\nSKILL.md\nscripts\n<path>:32:sha256 each. Everything below compares observed reality to it.\n<path>:91:cat skills.lock     # registry, pinned ref, bundles, expected skills + sha256 each\n<path>:168:`-I` because this recomputes sha256 over directories to decide whether a skill\n<path>:267:`<bun...",
+      "output_chars": 3250,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FHMG9crSuPZjHAbM8D9jZ5",
+      "name": "Bash",
+      "input": "D=<path>; sed -n 255,285p $D/SKILL.md; sed -n 2000,2030p $D/scripts/check_provenance.py",
+      "input_chars": 211,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FHMG9crSuPZjHAbM8D9jZ5",
+      "is_error": false,
+      "output": "| State | What it proves | What to do |\n|---|---|---|\n| present | the hook installed exactly these, from these sources | nothing; read the rows as fact |\n| present, `installed: []` | a run *completed* and installed nothing | anything on disk is not the hook's |\n| absent | no run has ever reached the...",
+      "output_chars": 4093,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Md42XmSbK2PNdDP1iymw9r",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Md42XmSbK2PNdDP1iymw9r",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
