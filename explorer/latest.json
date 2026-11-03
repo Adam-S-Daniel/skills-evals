@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T02:21:35Z",
+ "generated_at": "2026-11-03T02:23:33Z",
  "guidance": {
   "removed": [
    {
@@ -2921,7 +2921,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T02:19:51Z",
+ "newest_run": "2026-11-03T02:21:16Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -7301,7 +7301,7 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -7312,6 +7312,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T02:21:16Z",
+     "cli_version": "2.1.317",
+     "fixture": "closed-duplicate",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T021938Z-591f6a/vendor-release-impact-issues/20261103T022116Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.20032489999999997,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1393725,
+      "judge_mean": 9.2,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-10-26T15:04:19Z",
      "cli_version": "2.1.310",
@@ -9350,7 +9371,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "bc644f04b5d1f058bbd31a266a3f0ae8e5596978",
-  "results_commit": "b108fba17f61577811968cb46348f2e5b0a7d90f"
+  "results_commit": "3b1b4f34a921094325786775fad27172d5f7e8aa"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
