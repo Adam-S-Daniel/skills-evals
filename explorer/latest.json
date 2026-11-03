@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T13:27:15Z",
+ "generated_at": "2026-11-03T13:30:17Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T13:24:33Z",
+ "newest_run": "2026-11-03T13:27:14Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -12823,7 +12823,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -12834,6 +12834,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T13:27:14Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T132517Z-160166/github-actions-sha-pinning/20261103T132714Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 10,
+      "cost_usd": 0.1865716,
+      "judge_mean": 9.6,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.11428340000000001,
+      "judge_mean": 8.9,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T13:02:55Z",
      "cli_version": "2.1.317",
@@ -17648,8 +17669,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "798b8ed53750877de7a79572c08ad9bf7e8cd7e3",
-  "results_commit": "9723cf4b3301d7bc74f2b1509a87f72ad2ba0f80"
+  "repository_commit": "d35d9e3252565e9ca01e5234022eb9487ee82664",
+  "results_commit": "532b80ab54c6e1942380ebcec553870632565bab"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
