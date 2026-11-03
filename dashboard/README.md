@@ -75,6 +75,14 @@ runs from `gh api repos/<repo>/actions/runs?created=>=<7 days ago>`, plus
 scheduled-task runs from `list_triggers`/`get_trigger`, accumulated across passes)
 and uploads `run_stream.json`.
 
+## Red in CI runs
+
+`ci_red_runs` lists every agent-checks CI run that failed, newest first, from the
+`red_runs` list in `usage/weekly-ci.json` (written by _agent-guidance's daily
+impact report). A public repo's run links its run page; a private repo's run keeps
+only its week. The Real-work impact tab shows it under "By week", and both "By
+repo" and "By week" carry a "Red in CI" column.
+
 ## Cost and benefit
 
 `build.py` writes two datasets for the Cost and benefit tab. A week runs Monday

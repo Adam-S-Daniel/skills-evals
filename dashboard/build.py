@@ -323,6 +323,26 @@ def usage(er):
     return rows, sources, digests
 
 
+RED_RUN_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+$")
+
+
+def ci_red_runs(er):
+    """Every red agent-checks CI run the impact report lists (usage/weekly-ci.json `red_runs`), newest
+    first. A URL that is not a GitHub Actions run page is dropped; a private repo's entry has none."""
+    d = load(os.path.join(er, "usage", "weekly-ci.json"), {}) or {}
+    out = []
+    for i, r in enumerate(d.get("red_runs") or []):
+        if not isinstance(r, dict):
+            continue
+        url = r.get("url") if isinstance(r.get("url"), str) and RED_RUN_URL.match(r["url"]) else None
+        out.append({"key": url or f"{r.get('week')}|{r.get('repo')}|{i}", "week": r.get("week"),
+                    "repo": r.get("repo"), "created_at": r.get("created_at"),
+                    "conclusion": r.get("conclusion"), "url": url})
+    out.sort(key=lambda r: (r["week"] or "", r["created_at"] or ""), reverse=True)
+    return out or [{"key": PLACEHOLDER_ID, "week": None, "repo": None, "created_at": None,
+                    "conclusion": None, "url": None}]
+
+
 # --- Overview tab: threads, routines, check-ins, waiting -------------------------
 
 THREAD_STATES = {"done": "Done", "working": "Working", "review_ready": "Ready for review",
@@ -918,6 +938,7 @@ def build(results, inputs, config, now):
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
     out["usage_rows"], out["usage_sources"], out["usage_digests"] = usage(results)
+    out["ci_red_runs"] = ci_red_runs(results)
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
