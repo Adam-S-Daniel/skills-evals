@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:39:21Z",
+  "generated_at": "2026-11-03T23:41:47Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T23:38:31Z",
+ "generated_at": "2026-11-03T23:40:50Z",
  "guidance": {
   "removed": [
    {
@@ -11191,7 +11191,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:36:38Z",
+ "newest_run": "2026-11-03T23:38:33Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -22519,6 +22519,27 @@
    "registry": "adam-agentskills",
    "runs": [
     {
+     "at": "2026-11-03T23:38:33Z",
+     "cli_version": "2.1.317",
+     "fixture": "companion-skip-pair",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T233723Z-93f468/workflow-path-audit/20261103T233833Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.11053980000000001,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 8,
+      "cost_usd": 0.0684578,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
+    {
      "at": "2026-11-03T22:59:42Z",
      "cli_version": "2.1.317",
      "fixture": "workflow-doc-in-step",
@@ -24364,7 +24385,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "80ef626f73478df6df5efd10c1d8ddb5ee7a7ec7",
-  "results_commit": "8c6cc5273c4821700d9055fed5e42a1511f6185d"
+  "results_commit": "22eda3551d126d2b331182dc4e6358636b552f6f"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
