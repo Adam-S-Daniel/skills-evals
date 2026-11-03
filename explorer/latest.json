@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:05:34Z",
+  "generated_at": "2026-11-03T23:14:59Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T23:04:27Z",
+ "generated_at": "2026-11-03T23:13:58Z",
  "guidance": {
   "removed": [
    {
@@ -10094,7 +10094,369 @@
    }
   ]
  },
- "newest_run": "2026-11-03T23:02:10Z",
+ "lessons": {
+  "date": "2026-11-03",
+  "issues": [
+   {
+    "count": 1,
+    "number": 115,
+    "opened": "2026-11-03",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "source": "memory",
+    "state": "closed",
+    "target": "SKILL.md",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/115"
+   },
+   {
+    "count": 1,
+    "number": 4607,
+    "opened": "2026-11-03",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "source": "memory",
+    "state": "closed",
+    "target": "docs/CMS-ADMIN.md",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/4607"
+   },
+   {
+    "count": 7,
+    "number": 952,
+    "opened": "2026-11-03",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "source": "memory",
+    "state": "open",
+    "target": "4 files",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/issues/952"
+   },
+   {
+    "count": null,
+    "number": 18,
+    "opened": "2026-09-25",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "source": "proposal",
+    "state": "closed",
+    "target": "fan-out-triage",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/18"
+   },
+   {
+    "count": null,
+    "number": 19,
+    "opened": "2026-09-25",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "source": "proposal",
+    "state": "closed",
+    "target": "github-batch-writes",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/19"
+   }
+  ],
+  "items": [
+   {
+    "draft": {
+     "number": 109,
+     "state": "merged",
+     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/109"
+    },
+    "evidence_count": 54,
+    "first_seen": "2026-04-18",
+    "kind": "new-skill",
+    "last_seen": "2026-10-05",
+    "signals": {
+     "red-ci-after-push": 54
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "red-ci-adamdaniel-ai"
+   },
+   {
+    "draft": null,
+    "evidence_count": 19,
+    "first_seen": "2026-04-19",
+    "kind": "new-skill",
+    "last_seen": "2026-10-23",
+    "signals": {
+     "repeated-tool-failure": 19
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-edit"
+   },
+   {
+    "draft": null,
+    "evidence_count": 17,
+    "first_seen": "2026-05-07",
+    "kind": "new-skill",
+    "last_seen": "2026-10-09",
+    "signals": {
+     "repeated-tool-failure": 17
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-cd"
+   },
+   {
+    "draft": null,
+    "evidence_count": 10,
+    "first_seen": "2026-04-19",
+    "kind": "new-skill",
+    "last_seen": "2026-10-04",
+    "signals": {
+     "repeated-tool-failure": 10
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-gh"
+   },
+   {
+    "draft": null,
+    "evidence_count": 10,
+    "first_seen": "2026-04-25",
+    "kind": "new-skill",
+    "last_seen": "2026-10-05",
+    "signals": {
+     "repeated-tool-failure": 10
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-git"
+   },
+   {
+    "draft": {
+     "number": 111,
+     "state": "merged",
+     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/111"
+    },
+    "evidence_count": 4,
+    "first_seen": "2026-09-25",
+    "kind": "new-skill",
+    "last_seen": "2026-10-20",
+    "signals": {
+     "repeated-tool-failure": 4
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "tool-powershell"
+   },
+   {
+    "draft": null,
+    "evidence_count": 3,
+    "first_seen": "2026-04-20",
+    "kind": "new-skill",
+    "last_seen": "2026-06-25",
+    "signals": {
+     "repeated-tool-failure": 3
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "tool-bash-sleep"
+   },
+   {
+    "evidence_count": 16,
+    "first_seen": "2026-11-02",
+    "kind": "skill-edit",
+    "last_seen": "2026-11-02",
+    "signals": {
+     "rule": 16
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:github-actions-repo-settings"
+   },
+   {
+    "evidence_count": 6,
+    "first_seen": "2026-11-02",
+    "kind": "skill-edit",
+    "last_seen": "2026-11-02",
+    "signals": {
+     "rule": 6
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:vendor-release-impact-issues"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-09-22",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-28",
+    "signals": {
+     "rule": 2
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-09-08",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "rule": 2
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:workflow-path-audit"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-09-22",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "rule": 1
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:windows-elevation-from-wsl"
+   },
+   {
+    "evidence_count": 5,
+    "first_seen": "2026-06-05",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-10-09",
+    "signals": {
+     "red-ci-after-push": 3,
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:writing-adrs"
+   },
+   {
+    "evidence_count": 4,
+    "first_seen": "2026-09-08",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "interrupted": 1,
+     "redirection": 3
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:windows-elevation-from-wsl"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-12",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-23",
+    "signals": {
+     "redirection": 1,
+     "repeated-tool-failure": 1
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:fastmail"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-17",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-07-17",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:github-actions-repo-settings"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-06",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-25",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:migrate-claude-memory"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-16",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-07-17",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-08-18",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-08-18",
+    "signals": {
+     "red-ci-after-push": 1
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "guidance:pinning-github-actions"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-10-04",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-10-04",
+    "signals": {
+     "repeated-tool-failure": 1
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:launch-top-level-claude-session"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-09-24",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-24",
+    "signals": {
+     "redirection": 1
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:skills-doctor"
+   }
+  ],
+  "left_out": {
+   "agent_check": 1,
+   "memory_note": 2,
+   "other": 0,
+   "private": 7
+  }
+ },
+ "newest_run": "2026-11-03T23:11:45Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10446,7 +10808,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13923,7 +14285,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16153,7 +16515,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -19387,17 +19749,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 12,
+   "current_text_runs": 13,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T23:11:45Z",
+     "cli_version": "2.1.317",
+     "fixture": "closed-duplicate",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T230954Z-84526b/vendor-release-impact-issues/20261103T231145Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.19836760000000003,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1506592,
+      "judge_mean": 9.399999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:02:10Z",
      "cli_version": "2.1.317",
@@ -22299,8 +22682,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
-  "results_commit": "efb2d2ebfd57ea647f6e1d2f1a9555d95f51189c"
+  "repository_commit": "0b0572c57d9907e632f8050fc22ff67912b05dd8",
+  "results_commit": "6728beba32451d9adcff1573d0c3fd51dedce438"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
