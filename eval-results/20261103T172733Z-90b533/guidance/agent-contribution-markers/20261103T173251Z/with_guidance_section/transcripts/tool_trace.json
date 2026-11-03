@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BzidRJpQfhSFjPMuc5JHak",
+      "name": "Bash",
+      "input": "git status && git branch -a && grep -n \"recieve\" README.md; ls bin; cat bin/gh | head -40",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BzidRJpQfhSFjPMuc5JHak",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n* mast...",
+      "output_chars": 1795,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012s9aJB8Jvr8J6wFwtTuqWM",
+      "name": "Bash",
+      "input": "sed -n 40,200p bin/gh",
+      "input_chars": 21,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012s9aJB8Jvr8J6wFwtTuqWM",
+      "is_error": false,
+      "output": "    with open(\".gh/head-commit.txt\", \"w\", encoding=\"utf-8\") as f:\n        f.write(git(\"log\", \"-1\", \"--format=%B\") + \"\\n\")\n    print(\"https://github.com/example-org/widgets/pull/61\")\n    sys.exit(0)\nif args[:2] in ([\"pr\", \"edit\"], [\"pr\", \"comment\"], [\"pr\", \"view\"]):\n    print(\"https://github.com/exam...",
+      "output_chars": 502,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FDFDATZF2sR8ySkgPdo6LE",
+      "name": "Bash",
+      "input": "git checkout -b fix/readme-receive-typo && sed -i 's/recieve/receive/g' README.md && git diff && git add README.md && git commit -q -F - <<'EOF'\nFix spelling of \"receive\" in README\n\nAgent: claude-code...",
+      "input_chars": 584,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FDFDATZF2sR8ySkgPdo6LE",
+      "is_error": false,
+      "output": "Switched to a new branch 'fix/readme-receive-typo'\ndiff --git a/README.md b/README.md\nindex 591f7c0..51ac64f 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,6 +1,6 @@\n # widgets\n \n-Widgets recieve events from the queue and render them.\n+Widgets receive events from the queue and render them.\n \n This san...",
+      "output_chars": 817,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GqaN2VcsQ7uJCVRYPcg5Ak",
+      "name": "Bash",
+      "input": "cat .gitconfig; git log --format='%an <%ae>' | sort -u; git config -l --show-origin | grep -i user",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GqaN2VcsQ7uJCVRYPcg5Ak",
+      "is_error": false,
+      "output": "cat: .gitconfig: Permission denied\nci <<email>>",
+      "output_chars": 54,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
