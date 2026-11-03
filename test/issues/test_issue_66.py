@@ -1115,6 +1115,76 @@ class TestIssue66Trials(_HarnessCase):
 # 4. the statistics, for shapes the entry point cannot easily be made to write
 
 
+class TestRunnerErrorClass(_HarnessCase):
+    """An errored arm prints its error class beside "Runner-level error"
+    (cloud readers cannot download the diagnostics artifact), never its
+    detail; `--retry-transient` (eval.yml) runs a timeout or a retryable API
+    status once more."""
+
+    SKILL = "error-class-skill"
+    ARGS = ("--arm", "without_skill", "--no-judge", "--timestamp", TS)
+
+    def setUp(self):
+        super().setUp()
+        self.fixture_dir = _write_fixture(self.evals / self.SKILL, self.SKILL)
+        self.arm_dir = self.results / self.SKILL / TS / "without_skill"
+
+    def test_the_log_names_the_class_and_never_the_body(self):
+        self._script(agents=[{"mode": "api_error"}])
+        proc = self._run(self.fixture_dir, *self.ARGS)
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("Runner-level error in arm(s): without_skill\n"
+                      "  without_skill: agent_error, HTTP 529\n", proc.stdout)
+        self.assertNotIn("BODY-MUST-NOT-BE-LOGGED", proc.stdout + proc.stderr)
+        # Without the flag there is no retry.
+        self.assertEqual(len(self._calls("agents")), 1)
+
+    def test_a_cli_failure_prints_its_type_and_is_not_retried(self):
+        self._script(agents=[{"mode": "error"}])
+        proc = self._run(self.fixture_dir, *self.ARGS, "--retry-transient")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("  without_skill: nonzero_exit\n", proc.stdout)
+        # Not a retryable class: one call only.
+        self.assertEqual(len(self._calls("agents")), 1)
+
+    def test_a_transient_error_is_retried_once_and_the_retry_is_scored(self):
+        self._script(agents=[{"mode": "api_error"}, {"write": "marker.txt"}])
+        proc = self._run(self.fixture_dir, *self.ARGS, "--retry-transient")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("retrying without_skill once after agent_error, HTTP 529",
+                      proc.stdout)
+        self.assertEqual(len(self._calls("agents")), 2)
+        summary = json.loads((self.arm_dir / "summary.json").read_text(encoding="utf-8"))
+        self.assertIsNone(summary["error"])
+
+    def test_a_second_transient_error_fails_the_leg(self):
+        self._script(agents=[{"mode": "api_error"}, {"mode": "api_error"}])
+        proc = self._run(self.fixture_dir, *self.ARGS, "--retry-transient")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertEqual(len(self._calls("agents")), 2)
+        self.assertIn("  without_skill: agent_error, HTTP 529\n", proc.stdout)
+
+    def test_error_class_reads_only_the_type_status_and_exit(self):
+        cls = run_eval.error_class
+        self.assertIsNone(cls(None))
+        self.assertEqual(cls({"type": "timeout", "detail": "agent timed out after 60s"}),
+                         {"type": "timeout", "status": None})
+        self.assertEqual(cls({"type": "nonzero_exit", "detail": "API Error: 503 down"}),
+                         {"type": "nonzero_exit", "status": 503})
+        self.assertEqual(cls({"type": "bad type\nwith a body", "detail": ""})["type"],
+                         "unknown")
+        transient = run_eval.is_transient
+        self.assertTrue(transient({"type": "timeout", "detail": ""}))
+        self.assertTrue(transient({"type": "agent_error", "detail": "API Error: 429 slow"}))
+        self.assertFalse(transient({"type": "agent_error", "detail": "API Error: 400 bad"}))
+        self.assertFalse(transient({"type": "agent_error", "detail": "could not read"}))
+        self.assertFalse(transient({"type": "setup_failed", "detail": "API Error: 529"}))
+
+    def test_eval_yml_passes_the_flag(self):
+        text = (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8")
+        self.assertIn("--retry-transient", text)
+
+
 class TestIssue66Timeouts(_HarnessCase):
     """The real trial loop and subprocess.run timeout handler, without a child
     process or any elapsed-time dependency."""
