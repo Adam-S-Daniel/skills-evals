@@ -18,8 +18,11 @@ import draft_new_skill  # noqa: E402
 import fixture_pr_gate as gate  # noqa: E402
 
 REG = "https://github.com/Adam-S-Daniel/adam-agentskills"
-SKILL_FIXTURE = f"skill: writing-adrs\nregistry: {REG}\nprompt: Write an ADR.\n"
-GUIDE_FIXTURE = "subject: guidance\nsection: example-section\nprompt: Do it.\n"
+REQUEST = "https://github.com/Adam-S-Daniel/skills-evals/issues/42"
+#: Every fixture a fix PR adds says where it came from (Adam, 2026-11-03).
+ORIGIN = f"origin:\n  kind: invented\n  source: null\n  request: {REQUEST}\n"
+SKILL_FIXTURE = f"skill: writing-adrs\nregistry: {REG}\nprompt: Write an ADR.\n{ORIGIN}"
+GUIDE_FIXTURE = f"subject: guidance\nsection: example-section\nprompt: Do it.\n{ORIGIN}"
 UNSCHEDULED = ("fixtures:\n  - path: evals/other\n    reason: \"kept out\"\n")
 SCHEDULED = ("fixtures:\n  - path: evals/writing-adrs/old\n    readiness: \"ok\"\n")
 
@@ -154,6 +157,84 @@ class FixturePrGateTests(unittest.TestCase):
                 result = self.judge()
                 self.assertTrue(result["lane"])
                 self.assertFalse(result["eligible"], name)
+
+    def test_a_new_fixture_needs_a_valid_origin(self):
+        # Adam, 2026-11-03 (skills-evals#656): real fleet work or invented,
+        # always recorded, and always naming the request it answers.
+        base = f"skill: writing-adrs\nregistry: {REG}\nprompt: Write an ADR.\n"
+        real = "https://github.com/Adam-S-Daniel/example-repo/pull/7"
+        bad = {
+            "missing": ("", "no origin mapping"),
+            "not a mapping": ("origin: real-work\n", "no origin mapping"),
+            "an extra key": (ORIGIN + "  note: x\n", "no origin mapping"),
+            "bad kind": (ORIGIN.replace("invented", "scraped"), "kind is not"),
+            "real work without a URL": (ORIGIN.replace("invented", "real-work"),
+                                        "not a pull request URL"),
+            "real work naming an issue": (
+                ORIGIN.replace("invented", "real-work").replace(
+                    "null", real.replace("/pull/", "/issues/")), "not a pull request URL"),
+            "real work outside the fleet": (
+                ORIGIN.replace("invented", "real-work").replace(
+                    "null", "https://github.com/someone-else/example-repo/pull/7"),
+                "not in a fleet owner's repository"),
+            "invented with a source": (ORIGIN.replace("null", real), "source is not null"),
+            "another issue": (ORIGIN.replace("/issues/42", "/issues/43"),
+                              "not the issue this pull request answers"),
+            "another repository's issue": (ORIGIN.replace("skills-evals/issues",
+                                                          "other/issues"),
+                                           "not the issue this pull request answers"),
+        }
+        for name, (origin, reason) in bad.items():
+            with self.subTest(case=name):
+                git(self.repo, "checkout", "-q", "-B", "pr", "main")
+                self.add_skill_fixture()
+                self.write("evals/writing-adrs/harder/fixture.yaml", base + origin)
+                result = self.judge()
+                self.assertEqual((result["lane"], result["eligible"]), (True, False), name)
+                self.assertIn(reason, result["reason"])
+        good = {
+            "invented": ORIGIN,
+            "real work, first owner": ORIGIN.replace("invented", "real-work")
+                                            .replace("null", real),
+            "real work, second owner, any case": ORIGIN.replace("invented", "real-work")
+                .replace("null", "https://github.com/JodiDaniel/example-site/pull/12"),
+        }
+        for name, origin in good.items():
+            with self.subTest(case=name):
+                git(self.repo, "checkout", "-q", "-B", "pr", "main")
+                self.add_skill_fixture()
+                self.write("evals/writing-adrs/harder/fixture.yaml", base + origin)
+                result = self.judge()
+                self.assertTrue(result["eligible"], result["reason"])
+
+    def test_a_guidance_fixture_needs_a_valid_origin_too(self):
+        self.write("evals/guidance/example-section/new/fixture.yaml",
+                   GUIDE_FIXTURE.replace(ORIGIN, ""))
+        doc = yaml.safe_load(SCHEDULED)
+        doc["fixtures"].append({"path": "evals/guidance/example-section/new",
+                                "readiness": "hermetic"})
+        self.write("evals/scheduled.yml", yaml.safe_dump(doc, sort_keys=False))
+        result = self.judge(issues=[issue(kind="needs-fixtures",
+                                          key="guidance/example-section")])
+        self.assertFalse(result["eligible"])
+        self.assertIn("no origin mapping", result["reason"])
+
+    def test_origin_problem_without_an_issue_accepts_any_request(self):
+        origin = {"kind": "invented", "source": None, "request": REQUEST}
+        self.assertIsNone(gate.origin_problem(origin))
+        self.assertIsNone(gate.origin_problem({**origin, "request": REQUEST[:-2] + "7"}))
+        self.assertIsNotNone(gate.origin_problem({**origin, "request": REQUEST + "/x"}))
+        self.assertEqual(gate.stakes.FLEET_OWNERS, ("Adam-S-Daniel", "jodidaniel"))
+
+    def test_the_harness_loads_a_fixture_with_an_origin(self):
+        # The extra top-level key reaches no whitelist: run_eval loads it,
+        # and its mapping-key check passes it through.
+        sys.path.insert(0, str(ROOT / "harness"))
+        import run_eval
+        self.write("evals/writing-adrs/new/fixture.yaml", SKILL_FIXTURE)
+        fixture = run_eval.load_fixture(self.repo / "evals/writing-adrs/new")
+        self.assertEqual(fixture["origin"]["kind"], "invented")
+        run_eval.validate_mapping_keys(fixture, self.repo / "evals/writing-adrs/new")
 
     def test_a_symlink_is_not_eligible(self):
         self.add_skill_fixture()

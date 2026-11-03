@@ -680,16 +680,61 @@ skips triage and drafts a skill. The routine's saved prompt for this mode
 is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
 approves changes to it.
 
+### Fixture requests (2026-11-03)
+
+The weekly sweep files each `needs-fixtures`, `needs-harder-fixtures` and
+`needs-trigger-set` work item as an `agent-ready` issue
+(`scripts/work_item_issues.py`) with one kind label, the kind itself, and
+three lines after its marker: `Kind:`, `Subject:` (the skill, or
+`guidance/<section>`) and `Reason:` (fixed text from the plan's numbers,
+such as `train headroom 0.03, 5 fixture(s)` or `usage weight 0, no trigger
+set`). Missing labels are created, never edited, and an open issue missing
+its kind label gets it on the next run.
+
+A fixture request asks the fleet worker to build from **real fleet work**
+first (Adam, 2026-11-03, skills-evals#656): a merged pull request in a fleet
+repository, under either owner, where the subject's advice applied or an
+agent got it wrong, rebuilt as an ordinary per-skill fixture with invented
+names, data and hosts (`example.com`), never private content copied; an
+invented task when no real case fits. This replaces the scaffold lane below.
+Every fixture the pull request adds carries a top-level `origin:` mapping:
+`kind: real-work` with `source:` the pull request's URL (owner
+`Adam-S-Daniel` or `jodidaniel`), or `kind: invented` with `source: null`,
+and `request:` the issue's URL. `scripts/fixture_pr_gate.py` refuses to arm
+auto-merge for a fixture without a valid one; the harness ignores the key.
+A trigger set carries none.
+
+`scripts/fixture_queue.py report` follows the queue end to end and
+explorer-data.yml puts it in `explorer/latest.json` as `fixture_queue`: each
+request with the pull requests naming it, each fixture with an origin (real
+work or invented, when it landed, its ingested runs, its pass rate per arm,
+and its cost in dollars and allowance points from the runs'
+`cost_estimate.json`, null when unknown), totals, and findings. A finding
+becomes a `half-built-or-broken` issue (`fixture_queue.py alerts`, the
+fleet health audit's format, closed once it clears):
+
+- `skills-evals/fixture-queue-stale-request-<issue>` (idle, medium): an
+  open request 7 days old that no open or merged pull request names;
+- `skills-evals/fixture-queue-stuck-pr-<pr>` (broken, high): a fleet worker
+  pull request open 2 days with auto-merge off;
+- `skills-evals/fixture-queue-unused-fixture-<path>` (broken, high): a
+  fixture with an origin committed 3 days ago with no ingested run.
+
 ### Fixture supply (#65)
 
 Fixtures are the improvement queue, so they are made and promoted with no
 person in the loop (Adam, 2026-10-26; ADR
 [0003](decisions/0003-roster-merges-automatically.md)'s 2026-10-26 addendum).
-`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC:
+`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC.
+**Its scaffold step is paused** (Adam, 2026-11-03, skills-evals#656): the
+`plan` and `dispatch` jobs are removed, so step 1 no longer runs and
+nothing fires scaffold mode; fixture requests built from real fleet work
+(above) replace it. Steps 2 and 3 are kept for what is already in flight,
+and the same job still contextualizes drafted fixtures.
 
-1. **Scaffold.** It mines the fleet's newest merged pull requests
+1. **Scaffold (paused).** It mined the fleet's newest merged pull requests
    (`scripts/mine_real_work.py`, REST only), and
-   `scripts/scaffold_real_work.py pick` drops every candidate the routine
+   `scripts/scaffold_real_work.py pick` dropped every candidate the routine
    would refuse or already has: a body that quotes the diff, several closing
    issues, an existing `evals/real-work/<id>/` or `claude/scaffold-<id>`
    branch, or a successful scaffold fire in the last 30 days (read from the

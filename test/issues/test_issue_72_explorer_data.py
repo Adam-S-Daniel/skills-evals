@@ -157,7 +157,8 @@ class ShapeAndMathTests(unittest.TestCase):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
         self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
-                                     "coverage", "fires_without_results", "generated_at",
+                                     "coverage", "fires_without_results",
+                                     "fixture_queue", "generated_at",
                                      "guidance", "newest_run", "policy", "removed_skills",
                                      "roster", "schema_version",
                                      "skills", "source", "usage"])
@@ -165,6 +166,8 @@ class ShapeAndMathTests(unittest.TestCase):
         # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
         # #555's: no fire file either, so the summary is unknown.
         self.assertIsNone(d["fires_without_results"])
+        # No --fixture-queue report: unknown, not an empty queue.
+        self.assertIsNone(d["fixture_queue"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
@@ -695,6 +698,58 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         explorer_data.finish(doc)
 
 
+class FixtureQueueFieldTests(unittest.TestCase):
+    """Adam, 2026-11-03: the fixture queue's report (scripts/fixture_queue.py)
+    is in the document as `fixture_queue`, carried as is, or None."""
+
+    REPORT = {"schema": 1, "generated_at": "2026-11-01T00:00:00Z",
+              "requests": [{"issue": 3, "kind": "needs-fixtures", "subject": "alpha",
+                            "state": "open", "opened_at": "2026-10-20T00:00:00Z",
+                            "closed_at": None, "prs": []}],
+              "fixtures": [], "findings": [],
+              "totals": {"requests_open": 1, "requests_closed": 0, "prs_merged": 0,
+                         "fixtures_real_work": 0, "fixtures_invented": 0,
+                         "fixture_runs": 0, "cost_points": 0, "cost_usd": 0}}
+
+    def test_loaded_or_unknown(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "queue.json"
+            self.assertIsNone(explorer_data.load_fixture_queue(None))
+            self.assertIsNone(explorer_data.load_fixture_queue(path))
+            for bad in ("{", "[]", json.dumps({**self.REPORT, "schema": 2}),
+                        json.dumps({**self.REPORT, "totals": []}),
+                        json.dumps({k: v for k, v in self.REPORT.items() if k != "fixtures"})):
+                path.write_text(bad, encoding="utf-8")
+                with self.subTest(bad=bad[:30]):
+                    self.assertIsNone(explorer_data.load_fixture_queue(path))
+            path.write_text(json.dumps(self.REPORT), encoding="utf-8")
+            self.assertEqual(explorer_data.load_fixture_queue(path), self.REPORT)
+
+    def test_carried_into_the_document_and_through_the_gate(self):
+        t = Tree(self)
+        doc = explorer_data.build(t.tree, t.roster, t.policy, t.evals, AS_OF, SHA_A, SHA_B,
+                                  manifest=[], fixture_queue=self.REPORT)
+        self.assertEqual(doc["fixture_queue"], self.REPORT)
+        explorer_data.finish(doc)
+        # The gate still applies inside it.
+        leak = {**self.REPORT, "requests": [{**self.REPORT["requests"][0],
+                                             "subject": "someone@example.com"}]}
+        with self.assertRaises(explorer_data.Refused):
+            explorer_data.finish({**doc, "fixture_queue": leak})
+
+    def test_the_cli_passes_the_file(self):
+        t = Tree(self)
+        queue, out = t.root / "queue.json", t.root / "out.json"
+        queue.write_text(json.dumps(self.REPORT), encoding="utf-8")
+        code = explorer_data.main([
+            "--results-tree", str(t.tree), "--roster", str(t.roster),
+            "--policy", str(t.policy), "--evals-dir", str(t.evals), "--as-of", AS_OF,
+            "--repository-commit", SHA_A, "--results-commit", SHA_B,
+            "--fixture-queue", str(queue), "--out", str(out)])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.read_text())["fixture_queue"], self.REPORT)
+
+
 class WorkflowTests(unittest.TestCase):
 
     def setUp(self):
@@ -714,10 +769,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.doc["permissions"], {})
         build, publish = self.doc["jobs"]["build"], self.doc["jobs"]["publish"]
         # #555: `actions: read` lists the fire runs for `fires_without_results`.
+        # The fixture queue (2026-11-03): `pull-requests: read` lists the pull
+        # requests, and `queue-alerts` alone writes issues.
         self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
-                                                "issues": "read"})
+                                                "issues": "read", "pull-requests": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
-        self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish"])
+        self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish", "queue-alerts"])
+        self.assertEqual(self.doc["jobs"]["queue-alerts"]["permissions"],
+                         {"contents": "read", "issues": "write"})
         self.assertEqual(publish["needs"], "build")
 
     def test_nothing_from_the_event_is_interpolated_into_a_run_block(self):

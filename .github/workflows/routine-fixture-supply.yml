@@ -3,26 +3,28 @@ name: Fixture supply
 # Eval fixtures are the real improvement queue (improve needs several per
 # skill, and only writing-adrs has enough), so they are made and promoted
 # with no person in the loop (Adam, 2026-10-26: "closed loop with no human in
-# the loop"; ADR 0003's 2026-10-26 addendum). Daily, two independent jobs:
+# the loop"; ADR 0003's 2026-10-26 addendum).
 #
-# * `plan` + `dispatch` scaffold new real-work fixtures. `plan` runs the
-#   read-only miner over the fleet's merged pull requests (REST only, the
-#   job's read-only token; public repositories only), then
-#   `scripts/scaffold_real_work.py pick` skips every candidate the routine
-#   would refuse or already has (a fixture, a `claude/scaffold-<id>` branch,
-#   or a successful scaffold fire within REFIRE_AFTER_DAYS, read from the
-#   fire workflow's run titles), ranks the rest by their subject skills
-#   (most session-miner `fixture-candidate` lesson evidence first, read
-#   from adam-agentskills-private's persistent/lessons as counts only,
-#   #657; then fewest fixtures), and cuts the list to what fits: at most
-#   MAX_IN_FLIGHT (3) routine sessions at once, counting fires of the last
-#   45 minutes (the guard's PENDING_FULL_HOLD) as still running, and the weekly allowance guard's room
-#   (scripts/allowance_guard.py; it fails closed). `dispatch` fires them one
-#   at a time through routine-eval-fire.yml in scaffold mode, which
-#   validates the candidate, runs the guard again and holds the bearer; a
-#   minute apart. The routine pushes `claude/scaffold-<id>`, and
-#   routine-scaffold-gate.yml gates it and opens a pull request that merges
-#   itself once `test` passes.
+# THE SCAFFOLD LANE IS PAUSED (Adam, 2026-11-03, skills-evals#656). Its
+# `plan` and `dispatch` jobs, which mined the fleet's merged pull requests
+# and fired the routine in scaffold mode to turn them into `draft: true`
+# real-work fixtures, are removed from this workflow, so nothing here fires
+# the routine. What replaces them: the weekly sweep's fixture requests
+# (`needs-fixtures` and `needs-harder-fixtures` issues, scripts/
+# work_item_issues.py) ask the fleet worker to build each fixture from real
+# fleet work when one fits, as an ordinary per-skill fixture with invented
+# names and data and an `origin:` mapping naming the pull request it came
+# from (scripts/fixture_pr_gate.py requires it). scripts/fixture_queue.py
+# tracks those requests, their pull requests and the fixtures' runs and
+# cost for the Evals Explorer, and files `half-built-or-broken` issues when
+# the queue stalls (explorer-data.yml). To resume the lane, restore the two
+# jobs from this file's history (the commit that removed them cites
+# skills-evals#656); scripts/
+# scaffold_real_work.py `pick`, routine-eval-fire.yml's scaffold mode and
+# routine-scaffold-gate.yml are kept, unchanged.
+#
+# Daily, one job:
+#
 # * `promote` lands a `draft: true` fixture on the weekly schedule once it
 #   has MIN_PROMOTION_RUNS (2) ingested runs on persistent/eval-results with
 #   both arms and no errored arm, for its committed content
@@ -62,177 +64,6 @@ on:
 permissions: {}
 
 jobs:
-  plan:
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: read
-    outputs:
-      matrix: ${{ steps.pick.outputs.matrix }}
-      count: ${{ steps.pick.outputs.count }}
-    steps:
-      - name: Check out the default branch
-        uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          persist-credentials: false
-      # The fleet the miner reads: names in cron_coverage.fleet, owners in
-      # SYNC_OWNERS, from _agent-guidance's default branch. Public.
-      - name: Check out _agent-guidance (the fleet registry)
-        uses: actions/checkout@v7.0.1
-        with:
-          repository: Adam-S-Daniel/_agent-guidance
-          path: _agent-guidance
-          persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@v7.1.0
-        with:
-          python-version: "3.12"
-      - name: Install PyYAML
-        run: python3 -m pip install pyyaml==6.0.3
-      - name: Check out persistent/eval-results (the ingested runs)
-        uses: actions/checkout@v7.0.1
-        with:
-          ref: persistent/eval-results
-          path: eval-results-branch
-          persist-credentials: false
-          sparse-checkout: routine-results
-      # The newest 20 merged pull requests per repository: new work arrives
-      # a few a day, and every candidate costs three REST reads against the
-      # job token's hourly limit.
-      # The fleet includes the private registry, which the job token cannot
-      # see, so the miner would fail closed on its 404 (2026-10-26, run
-      # 40361751478). The read-only registry App sees it and is listed
-      # under `skipped`; public repositories read the same with any token.
-      - name: Mint the read-only fleet token
-        id: fleet-token
-        uses: actions/create-github-app-token@v3.3.0
-        with:
-          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
-          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
-          owner: Adam-S-Daniel
-          repositories: adam-agentskills-private
-          permission-contents: read
-      - name: Mine merged fleet pull requests
-        env:
-          GH_TOKEN: ${{ steps.fleet-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          python3 scripts/mine_real_work.py mine --registry _agent-guidance/repos.yml \
-            --sync-workflow _agent-guidance/.github/workflows/sync.yml \
-            --out "$RUNNER_TEMP/candidates.json" --limit 20
-      # 30 is scripts/scaffold_real_work.py REFIRE_AFTER_DAYS. A read that
-      # fails plans no fire; the error body is never printed.
-      - name: List scaffold branches and recent scaffold fires
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if ! git ls-remote --heads origin 'refs/heads/claude/scaffold-*' \
-               > "$RUNNER_TEMP/branches.txt" 2> /dev/null; then
-            echo "::error::could not list the scaffold branches; planning no fire"
-            exit 1
-          fi
-          since="$(date -u -d '-30 days' +%Y-%m-%dT%H:%M:%SZ)"
-          if ! gh api --paginate \
-               "repos/${GITHUB_REPOSITORY}/actions/workflows/routine-eval-fire.yml/runs?status=success&created=%3E%3D${since}&per_page=100" \
-               --jq '.workflow_runs[].display_title' > "$RUNNER_TEMP/fired.txt" 2> /dev/null; then
-            echo "::error::could not list the recent fires; planning no fire"
-            exit 1
-          fi
-      # The session miner's fixture-candidate lessons (#657) rank candidates
-      # for a skill that failed in real sessions first. Data only, from
-      # adam-agentskills-private's persistent/lessons with the same read-only
-      # token: pick reads the newest day's fixture-candidate proposals for an
-      # evidence count per public skill and nothing else. No branch picks
-      # without them; a lookup error fails the job (closed).
-      - name: Look for the lessons branch
-        id: lessons-branch
-        env:
-          LESSONS_TOKEN: ${{ steps.fleet-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$LESSONS_TOKEN" | base64 -w0)"
-          rc=0
-          git -c "http.extraHeader=Authorization: basic $auth" ls-remote --exit-code --heads \
-            https://github.com/Adam-S-Daniel/adam-agentskills-private.git persistent/lessons \
-            > /dev/null || rc=$?
-          if [ "$rc" -eq 2 ]; then
-            echo "no persistent/lessons branch yet: picking without lessons"
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          [ "$rc" -eq 0 ] || exit "$rc"
-          echo "present=true" >> "$GITHUB_OUTPUT"
-      - name: Check out the lessons (adam-agentskills-private)
-        if: steps.lessons-branch.outputs.present == 'true'
-        uses: actions/checkout@v7.0.1
-        with:
-          repository: Adam-S-Daniel/adam-agentskills-private
-          ref: persistent/lessons
-          path: private-lessons
-          persist-credentials: false
-          sparse-checkout: lessons/proposals
-          token: ${{ steps.fleet-token.outputs.token }}
-      - name: Pick candidates within the routine's limit and the weekly allowance
-        id: pick
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          lessons=()
-          if [ -d private-lessons/lessons/proposals ]; then
-            lessons=(--lessons private-lessons/lessons/proposals)
-          fi
-          python3 scripts/scaffold_real_work.py pick \
-            --candidates "$RUNNER_TEMP/candidates.json" \
-            --branches "$RUNNER_TEMP/branches.txt" --fired "$RUNNER_TEMP/fired.txt" \
-            --results-tree eval-results-branch --max 3 "${lessons[@]}" > "$RUNNER_TEMP/pick.out"
-          cat "$RUNNER_TEMP/pick.out" >> "$GITHUB_OUTPUT"
-
-  dispatch:
-    needs: plan
-    # An empty matrix is an error to GitHub, so nothing to fire skips the job.
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.plan.outputs.count != '0'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: write
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    steps:
-      - name: Fire the routine in scaffold mode
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          CANDIDATE: ${{ matrix.candidate }}
-          SLOT: ${{ matrix.slot }}
-        run: |
-          set -euo pipefail
-          # The miner key pattern routine-eval-fire.yml checks again.
-          if ! [[ "$CANDIDATE" =~ ^[A-Za-z0-9-]+__[A-Za-z0-9._-]+__[1-9][0-9]{0,6}$ ]] \
-             || ! [[ "$SLOT" =~ ^[0-2]$ ]]; then
-            echo "::error::the planned candidate or slot has an unexpected shape"
-            exit 1
-          fi
-          # The routine starts one session at a time: a minute between fires.
-          if [ "$SLOT" != 0 ]; then
-            sleep 60
-          fi
-          if ! gh workflow run routine-eval-fire.yml \
-            --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
-            --raw-field mode=scaffold --raw-field "candidate=$CANDIDATE" \
-            --raw-field arms=both --raw-field trials=1 > /dev/null 2>&1; then
-            echo "::error::Routine scaffold dispatch failed"
-            exit 1
-          fi
-          echo "fired scaffold mode for ${CANDIDATE}"
-
   promote:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
