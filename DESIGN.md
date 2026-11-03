@@ -2671,7 +2671,9 @@ after 40 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
 propose a removal, when no test crossed and its pairs span two CLI
 versions, and otherwise stays `insufficient`, unfired, as a `cell-at-cap`
 work item; a fixture the eval scope pass paused keeps its cells, parked as
-`paused` unless they showed benefit; a removal decides once its test is at
+`paused` unless they showed benefit or decided no-benefit, and a pause makes
+a subject `ceiling` only where each paused cell's own runs show the ceiling
+(else `insufficient`, a `paused-unmeasured` work item); a removal decides once its test is at
 its level on pairs spanning two CLI versions (a keep crossing wins unless
 the removal decided first); an automatic removal needs two or more headroom
 cells, all no-benefit, and no parked cell. The judge is reported and does not vote (`judge_margin` 1.5

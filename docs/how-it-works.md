@@ -624,18 +624,33 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   0 at 90%), and is `no-benefit` once that test decides: it needs no
   headroom to show harm. A harm beyond the margin is parked only at the
   no-harm test's error rate; a milder one can still end parked or, at the
-  cap, `no-clear-effect` (a proposal at most).
+  cap, `no-clear-effect` (a proposal at most). A fixture the eval scope
+  pass pauses stops being fired, so a harm it had not yet decided stays
+  undecided (`paused`, below); the subject is then `insufficient`, not
+  `ceiling`.
 - *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
   not decided) it stays `insufficient`: it is no longer fired, blocks its
   subject and becomes a `cell-at-cap` work item.
 - *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
-  cells in the verdict: a `benefit` cell still keeps, and any other is
-  `paused`, parked, so it does not vote and a removal beside it is only a
-  proposal. A subject whose every cell is parked is `ceiling` only when each
-  is at the ceiling or paused for the ceiling; a floor or zero-use pause
-  leaves it `insufficient`.
+  cells in the verdict: a `benefit` cell still keeps, a `no-benefit` cell
+  (a harm or no-benefit its test decided before the pause) still votes, and
+  any other is `paused`, parked, so it does not vote and a removal beside it
+  is only a proposal. A subject whose every cell is parked is `ceiling` only
+  when each shows the ceiling on its own runs: a ceiling class, or a cell
+  paused for the ceiling that was a ceiling class or whose no-harm test had
+  rejected with a without arm averaging 0.90 or more. The pause reads only
+  a pooled sample of the without arm, which is not that evidence. Otherwise
+  (and for a floor or zero-use pause) the subject is `insufficient`, and the
+  planner lists it as a `paused-unmeasured` work item: a paused fixture is
+  off the schedule, so it has no planner cell to carry a `fixture-ceiling`
+  item.
+- *Where work items go.* `fixture-ceiling`, `cell-at-cap` and
+  `paused-unmeasured` items are counted in the weekly sweep's step summary
+  and listed in its plan JSON; no issue is filed for them
+  (`scripts/work_item_issues.py` files only `fixture-broken`,
+  `routine-outage`, `needs-fixtures` and `needs-harder-fixtures`).
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
   no-clear-effect, none undecided. It may be automatic only with two or
   more such cells, every one no-benefit; one headroom cell, or any
@@ -911,9 +926,11 @@ and any `unscheduled.yml` row the pass did not write. The unscheduled rule
 The gate does not drop a paused fixture (PR 649's third adversarial round,
 C1): `scripts/compute_gates.py` reads `evals/scope-auto.yml` and the
 `Auto scope (` rows and keeps such a fixture's cells, parked as `paused`
-unless they had already shown `benefit`. Dropping them let the subject's
+unless they had already shown `benefit` or `no-benefit` (round 4's M1: a
+decided harm must not be hidden by a pause). Dropping them let the subject's
 other cells remove a subject the paused fixture showed helped,
-automatically.
+automatically. A pause by itself never makes a subject `ceiling` (see
+*Paused fixtures* above).
 
 ## 4. Where to look for current results
 

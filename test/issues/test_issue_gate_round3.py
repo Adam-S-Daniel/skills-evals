@@ -150,11 +150,16 @@ class ScopePauseTests(unittest.TestCase):
         self.assertEqual(dropped["removal"], "auto")
 
     def test_a_subject_whose_every_cell_is_paused(self):
-        runs = pairs("a", 3, 95, 95) + pairs("a", 3, 95, 95, model="model-b")
-        ceiling = self.skill_verdict(runs, expect("a", paused="a"))
+        # Round 4's M1: `ceiling` needs each paused cell's own evidence (20
+        # pairs at 96 stop as `ceiling-unconfirmed`); three pairs are not.
+        top = pairs("a", 20, 96, 96) + pairs("a", 20, 96, 96, start=1000, model="model-b")
+        ceiling = self.skill_verdict(top, expect("a", paused="a"))
         self.assertEqual(ceiling["verdict"], "ceiling")
+        runs = pairs("a", 3, 95, 95) + pairs("a", 3, 95, 95, model="model-b")
+        self.assertEqual(self.skill_verdict(runs, expect("a", paused="a"))["verdict"],
+                         "insufficient")
         for rule in ("zero-use", "floor"):
-            v = self.skill_verdict(runs, expect("a", paused="a", rule=rule))
+            v = self.skill_verdict(top, expect("a", paused="a", rule=rule))
             self.assertEqual(v["verdict"], "insufficient", rule)
             self.assertNotIn("removal", v)
         # A cell of a paused fixture with no run is parked, not missing.
@@ -312,7 +317,7 @@ class AtCapTests(unittest.TestCase):
                 self.assertEqual(fired, [])
                 self.assertEqual(items, [{"kind": "cell-at-cap", "change_type": None,
                                           "skill": skill, "fixture": SKILL_FIXTURE,
-                                          "model": MODEL, "route": "issue",
+                                          "model": MODEL, "route": "summary",
                                           "reason": got["reason"]}])
                 self.assertIn("has not been at its level", items[0]["reason"])
             else:
@@ -328,7 +333,7 @@ class AtCapTests(unittest.TestCase):
         section = {**frozen, "skill": "", "section": "sec"}
         work = plan_week.build_plan(ctx(cells=[section], room=1.0), NOW)["work"]
         self.assertIn({"kind": "cell-at-cap", "change_type": None, "skill": "",
-                       "fixture": "evals/a", "model": "heavy", "route": "issue",
+                       "fixture": "evals/a", "model": "heavy", "route": "summary",
                        "reason": "why", "section": "sec"}, work)
 
     def test_a_decided_cell_at_the_cap_is_not_rechecked(self):

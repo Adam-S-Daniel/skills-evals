@@ -234,21 +234,29 @@ marks it `scope_paused` with the pause's rule, from compute_gates) stays in
 the verdict (round 3's C1: dropping its cells let the subject's other cells
 remove a subject it helped, automatically). Each of its cells keeps its
 class when that is `benefit` (a keep it earned before the pause still
-keeps: the keep test held its level at whatever pair it stopped) and is
-otherwise `paused`, recording `class_before_pause`: parked, so it neither
-votes nor lets a removal beside it be automatic. A subject whose every
-counted cell is parked is `ceiling` when each is a ceiling class or a
-ceiling pause, and `insufficient` otherwise (a floor or zero-use pause
-measures nothing).
+keeps: the keep test held its level at whatever pair it stopped) or
+`no-benefit` (round 4's M1: a harm or no-benefit decided at its stopping
+time is evidence at the gate's level, so it votes; the pause reads only a
+pooled sample of the without arm and must not hide it), and is otherwise
+`paused`, recording `class_before_pause`: parked, so it neither votes nor
+lets a removal beside it be automatic. A subject whose every counted cell
+is parked is `ceiling` only when each cell shows the ceiling on its own runs
+(`_shows_ceiling`: a ceiling class, or a ceiling pause of a cell that was a
+ceiling class, or whose no-harm test had rejected with a without arm
+averaging at least HIGH_STOP_MIN_WITHOUT), and `insufficient` otherwise,
+marked `unmeasured` so scripts/plan_week.py lists a `paused-unmeasured` work
+item (a floor or zero-use pause measures nothing, and a pooled sample is not
+a bound).
 HEADROOM cells are the `no-benefit` and `no-clear-effect` ones. First match:
 
   * no fixture on main -> `insufficient`;
   * any `benefit` -> `keep`;
   * any `insufficient` or missing cell -> `insufficient`;
   * every cell broken -> `cannot-discriminate`;
-  * no headroom cell (every counted cell parked) -> `ceiling`: the
-    subject needs a fixture with headroom, not more runs, and is never
-    removed for it;
+  * no headroom cell (every counted cell parked) -> `ceiling` when every
+    one shows it on its own runs (above): the subject needs a fixture with
+    headroom, not more runs, and is never removed for it; otherwise
+    `insufficient`;
   * otherwise `retire`, with `removal`:
       - `auto` when there are at least AUTO_MIN_HEADROOM_CELLS (2) headroom
         cells and every one is `no-benefit`: two cells with independent run
@@ -1256,12 +1264,14 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata)
         paused = (expected.get(fixture) or {}).get("scope_paused")
-        if paused and cell["class"] != "benefit":
+        if paused and cell["class"] not in PAUSE_KEEPS_CLASS:
             # Round 3's C1: the eval scope pass stopped firing this fixture.
             # Dropping its cells let the others remove a subject it helped,
             # so they stay, parked: a keep they earned before the pause
-            # still keeps, and anything else neither votes nor frees an
-            # automatic removal.
+            # still keeps, a decided `no-benefit` still votes (round 4's
+            # M1: the pause reads only the pooled without arm, so parking
+            # it hid a decided harm of any size), and anything else neither
+            # votes nor frees an automatic removal.
             cell = {**cell, "class": "paused", "class_before_pause": cell["class"],
                     "reason": f"paused by the eval scope pass ({paused}) and no longer "
                               f"fired; before the pause it was {cell['class']}: "
@@ -1292,6 +1302,28 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
 PARKED_CLASSES = frozenset({"ceiling", "ceiling-unconfirmed", "paused"})
 #: The parked classes that say the without arm leaves no room.
 CEILING_CLASSES = frozenset({"ceiling", "ceiling-unconfirmed"})
+#: The classes a scope-paused fixture's cell keeps (round 4's M1): each was
+#: decided at the gate's own level before the pause froze its window.
+PAUSE_KEEPS_CLASS = frozenset({"benefit", "no-benefit"})
+
+
+def _shows_ceiling(cell: dict) -> bool:
+    """Whether a parked cell's own runs say its without arm leaves no room
+    (round 4's M1): a ceiling class, or a cell the eval scope pass paused at
+    the ceiling whose class before the pause was a ceiling class, or whose
+    no-harm test had rejected with a without arm averaging at least
+    HIGH_STOP_MIN_WITHOUT. The pause itself reads only a pooled sample of
+    the without arm, which is not evidence enough to call a subject
+    `ceiling`, and a floor or zero-use pause measures nothing."""
+    if cell["class"] in CEILING_CLASSES:
+        return True
+    if cell["class"] != "paused" or cell.get("scope_paused") != "ceiling":
+        return False
+    if cell.get("class_before_pause") in CEILING_CLASSES:
+        return True
+    without = cell.get("without_mean")
+    return cell.get("noharm_at") is not None and without is not None \
+        and without >= HIGH_STOP_MIN_WITHOUT
 
 
 def _verdict(cells: list, any_fixture: bool) -> dict:
@@ -1310,13 +1342,16 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
         return {"verdict": "cannot-discriminate", "reason": "every cell's fixture looks "
                 "broken: both arms pass almost nothing"}
     if classes <= PARKED_CLASSES and classes:
-        if all(c["class"] in CEILING_CLASSES or c.get("scope_paused") == "ceiling"
-               for c in counted):
+        if all(_shows_ceiling(c) for c in counted):
             return {"verdict": "ceiling", "reason": "every cell's without arm is at the "
                     "ceiling: the subject needs a fixture with headroom, not more runs"}
-        return {"verdict": "insufficient", "reason": "every cell is parked, and the eval "
-                "scope pass paused a fixture for a reason other than the ceiling: no "
-                "fixture is measuring the subject"}
+        # `unmeasured`: scripts/plan_week.py lists the subject as a
+        # `paused-unmeasured` work item, since a paused fixture has no
+        # planner cell to carry one.
+        return {"verdict": "insufficient", "unmeasured": True, "reason": "every cell is "
+                "parked, and a cell the eval scope pass paused does not show a ceiling on "
+                "its own runs (or was paused for a floor or no use): no fixture is "
+                "measuring the subject"}
     if not headroom or not classes <= PARKED_CLASSES | {"no-benefit", "no-clear-effect"}:
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.

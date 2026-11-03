@@ -450,3 +450,95 @@ Known limits it left:
   and so no `fixture-ceiling` item.
 - *A cell held at the cap only by `min_cli_versions`* still needs new
   content or a person; letting it take pairs past the cap was not done.
+
+### Adversarial round 4 (2026-11-03)
+
+The fourth round found no new path to a wrong automatic removal and named
+two gaps in round 3's pause handling, fixed here.
+
+**A pause no longer hides a decided harm, and is not a ceiling by itself
+(M1).** Round 3 turned every non-`benefit` cell of a paused fixture into
+`paused`, including one whose harm test had already decided `no-benefit`,
+and called a subject whose every cell was parked `ceiling` whenever each
+was paused for the ceiling. The scope pass pauses on a pooled sample of the
+without arm over four runs, long before the harm test can decide (about 14
+to 25 pairs), so a harm of any size could end as `ceiling`: never removed or
+proposed, with the planner asking for harder fixtures. Round 3's "this makes
+the gate safe whatever it pauses" and its note that the two paused guidance
+sections were "now `ceiling`" overstated it. Now:
+
+- a decided `no-benefit` cell keeps its class through a pause and votes
+  (`PAUSE_KEEPS_CLASS`): its test was at its level at its stopping time,
+  and the pause only stopped the firing. With no parked cell beside it, a
+  removal it supports may be automatic, as it would be without the pause;
+- a subject whose every cell is parked is `ceiling` only when each cell
+  shows the ceiling on its own runs (`_shows_ceiling`): a ceiling class, or
+  a cell paused for the ceiling whose class before the pause was a ceiling
+  class, or whose no-harm test had rejected with a without arm averaging at
+  least `HIGH_STOP_MIN_WITHOUT` (0.90). Otherwise it is `insufficient`,
+  marked `unmeasured`, and `scripts/plan_week.py` lists a
+  `paused-unmeasured` work item for it: a paused fixture is off
+  `evals/scheduled.yml`, so it has no planner cell and no `fixture-ceiling`
+  item.
+
+The reviewer's `repro_paused_harm.py`, before and after:
+
+| Case | Before | After |
+|---|---|---|
+| Harmful (with 50, without 95), 40 pairs a model, paused | `ceiling` | `retire`, auto (cells `no-benefit`, as unpaused) |
+| Harmful, paused after 2 pairs a model | `ceiling` | `insufficient` |
+| One model 99/99, the other 75/75, paused | `ceiling` | `retire`, proposal |
+| Harmful fixture a paused, flat fixture b | `retire`, proposal | `retire`, auto (a's harm now votes) |
+
+On the results of 2026-11-03 (`cf913560`) with this branch's evals as of
+round 4, the two guidance sections that read `ceiling`
+(watch-finished-is-not-ci-passed, subagent-delegation) now read
+`insufficient`: their paused cells were `insufficient` before the pause.
+With main merged, the scope pass no longer pauses either.
+
+**`compute` is pinned end to end (M2).** Nothing ran
+`compute_gates.compute` over an `evals/` tree with a pause, so reverting
+its `keep_paused=True` brought round 3's C1 back with every test green. A
+test now builds a temporary tree (two fixtures, a `scope-auto.yml` row and
+an `Auto scope (ceiling)` row for the one that helps) and asserts a kept
+skill stays `keep`, and a pause before the keep leaves a proposal, not
+`auto`. It fails with the call flipped to `keep_paused=False`.
+
+**The minors.**
+
+- *m1:* `fixture-ceiling`, `cell-at-cap` and `paused-unmeasured` items are
+  routed `summary` (`plan_week.SUMMARY_ROUTE`), not `issue`: the sweep's
+  step summary counts them and its plan JSON lists them, and
+  `scripts/work_item_issues.py` files no issue for them. Round 3's "where it
+  had been a silent dead end" overstated what changed: a capped cell is a
+  count in the step summary, not an issue. Filing them would need a marker,
+  a closing rule and a privacy review per kind; the smaller change makes the
+  route say where they go.
+- *m2:* a keep at or before the removal's stopping time wins over a harm
+  the harm test decides later (a test pins it). The keep's own crossing
+  bounds its error. The reviewer's other ordering, a keep that crosses
+  after a decided harm, did not arise in the shapes tried: the remove test
+  (null D at or above the margin) decided at or before the harm test (null
+  D at or above 0), and a keep after the removal's stopping time already
+  loses to it.
+- *m4:* `plan_week` turns a malformed `evals/scope-auto.yml` or
+  `evals/unscheduled.yml` into a PlanError,
+  "evals/unscheduled.yml or evals/scope-auto.yml is malformed", on its
+  guidance path as on its skill path.
+
+Known limits it left:
+
+- *Pauses are read from the tree, not as of `--as-of`* (m3): a past
+  evaluation repeated after a pause or a resume gives its paused fixtures'
+  cells the current classes. `evals/` was already read from the tree, so
+  this adds no new kind of drift.
+- *A pause outlives the content it measured* (m5): a `ceiling` or `floor`
+  pause resumes only when the fixture's digest changes, not the tested
+  skill or section, or the guidance rest. After an edit, a paused fixture's
+  cells are `paused` (from `missing`) until someone resumes it; this can
+  never free a removal (a parked cell vetoes `auto`), but it is a slow loss
+  of measurement, which the `paused-unmeasured` item names only when every
+  cell of the subject is parked. The scope pass's rules are its own
+  thread's to change.
+- *A paused fixture's decided `no-benefit` is final:* no new pair can reach
+  it to let a later keep compete, as for any cell whose window is frozen.

@@ -28,8 +28,10 @@
 #     harm test (D < 0) runs at such cells and makes a harmful one
 #     no-benefit once it decides, and the cell parks only when a no-harm
 #     test (D > -margin) agrees, so a harm beyond the margin parks only at
-#     that test's error rate. A milder harm can still end parked or with no
-#     clear effect.
+#     that test's error rate (for a fixture the eval scope pass did not
+#     pause: a pause stops the firing, so an undecided harm stays undecided
+#     and its subject `insufficient`). A milder harm can still end parked or
+#     with no clear effect.
 #   * `max_runs_high_cell` (20): a cell whose without arm is above
 #     1 - `objective_margin`, still undecided after this many pairs, whose
 #     no-harm test has rejected and whose without arm averages at least
@@ -42,12 +44,18 @@
 #     crossed, on pairs spanning `min_cli_versions`, has `no-clear-effect`,
 #     which can only PROPOSE a removal. With one version, or with a test that
 #     crossed but has not decided, it stays `insufficient`: it is no longer
-#     fired, and the planner lists it as a `cell-at-cap` work item. An
+#     fired, and the planner lists it as a `cell-at-cap` work item (a step
+#     summary count, not an issue). An
 #     automatic removal needs two or more cells with headroom, every one
 #     no-benefit, and no parked cell; with one, the removal is a proposal too.
 #   * A fixture the eval scope pass paused keeps its cells: a `benefit` cell
-#     still keeps, and any other is `paused`, parked like a ceiling cell, so
-#     it never lets the other cells remove the subject automatically.
+#     still keeps, a decided `no-benefit` cell still votes, and any other is
+#     `paused`, parked like a ceiling cell, so it never lets the other cells
+#     remove the subject automatically. A subject whose every cell is parked
+#     is `ceiling` only when each shows it on its own runs (a ceiling class,
+#     or a ceiling pause of a cell that was one, or whose no-harm test had
+#     rejected with a without arm of at least 0.90); otherwise it is
+#     `insufficient` and a `paused-unmeasured` work item.
 #   * The judge is reported but no longer votes on keep or removal (its
 #     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
 #     figure the explorer shows). Single checks no longer keep on their own.

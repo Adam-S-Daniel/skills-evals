@@ -293,14 +293,19 @@ lands (the gates pool only runs of the content on main).
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures`,
 `fixture-ceiling` and `fixture-broken` (change type `fixture`), `cell-at-cap`
 (change type None: an undecided cell whose pairs reached the cap, with its
-gates reason; none for a kept subject), `routine-outage` and
-`routine-down` (change type None: the routine failed, not a subject; see
-EMPTY FIRES),
+gates reason; none for a kept subject), `paused-unmeasured` (change type
+`fixture`: a subject the gate marked `unmeasured`, every cell parked and a
+scope-paused one showing no ceiling on its own runs; `unmeasured_items`),
+`routine-outage` and `routine-down` (change type None: the routine failed,
+not a subject; see EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
 fire workflow refuses, see above). Every item carries `change_type`:
 `skill-edit` for an improve fire, `guidance-edit` for a guidance-improve
 fire, `fixture`, `trigger`, or None for `routine-outage` and
-`routine-down`. Lesson proposals of kind `agent-check` are not planned
+`routine-down`. `fixture-ceiling`, `cell-at-cap` and `paused-unmeasured` are
+routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
+them, but scripts/work_item_issues.py files no issue for them (round 4's
+m1). Lesson proposals of kind `agent-check` are not planned
 here: _agent-guidance's fleet worker reads them (its ADR 0027), so a
 second reader would file each twice (#657).
 
@@ -500,6 +505,11 @@ BLOCKING_MIN_RUNS = 3
 #: lighter subcommands run where pyyaml is not installed);
 #: test_issue_gate_round3.py pins the two equal.
 PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed", "paused")
+#: The route of a work item listed only in the sweep's step summary (its
+#: kind and count, `summary_lines`) and the plan JSON: `fixture-ceiling`,
+#: `cell-at-cap` and `paused-unmeasured` (round 4's m1 and M1). scripts/work_item_issues.py files issues
+#: for its KINDS only, so routing these to `issue` promised one that never came.
+SUMMARY_ROUTE = "summary"
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
 #: workflow's `section` pattern refuses its id.
@@ -566,6 +576,11 @@ BATCH_SUBJECT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 # The bands a batch restricts to its members; safety, recheck, improve and
 # bare are not.
 BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
+
+
+#: The PlanError for a malformed evals/unscheduled.yml or evals/scope-auto.yml
+#: (compute_gates raises ValueError for either; round 4's m4).
+SCHEDULE_FILES_MALFORMED = "evals/unscheduled.yml or evals/scope-auto.yml is malformed"
 
 
 class PlanError(Exception):
@@ -1087,8 +1102,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     harder fixture can let it vote. An `insufficient` cell whose pairs
     reached `max_runs_per_cell` (`at_cap`) plans no fire either: its window
     is frozen. It is a `cell-at-cap` work item carrying its gates reason
-    (round 3's M3: it was a silent dead end), and a decided cell at the cap
-    is not re-checked (round 3's m5).
+    (round 3's M3: it was a silent dead end; it is a step summary
+    count, not an issue), and a decided cell at the cap is not re-checked
+    (round 3's m5).
 
     CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
     allocation): in the missing, near, focus and guidance-rest bands a cell
@@ -1140,7 +1156,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             if not kept:
                 parked = {"kind": "fixture-ceiling", "change_type": "fixture",
                           "skill": cell["skill"], "fixture": cell["fixture"],
-                          "model": cell["model"], "route": "issue"}
+                          "model": cell["model"], "route": SUMMARY_ROUTE}
                 if cell.get("section"):
                     parked["section"] = cell["section"]
                 work.append(parked)
@@ -1153,7 +1169,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             if not kept:
                 capped = {"kind": "cell-at-cap", "change_type": None,
                           "skill": cell["skill"], "fixture": cell["fixture"],
-                          "model": cell["model"], "route": "issue",
+                          "model": cell["model"], "route": SUMMARY_ROUTE,
                           "reason": cell.get("reason")}
                 if cell.get("section"):
                     capped["section"] = cell["section"]
@@ -1208,7 +1224,32 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         # can outlast its routine-outage item.
         outages.insert(0, {"kind": "routine-down", "change_type": None, "route": "issue",
                            "since": _iso(down)})
-    return bands, outages + work
+    return bands, outages + work + list(ctx.get("unmeasured") or [])
+
+
+def unmeasured_items(gates_doc: dict, private: frozenset = frozenset()) -> list:
+    """Round 4's M1: one `paused-unmeasured` work item (change type
+    `fixture`, SUMMARY_ROUTE) per skill or guidance section whose verdict
+    the gate marked `unmeasured`: every cell parked, and a fixture the eval
+    scope pass paused shows no ceiling on its own runs. A paused fixture is
+    off evals/scheduled.yml, so it has no planner cell and no
+    `fixture-ceiling` item; without this the subject would sit
+    `insufficient` with nothing asking for a resumed or harder fixture. A
+    private skill gets none (the plan names only public subjects)."""
+    out = []
+    for half in ("skills", "guidance"):
+        for name, verdict in sorted((gates_doc.get(half) or {}).items()):
+            if not isinstance(verdict, dict) or verdict.get("unmeasured") is not True \
+                    or (half == "skills" and name in private):
+                continue
+            item = {"kind": "paused-unmeasured", "change_type": "fixture",
+                    "skill": name if half == "skills" else "", "route": SUMMARY_ROUTE,
+                    "fixtures": sorted({c.get("fixture") or "" for c in verdict.get("cells", [])
+                                        if c.get("class") == "paused"})}
+            if half == "guidance":
+                item["section"] = name
+            out.append(item)
+    return out
 
 
 #: The bands where a cell waits for its cheaper model's cell (`eval_items`).
@@ -2247,7 +2288,10 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
         if directory.name == "guidance":
             # Guidance sections, not a skill: no improve loop, no usage weight.
             continue
-        expected = compute_gates.expected_content(evals_dir, directory.name, registries)
+        try:
+            expected = compute_gates.expected_content(evals_dir, directory.name, registries)
+        except ValueError:
+            raise PlanError(SCHEDULE_FILES_MALFORMED) from None
         if not expected:
             continue
         urls, names = set(), sorted(expected)
@@ -2324,9 +2368,14 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         # beside the rest of the guidance on main (2026-11-03; older rests
         # are ignored), so the improve evidence counts the same runs the
         # section's verdict does.
-        cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
-                                 compute_gates.expected_guidance(evals_dir, section,
-                                                                 guidance_dir),
+        try:
+            expected = compute_gates.expected_guidance(evals_dir, section, guidance_dir)
+        except ValueError:
+            # Round 4's m4: expected_guidance reads the scope pauses, and a
+            # malformed file must fail the plan with a plain reason, as the
+            # skill path does, never a traceback or an opaque error.
+            raise PlanError(SCHEDULE_FILES_MALFORMED) from None
+        cells = gates.pool_cells(runs, section, gates_doc["roster_models"], expected,
                                  strata=True)
         try:
             row = proposer.load_row(guidance_dir, section)
@@ -2574,6 +2623,7 @@ def gather(args, now: datetime) -> dict:
             "guidance_policy": gates_doc.get("guidance_policy"),
             "guidance_removal_prs": gremoval,
             "cells": cells, "outages": outages, "routine_down": down,
+            "unmeasured": unmeasured_items(gates_doc, private_skills(evals_dir)),
             "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,

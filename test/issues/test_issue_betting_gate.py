@@ -410,13 +410,13 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual([(f["fixture"], f["model"]) for f in plan["fires"]],
                          [("evals/a", "light")])
         self.assertIn({"kind": "fixture-ceiling", "change_type": "fixture", "skill": "a",
-                       "fixture": "evals/a", "model": "heavy", "route": "issue"},
+                       "fixture": "evals/a", "model": "heavy", "route": "summary"},
                       plan["work"])
 
     def test_parked_and_frozen_cells_are_not_fired(self):
         from test_issue_closed_loop_planner import NOW, cell as pcell, ctx
         item = {"kind": "fixture-ceiling", "change_type": "fixture", "skill": "a",
-                "fixture": "evals/a", "model": "heavy", "route": "issue"}
+                "fixture": "evals/a", "model": "heavy", "route": "summary"}
         # Round 2's M2: a stopped high cell is parked as a ceiling cell is.
         cells = [pcell("evals/a", "heavy", "ceiling-unconfirmed", runs=20),
                  pcell("evals/a", "light", "insufficient", runs=1)]
