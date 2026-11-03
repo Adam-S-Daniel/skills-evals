@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S79Mh6uDN9bhqe3siQ2ZLX",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100; cat docs/vendor-tracking.md",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K21oBPVocqd2ujcPwhjxck",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S79Mh6uDN9bhqe3siQ2ZLX",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n51d5b5d initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS....",
+      "output_chars": 563,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K21oBPVocqd2ujcPwhjxck",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017Fa3m87hVVwchEr2sdpriy",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md | head -150; echo ----; head -c 3000 vendor/releases.json; echo; cat .example-cli/settings.json hooks/warm-cache.sh README.md .gitmodules .mcp.json; ls -la vendor",
+      "input_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017Fa3m87hVVwchEr2sdpriy",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1736,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019zrbeCQSLwpVHrYo8Rb2cu",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re, json, sys\nroot = sys.argv[1]\nmd = open(f\"{root}<path>\").read()\nsec = md.split(\"## v4.4.0\")[1]\nbul = [l[2:] for l in sec.splitlines() if l.sta...",
+      "input_chars": 3553,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019zrbeCQSLwpVHrYo8Rb2cu",
+      "is_error": false,
+      "output": "01-hooks-sessionstart-timeout 99\n02-config-unknown-top-level-keys 107\nrc=0\n# ExampleCLI 4.4.0 honors SessionStart hook timeout: warm-cache.sh takes longer than the 20s set here\n\nFound in the ExampleCLI 4.4.0 release review (tracking pull request: TRACKING_PR_LINK, filled in once it is opened). Not y...",
+      "output_chars": 1101,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XuFdUBDMBUii1P768MCVL1",
+      "name": "Bash",
+      "input": "python3 -I - <<'EOF'\nimport re\np=open(f\"{__import__('os').environ['TMPDIR']}/gen.py\").read()\np=p.replace(\"Found in the ExampleCLI 4.4.0 release review\",\"Found in the ExampleCLI release review\")\np=p.re...",
+      "input_chars": 2518,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XuFdUBDMBUii1P768MCVL1",
+      "is_error": false,
+      "output": "01-hooks-sessionstart-timeout 99\n02-config-unknown-top-level-keys 107\nissues/01-hooks-sessionstart-timeout.md:1:# ExampleCLI 4.4.0 honors SessionStart hook timeout: warm-cache.sh takes longer than the 20s set here\nissues/01-hooks-sessionstart-timeout.md:16:- `hooks/warm-cache.sh` runs `npm ci`; its ...",
+      "output_chars": 1599,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
