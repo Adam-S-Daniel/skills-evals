@@ -119,8 +119,10 @@ THE BANDS (rule D), in order:
   "no run after two fires", whatever the cause. A cell whose verdict
   document lacks `newest_on_model` or `run_stamps_on_model` counts none and
   joins no window (fail safe). Safety cells are exempt. Every band, safety included, skips a cell with a
-  PENDING fire: one younger than FIRE_RESULT_WINDOW, successful or still
-  running, with no run on the cell since it started. THE CIRCUIT BREAKER
+  PENDING fire: one younger than PENDING_WINDOW (the routine's 30-minute
+  eval stop plus 10 minutes), successful or still running, with no run on
+  the cell since it started; past that the fire cannot deliver, so the
+  cell is planned again, a lost fire re-fired within the hour. THE CIRCUIT BREAKER
   (#583): the routine is down from the start of an outage fire until a
   paired eval fire on a known cell delivers (or, for the breaker only,
   once fires PROBE_WAIT, 45 minutes, old with no run, plus empty fires,
@@ -371,6 +373,7 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 import allowance_guard as guard  # noqa: E402
 import improve_outcomes as outcomes_mod  # noqa: E402
 import plan_scheduled_evals as schedule  # noqa: E402
+import routine_deadlines  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 
 REGISTRY_URL = "https://github.com/Adam-S-Daniel/adam-agentskills"
@@ -403,6 +406,14 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
+#: How long a fire with no run yet holds its cell (`pending`): the routine's
+#: own eval-mode stop plus a margin (scripts/routine_deadlines.py), after
+#: which the fire cannot deliver, so the cell is planned again. Adam,
+#: 2026-11-03: a lost fire must not wait FIRE_RESULT_WINDOW, two hours, for
+#: someone to notice it. The fire itself is still classified only at
+#: FIRE_RESULT_WINDOW, so the outage windows and PROBE_WAIT keep their
+#: meaning, and only two empty fires make the cell fixture-broken.
+PENDING_WINDOW = routine_deadlines.deadline("eval")
 #: Only empty fires this recent count, so a fixture-broken cell is retried
 #: once its fires age out instead of staying broken for good (#559).
 RETRY_AFTER = timedelta(days=14)
@@ -1855,12 +1866,14 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
       * `down_fires`: the candidates that are down fires, in neither count
         above.
       * `pending`: a successful or still running non-bare eval fire that
-        started after the bound and less than FIRE_RESULT_WINDOW ago, so
-        its run may still land. On an unknown cell any such fire is
-        pending: holding a cell for at most FIRE_RESULT_WINDOW is cheaper
-        than a second fire.
-      * `pending_since`: the start of the newest such fire, else None; one
-        younger than PROBE_WAIT holds the next probe (`probe_blocked`).
+        started after the bound and less than PENDING_WINDOW ago, so its
+        run may still land. On an unknown cell any such fire is pending:
+        holding a cell for at most PENDING_WINDOW is cheaper than a second
+        fire. Past PENDING_WINDOW the routine has stopped, so the cell is
+        planned again.
+      * `pending_since`: the start of the newest fire started after the
+        bound and less than FIRE_RESULT_WINDOW ago, else None; one younger
+        than PROBE_WAIT holds the next probe (`probe_blocked`).
       * `last_fire`: the start of the cell's newest successful or running
         eval fire of any arms and age, else None, for the probe order.
 
@@ -1905,6 +1918,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     early: list = []  # young fires that have already landed a run
     stale: list = []  # (start, cell index): young fires PROBE_WAIT old with no run yet
     candidates: list = []  # per cell, its candidates' starts, earliest first
+    all_landed: list = []  # per cell x model visited, its landed run times
     for fixture in scheduled:
         subject, ident = _fixture_subject(evals_dir, fixture)
         if subject == "any":
@@ -1932,6 +1946,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
             raw = cell.get("newest_on_model") if cell else None
             bound = _stamp_time(raw)
             landed = _landed_runs(cell)
+            all_landed.append(landed or [])
             # An unreadable stamp is as unknown as an absent key.
             known = landed is not None and (cell is None or (
                 "newest_on_model" in cell and (raw is None or bound is not None)))
@@ -1965,7 +1980,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "usd_per_arm_trial": cost / arm_trials if cost is not None and arm_trials
                 else None,
                 "empty_fires": 0, "outage_fires": 0, "down_fires": 0,
-                "pending": bool(waiting), "pending_since": max(waiting, default=None),
+                "pending": bool(waiting),  # settled below, once every run is known
+                "waiting": waiting,
+                "pending_since": max(waiting, default=None),
                 "last_fire": latest.get((fixture, model))})
             if section is not None:
                 # What the guidance focus reads (`guidance_focus`): the
@@ -1980,6 +1997,18 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                     "reason": (cell or {}).get("reason"),
                     **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
                        for role, arm in arms.items()}})
+    # A fire past PENDING_WINDOW is lost when the routine has delivered a run
+    # of any cell since it started: the routine is up, so this fire alone
+    # failed, and its cell is planned again now. With no delivery since,
+    # the routine may be down, so the cell keeps holding for
+    # FIRE_RESULT_WINDOW, as before: re-firing every cell into an outage
+    # would only spend fires and count healthy cells broken.
+    landed_any = [r for cell_landed in all_landed for r in cell_landed]
+    for cell in cells:
+        waiting = cell.pop("waiting")
+        cell["pending"] = any(now - t < PENDING_WINDOW
+                              or not any(r > t for r in landed_any)
+                              for t in waiting)
     # Second pass, once every fire is classified: judge each empty fire on
     # its own window, reconstruct when the routine was down, then count each
     # cell's candidates by their verdicts.
