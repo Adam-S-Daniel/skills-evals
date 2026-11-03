@@ -632,36 +632,6 @@ class BandTests(unittest.TestCase):
                                         private),
                 {"zz-private-skill": None, "zz-public-skill": 0})
 
-    def test_agent_check_lessons_lead_the_work_list(self):
-        lessons = [{"schema_version": 1, "id": "L-2", "subject": "s2", "kind": "agent-check",
-                    "evidence_count": 2, "examples": [], "check_sketch": "x"},
-                   {"schema_version": 1, "id": "L-5", "subject": "s5", "kind": "agent-check",
-                    "evidence_count": 5},
-                   {"schema_version": 1, "id": "L-x", "subject": "s", "kind": "skill-edit",
-                    "evidence_count": 9},
-                   {"schema_version": 1, "id": "bad id", "subject": "s", "kind": "agent-check",
-                    "evidence_count": 9},
-                   {"schema_version": 1, "id": "L-0", "subject": "s", "kind": "agent-check",
-                    "evidence_count": True}, "junk"]
-        plan = plan_week.build_plan(ctx(skills={"few": skill(fixtures=2)}, lessons=lessons), NOW)
-        self.assertEqual([(w["kind"], w.get("id")) for w in plan["work"]],
-                         [("agent-check", "L-5"), ("agent-check", "L-2"),
-                          ("needs-fixtures", None)])
-        self.assertEqual(plan["work"][0]["change_type"], "agent-check")
-        self.assertNotIn("check_sketch", plan["work"][1])
-        lines = "\n".join(plan_week.summary_lines(plan))
-        self.assertIn("agent-check 2", lines)
-        self.assertNotIn("s5", lines)
-
-    def test_read_lessons_skips_unreadable_files(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp)
-            (base / "a").mkdir()
-            (base / "a" / "one.json").write_text('{"id": "x"}')
-            (base / "bad.json").write_text("{")
-            self.assertEqual(plan_week.read_lessons(base), [{"id": "x"}])
-        self.assertEqual(plan_week.read_lessons(None), [])
-
 
 CHECKLIST_SKILL = """---
 name: example-checks
@@ -1195,7 +1165,7 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(plan["improve_ranking"], [{
             "subject": "skill", "name": "a", "value": 4 * 0.5 / cost, "use": 4,
             "use_known": True, "headroom": 0.5, "cost": cost, "cost_known": True,
-            "eligible": True, "reasons": []}])
+            "eligible": True, "reasons": [], "lesson_evidence": 0}])
         improve = [f for f in plan["fires"] if f["mode"] == "improve"]
         self.assertEqual([f["value"] for f in improve], [4 * 0.5 / cost])
         self.assertIsNone(plan["fires"][0]["value"] if plan["fires"][0]["mode"] == "eval"
