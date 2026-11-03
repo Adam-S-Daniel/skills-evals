@@ -32784,6 +32784,7 @@ class TestIssue147(unittest.TestCase):
             for relative in ("scripts/render_roster_yaml.py",
                              "scripts/make_badge.py",
                              "scripts/push_with_rebase_retry.sh",
+                             "scripts/relocate_colliding_runs.py",
                              "harness/roster.py",
                              "harness/timeweeks.py",
                              "evals/roster.yml"):
@@ -33142,6 +33143,7 @@ elif 'worktree' in args and 'remove' in args:
                              "scripts/render_roster_yaml.py",
                              "scripts/make_badge.py",
                              "scripts/push_with_rebase_retry.sh",
+                             "scripts/relocate_colliding_runs.py",
                              "harness/roster.py",
                              "harness/timeweeks.py",
                              "evals/roster.yml"):
