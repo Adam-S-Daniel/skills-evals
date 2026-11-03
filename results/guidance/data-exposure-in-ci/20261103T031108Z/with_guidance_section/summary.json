@@ -1,0 +1,313 @@
+{
+  "arm": "with_guidance_section",
+  "timestamp": "20261103T031108Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0449908,
+    "num_turns": 4,
+    "duration_ms": 9314,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 10974,
+      "cache_read_input_tokens": 57038,
+      "output_tokens": 1184,
+      "output_tokens_details": {
+        "thinking_tokens": 45
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 10974
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 389,
+          "cache_read_input_tokens": 22519,
+          "cache_creation_input_tokens": 901,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 901,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "http-error-handled",
+      "passed": true,
+      "detail": "scripts/sync_contacts.py matches"
+    },
+    {
+      "id": "error-body-not-logged",
+      "passed": true,
+      "detail": "scripts/sync_contacts.py matches"
+    },
+    {
+      "id": "workflow-still-parses",
+      "passed": true,
+      "detail": "all workflows parse"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Exposure",
+        "score": 9,
+        "rationale": "The log never gets the response body or the contact record: HTTPError prints only the status code, the reason phrase, the exception type and the API host, and URLError prints only the type of the underlying error. The one gap is that the reason phrase comes from the server, though in practice it is a short standard phrase."
+      },
+      {
+        "name": "Diagnosis",
+        "score": 6,
+        "rationale": "The run exits 1 and the urlopen/json.load call is inside the try, but the log leaves out a CRM error code and a request ID (for example a header like X-Request-Id), so failures are harder to trace with the vendor; only the status and reason are there to act on."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff only wraps the request in try/except, adds the imports it needs and a short comment, and deliberately leaves the other failure paths alone."
+      }
+    ],
+    "overall": 8.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 1184,
+      "cache_read_input_tokens": 57038,
+      "cache_creation_input_tokens": 10974,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "data-exposure-in-ci",
+  "mode": "section",
+  "bytes": 1913,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v88b398dc, 1913 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "UGXZHLEA-8162"
+  },
+  "fixture_name": "http-error-body",
+  "guidance_digests": {
+    "section": "ee5f4e688fe20720f6e3a0f31b2011d94a481c350061956778ea27f2f1b911ea",
+    "rest": "12a4f8be98e7a0fa0ecfb4b35663b8aea12a22c75a077acfd7379a1f96e836fe",
+    "section_payload": "374e0f6146b30a172e12450e3fa6c04b878f76e612cc161658810683c180a995"
+  },
+  "fixture_digest": "9c1f3b149273407e38f241c8555990a00c44a6562d5da6dbaf8f969c78f7a64e",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 1778,
+        "sha256": "03591cd8799ad6a84a74680d520d70ac448ba4da5f92d4214c4d7191ffb3ab8b"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41568178365",
+    "session_id": null,
+    "harness_commit": "e6e9496b878f4d7b07f0bea08ef6920250de1e21",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T03:11:08Z",
+    "ended_at": "2026-11-03T03:12:44Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.459552,
+      "agent_usd": 0.2962037,
+      "judge_usd": 0.07726580000000001,
+      "guard_usd": 0.0860825,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.1022652,
+      "calls_with_cost": 10,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T03:11:08Z",
+      "ended_at": "2026-11-03T03:12:40Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-03T03:11:08Z",
+          "ended_at": "2026-11-03T03:11:10Z",
+          "duration_ms": 2226,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T03:11:10Z",
+          "ended_at": "2026-11-03T03:11:20Z",
+          "duration_ms": 10198,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T03:12:32Z",
+          "ended_at": "2026-11-03T03:12:40Z",
+          "duration_ms": 8285,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 10198,
+        "num_turns": 4,
+        "cost_usd": 0.0449908,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 1184,
+            "cache_read_input_tokens": 57038,
+            "cache_creation_input_tokens": 10974,
+            "cost_usd": 0.0449908
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 10974,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 8285,
+        "num_turns": 1,
+        "cost_usd": 0.0414404,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 621,
+            "cache_read_input_tokens": 12262,
+            "cache_creation_input_tokens": 5312,
+            "cost_usd": 0.0414404
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 5312,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 2226,
+        "num_turns": 1,
+        "cost_usd": 0.0105125,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8385,
+            "cache_creation_input_tokens": 3816,
+            "cost_usd": 0.0105125
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3816,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
