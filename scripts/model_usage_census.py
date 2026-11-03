@@ -816,6 +816,33 @@ def guidance_state(texts: list[str] | None) -> str:
     return GUIDANCE_NEITHER
 
 
+#: How a session's first skill listing read (skills-evals#668). Claude Code
+#: keeps the listing under a character budget and, over it, lists the last
+#: skills by name alone. A plugin skill always has a description (the spec
+#: requires one), so a namespaced name listed without one is that cut; a bare
+#: built-in such as `init` can legitimately have none and does not count.
+LISTING_FULL, LISTING_TRUNCATED, LISTING_UNKNOWN = "full", "truncated", "unknown"
+_LISTED_RE = re.compile(r"^- (?P<name>[^\s:]+(?::[^\s:]+)?)(?P<rest>.*)$")
+
+
+def listing_state(entry: dict) -> str | None:
+    """`full` or `truncated` for an `attachment` entry holding the session's
+    first (`isInitial`) skill listing; None for any other entry."""
+    attachment = entry.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "skill_listing" \
+            or attachment.get("isInitial") is not True:
+        return None
+    content = attachment.get("content")
+    if not isinstance(content, str):
+        return None
+    for line in content.split("\n"):
+        match = _LISTED_RE.match(line)
+        if match and ":" in match.group("name") \
+                and not match.group("rest").lstrip(":").strip():
+            return LISTING_TRUNCATED
+    return LISTING_FULL
+
+
 def _bump(counts: dict, key: str, week: str) -> None:
     counts.setdefault(key, {})
     counts[key][week] = counts[key].get(week, 0) + 1
@@ -1096,7 +1123,7 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     skills: dict[str, dict[str, int]] = {}
     sessions: dict[str, dict[str, int]] = {}
     tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0,
-             "guidance": {}}
+             "guidance": {}, "listing": {}}
     #: (st_dev, st_ino) of every transcript already processed. A symlink or a
     #: hard-linked copy is the SAME underlying file reachable via a second
     #: path in the walk — reading it twice double-counts every turn in it.
@@ -1173,6 +1200,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
         title = None
         first_when = first_uuid = None
         texts: list[str] | None = None
+        listing: str | None = None
         tally["sessions_scanned"] += 1
         try:
             with open(transcript, encoding="utf-8", errors="replace") as f:
@@ -1194,6 +1222,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                         found = _instruction_texts(entry)
                         if found is not None:
                             texts = (texts or []) + found
+                        if listing is None:
+                            listing = listing_state(entry)
                         continue
                     if record and kind in ("summary", "custom-title"):
                         text = entry.get("summary" if kind == "summary" else "customTitle")
@@ -1296,6 +1326,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                 and not (isinstance(first_uuid, str) and first_uuid
                          and not fresh(("g", first_uuid))):
             _bump(tally["guidance"], guidance_state(texts), iso_week(first_when))
+            _bump(tally.setdefault("listing", {}), listing or LISTING_UNKNOWN,
+                  iso_week(first_when))
         for event in file_events:
             event["session_title"] = title
         for load in loads:
@@ -1343,6 +1375,9 @@ def build_weekly_document(tally: dict, now: datetime,
             for week, n in by_week.items()]
     rows += [skill_usage.guidance_row(week, state, n)
              for state, by_week in tally.get("guidance", {}).items()
+             for week, n in by_week.items()]
+    rows += [skill_usage.listing_row(week, state, n)
+             for state, by_week in tally.get("listing", {}).items()
              for week, n in by_week.items()]
     if hooks is not None:
         rows += [skill_usage.hook_row(week, name, repo, runs, blocked, runner)
