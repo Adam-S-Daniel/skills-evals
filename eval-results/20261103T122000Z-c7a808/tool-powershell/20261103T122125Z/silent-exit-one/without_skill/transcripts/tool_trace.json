@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RxBxEKF1t9yHPm3kvfBwqr",
+      "name": "Bash",
+      "input": "git status --short && ls -la && cat README.md && ls bin scripts && cat scripts/sync-exports.ps1 && cat bin/pwsh",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RxBxEKF1t9yHPm3kvfBwqr",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  3 12:22 .\ndrwx------ 6 root root 4096 Nov  3 12:21 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 08:13 .bash_profile\ncrw-rw-rw-...",
+      "output_chars": 2938,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hw3kyo6kfrN1NPPU4ZJofP",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/sync-exports.ps1; echo \"exit=$?\"; bash bin/pwsh -Command \"\\$ErrorActionPreference='Stop'; & ./scripts/sync-exports.ps1\"; echo \"exit=$?\"",
+      "input_chars": 163,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hw3kyo6kfrN1NPPU4ZJofP",
+      "is_error": false,
+      "output": "exit=1\nCopy-Item : Cannot find path '<path>' because it does not exist.\nexit=1",
+      "output_chars": 87,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JFua5VVUJMpSkPma8583GH",
+      "name": "Bash",
+      "input": "sed -i \"s|'<path>'|'<path>'|\" scripts/sync-exports.ps1 && cat scripts/sync-exports.ps1 && git diff --stat; bash bin/pwsh -File scripts/sync-exports.ps1; echo \"exit=$?\"",
+      "input_chars": 196,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JFua5VVUJMpSkPma8583GH",
+      "is_error": false,
+      "output": "param(\n    [string]$Source = '<path>',\n    [string]$Dest = '<path>'\n)\n\nCopy-Item -Path $Source -Destination $Dest -Recurse\n scripts/sync-exports.ps1 | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\nsynced 3 files\nexit=0",
+      "output_chars": 242,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
