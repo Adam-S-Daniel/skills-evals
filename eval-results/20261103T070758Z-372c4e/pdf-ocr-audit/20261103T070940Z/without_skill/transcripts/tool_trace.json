@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R9RpdDVJosvb93ezN92bJS",
+      "name": "Bash",
+      "input": "ls -la && find archive -type f | head -100; which pdftotext pdffonts pdfimages",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R9RpdDVJosvb93ezN92bJS",
+      "is_error": false,
+      "output": "total 20\ndrwxr-xr-x 5 root root 4096 Nov  3 07:10 .\ndrwx------ 6 root root 4096 Nov  3 07:10 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:20 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  3 00:20 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  3 07:10 .claude\ndrwxr-xr-x 9 root root 4096 Nov  3 07:10 .git\ncrw-r...",
+      "output_chars": 1066,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012BarZvp64o8BoC5NyGpNQ3",
+      "name": "Bash",
+      "input": "cd <path> && for f in *; do echo \"== $f\"; pdfinfo -- \"$f\" 2>&1 | grep -E 'Pages|Error|Encrypted'; echo \"chars: $(pdftotext -- \"$f\" - 2><path> | tr -d '[:space:]' | wc -c)\"; echo \"fonts: $(pdffonts -- ...",
+      "input_chars": 359,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012BarZvp64o8BoC5NyGpNQ3",
+      "is_error": false,
+      "output": "== POLICY.PDF\nPages:           1\nEncrypted:       no\nchars: 33\nfonts: 1\nimages: 0\n== annual-report.pdf\nPages:           2\nEncrypted:       no\nchars: 32\nfonts: 1\nimages: 0\n== meeting-notes.pdf\nSyntax Error: End of file inside dictionary\nSyntax Error: Couldn't find trailer dictionary\nSyntax Error: Cou...",
+      "output_chars": 853,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AKmJCnZGfc5o3SZ9HEFXtG",
+      "name": "Bash",
+      "input": "for f in POLICY.PDF annual-report.pdf project-brief.pdf scanned-invoice.pdf signed-lease-scan.pdf; do echo \"== $f\"; pdftotext -layout -- \"$f\" - | head -20; pdfimages -list -- \"$f\" | tail -n +3; done; ...",
+      "input_chars": 360,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AKmJCnZGfc5o3SZ9HEFXtG",
+      "is_error": false,
+      "output": "== POLICY.PDF\nExample uppercase extension document\n\f== annual-report.pdf\nExample annual report\n\fGood text layer\n\f== project-brief.pdf\nExample searchable page\n\f\f   2     0 image      20    20  gray    1   8  image  no         4  0     7     7  400B 100%\n== scanned-invoice.pdf\nxzQ9 vv0 zzJ3 qp7 Kxx\nxz...",
+      "output_chars": 2007,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SUEBVfN3z79m9z2D11RRws",
+      "name": "Bash",
+      "input": "for f in annual-report.pdf project-brief.pdf signed-lease-scan.pdf quarterly-report.pdf; do for p in 1 2; do echo \"$f p$p: $(pdftotext -f $p -l $p -- \"$f\" - | tr -d '[:space:]' | wc -c) chars\"; done; ...",
+      "input_chars": 227,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SUEBVfN3z79m9z2D11RRws",
+      "is_error": false,
+      "output": "annual-report.pdf p1: 19 chars\nannual-report.pdf p2: 13 chars\nproject-brief.pdf p1: 21 chars\nproject-brief.pdf p2: 0 chars\nsigned-lease-scan.pdf p1: 22 chars\nsigned-lease-scan.pdf p2: 14 chars\nquarterly-report.pdf p1: 0 chars\nquarterly-report.pdf p2: 0 chars\n%PDF-1.4\n1 0 obj\n<< /Type /Catalog",
+      "output_chars": 293,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qg61Ds28EnMTMPZ4ocDwwj",
+      "name": "Bash",
+      "input": "cd <path> && cat > audit.md <<'EOF'\n# PDF OCR audit of `archive/`\n\nMethod: `pdftotext` per page (characters of extracted text), `pdfimages -list` (embedded images), `pdffonts`. 8 files checked.\n\n## Ne...",
+      "input_chars": 1729,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qg61Ds28EnMTMPZ4ocDwwj",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
