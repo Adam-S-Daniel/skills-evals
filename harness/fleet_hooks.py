@@ -249,6 +249,24 @@ def _set_writable(directory: Path, writable: bool) -> None:
         Path(current).chmod(0o755 if writable else 0o555)
 
 
+#: Where the guard hook's fixed `PATH` (`guard_hooks`) can find `python3`.
+GUARD_PYTHON_PATHS = ("/usr/bin/python3", "/bin/python3")
+
+
+def guard_python_present() -> bool:
+    """Whether the guard's `env -i PATH=/usr/bin:/bin` can run `python3`."""
+    return any(os.path.isfile(p) and os.access(p, os.X_OK) for p in GUARD_PYTHON_PATHS)
+
+
+def harness_netns() -> str:
+    """The harness's network namespace id, the receipt the include compares."""
+    try:
+        return os.readlink("/proc/self/ns/net")
+    except OSError as exc:
+        raise context.ContextError("fleet_hooks_no_receipt", "this host has no network "
+                                   "namespace id to tell the arm's sandbox apart") from exc
+
+
 def materialize(hooks: HookSet, directory: Path, modules: Path) -> None:
     """Write the set, its modules, the include and the receipt, read-only."""
     directory.mkdir()
@@ -261,11 +279,7 @@ def materialize(hooks: HookSet, directory: Path, modules: Path) -> None:
     shutil.copytree(modules / "node_modules", root / "dated-phrasing" / "node_modules",
                     symlinks=True)
     (directory / INCLUDE).write_text(include_text(str(directory)), encoding="utf-8")
-    try:
-        receipt = os.readlink("/proc/self/ns/net")
-    except OSError as exc:
-        raise context.ContextError("fleet_hooks_no_receipt", "this host has no network "
-                                   "namespace id to tell the arm's sandbox apart") from exc
+    receipt = harness_netns()
     (directory / RECEIPT).write_text(receipt + "\n", encoding="utf-8")
     _set_writable(directory, False)
 

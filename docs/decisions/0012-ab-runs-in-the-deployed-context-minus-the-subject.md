@@ -391,15 +391,16 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   before, "the rest of the guidance covers it", though the fleet hooks
   may be what covers it; no hooked in-place guidance run reaches the
   gates yet.
-- **Known, for the stage 5 audit.** `fleet_hooks_origin_exists` and
-  `fleet_hooks_no_receipt` refuse at arm time, not at plan time, so the
-  first arm of a pair can be paid for before its sibling refuses.
-  `run_priors` groups by `fixture_digest`, not by the hook digest. The
-  live probe in the routine container and on the CI runner, showing that
-  a Bash command in the arm's sandbox sees a network namespace other than
-  the harness's, needs a real CLI call and waits for the first opt-in;
-  until then the receipt rests on the sandbox's `--unshare-net`, which the
-  tests stand in for with `bwrap --unshare-net`. The CLI was seen to
+- **Known, for the stage 5 audit.** `fleet_hooks_origin_exists` refuses
+  at arm time, not at plan time, because it depends on the seed's setup, so
+  the first arm of a pair can be paid for before its sibling refuses. Since
+  [#605](https://github.com/Adam-S-Daniel/skills-evals/issues/605), the plan
+  itself refuses a host without a namespace id (`fleet_hooks_no_receipt`),
+  without `python3` where the guard looks (`fleet_hooks_no_python`), or whose
+  managed settings set `disableAllHooks` or `allowManagedHooksOnly`
+  (`fleet_hooks_managed_hooks_off`). `run_priors` and the regression window
+  group by `fixture_digest` and the hook digest together. The receipt rests on the sandbox's `--unshare-net`, which the tests stand
+  in for with `bwrap --unshare-net`, and on the live probes below. The CLI was seen to
   rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
   pairs and setting `hook.<event>.enabled=false`). One live call on WSL
   (Claude Code 2.1.316, Git 2.54.0, sandbox on; 2026-11-02, recorded on
@@ -409,8 +410,7 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   included pre-commit hook fired, and it fired in a network namespace
   other than the launching process's. The cloud container probe (2026-11-03)
   matched it, and no Actions runner hosts a hooked arm; both are recorded in
-  [ADR 0016](0016-the-arm-sandboxs-network-namespace-marks-where-fleet-hooks-run.md). A managed
-  `disableAllHooks` would drop the guard without a word. And the agent can
+  [ADR 0016](0016-the-arm-sandboxs-network-namespace-marks-where-fleet-hooks-run.md). And the agent can
   still switch its own hooks off, by `git remote set-url origin` to a
   non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not
   intent, and CI's required `agent-checks` is the enforcement. In a

@@ -2454,6 +2454,27 @@ def managed_sandbox_refusal(files=None, dropins=None,
     return None
 
 
+def managed_hooks_refusal(files=None, dropins=None) -> str | None:
+    """Why the managed settings can silently drop the arm's PreToolUse guard
+    (#605), or None: `disableAllHooks` or `allowManagedHooksOnly` set to
+    anything but false. Names the file and key, never a value."""
+    for path in managed_settings_paths(files, dropins):
+        try:
+            settings = json.loads(Path(path).read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            return (f"managed settings file {path} cannot be read "
+                    f"({type(exc).__name__})")
+        if not isinstance(settings, dict):
+            return f"managed settings file {path} is not a JSON object"
+        for key in ("disableAllHooks", "allowManagedHooksOnly"):
+            if key in settings and settings[key] is not False:
+                return (f"managed settings file {path} sets {key}, which can "
+                        "drop the arm's PreToolUse guard")
+    return None
+
+
 # What the CLI and trusted delivery hook write, during a turn, under the directories
 # `_agent_config_dirs` names, as relative paths (fnmatch, `*` crossing `/`).
 # Measured with CLI 2.1.292 (strace of a two-turn arm with a Bash call, a
@@ -6013,7 +6034,16 @@ def _in_place_plan(fixture: dict, args: argparse.Namespace,
                                  Path(candidate).resolve().parent] if candidate else [])}
     if fixture.get(FLEET_HOOKS_KEY) is True:
         # The hooks the context deployed, proven against it (#535); both arms
-        # of every trial get this one set.
+        # of every trial get this one set. Host conditions first (#605), so a
+        # host that cannot run them refuses before any arm is paid for.
+        reason = managed_hooks_refusal()
+        if reason:
+            raise delivery.DeliveryError("fleet_hooks_managed_hooks_off", reason)
+        if not fleet_hooks.guard_python_present():
+            raise delivery.DeliveryError(
+                "fleet_hooks_no_python", "the guard hook runs under PATH=/usr/bin:/bin "
+                "and neither /usr/bin/python3 nor /bin/python3 is executable there")
+        fleet_hooks.harness_netns()
         plan["fleet_hooks"] = fleet_hooks.freeze(frozen, repositories,
                                                  guidance_subject=kind == "guidance")
     _check_context_summary(plan)

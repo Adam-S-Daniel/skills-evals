@@ -37,6 +37,7 @@ import fleet_hooks  # noqa: E402
 import gates  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
+import regression  # noqa: E402
 from test_issue_adr0012_delivery import Base, GUIDANCE_REPO, PRIMARY  # noqa: E402
 
 FLEET_CONSUMER = "Adam-S-Daniel/consumer"
@@ -961,3 +962,92 @@ class GuidanceRowPoolingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostGuardTests(HookBase):
+    """Host conditions a hooked plan refuses before any arm is paid for (#605)."""
+
+    def managed(self, content, name="managed-settings.json"):
+        path = Path(self.enterContext(tempfile.TemporaryDirectory())) / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    def test_managed_hooks_off_is_refused_naming_file_and_key(self):
+        for key, value in (("disableAllHooks", True), ("allowManagedHooksOnly", True),
+                           ("disableAllHooks", "yes")):
+            path = self.managed(json.dumps({key: value}))
+            reason = run_eval.managed_hooks_refusal(files=[path], dropins=[])
+            self.assertIn(str(path), reason)
+            self.assertIn(key, reason)
+            self.assertNotIn("yes", reason)
+
+    def test_managed_hooks_left_on_missing_files_and_other_keys_are_fine(self):
+        path = self.managed(json.dumps({"disableAllHooks": False, "model": "x"}))
+        missing = path.parent / "absent.json"
+        self.assertIsNone(run_eval.managed_hooks_refusal(files=[path, missing], dropins=[]))
+
+    def test_an_unreadable_or_non_object_managed_file_is_a_refusal(self):
+        for content in ("{not json", "[]"):
+            path = self.managed(content)
+            self.assertIn(str(path), run_eval.managed_hooks_refusal(files=[path], dropins=[]))
+
+    def test_a_dropin_is_read_too(self):
+        path = self.managed(json.dumps({"allowManagedHooksOnly": True}), "10-x.json")
+        self.assertIn("allowManagedHooksOnly",
+                      run_eval.managed_hooks_refusal(files=[], dropins=[path.parent]))
+
+    def test_plan_refuses_managed_hooks_off_only_for_a_hooked_fixture(self):
+        path = self.managed(json.dumps({"disableAllHooks": True}))
+        with mock.patch.object(run_eval, "MANAGED_SETTINGS_FILES", (path,)), \
+                mock.patch.object(run_eval, "MANAGED_SETTINGS_DROPINS", ()):
+            with self.assertRaises(run_eval.delivery.DeliveryError) as raised:
+                self.plan()
+            self.assertEqual(raised.exception.code, "fleet_hooks_managed_hooks_off")
+            self.assertNotIn("fleet_hooks", self.plan(hooks=False))
+
+    def test_plan_refuses_a_host_without_the_guards_python(self):
+        with mock.patch.object(fleet_hooks, "GUARD_PYTHON_PATHS", ("/nonexistent/python3",)):
+            with self.assertRaises(run_eval.delivery.DeliveryError) as raised:
+                self.plan()
+            self.assertEqual(raised.exception.code, "fleet_hooks_no_python")
+            self.assertNotIn("fleet_hooks", self.plan(hooks=False))
+
+    def test_plan_refuses_a_host_without_a_netns_id(self):
+        with mock.patch.object(fleet_hooks.os, "readlink", side_effect=OSError("no")):
+            with self.assertRaises(context.ContextError) as raised:
+                self.plan()
+            self.assertEqual(raised.exception.code, "fleet_hooks_no_receipt")
+
+
+class HookDigestGroupingTests(unittest.TestCase):
+    """Variance priors and regression windows start afresh when the hook
+    digest moves, though the fixture digest did not (#605)."""
+
+    def runs(self, hooks_digest):
+        from test_issue_69_regression import run
+        out = []
+        for day, passed in enumerate((4, 3), start=1):
+            record = run("a", "with", day, passed)
+            if hooks_digest:
+                record["fleet_hooks_digest"] = hooks_digest
+            out.append(record)
+        return out
+
+    def test_run_priors_group_by_hook_digest(self):
+        first, second = self.runs(None)
+        self.assertNotEqual(gates.run_priors([first, second])["objective"],
+                            gates.FALLBACK_PRIOR_VARIANCE)
+        # Two groups of one run each measure no variance: the fallback.
+        apart = gates.run_priors([first, {**second, "fleet_hooks_digest": "h" * 64}])
+        self.assertEqual(apart["objective"], gates.FALLBACK_PRIOR_VARIANCE)
+
+    def test_regression_keeps_the_newest_runs_fixture_and_hook_digest(self):
+        from test_issue_69_regression import POLICY, series
+        old = series("a", [4, 4, 4], first=1)
+        new = series("a", [2, 2, 2], first=4)
+        for record in new:
+            record["fleet_hooks_digest"] = "h" * 64
+        row = regression._row("skill", "a", None, "model", None, old + new,
+                              POLICY)
+        self.assertEqual(len(row["windows"]["previous"]) + len(row["windows"]["current"]), 3)
+        self.assertEqual(row["verdict"], "insufficient")
