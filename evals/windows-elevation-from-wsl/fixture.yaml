@@ -56,10 +56,15 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # this headroom is also what a longer description has to fit in. 11 eligible
 # guidance revisions matched the shipped bytes; the pin is the newest (then
 # the smallest SHA).
+# Re-pinned 2026-11-03 from 9303b57d (2026-10-08, flagged by the explorer's
+# context-drift alert and older than the fleet hook runner) to main at
+# 50d66105, guidance proven at 570544a8 (26 eligible revisions matched; the
+# newest was chosen). Measured then: context 25528, 7447, 688780; with arm
+# 25528, 7987, 698461 bytes. Both fit the limits below, which are unchanged.
 context:
   repository: Adam-S-Daniel/wsl-automation
-  revision: 9303b57da1bfd5bccd529dd5d36bf71dda72c60f
-  guidance_revision: 6d2415b4d0704acf7619b46f4c01479fd01f978e
+  revision: 50d661059e67ae65610115eb009bd0f03dc0f851
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 8975

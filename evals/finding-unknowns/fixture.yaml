@@ -11,10 +11,15 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # Nine eligible guidance ancestors matched the deployed bytes exactly. The
 # selected match has the greatest committer timestamp, breaking ties by the
 # lexicographically smallest SHA.
+# Re-pinned 2026-11-03 from 9db7bb39 (2026-10-08, older than the fleet hook
+# runner) to main at e6e9496b, guidance proven at 570544a8 (26 eligible
+# revisions matched; the newest was chosen). Measured then: guidance 25528
+# bytes, still no adopted skill; the with arm adds 763 catalog and 14235
+# payload bytes. All fit the limits below, which are unchanged.
 context:
   repository: Adam-S-Daniel/skills-evals
-  revision: 9db7bb3956453f32705d3f9db672900714b3c216
-  guidance_revision: b0abbe7dc97eca0a2624bfa9695b0d98b774cef2
+  revision: e6e9496b878f4d7b07f0bea08ef6920250de1e21
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
   budget:
     guidance_bytes: 31374
     skill_catalog_bytes: 954
