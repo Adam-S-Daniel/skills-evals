@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T04:56:38Z",
+ "generated_at": "2026-11-03T05:00:15Z",
  "guidance": {
   "removed": [
    {
@@ -1563,7 +1563,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 11,
+    "current_text_runs": 13,
     "heading": "Security",
     "id": "security",
     "next_test": {
@@ -1573,6 +1573,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:49:05Z",
+      "cli_version": "2.1.317",
+      "fixture": "search-query",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.3462087,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.34615789999999996,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0789814,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.08492900000000002,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T044905Z/report.md"
+     },
      {
       "at": "2026-11-03T04:21:57Z",
       "cli_version": "2.1.317",
@@ -2955,7 +2992,7 @@
      "helps": 0.17667279633252575,
      "no_help": 0.0
     },
-    "current_text_runs": 12,
+    "current_text_runs": 14,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -2965,6 +3002,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:49:09Z",
+      "cli_version": "2.1.317",
+      "fixture": "open-pull-request",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.19610860000000002,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.197958,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.0862744,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.1226218,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261103T044909Z/report.md"
+     },
      {
       "at": "2026-11-03T04:21:53Z",
       "cli_version": "2.1.317",
@@ -3267,16 +3341,53 @@
      "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
     "id": "github-404-means-not-authorized",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 20,
+     "position": 21,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:44:19Z",
+      "cli_version": "2.1.317",
+      "fixture": "private-repo-404",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.17047219999999996,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.16026420000000002,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1106188,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.11122119999999999,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261103T044419Z/report.md"
+     },
      {
       "at": "2026-11-03T04:16:56Z",
       "cli_version": "2.1.317",
@@ -3478,7 +3589,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
     "id": "fleet-spans-two-owners",
     "next_test": {
@@ -3488,6 +3599,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:43:04Z",
+      "cli_version": "2.1.317",
+      "fixture": "skills-lock-census",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.1886628,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.172963,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.10828979999999999,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.11765379999999998,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261103T044304Z/report.md"
+     },
      {
       "at": "2026-11-03T04:15:43Z",
       "cli_version": "2.1.317",
@@ -4185,7 +4333,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Dependency updates",
     "id": "dependency-updates",
     "next_test": {
@@ -4195,6 +4343,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:47:02Z",
+      "cli_version": "2.1.317",
+      "fixture": "dependabot-cooldown",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.177099585,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.15636479999999997,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 4,
+        "cost_usd": 0.07868979999999999,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0827472,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261103T044702Z/report.md"
+     },
      {
       "at": "2026-11-03T04:19:36Z",
       "cli_version": "2.1.317",
@@ -5044,7 +5229,7 @@
      "helps": 0.5883363981662628,
      "no_help": 0.0
     },
-    "current_text_runs": 11,
+    "current_text_runs": 13,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
@@ -5054,6 +5239,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:45:33Z",
+      "cli_version": "2.1.317",
+      "fixture": "stop-worker",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.25234109,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.20037154000000001,
+        "judge_mean": 4.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.1047602,
+        "judge_mean": 3.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.16102719999999998,
+        "judge_mean": 9.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261103T044533Z/report.md"
+     },
      {
       "at": "2026-11-03T04:17:49Z",
       "cli_version": "2.1.317",
@@ -5822,7 +6044,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 23,
+     "position": 20,
      "scheduled": true
     },
     "runs": [
@@ -6058,22 +6280,59 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": "keep",
     "bytes": 447,
     "confidence": {
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Docker",
     "id": "section-docker",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 21,
+     "position": 22,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:50:26Z",
+      "cli_version": "2.1.317",
+      "fixture": "node-service",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.18873720000000002,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.20739843000000002,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.12602619999999998,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.12241439999999999,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-docker/20261103T045026Z/report.md"
+     },
      {
       "at": "2026-11-03T04:23:00Z",
       "cli_version": "2.1.317",
@@ -6686,16 +6945,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Python",
     "id": "section-python",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 22,
+     "position": 23,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T04:46:01Z",
+      "cli_version": "2.1.317",
+      "fixture": "load-config",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.220955655,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.21817854,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0900466,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.11236020000000001,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261103T044601Z/report.md"
+     },
      {
       "at": "2026-11-03T04:18:18Z",
       "cli_version": "2.1.317",
@@ -7166,7 +7462,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T04:41:52Z",
+ "newest_run": "2026-11-03T04:50:26Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -14079,7 +14375,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "651b742ca80c91a03afe877398b92de399d868c1",
-  "results_commit": "7eb3a460982a0b2b06715e027af32e3a55e5d8d0"
+  "results_commit": "8f4d600203be45b950c8715d0875e6e927917f57"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
