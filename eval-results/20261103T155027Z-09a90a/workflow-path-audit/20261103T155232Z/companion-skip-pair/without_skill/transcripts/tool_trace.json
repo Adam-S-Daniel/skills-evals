@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HLTQygVRUxnJkEdckXG1az",
+      "name": "Bash",
+      "input": "git log --oneline | head -3; ls .github/workflows; grep -n -B1 -A8 -E '^\\s*(paths|paths-ignore):|^on:' .github/workflows/*.yml | head -300; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 176,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HLTQygVRUxnJkEdckXG1az",
+      "is_error": false,
+      "output": "25ef9a4 initial commit\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml\n.github/workflows/docs-site.yml-2-\n.github/workflows/docs-site.yml:3:on:\n.github/workflows/docs-site.yml-4-  pull_request:\n.github/workflows/docs-site.yml:5:    paths:\n.github/workflows/docs-site.yml-6-      - \"docs/**\"\n...",
+      "output_chars": 2878,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018pZ1iL2YeB3gUQHogXtfoL",
+      "name": "Bash",
+      "input": "git ls-files | head -80; for f in .github/workflows/*.yml; do echo \"=== $f\"; cat $f; done; cat .github/rulesets/main.json",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018pZ1iL2YeB3gUQHogXtfoL",
+      "is_error": false,
+      "output": ".editorconfig\n.gh/replay/api/repos/example-org/example-service/rules/branches/main.json\n.gh/replay/api/repos/example-org/example-service/rulesets.json\n.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json\n.gh/replay/auth-status.txt\n.gh/replay/repo-view.json\n.gh/replay/ruleset-list.j...",
+      "output_chars": 3726,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AJQ14wccDSSCKEpczkVjes",
+      "name": "Bash",
+      "input": "cat package.json mkdocs.yml; cat test/*.js | head -40; grep -rn -E \"require|import|readFile|\\.\\./\" src test | head -20; grep -n -iE \"docs|\\.\\./|include|snippet\" mkdocs.yml docs/*.md; cat .editorconfig...",
+      "input_chars": 207,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AJQ14wccDSSCKEpczkVjes",
+      "is_error": false,
+      "output": "{\n  \"name\": \"example-service\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"start\": \"node src/index.js\",\n    \"test\": \"node --test test/\"\n  }\n}\nsite_name: Example Service\nsite_url: https://docs.example.com/\ndocs_dir: docs\n\nnav:\n  - Home: index.md\n  - Guide: g...",
+      "output_chars": 1186,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UjfCJcwr6TJZ6q7SeHoNvc",
+      "name": "Bash",
+      "input": "cat .gh/replay/repo-view.json; cat scripts/sweep-stale.sh | head -20",
+      "input_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UjfCJcwr6TJZ6q7SeHoNvc",
+      "is_error": false,
+      "output": "{\n  \"name\": \"example-service\",\n  \"nameWithOwner\": \"example-org/example-service\",\n  \"owner\": {\n    \"login\": \"example-org\"\n  },\n  \"defaultBranchRef\": {\n    \"name\": \"main\"\n  }\n}\n#!<path> bash\n# Close issues with no activity for 60 days. Runs on the nightly schedule only.\nset -euo pipefail\n\necho \"sweepi...",
+      "output_chars": 445,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
