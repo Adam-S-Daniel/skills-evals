@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T18:39:50Z",
+  "generated_at": "2026-11-03T18:45:39Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T18:38:30Z",
+ "generated_at": "2026-11-03T18:43:05Z",
  "guidance": {
   "removed": [
    {
@@ -9697,7 +9697,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T18:28:41Z",
+ "newest_run": "2026-11-03T18:40:52Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13849,7 +13849,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 22,
+   "current_text_runs": 23,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -13860,6 +13860,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T18:40:13Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T182051Z-6460a0/github-actions-sha-pinning/20261103T184013Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.1349381,
+      "judge_mean": 9.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.1085913,
+      "judge_mean": 8.8,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T18:02:50Z",
      "cli_version": "2.1.317",
@@ -15523,7 +15544,7 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": 0.9986595040094987,
+    "helps": 0.9987513407922415,
     "no_help": 0.0
    },
    "copies": {
@@ -15538,7 +15559,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 16,
+   "current_text_runs": 17,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -15549,6 +15570,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T18:40:52Z",
+     "cli_version": "2.1.317",
+     "fixture": "release-pipeline",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T181347Z-0715ed/review-bash-ci-reliability/20261103T184052Z/report.md",
+     "with": {
+      "checks_passed": 11,
+      "checks_total": 11,
+      "cost_usd": 0.1469884,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 11,
+      "cost_usd": 0.0871721,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T18:28:41Z",
      "cli_version": "2.1.317",
@@ -20175,7 +20217,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "cdbf6eb24ed24f0edf66f2f28b9e271665205642",
-  "results_commit": "37af5bfbb1987dbd80b83eb769b7bbf72fa00005"
+  "results_commit": "0fa2ec04c56f0e46a0e99455df6fdafbf428c3a7"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
