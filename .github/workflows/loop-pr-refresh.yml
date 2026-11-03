@@ -65,6 +65,11 @@ jobs:
           path: skills-evals
           persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
       - name: Mint the registry App token (adam-agentskills only)
         id: registry-token
         continue-on-error: true

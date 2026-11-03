@@ -30,6 +30,7 @@ workflows:
     '.github/workflows/loop-pr-refresh.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
+        - 'actions/setup-python@v7.1.0'
     '.github/workflows/propagation.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
