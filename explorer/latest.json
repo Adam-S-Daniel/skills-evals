@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T17:02:23Z",
+ "generated_at": "2026-11-03T17:15:59Z",
  "guidance": {
   "removed": [
    {
@@ -9317,7 +9317,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:58:58Z",
+ "newest_run": "2026-11-03T17:13:31Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -15954,7 +15954,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
@@ -15965,6 +15965,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T17:13:31Z",
+     "cli_version": "2.1.317",
+     "fixture": "preview-before-delete",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T170941Z-0c548f/tool-powershell/20261103T171331Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 4,
+      "cost_usd": 0.11398799999999999,
+      "judge_mean": 7.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.0760827,
+      "judge_mean": 9.7,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T16:51:59Z",
      "cli_version": "2.1.317",
@@ -18978,7 +18999,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "d7f6435dbbdf61311a98ff6d9f30fd3172b62030",
-  "results_commit": "0e88e16282116e4ea0dfadff2a2da0637bde29b6"
+  "results_commit": "a1723395aefea0820b483b370d4f09f8b50dac90"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
