@@ -20,7 +20,10 @@ name: Weekly routine evals
 #   retirement verdicts as scripts/compute_gates.py does, and reads the
 #   GitHub evidence (fire runs, improve and guidance-improve branches,
 #   adam-agentskills and _agent-guidance pull requests, open on-hold
-#   issues) with its read-only token. A read failure
+#   issues) with its read-only token. With the read-only registry App it
+#   also reads the session miner's `skill-edit` lessons from
+#   adam-agentskills-private's persistent/lessons, as an evidence count per
+#   public skill that boosts its improve value (#657). A read failure
 #   plans nothing (fail closed). When nothing fits, `count` is 0 and the
 #   dispatch job is skipped.
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
@@ -162,6 +165,34 @@ jobs:
           persist-credentials: false
           sparse-checkout: plugins
           token: ${{ steps.private-token.outputs.token }}
+      # The session miner's skill-edit lessons (#657) boost a public skill's
+      # improve candidate (plan_week.py, SKILL-EDIT LESSONS). Data only, from
+      # persistent/lessons; plan_week reads the newest day's skill-edit
+      # proposals for an evidence count and nothing else. No branch (or no
+      # App) plans without them.
+      - name: Look for the lessons branch
+        id: lessons-branch
+        if: steps.private-token.outputs.token != ''
+        env:
+          PRIVATE_READ_TOKEN: ${{ steps.private-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if GH_TOKEN="$PRIVATE_READ_TOKEN" gh api repos/Adam-S-Daniel/adam-agentskills-private/branches/persistent/lessons \
+               --silent 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out the lessons (data only)
+        if: steps.lessons-branch.outputs.exists == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/lessons
+          path: private-lessons
+          persist-credentials: false
+          sparse-checkout: lessons/proposals
+          token: ${{ steps.private-token.outputs.token }}
       - name: Check out adam-agentskills
         uses: actions/checkout@v7.0.1
         with:
@@ -206,6 +237,9 @@ jobs:
           private=()
           if [ -d registry-private/plugins ]; then
             private=(--registry "adam-agentskills-private=$GITHUB_WORKSPACE/registry-private")
+          fi
+          if [ -d private-lessons/lessons/proposals ]; then
+            private+=(--lessons "$GITHUB_WORKSPACE/private-lessons/lessons/proposals")
           fi
           python3 scripts/plan_week.py plan --results-tree eval-results-branch \
             --as-of "$as_of" --max-fires 30 \

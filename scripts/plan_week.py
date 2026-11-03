@@ -139,7 +139,8 @@ THE BANDS (rule D), in order:
   cell at all the plan is not held.
   5. improvements, at least 20%: improve fires for eligible skills and
      guidance-improve fires for eligible guidance sections, highest
-     potential value first: value = use x headroom / cost, ties by name.
+     potential value first: value = use x headroom / cost, ties by name;
+     a skill's times its skill-edit lesson boost (SKILL-EDIT LESSONS).
        use: a skill's usage weight (harness/skill_usage.py, `skill_weights`:
          invocations over 4 weeks); a guidance section's is the census's
          transcript sessions scanned scaled to 28 days by its window
@@ -292,14 +293,23 @@ WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
 `routine-down` (change type None: the routine failed, not a subject; see
 EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
-fire workflow refuses, see above), and `agent-check` items
-read from `--lessons` (lesson proposals
-of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
-which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
-hooks are the first choice whenever possible, so they lead the work list).
-Every item carries `change_type`: `skill-edit` for an improve fire,
-`guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`,
-`trigger`, or None for `routine-outage` and `routine-down`.
+fire workflow refuses, see above). Every item carries `change_type`:
+`skill-edit` for an improve fire, `guidance-edit` for a guidance-improve
+fire, `fixture`, `trigger`, or None for `routine-outage` and
+`routine-down`. Lesson proposals of kind `agent-check` are not planned
+here: _agent-guidance's fleet worker reads them (its ADR 0027), so a
+second reader would file each twice (#657).
+
+SKILL-EDIT LESSONS (#657). `--lessons DIR` is adam-agentskills-private's
+`lessons/proposals/` from `persistent/lessons`, read by
+scripts/lesson_evidence.py: the newest day's `skill-edit` proposals whose
+subject is `skill:<name>`, as `{name: evidence_count}`. A public skill's
+improve candidate with such evidence has its value multiplied by
+1 + min(count, SKILL_EDIT_BOOST_CAP) / SKILL_EDIT_BOOST_CAP, so real-session
+evidence can at most double it; it never makes an ineligible skill eligible
+and never gives an unknown value one. The ranking row carries the count as
+`lesson_evidence`. A private skill gets no candidate, so no count of it is
+published.
 
 THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
 weeks over about 72,000 model turns, so most skills almost never trigger).
@@ -326,7 +336,7 @@ artifact. $GITHUB_OUTPUT gets `matrix=`
 (the fires, improve and guidance-improve fires last so a long improve run
 never holds up the evals behind it; every leg carries `section`, empty but
 for a guidance-improve leg) and `count=`. The log and job summary carry numbers and
-public skill names only: agent-check items are counted, never quoted.
+public skill names only.
 
 FIRE CHECK. `guidance-headroom SECTION` is routine-eval-fire.yml's check
 before a guidance-improve fire: the same rule A headroom over the same
@@ -372,6 +382,7 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 
 import allowance_guard as guard  # noqa: E402
 import improve_outcomes as outcomes_mod  # noqa: E402
+import lesson_evidence  # noqa: E402
 import plan_scheduled_evals as schedule  # noqa: E402
 import routine_deadlines  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
@@ -518,7 +529,9 @@ WATCHDOG_MARGIN = timedelta(minutes=2)
 WATCHDOG_MAX_WAIT = 3300
 WEEKLY_WORKFLOW = "routine-eval-weekly.yml"
 WATCHDOG_WORKFLOW = "routine-eval-watchdog.yml"
-LESSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+#: A skill-edit lesson's boost reaches its full x2 at this evidence count
+#: (#657; module docstring, SKILL-EDIT LESSONS).
+SKILL_EDIT_BOOST_CAP = 3
 #: The trigger lane: a skill whose fresh usage weight (invocations over
 #: skill_usage.weight's four weeks) is at most this rarely triggers at all.
 TRIGGER_MAX_WEIGHT = 1
@@ -1160,6 +1173,12 @@ def neutral_weights(raw: dict) -> dict:
     return {skill: neutral if w is None else w for skill, w in raw.items()}
 
 
+def lesson_boost(count: int) -> float:
+    """The improve value multiplier for `count` skill-edit lessons: 1 with
+    none, 2 at SKILL_EDIT_BOOST_CAP or more (module docstring)."""
+    return 1 + min(max(count, 0), SKILL_EDIT_BOOST_CAP) / SKILL_EDIT_BOOST_CAP
+
+
 def value_of(use, headroom, cost) -> float | None:
     """The potential value of an improvement: expected uses over the usage
     window times train headroom, per allowance point spent. None when any
@@ -1204,6 +1223,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     neutral = neutral_weights({**{n: raw.get(n) for n in ctx["skills"]}, "": None})[""]
     fires, work, status = [], [], {}
     candidates = []
+    lessons = ctx.get("skill_edit_lessons") or {}
     for name, skill in sorted(ctx["skills"].items()):
         evidence = skill["evidence"]
         headroom = evidence["headroom"]
@@ -1235,7 +1255,8 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                            "use_known": raw.get(name) is not None, "headroom": headroom,
                            "cost": cost_estimate(ctx, "skill", name),
                            "eligible": not reasons, "reasons": reasons,
-                           "fixtures": skill["fixtures"], "holdout": skill["holdout"]})
+                           "fixtures": skill["fixtures"], "holdout": skill["holdout"],
+                           "lessons": lessons.get(name, 0)})
     guidance_use = ctx.get("guidance_use")
     gstatus, gitems = {}, []
     for section, info in sorted((ctx.get("guidance") or {}).items()):
@@ -1266,11 +1287,17 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     ranking = []
     for c in candidates:
         cost = fallback if c["cost"] is None else c["cost"]
-        ranking.append({"subject": c["subject"], "name": c["name"],
-                        "value": value_of(c["use"], c["headroom"], cost), "use": c["use"],
-                        "use_known": c["use_known"], "headroom": c["headroom"], "cost": cost,
-                        "cost_known": c["cost"] is not None, "eligible": c["eligible"],
-                        "reasons": c["reasons"]})
+        base = value_of(c["use"], c["headroom"], cost)
+        row = {"subject": c["subject"], "name": c["name"],
+               "value": base, "use": c["use"],
+               "use_known": c["use_known"], "headroom": c["headroom"], "cost": cost,
+               "cost_known": c["cost"] is not None, "eligible": c["eligible"],
+               "reasons": c["reasons"]}
+        if c["subject"] == "skill":
+            row["lesson_evidence"] = c["lessons"]
+            if base is not None:
+                row["value"] = base * lesson_boost(c["lessons"])
+        ranking.append(row)
     ranking.sort(key=lambda r: (r["value"] is None, -(r["value"] or 0.0), r["name"]))
     value = {(r["subject"], r["name"]): r["value"] for r in ranking}
     for c in candidates:
@@ -1378,24 +1405,6 @@ def trigger_items(ctx: dict) -> tuple:
     hooks = sorted(name for name, info in ctx.get("triggers", {}).items()
                    if info["hook_candidate"])
     return work, hooks
-
-
-def lesson_items(lessons: list) -> list:
-    """Agent-check work items from lesson proposals, most evidence first."""
-    items = []
-    for lesson in lessons:
-        if not isinstance(lesson, dict) or lesson.get("kind") != "agent-check" \
-                or lesson.get("schema_version") != 1:
-            continue
-        ident, count = lesson.get("id"), lesson.get("evidence_count")
-        if not isinstance(ident, str) or not LESSON_ID_RE.fullmatch(ident) \
-                or isinstance(count, bool) or not isinstance(count, int) or count < 1 \
-                or not isinstance(lesson.get("subject"), str):
-            continue
-        items.append({"kind": "agent-check", "change_type": "agent-check", "id": ident,
-                      "subject": lesson["subject"], "evidence_count": count,
-                      "route": "fleet worker, agent-ready issue (.githooks/agent-checks)"})
-    return sorted(items, key=lambda i: (-i["evidence_count"], i["id"]))
 
 
 def allocate(bands: dict, room: float, max_fires: int) -> list:
@@ -1580,8 +1589,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             # THE BATCH: None before the policy's start; `started` tells the
             # weekly workflow to publish `record` to BATCH_RECORD.
             "batch": None if batch is None else {**batch, "outside": outside},
-            # Hook items first, trigger items just before improve's.
-            "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
+            # Trigger items just before improve's.
+            "work": triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
             "hook_candidates": hooks, "real_work": ctx.get("real_work", []),
             # An eval leg sends no skill and no section, and only a
@@ -2335,20 +2344,6 @@ def guidance_prs(rows: list) -> tuple:
     return improve, sorted(removal)
 
 
-def read_lessons(directory: Path | None) -> list:
-    if directory is None:
-        return []
-    lessons = []
-    for path in sorted(directory.rglob("*.json")):
-        try:
-            if path.is_symlink() or path.stat().st_size > 64 * 1024:
-                continue
-            lessons.append(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
-            continue
-    return lessons
-
-
 def private_skills(evals_dir: Path) -> frozenset:
     """The skills with a fixture in the private registry (`registry:` is
     PRIVATE_REGISTRY_URL). The public census never counts them, so their
@@ -2502,7 +2497,7 @@ def gather(args, now: datetime) -> dict:
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
                                            now, private_skills(evals_dir)),
-            "lessons": read_lessons(args.lessons),
+            "skill_edit_lessons": lesson_evidence.skill_evidence(args.lessons, "skill-edit"),
             # THE BATCH: only with --batch-policy (the weekly workflow's).
             "batch_policy": (load_batch_policy(args.batch_policy)
                              if args.batch_policy is not None else None),
@@ -2789,7 +2784,8 @@ def main(argv: list | None = None) -> int:
                    help="an _agent-guidance checkout: the guidance sections' content")
     p.add_argument("--budget", type=Path, default=None)
     p.add_argument("--evidence", type=Path, default=None)
-    p.add_argument("--lessons", type=Path, default=None)
+    p.add_argument("--lessons", type=Path, default=None,
+                   help="adam-agentskills-private lessons/proposals/ (skill-edit lessons)")
     p.add_argument("--max-fires", type=int, default=30)
     p.add_argument("--out", type=Path, default=None)
     p.add_argument("--ranking-out", type=Path, default=None,
