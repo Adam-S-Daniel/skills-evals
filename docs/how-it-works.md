@@ -258,8 +258,9 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
 4. **Guidance focus** (at least 15%): the undecided guidance cells (no run,
    or not yet decided) of the two sections nearest a verdict, below.
 5. **Improvements** (at least 20%): skills with four or more fixtures, train
-   headroom, a check that fails often but can pass, no retirement verdict,
-   and no pause, ordered by potential value: expected uses over four weeks
+   headroom, a check that fails often but can pass, not owned by retirement
+   (its verdict is `retire` or `retire-pending`, or a removal pull request is
+   open for it), and no pause, ordered by potential value: expected uses over four weeks
    times train headroom, per allowance point an improve run costs (three
    trials of every fixture at its historical fire cost; an unknown use or
    cost is neutral, an unknown headroom ranks last). Fleet-guidance sections
@@ -277,6 +278,7 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
+   A skill or guidance section owned by retirement gets neither item.
 6. **Re-checks**: decided cells not measured for eight weeks (four for a
    high-stakes subject).
 

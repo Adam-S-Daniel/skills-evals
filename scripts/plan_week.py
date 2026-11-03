@@ -235,7 +235,8 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      adam-agentskills (the one registry the routine checks out); the first
      by name is the fixed holdout, passed as `holdout` so the proposer never
      sees it. Fewer fixtures with train headroom is a `needs-fixtures` work
-     item instead, ranked by headroom.
+     item instead, ranked by headroom, unless retirement owns the skill
+     (rule 4).
   2. train headroom: 1 - the pooled with-arm pass rate over the other
      fixtures is at least `MIN_GAIN` (propose_skill_edit's default gain). A
      skill below it (one that already passes at least 90% of its checks) can
@@ -245,8 +246,10 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   3. a target: some train check fails in at least 25% of at least 6 scored
      with-arm trials, at least twice, and has passed at least once in some
      arm. Infrastructure trials are not evidence (gates.trial_record).
-  4. not owned by retirement: its verdict is not `retire` or
-     `retire-pending`.
+  4. not owned by retirement (`retirement_owner`): owned means its verdict
+     is `retire` or `retire-pending`, or a `retire-skill/<skill>` pull
+     request is open in adam-agentskills. An owned skill gets no
+     `needs-fixtures` or `needs-harder-fixtures` item either.
   5. not paused (rule C, `pause`): no open improve pull request
      (`eval-improve/<skill>` in adam-agentskills), no attempt in flight, no
      open issue or pull request labeled `on-hold` whose title names the
@@ -258,8 +261,11 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   eligible with at least `MIN_IMPROVE_FIXTURES` such fixtures (the last in
   name order is the holdout, as the proposer picks it), train headroom of at
   least `MIN_GAIN` over its pooled in-situ `full` arm runs, and a guidance
-  verdict (the verdict document's `guidance` half) that is not `retire` or
-  `retire-pending`, an `eval-coverage.yml` row that is not `skipped` (the
+  not owned by retirement (`retirement_owner` with `subject="guidance"`: a
+  guidance verdict, the verdict document's `guidance` half, of `retire` or
+  `retire-pending`, or an open `retire-guidance/<section>` pull request in
+  _agent-guidance; an owned section gets no fixture work item either), an
+  `eval-coverage.yml` row that is not `skipped` (the
   proposer refuses one), and not paused: `pause` keyed by section over the
   guidance-improve outcomes (scripts/improve_outcomes.py, mode
   `guidance-improve`) and the `eval-guidance-improve/<section>` pull
@@ -1405,19 +1411,30 @@ def cost_estimate(ctx: dict, subject: str, name: str) -> float | None:
     return IMPROVE_TRIALS * sum(sum(v) / len(v) for v in per_fixture.values())
 
 
-def retirement_owner(ctx: dict, name: str, skill: dict | None = None) -> str | None:
+def retirement_owner(ctx: dict, name: str, skill: dict | None = None,
+                     subject: str = "skill") -> str | None:
     """Why retirement owns skill `name`, or None. One rule for every lane that
     edits a skill or asks for work on it: the gates document's verdict
     (ctx["gate_verdicts"], which keeps a skill whose fixtures are all
     scope-paused) when gather supplied it, else `skill["verdict"]`; `retire`
     and `retire-pending` own it, and so does an open `retire-skill/<skill>`
-    pull request (ctx["removal_prs"]), whatever the verdict now reads."""
-    verdicts = ctx.get("gate_verdicts")
-    verdict = (verdicts.get(name) if verdicts is not None
-               else (skill or ctx["skills"].get(name, {})).get("verdict"))
+    pull request (ctx["removal_prs"]), whatever the verdict now reads.
+
+    With `subject="guidance"`, `name` is a guidance section and the same rule
+    reads its verdict from `skill` (the section's ctx["guidance"] entry) and
+    its open `retire-guidance/<section>` pull requests from
+    ctx["guidance_removal_prs"]."""
+    if subject == "guidance":
+        verdict = (skill or (ctx.get("guidance") or {}).get(name, {})).get("verdict")
+        removals = ctx.get("guidance_removal_prs")
+    else:
+        verdicts = ctx.get("gate_verdicts")
+        verdict = (verdicts.get(name) if verdicts is not None
+                   else (skill or ctx["skills"].get(name, {})).get("verdict"))
+        removals = ctx.get("removal_prs")
     if verdict in ("retire", "retire-pending"):
         return f"owned by retirement ({verdict})"
-    if name in (ctx.get("removal_prs") or ()):
+    if name in (removals or ()):
         return "owned by retirement (open removal PR)"
     return None
 
@@ -1480,8 +1497,9 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append("no train headroom")
         if info["fixtures"] < MIN_IMPROVE_FIXTURES:
             reasons.append(f"{info['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
-        if info["verdict"] in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({info['verdict']})")
+        owner = retirement_owner(ctx, section, info, subject="guidance")
+        if owner:
+            reasons.append(owner)
         if info.get("row_ok") is False:
             reasons.append("its eval-coverage.yml row is skipped or missing")
         if not reasons and info.get("pause"):
@@ -1493,7 +1511,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                            "use_known": guidance_use is not None, "headroom": headroom,
                            "cost": cost_estimate(ctx, "guidance", section),
                            "eligible": not reasons, "reasons": reasons})
-        gitems.append((section, info, headroom, reasons))
+        gitems.append((section, info, headroom, reasons, owner))
     known = sorted(c["cost"] for c in candidates if c["cost"] is not None)
     fallback = (known[len(known) // 2] if len(known) % 2
                 else (known[len(known) // 2 - 1] + known[len(known) // 2]) / 2) \
@@ -1528,7 +1546,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     # highest value first; a work item only when the fire workflow's section
     # pattern refuses its id.
     guidance_work, fired = [], None
-    for section, info, headroom, reasons in sorted(
+    for section, info, headroom, reasons, owner in sorted(
             gitems, key=lambda g: (value[("guidance", g[0])] is None,
                                    -(value[("guidance", g[0])] or 0.0), g[0])):
         v = value[("guidance", section)]
@@ -1548,10 +1566,11 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "cost": ctx["improve_charge"], "change_type": "guidance-edit",
                           "band": "improve", "value": v,
                           "order": (v is None, -(v or 0.0), section)})
-        elif headroom is not None and info["verdict"] not in ("retire", "retire-pending") \
+        elif headroom is not None and owner is None \
                 and (headroom < MIN_GAIN or info["fixtures"] < MIN_IMPROVE_FIXTURES):
             # A paused section, or one whose manifest row is skipped, needs
-            # no fixture work; its reason is in `gstatus`.
+            # no fixture work; its reason is in `gstatus`. Neither does one
+            # retirement owns (`retirement_owner`).
             kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
             guidance_work.append({
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,

@@ -644,3 +644,25 @@ Major finding off the removal side.
   its checks. Unreachable today (`retirement_mode: proposal`); the fix is to
   re-read the verdict in the PR's checks or have the coverage job disarm and
   close the PR.
+
+### Adversarial round 9 (2026-11-03)
+
+The ninth round found no path to a wrong automatic removal (round 8's lane fuzz
+clean over 150 trials, a new context-level fuzz over 10,000 subjects) and three
+minor findings.
+
+- *m1:* the guidance half of `improve_items` filed `needs-fixtures` and
+  `needs-harder-fixtures` agent-ready issues for a section with an open
+  `retire-guidance/<section>` PR, because it judged ownership from the verdict
+  alone (pre-existing on main). `retirement_owner` now takes
+  `subject="guidance"` and reads the section's verdict and
+  `guidance_removal_prs`, so a section is owned the same way a skill is, and its
+  status says "owned by retirement (open removal PR)". The fuzz now finds no
+  guidance violation; tests with a no-PR control.
+- *m2:* a test pins that an open removal PR suppresses a skill's
+  `needs-harder-fixtures` item (verdict `insufficient`, four fixtures, headroom
+  0.05), killing the surviving mutation that narrowed that guard to the verdict.
+- *m3:* `plan_week.py`'s improve rules and `how-it-works.md` now say what the
+  code does: retirement owns a subject when its verdict is `retire` or
+  `retire-pending` or a removal PR is open, and an owned subject gets no
+  `needs-fixtures` or `needs-harder-fixtures` item.
