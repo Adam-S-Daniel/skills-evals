@@ -460,6 +460,32 @@ class WorkspaceGitBoundaryTests(_WorkspaceGitFixture, unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
             run_eval._git('diff', cwd=self.repo)
 
+    def test_the_cli_sandbox_info_directory_is_not_tampering(self):
+        # CLI 2.1.317 (2026-11-03) leaves an empty `.git/info/
+        # .claude-sandbox-noreplace` directory on every sandboxed launch, and
+        # every arm on it failed workspace_git_tampered. Only that empty,
+        # owned directory is ignored; anything else by that name still counts.
+        import workspace_git
+        placeholder = self.repo / '.git' / 'info' / '.claude-sandbox-noreplace'
+        workspace_git.seal(self.repo)
+        self.addCleanup(workspace_git.release, self.repo)
+        placeholder.mkdir()
+        self.assertIn('', run_eval._git('diff', cwd=self.repo).stdout)
+        (placeholder / 'payload').write_text('x\n')
+        with self.assertRaisesRegex(RuntimeError, r"'info/\.claude-sandbox-noreplace' added"):
+            run_eval._git('diff', cwd=self.repo)
+        (placeholder / 'payload').unlink()
+        placeholder.rmdir()
+        placeholder.write_bytes(b'')
+        with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+            run_eval._git('diff', cwd=self.repo)
+        placeholder.unlink()
+        hooks = self.repo / '.git' / 'hooks' / '.claude-sandbox-noreplace'
+        hooks.mkdir()
+        hooks.joinpath('pre-commit').write_text('#!/bin/sh\n')
+        with self.assertRaisesRegex(RuntimeError, 'workspace_git_tampered'):
+            run_eval._git('diff', cwd=self.repo)
+
     def test_the_refusal_names_what_changed(self):
         # 2026-11-03: an in-place arm failed with only "baseline
         # configuration, info, or hooks changed" and no trace survived, so

@@ -104,6 +104,26 @@ def _read_regular(path: Path) -> bytes:
         _refuse('metadata cannot be read as a regular file')
 
 
+# The empty directory Claude Code's Linux sandbox leaves at `.git/info/` from
+# CLI 2.1.317 (measured 2026-11-03: one launch with the arm's sandbox
+# settings and no tool call creates it; 2.1.316 did not). Like the 0-byte
+# files `_sandbox_placeholder` accepts, only the exact shape is ignored.
+_SANDBOX_NOREPLACE = '.claude-sandbox-noreplace'
+
+
+def _sandbox_dir_placeholder(path: Path) -> bool:
+    """Whether `path` is that empty sandbox directory: named
+    `_SANDBOX_NOREPLACE`, a real directory this user owns, and empty."""
+    if path.name != _SANDBOX_NOREPLACE:
+        return False
+    try:
+        info = os.lstat(path)
+        return (stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+                and not os.listdir(path))
+    except OSError:
+        return False
+
+
 def _digest(path: Path) -> str:
     digest = hashlib.sha256()
     if not path.exists() and not path.is_symlink():
@@ -114,6 +134,8 @@ def _digest(path: Path) -> str:
         digest.update(_read_regular(path))
     elif path.is_dir():
         for entry in sorted(path.rglob('*')):
+            if entry.parent == path and _sandbox_dir_placeholder(entry):
+                continue
             name = str(entry.relative_to(path)).encode()
             digest.update(len(name).to_bytes(8, 'big'))
             digest.update(name)
@@ -169,6 +191,8 @@ def _baseline_entries(gitdir: Path) -> dict[str, str]:
         if out[part] != 'directory':
             continue
         for entry in sorted(root.rglob('*')):
+            if entry.parent == root and _sandbox_dir_placeholder(entry):
+                continue
             out[f'{part}/{entry.relative_to(root)}'] = describe(entry)
     return out
 
