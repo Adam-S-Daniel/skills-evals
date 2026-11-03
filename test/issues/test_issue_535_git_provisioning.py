@@ -13,7 +13,8 @@ no hooks. It pins:
     older summary still ingests) and checks;
   * run_eval refuses a `fleet_hooks: true` fixture on an older Git with
     `git_too_old_for_fleet_hooks`, exit 2, before any CLI call;
-  * the weekly planner holds such a fixture ("git too old for fleet hooks").
+  * the weekly planner holds such a fixture ("git too old for fleet hooks")
+    until the newest ingested routine summary records Git 2.54 or later.
 
 The Git version is stubbed through `run_eval.git_version` or a stubbed
 `subprocess.run`; the host's Git is never changed. No network, no clock.
@@ -22,6 +23,7 @@ The Git version is stubbed through `run_eval.git_version` or a stubbed
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 import io
 import json
 import subprocess
@@ -46,6 +48,7 @@ from test_issue_routine_eval_ingest import STAMP, summary  # noqa: E402
 
 OLD = "git version 2.43.0"
 NEW = "git version 2.56.0"
+NOW = datetime(2026, 11, 3, tzinfo=timezone.utc)
 
 
 def completed(stdout: str, returncode: int = 0) -> subprocess.CompletedProcess:
@@ -266,35 +269,88 @@ class IngestTests(unittest.TestCase):
 
 
 class PlannerTests(unittest.TestCase):
+    """The hold reads the routine's Git, as its newest ingested summary
+    records it, never the planner host's (an Actions runner)."""
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(prefix="fleet-hooks-plan-")
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
         self.context = {"revision": "a" * 40, "guidance_revision": "b" * 40}
+        # The planner host's Git is never read.
+        host = mock.patch.object(run_eval, "git_version", side_effect=AssertionError("host Git"))
+        host.start()
+        self.addCleanup(host.stop)
 
-    def hold(self, doc: dict, version: str | None):
+    def hold(self, doc: dict, routine_git: str | None):
         (self.dir / "fixture.yaml").write_text(yaml.safe_dump(doc), encoding="utf-8")
-        with mock.patch.object(run_eval, "git_version", return_value=version) as read:
-            reason = plan_week.fixture_hold_reason(self.dir)
-        return reason, read.call_count
+        return plan_week.fixture_hold_reason(self.dir, routine_git)
 
-    def test_an_opted_in_fixture_is_held_on_old_git(self):
+    def record(self, prefix: str, run: str, stamp: str, version):
+        path = (self.dir / "tree" / prefix / run / "s" / stamp / "with_skill" / "summary.json")
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"timestamp": stamp, "harness": {
+            "name": "claude-code", "git_version": version}}), encoding="utf-8")
+
+    def test_an_opted_in_fixture_is_held_without_a_recorded_new_git(self):
         for doc in ({"skill": "s", "context": self.context, "fleet_hooks": True},
                     {"subject": "guidance", "fleet_hooks": True},
                     {"subject": "any", "fleet_hooks": True},
                     # Anything but false holds: the harness would refuse it.
                     {"subject": "guidance", "fleet_hooks": "yes"},
                     {"subject": "guidance", "fleet_hooks": None}):
-            for version in (OLD, None):
+            for version in (OLD, None, "git version 2.53.9"):
                 with self.subTest(doc=doc, version=version):
-                    self.assertEqual(self.hold(doc, version)[0], plan_week.HOLD_GIT)
+                    self.assertEqual(self.hold(doc, version), plan_week.HOLD_GIT)
 
-    def test_new_git_or_no_opt_in_is_not_held_and_git_is_read_only_on_opt_in(self):
-        self.assertEqual(self.hold({"skill": "s", "context": self.context,
-                                    "fleet_hooks": True}, NEW), (None, 1))
-        self.assertEqual(self.hold({"skill": "s", "context": self.context}, OLD), (None, 0))
-        self.assertEqual(self.hold({"skill": "s", "context": self.context,
-                                    "fleet_hooks": False}, OLD), (None, 0))
+    def test_new_routine_git_or_no_opt_in_is_not_held(self):
+        for version in (NEW, "git version 2.54.0"):
+            self.assertIsNone(self.hold({"skill": "s", "context": self.context,
+                                         "fleet_hooks": True}, version))
+        for version in (OLD, None):
+            self.assertIsNone(self.hold({"skill": "s", "context": self.context}, version))
+            self.assertIsNone(self.hold({"skill": "s", "context": self.context,
+                                         "fleet_hooks": False}, version))
+
+    def test_the_fire_check_leaves_the_git_hold_to_the_plan(self):
+        # validate_fire has no results tree; its other holds still apply.
+        (self.dir / "fixture.yaml").write_text(yaml.safe_dump(
+            {"skill": "s", "context": self.context, "fleet_hooks": True}), encoding="utf-8")
+        self.assertIsNone(plan_week.fixture_hold_reason(self.dir, check_git=False))
+        (self.dir / "fixture.yaml").write_text(yaml.safe_dump(
+            {"skill": "s", "fleet_hooks": True}), encoding="utf-8")
+        self.assertEqual(plan_week.fixture_hold_reason(self.dir, check_git=False), "no context")
+
+    def test_the_routine_git_is_the_newest_routine_summary_recording_one(self):
+        tree = self.dir / "tree"
+        self.assertIsNone(plan_week.routine_git_version(tree))
+        # A null version records nothing, and results/ is not the routine.
+        self.record("routine-results", "r1", "20261101T000000Z", None)
+        self.record("results", "r0", "20261105T000000Z", NEW)
+        self.assertIsNone(plan_week.routine_git_version(tree))
+        self.record("routine-results", "r2", "20261102T000000Z", NEW)
+        self.record("routine-results", "r3", "20261103T000000Z", OLD)
+        self.record("routine-results", "r4", "20261104T000000Z", None)
+        self.assertEqual(plan_week.routine_git_version(tree), OLD)
+        self.record("routine-results", "r5", "20261104T000001Z", NEW)
+        self.assertEqual(plan_week.routine_git_version(tree), NEW)
+
+    def test_the_plan_holds_hooked_cells_on_the_routine_git(self):
+        # eval_cells_and_outages over the committed fixtures: every hooked
+        # cell is held until the routine's Git is new enough, and no
+        # unhooked cell is held by this.
+        doc = {"roster_models": ["m"], "skills": {}, "guidance": {}}
+        hooked = {str(p.parent.relative_to(ROOT)) for p in ROOT.glob("evals/**/fixture.yaml")
+                  if yaml.safe_load(p.read_text(encoding="utf-8")).get("fleet_hooks") is True}
+        self.assertTrue(hooked)
+        for version in (None, OLD, NEW):
+            cells, _, _ = plan_week.eval_cells_and_outages(
+                ROOT / "evals", doc, [], NOW, version)
+            for cell in cells:
+                with self.subTest(version=version, cell=cell["fixture"]):
+                    git_held = cell["hold_reason"] == plan_week.HOLD_GIT
+                    is_hooked = cell["fixture"] in hooked
+                    self.assertEqual(git_held, is_hooked and version != NEW)
 
     def test_only_the_audited_fixtures_opt_in(self):
         # The opt-in is the last stage of #535: exactly the fixtures its seed

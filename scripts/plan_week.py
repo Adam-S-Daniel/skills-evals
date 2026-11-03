@@ -2078,9 +2078,36 @@ def _fixture_subject(evals_dir: Path, fixture: str) -> tuple:
 
 HOLD_PRIVATE = "private, paused"
 HOLD_GIT = "git too old for fleet hooks"
+#: Where ingested routine runs land on the results branch (ADR 0010
+#: decision 2; ingest_routine_results.DEST_ROOT).
+ROUTINE_RESULTS = "routine-results"
+_STAMP_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z")
 
 
-def fixture_hold_reason(directory: Path) -> str | None:
+def routine_git_version(results_tree: Path) -> str | None:
+    """`harness.git_version` of the newest ingested routine summary that
+    records one (a non-empty string), by the summary's `timestamp`, or None
+    when none does. This is the Git the routine's arms run (#535), which the
+    planner's own host does not show: the plan runs on an Actions runner."""
+    import compute_gates  # noqa: PLC0415
+    root = Path(results_tree) / ROUTINE_RESULTS
+    newest = None
+    if root.is_dir():
+        for path in root.rglob("summary.json"):
+            doc = compute_gates._read(path)
+            if not isinstance(doc, dict) or not isinstance(doc.get("harness"), dict):
+                continue
+            version, stamp = doc["harness"].get("git_version"), doc.get("timestamp")
+            if not (isinstance(version, str) and version and isinstance(stamp, str)
+                    and _STAMP_RE.fullmatch(stamp)):
+                continue
+            if newest is None or (stamp, str(path)) > newest[:2]:
+                newest = (stamp, str(path), version)
+    return newest[2] if newest else None
+
+
+def fixture_hold_reason(directory: Path, routine_git: str | None = None, *,
+                        check_git: bool = True) -> str | None:
     """Why the planner refuses to schedule the fixture in `directory`, or
     None when it may be. Adam, 2026-11-02: an isolation pair never pools
     (harness/gates.py pool_cells needs a tested digest and an arm context), so
@@ -2091,9 +2118,13 @@ def fixture_hold_reason(directory: Path) -> str | None:
 
     A fixture that opts into the fleet hooks (`fleet_hooks:` present and not
     false; ADR 0012, fleet hooks addendum, #535) is held ("git too old for
-    fleet hooks") while this host's `git` is older than Git 2.54, which
-    config-based hooks need (run_eval.git_supports_fleet_hooks). The harness
-    refuses such a run too (`git_too_old_for_fleet_hooks`)."""
+    fleet hooks") unless `routine_git`, the routine's Git as its newest
+    ingested summary records it (`routine_git_version`), is Git 2.54 or
+    later, which config-based hooks need (run_eval.git_supports_fleet_hooks).
+    No recorded version holds. The harness refuses such a run too
+    (`git_too_old_for_fleet_hooks`), but only after the fire is spent, and
+    two empty fires make the cell fixture-broken. `check_git=False` skips
+    this hold, for a caller that has no results tree (`validate_fire`)."""
     import yaml  # noqa: PLC0415
     try:
         doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
@@ -2102,9 +2133,9 @@ def fixture_hold_reason(directory: Path) -> str | None:
     doc = doc if isinstance(doc, dict) else {}
     if doc.get("registry") == PRIVATE_REGISTRY_URL:
         return HOLD_PRIVATE
-    if doc.get("fleet_hooks", False) is not False:
+    if check_git and doc.get("fleet_hooks", False) is not False:
         import run_eval  # noqa: PLC0415
-        if not run_eval.git_supports_fleet_hooks(run_eval.git_version()):
+        if not run_eval.git_supports_fleet_hooks(routine_git):
             return HOLD_GIT
     if doc.get("subject") in ("guidance", "any"):
         return None
@@ -2204,12 +2235,13 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
 
 
 def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
-                           now: datetime) -> tuple:
+                           now: datetime, routine_git: str | None = None) -> tuple:
     """(cells, outages, routine down). One cell per scheduled fixture x
     roster model, with its gates class, run counts, newest run, mean cost
     per run, `empty_fires`, `outage_fires`, `down_fires`, `pending`,
     `pending_since`, `last_fire`, and
-    `schedulable` with its `hold_reason` (fixture_hold_reason). A held cell
+    `schedulable` with its `hold_reason` (fixture_hold_reason, given
+    `routine_git`, the routine's recorded Git). A held cell
     stays in the list for the cost statistics; `eval_items` plans none of
     it. A `subject: any` row makes no cell (`real_work_rows` lists it). Each
     outage is {"start", "fires"}: a maximal chain of outage fires, each at
@@ -2327,7 +2359,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
         subject, ident = _fixture_subject(evals_dir, fixture)
         if subject == "any":
             continue  # a real-work row is not a skill cell
-        hold = fixture_hold_reason(evals_dir.parent / fixture)
+        hold = fixture_hold_reason(evals_dir.parent / fixture, routine_git)
         parts = fixture.split("/")
         if subject == "guidance":
             # Pooled by section (results/guidance/<id>/...), in-situ cells.
@@ -2945,7 +2977,7 @@ def gather(args, now: datetime) -> dict:
     triggers = trigger_contexts(evals_dir, registries)
     trigger_pauses(triggers, evals_dir, registries, records, prs, evidence["on_hold"], now)
     cells, outages, down = eval_cells_and_outages(evals_dir, gates_doc, evidence["fire_runs"],
-                                                  now)
+                                                  now, routine_git_version(args.results_tree))
     held = sum(1 for c in cells if c["hold_reason"] == HOLD_PRIVATE)
     if held:
         print(f"{held} private cells held")  # a count only: no name in the log
@@ -3120,7 +3152,9 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
             raise PlanError("the eval leg is not a scheduled fixture on a roster arm")
         if arms == "bare" and not schedule.declares_context(root / fixture):
             raise PlanError("the bare leg's fixture does not run in place")
-        if arms == "both" and fixture_hold_reason(root / fixture) is not None:
+        # The fire has no results tree to read the routine's Git from; the
+        # plan held the fixture on it, and the harness refuses an old Git.
+        if arms == "both" and fixture_hold_reason(root / fixture, check_git=False) is not None:
             raise PlanStale("the eval leg's fixture is held, not schedulable")
     elif mode == "improve" and trim:
         if fixture or key or model or arms or holdout \
