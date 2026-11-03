@@ -44,6 +44,10 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # adam-agentskills main's copy of the subject), guidance proven at a13d5dab.
 # Budgets unchanged; today's figures are REMEASURED in the issue-371
 # scheduled-fixtures test.
+# The arms run the fleet hooks the context deployed (#535; ADR 0012, fleet
+# hooks addendum). Audited in #535's PR 5: proven pin, no seed hook or
+# `origin`, and no refusal on the task's expected path.
+fleet_hooks: true
 context:
   repository: Adam-S-Daniel/cms-platform
   revision: 6c8eca124eccb7517f6cb28b844b5af9d735a238

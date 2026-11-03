@@ -296,15 +296,27 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(self.hold({"skill": "s", "context": self.context,
                                     "fleet_hooks": False}, OLD), (None, 0))
 
-    def test_no_committed_fixture_opts_in_yet(self):
-        # The opt-in is the last stage of #535 (the seed audit); none before.
+    def test_only_the_audited_fixtures_opt_in(self):
+        # The opt-in is the last stage of #535: exactly the fixtures its seed
+        # audit cleared (proven pin, no seed hook or `origin`, no refusal on
+        # the expected path). A new opt-in is audited and added here.
         opted = []
         for directory in plan_week.schedule.committed_fixtures(ROOT):
             path = ROOT / directory / "fixture.yaml"
             doc = yaml.safe_load(path.read_text(encoding="utf-8"))
             if isinstance(doc, dict) and run_eval.FLEET_HOOKS_KEY in doc:
                 opted.append(str(path.relative_to(ROOT)))
-        self.assertEqual(opted, [])
+        audited = sorted(f"evals/{name}/fixture.yaml" for name in (
+            "admin-config-render", "embeddable-tool-pages", "finding-unknowns",
+            "github-actions-sha-pinning", "post-failure-comment",
+            "windows-elevation-from-wsl", "workflow-path-audit/required-check-routing",
+            "writing-adrs/bootstrap",
+            *(f"review-bash-ci-reliability/{n}" for n in (
+                "drift-report-capture", "nightly-snapshot", "release-pipeline",
+                "test-runner-assertions")),
+            *(f"vendor-release-impact-issues/{n}" for n in (
+                "closing-keywords", "issue-hygiene", "stamps-skip-quotes"))))
+        self.assertEqual(sorted(opted), audited)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,10 @@ registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
 # 2dcf61ff, guidance proven at 570544a8 (26 eligible revisions matched; the
 # newest was chosen). Measured then: context 25528, 14803, 875774; with arm
 # 25528, 15395, 882224 bytes. Both fit the limits below, which are unchanged.
+# The arms run the fleet hooks the context deployed (#535; ADR 0012, fleet
+# hooks addendum). Audited in #535's PR 5: proven pin, no seed hook or
+# `origin`, and no refusal on the task's expected path.
+fleet_hooks: true
 context:
   repository: Adam-S-Daniel/adamdaniel.ai
   revision: 2dcf61ff3ca6c691124b1f531ef407f7fb2e80d9

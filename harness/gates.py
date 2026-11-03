@@ -733,7 +733,8 @@ def run_priors(runs: list) -> dict:
         if not numbers["counted"]:
             continue
         key = (run["skill"], run["fixture"], run["model"], run["role"], run.get("pair"),
-               run["fixture_digest"], run["tested_digest"] if run["role"] == "with" else None)
+               run["fixture_digest"], run.get("fleet_hooks_digest"),
+               run["tested_digest"] if run["role"] == "with" else None)
         group = groups.setdefault(key, {"objective": [], "judge": [], "check": {}})
         if numbers["run_mean"] is not None:
             group["objective"].append(numbers["run_mean"])

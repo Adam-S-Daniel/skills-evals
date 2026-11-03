@@ -229,8 +229,11 @@ def _ordered(runs: list, role: str) -> list:
 def _row(subject: str, ident: str, fixture, model: str, pair, runs: list,
          policy: dict) -> dict:
     """The row of one cell, from every run of it (module docstring)."""
-    newest = max(runs, key=gates._order)["fixture_digest"]
-    runs = [r for r in runs if r["fixture_digest"] == newest]
+    last = max(runs, key=gates._order)
+    # A change to the fleet hook set moves its digest, not the fixture's (#605).
+    newest = (last["fixture_digest"], last.get("fleet_hooks_digest"))
+    runs = [r for r in runs
+            if (r["fixture_digest"], r.get("fleet_hooks_digest")) == newest]
     gates.prime(runs)
     counted = [r for r in runs if r["numbers"]["counted"]]
     size, least = policy["window_runs"], policy["min_window_runs"]

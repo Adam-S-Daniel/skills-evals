@@ -16,6 +16,10 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # revisions matched; the newest was chosen). Measured then: guidance 25528
 # bytes, still no adopted skill; the with arm adds 763 catalog and 14235
 # payload bytes. All fit the limits below, which are unchanged.
+# The arms run the fleet hooks the context deployed (#535; ADR 0012, fleet
+# hooks addendum). Audited in #535's PR 5: proven pin, no seed hook or
+# `origin`, and no refusal on the task's expected path.
+fleet_hooks: true
 context:
   repository: Adam-S-Daniel/skills-evals
   revision: e6e9496b878f4d7b07f0bea08ef6920250de1e21

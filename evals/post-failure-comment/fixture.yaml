@@ -19,6 +19,10 @@ registry: https://github.com/Adam-S-Daniel/cms-platform
 # limit is ceil(measured * 1.25). 7 eligible guidance revisions matched the
 # shipped bytes; the pin is the newest (then the smallest SHA). The context
 # adopts the skill, so the `without` arm removes the deployed copy.
+# The arms run the fleet hooks the context deployed (#535; ADR 0012, fleet
+# hooks addendum). Audited in #535's PR 5: proven pin, no seed hook or
+# `origin`, and no refusal on the task's expected path.
+fleet_hooks: true
 context:
   repository: Adam-S-Daniel/adamdaniel.ai
   revision: 2a994ee0219679ef85e908bbc1119f386dd33768
