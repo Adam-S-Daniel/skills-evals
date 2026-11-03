@@ -829,8 +829,8 @@ class DispatchLegTests(unittest.TestCase):
         guidance = {"FIXTURE": GUIDANCE_FIXTURE, "EVAL_KEY": GUIDANCE_FIXTURE[len("evals/"):]}
         plan_week.validate_fire({**good, **guidance})
         for change in ({"EVAL_KEY": "writing-adrs/supersede"}, {"MODEL": "claude-fable-5-1"},
-                       {"FIXTURE": "evals/writing-adrs/supersede",
-                        "EVAL_KEY": "writing-adrs/supersede"},
+                       # An unscheduled fixture (evals/unscheduled.yml).
+                       {"FIXTURE": "evals/browser-testing", "EVAL_KEY": "browser-testing"},
                        {"SKILL": "writing-adrs"}, {"MODE": "scaffold"},
                        {"ARMS": ""}, {"ARMS": "with"}, {"ARMS": "without"},
                        # A scheduled fixture with no `context` mapping.

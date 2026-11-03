@@ -623,21 +623,40 @@ class CellTests(unittest.TestCase):
         self.assertEqual(cell(series("with", [(90, 90, 90)] * 5),
                               series("without", [(40, 40, 40)] * 5))["class"], "benefit")
 
-    def test_pass_rate_exactly_point_nine_is_ceiling(self):
+    def test_a_cell_at_the_ceiling_is_judged_by_the_removal_rule(self):
+        # Adam, 2026-11-03 ("Judge them by the removal rule"): both arms at
+        # 90% leave no room for the 0.15 margin, so the cell is decided like
+        # any other, and its reason says it sat at the ceiling.
         same = [(90, 90, 90)] * 5
-        self.assertEqual(cell(series("with", same), series("without", same))["class"],
-                         "ceiling")
+        result = cell(series("with", same), series("without", same))
+        self.assertEqual(result["class"], "insufficient")
+        same = [(90, 90, 90)] * 10
+        result = cell(series("with", same, FLAT_JUDGE), series("without", same, FLAT_JUDGE))
+        self.assertEqual(result["class"], "no-benefit")
+        self.assertTrue(result["reason"].endswith("both arms are at the ceiling"))
 
     def test_pass_rate_point_eight_nine_is_not_ceiling(self):
         same = [(89, 89, 89)] * 5
         result = cell(series("with", same), series("without", same))
         self.assertEqual(result["class"], "insufficient")
 
-    def test_a_check_failing_everywhere_cannot_discriminate(self):
+    def test_a_check_failing_everywhere_no_longer_parks_the_cell(self):
+        # It adds the same 0 to both arms; the deltas decide (2026-11-03).
         def runs(role):
             return [arm_run(role, [trial(8, 10, fail={9, (3 * r + k) % 9}) for k in range(3)], r)
                     for r in range(5)]
-        self.assertEqual(cell(runs("with"), runs("without"))["class"], "cannot-discriminate")
+        self.assertNotEqual(cell(runs("with"), runs("without"))["class"], "cannot-discriminate")
+
+    def test_the_floor_needs_floor_min_runs_on_each_arm(self):
+        low = [(1, 1, 1), (1, 1, 0)] * 3
+        n = gates.FLOOR_MIN_RUNS
+        result = cell(series("with", low[:n - 1], total=10),
+                      series("without", low[:n - 1], total=10))
+        self.assertEqual(result["class"], "insufficient")
+        self.assertIn("decide whether the fixture is broken", result["reason"])
+        self.assertEqual(cell(series("with", low[:n], total=10),
+                              series("without", low[:n], total=10))["class"],
+                         "cannot-discriminate")
 
     def test_both_arms_near_the_floor_cannot_discriminate(self):
         low = [(1, 1, 1), (1, 1, 0)] * 3
@@ -804,11 +823,12 @@ class CellTests(unittest.TestCase):
                       policy=LEGACY_POLICY)
         self.assertEqual(result["class"], "no-benefit")
 
-    def test_class_c_ceiling_on_the_judge_figure(self):
+    def test_class_c_at_the_judge_ceiling_is_judged_by_the_removal_rule(self):
         high = [9.2, 9.4] * 3
-        self.assertEqual(cell(series("with", FLAT[:5], high),
-                              series("without", FLAT[:5], high), carried=True)["class"],
-                         "ceiling")
+        result = cell(series("with", FLAT[:5], high), series("without", FLAT[:5], high),
+                      carried=True)
+        self.assertEqual(result["class"], "no-benefit")
+        self.assertTrue(result["reason"].endswith("both arms are at the ceiling"))
 
     def test_pairwise_class_c_reads_dimensions_mean(self):
         result = cell(series("with", FLAT[:5], [8.0, 8.2] * 3, pairwise=True),
@@ -985,18 +1005,27 @@ class VerdictTests(unittest.TestCase):
         runs = [r for m in self.MODELS[1:] for r in self.flat(m)] + self.gain("model-a")
         self.assertEqual(self.verdict(runs)["verdict"], "keep")
 
-    def test_one_ceiling_cell_among_no_benefit_is_ceiling(self):
+    def test_no_verdict_is_ceiling_any_more(self):
+        # 2026-11-03: a ceiling cell is decided by the removal rule, so a
+        # subject's verdict is never parked at `ceiling`.
         runs = [r for m in self.MODELS[1:] for r in self.flat(m, 5)] + self.ceiling("model-a")
-        self.assertEqual(self.verdict(runs)["verdict"], "ceiling")
-
-    def test_all_ceiling_cells_never_retire(self):
+        self.assertNotEqual(self.verdict(runs)["verdict"], "ceiling")
         fixtures = ("one", "two", "three", "four")
         runs = [r for m in self.MODELS for f in fixtures for r in self.ceiling(m, fixture=f)]
-        self.assertEqual(self.verdict(runs, expected=self.expect(*fixtures))["verdict"],
-                         "ceiling")
+        self.assertNotEqual(self.verdict(runs, expected=self.expect(*fixtures))["verdict"],
+                            "ceiling")
 
-    def test_cannot_discriminate_outranks_ceiling(self):
-        runs = self.ceiling("model-a") + self.low("model-b") + self.flat("model-c")
+    def test_a_broken_fixture_cell_is_left_out_of_the_verdict(self):
+        runs = self.low("model-a") + self.flat("model-b") + self.flat("model-c")
+        result = self.verdict(runs)
+        self.assertEqual([c["class"] for c in result["cells"]],
+                         ["cannot-discriminate", "no-benefit", "no-benefit"])
+        self.assertEqual((result["verdict"], result["reason"]),
+                         ("retire", "every cell shows no benefit, apart from fixtures "
+                                    "that look broken"))
+
+    def test_every_cell_broken_is_cannot_discriminate(self):
+        runs = [r for m in self.MODELS for r in self.low(m)]
         self.assertEqual(self.verdict(runs)["verdict"], "cannot-discriminate")
 
     def test_insufficient_outranks_cannot_discriminate(self):

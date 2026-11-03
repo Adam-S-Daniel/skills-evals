@@ -464,6 +464,22 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         self.assertTrue(mint["continue-on-error"])
         self.assertEqual(mint["with"]["permission-contents"], "write")
 
+    def test_contextualize_runs_between_promote_and_the_mint_without_credentials(self):
+        steps = self.jobs["promote"]["steps"]
+        ids = [s.get("id") for s in steps]
+        self.assertLess(ids.index("promote"), ids.index("contextualize"))
+        self.assertLess(ids.index("contextualize"), ids.index("app-token"))
+        step = steps[ids.index("contextualize")]
+        self.assertNotIn("env", step)
+        self.assertIn("scripts/contextualize_fixtures.py", step["run"])
+        self.assertIn("--apply", step["run"])
+        for s in steps[:ids.index("contextualize")]:
+            if s.get("uses", "").startswith("actions/checkout@"):
+                with self.subTest(step=s["name"]):
+                    self.assertIs(s["with"]["persist-credentials"], False)
+        mint = steps[ids.index("app-token")]
+        self.assertIn("steps.contextualize.outputs.count != '0'", mint["if"])
+
     def test_the_miner_reads_the_fleet_with_the_read_only_registry_token(self):
         holders = [(name, s.get("id")) for name, job in self.jobs.items()
                    for s in job["steps"] if "REGISTRY_READ_APP_PEM" in json.dumps(s)]
@@ -480,7 +496,7 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         self.assertEqual(step["env"]["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
         self.assertEqual(step["env"]["GH_TOKEN"], "${{ github.token }}")
         block = step["run"]
-        self.assertIn("evals/scheduled.yml|evals/*/fixture.yaml) ;;", block)
+        self.assertIn("evals/scheduled.yml|evals/unscheduled.yml|evals/*/fixture.yaml) ;;", block)
         self.assertIn('push -q origin "HEAD:refs/heads/${branch}"', block)
         self.assertIn('branch="fixture-promotion/${RUN_ID}"', block)
         self.assertIn('--auto --merge --match-head-commit "$sha"', block)

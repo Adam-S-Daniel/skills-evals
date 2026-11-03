@@ -131,7 +131,9 @@ def promoted_entries():
     paths = []
     for row in rows[len(REVIEWED):]:
         fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
-        if not row["readiness"].startswith(PROMOTED_NOTE) or fixture.get("draft") is not False:
+        # A drafted skill's fixture (scripts/contextualize_fixtures.py) has no
+        # `draft:` key; absent reads as not a draft.
+        if not row["readiness"].startswith(PROMOTED_NOTE) or fixture.get("draft", False) is not False:
             raise AssertionError(f"{row['path']}: scheduled after the reviewed fixtures, "
                                  "but not promoted by scaffold_real_work.py promote")
         paths.append(row["path"])

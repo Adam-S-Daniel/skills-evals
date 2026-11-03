@@ -314,8 +314,11 @@ the two sections nearest one until those decide.
   cells, deliberately, since a smaller section reaches a verdict on fewer
   runs; then to more counted runs; then to the section id.
 - **Eligibility.** The section's verdict is still `insufficient` (or it has
-  none): keep, every retire verdict, `shorten-or-merge`, ceiling and
-  cannot-discriminate are not focused. At least one of its cells must be
+  none): keep, every retire verdict, `shorten-or-merge` and
+  cannot-discriminate are not focused. (Since 2026-11-03 no cell or verdict
+  is `ceiling`: a cell at the ceiling is decided by the removal rule, and a
+  `cannot-discriminate` cell is one whose arms both pass almost nothing over
+  three runs each, left out of the verdict as a broken fixture.) At least one of its cells must be
   able to plan a fire (schedulable, stakes not `none`, not a "fixture
   broken" missing cell), no `retire-guidance/<section>` pull request may be
   open in _agent-guidance, and no cell may be BLOCKING: one whose no-benefit

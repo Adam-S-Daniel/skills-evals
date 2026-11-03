@@ -172,3 +172,14 @@ judge_rubric: >
   index rows, and CHANGELOG.md's entry untouched, and avoid writing a second
   ADR for the CHANGELOG's dependency-removal/typo-fix fact, which is a
   routine change with no alternatives to record, not a decision?
+
+# In-place context (ADR 0012), added on 2026-11-03 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 7cf559388b9ea4b65966dd51a4e3d692cc083b78
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 9309
+    skill_payload_bytes: 860975

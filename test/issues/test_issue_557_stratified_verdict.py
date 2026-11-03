@@ -141,9 +141,10 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(v["cells"][0]["class"], "insufficient")
         self.assertIn("judge", v["cells"][0]["reason"])
 
-    def test_pooled_ceiling_is_decided_on_pooled_counts(self):
+    def test_pooled_ceiling_is_judged_by_the_removal_rule(self):
+        # 2026-11-03: no `ceiling` class; the pooled cell is decided.
         v = verdict(stratum(MAIN, CEILING, CEILING))
-        self.assertEqual(v["cells"][0]["class"], "ceiling")
+        self.assertNotEqual(v["cells"][0]["class"], "ceiling")
 
     def test_a_retire_that_helps_alone_is_shorten_or_merge(self):
         alone = stratum("none", GAIN + GAIN, FLAT, judges=([8.0] * 20, FLAT_JUDGE),
