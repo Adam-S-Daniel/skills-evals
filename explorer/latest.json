@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T07:41:07Z",
+ "generated_at": "2026-11-03T07:45:51Z",
  "guidance": {
   "removed": [
    {
@@ -9164,7 +9164,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T07:38:10Z",
+ "newest_run": "2026-11-03T07:44:10Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -14987,11 +14987,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
@@ -15002,6 +15002,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T07:44:10Z",
+     "cli_version": "2.1.317",
+     "fixture": "companion-skip-pair",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T074225Z-b6743e/workflow-path-audit/20261103T074410Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.15940020000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 8,
+      "cost_usd": 0.0886157,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:26:02Z",
      "cli_version": "2.1.316",
@@ -16413,7 +16434,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "743ef98a1ade0bf321807e624a0655ac92f473d4"
+  "results_commit": "3282619ad530a321ad26018ebeefe0eb052d76c7"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
