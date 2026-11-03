@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T06:50:49Z",
+ "generated_at": "2026-11-03T06:52:25Z",
  "guidance": {
   "removed": [
    {
@@ -338,7 +338,7 @@
      "helps": 1.0,
      "no_help": 0.0
     },
-    "current_text_runs": 56,
+    "current_text_runs": 58,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -348,6 +348,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T06:46:48Z",
+      "cli_version": "2.1.317",
+      "fixture": "done-summary",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.1392602,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 3,
+        "cost_usd": 0.1325692,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 3,
+        "cost_usd": 0.0724172,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0883266,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T064648Z/report.md"
+     },
      {
       "at": "2026-11-03T06:08:51Z",
       "cli_version": "2.1.317",
@@ -3125,7 +3162,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
@@ -3135,6 +3172,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T06:46:35Z",
+      "cli_version": "2.1.317",
+      "fixture": "required-check-concurrency",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.4485804,
+        "judge_mean": 8.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.20963829499999997,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.1081728,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.223827,
+        "judge_mean": 8.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261103T064635Z/report.md"
+     },
      {
       "at": "2026-11-03T04:12:25Z",
       "cli_version": "2.1.317",
@@ -7353,7 +7427,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": "keep",
     "bytes": 447,
     "confidence": {
      "helps": 0.0,
@@ -9830,17 +9904,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
     "band": null,
-    "due": "2026-12-01T03:46:34Z",
+    "due": "2026-12-01T06:00:09Z",
     "position": null,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T06:21:08Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T061931Z-a925dd/consumer-repo-provisioning/20261103T062108Z/report.md",
+     "with": {
+      "checks_passed": 11,
+      "checks_total": 19,
+      "cost_usd": 0.3785004,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 19,
+      "cost_usd": 0.36824179999999995,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T06:00:09Z",
      "cli_version": "2.1.317",
@@ -16192,7 +16287,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "d2fad666212b6d7199a8bcbe70565fc0081d25bc"
+  "results_commit": "ca8469e7362ea753d4a9b99c6b95e9150b6490bd"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
