@@ -672,8 +672,8 @@ class QueueConfidenceUsageTests(unittest.TestCase):
              "judge": {"helps_confidence": 0.9, "no_help_confidence": 0.1}},
             {"objective": {"helps_confidence": 0.95, "no_help_confidence": 0.3},
              "keep_tests": [{"route": "objective", "p": 0.05}]}]}
-        self.assertEqual(explorer_data.subject_confidence(verdict),
-                         {"helps": 0.9, "no_help": 0.3})
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["helps"], got["no_help"]), (0.9, 0.3))
         # A family of one, or none recorded, is m = 1.
         self.assertEqual(explorer_data.subject_confidence(
             {**verdict, "keep_family": None})["helps"], 0.95)
@@ -684,9 +684,26 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         # A voting cell with no figure blocks a no-help claim; no figure at all is None.
         verdict["cells"].append({"class": "missing"})
         self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
-        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}),
-                         {"helps": None, "no_help": None})
-        self.assertEqual(explorer_data.subject_confidence({}), {"helps": None, "no_help": None})
+        empty = {k: None for k in ("helps", "no_help", "keep_pairs", "no_help_pairs",
+                                   "max_pairs", "keep_family")}
+        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}), empty)
+        self.assertEqual(explorer_data.subject_confidence({}), empty)
+
+    def test_confidence_carries_the_pair_counts_behind_each_level(self):
+        verdict = {"keep_family": 2, "cells": [
+            {"objective": {"no_help_confidence": 0.7, "pairs": 11},
+             "keep_tests": [{"route": "objective", "p": 0.6}]},
+            {"objective": {"no_help_confidence": 0.3, "pairs": 6},
+             "keep_tests": [{"route": "objective", "p": 0.05}]}]}
+        got = explorer_data.subject_confidence(verdict)
+        # keep comes from the second cell (smallest p), remove from the second
+        # (lowest level), and the busiest cell is the first.
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"],
+                          got["keep_family"]), (6, 6, 11, 2))
+        verdict["cells"][1]["objective"]["pairs"] = "6"
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"]),
+                         (None, None, 11))
 
     def test_usage_counts_listed_skills_and_names_its_window(self):
         t = Tree(self)
