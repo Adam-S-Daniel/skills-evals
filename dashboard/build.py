@@ -843,18 +843,21 @@ def half_built(dump, now):
             "key": f"{it.get('repo')}#{it.get('number')}", "repo": it.get("repo"), "number": it.get("number"),
             "url": it.get("url"), "title": it.get("title"), "state": "open" if is_open else "closed",
             "kind": it.get("kind") or "unknown", "severity": it.get("severity") or "unknown",
-            "finding_id": it.get("finding_id"), "opened": opened.date().isoformat() if opened else None,
+            "finding_id": it.get("finding_id"),
+            "needs_owner": "needs you" if "needs-owner" in (it.get("labels") or []) else "", "opened": opened.date().isoformat() if opened else None,
             "age_days": max((now - opened).days, 0) if opened else None, "closed_at": None if is_open else iso(closed)})
-    rows.sort(key=lambda r: (r["state"] != "open", order.get(r["severity"], 3), -(r["age_days"] or 0)))
+    # High severity first, then what needs Adam, then the rest by severity; oldest first within each.
+    rows.sort(key=lambda r: (r["state"] != "open", r["severity"] != "high", not r["needs_owner"],
+                             order.get(r["severity"], 3), -(r["age_days"] or 0)))
     opened_ = [r for r in rows if r["state"] == "open"]
     count = lambda field, v: sum(1 for r in opened_ if r[field] == v)
     status = "not-checked" if checked is None else "attention" if opened_ else "clear"
     summary = [{"key": "all", "open": len(opened_), "high": count("severity", "high"), "broken": count("kind", "broken"),
                 "partial": count("kind", "partial"), "implied_only": count("kind", "implied-only"),
-                "idle": count("kind", "idle"), "fixed_7d": len(rows) - len(opened_),
+                "idle": count("kind", "idle"), "needs_owner": count("needs_owner", "needs you"), "fixed_7d": len(rows) - len(opened_),
                 "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")), "status": status}]
     return rows or [{"key": PLACEHOLDER_ID, "repo": None, "number": None, "url": None, "title": None, "state": None,
-                     "kind": None, "severity": None, "finding_id": None, "opened": None, "age_days": None,
+                     "kind": None, "severity": None, "finding_id": None, "needs_owner": "", "opened": None, "age_days": None,
                      "closed_at": None}], summary
 
 
