@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T21:29:25Z",
+  "generated_at": "2026-11-03T21:34:35Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T21:26:55Z",
+ "generated_at": "2026-11-03T21:31:19Z",
  "guidance": {
   "removed": [
    {
@@ -9854,7 +9854,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T21:22:40Z",
+ "newest_run": "2026-11-03T21:28:06Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -11248,7 +11248,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15519,7 +15519,7 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.35738910318698636
+    "no_help": 0.4454626778770948
    },
    "copies": {
     "alert": {
@@ -15533,17 +15533,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
    "name": "post-failure-comment",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 17,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T21:28:06Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T211757Z-b83981/post-failure-comment/20261103T212806Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 12,
+      "cost_usd": 0.1956986,
+      "judge_mean": 5.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 9,
+      "checks_total": 12,
+      "cost_usd": 0.1450399,
+      "judge_mean": 5.699999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T20:58:44Z",
      "cli_version": "2.1.317",
@@ -15767,7 +15788,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17081,17 +17102,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 13,
+   "current_text_runs": 14,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:25:13Z",
+     "cli_version": "2.1.317",
+     "fixture": "personal-copy-outranks-repo",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T211035Z-c09d65/skills-doctor/20261103T212513Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1354444,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.0988041,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:22:40Z",
      "cli_version": "2.1.317",
@@ -17817,7 +17859,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21299,7 +21341,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "85293783cea1e7d67b949901673db672d52a0046",
-  "results_commit": "1d3506aa5fef1ca3b7d21d25f96d8424697d2870"
+  "results_commit": "7023c99113ff7c717be1725d99d610d4966170db"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
