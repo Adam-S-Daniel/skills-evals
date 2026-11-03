@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T02:44:37Z",
+ "generated_at": "2026-11-03T02:46:43Z",
  "guidance": {
   "removed": [
    {
@@ -3661,7 +3661,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T02:42:16Z",
+ "newest_run": "2026-11-03T02:45:07Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -7680,7 +7680,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
@@ -7691,6 +7691,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T02:45:07Z",
+     "cli_version": "2.1.317",
+     "fixture": "personal-copy-outranks-repo",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T024330Z-e70a74/skills-doctor/20261103T024507Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1402684,
+      "judge_mean": 7.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.0901511,
+      "judge_mean": 8.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T02:19:51Z",
      "cli_version": "2.1.317",
@@ -10174,7 +10195,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "e6e9496b878f4d7b07f0bea08ef6920250de1e21",
-  "results_commit": "348b6b9c3518b0f63793bbea955837ed43fef0e4"
+  "results_commit": "bc596da57b9f60816b4a835f007a59f9cbd3a1e6"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
