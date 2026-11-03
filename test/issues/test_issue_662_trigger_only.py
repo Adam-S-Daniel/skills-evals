@@ -712,11 +712,11 @@ class TitleTests(unittest.TestCase):
     def test_trigger_titles(self):
         self.assertEqual(outcomes.parse_title("Fire eval routine: improve trigger writing-adrs "),
                          {"mode": "improve", "target": "writing-adrs", "model": None,
-                          "bare": False, "trigger": True})
+                          "bare": False, "trigger": True, "trim": False})
         # A skill named `trigger` is a target, not a flag.
         self.assertEqual(outcomes.parse_title("Fire eval routine: improve trigger "),
                          {"mode": "improve", "target": "trigger", "model": None,
-                          "bare": False, "trigger": False})
+                          "bare": False, "trigger": False, "trim": False})
         for bad in ("Fire eval routine: eval trigger x ",
                     "Fire eval routine: eval trigger evals/x claude-opus-5-5",
                     "Fire eval routine: scaffold trigger a__b__1 ",

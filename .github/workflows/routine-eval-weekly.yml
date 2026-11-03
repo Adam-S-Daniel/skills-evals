@@ -19,6 +19,10 @@ name: Weekly routine evals
 #   evals/<skill>/trigger-eval-set.json is an improve fire sent
 #   `trigger_only=true` and no holdout, which runs only skill-creator's
 #   description loop; one with no set is a `needs-trigger-set` work item.
+#   So are description trims (skills-evals#687): a skill with a
+#   `length-limit` waiver in adam-agentskills is an improve fire sent
+#   `trim_description=true` and no holdout, planned before the value-ranked
+#   improve fires; its `description-trim` work item is never filed as an issue.
 # * The plan job reads the whole results branch (ingested runs, the usage
 #   census) and the three public registries as data, computes the
 #   retirement verdicts as scripts/compute_gates.py does, and reads the
@@ -446,6 +450,7 @@ jobs:
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
           TRIGGER_ONLY: ${{ matrix.trigger_only }}
+          TRIM_DESCRIPTION: ${{ matrix.trim_description }}
         run: python3 scripts/plan_week.py validate-fire
       # A leg whose fixture was unscheduled after the plan exits 0 with
       # fire=false and skips the rest. A cap still full when the sweep's
@@ -471,6 +476,7 @@ jobs:
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
           TRIGGER_ONLY: ${{ matrix.trigger_only }}
+          TRIM_DESCRIPTION: ${{ matrix.trim_description }}
         run: |
           set -euo pipefail
           case "$MODE" in
@@ -488,16 +494,21 @@ jobs:
                       --raw-field "model=$MODEL" --raw-field "arms=$ARMS"
                       --raw-field "trials=$trials") ;;
             improve)
-              # A trigger-only fire (the trigger lane, #662) sends no holdout;
-              # validate-fire refused one that carried any.
+              # A trigger-only fire (the trigger lane, #662) and a description
+              # trim (#687) send no holdout; validate-fire refused one that
+              # carried any, and a leg that is both.
               if [ "${TRIGGER_ONLY:-}" = "true" ]; then
                 fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
                         --raw-field holdout= --raw-field arms=both --raw-field trials=3
-                        --raw-field trigger_only=true)
+                        --raw-field trigger_only=true --raw-field trim_description=false)
+              elif [ "${TRIM_DESCRIPTION:-}" = "true" ]; then
+                fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
+                        --raw-field holdout= --raw-field arms=both --raw-field trials=3
+                        --raw-field trigger_only=false --raw-field trim_description=true)
               else
                 fields=(--raw-field mode=improve --raw-field "skill=$SKILL"
                         --raw-field "holdout=$HOLDOUT" --raw-field arms=both --raw-field trials=3
-                        --raw-field trigger_only=false)
+                        --raw-field trigger_only=false --raw-field trim_description=false)
               fi ;;
             guidance-improve)
               fields=(--raw-field mode=guidance-improve --raw-field "section=$SECTION"

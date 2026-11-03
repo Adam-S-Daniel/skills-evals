@@ -763,19 +763,30 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sent[-10:], ["--raw-field", "skill=writing-adrs",
+        self.assertEqual(sent[-12:], ["--raw-field", "skill=writing-adrs",
                                       "--raw-field", "holdout=bootstrap",
                                       "--raw-field", "arms=both", "--raw-field", "trials=3",
-                                      "--raw-field", "trigger_only=false"])
+                                      "--raw-field", "trigger_only=false",
+                                      "--raw-field", "trim_description=false"])
         self.assertIn("mode=improve", sent)
         # A trigger-only leg (skills-evals#662) sends an empty holdout.
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "", "TRIGGER_ONLY": "true"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sent[-10:], ["--raw-field", "skill=writing-adrs",
+        self.assertEqual(sent[-12:], ["--raw-field", "skill=writing-adrs",
                                       "--raw-field", "holdout=",
                                       "--raw-field", "arms=both", "--raw-field", "trials=3",
-                                      "--raw-field", "trigger_only=true"])
+                                      "--raw-field", "trigger_only=true",
+                                      "--raw-field", "trim_description=false"])
+        # A description trim leg (skills-evals#687) sends an empty holdout too.
+        result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
+                                      "HOLDOUT": "", "TRIM_DESCRIPTION": "true"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-12:], ["--raw-field", "skill=writing-adrs",
+                                      "--raw-field", "holdout=",
+                                      "--raw-field", "arms=both", "--raw-field", "trials=3",
+                                      "--raw-field", "trigger_only=false",
+                                      "--raw-field", "trim_description=true"])
         result, sent = self.dispatch({"MODE": "scaffold"})
         self.assertEqual(result.returncode, 1)
         self.assertIsNone(sent)

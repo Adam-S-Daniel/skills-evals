@@ -173,7 +173,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(set(inputs),
                          {"mode", "candidate", "fixture", "skill", "holdout",
                           "section", "model", "proposal", "hook_declined",
-                          "trigger_only", "arms", "trials"})
+                          "trigger_only", "trim_description", "arms", "trials"})
         self.assertEqual(inputs["mode"]["type"], "choice")
         self.assertEqual(inputs["mode"]["options"],
                          ["eval", "scaffold", "improve", "guidance-improve", "draft"])

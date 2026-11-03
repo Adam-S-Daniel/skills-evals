@@ -827,3 +827,52 @@ What it is:
   the fleet worker; a pull request that adds exactly that one file, valid
   by the loop's own reader and size floor, merges itself through
   `fixture-pr-gate.yml` (repo-settings ADR 0018).
+
+## Description trim mode addendum (2026-11-03)
+
+[skills-evals#687](https://github.com/Adam-S-Daniel/skills-evals/issues/687),
+built at the integrator's request: queue the ten length-waived description
+trims through the improve lane.
+[adam-agentskills#119](https://github.com/Adam-S-Daniel/adam-agentskills/pull/119)
+capped descriptions at 400 characters; ten eval-protected skills were left
+long with a `length-limit` waiver, because a hand edit would reset their
+eval evidence (_agent-guidance ADR 0034).
+
+What it is:
+
+- Fire mode stays `improve`, with a new dispatch input `trim_description`
+  (`true` sends `"trim_description": true` as the payload's last key, never
+  together with `trigger_only`, and no holdout). The run title is `Fire eval
+  routine: improve trim <skill>`, so it shares the improve cooldown, stop
+  rule, charge and cap.
+- `propose_skill_edit.py --trim-description` makes one proposal call (the
+  roster's judge model) for a description of at most `TRIM_MAX_CHARS` (400)
+  characters, keeping every trigger and boundary, as the reply
+  `{"description": "..."}` parsed strictly. It measures the current and the
+  trimmed text on every fixture of the skill (at least `MIN_FIXTURES`), with
+  the call an ordinary candidate is measured with and no judge.
+- The acceptance rule is AGGREGATE non-inferiority: no fixture errored, the
+  candidate's objective passes summed over all fixtures and trials are at
+  least the baseline's (`TRIM_TOLERANCE_CHECKS`, 0), and no single fixture
+  loses more than `TRIM_FIXTURE_DROP_CHECKS` (1) of its passes. Strict
+  per-fixture non-inferiority was the other option. It was turned down
+  because three trials of a fixture move its summed checks by one on noise
+  alone, so requiring every fixture to hold exactly would reject most
+  faithful trims for a flake. The per-fixture bound of one keeps a trim from
+  losing a fixture's behavior and buying it back on another.
+- `improve_gate.py` checks a `mode: trim` record against its own key set,
+  re-derives the decision from the per-fixture counts with mirrored
+  constants, refuses a patch that changes the body or leaves the description
+  over the cap, and, in `prepare`, removes exactly the skill's `length-limit`
+  waiver from adam-agentskills' `scripts/skills_waivers.yml` as text,
+  checked by reloading the file. That path is allowed in the registry change
+  only for a trim.
+- The planner reads the waivers from its adam-agentskills checkout and plans
+  one trim fire per eligible waived skill BEFORE the value-ranked improve
+  fires (a fixed chore, not ranked by value), still under the improve cap
+  and the outage hold. Its `trims` map and `description-trim` work items
+  track each skill until the waiver is gone; they are never filed as issues.
+
+Not done here: a rejected trim keeps its waiver, but nothing yet writes the
+rejection's reason into adam-agentskills' `docs/skill-impact.md`, as the
+issue asks; the rejection is in the loop's record and the plan's `trims` map.
