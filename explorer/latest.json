@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T10:09:35Z",
+ "generated_at": "2026-11-03T12:23:33Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T10:07:43Z",
+ "newest_run": "2026-11-03T12:21:25Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -14877,7 +14877,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected (for example a Remove-Item on a system or VM-storage path). Covers getting the real error out of the first failure, the two-strikes stop rule, treating a policy block as a decision to report rather than a bug to route around, and previewing deletions before running them. For \"Access is denied\" from powershell.exe inside WSL, use windows-elevation-from-wsl instead.",
    "name": "tool-powershell",
    "next_test": {
@@ -14888,6 +14888,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T12:21:25Z",
+     "cli_version": "2.1.317",
+     "fixture": "silent-exit-one",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T122000Z-c7a808/tool-powershell/20261103T122125Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.38496640000000004,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.15765839999999998,
+      "judge_mean": 9.7,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T10:07:43Z",
      "cli_version": "2.1.317",
@@ -17249,8 +17270,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "ed3aee27b5e93c0991c6904ec6f82f353aae88cf",
-  "results_commit": "21638c61e476eb7598d3d2d18dead002d9c325f9"
+  "repository_commit": "27025dc31518e2b954dfc136be759e8795c780ae",
+  "results_commit": "dfe58a9ffd5172aea1677ef90844a38d2c396477"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
