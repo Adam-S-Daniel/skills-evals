@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 9
  },
- "generated_at": "2026-11-03T15:06:45Z",
+ "generated_at": "2026-11-03T15:09:16Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T15:04:33Z",
+ "newest_run": "2026-11-03T15:06:08Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9889,17 +9889,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
    "name": "cms-stuck-pr-triage",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 2,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T15:06:08Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T150355Z-de2984/cms-stuck-pr-triage/20261103T150608Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.2559033,
+      "judge_mean": 6.800000000000001,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.22472219999999998,
+      "judge_mean": 8.8,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T03:08:27Z",
      "cli_version": "2.1.317",
@@ -10478,7 +10499,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11830,7 +11851,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12663,7 +12684,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13960,7 +13981,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14179,7 +14200,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14293,7 +14314,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15680,7 +15701,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16580,7 +16601,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17177,7 +17198,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18248,7 +18269,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "e29f8fe27a6b72c3bfe7b46d843f087011cc6143",
-  "results_commit": "f92dce8e0bbd2de9e1e5926d877d7563e7fe7735"
+  "results_commit": "89d7d3e2a9990d7ced7e79bdf0d6982b91a05661"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
