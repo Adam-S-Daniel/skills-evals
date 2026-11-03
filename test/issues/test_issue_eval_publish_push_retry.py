@@ -3,7 +3,7 @@
 
 The publish matrix jobs run in parallel and other workflows push
 persistent/eval-results too, so a bare push is rejected with "fetch first" and
-the eval's paid result is never published. scripts/push_results_branch.sh
+the eval's paid result is never published. scripts/push_with_rebase_retry.sh
 rebases onto the remote tip and retries. The behavioral tests drive it against
 local bare repositories; no network, no sleeps.
 """
@@ -19,7 +19,7 @@ from pathlib import Path
 import yaml
 
 REPO = Path(__file__).resolve().parent.parent.parent
-SCRIPT = REPO / "scripts" / "push_results_branch.sh"
+SCRIPT = REPO / "scripts" / "push_with_rebase_retry.sh"
 WORKFLOW = REPO / ".github" / "workflows" / "eval.yml"
 BRANCH = "persistent/eval-results"
 STEP_NAME = "Build the badge over the run window, commit, and push"
@@ -118,9 +118,10 @@ class PublishStepTests(unittest.TestCase):
         self.run_text = matches[0]["run"]
 
     def test_step_uses_the_retrying_helper(self):
-        self.assertIn("push_results_branch.sh", self.run_text)
-        self.assertIn('cp scripts/push_results_branch.sh "$RUNNER_TEMP/"', self.run_text)
-        self.assertIn('bash "$RUNNER_TEMP/push_results_branch.sh" origin persistent/eval-results', self.run_text)
+        self.assertIn("push_with_rebase_retry.sh", self.run_text)
+        self.assertIn('cp scripts/push_with_rebase_retry.sh "$RUNNER_TEMP/"', self.run_text)
+        self.assertIn('bash "$RUNNER_TEMP/push_with_rebase_retry.sh" origin "$target_branch" 3', self.run_text)
+        self.assertIn('target_branch=persistent/eval-results', self.run_text)
 
     def test_no_bare_push_remains(self):
         for line in self.run_text.splitlines():

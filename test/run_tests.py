@@ -32780,6 +32780,7 @@ class TestIssue147(unittest.TestCase):
             workspace.joinpath("evals").mkdir()
             for relative in ("scripts/render_roster_yaml.py",
                              "scripts/make_badge.py",
+                             "scripts/push_with_rebase_retry.sh",
                              "harness/roster.py",
                              "harness/timeweeks.py",
                              "evals/roster.yml"):
@@ -33137,6 +33138,7 @@ elif 'worktree' in args and 'remove' in args:
             for relative in (".github/workflows/eval.yml",
                              "scripts/render_roster_yaml.py",
                              "scripts/make_badge.py",
+                             "scripts/push_with_rebase_retry.sh",
                              "harness/roster.py",
                              "harness/timeweeks.py",
                              "evals/roster.yml"):

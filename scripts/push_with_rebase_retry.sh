@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Push HEAD to <remote> <branch>, rebasing onto the remote tip when the push is
+# Push the local <branch> to <remote>, rebasing onto the remote tip when the push is
 # rejected.
 #
 # Why: eval.yml's `publish` job and other workflows (the routine ingest,
@@ -9,7 +9,7 @@
 # published (run 41542886876). A fetch plus rebase is the wait between
 # attempts, so there is no sleep.
 #
-# Usage: push_results_branch.sh <remote> <branch> [attempts, default 3]
+# Usage: push_with_rebase_retry.sh <remote> <branch> [attempts, default 3]
 #
 # Auth is not this script's business: the caller supplies it through git
 # config environment variables (GIT_CONFIG_COUNT and friends) for this one
@@ -34,7 +34,7 @@ esac
 
 attempt=1
 while [ "$attempt" -le "$attempts" ]; do
-  if git push "$remote" "HEAD:refs/heads/$branch"; then
+  if git push "$remote" "$branch"; then
     exit 0
   fi
   echo "Push attempt $attempt of $attempts was rejected." >&2

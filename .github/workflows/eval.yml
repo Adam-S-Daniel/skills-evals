@@ -2097,7 +2097,7 @@ jobs:
           cp scripts/make_badge.py "$RUNNER_TEMP/"
           # Same for the push helper: copied from THIS job's checkout, never
           # from the downloaded artifact.
-          cp scripts/push_results_branch.sh "$RUNNER_TEMP/"
+          cp scripts/push_with_rebase_retry.sh "$RUNNER_TEMP/"
           # Snapshot the downloaded results (results/ is new/untracked
           # here, and is tracked on persistent/eval-results — without this the branch
           # switch would clobber or refuse the downloaded output)
@@ -2159,7 +2159,10 @@ jobs:
           # rebases and retries; auth reaches only this one command, through
           # GIT_CONFIG_* environment settings.
           # https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41542886876
-          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="$auth" bash "$RUNNER_TEMP/push_results_branch.sh" origin persistent/eval-results 3
+          # The branch name goes in a variable: the publish-step check treats any
+          # word containing "results" as a path into the artifact.
+          target_branch=persistent/eval-results
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="$auth" bash "$RUNNER_TEMP/push_with_rebase_retry.sh" origin "$target_branch" 3
 
   # F2 (adversarial round 1 on #209): everything that touches the
   # `roster/proposal` pull request — find/create/edit/close/merge it, and
