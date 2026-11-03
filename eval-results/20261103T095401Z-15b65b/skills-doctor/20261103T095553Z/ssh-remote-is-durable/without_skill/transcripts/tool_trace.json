@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012jyp1vU1KyBJ5kPY1Nq8YD",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012jyp1vU1KyBJ5kPY1Nq8YD",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/standup-notes/SKILL.md\n./session/plugin-list.json\n./session/surfa...",
+      "output_chars": 417,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E1HJb79g5yP8DevpmJuaUE",
+      "name": "Bash",
+      "input": "for f in README.md session/*.txt session/*.json session/skills.lock session/skills/standup-notes/SKILL.md; do echo \"=== $f\"; cat \"$f\"; done; git log --oneline | head; ls -la",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E1HJb79g5yP8DevpmJuaUE",
+      "is_error": false,
+      "output": "=== README.md\n# Session capture \u2014 build VM, 2026-10-22\n\nCopied off `build-01.example.net`, the VM I SSH into for long builds, so the\ndelivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood.\n- `session/skills.lock` \u2014 the lock in the exa...",
+      "output_chars": 4003,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PBHqW8mrmJPLf1n6UUg44W",
+      "name": "Bash",
+      "input": "cd <path> && ls adam-coding-anywhere adam-coding-anywhere/skills adam-anything-anywhere/skills; grep -rl -i \"bootstrap\\|ssh-remote\" . | head",
+      "input_chars": 223,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PBHqW8mrmJPLf1n6UUg44W",
+      "is_error": false,
+      "output": "adam-anything-anywhere/skills:\nfinding-unknowns\nwriting-adrs\n\nadam-coding-anywhere:\nskills\n\nadam-coding-anywhere/skills:\nci-job-performance\ndebug-github-workflows\ndisarm-inherited-reach\nfan-out-triage\ngithub-actions-repo-settings\nreview-bash-ci-reliability\nvendor-release-impact-issues\nworkflow-path-...",
+      "output_chars": 416,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013BooiAR3f77NzvDbXeao5t",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013BooiAR3f77NzvDbXeao5t",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
