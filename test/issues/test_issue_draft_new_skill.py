@@ -365,6 +365,67 @@ class Select(Case):
         self.assertEqual(dns.eligibility("a", {"a": {"hook-first"}}, set()), (False, False))
         self.assertEqual(dns.eligibility("a", {"a": {"hook-first"}}, {"a"}), (True, True))
         self.assertEqual(dns.eligibility("a", {"a": {"accepted"}}, {"a"}), (False, False))
+        two = {f"unmeasured@{RUN_ID[:-1]}{k}" for k in "01"}
+        self.assertEqual(dns.eligibility("a", {"a": two}, set()), (True, False))
+        three = two | {f"unmeasured@{RUN_ID[:-1]}2"}
+        self.assertEqual(dns.eligibility("a", {"a": three}, set()), (False, False))
+        self.assertEqual(dns.eligibility("a", {"a": two | {"rejected"}}, set()),
+                         (False, False))
+
+    def test_family_names_the_miners_cluster(self):
+        self.assertEqual(dns.family("tool-bash-gh"), "tool-bash")
+        self.assertEqual(dns.family("tool-bash-sleep"), "tool-bash")
+        self.assertEqual(dns.family("tool-edit"), "tool-edit")
+        self.assertEqual(dns.family("red-ci-adamdaniel-ai"), "red-ci")
+        self.assertEqual(dns.family("github-batch-writes"), "github-batch-writes")
+
+    def test_two_measured_sibling_rejections_close_the_family(self):
+        one = {"tool-bash-gh": {"rejected"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", one, set()), (True, False))
+        two = {**one, "tool-bash-sleep": {"rejected"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", two, set()), (False, False))
+        # Another family, or a subject that is its own family, is untouched.
+        self.assertEqual(dns.eligibility("tool-edit", two, set()), (True, False))
+        self.assertEqual(dns.eligibility("red-ci-x", two, set()), (True, False))
+        # An accepted sibling keeps the family open.
+        opened = {**two, "tool-bash-git": {"accepted"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", opened, set()), (True, False))
+        # Rejections that measured nothing say nothing about the family.
+        unmeasured = {"tool-bash-gh": {f"unmeasured@{RUN_ID}"},
+                      "tool-bash-sleep": {f"unmeasured@{RUN_ID}"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", unmeasured, set()), (True, False))
+
+    def test_select_skips_a_subject_in_a_closed_family(self):
+        self.put("2026-10-26", proposal(subject="tool-bash-cd"))
+        self.write(self.drafted, "tool-bash-gh rejected\ntool-bash-sleep rejected\n")
+        self.assertEqual(self.select()["count"], "0")
+        self.write(self.drafted, "tool-bash-gh rejected\n")
+        self.assertEqual(self.select()["count"], "1")
+
+    def test_an_unmeasured_rejection_leaves_the_subject_eligible(self):
+        self.put("2026-10-26", proposal())
+        self.write(self.drafted, f"{SUBJECT} unmeasured@{RUN_ID}\n")
+        self.assertEqual(self.select()["count"], "1")
+        self.write(self.drafted, "".join(f"{SUBJECT} unmeasured@{RUN_ID[:-1]}{k}\n"
+                                         for k in "012"))
+        self.assertEqual(self.select()["count"], "0")
+        # A malformed tag is skipped, not counted.
+        self.write(self.drafted, f"{SUBJECT} unmeasured@nope\n")
+        self.assertEqual(self.select()["count"], "1")
+
+    def test_measured_reads_whether_any_fixture_ran_both_arms(self):
+        ok = {"n": 1, "errors": 0, "passed": 4, "total": 4}
+        bad = {"n": 1, "errors": 1, "passed": 0, "total": 0}
+        self.assertFalse(dns.measured({"fixtures": {}}))
+        self.assertFalse(dns.measured({}))
+        self.assertFalse(dns.measured({"fixtures": {"x": {"with_skill": bad,
+                                                          "without_skill": bad}}}))
+        self.assertFalse(dns.measured({"fixtures": {"x": {"with_skill": ok,
+                                                          "without_skill": None}}}))
+        self.assertTrue(dns.measured({"fixtures": {"x": {"with_skill": bad,
+                                                         "without_skill": bad},
+                                                   "y": {"with_skill": ok,
+                                                         "without_skill": ok}}}))
 
 
 class IssueProposals(Case):
@@ -567,6 +628,11 @@ class DraftedSubjects(Case):
             "20261026T000000Z-bbbbbb": hook_record(subject="two-thing"),
             "20261026T000000Z-cccccc": {"subject": "Bad Subject", "decision": "accepted"},
             "20261026T000000Z-dddddd": MARKER,
+            "20261026T000000Z-eeeeee": skill_record(
+                run_id="x", subject="three-thing", decision="rejected", plugin=None,
+                fixtures={}),
+            "20261026T000000Z-ffffff": skill_record(
+                run_id="x", subject="four-thing", decision="rejected"),
         }
         for run_id, doc in branches.items():
             git(repo, "checkout", "-q", "-b", f"b-{run_id}", base)
@@ -580,7 +646,9 @@ class DraftedSubjects(Case):
         git(repo, "checkout", "-q", "main")
         code, out, err = run_main("drafted-subjects", "--repo", str(repo))
         self.assertEqual(code, 0, err)
-        self.assertEqual(out.splitlines(), ["one-thing accepted", "two-thing hook-first"])
+        self.assertEqual(out.splitlines(), [
+            "four-thing rejected", "one-thing accepted",
+            "three-thing unmeasured@20261026T000000Z-eeeeee", "two-thing hook-first"])
         self.assertNotIn(MARKER, out + err)
 
 
@@ -1239,10 +1307,20 @@ class FixturesApply(Staged):
     def test_fixtures_land_with_their_readme_layout_entry(self):
         tree = self.tmp / "skills-evals"
         self.write(tree / "README.md", (REPO_ROOT / "README.md").read_text())
+        before = (REPO_ROOT / "evals/unscheduled.yml").read_text()
+        self.write(tree / "evals/unscheduled.yml", before)
         code, out, err = run_main("fixtures-apply", "--staged", str(self.stage()),
                                   "--tree", str(tree))
         self.assertEqual(code, 0, err)
         self.assertEqual(outputs(out)["subject"], SUBJECT)
+        # Adam's 2026-11-02 rule (test_issue_371_scheduled_fixtures.py): each
+        # drafted fixture is listed as unscheduled, with a reason, and the
+        # rows already there are kept byte for byte.
+        after = (tree / "evals/unscheduled.yml").read_text()
+        self.assertTrue(after.startswith(before))
+        rows = {r["path"]: r["reason"] for r in yaml.safe_load(after)["fixtures"]}
+        for name in FIXTURE_NAMES:
+            self.assertEqual(rows[f"evals/{SUBJECT}/{name}"], dns.ISOLATION_REASON)
         for name in FIXTURE_NAMES:
             self.assertTrue((tree / f"evals/{SUBJECT}/{name}/fixture.yaml").is_file())
         # The suite's own rule (test_every_eval_directory_is_named_in_the_readmes_layout).
@@ -1253,6 +1331,25 @@ class FixturesApply(Staged):
         code, _, _ = run_main("fixtures-apply", "--staged", str(self.tmp / "staged"),
                               "--tree", str(tree))
         self.assertEqual(code, 1, "a second apply must refuse the existing directory")
+
+    def test_a_fixture_with_a_context_gets_the_context_reason(self):
+        doc = {"skill": SUBJECT, "context": {"repo": "example"}}
+        rows = dns.unscheduled_entries(
+            {"b": {"fixture.yaml": yaml.safe_dump(doc).encode()},
+             "a": {"fixture.yaml": yaml.safe_dump({"skill": SUBJECT}).encode()}}, SUBJECT)
+        parsed = yaml.safe_load("fixtures:\n" + rows)["fixtures"]
+        self.assertEqual([r["path"] for r in parsed],
+                         [f"evals/{SUBJECT}/a", f"evals/{SUBJECT}/b"])
+        self.assertEqual([r["reason"] for r in parsed],
+                         [dns.ISOLATION_REASON, dns.CONTEXT_REASON])
+
+    def test_fixtures_apply_refuses_a_missing_unscheduled_file(self):
+        tree = self.tmp / "skills-evals"
+        self.write(tree / "README.md", (REPO_ROOT / "README.md").read_text())
+        code, _, _ = run_main("fixtures-apply", "--staged", str(self.stage()),
+                              "--tree", str(tree))
+        self.assertEqual(code, 1)
+        self.assertFalse((tree / "evals" / SUBJECT).exists())
 
 
 class Bodies(Staged):
@@ -1294,7 +1391,9 @@ class Bodies(Staged):
         self.assertIn("merges itself (merge commit)", skill)
         self.assertIn(dns.improve_gate.REGISTRY_ADR, skill)
         _, fixtures = self.body("pr-body", "--repo", "skills-evals", "--mode", "auto")
-        self.assertIn("Auto-merge (merge commit) is enabled", fixtures)
+        self.assertIn("Follow drafted-skill fixtures", fixtures)
+        self.assertIn("Once the skill's pull request has merged", fixtures)
+        self.assertNotIn("job token", fixtures)
         _, draft = self.body("pr-body", "--repo", "adam-agentskills")
         self.assertIn("nothing merges itself", draft)
         with self.assertRaises(SystemExit):

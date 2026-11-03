@@ -49,7 +49,9 @@ values only):
             --evals DIR --drafted FILE [--hook-declined FILE]
             -> proposal=<proposals/... or issue-proposals/...>, count=0|1,
                hook_declined=0|1
-  drafted-subjects --repo DIR      -> `<subject> <decision>` per line
+  drafted-subjects --repo DIR      -> `<subject> <decision>` per line, or
+                                      `<subject> unmeasured@<run_id>` for a
+                                      rejection that measured no fixture
   payload   --lessons DIR --proposal RELPATH --run-id ID [--hook-declined]
             -> the fire payload JSON on stdout (DIR is lessons/ for a
                proposals/ path, the issue-proposals --out DIR for an
@@ -629,14 +631,38 @@ def skill_exists(registry: Path, subject: str) -> bool:
     return any(p.is_file() for p in registry.glob(f"plugins/*/skills/{subject}/SKILL.md"))
 
 
+# Unmeasured rejections a subject may collect before it is retired anyway,
+# so a proposal no drafter can stage correctly stops costing a fire a day.
+MAX_UNMEASURED = 3
+UNMEASURED_PREFIX = "unmeasured@"
+
+
+def measured(doc: dict) -> bool:
+    """True when some fixture of a draft record ran both arms without error."""
+    fixtures = doc.get("fixtures")
+    if not isinstance(fixtures, dict):
+        return False
+    for row in fixtures.values():
+        arms = [row.get(a) for a in ("with_skill", "without_skill")] \
+            if isinstance(row, dict) else []
+        if arms and all(isinstance(a, dict) and a.get("total") and not a.get("errors")
+                        for a in arms):
+            return True
+    return False
+
+
 def parse_drafted(path: Path) -> dict[str, set[str]]:
-    """`<subject> <decision>` lines (drafted-subjects' output) by subject;
-    anything else is skipped."""
+    """`<subject> <decision>` and `<subject> unmeasured@<run_id>` lines
+    (drafted-subjects' output) by subject; anything else is skipped."""
     out: dict[str, set[str]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         parts = line.split()
-        if len(parts) == 2 and SUBJECT_RE.fullmatch(parts[0]) and parts[1] in DECISIONS:
-            out.setdefault(parts[0], set()).add(parts[1])
+        if len(parts) != 2 or not SUBJECT_RE.fullmatch(parts[0]):
+            continue
+        tag = parts[1]
+        if tag in DECISIONS or (tag.startswith(UNMEASURED_PREFIX)
+                                and RUN_ID_RE.fullmatch(tag[len(UNMEASURED_PREFIX):])):
+            out.setdefault(parts[0], set()).add(tag)
     return out
 
 
@@ -647,13 +673,49 @@ def parse_subjects(path: Path | None) -> set[str]:
             if SUBJECT_RE.fullmatch(line.strip())}
 
 
+# A closed family: this many siblings measured and rejected, none accepted.
+MAX_FAMILY_REJECTED = 2
+
+
+def family(subject: str) -> str:
+    """The cluster a mined subject belongs to (mine_sessions.py's
+    `cluster_subject` names): `tool-<tool>` for `tool-<tool>-<word>`, `red-ci`
+    for `red-ci-<repo>`; any other subject is a family of its own."""
+    if subject.startswith("red-ci-"):
+        return "red-ci"
+    parts = subject.split("-")
+    if parts[0] == "tool" and len(parts) > 2:
+        return "-".join(parts[:2])
+    return subject
+
+
+def family_closed(subject: str, drafted: dict[str, set[str]]) -> bool:
+    """True when MAX_FAMILY_REJECTED other subjects of the same family were
+    measured and rejected and none was accepted: siblings of a signal that
+    keeps producing skills that add nothing are not drafted again under a
+    new name."""
+    fam = family(subject)
+    if fam == subject:
+        return False
+    siblings = [d for s, d in drafted.items() if s != subject and family(s) == fam]
+    if any("accepted" in d for d in siblings):
+        return False
+    return sum("rejected" in d for d in siblings) >= MAX_FAMILY_REJECTED
+
+
 def eligibility(subject: str, drafted: dict[str, set[str]],
                 declined: set[str]) -> tuple[bool, bool]:
     """(eligible, via a declined hook proposal). A skill record (accepted or
-    rejected) is final; a hook-first record holds the subject until the
-    agent-checks lane declines it."""
+    rejected) is final; a rejection that measured nothing is not, until
+    MAX_UNMEASURED of them; a hook-first record holds the subject until the
+    agent-checks lane declines it; a subject in a closed family
+    (`family_closed`) is not drafted."""
     decisions = drafted.get(subject, set())
     if decisions & {"accepted", "rejected"}:
+        return False, False
+    if family_closed(subject, drafted):
+        return False, False
+    if sum(d.startswith(UNMEASURED_PREFIX) for d in decisions) >= MAX_UNMEASURED:
         return False, False
     if "hook-first" in decisions:
         return (True, True) if subject in declined else (False, False)
@@ -735,7 +797,14 @@ def drafted_subjects(repo: str) -> list[str]:
         if isinstance(doc, dict) and isinstance(doc.get("subject"), str) \
                 and SUBJECT_RE.fullmatch(doc["subject"]) \
                 and doc.get("decision") in DECISIONS:
-            lines.add(f"{doc['subject']} {doc['decision']}")
+            # A rejection that measured nothing (a shape mistake caught
+            # before any run, or every fixture's run_eval failing) says
+            # nothing about the proposal, so it is not final: it counts
+            # toward MAX_UNMEASURED instead, and the subject is drafted again
+            # with no branch to delete by hand.
+            unmeasured = doc["decision"] == "rejected" and not measured(doc)
+            lines.add(f"{doc['subject']} unmeasured@{match.group('run_id')}"
+                      if unmeasured else f"{doc['subject']} {doc['decision']}")
     return sorted(lines)
 
 
@@ -1607,10 +1676,36 @@ def layout_line(subject: str, comment: str) -> str:
     return f"  {subject}/".ljust(27) + f"# {comment}"
 
 
+#: Adam's 2026-11-02 rule (test_issue_371_scheduled_fixtures.py): a skill
+#: fixture is on evals/scheduled.yml or listed in this file with a reason.
+UNSCHEDULED_FILE = "evals/unscheduled.yml"
+#: The reason an isolation pair (no `context:`) is listed, the same words the
+#: earlier drafted and hand-listed fixtures carry.
+ISOLATION_REASON = ("Isolation pair with no context: its runs cannot pool "
+                    "(ADR 0012); convert with a context before scheduling.")
+CONTEXT_REASON = ("Drafted by the draft loop with a context and no readiness "
+                  "note yet: add one and move it to scheduled.yml.")
+
+
+def unscheduled_entries(by_fixture: dict[str, dict[str, bytes]], subject: str) -> str:
+    """The unscheduled.yml rows for a drafted skill's fixtures, one per
+    fixture, with the reason its shape gives."""
+    rows = []
+    for name in sorted(by_fixture):
+        doc = yaml.safe_load(by_fixture[name]["fixture.yaml"].decode("utf-8"))
+        reason = CONTEXT_REASON if isinstance(doc, dict) and doc.get("context") \
+            else ISOLATION_REASON
+        rows.append(f"  - path: evals/{subject}/{name}\n"
+                    f"    reason: {json.dumps(reason)}\n")
+    return "".join(rows)
+
+
 def fixtures_apply(staged: Path, tree: Path) -> dict:
     """In a skills-evals checkout: the staged fixtures at evals/<subject>/,
-    and the README's layout entry the suite requires of every eval directory
-    (test_every_eval_directory_is_named_in_the_readmes_layout)."""
+    the README's layout entry the suite requires of every eval directory
+    (test_every_eval_directory_is_named_in_the_readmes_layout), and one
+    UNSCHEDULED_FILE row per fixture (test_issue_371_scheduled_fixtures.py):
+    a drafted fixture is not scheduled until someone writes its readiness."""
     record = staged_record(staged, "accepted")
     subject = record["subject"]
     source = staged / "evals" / subject
@@ -1634,6 +1729,12 @@ def fixtures_apply(staged: Path, tree: Path) -> dict:
                   if "evals/" in b and "harness/" in b), None)
     if index is None or anchor not in blocks[index]:
         raise Rejected("README.md has no layout block with a real-work/ entry")
+    _no_symlink_on(tree, UNSCHEDULED_FILE)
+    unscheduled = tree / UNSCHEDULED_FILE
+    listed = unscheduled.read_text(encoding="utf-8") if unscheduled.is_file() else ""
+    if not listed.startswith("#") or "\nfixtures:\n" not in listed \
+            or f"path: evals/{subject}/" in listed:
+        raise Rejected(f"{UNSCHEDULED_FILE} is missing, malformed or already lists the subject")
     entry = [layout_line(subject, f"A/B eval drafted from a lesson: "
                          f"{len(by_fixture)} fixtures")]
     entry += [f"    {name}/" for name in sorted(by_fixture)]
@@ -1643,7 +1744,9 @@ def fixtures_apply(staged: Path, tree: Path) -> dict:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     readme.write_text("```".join(blocks), encoding="utf-8")
-    return {"subject": subject, "files": str(len(files) + 1)}
+    unscheduled.write_text(listed + ("" if listed.endswith("\n") else "\n")
+                           + unscheduled_entries(by_fixture, subject), encoding="utf-8")
+    return {"subject": subject, "files": str(len(files) + 2)}
 
 
 # ---------------------------------------------------------------------------
@@ -1691,11 +1794,11 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str,
             "coverage census reports an `orphan_fixture`."]
         if mode == "auto":
             head += [
-                "", "Auto-merge (merge commit) is enabled, with no human "
-                "review. This pull request was opened with the job token, "
-                "which starts no workflow, so its required checks start only "
-                "when someone pushes to it or runs them, after the skill's "
-                "pull request has merged."]
+                "", "Auto-merge (merge commit) is not on yet, and no human "
+                "reviews this. Once the skill's pull request has merged, the "
+                "`Follow drafted-skill fixtures` workflow turns auto-merge "
+                "on (and restarts any checks GitHub held), so this merges "
+                "itself after its required checks pass."]
     return "\n".join([*head, "", "---", "", report, "", MARKER, ""])
 
 

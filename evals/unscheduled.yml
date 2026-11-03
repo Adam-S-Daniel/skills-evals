@@ -36,6 +36,14 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/writing-adrs/why-no-comment-trail
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/red-ci-adamdaniel-ai/concurrency-cancel
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/red-ci-adamdaniel-ai/paths-required
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/red-ci-adamdaniel-ai/timeout-wall
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/red-ci-adamdaniel-ai/unpinned-action
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/tool-powershell/preview-before-delete
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/tool-powershell/protected-path-cleanup

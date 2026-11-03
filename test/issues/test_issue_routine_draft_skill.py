@@ -25,7 +25,12 @@ PyYAML and running the shell steps that carry logic against a fake `gh`:
     acting job re-validates at the judged sha before it acts; the fixtures
     pull request follows the skill's; hook-first opens an issue with the job
     token's `issues: write` and nothing else; no merge, force or approve;
-  * all three: every `uses:` locked in actions.lock at a tag the repo
+    the fixtures pull request is opened with the roster App token and the
+    gate never arms its auto-merge;
+  * draft-fixtures-follow.yml: schedule plus dispatch; once the skill's pull
+    request has merged it updates a job-token-opened fixtures pull request's
+    branch and turns on its auto-merge, with the roster App token alone;
+  * all four: every `uses:` locked in actions.lock at a tag the repo
     already pins, no `${{ }}` in a `run:`, no concurrency group, every
     checkout without persisted credentials.
 
@@ -34,6 +39,7 @@ Discovered and run by test/run_tests.py.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -54,7 +60,8 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 CALLER = WORKFLOWS / "routine-draft-skill.yml"
 SIGNAL = WORKFLOWS / "routine-draft-skill-pushed.yml"
 GATE = WORKFLOWS / "routine-draft-skill-gate.yml"
-OURS = (CALLER, SIGNAL, GATE)
+FOLLOW = WORKFLOWS / "draft-fixtures-follow.yml"
+OURS = (CALLER, SIGNAL, GATE, FOLLOW)
 sys.path.insert(0, str(TEST_DIR))
 from lockfile_pins import lock_problem  # noqa: E402
 
@@ -515,6 +522,8 @@ class GateTests(unittest.TestCase):
         refs = sorted((p, v.strip()) for p, v in strings(self.doc) if "secrets." in v)
         mint = next(i for i, s in enumerate(self.jobs["skill-pr"]["steps"])
                     if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
+        roster = next(i for i, s in enumerate(self.jobs["fixtures-pr"]["steps"])
+                      if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
         self.assertEqual(refs, sorted([
             (("jobs", "credential", "steps", "0", "env", "PR_CREDENTIAL_SET"),
              "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}"),
@@ -522,14 +531,17 @@ class GateTests(unittest.TestCase):
              "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}"),
             (("jobs", "skill-pr", "steps", str(mint), "with", "private-key"),
              "${{ secrets.EVAL_IMPROVE_APP_PEM }}"),
+            (("jobs", "fixtures-pr", "steps", str(roster), "with", "private-key"),
+             "${{ secrets.ROSTER_APP_PRIVATE_KEY }}"),
         ]))
         with_ = self.jobs["skill-pr"]["steps"][mint]["with"]
         self.assertEqual(with_["repositories"], "adam-agentskills")
         self.assertEqual({k: v for k, v in with_.items() if k.startswith("permission-")},
                          {"permission-contents": "write", "permission-pull-requests": "write"})
-        users = [p for p, v in strings(self.doc) if "steps.app-token.outputs" in v]
-        self.assertEqual(len(users), 1)
-        self.assertEqual(users[0][-2:], ("env", "GH_TOKEN"))
+        users = sorted(p for p, v in strings(self.doc) if "steps.app-token.outputs" in v)
+        self.assertEqual([(u[1], u[-2:]) for u in users],
+                         [("fixtures-pr", ("env", "APP_TOKEN")),
+                          ("skill-pr", ("env", "GH_TOKEN"))])
 
     def test_every_acting_job_revalidates_at_the_judged_sha_first(self):
         for name in ("skill-pr", "fixtures-pr", "hook-issue"):
@@ -603,7 +615,13 @@ class GateTests(unittest.TestCase):
         self.assertEqual(fixtures["env"]["AUTO"], "${{ needs.skill-pr.outputs.auto }}")
         self.assertEqual(self.jobs["skill-pr"]["outputs"]["auto"],
                          "${{ steps.open.outputs.auto }}")
-        for run, mode in ((skill["run"], '"$MODE"'), (fixtures["run"], '"$mode"')):
+        # The fixtures step opens ready or draft but never arms auto-merge:
+        # draft-fixtures-follow.yml does, after the skill has merged.
+        self.assertNotIn("gh pr merge", fixtures["run"])
+        self.assertNotIn('"MERGE"', fixtures["run"])
+        self.assertIn("if [ \"$mode\" = draft ]; then\n  draft=(--draft)\nfi",
+                      fixtures["run"].replace("          ", ""))
+        for run, mode in ((skill["run"], '"$MODE"'),):
             with self.subTest(mode=mode):
                 self.assertIn(f"if [ {mode} = draft ]; then\n  draft=(--draft)\nfi",
                               run.replace("          ", ""))
@@ -621,6 +639,25 @@ class GateTests(unittest.TestCase):
         self.assertLess(run.index("gh pr merge"), run.index('echo "auto=true"'))
         self.assertIn("eval-improve/*|retire-skill/*|draft-skill/*)", run)
         self.assertIn('if [ "$AUTO" = true ]; then\n  mode=auto', fixtures["run"].replace("          ", ""))
+
+    def test_the_fixtures_pull_request_is_opened_with_the_roster_app(self):
+        steps = self.jobs["fixtures-pr"]["steps"]
+        ids = [s.get("id") for s in steps]
+        names = [s.get("name") for s in steps]
+        mint = steps[ids.index("app-token")]
+        opener = steps[names.index("Open the fixtures' pull request")]
+        self.assertLess(ids.index("revalidate"), ids.index("app-token"))
+        self.assertLess(ids.index("app-token"), names.index(opener["name"]))
+        self.assertIs(mint["continue-on-error"], True)
+        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+        self.assertEqual(mint["with"]["repositories"], "skills-evals")
+        self.assertEqual({k: v for k, v in mint["with"].items() if k.startswith("permission-")},
+                         {"permission-contents": "write", "permission-pull-requests": "write"})
+        self.assertEqual(opener["env"]["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
+        self.assertEqual(opener["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertNotIn("gh pr merge", opener["run"])
+        self.assertIn("::warning::", opener["run"])
+        self.assertIn("draft-fixtures-follow.yml", opener["run"])
 
     def test_the_fixtures_commit_is_evals_subject_only(self):
         body = step(self.doc, "fixtures-pr", "Open the fixtures' pull request")["run"]
@@ -655,8 +692,103 @@ class GateTests(unittest.TestCase):
 
     def test_the_guards_can_fail(self):
         self.assertIsNotNone(lock_problem("actions/checkout@v4", GATE))
+        # The fixtures-step guards fail on a mutated copy of the gate.
+        mutated = copy.deepcopy(self.doc)
+        steps = mutated["jobs"]["fixtures-pr"]["steps"]
+        steps[[s.get("id") for s in steps].index("app-token")]["continue-on-error"] = False
+        self.assertIsNot(steps[[s.get("id") for s in steps].index("app-token")]
+                         ["continue-on-error"], True)
+        opener = next(s for s in steps if s.get("name") == "Open the fixtures' pull request")
+        opener["run"] += "\ngh pr merge \"$url\" --auto --merge\n"
+        self.assertIn("gh pr merge", opener["run"])
         self.assertEqual(PUSH_TARGET.findall("git push origin HEAD:main"), ["HEAD:main"])
         self.assertTrue(fnmatch("claude/eval-x", "claude/eval-*"))
+
+
+class FollowTests(unittest.TestCase):
+    """draft-fixtures-follow.yml: structural facts, each with a control."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = load(FOLLOW)
+
+    @staticmethod
+    def problems(doc: dict) -> list[str]:
+        """Every structural rule the workflow must keep; empty when it does."""
+        found = []
+        on = triggers(doc)
+        if set(on) != {"schedule", "workflow_dispatch"}:
+            found.append("triggers")
+        if on.get("schedule") != [{"cron": "7,37 * * * *"}]:
+            found.append("schedule")
+        if doc.get("permissions") != {}:
+            found.append("workflow permissions")
+        if "concurrency" in doc or "env" in doc:
+            found.append("workflow concurrency or env")
+        job = doc["jobs"]["follow"]
+        if job.get("permissions") != {"actions": "read", "contents": "read", "pull-requests": "read"}:
+            found.append("job permissions")
+        if "concurrency" in job:
+            found.append("job concurrency")
+        if job.get("if") != DEFAULT_BRANCH_IF:
+            found.append("default branch only")
+        runs = "\n".join(s["run"] for s in job["steps"] if "run" in s)
+        for needle in ("update-branch", "--auto --merge", "draft-skill-fixtures/",
+                       "merged_at", "status=action_required"):
+            if needle not in runs:
+                found.append(f"missing {needle}")
+        if "${{" in runs:
+            found.append("expression in run")
+        for banned in ("gh pr close", "--force", "approve", "git push"):
+            if banned in runs:
+                found.append(f"banned {banned}")
+        return found
+
+    def test_the_structure_holds(self):
+        self.assertEqual(self.problems(self.doc), [])
+
+    def test_the_app_token_is_minted_first_and_scoped(self):
+        steps = self.doc["jobs"]["follow"]["steps"]
+        self.assertEqual(steps[0]["id"], "app-token")
+        self.assertIs(steps[0]["continue-on-error"], True)
+        self.assertEqual(steps[0]["with"]["repositories"], "skills-evals")
+        env = steps[1]["env"]
+        self.assertEqual(env["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
+        self.assertEqual(env["GH_TOKEN"], "${{ github.token }}")
+        self.assertEqual(env["REGISTRY"], "Adam-S-Daniel/adam-agentskills")
+        self.assertEqual(len(steps), 2)
+
+    def test_each_rule_can_fail(self):
+        def mutate(change):
+            doc = copy.deepcopy(self.doc)
+            change(doc)
+            return self.problems(doc)
+
+        def run_of(doc):
+            return doc["jobs"]["follow"]["steps"][1]
+
+        self.assertIn("triggers", mutate(lambda d: triggers(d).update(push={})))
+        self.assertIn("schedule", mutate(
+            lambda d: triggers(d).update(schedule=[{"cron": "0 * * * *"}])))
+        self.assertIn("workflow permissions", mutate(
+            lambda d: d.update(permissions={"contents": "read"})))
+        self.assertIn("workflow concurrency or env", mutate(
+            lambda d: d.update(concurrency={"group": "x"})))
+        self.assertIn("job permissions", mutate(
+            lambda d: d["jobs"]["follow"]["permissions"].update(contents="write")))
+        self.assertIn("job concurrency", mutate(
+            lambda d: d["jobs"]["follow"].update(concurrency="x")))
+        self.assertIn("default branch only", mutate(
+            lambda d: d["jobs"]["follow"].pop("if")))
+        for needle in ("update-branch", "--auto --merge", "draft-skill-fixtures/",
+                       "merged_at", "status=action_required"):
+            self.assertIn(f"missing {needle}", mutate(
+                lambda d, n=needle: run_of(d).update(run=run_of(d)["run"].replace(n, "x"))))
+        self.assertIn("expression in run", mutate(
+            lambda d: run_of(d).update(run=run_of(d)["run"] + "\necho ${{ github.actor }}")))
+        for banned in ("gh pr close", "--force", "approve", "git push"):
+            self.assertIn(f"banned {banned}", mutate(
+                lambda d, b=banned: run_of(d).update(run=run_of(d)["run"] + f"\n{b}")))
 
 
 if __name__ == "__main__":

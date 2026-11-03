@@ -1090,6 +1090,34 @@ def check_usage(usage, where: str, run: dict) -> None:
     _reasons(measured, where, MEASURED_NULLABLE)
 
 
+def _capped(detail: str) -> str:
+    """The harness's own cut (run_eval._capped_detail): MAX_STRING
+    characters, ending in a marker that says how long the detail was."""
+    marker = f" [truncated: {len(detail)} chars]"
+    return detail[:MAX_STRING - len(marker)] + marker
+
+
+def cap_summary_details(doc) -> bool:
+    """Cut every over-cap objective check `detail` and `error.detail` string
+    in a summary to MAX_STRING, in place; True when one was cut. A harness
+    from before the cap wrote them whole, and that one long string (a
+    passing `files_unchanged` naming every file, 2026-11-03) rejected the
+    whole paid run. Only these two fields are cut, and only strings: a
+    wrong type is still check_summary's to refuse."""
+    if not isinstance(doc, dict):
+        return False
+    holders = [doc.get("error")]
+    if isinstance(doc.get("objective_checks"), list):
+        holders.extend(doc["objective_checks"])
+    cut = False
+    for holder in holders:
+        if isinstance(holder, dict) and isinstance(holder.get("detail"), str) \
+                and len(holder["detail"]) > MAX_STRING:
+            holder["detail"] = _capped(holder["detail"])
+            cut = True
+    return cut
+
+
 def check_summary(doc, where: str, parts: dict) -> None:
     _object(doc, where, SUMMARY_ALLOWED, SUMMARY_REQUIRED)
     if doc["arm"] != parts["arm"]:
@@ -1523,7 +1551,10 @@ def validate(repo: str, base: str, source: str, branch: str,
             raise Rejected(f"{name!r}: size changed while reading")
         text = decode_text(data, where)
         if kind == "summary.json":
-            check_summary(load_json(text, where), where, parts)
+            doc = load_json(text, where)
+            if cap_summary_details(doc):
+                data = (json.dumps(doc, indent=2)).encode("utf-8")
+            check_summary(doc, where, parts)
         elif kind == "tool_trace.json":
             check_tool_trace(load_json(text, where), where)
         else:

@@ -1,0 +1,182 @@
+name: Follow drafted-skill fixtures
+
+# Draft mode opens two pull requests for an accepted skill: the skill in
+# adam-agentskills, then its fixtures here (routine-draft-skill-gate.yml,
+# docs/how-it-works.md "Draft mode"). The fixtures must merge only AFTER
+# their skill, or the suite names a skill the registry does not have. This
+# workflow is what arms the fixtures' auto-merge, and only once the skill's
+# pull request has merged.
+#
+# Why it exists: GitHub holds every workflow run of a pull request opened by
+# github-actions[bot] at `action_required` (skills-evals#618), so the
+# required `test` check never runs and an armed auto-merge never fires. The
+# gate therefore opens the fixtures pull request with the roster App token.
+# When that token was missing the gate falls back to the job token and warns;
+# this workflow then restarts the held checks.
+#
+# Every 30 minutes (and on dispatch) it lists the open, non-draft pull
+# requests here whose head branch is `draft-skill-fixtures/<subject>` and
+# looks up the skill's pull request, `draft-skill/<subject>` in
+# adam-agentskills:
+#
+#   no skill pull request, or it is open   wait; nothing is touched.
+#   closed without merging                 a notice only: a person decides
+#                                          what happens to the fixtures.
+#   merged                                 1. a fixtures pull request opened
+#                                          by github-actions[bot] whose head
+#                                          has runs held at action_required
+#                                          is brought
+#                                          up to date with `update-branch`
+#                                          under the App token; that is a
+#                                          push by the App, so its checks run.
+#                                          2. if auto-merge is off, turn it on
+#                                          (merge commit) and read it back.
+#
+# * Tokens: the job token (actions, contents and pull-requests: read) reads; the
+#   roster App token (skills-evals only, contents and pull-requests write),
+#   minted by the first step and used by the second alone, does the two
+#   writes. With no App token nothing is written and the next run tries
+#   again.
+# * It never approves, closes, force-pushes or deletes anything, and a draft
+#   fixtures pull request (a person is meant to read it) is left alone.
+# * Every value reaches a `run:` block through `env`, never as an expression;
+#   a response body is never printed.
+# * Default branch only; schedule and dispatch, no push or pull_request
+#   trigger, so no path filter and no required check.
+# * No `concurrency` group: a run held in a group would cancel the pending
+#   one, and every run is idempotent (a second arming is a no-op).
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  follow:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Mint the roster App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Arm or restart fixtures pull requests whose skill has merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          REGISTRY: Adam-S-Daniel/adam-agentskills
+        run: |
+          set -euo pipefail
+          app_token=""
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*) : ;;
+            *) app_token="$APP_TOKEN" ;;
+          esac
+          if [ -z "$app_token" ]; then
+            echo "::warning::the roster App token is unavailable; nothing is armed or restarted, and the next run tries again"
+            exit 0
+          fi
+          listing="$RUNNER_TEMP/open-pulls.json"
+          if ! gh api "repos/${REPO}/pulls?state=open&per_page=100" > "$listing" 2>/dev/null; then
+            echo "::error::could not list the open pull requests"
+            exit 1
+          fi
+          rows="$(jq -r --arg repo "$REPO" '
+            .[] | select((.head.ref | startswith("draft-skill-fixtures/"))
+                         and .head.repo.full_name == $repo
+                         and (.draft | not))
+            | [.number, .head.ref, .head.sha, .user.login, (.auto_merge != null)]
+            | @tsv' "$listing")" || rows=""
+          failed=0
+          summary() {
+            echo "- #${1}: ${2}" >> "$GITHUB_STEP_SUMMARY"
+          }
+          echo "### Drafted-skill fixtures pull requests" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$rows" ]; then
+            echo "no open fixtures pull request to follow"
+            summary "-" "none open"
+            exit 0
+          fi
+          while IFS=$'\t' read -r n ref sha author armed <&3; do
+            subject="${ref#draft-skill-fixtures/}"
+            if ! [[ "$n" =~ ^[0-9]+$ ]] || ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]] \
+               || ! [[ "$subject" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]]; then
+              echo "::warning::skipping a fixtures pull request whose branch or sha has an unexpected shape"
+              continue
+            fi
+            # The newest skill pull request for the subject, any state.
+            state="$(gh api "repos/${REGISTRY}/pulls?state=all&head=Adam-S-Daniel:draft-skill/${subject}&per_page=10" 2>/dev/null \
+              | jq -r 'sort_by(.created_at) | last
+                       | if . == null then "none"
+                         elif .merged_at != null then "merged"
+                         elif .state == "open" then "open"
+                         else "closed-unmerged" end')" || state=""
+            case "$state" in
+              none|open)
+                echo "#${n}: waiting on the skill (${subject})"
+                summary "$n" "waiting on the skill's pull request"
+                continue ;;
+              closed-unmerged)
+                echo "::notice::#${n}: the skill's pull request for ${subject} was closed without merging; the fixtures pull request is left for a person"
+                summary "$n" "the skill was not merged; left for a person"
+                continue ;;
+              merged) ;;
+              *)
+                echo "::warning::#${n}: could not tell the state of the skill's pull request; the next run tries again"
+                summary "$n" "skill state unknown"
+                continue ;;
+            esac
+            # Runs GitHub is holding on the head (a job-token pull request).
+            # Only then is the branch updated, so a pull request whose
+            # checks already run is never restarted on every pass.
+            held="$(gh api "repos/${REPO}/actions/runs?head_sha=${sha}&status=action_required&per_page=1" \
+              --jq '.total_count' 2>/dev/null)" || held=""
+            if [ "$author" = "github-actions[bot]" ] && [[ "$held" =~ ^[1-9][0-9]*$ ]]; then
+              # A push by the App starts them; update-branch is that push.
+              if GH_TOKEN="$app_token" gh api -X PUT "repos/${REPO}/pulls/${n}/update-branch" \
+                   -f expected_head_sha="$sha" > /dev/null 2>&1; then
+                echo "#${n}: branch updated by the App, so its checks run"
+                summary "$n" "branch updated; checks restarted"
+              else
+                echo "::warning::#${n}: update-branch did not apply (already up to date, or the head moved); its checks are still held"
+                summary "$n" "update-branch did not apply; checks still held"
+              fi
+            fi
+            if [ "$armed" = true ]; then
+              summary "$n" "skill merged; auto-merge already on"
+              continue
+            fi
+            if ! GH_TOKEN="$app_token" gh pr merge "$n" --repo "$REPO" --auto --merge > /dev/null 2>&1; then
+              echo "::error::#${n}: could not turn on auto-merge"
+              summary "$n" "could not turn on auto-merge"
+              failed=1
+              continue
+            fi
+            method="$(GH_TOKEN="$app_token" gh pr view "$n" --repo "$REPO" --json autoMergeRequest \
+              --jq '.autoMergeRequest.mergeMethod // ""' 2>/dev/null)" || method=""
+            if [ "$method" != "MERGE" ]; then
+              echo "::error::#${n}: auto-merge is not enabled with the merge method"
+              summary "$n" "auto-merge not confirmed"
+              failed=1
+              continue
+            fi
+            echo "#${n}: skill merged; auto-merge turned on (merge commit)"
+            summary "$n" "skill merged; auto-merge turned on (merge commit)"
+          done 3<<<"$rows"
+          exit "$failed"
