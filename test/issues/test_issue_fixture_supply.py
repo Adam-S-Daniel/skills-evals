@@ -16,7 +16,9 @@ loop with no human in the loop"; ADR 0003's 2026-10-26 addendum).
     arms, no errored arm and the committed digest, skip onboarding and
     browser-testing, flip `draft:` and append a schedule entry that the
     weekly planner still loads;
-  * the workflow, parsed with PyYAML, keeps its trust boundary.
+  * the workflow, parsed with PyYAML, keeps its trust boundary, and its
+    scaffold lane stays paused (Adam, 2026-11-03, skills-evals#656): no job
+    mines, picks or fires; `pick` and `supply_plan` stay tested as code.
 
 Offline and deterministic: throwaway Git repositories, synthetic results
 trees, the allowance state passed in. example.com only.
@@ -419,14 +421,27 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         self.assertEqual(self.doc["permissions"], {})
         self.assertNotIn("concurrency", self.doc)
         self.assertEqual({name: job["permissions"] for name, job in self.jobs.items()}, {
-            "plan": {"contents": "read", "actions": "read"},
-            "dispatch": {"contents": "read", "actions": "write"},
             "promote": {"contents": "read", "pull-requests": "read"}})
         for name, job in self.jobs.items():
             with self.subTest(job=name):
                 self.assertNotIn("concurrency", job)
                 self.assertIn("github.ref == format('refs/heads/{0}', "
                               "github.event.repository.default_branch)", job["if"])
+
+    def test_the_scaffold_lane_is_paused(self):
+        # Adam, 2026-11-03 (skills-evals#656): fixture requests built from
+        # real fleet work replace it. Nothing here mines, picks or fires.
+        self.assertEqual(sorted(self.jobs), ["promote"])
+        text = json.dumps(self.jobs)
+        for gone in ("mode=scaffold", "gh workflow run", "scaffold_real_work.py pick",
+                     "mine_real_work.py", "REGISTRY_READ_APP_PEM", "actions: write"):
+            with self.subTest(gone=gone):
+                self.assertNotIn(gone, text)
+        header = self.text.split("\non:", 1)[0]
+        for cited in ("THE SCAFFOLD LANE IS PAUSED", "Adam, 2026-11-03", "skills-evals#656",
+                      "real", "fixture_pr_gate.py", "fixture_queue.py"):
+            with self.subTest(cited=cited):
+                self.assertIn(cited, header)
 
     def test_every_uses_is_locked(self):
         uses = [s["uses"] for job in self.jobs.values() for s in job["steps"] if "uses" in s]
@@ -441,21 +456,6 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         for job, block in blocks:
             with self.subTest(job=job):
                 self.assertNotIn("${{", block)
-
-    def test_dispatch_reuses_the_fire_workflow_one_at_a_time(self):
-        job = self.jobs["dispatch"]
-        self.assertEqual(job["strategy"]["max-parallel"], 1)
-        block = self.step("dispatch", "gh workflow run")["run"]
-        self.assertIn("gh workflow run routine-eval-fire.yml", block)
-        self.assertIn("--raw-field mode=scaffold", block)
-        self.assertIn("sleep 60", block)
-
-    def test_constants_match_the_script(self):
-        listing = self.step("plan", "gh api --paginate")["run"]
-        self.assertIn(f"-{scaffold.REFIRE_AFTER_DAYS} days", listing)
-        pick = self.step("plan", "scaffold_real_work.py pick")["run"]
-        self.assertIn(f"--max {scaffold.MAX_IN_FLIGHT}", pick)
-        self.assertIn("display_title", listing)
 
     def test_the_app_key_reaches_only_promotes_mint_step(self):
         holders = [(name, s.get("id")) for name, job in self.jobs.items()
@@ -483,17 +483,6 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
                     self.assertIs(s["with"]["persist-credentials"], False)
         mint = steps[ids.index("app-token")]
         self.assertIn("steps.contextualize.outputs.count != '0'", mint["if"])
-
-    def test_the_miner_reads_the_fleet_with_the_read_only_registry_token(self):
-        holders = [(name, s.get("id")) for name, job in self.jobs.items()
-                   for s in job["steps"] if "REGISTRY_READ_APP_PEM" in json.dumps(s)]
-        self.assertEqual(holders, [("plan", "fleet-token")])
-        mint = next(s for s in self.jobs["plan"]["steps"] if s.get("id") == "fleet-token")
-        self.assertEqual(mint["with"]["repositories"], "adam-agentskills-private")
-        self.assertEqual(mint["with"]["permission-contents"], "read")
-        self.assertNotIn("continue-on-error", mint)
-        step = self.step("plan", "mine_real_work.py mine")
-        self.assertEqual(step["env"]["GH_TOKEN"], "${{ steps.fleet-token.outputs.token }}")
 
     def test_promotion_pushes_only_what_promote_writes_and_arms_that_sha(self):
         step = self.step("promote", "app_gh pr merge")

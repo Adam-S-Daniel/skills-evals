@@ -396,8 +396,10 @@ class WorkflowTests(unittest.TestCase):
 
     def test_actions_read_only_on_build(self):
         self.assertEqual(self.wf["permissions"], {})
+        # The fixture queue (2026-11-03) adds `pull-requests: read`.
         self.assertEqual(self.build["permissions"],
-                         {"actions": "read", "contents": "read", "issues": "read"})
+                         {"actions": "read", "contents": "read", "issues": "read",
+                          "pull-requests": "read"})
         self.assertEqual(self.wf["jobs"]["publish"]["permissions"], {"contents": "write"})
 
     def test_the_token_is_only_in_the_fetching_steps(self):
@@ -406,9 +408,12 @@ class WorkflowTests(unittest.TestCase):
             self.assertNotIn("env", job)
         holders = {s.get("name") for job in self.wf["jobs"].values() for s in job["steps"]
                    if any(k in (s.get("env") or {}) for k in ("GH_TOKEN", "GITHUB_TOKEN"))}
-        # The regression-issue listing predates #555; publish pushes with its own.
+        # The regression-issue listing predates #555; publish pushes with its own;
+        # the fixture queue (2026-11-03) lists and files issues with its own.
         self.assertEqual(holders, {"List the recent eval fires", "List the open regression issues",
-                                   "Commit to persistent/eval-results and push"})
+                                   "Commit to persistent/eval-results and push",
+                                   "List the fixture requests and their pull requests",
+                                   "File, keep or close the fixture queue issues"})
         self.assertEqual(self.fetch["env"], {"GH_TOKEN": "${{ github.token }}"})
 
     def test_the_fetch_step_cannot_fail_the_job(self):
