@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T21:06:40Z",
+  "generated_at": "2026-11-03T21:10:45Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T21:05:04Z",
+ "generated_at": "2026-11-03T21:08:14Z",
  "guidance": {
   "removed": [
    {
@@ -9854,7 +9854,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T21:02:44Z",
+ "newest_run": "2026-11-03T21:04:58Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -11241,7 +11241,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 26,
+   "current_text_runs": 27,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -11252,6 +11252,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:03:23Z",
+     "cli_version": "2.1.317",
+     "fixture": "secret-name",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T204554Z-3bf541/debug-github-workflows/20261103T210323Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.14596830000000002,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.1057515,
+      "judge_mean": 4.4,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T20:50:13Z",
      "cli_version": "2.1.317",
@@ -13887,7 +13908,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15697,17 +15718,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 13,
+   "current_text_runs": 14,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:03:28Z",
+     "cli_version": "2.1.317",
+     "fixture": "timeout-wall",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T205109Z-4daeff/red-ci-adamdaniel-ai/20261103T210328Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 3,
+      "cost_usd": 0.1426381,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.0869463,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:02:44Z",
      "cli_version": "2.1.317",
@@ -17002,7 +17044,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17705,7 +17747,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 17,
+   "current_text_runs": 18,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
@@ -17716,6 +17758,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:04:58Z",
+     "cli_version": "2.1.317",
+     "fixture": "silent-exit-one",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T205335Z-868be9/tool-powershell/20261103T210458Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.11688870000000001,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 5,
+      "cost_usd": 0.0638688,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T20:38:14Z",
      "cli_version": "2.1.317",
@@ -21150,8 +21213,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "7d0825c3e094ccf2c8f934556c9676f9bd0805b9"
+  "repository_commit": "b74d78cdf7c51d949881eaf713394a98654291ba",
+  "results_commit": "4143f302136908ce66b2185e5647d844a623ee07"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
