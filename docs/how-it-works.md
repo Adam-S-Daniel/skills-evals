@@ -583,7 +583,13 @@ Other unattributed failures stay records with no proposal, and the subject
    One proposal:
    the most evidence, then the newest, then by name; never a subject that
    is already a skill, already has `evals/<subject>/`, or was drafted
-   before (any `claude/draft-skill-*` branch). It dispatches
+   before (any `claude/draft-skill-*` branch). A rejection that measured
+   nothing is the exception: the subject is drafted again, up to three
+   such tries. The miner names subjects by cluster (`tool-<tool>-<word>`,
+   `red-ci-<repo>`), so a signal that keeps producing skills that add
+   nothing would come back under new names. Once two siblings in one
+   family (`tool-<tool>`, or `red-ci`) were measured and rejected, with
+   none accepted, the rest of that family is not drafted. It dispatches
    `routine-eval-fire.yml` in draft mode only when one fire fits the
    weekly allowance guard.
 2. **Triage, hooks first** (Adam, 2026-10-26: "I want the first choice to
