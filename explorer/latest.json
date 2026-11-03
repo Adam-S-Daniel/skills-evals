@@ -2,7 +2,7 @@
  "alerts": [],
  "context_drift_unknown": 0,
  "coverage": {
-  "as_of": null,
+  "as_of": "2026-11-03T16:21:24Z",
   "covered": 27,
   "gap": 0,
   "skipped": 11,
@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T16:17:04Z",
+ "generated_at": "2026-11-03T16:21:28Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:14:29Z",
+ "newest_run": "2026-11-03T16:18:05Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9327,7 +9327,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Add one or more email addresses to a Fastmail account as selectable \"From\" (sending) identities by triggering the add-from-address GitHub Actions workflow in the Adam-S-Daniel/fastmail-actions repo (which does the JMAP work with the FASTMAIL_API_TOKEN repo secret). Trigger when the user wants to \"add a from address\", \"add a sending identity\", \"let me send as X\", \"add an alias I can send from\", or \"register a new From address in Fastmail\". Supports a dry-run (whatif) preview. For discovering which received alias addresses are worth adding, use the add-received-from-addresses skill instead.",
+   "description": "Add email addresses to a Fastmail account as \"From\" sending identities by triggering the add-from-address workflow in Adam-S-Daniel/fastmail-actions, with a dry-run preview. Trigger on \"add a from address\", \"add a sending identity\", \"let me send as X\". To discover which aliases are worth adding, use add-received-from-addresses.",
    "name": "add-from-address",
    "next_test": {
     "band": null,
@@ -9356,7 +9356,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Discover which of a Fastmail account's own alias addresses are worth being able to send from, and add them as \"From\" identities, by triggering the add-received-from-addresses GitHub Actions workflow in the Adam-S-Daniel/fastmail-actions repo (which does the JMAP work with the FASTMAIL_API_TOKEN repo secret). It scans every message for distinct X-Delivered-To addresses, keeps only those you actually correspond through, drops any that are already identities, and adds the rest. Trigger when the user wants to \"add From addresses for aliases I actually use\", \"find alias addresses worth sending from\", or \"set up identities for the addresses that receive my mail\". Supports a dry-run (whatif) preview. To add a specific known address, use the add-from-address skill instead.",
+   "description": "Find the Fastmail alias addresses you actually correspond through (distinct X-Delivered-To, minus existing identities) and add them as \"From\" identities via the add-received-from-addresses workflow in Adam-S-Daniel/fastmail-actions, with a dry-run preview. Trigger on \"add From addresses for aliases I use\". For one known address, use add-from-address.",
    "name": "add-received-from-addresses",
    "next_test": {
     "band": null,
@@ -10076,7 +10076,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Compare pairs of PDFs (name.pdf + name<suffix>.pdf in the same folder) to determine whether they would produce identical printouts and whether their embedded text differs \u2014 e.g. to safely delete redundant \"-signed\" or \"-needsocr\" duplicates. Recursively finds every pair under a directory, rasterizes pages and compares hashes, and diffs extracted text. Triggers: \"compare pdf pairs\", \"find duplicate pdfs\", \"are these pdfs identical\", \"which suffixed pdfs can I delete\", \"dedupe scanned pdfs\".",
+   "description": "Compare PDF pairs (name.pdf + name<suffix>.pdf) under a folder to tell whether they print identically and whether their text differs, e.g. before deleting \"-signed\" or \"-needsocr\" duplicates. Triggers: \"compare pdf pairs\", \"find duplicate pdfs\", \"are these pdfs identical\", \"dedupe scanned pdfs\".",
    "name": "compare-pdfpairs",
    "next_test": {
     "band": null,
@@ -10493,7 +10493,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 12,
+   "current_text_runs": 13,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -10504,6 +10504,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:18:05Z",
+     "cli_version": "2.1.317",
+     "fixture": "secret-name",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T161054Z-e5f3a0/debug-github-workflows/20261103T161805Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.3860518000000001,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.26681900000000003,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:25:41Z",
      "cli_version": "2.1.317",
@@ -12431,7 +12452,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Automate Fastmail email workflows via a local browser session. Use this skill ONLY when running on Adam's computer with access to his browser (e.g. via Claude desktop / Cowork mode with Claude in Chrome). Do NOT use in headless environments such as the Claude Code CLI, CI pipelines, or any context without an interactive browser available. Trigger when the user wants to: search Fastmail for emails by sender, subject, or keyword; read email threads or attachment contents (including spreadsheets); compose and send new messages; or draft and send replies. Trigger on \"Fastmail\", \"check my email\", \"search my inbox\", \"reply to\", or similar email-management requests. Not for adding From addresses or sending identities; those use add-from-address / add-received-from-addresses.",
+   "description": "Automate Fastmail via a local browser session: search mail, read threads and attachments, compose, send and reply. Only on Adam's computer with browser access (Claude desktop or Cowork with Claude in Chrome), never headless. Trigger on \"Fastmail\", \"check my email\", \"search my inbox\". Not for From addresses; use add-from-address.",
    "name": "fastmail",
    "next_test": {
     "band": null,
@@ -12460,7 +12481,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Surface and resolve the ambiguities in a task before, during, and after implementation \u2014 the blind-spot pass, the self-interview, reference-driven specs, implementation notes, and a post-hoc explainer or quiz. Use at the start of any non-trivial build, when working in an unfamiliar codebase or a new domain, when acceptance criteria are subjective (\"make it feel polished\", \"clean this up\"), when a plan keeps needing rework mid-implementation, or when the user says \"help me find my unknowns\", \"what am I missing\", \"poke holes in this\", \"what haven't I thought about\". Also use after a change lands, to produce the explainer or comprehension check that proves the work is understood.",
+   "description": "Surface and resolve a task's ambiguities before, during and after implementation: blind-spot pass, self-interview, reference-driven specs, implementation notes, post-hoc explainer or quiz. Use on non-trivial builds, unfamiliar code or domains, subjective criteria, plans that keep needing rework, or \"what am I missing\", \"poke holes in this\".",
    "name": "finding-unknowns",
    "next_test": {
     "band": null,
@@ -13770,7 +13791,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Launch a new, top-level, interactive Claude Code session in a new Windows Terminal tab \u2014 native Windows or inside WSL \u2014 in a chosen folder, optionally remote-controllable and optionally seeded with an initial prompt or a handoff file. Use this WHENEVER the user asks to start / open / launch / spawn a new (top-level, separate, fresh, detached, background) Claude Code session, hand off to a fresh session, or launch Claude in a new terminal, tab or window, on Windows or in WSL, even if they don't name every detail.",
+   "description": "Launch a new top-level interactive Claude Code session in a new Windows Terminal tab, on Windows or in WSL, in a chosen folder, optionally remote-controllable and seeded with a prompt or handoff file. Use whenever the user asks to start, open, launch or spawn a new or separate Claude Code session, or to hand off to a fresh one.",
    "name": "launch-top-level-claude-session",
    "next_test": {
     "band": null,
@@ -13799,7 +13820,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Inventory and clean up Claude Code auto-memory stores under ~/.claude/projects/<munged-path>/memory/ on this machine. List decoded paths, file counts, sizes, and freshness; identify ORPHANED stores for human review; keep undecodable or ambiguous stores UNRESOLVED and never delete on that basis. Trigger on \"clean up claude memory\", \"migrate claude memory\", \"inventory memory stores\", \"orphaned memory\", or mentions of `~/.claude/projects`. LOCAL-ONLY: requires this machine's ~/.claude directory; do not invoke in a hosted/cloud session without it.",
+   "description": "Inventory and clean up Claude Code auto-memory stores under ~/.claude/projects/*/memory/ on this machine: decoded paths, counts, sizes, freshness, orphaned stores for review, never deleting ambiguous ones. Trigger on \"clean up claude memory\", \"orphaned memory\", \"inventory memory stores\". Local-only; needs this machine's ~/.claude.",
    "name": "migrate-claude-memory",
    "next_test": {
     "band": null,
@@ -13857,7 +13878,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Audit PDF files to determine whether OCR (optical character recognition) is needed to make them fully text-searchable. Use this skill whenever the user asks about PDF searchability, OCR status, whether PDFs have embedded text, which PDFs are scans, or wants to audit/inventory a folder of PDFs for text extraction readiness. Also triggers for: \"which PDFs need OCR\", \"are my PDFs searchable\", \"do these PDFs have text layers\", \"audit my PDFs\", \"find scanned PDFs\".",
+   "description": "Audit PDFs to see whether OCR is needed to make them text-searchable. Use when asked about PDF searchability, OCR status, embedded text or which PDFs are scans, or to inventory a folder for text extraction. Triggers: \"which PDFs need OCR\", \"are my PDFs searchable\", \"audit my PDFs\", \"find scanned PDFs\".",
    "name": "pdf-ocr-audit",
    "next_test": {
     "band": null,
@@ -15178,7 +15199,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
@@ -15189,6 +15210,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:17:05Z",
+     "cli_version": "2.1.317",
+     "fixture": "bucketed-account-store",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T161329Z-e2b8de/skills-doctor/20261103T161705Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.5847811999999999,
+      "judge_mean": 9.7,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.3284192,
+      "judge_mean": 8.6,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T14:50:12Z",
      "cli_version": "2.1.317",
@@ -15671,7 +15713,7 @@
    },
    "copies": null,
    "current_text_runs": 0,
-   "description": "Sync Claude Code settings.json between a Windows home and a WSL home, merging per property and keeping OS-bound keys per file. Triggers on requests to \"sync Claude Code settings\", \"merge my settings.json\", \"keep WSL and Windows Claude settings in sync\", or mentions of reconciling %USERPROFILE%\\.claude\\settings.json with ~/.claude/settings.json in WSL. Windows-only (needs PowerShell 7+ and access to the WSL UNC share). Use when the user wants the two settings.json files reconciled, not when they want a single file edited in place.",
+   "description": "Sync Claude Code settings.json between the Windows and WSL homes, merging per property and keeping OS-bound keys per file. Use for \"sync Claude Code settings\", \"merge my settings.json\", or keeping WSL and Windows settings in sync, not for editing one file. Windows-only (PowerShell 7+ and the WSL UNC share).",
    "name": "sync-cc-settings-between-wsl-and-windows",
    "next_test": {
     "band": null,
@@ -15724,12 +15766,12 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 7,
-   "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected (for example a Remove-Item on a system or VM-storage path). Covers getting the real error out of the first failure, the two-strikes stop rule, treating a policy block as a decision to report rather than a bug to route around, and previewing deletions before running them. For \"Access is denied\" from powershell.exe inside WSL, use windows-elevation-from-wsl instead.",
+   "current_text_runs": 0,
+   "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
     "band": "near",
@@ -16540,12 +16582,12 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 2,
-   "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL \u2014 Register-ScheduledTask / Set-ScheduledTask on a RunLevel=HighestAvailable task, a service change (Set-Service, Stop-Service, New-Service), an LSA rights grant such as \"Log on as a batch job\" (SeBatchLogonRight, secedit, ntrights), an HKLM registry write, or any other change to Windows state from a WSL session. Use it BEFORE attempting such a write from WSL and the moment one is denied.",
+   "current_text_runs": 0,
+   "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL: scheduled-task registration, service changes, LSA rights grants such as SeBatchLogonRight, HKLM writes or any other Windows state change from WSL. Use it before attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
     "band": "near",
@@ -18668,7 +18710,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "3e52c5d97d51e35d0ad6171e6dd8737982da2253",
-  "results_commit": "a82e9dfeeded7bb38bb29cce0150f7d716092223"
+  "results_commit": "3eb29af2fe5d0221d7e3e64361343f662a51248d"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
