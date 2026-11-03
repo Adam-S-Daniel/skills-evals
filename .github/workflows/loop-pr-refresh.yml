@@ -1,0 +1,204 @@
+name: Refresh loop pull requests
+
+# skills-evals#623. Every loop pull request adds its record to the same
+# append-only places: adam-agentskills' docs/skill-impact.md and
+# scripts/plugin_layout.json, and skills-evals' README.md layout block and
+# evals/unscheduled.yml. Two of them open at once always conflict there, and
+# the gates that opened them never touch them again, so the second one sat
+# until a person merged by hand.
+#
+# This workflow lists the open loop pull requests whose head conflicts with
+# its base:
+#
+#   adam-agentskills  draft-skill/, eval-improve/, retire-skill/
+#   skills-evals      draft-skill-fixtures/
+#
+# and for each one runs scripts/refresh_loop_prs.py `merge` in a fresh clone:
+# the base is merged in and only those append-only paths are re-resolved (the
+# base's copy plus the pull request's own block). Anything else, or a change
+# that is not one inserted block, is left for a person and named in the job
+# summary. A resolved merge is pushed as a plain merge commit on top of the
+# head, never a force-push, by a GitHub App token, so the pull request's own
+# checks run again (a job-token push would start none).
+#
+# * Tokens: the job token reads (contents and pull-requests: read). Two App
+#   tokens, each minted under continue-on-error and used by the refresh step
+#   alone, push: the eval-improve App for adam-agentskills only (secrets
+#   EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM, as
+#   routine-improve-gate.yml mints it), and the roster App for skills-evals
+#   only (as draft-fixtures-follow.yml mints it). A repository whose token is
+#   missing is skipped with a warning.
+# * Nothing from a pull request runs: git merges its files as data and the
+#   resolvers parse text and JSON. The script is the default branch's copy.
+# * Triggers: after every ingest (`workflow_run`, which keeps firing while
+#   the evals run, unlike this repository's cron) and dispatch. No
+#   schedule: nothing that handles an eval-improve branch may run on one
+#   (ThreePrGateTests, ADR 0010 decision 4). Default branch only; no push or
+#   pull_request trigger, so no path filter and no required check.
+# * No `concurrency` group: a run waiting in a group would cancel the pending
+#   one, and every run is idempotent (an up-to-date head is left alone, and a
+#   push that lost a race is refused as non-fast-forward).
+# * Every value reaches a `run:` block through `env`; no response body is
+#   printed.
+
+on:
+  workflow_run:
+    workflows: [Ingest routine eval results]
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  refresh:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Mint the registry App token (adam-agentskills only)
+        id: registry-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills
+          permission-contents: write
+
+      - name: Mint the roster App token (skills-evals only)
+        id: roster-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+
+      - name: Merge the base into conflicted loop pull requests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.registry-token.outputs.token }}
+          ROSTER_TOKEN: ${{ steps.roster-token.outputs.token }}
+          SELF_REPO: ${{ github.repository }}
+          SCRIPT: ${{ github.workspace }}/skills-evals/scripts/refresh_loop_prs.py
+        run: |
+          set -euo pipefail
+          echo "### Loop pull requests refreshed" >> "$GITHUB_STEP_SUMMARY"
+          failed=0
+          note() { echo "- ${1}: ${2}" >> "$GITHUB_STEP_SUMMARY"; }
+          token_ok() {
+            case "${1:-}" in ''|*[!A-Za-z0-9_.-]*) return 1 ;; *) return 0 ;; esac
+          }
+          refresh_repo() {
+            local repo="$1" token="$2" prefixes="$3"
+            if ! token_ok "$token"; then
+              echo "::warning::no App token for ${repo}; its loop pull requests are not refreshed this run"
+              note "$repo" "skipped (no App token)"
+              return 0
+            fi
+            local listing="$RUNNER_TEMP/pulls.json"
+            if ! gh api "repos/${repo}/pulls?state=open&per_page=100" > "$listing" 2>/dev/null; then
+              echo "::error::could not list the open pull requests of ${repo}"
+              failed=1
+              return 0
+            fi
+            local rows
+            rows="$(jq -r --arg repo "$repo" --arg prefixes "$prefixes" '
+              ($prefixes | split(" ")) as $p
+              | .[] | select(.head.repo.full_name == $repo
+                             and (.head.ref as $r | any($p[]; . as $x | $r | startswith($x))))
+              | [.number, .head.ref, .base.ref] | @tsv' "$listing")" || rows=""
+            local b64 auth
+            b64="$(printf 'x-access-token:%s' "$token" | base64 -w0)"
+            echo "::add-mask::${b64}"
+            auth="AUTHORIZATION: basic ${b64}"
+            while IFS=$'\t' read -r n ref base <&3; do
+              [ -n "${n:-}" ] || continue
+              if ! [[ "$n" =~ ^[0-9]+$ ]] || ! [[ "$ref" =~ ^[a-z-]+/[a-z0-9][a-z0-9-]{0,63}$ ]] \
+                 || ! [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]]; then
+                echo "::warning::skipping a pull request of ${repo} whose branch has an unexpected shape"
+                continue
+              fi
+              # GitHub computes `mergeable` lazily: the first read may be null.
+              local mergeable=""
+              for _ in 1 2 3 4 5; do
+                mergeable="$(gh api "repos/${repo}/pulls/${n}" --jq '.mergeable' 2>/dev/null)" || mergeable=""
+                [ "$mergeable" = true ] || [ "$mergeable" = false ] && break
+                sleep 5
+              done
+              if [ "$mergeable" != false ]; then
+                echo "${repo}#${n}: no conflict (${mergeable:-unknown})"
+                continue
+              fi
+              local dir="$RUNNER_TEMP/clone-${n}"
+              rm -rf "$dir"
+              git init -q "$dir"
+              git -C "$dir" remote add origin "https://github.com/${repo}.git"
+              if ! git -C "$dir" -c "http.https://github.com/.extraheader=$auth" fetch -q --no-tags origin \
+                   "+refs/heads/${base}:refs/remotes/origin/${base}" \
+                   "+refs/heads/${ref}:refs/remotes/origin/${ref}"; then
+                echo "::error::${repo}#${n}: could not fetch its branches"
+                failed=1
+                continue
+              fi
+              git -C "$dir" checkout -q --detach "refs/remotes/origin/${ref}"
+              local head out rc=0
+              head="$(git -C "$dir" rev-parse HEAD)"
+              out="$(python3 "$SCRIPT" merge --repo "$dir" --base "refs/remotes/origin/${base}")" || rc=$?
+              printf '%s\n' "$out"
+              if [ "$rc" = 3 ]; then
+                echo "::warning::${repo}#${n}: a conflict outside the append-only files; left for a person"
+                note "${repo}#${n}" "left for a person ($(sed -n 's/^reason=//p' <<<"$out"))"
+                continue
+              elif [ "$rc" != 0 ]; then
+                echo "::error::${repo}#${n}: the refresh failed"
+                failed=1
+                continue
+              fi
+              if grep -qxF 'outcome=up-to-date' <<<"$out"; then
+                note "${repo}#${n}" "already up to date"
+                continue
+              fi
+              local commit
+              commit="$(git -C "$dir" rev-parse HEAD)"
+              # A plain push: if the branch moved since the fetch it is
+              # refused, and the next run starts again from the new head.
+              if ! git -C "$dir" -c "http.https://github.com/.extraheader=$auth" \
+                   push -q origin "${commit}:refs/heads/${ref}"; then
+                echo "::warning::${repo}#${n}: the push was refused (the branch moved); the next run retries"
+                note "${repo}#${n}" "push refused; retried next run"
+                continue
+              fi
+              git -C "$dir" -c "http.https://github.com/.extraheader=$auth" fetch -q --no-tags origin \
+                "+refs/heads/${ref}:refs/remotes/origin/${ref}"
+              if ! git -C "$dir" merge-base --is-ancestor "$commit" "refs/remotes/origin/${ref}"; then
+                echo "::error::${repo}#${n}: the push reported success but the merge is not on the branch"
+                failed=1
+                continue
+              fi
+              echo "${repo}#${n}: merged ${base} on top of ${head:0:12}"
+              note "${repo}#${n}" "base merged in; its checks run again"
+            done 3<<<"$rows"
+          }
+          refresh_repo Adam-S-Daniel/adam-agentskills "${REGISTRY_TOKEN:-}" \
+            "draft-skill/ eval-improve/ retire-skill/"
+          refresh_repo "$SELF_REPO" "${ROSTER_TOKEN:-}" "draft-skill-fixtures/"
+          exit "$failed"

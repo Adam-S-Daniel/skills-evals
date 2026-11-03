@@ -717,7 +717,9 @@ class FollowTests(unittest.TestCase):
         """Every structural rule the workflow must keep; empty when it does."""
         found = []
         on = triggers(doc)
-        if set(on) != {"schedule", "workflow_dispatch"}:
+        if set(on) != {"schedule", "workflow_run", "workflow_dispatch"} \
+                or on["workflow_run"] != {"workflows": ["Ingest routine eval results"],
+                                          "types": ["completed"]}:
             found.append("triggers")
         if on.get("schedule") != [{"cron": "7,37 * * * *"}]:
             found.append("schedule")
@@ -768,6 +770,9 @@ class FollowTests(unittest.TestCase):
             return doc["jobs"]["follow"]["steps"][1]
 
         self.assertIn("triggers", mutate(lambda d: triggers(d).update(push={})))
+        self.assertIn("triggers", mutate(lambda d: triggers(d).pop("workflow_run")))
+        self.assertIn("triggers", mutate(
+            lambda d: triggers(d)["workflow_run"].update(workflows=["Other"])))
         self.assertIn("schedule", mutate(
             lambda d: triggers(d).update(schedule=[{"cron": "0 * * * *"}])))
         self.assertIn("workflow permissions", mutate(
