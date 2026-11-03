@@ -195,11 +195,15 @@ jobs:
   # while any loop pull request (an improvement, a new skill or a removal)
   # is open there; scripts/retire_skill.py's LOOP_PREFIXES names the heads.
   #
-  # Before each pass, `retire_skill.py --withdraw-stale` disarms, comments on
-  # and closes (branch kept) every open loop removal pull request
-  # (`retire-skill/` or `retire-guidance/` head plus `agent-authored`, not
-  # `on-hold`) whose subject's current verdict is no longer `retire` with an
-  # automatic removal. Unknown verdicts withdraw nothing (ADR 0014).
+  # Before each pass, its own step runs `retire_skill.py --withdraw-stale`:
+  # every open loop removal pull request (`retire-skill/` or
+  # `retire-guidance/` head, `agent-authored`, opened by the eval-improve
+  # App, not `on-hold`) whose subject's current verdict no longer supports
+  # an automatic removal is disarmed, commented on, closed (branch kept) and
+  # recorded in the subject's retirement issue; while the mode is `proposal`
+  # a still-supported one is only disarmed. Unknown verdicts withdraw
+  # nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
+  # ingest, so a verdict an ingest changes is acted on within that run.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -269,6 +273,7 @@ jobs:
         run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
 
       - name: Compute the retirement verdicts
+        id: verdicts
         working-directory: skills-evals
         run: |
           as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
@@ -291,6 +296,7 @@ jobs:
 
       - name: Are the GitHub App's secrets configured?
         id: credential
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
         env:
           PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
         run: |
@@ -300,12 +306,17 @@ jobs:
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Minted only now, after the verdicts, and only for the next step. A
-      # failed mint leaves the token empty, and the next step falls back to
-      # proposal mode instead of failing the job.
+      # Every step from here runs unless the run was cancelled, so a failed
+      # withdrawal or act in one pass never skips the other pass or its own
+      # act step (PR #724 round 1's M3); any failed step still fails the job
+      # at the end. Each also needs the verdicts computed.
+      #
+      # Minted only now, after the verdicts. A failed mint leaves the token
+      # empty, and the act step falls back to proposal mode instead of
+      # failing the job.
       - name: Mint the GitHub App token for adam-agentskills
         id: app-token
-        if: steps.credential.outputs.present == 'true'
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && steps.credential.outputs.present == 'true' }}
         continue-on-error: true
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -316,7 +327,22 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
+      - name: Withdraw stale skill removal pull requests
+        # Any open retire-skill/ pull request whose verdict no longer
+        # supports it (ADR 0014); it needs the App token only when there is
+        # one to withdraw or disarm.
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retire_skill.py --withdraw-stale \
+            --gates "$RUNNER_TEMP/gates/latest.json"
+
       - name: Act on the skill retirement verdict
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ github.token }}
@@ -330,11 +356,6 @@ jobs:
             echo "::notice::no adam-agentskills write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
-          # First withdraw any open retire-skill/ pull request whose verdict
-          # no longer supports it (ADR 0014); it needs the App token only
-          # when there is one to withdraw.
-          python3 scripts/retire_skill.py --withdraw-stale \
-            --gates "$RUNNER_TEMP/gates/latest.json"
           python3 scripts/retire_skill.py \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
@@ -344,13 +365,12 @@ jobs:
             --date "$(date -u +%F)" \
             "${modes[@]}"
 
-      # Minted only now, after the verdicts, and only for the next step. A
-      # failed mint (for example the App is not installed on _agent-guidance
-      # yet) leaves the token empty, and the next step files the issue
-      # instead of failing the job.
+      # A failed mint (for example the App is not installed on
+      # _agent-guidance yet) leaves the token empty, and the act step files
+      # the issue instead of failing the job.
       - name: Mint the GitHub App token for _agent-guidance
         id: guidance-token
-        if: steps.credential.outputs.present == 'true'
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && steps.credential.outputs.present == 'true' }}
         continue-on-error: true
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -361,11 +381,25 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
+      - name: Withdraw stale guidance removal pull requests
+        # Any open retire-guidance/ pull request whose verdict no longer
+        # supports it (ADR 0014).
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.guidance-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retire_skill.py --withdraw-stale --target guidance \
+            --gates "$RUNNER_TEMP/gates/latest.json"
+
       - name: Act on the guidance retirement verdict
         # One section at a time. In `guidance: retirement_mode: auto`
         # (gate-policy.yml) a retire verdict opens an auto-merging removal
         # pull request in _agent-guidance; with no write token, or in
         # proposal mode, it files an issue in this repository instead.
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ github.token }}
@@ -379,10 +413,6 @@ jobs:
             echo "::notice::no _agent-guidance write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
-          # First withdraw any open retire-guidance/ pull request whose
-          # verdict no longer supports it (ADR 0014).
-          python3 scripts/retire_skill.py --withdraw-stale --target guidance \
-            --gates "$RUNNER_TEMP/gates/latest.json"
           python3 scripts/retire_skill.py --target guidance \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
