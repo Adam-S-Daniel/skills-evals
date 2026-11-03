@@ -94,13 +94,14 @@
         <span><span class="pd-alert-num dash-skeleton" data-source="half_built_summary" data-field="open">—</span> open</span>
         <span><b data-source="half_built_summary" data-field="high">—</b> high severity</span>
         <span><b data-source="half_built_summary" data-field="broken">—</b> broken</span>
+        <span><b data-source="half_built_summary" data-field="needs_owner">—</b> need you</span>
         <span><b data-source="half_built_summary" data-field="fixed_7d">—</b> fixed in the last 7 days</span>
       </p>
       <p class="pd-note" id="hb-checked">Last checked: —</p>
       <p class="pd-note" id="hb-empty" hidden></p>
       <div class="pd-scroll" id="hb-wrap" style="max-height: 20rem" hidden>
         <table class="pd-table" id="tbl-halfbuilt" data-source="half_built_issues" data-row-key="key">
-          <thead><tr><th data-field="repo">Repo</th><th data-field="kind">Kind</th><th data-field="severity">Severity</th><th data-field="title">Finding</th><th data-field="age_days">Age</th></tr></thead>
+          <thead><tr><th data-field="repo">Repo</th><th data-field="kind">Kind</th><th data-field="severity">Severity</th><th data-field="needs_owner">Needs you</th><th data-field="title">Finding</th><th data-field="age_days">Age</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -1278,7 +1279,7 @@ dash.calc('new_runs', {
     empty.textContent = msg; empty.hidden = !msg;
     wrap.hidden = !rowsOf('half_built_issues').length;
     renderTable('tbl-halfbuilt', 'half_built_issues', [
-      { field: 'repo' }, { field: 'kind' }, { field: 'severity', pill: true }, { field: 'title', link: 'url' },
+      { field: 'repo' }, { field: 'kind' }, { field: 'severity', pill: true }, { field: 'needs_owner', pill: true }, { field: 'title', link: 'url' },
       { field: 'age_days', num: true, fmt: (v, r) => (r.state === 'closed' ? 'fixed ' + String(r.closed_at || '').slice(0, 10) : v == null ? '' : v + ' d') },
     ], (r) => r.key);
   };

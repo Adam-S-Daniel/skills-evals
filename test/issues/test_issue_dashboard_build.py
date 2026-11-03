@@ -513,8 +513,20 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((issues[0]["opened"], issues[0]["age_days"], issues[0]["closed_at"]), ("2026-10-25", 9, None))
         self.assertEqual(issues[-1]["closed_at"], "2026-10-30T12:00:00Z")
         self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
-                         {"open": 4, "high": 2, "broken": 1, "partial": 1, "implied_only": 1, "idle": 1, "fixed_7d": 1,
+                         {"open": 4, "high": 2, "broken": 1, "partial": 1, "implied_only": 1, "idle": 1,
+                          "needs_owner": 0, "fixed_7d": 1,
                           "checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
+
+    def test_half_built_puts_high_first_then_what_needs_the_owner(self):
+        dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
+            self.hb_item(1, severity="medium", created="2026-10-01T12:00:00Z"),
+            self.hb_item(2, severity="low", labels=["half-built-or-broken", "needs-owner"]),
+            self.hb_item(3, severity="high"),
+            self.hb_item(4, severity="medium", labels=["needs-owner"], created="2026-10-30T12:00:00Z")]}
+        issues, summary = build.half_built(dump, self.HB_NOW)
+        self.assertEqual([r["number"] for r in issues], [3, 4, 2, 1])
+        self.assertEqual([r["needs_owner"] for r in issues], ["", "needs you", "needs you", ""])
+        self.assertEqual(summary[0]["needs_owner"], 2)
 
     def test_half_built_unknown_kind_and_severity(self):
         dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
