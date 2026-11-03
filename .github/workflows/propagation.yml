@@ -239,6 +239,9 @@ jobs:
   # The shared real-eval lane serializes writes to persistent/eval-results.
   # It is schedule-only and checks out trusted main again; no result-branch
   # script is ever executed. Its write token exists in the final push step.
+  # It writes fixture-census/ and badges/fixture-census.json only:
+  # coverage/ and badges/coverage.json belong to skill-coverage.yml's
+  # scaffold_skill_gaps.py, whose shape the explorer reads (#660).
   coverage-publish:
     if: github.event_name == 'schedule' && needs.coverage.result == 'success'
     needs: coverage
@@ -281,24 +284,24 @@ jobs:
           else
             git checkout -B persistent/eval-results
           fi
-          for directory in coverage badges; do
+          for directory in fixture-census badges; do
             if [ -L "$directory" ] || { [ -e "$directory" ] && [ ! -d "$directory" ]; }; then
               echo "Unsafe coverage output path." >&2
               exit 1
             fi
           done
-          for destination in coverage/latest.json "coverage/$stamp.json" coverage/latest.md badges/coverage.json; do
+          for destination in fixture-census/latest.json "fixture-census/$stamp.json" fixture-census/latest.md badges/fixture-census.json; do
             if [ -L "$destination" ] || { [ -e "$destination" ] && [ ! -f "$destination" ]; }; then
               echo "Unsafe coverage output path." >&2
               exit 1
             fi
           done
-          mkdir -p coverage badges
-          cp "$source/latest.json" coverage/latest.json
-          cp "$source/latest.json" "coverage/$stamp.json"
-          cp "$source/latest.md" coverage/latest.md
-          cp "$source/badge.json" badges/coverage.json
-          git add -f coverage/latest.json "coverage/$stamp.json" coverage/latest.md badges/coverage.json
+          mkdir -p fixture-census badges
+          cp "$source/latest.json" fixture-census/latest.json
+          cp "$source/latest.json" "fixture-census/$stamp.json"
+          cp "$source/latest.md" fixture-census/latest.md
+          cp "$source/badge.json" badges/fixture-census.json
+          git add -f fixture-census/latest.json "fixture-census/$stamp.json" fixture-census/latest.md badges/fixture-census.json
           if git diff --cached --quiet; then
             echo "No coverage change to commit."
             echo "changed=false" >> "$GITHUB_OUTPUT"
