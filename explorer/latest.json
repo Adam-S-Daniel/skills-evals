@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:45:15Z",
+  "generated_at": "2026-11-03T23:55:33Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T23:44:16Z",
+ "generated_at": "2026-11-03T23:54:16Z",
  "guidance": {
   "removed": [
    {
@@ -11191,7 +11191,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:42:57Z",
+ "newest_run": "2026-11-03T23:52:38Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -19648,11 +19648,11 @@
       "votes": true
      },
      {
-      "gain": 4.2,
-      "high": 48.8,
-      "low": -100.0,
+      "gain": 3.3,
+      "high": 41.5,
+      "low": -46.3,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "personal-copy-outranks-repo",
       "votes": true
@@ -19661,7 +19661,7 @@
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 3,
-    "max_pairs": 4,
+    "max_pairs": 5,
     "no_help": 0.0,
     "no_help_pairs": 3
    },
@@ -19677,7 +19677,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
@@ -19688,6 +19688,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T23:52:38Z",
+     "cli_version": "2.1.317",
+     "fixture": "personal-copy-outranks-repo",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T235053Z-3149f8/skills-doctor/20261103T235238Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1330164,
+      "judge_mean": 6.7,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.09591759999999999,
+      "judge_mean": 7.7,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:47:57Z",
      "cli_version": "2.1.317",
@@ -24406,7 +24427,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "e0fa3dfccbd4926ab687182cd7d0d914d453d2b5",
-  "results_commit": "5cfdd7a307c760c6b3a64eb159f1bcfb2be3e295"
+  "results_commit": "3132e3fc38aadad9045b1f3e60b41aec8c760bf3"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
