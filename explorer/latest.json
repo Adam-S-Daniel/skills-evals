@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-02T23:31:22Z",
+ "generated_at": "2026-11-03T00:00:17Z",
  "guidance": {
   "removed": [
    {
@@ -569,13 +569,13 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": "keep",
     "bytes": 1197,
     "confidence": {
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 7,
+    "current_text_runs": 11,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
@@ -585,6 +585,80 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-02T23:32:40Z",
+      "cli_version": "2.1.316",
+      "fixture": "backup-config-secrets",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 5,
+        "cost_usd": 0.0792336,
+        "judge_mean": 4.5,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 5,
+        "cost_usd": 0.0749761,
+        "judge_mean": 4.5,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 5,
+        "cost_usd": 0.041665799999999996,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 5,
+        "checks_total": 5,
+        "cost_usd": 0.048580200000000004,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261102T233240Z/report.md"
+     },
+     {
+      "at": "2026-11-02T23:32:33Z",
+      "cli_version": "2.1.316",
+      "fixture": "http-error-body",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0952215,
+        "judge_mean": 8.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0956581,
+        "judge_mean": 8.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.051167699999999997,
+        "judge_mean": 3.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.048928,
+        "judge_mean": 8.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261102T233233Z/report.md"
+     },
      {
       "at": "2026-11-02T23:17:41Z",
       "cli_version": "2.1.316",
@@ -2107,7 +2181,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T23:28:36Z",
+ "newest_run": "2026-11-02T23:58:00Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -3005,7 +3079,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -3016,6 +3090,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-02T23:58:00Z",
+     "cli_version": "2.1.316",
+     "fixture": "secret-name",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T235623Z-0461c0/debug-github-workflows/20261102T235800Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.14814609999999998,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.10415800000000001,
+      "judge_mean": 7.3999999999999995,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:27:16Z",
      "cli_version": "2.1.316",
@@ -8385,8 +8480,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "faf4d5ce19605d6eb90432ffb37407396c2b7148",
-  "results_commit": "e89a81da8265680011bcc351d7d1809ce351389a"
+  "repository_commit": "f166dc930e5cff36de5100099f4ed24afb21184b",
+  "results_commit": "d2ab94a7153665e37e017d7dc1fc3e18165d47d2"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
