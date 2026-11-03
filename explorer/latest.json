@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T18:10:05Z",
+  "generated_at": "2026-11-03T18:16:15Z",
   "requests": [
    {
     "closed_at": null,
@@ -135,7 +135,7 @@
    "requests_open": 8
   }
  },
- "generated_at": "2026-11-03T18:07:00Z",
+ "generated_at": "2026-11-03T18:12:34Z",
  "guidance": {
   "removed": [
    {
@@ -9453,7 +9453,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T18:02:50Z",
+ "newest_run": "2026-11-03T18:07:06Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -16611,7 +16611,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 6,
+   "current_text_runs": 8,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
@@ -16622,6 +16622,48 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T18:07:06Z",
+     "cli_version": "2.1.317",
+     "fixture": "silent-exit-one",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T175001Z-cb0c82/tool-powershell/20261103T180706Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 5,
+      "cost_usd": 0.1045659,
+      "judge_mean": 5.5,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 5,
+      "cost_usd": 0.06257839999999999,
+      "judge_mean": 7.0,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-03T18:06:41Z",
+     "cli_version": "2.1.317",
+     "fixture": "protected-path-cleanup",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T174622Z-18da3e/tool-powershell/20261103T180641Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.2543878,
+      "judge_mean": 10.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.14285599999999998,
+      "judge_mean": 9.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T17:29:37Z",
      "cli_version": "2.1.317",
@@ -19763,7 +19805,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "75d32a912acef2a25311568c5801eb89c1c3a389",
-  "results_commit": "52a0d69a6a45e616c16bdf33864f5c057d295754"
+  "results_commit": "b53c04e64f616a1327455c2a5054b2f83d97166a"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
