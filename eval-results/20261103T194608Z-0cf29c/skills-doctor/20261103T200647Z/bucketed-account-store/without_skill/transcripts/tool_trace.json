@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TDHs6k1y6ftmTBKE4RtHnF",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git status --short | head",
+      "input_chars": 76,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TDHs6k1y6ftmTBKE4RtHnF",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  3 20:07 .\ndrwx------ 6 root root 4096 Nov  3 20:07 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 07:07 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  3 07:07 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  3 20:07 .claude\ndrwxr-xr-x 9 root root 4096 Nov  3 20:07 .gi...",
+      "output_chars": 1060,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EowToNu6b4CvnAHXeJMZxP",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find registry session .claude -type f | head -100",
+      "input_chars": 102,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EowToNu6b4CvnAHXeJMZxP",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013eNYeFMSLtPhtw4XApSUhk",
+      "name": "Bash",
+      "input": "cd <path>; for f in session/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json session/skills/synced/.bucket*; do echo \"=== $f\"; cat \"$f\"; done; ls -laR ...",
+      "input_chars": 767,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013eNYeFMSLtPhtw4XApSUhk",
+      "is_error": false,
+      "output": "=== session/skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/agentskills\",\n  \"ref\": \"f08c85e473f6adec71366fca65485b8de18be252\",\n  \"bundles\": [\n    \"adam\"\n  ],\n  \"skills\": {\n    \"adam/adam-writing-style\": \"sha256:18288219eb6f4a30722b3d9a35179660061a633dc566b2aa12934c6e85def054\",\n    \"adam/writing-adrs\": \"s...",
+      "output_chars": 5578,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VrvtRb7uto2xdGW8LfMmAe",
+      "name": "Bash",
+      "input": "cd <path>; for s in writing-adrs adam-writing-style; do echo $s; (cd $s; sha256sum SKILL.md | cut -d' ' -f1; sha256sum SKILL.md | sha256sum | cut -d' ' -f1; find . -type f | sort | xargs cat | sha256s...",
+      "input_chars": 398,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VrvtRb7uto2xdGW8LfMmAe",
+      "is_error": false,
+      "output": "writing-adrs\n5d04a9063499f87449bf15513d452b11c410e2fd0489f17622086179f6e76573\n639a844a86737410285be96b73af70b56408bcf47a85ff060bd217c0476971c6\n5d04a9063499f87449bf15513d452b11c410e2fd0489f17622086179f6e76573  -\nadam-writing-style\n0739cf97b5c8dd1cd17f8b4a837d663fe6c10853ea019dddeb9f39125e79d434\n26f7a...",
+      "output_chars": 787,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0114Rd6P7pVSTzZvBy9mVCLd",
+      "name": "Bash",
+      "input": "cd <path>; diff registry/plugins/adam/skills/adam-writing-style/SKILL.md session/skills/adam-writing-style/SKILL.md && echo same-style\ncat > FINDINGS.md <<'EOF'\n# Findings: why writing-adrs drops \"Alt...",
+      "input_chars": 4193,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0114Rd6P7pVSTzZvBy9mVCLd",
+      "is_error": false,
+      "output": "same-style",
+      "output_chars": 10,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
