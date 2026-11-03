@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T22:28:58Z",
+  "generated_at": "2026-11-03T22:31:51Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T22:27:35Z",
+ "generated_at": "2026-11-03T22:30:19Z",
  "guidance": {
   "removed": [
    {
@@ -380,7 +380,11 @@
     "bytes": 1422,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 14,
     "heading": "Working in these repos",
@@ -665,7 +669,11 @@
     "bytes": 886,
     "confidence": {
      "helps": 0.3482157405898648,
-     "no_help": 0.0
+     "keep_family": 8,
+     "keep_pairs": 5,
+     "max_pairs": 5,
+     "no_help": 0.0,
+     "no_help_pairs": 4
     },
     "current_text_runs": 56,
     "heading": "Anything you name gets its link",
@@ -1801,7 +1809,11 @@
     "bytes": 1015,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Finding your unknowns",
@@ -2049,7 +2061,11 @@
     "bytes": 149,
     "confidence": {
      "helps": 0.27404718693284946,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Workstation layout",
@@ -2297,7 +2313,11 @@
     "bytes": 431,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.19852941176470584
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.19852941176470584,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Security",
@@ -2584,7 +2604,11 @@
     "bytes": 1197,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 8,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": null
     },
     "current_text_runs": 31,
     "heading": "Data exposure in CI and public repos",
@@ -3241,7 +3265,11 @@
     "bytes": 295,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Read before you start",
@@ -3489,7 +3517,11 @@
     "bytes": 2201,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.19852941176470584
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.19852941176470584,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Automation vs branch protection",
@@ -3737,7 +3769,11 @@
     "bytes": 1283,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Two GitHub connectors, and which one you are holding",
@@ -3985,7 +4021,11 @@
     "bytes": 622,
     "confidence": {
      "helps": 0.9569269998137909,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 9,
+     "max_pairs": 9,
+     "no_help": 0.0,
+     "no_help_pairs": 9
     },
     "current_text_runs": 34,
     "heading": "Agent-made GitHub contributions carry a marker",
@@ -4716,7 +4756,11 @@
     "bytes": 324,
     "confidence": {
      "helps": null,
-     "no_help": null
+     "keep_family": null,
+     "keep_pairs": null,
+     "max_pairs": null,
+     "no_help": null,
+     "no_help_pairs": null
     },
     "current_text_runs": 0,
     "heading": "PR descriptions open with a TLDR",
@@ -4741,7 +4785,11 @@
     "bytes": 875,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
@@ -4989,7 +5037,11 @@
     "bytes": 963,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.05065965780251491
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.05065965780251491,
+     "no_help_pairs": 4
     },
     "current_text_runs": 14,
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
@@ -5274,7 +5326,11 @@
     "bytes": 1364,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 14,
     "heading": "\"The watch finished\" is not \"CI passed\"",
@@ -5559,7 +5615,11 @@
     "bytes": 1102,
     "confidence": {
      "helps": null,
-     "no_help": null
+     "keep_family": null,
+     "keep_pairs": null,
+     "max_pairs": null,
+     "no_help": null,
+     "no_help_pairs": null
     },
     "current_text_runs": 14,
     "heading": "A successful `git push` does not mean your commit exists",
@@ -5844,7 +5904,11 @@
     "bytes": 534,
     "confidence": {
      "helps": 0.3439665422936571,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 4
     },
     "current_text_runs": 16,
     "heading": "Dependency updates",
@@ -6166,7 +6230,11 @@
     "bytes": 1003,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 15,
     "heading": "A name you choose becomes data a scanner reads",
@@ -6527,7 +6595,11 @@
     "bytes": 1153,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 4
     },
     "current_text_runs": 14,
     "heading": "Pinning GitHub Actions",
@@ -6888,7 +6960,11 @@
     "bytes": 918,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "A test that can signal can kill every session",
@@ -7175,7 +7251,11 @@
     "bytes": 2515,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.0,
+     "no_help_pairs": 4
     },
     "current_text_runs": 14,
     "heading": "Subagent delegation (model routing)",
@@ -7460,7 +7540,11 @@
     "bytes": 1228,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Skills ecosystem",
@@ -7708,7 +7792,11 @@
     "bytes": 1970,
     "confidence": {
      "helps": 0.04875148632580273,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Two setup gaps you may close, and must not nag about",
@@ -7956,7 +8044,11 @@
     "bytes": 1396,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.19852941176470584
+     "keep_family": 2,
+     "keep_pairs": 4,
+     "max_pairs": 4,
+     "no_help": 0.19852941176470584,
+     "no_help_pairs": 3
     },
     "current_text_runs": 14,
     "heading": "Git practices",
@@ -8241,7 +8333,11 @@
     "bytes": 447,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.13813813813813813
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.13813813813813813,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Docker",
@@ -8489,7 +8585,11 @@
     "bytes": 278,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": ".NET / C#",
@@ -8737,7 +8837,11 @@
     "bytes": 313,
     "confidence": {
      "helps": 0.4117647058823529,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Go",
@@ -8985,7 +9089,11 @@
     "bytes": 249,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.19852941176470584
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.19852941176470584,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "JavaScript",
@@ -9233,7 +9341,11 @@
     "bytes": 786,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Python",
@@ -9481,7 +9593,11 @@
     "bytes": 305,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.19852941176470584
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.19852941176470584,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "Rust",
@@ -9729,7 +9845,11 @@
     "bytes": 526,
     "confidence": {
      "helps": 0.0,
-     "no_help": 0.0
+     "keep_family": 2,
+     "keep_pairs": 3,
+     "max_pairs": 3,
+     "no_help": 0.0,
+     "no_help_pairs": 3
     },
     "current_text_runs": 12,
     "heading": "TypeScript",
@@ -10018,7 +10138,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10058,7 +10182,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10098,7 +10226,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10202,7 +10334,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10242,7 +10378,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10282,7 +10422,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.005404469920257782
+    "keep_family": 2,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": 0.005404469920257782,
+    "no_help_pairs": 1
    },
    "copies": {
     "alert": {
@@ -10554,7 +10698,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10658,7 +10806,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 2,
+    "keep_pairs": 3,
+    "max_pairs": 4,
+    "no_help": 0.0,
+    "no_help_pairs": 3
    },
    "copies": {
     "alert": {
@@ -10846,7 +10998,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10950,7 +11106,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -10990,7 +11150,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.07693826414977878
+    "keep_family": 2,
+    "keep_pairs": 4,
+    "max_pairs": 4,
+    "no_help": 0.07693826414977878,
+    "no_help_pairs": 2
    },
    "copies": {
     "alert": {
@@ -11432,7 +11596,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 8,
+    "keep_pairs": 3,
+    "max_pairs": 4,
+    "no_help": 0.0,
+    "no_help_pairs": 3
    },
    "copies": {
     "alert": {
@@ -12670,7 +12838,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.02195706391510588,
-    "no_help": 0.0
+    "keep_family": 2,
+    "keep_pairs": 4,
+    "max_pairs": 4,
+    "no_help": 0.0,
+    "no_help_pairs": 2
    },
    "copies": {
     "alert": {
@@ -13154,7 +13326,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -13237,7 +13413,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 2,
+    "keep_pairs": 1,
+    "max_pairs": 2,
+    "no_help": 0.0,
+    "no_help_pairs": 1
    },
    "copies": {
     "alert": {
@@ -13656,7 +13836,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 8,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": 0.0,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -13823,7 +14007,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -13863,7 +14051,11 @@
    "bundle": "adam-anything-anywhere",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -14177,7 +14369,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.5376349523740718
+    "keep_family": 2,
+    "keep_pairs": 5,
+    "max_pairs": 5,
+    "no_help": 0.5376349523740718,
+    "no_help_pairs": 4
    },
    "copies": {
     "alert": {
@@ -14659,7 +14855,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.6246780630335123,
-    "no_help": 0.13705583756345174
+    "keep_family": 2,
+    "keep_pairs": 13,
+    "max_pairs": 13,
+    "no_help": 0.13705583756345174,
+    "no_help_pairs": 13
    },
    "copies": {
     "alert": {
@@ -15542,7 +15742,11 @@
    "bundle": "adam-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -15582,7 +15786,11 @@
    "bundle": "adam-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -15622,7 +15830,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -15662,7 +15874,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -15745,7 +15961,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 2,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": 0.0,
+    "no_help_pairs": 2
    },
    "copies": {
     "alert": {
@@ -15849,7 +16069,11 @@
    "bundle": null,
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.4454626778770948
+    "keep_family": 2,
+    "keep_pairs": 3,
+    "max_pairs": 4,
+    "no_help": 0.4454626778770948,
+    "no_help_pairs": 4
    },
    "copies": {
     "alert": {
@@ -16058,7 +16282,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -16098,7 +16326,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.13705583756345174
+    "keep_family": 4,
+    "keep_pairs": 4,
+    "max_pairs": 4,
+    "no_help": 0.13705583756345174,
+    "no_help_pairs": 4
    },
    "copies": {
     "alert": {
@@ -16538,7 +16770,11 @@
    "bundle": "adam-non-coding-local",
    "confidence": {
     "helps": 0.22896443297261326,
-    "no_help": 0.0
+    "keep_family": 2,
+    "keep_pairs": 3,
+    "max_pairs": 3,
+    "no_help": 0.0,
+    "no_help_pairs": 1
    },
    "copies": {
     "alert": {
@@ -16705,7 +16941,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 8,
+    "keep_pairs": 3,
+    "max_pairs": 3,
+    "no_help": 0.0,
+    "no_help_pairs": 2
    },
    "copies": {
     "alert": {
@@ -17481,7 +17721,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 4,
+    "keep_pairs": 3,
+    "max_pairs": 4,
+    "no_help": 0.0,
+    "no_help_pairs": 3
    },
    "copies": {
     "alert": {
@@ -18173,7 +18417,11 @@
    "bundle": "adam-coding-local",
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -18213,7 +18461,11 @@
    "bundle": null,
    "confidence": {
     "helps": null,
-    "no_help": null
+    "keep_family": null,
+    "keep_pairs": null,
+    "max_pairs": null,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -18253,7 +18505,11 @@
    "bundle": "adam-coding-local",
    "confidence": {
     "helps": 0.0,
-    "no_help": null
+    "keep_family": 6,
+    "keep_pairs": 3,
+    "max_pairs": 4,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -18945,7 +19201,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 8,
+    "keep_pairs": 3,
+    "max_pairs": 3,
+    "no_help": 0.0,
+    "no_help_pairs": 1
    },
    "copies": {
     "alert": {
@@ -19553,7 +19813,11 @@
    "bundle": "adam-coding-local",
    "confidence": {
     "helps": 0.0,
-    "no_help": null
+    "keep_family": 2,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": null,
+    "no_help_pairs": null
    },
    "copies": {
     "alert": {
@@ -20014,7 +20278,11 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 4,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": 0.0,
+    "no_help_pairs": 2
    },
    "copies": {
     "alert": {
@@ -20643,7 +20911,11 @@
    "bundle": "adam-anything-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "keep_family": 4,
+    "keep_pairs": 2,
+    "max_pairs": 2,
+    "no_help": 0.0,
+    "no_help_pairs": 1
    },
    "copies": {
     "alert": {
@@ -21796,8 +22068,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "c6b38e18c441888d8458979f75d020bce2253655",
-  "results_commit": "297982eefa47d5ef9a94be35fd3d3d7e282378c7"
+  "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
+  "results_commit": "cba7b38cec78cbc7fa60033792cdac47a4baa281"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
