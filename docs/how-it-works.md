@@ -544,7 +544,8 @@ locked, a `skills.lock` re-pin — produced by the registry's own generators
 rather than reimplemented here. The job checks out the registry with full
 history (the lock re-pin reads the commit the lock pins) and writes with the
 improvement gate's GitHub App token. Without that token, or for a skill whose
-plugin runs code (its removal would wait on plugin-runtime-review), it falls
+removal plugin-runtime-review would hold (the skill has its own `hooks/` or
+`bin/`, or a hook of its plugin names a path in it), it falls
 back to `proposal`: one skills-evals issue that is filed or updated and that
 a human acts on; once that issue is closed, the skill is not proposed
 again. Preview either mode with

@@ -49,7 +49,7 @@ $GITHUB_OUTPUT):
            --run-id ID [--policy FILE]
   pr-body  --staged DIR --run-id ID --sha SHA --branch NAME
            [--mode draft|auto]                          (body on stdout)
-  merge-mode --tree DIR --plugin NAME [--policy FILE]   (mode=, mode_reason=)
+  merge-mode --tree DIR --plugin NAME --skill NAME [--policy FILE]   (mode=, mode_reason=)
   fire-check SKILL [--holdout NAME]                     (no output; exit 0 or 1)
 
 `prepare` builds the whole registry change on a clean checkout of
@@ -61,8 +61,10 @@ commit re-pinning `skills.lock` to the first when the lock covers the
 skill (the registry's own `scripts/` do the last two). Those are what the
 registry's required checks and AGENTS.md ask of a skill edit. It prints the
 merge mode: `evals/improve-policy.yml`'s `improve_merge_mode`, or `draft`
-when the skill's plugin runs code (`auto_refusal`), so an auto-merged pull
-request never touches what adam-agentskills' plugin-runtime-review gates.
+when adam-agentskills' plugin-runtime-review would hold the change
+(`auto_refusal`: the skill has its own `hooks/` or `bin/`, or a hook of its
+plugin names a path in it), so an auto-merged pull request never waits on
+that review. A skill's text is not runtime, whatever its plugin holds.
 `merge-mode` prints the same decision (`effective_mode`) for
 routine-draft-skill-gate.yml, so one policy file switches every loop gate
 that writes adam-agentskills.
@@ -121,14 +123,17 @@ MERGE_MODES = ("auto", "draft")
 #: A policy that names no mode (Adam, 2026-10-26: accepted improvements merge
 #: with no human in the loop).
 DEFAULT_MERGE_MODE = "auto"
-#: What makes a plugin one that runs code, as adam-agentskills'
-#: scripts/plugin_runtime_gate.py sees it: these paths under its root, or a
-#: `hooks` or `settings` key in a manifest. A skill in such a plugin is never
-#: auto-merged, because a hook can name any file under the root.
-RUNTIME_PATHS = ("hooks", "bin", "settings.json", "package.json",
-                 "bun.lock", "bun.lockb", "npm-shrinkwrap.json",
-                 "package-lock.json")
-RUNTIME_KEYS = ("hooks", "settings")
+#: The places adam-agentskills' scripts/plugin_runtime_gate.py reads to
+#: decide whether a pull request changes how a plugin runs code: a hook's
+#: command names a path after the plugin root, and a skill's own `hooks/` or
+#: `bin/` directory is a runtime path. A loop pull request that only adds,
+#: edits or removes a skill's text is not one of those, whatever else the
+#: plugin holds (Adam, 2026-11-03: text-only loop skill pull requests in
+#: plugins with hooks auto-merge; the gate still holds the rest).
+SKILL_RUNTIME_DIRS = ("hooks", "bin")
+#: Where a plugin's hooks can name a path: its hooks/ JSON, the two
+#: manifests (an inline `hooks` value) and its settings file.
+HOOK_CONFIG_MAX = 1024 * 1024
 #: The registry files `prepare` writes besides the skill's own directory.
 IMPACT_FILE = "docs/skill-impact.md"
 README = "README.md"
@@ -508,33 +513,60 @@ def _manifest(tree: Path, rel: str) -> tuple[str, dict]:
     return text, doc
 
 
-def auto_refusal(tree: Path, plugin: str) -> str | None:
-    """Why the skill's plugin may not be auto-merged into, or None. A plugin
-    that runs code (adam-agentskills ADR 0016's runtime surfaces) always
-    gets a draft: a hook can name any file under its root, skills included,
-    and its runtime review must have an owner's approval."""
+def _hook_config_texts(tree: Path, root: str) -> list[str]:
+    """The text of every file under `root` a hook can be declared in: hooks/
+    JSON files, the manifests and settings.json. Missing files are skipped;
+    an unreadable one is a refusal, never a silent pass."""
+    rels = [f"{root}/{name}" for name in MANIFESTS + ("settings.json",)]
+    hooks = tree / root / "hooks"
+    if hooks.is_symlink():
+        raise Rejected(f"{root}/hooks is a symlink")
+    if hooks.is_dir():
+        rels += sorted(p.relative_to(tree).as_posix() for p in hooks.rglob("*.json"))
+    texts = []
+    for rel in rels:
+        path = _no_symlink(tree, rel)
+        if not path.is_file():
+            continue
+        if path.stat().st_size > HOOK_CONFIG_MAX:
+            raise Rejected(f"{rel} is too large to read")
+        try:
+            texts.append(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError):
+            raise Rejected(f"cannot read {rel}") from None
+    return texts
+
+
+def auto_refusal(tree: Path, plugin: str, skill: str) -> str | None:
+    """Why a loop pull request that changes `skill` may not be auto-merged,
+    or None: when adam-agentskills' plugin-runtime-review would hold it (its
+    ADR 0016), because auto-merge cannot approve that. That is a skill with
+    its own `hooks/` or `bin/` directory, or one a hook of its plugin names
+    a path in. Any other skill change, in any plugin, is text."""
+    if not NAME_RE.fullmatch(skill):
+        raise Rejected("skill is not a skill name")
     root = f"plugins/{plugin}"
-    for name in RUNTIME_PATHS:
-        path = tree / root / name
+    for name in SKILL_RUNTIME_DIRS:
+        path = tree / root / "skills" / skill / name
         if path.exists() or path.is_symlink():
-            return "the skill's plugin runs code (it has a runtime path)"
-    for name in MANIFESTS:
-        _, doc = _manifest(tree, f"{root}/{name}")
-        if any(key in doc for key in RUNTIME_KEYS):
-            return "the skill's plugin runs code (a manifest names hooks or settings)"
+            return f"the skill has a runtime path ({name}/), which plugin-runtime-review holds"
+    needle = f"skills/{skill}/"
+    if any(needle in text or text.rstrip().endswith(f"skills/{skill}")
+           for text in _hook_config_texts(tree, root)):
+        return "a hook of the skill's plugin names a path in the skill, which plugin-runtime-review holds"
     return None
 
 
-def effective_mode(tree: Path, plugin: str, policy: Path = POLICY) -> dict:
-    """The merge mode for a loop pull request that changes a skill of
+def effective_mode(tree: Path, plugin: str, skill: str, policy: Path = POLICY) -> dict:
+    """The merge mode for a loop pull request that changes `skill` of
     `plugin` in the registry checkout `tree`: the policy's, lowered to
-    `draft` (with the reason) when the plugin runs code. The one switch for
+    `draft` (with the reason) when `auto_refusal` gives one. The one switch for
     every loop gate that writes adam-agentskills: this gate's `prepare` and
     routine-draft-skill-gate.yml's `merge-mode` step."""
     if not NAME_RE.fullmatch(plugin):
         raise Rejected("plugin is not a plugin name")
     mode = merge_mode(policy)
-    reason = auto_refusal(tree, plugin) if mode == "auto" else None
+    reason = auto_refusal(tree, plugin, skill) if mode == "auto" else None
     return {"mode": "draft", "mode_reason": reason} if reason \
         else {"mode": mode}
 
@@ -684,7 +716,7 @@ def prepare(staged: Path, tree: Path, skill_md: str, registry_sha: str,
         raise Rejected("the skill changed on the registry's default branch "
                        "since it was measured; measure it again")
 
-    decided = effective_mode(tree, plugin, policy)
+    decided = effective_mode(tree, plugin, skill, policy)
     mode, reason = decided["mode"], decided.get("mode_reason")
 
     apply(staged, tree, skill_md)
@@ -878,6 +910,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("merge-mode")
     p.add_argument("--tree", required=True, type=Path)
     p.add_argument("--plugin", required=True)
+    p.add_argument("--skill", required=True)
     p.add_argument("--policy", type=Path, default=POLICY)
     p = sub.add_parser("pr-body")
     p.add_argument("--staged", required=True, type=Path)
@@ -901,7 +934,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "apply":
             result = apply(args.staged, args.tree, args.skill_md)
         elif args.command == "merge-mode":
-            result = effective_mode(args.tree, args.plugin, args.policy)
+            result = effective_mode(args.tree, args.plugin, args.skill, args.policy)
         elif args.command == "prepare":
             result = prepare(args.staged, args.tree, args.skill_md,
                              args.registry_sha, args.run_id, args.policy)

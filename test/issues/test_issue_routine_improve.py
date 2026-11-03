@@ -927,29 +927,51 @@ class PrepareTests(unittest.TestCase):
         self.assertIn("draft pull request; a person merges or closes it",
                       self.show("docs/skill-impact.md"))
 
-    def test_a_plugin_that_runs_code_falls_back_to_a_draft(self):
+    def _mode_with(self, files: dict) -> dict:
+        self.git("checkout", "-q", "-f", "--detach", self.start)
+        self.git("clean", "-qfdx")
+        self.write(files)
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "case")
+        self.measured = self.git("rev-parse", "HEAD")
+        return self.prepare()
+
+    def test_a_plugin_that_runs_code_still_auto_merges_a_text_change(self):
+        # Adam, 2026-11-03: text-only loop skill pull requests in plugins
+        # with hooks auto-merge; adam-agentskills' plugin-runtime-review
+        # still holds anything that changes how the plugin runs code.
+        self.start = self.measured
         cases = {
-            "hooks": {f"plugins/{PLUGIN}/hooks/hooks.json": "{}\n"},
+            "hooks": {f"plugins/{PLUGIN}/hooks/hooks.json":
+                      '{"hooks": {"SessionStart": [{"command": "${CLAUDE_PLUGIN_ROOT}/hooks/a.sh"}]}}\n'},
             "bin": {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"},
             "settings": {f"plugins/{PLUGIN}/settings.json": "{}\n"},
-            "manifest": {f"plugins/{PLUGIN}/.claude-plugin/plugin.json":
-                         '{\n  "name": "%s",\n  "version": "1.0.0",\n'
-                         '  "hooks": "./h.json"\n}\n' % PLUGIN},
         }
-        start = self.measured
         for label, files in cases.items():
             with self.subTest(case=label):
-                self.git("checkout", "-q", "-f", "--detach", start)
-                self.git("clean", "-qfdx")
-                self.write(files)
-                self.git("add", "-A")
-                self.git("commit", "-q", "-m", label)
-                self.measured = self.git("rev-parse", "HEAD")
-                out = self.prepare()
+                out = self._mode_with(files)
+                self.assertEqual(out["mode"], "auto")
+                self.assertNotIn("mode_reason", out)
+
+    def test_a_change_the_runtime_gate_would_hold_falls_back_to_a_draft(self):
+        self.start = self.measured
+        cases = {
+            "the skill's own bin": {f"plugins/{PLUGIN}/skills/{SKILL}/bin/tool": "#!/bin/sh\n"},
+            "a hook names the skill": {
+                f"plugins/{PLUGIN}/hooks/hooks.json":
+                    '{"hooks": {"Stop": [{"command": '
+                    f'"${{CLAUDE_PLUGIN_ROOT}}/skills/{SKILL}/check.sh"}}]}}}}\n'},
+            "a manifest hook names the skill": {
+                f"plugins/{PLUGIN}/.claude-plugin/plugin.json":
+                    '{\n  "name": "%s",\n  "version": "1.0.0",\n'
+                    '  "hooks": {"Stop": [{"command": "x/skills/%s/a.sh"}]}\n}\n' % (PLUGIN, SKILL)},
+        }
+        for label, files in cases.items():
+            with self.subTest(case=label):
+                out = self._mode_with(files)
                 self.assertEqual(out["mode"], "draft")
-                self.assertIn("runs code", out["mode_reason"])
-                self.assertIn("draft pull request",
-                              self.show("docs/skill-impact.md"))
+                self.assertIn("plugin-runtime-review", out["mode_reason"])
+                self.assertIn("draft pull request", self.show("docs/skill-impact.md"))
 
     def test_refuses_a_skill_that_moved_since_it_was_measured(self):
         self.write({f"plugins/{PLUGIN}/skills/{SKILL}/references/x.md": "new\n"})
@@ -1007,21 +1029,24 @@ class PrepareTests(unittest.TestCase):
                 ("improve_merge_mode: auto\n", {}, ["mode=auto"]),
                 ("improve_merge_mode: draft\n", {}, ["mode=draft"]),
                 ("improve_merge_mode: auto\n",
-                 {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"},
-                 ["mode=draft", "mode_reason=the skill's plugin runs code "
-                  "(it has a runtime path)"])):
+                 {f"plugins/{PLUGIN}/bin/tool": "#!/bin/sh\n"}, ["mode=auto"]),
+                ("improve_merge_mode: auto\n",
+                 {f"plugins/{PLUGIN}/skills/{SKILL}/bin/tool": "#!/bin/sh\n"},
+                 ["mode=draft", "mode_reason=the skill has a runtime path (bin/), "
+                  "which plugin-runtime-review holds"])):
             with self.subTest(text=text, files=sorted(files)):
                 policy.write_text(text, encoding="utf-8")
                 self.write(files)
                 out = io.StringIO()
                 with contextlib.redirect_stdout(out):
                     code = gate.main(["merge-mode", "--tree", str(self.tree),
-                                      "--plugin", PLUGIN, "--policy", str(policy)])
+                                      "--plugin", PLUGIN, "--skill", SKILL,
+                                      "--policy", str(policy)])
                 self.assertEqual((code, out.getvalue().splitlines()), (0, want))
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             self.assertEqual(gate.main(["merge-mode", "--tree", str(self.tree),
-                                        "--plugin", "../x"]), 1)
+                                        "--plugin", "../x", "--skill", SKILL]), 1)
 
     def test_the_cli_prints_validated_values(self):
         out = io.StringIO()

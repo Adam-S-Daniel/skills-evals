@@ -191,7 +191,7 @@ jobs:
   # that uses it and passed as REGISTRY_TOKEN; skills-evals issues still use
   # this job's own token. With no token (either secret unset, or the mint
   # failed) the script gets `--fallback-to-proposal` and files the issue
-  # instead, as it does for a skill whose plugin runs code. It opens nothing
+  # instead, as it does for a skill plugin-runtime-review would hold. It opens nothing
   # while any loop pull request (an improvement, a new skill or a removal)
   # is open there; scripts/retire_skill.py's LOOP_PREFIXES names the heads.
   retirement:

@@ -11,8 +11,8 @@
 #
 # A missing key means `auto`. An unreadable file, a value other than those
 # two, or any other key means `draft`. Whatever this says, the gate falls
-# back to `draft` for a skill whose plugin runs code (hooks, bin/, settings
-# or a package manifest), so a pull request it auto-merges never needs
-# adam-agentskills' plugin-runtime-review. See adam-agentskills ADR 0021 and
+# back to `draft` for a change adam-agentskills' plugin-runtime-review would
+# hold (the skill has its own hooks/ or bin/, or a hook of its plugin names a
+# path in it), so a pull request it auto-merges never needs that review. See adam-agentskills ADR 0021 and
 # this repository's ADR 0005, "Automatic merge addendum (2026-10-26)".
 improve_merge_mode: auto
