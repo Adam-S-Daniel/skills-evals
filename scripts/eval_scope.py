@@ -18,7 +18,9 @@ Rules, each deterministic (thresholds are the constants below):
   floor     the same run filter, both arms pass at most FLOOR_SHARE. Paused.
   zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
             surfaces it reaches (`skill_usage.zero_use`; unknown means do
-            nothing). All of its scheduled fixtures are paused.
+            nothing). All of its scheduled fixtures are paused. A skill in
+            evals/usage-unknown.yml has unknown use: never paused for zero
+            use, and an earlier zero-use pause of it resumes.
   resume    a fixture this pass paused earlier returns when its content digest
             differs from the one recorded at the pause (ceiling, floor) or when
             `zero_use` is False (zero-use).
@@ -68,6 +70,8 @@ AUTO_PREFIX = "Auto scope ("
 SCHEDULED = "evals/scheduled.yml"
 UNSCHEDULED = "evals/unscheduled.yml"
 SCOPE_AUTO = "evals/scope-auto.yml"
+#: Skills whose recorded use is not their real use (#668): zero use is unknown.
+USAGE_UNKNOWN = "evals/usage-unknown.yml"
 SCHEMA = 1
 
 SCOPE_AUTO_HEADER = """\
@@ -111,6 +115,17 @@ def read_rows(root: Path, rel: str, key: str) -> list[dict]:
     if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
         raise ScopeError(f"{rel}: `{key}` must be a list of mappings")
     return rows
+
+
+def usage_unknown(root: Path) -> dict[str, str]:
+    """{skill: reason} from USAGE_UNKNOWN; empty when the file is absent."""
+    found = {}
+    for row in read_rows(root, USAGE_UNKNOWN, "skills"):
+        skill, reason = row.get("skill"), row.get("reason")
+        if not isinstance(skill, str) or not skill or not isinstance(reason, str) or not reason:
+            raise ScopeError(f"{USAGE_UNKNOWN}: each row needs a skill and a reason")
+        found[skill] = reason
+    return found
 
 
 def fixture_digest(directory: Path) -> str:
@@ -278,6 +293,8 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
     table = stakes_file.load(root / "evals" / "stakes.yml", root / "evals")
     today = now.date().isoformat()
 
+    unknown_use = usage_unknown(root)
+
     resume, resumed = [], set()
     for row in auto:
         path, rule = row.get("path"), row.get("rule")
@@ -289,6 +306,12 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                "why": "the fixture's content changed since it was paused"})
                 resumed.add(path)
         elif rule == "zero-use" and subject_kind == "skill" and directory.is_dir():
+            if subject in unknown_use:
+                resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
+                               "why": f"its use is unknown ({USAGE_UNKNOWN}: "
+                                      f"{unknown_use[subject]})"})
+                resumed.add(path)
+                continue
             used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
             if used is False:
@@ -308,7 +331,7 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
         since = last_commit_time(root, path)
         if since is not None:
             found = ceiling_or_floor(measure(kind, fixture_runs(explorer, kind, subject, path, since)))
-        if found is None and kind == "skill":
+        if found is None and kind == "skill" and subject not in unknown_use:
             used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
             if used is True:

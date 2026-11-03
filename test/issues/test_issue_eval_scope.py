@@ -271,6 +271,16 @@ class ZeroUseTests(unittest.TestCase):
         self.assertEqual(self.paused(usage_doc({"beta": 3})),
                          ["evals/alpha/one", "evals/alpha/two"])
 
+    def test_a_skill_with_unknown_use_is_not_paused(self):
+        write(self.root, "evals/usage-unknown.yml",
+              'skills:\n  - skill: alpha\n    reason: "listed by name only"\n')
+        self.assertEqual(self.paused(usage_doc({"beta": 3})), [])
+
+    def test_a_usage_unknown_row_needs_a_reason(self):
+        write(self.root, "evals/usage-unknown.yml", "skills:\n  - skill: alpha\n")
+        with self.assertRaises(eval_scope.ScopeError):
+            self.paused(usage_doc({"beta": 3}))
+
     def test_a_used_skill_is_kept(self):
         self.assertEqual(self.paused(usage_doc({"alpha": 1, "beta": 1})), [])
 
@@ -393,6 +403,16 @@ class ApplyAndResumeTests(unittest.TestCase):
         self.assertEqual([r["path"] for r in self.rows("evals/scope-auto.yml", "rows")], [])
         self.assertIn("evals/alpha/two",
                       [r["path"] for r in self.rows("evals/scheduled.yml", "fixtures")])
+
+    def test_zero_use_resumes_when_the_skill_is_listed_as_unknown_use(self):
+        eval_scope.apply_plan(self.root, plan_for(self.root, explorer(), usage_doc({"zzz": 1})))
+        write(self.root, "evals/usage-unknown.yml",
+              'skills:\n  - skill: alpha\n    reason: "listed by name only"\n')
+        plan = plan_for(self.root, explorer(), usage_doc({"zzz": 1}))
+        self.assertEqual(sorted(r["path"] for r in plan["resume"]),
+                         ["evals/alpha/one", "evals/alpha/two"])
+        self.assertIn("listed by name only", plan["resume"][0]["why"])
+        self.assertEqual(plan["pause"], [])
 
     def test_a_stale_plan_is_refused(self):
         plan = plan_for(self.root, self.exp)
