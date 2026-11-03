@@ -1568,9 +1568,10 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "order": (v is None, -(v or 0.0), section)})
         elif headroom is not None and owner is None \
                 and (headroom < MIN_GAIN or info["fixtures"] < MIN_IMPROVE_FIXTURES):
-            # A paused section, or one whose manifest row is skipped, needs
-            # no fixture work; its reason is in `gstatus`. Neither does one
-            # retirement owns (`retirement_owner`).
+            # A section retirement owns (`retirement_owner`) gets no fixture
+            # work. A paused section, or one whose manifest row is skipped,
+            # still does when it lacks fixtures or headroom (as on the skill
+            # side); whether it should is an open policy question.
             kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
             guidance_work.append({
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,
