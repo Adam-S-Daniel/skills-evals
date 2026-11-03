@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:01:20Z",
+  "generated_at": "2026-11-03T23:03:12Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T23:00:23Z",
+ "generated_at": "2026-11-03T23:02:10Z",
  "guidance": {
   "removed": [
    {
@@ -10094,7 +10094,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T22:57:44Z",
+ "newest_run": "2026-11-03T22:59:42Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10446,7 +10446,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12858,10 +12858,10 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": 0.24765927993469683,
+    "helps": 0.3160538908497246,
     "keep_family": 2,
-    "keep_pairs": 5,
-    "max_pairs": 5,
+    "keep_pairs": 6,
+    "max_pairs": 6,
     "no_help": 0.0,
     "no_help_pairs": 2
    },
@@ -12877,7 +12877,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 7,
+   "current_text_runs": 8,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
@@ -12888,6 +12888,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:57:03Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T225038Z-89b7f0/disarm-inherited-reach/20261103T225703Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 9,
+      "cost_usd": 0.17376830000000001,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.0942058,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:32:27Z",
      "cli_version": "2.1.317",
@@ -13902,7 +13923,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14940,10 +14961,10 @@
    "confidence": {
     "helps": 0.6819305618928069,
     "keep_family": 2,
-    "keep_pairs": 14,
+    "keep_pairs": 15,
     "max_pairs": 15,
     "no_help": 0.13705583756345174,
-    "no_help_pairs": 14
+    "no_help_pairs": 15
    },
    "copies": {
     "alert": {
@@ -14957,7 +14978,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 29,
+   "current_text_runs": 30,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -14985,6 +15006,27 @@
       "checks_passed": 10,
       "checks_total": 10,
       "cost_usd": 0.1058515,
+      "judge_mean": 8.9,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-03T22:56:38Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T225416Z-a1df9e/github-actions-sha-pinning/20261103T225638Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.43671716499999996,
+      "judge_mean": 9.4,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.36287335499999995,
       "judge_mean": 8.9,
       "trials": 1
      }
@@ -16111,7 +16153,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -20422,17 +20464,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 5,
+   "current_text_runs": 6,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:59:42Z",
+     "cli_version": "2.1.317",
+     "fixture": "workflow-doc-in-step",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T225636Z-5456da/workflow-path-audit/20261103T225942Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.1434624,
+      "judge_mean": 6.125000000000001,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.1383781,
+      "judge_mean": 5.375,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:43:21Z",
      "cli_version": "2.1.317",
@@ -22216,7 +22279,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
-  "results_commit": "3fb3e8f9e75a0bbdf9a54a51a8fb8baa27978449"
+  "results_commit": "2295d04620469d7b5221c4b11a072d8524b1b686"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
