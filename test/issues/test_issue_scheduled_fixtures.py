@@ -26,8 +26,7 @@ import context as harness_context  # noqa: E402
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
-REVIEWED = ["evals/workflow-path-audit/required-check-routing",
-            "evals/embeddable-tool-pages",
+REVIEWED = ["evals/embeddable-tool-pages",
             "evals/review-bash-ci-reliability/release-pipeline",
             "evals/skills-doctor/bucketed-account-store",
             "evals/github-actions-sha-pinning",
@@ -40,11 +39,8 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/anything-you-name-gets-its-link/done-summary",
             "evals/guidance/anything-you-name-gets-its-link/no-url",
             "evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure",
-            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
             "evals/guidance/pinning-github-actions/new-workflow",
-            "evals/guidance/git-practices/merge-method-and-closing-keyword",
             "evals/guidance/subagent-delegation/verifier-that-cannot-fail",
-            "evals/guidance/automation-vs-branch-protection/required-check-concurrency",
             "evals/guidance/working-in-these-repos/on-hold-pull-request",
             "evals/guidance/data-exposure-in-ci/dispatch-email-input",
             "evals/guidance/data-exposure-in-ci/http-error-body",
@@ -54,22 +50,12 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/guidance/fleet-spans-two-owners/skills-lock-census",
             "evals/guidance/github-404-means-not-authorized/private-repo-404",
             "evals/guidance/test-that-can-signal-kills-every-session/stop-worker",
-            "evals/guidance/section-python/load-config",
             "evals/guidance/dependency-updates/dependabot-cooldown",
             "evals/guidance/agent-contribution-markers/open-pull-request",
             "evals/guidance/security/search-query",
-            "evals/guidance/section-docker/node-service",
-            "evals/guidance/section-javascript/fetch-retry",
-            "evals/guidance/section-typescript/parse-event",
-            "evals/guidance/section-go/fetch-user",
-            "evals/guidance/section-rust/parse-port",
-            "evals/guidance/section-dotnet/load-settings",
-            "evals/guidance/workstation-layout/clone-all",
             "evals/guidance/two-github-connectors/org-connector-ci",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
-            "evals/guidance/skills-ecosystem/push-fails-everywhere",
             "evals/guidance/finding-your-unknowns/changelog-check",
-            "evals/guidance/read-before-you-start/new-config-key",
             # Skill fixtures merged hermetic and left off the schedule while
             # the skills-fixture lane was stopped (#62's children): their
             # skills are live in adam-agentskills and cms-platform.
@@ -77,16 +63,8 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/pdf-ocr-audit",
             "evals/cms-stuck-pr-triage",
             "evals/post-failure-comment",
-            "evals/admin-config-render",
-            "evals/code-quality",
-            "evals/ci-watcher-loops",
-            "evals/editorial-label-audit",
             "evals/consumer-repo-provisioning",
             "evals/platform-release-and-bump",
-            # A private skill (#81): results go to adam-agentskills-private.
-            "evals/adam-writing-style/proposal-bio",
-            "evals/adam-writing-style/recruiter-reply",
-            "evals/adam-writing-style/self-appraisal-opening",
             # Skills with eval runs that were never scheduled (2026-11-01).
             "evals/ci-job-performance/browser-cache",
             "evals/debug-github-workflows/git-identity",
@@ -97,18 +75,14 @@ REVIEWED = ["evals/workflow-path-audit/required-check-routing",
             "evals/vendor-release-impact-issues/closing-keywords",
             "evals/vendor-release-impact-issues/issue-hygiene",
             "evals/vendor-release-impact-issues/stamps-skip-quotes",
-            "evals/finding-unknowns",
             # In place on repo-settings, which the routine clones from 2026-11-01.
             "evals/github-actions-repo-settings/drift-diagnosis",
             # In place, with a context; the rest of both skills' fixtures
             # (Adam, 2026-11-02: leaving one out needs a reason).
             "evals/review-bash-ci-reliability/drift-report-capture",
-            "evals/review-bash-ci-reliability/empty-repo-discovery",
             "evals/review-bash-ci-reliability/nightly-snapshot",
             "evals/review-bash-ci-reliability/test-runner-assertions",
-            "evals/skills-doctor/one-row-rejects-the-lock",
-            "evals/skills-doctor/personal-copy-outranks-repo",
-            "evals/skills-doctor/ssh-remote-is-durable"]
+            "evals/skills-doctor/personal-copy-outranks-repo"]
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
@@ -159,6 +133,9 @@ def promoted_context_problem(fixture):
 #: The schedule: the reviewed fixtures, then any promoted ones (Adam,
 #: 2026-10-26: fixtures are promoted with no human in the loop).
 EXPECTED = REVIEWED + promoted_entries()
+#: The manual-dispatch default. It left the schedule on 2026-11-03 (listed in
+#: unscheduled.yml) but stays a committed fixture, which is all a dispatch needs.
+DISPATCH_DEFAULT = "evals/workflow-path-audit/required-check-routing"
 
 
 def module(name, path):
@@ -255,13 +232,13 @@ class TestScheduledFixtures(unittest.TestCase):
     def test_dispatch_defaults_and_explicit_fixture_are_unchanged(self):
         trigger = doc().get("on", doc().get(True))
         self.assertEqual(set(trigger), {"workflow_dispatch"})
-        self.assertEqual(trigger["workflow_dispatch"]["inputs"]["fixture"]["default"], EXPECTED[0])
+        self.assertEqual(trigger["workflow_dispatch"]["inputs"]["fixture"]["default"], DISPATCH_DEFAULT)
         events = [{}, {"inputs": {}}, {"inputs": {"fixture": ""}},
                   {"inputs": {"fixture": None}}]
         for event in events:
             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", event),
-                             {"include": [{"fixture": EXPECTED[0],
-                                           "eval_key": EXPECTED[0][6:], "slot": 0}]})
+                             {"include": [{"fixture": DISPATCH_DEFAULT,
+                                           "eval_key": DISPATCH_DEFAULT[6:], "slot": 0}]})
         for path in EXPECTED:
             self.assertEqual(planner.plan(ROOT, "workflow_dispatch", {"inputs": {"fixture": path}})["include"],
                              [{"fixture": path, "eval_key": path[6:], "slot": 0}])

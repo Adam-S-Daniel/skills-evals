@@ -2,8 +2,6 @@
 # record: from the fixture's pins at skills-evals c1bf71c, or for the unpinned
 # fixture from the roster's first arm and judge at fc7e1cf.
 fixtures:
-  - path: evals/workflow-path-audit/required-check-routing
-    readiness: "Isolation pair on pins since removed (agent claude-sonnet-5, judge claude-opus-4-8). Current scheduled fixture; local smoke: with 8 vs without 7."
   - path: evals/embeddable-tool-pages
     readiness: "Isolation pair, unpinned (the committed roster then named arm claude-sonnet-5 and judge claude-fable-5-1). Local N=3 judged baseline: objective with 7/7 vs without 6/7; judge 6.9 vs 4.2."
   - path: evals/review-bash-ci-reliability/release-pipeline
@@ -28,15 +26,9 @@ fixtures:
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
   - path: evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
-  - path: evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
   - path: evals/guidance/pinning-github-actions/new-workflow
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
-  - path: evals/guidance/git-practices/merge-method-and-closing-keyword
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
   - path: evals/guidance/subagent-delegation/verifier-that-cannot-fail
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/automation-vs-branch-protection/required-check-concurrency
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/working-in-these-repos/on-hold-pull-request
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
@@ -56,37 +48,17 @@ fixtures:
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/test-that-can-signal-kills-every-session/stop-worker
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-python/load-config
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/dependency-updates/dependabot-cooldown
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/agent-contribution-markers/open-pull-request
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/security/search-query
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-docker/node-service
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-javascript/fetch-retry
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-typescript/parse-event
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-go/fetch-user
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-rust/parse-port
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/section-dotnet/load-settings
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/workstation-layout/clone-all
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/two-github-connectors/org-connector-ci
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/two-setup-gaps/multi-repo-cloud-session
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/skills-ecosystem/push-fails-everywhere
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/guidance/finding-your-unknowns/changelog-check
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
-  - path: evals/guidance/read-before-you-start/new-config-key
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/rename-pdfs
     readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#82)."
@@ -96,24 +68,10 @@ fixtures:
     readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#84)."
   - path: evals/post-failure-comment
     readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#86)."
-  - path: evals/admin-config-render
-    readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#87)."
-  - path: evals/code-quality
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Local N=3 run 2026-10-05 on agent claude-sonnet-5 (not badge input): objective with 9.0/10 vs without 7.67/10 after re-scoring with tree-sitter (#88). No routine run yet. In-place context added on adamdaniel.ai (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/ci-watcher-loops
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Local N=3 touch-gate run 2026-10-05 on agent claude-sonnet-5 (not badge input): objective 8.0 vs 8.0 of 8, judge 8.32 vs 7.85 (#89). No routine run yet. In-place context added on adamdaniel.ai (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/editorial-label-audit
-    readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#90)."
   - path: evals/consumer-repo-provisioning
     readiness: "In-place pair on adamdaniel.ai (skills-evals#574), unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: merged with its checks exercised by test (#91)."
   - path: evals/platform-release-and-bump
     readiness: "In-place pair on adamdaniel.ai, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: test scores the seed and the reference fix (#93)."
-  - path: evals/adam-writing-style/proposal-bio
-    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
-  - path: evals/adam-writing-style/recruiter-reply
-    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
-  - path: evals/adam-writing-style/self-appraisal-opening
-    readiness: "Isolation pair, unpinned (the committed roster names arm claude-sonnet-5-5; judge claude-fable-5-1 is not run, the fixture judges pairwise). Private skill: the routine pushes its results to adam-agentskills-private, never here (#81). No routine run yet; hermetic: checks exercised by test."
   - path: evals/ci-job-performance/browser-cache
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/debug-github-workflows/git-identity
@@ -132,23 +90,15 @@ fixtures:
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/stamps-skip-quotes
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/finding-unknowns
-    readiness: "In-place pair on skills-evals, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test."
   - path: evals/github-actions-repo-settings/drift-diagnosis
     readiness: "In-place pair on repo-settings, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled until the eval runner routine cloned repo-settings (2026-11-01); hermetic checks exercised by test."
   - path: evals/review-bash-ci-reliability/drift-report-capture
-    readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/review-bash-ci-reliability/empty-repo-discovery
     readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
   - path: evals/review-bash-ci-reliability/nightly-snapshot
     readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
   - path: evals/review-bash-ci-reliability/test-runner-assertions
     readiness: "In-place pair on cms-platform, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/skills-doctor/one-row-rejects-the-lock
-    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
   - path: evals/skills-doctor/personal-copy-outranks-repo
-    readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
-  - path: evals/skills-doctor/ssh-remote-is-durable
     readiness: "In-place pair on adam-agentskills, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs but was never scheduled; scheduled with the unscheduled-fixture reasons review (Adam, 2026-11-02); context measured through run_eval._in_place_plan, no model call."
   - path: evals/fan-out-triage/keyword-lookalikes
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
@@ -160,29 +110,17 @@ fixtures:
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/companion-skip-pair
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/workflow-path-audit/moved-test-dir
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/workflow-path-audit/workflow-doc-in-step
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/writing-adrs/existing-convention
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/writing-adrs/supersede
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/writing-adrs/why-no-comment-trail
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at 7cf559388b9e (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/red-ci-adamdaniel-ai/concurrency-cancel
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/red-ci-adamdaniel-ai/paths-required
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/red-ci-adamdaniel-ai/timeout-wall
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/red-ci-adamdaniel-ai/unpinned-action
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 2dcf61ff3ca6 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/tool-powershell/preview-before-delete
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/tool-powershell/protected-path-cleanup
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/tool-powershell/silent-exit-one
-    readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
-  - path: evals/tool-powershell/whatever-works-pressure
     readiness: "Promoted automatically on 2026-11-03 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 50d661059e67 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
