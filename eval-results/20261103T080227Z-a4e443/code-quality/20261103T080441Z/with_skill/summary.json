@@ -1,0 +1,459 @@
+{
+  "skill": "code-quality",
+  "arm": "with_skill",
+  "timestamp": "20261103T080441Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.7855267,
+    "num_turns": 11,
+    "duration_ms": 162112,
+    "usage": {
+      "input_tokens": 22,
+      "cache_creation_input_tokens": 53898,
+      "cache_read_input_tokens": 423770,
+      "output_tokens": 6160,
+      "output_tokens_details": {
+        "thinking_tokens": 1877
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 53898,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 957,
+          "cache_read_input_tokens": 53607,
+          "cache_creation_input_tokens": 291,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 291
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "golangci-width-100",
+      "passed": true,
+      "detail": "parsed_config_values: all values satisfy typed constraints"
+    },
+    {
+      "id": "hook-guards-go-tools",
+      "passed": false,
+      "detail": "shell_staged_tool_guard: unsupported_dynamic_form"
+    },
+    {
+      "id": "hook-lints-staged-go",
+      "passed": false,
+      "detail": "command_nonzero exit=1 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "hook-passes-without-go-files",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "hook-skips-missing-go-tools",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "workflows-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/tests.yml)"
+    },
+    {
+      "id": "md-yaml-opt-outs-unchanged",
+      "passed": true,
+      "detail": "unchanged (.markdownlint.json, .yamllint.yml)"
+    },
+    {
+      "id": "other-configs-unchanged",
+      "passed": true,
+      "detail": "unchanged (.prettierrc, .rubocop.yml, ruff.toml)"
+    },
+    {
+      "id": "package-json-parses",
+      "passed": true,
+      "detail": "parsed_config_values: all values satisfy typed constraints"
+    },
+    {
+      "id": "go-sources-unchanged",
+      "passed": false,
+      "detail": "main.go: modified"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 8,
+        "rationale": "The v2 .golangci.yml enables lll at 100 with a house-width comment, the hook adds a Go branch in the existing filter/have/note style that lints the staged files' package directories, skips with a notice when golangci-lint is absent, leaves Go-free commits unaffected, and AGENTS.md gains a Go row; the only slip is that gofmt is not run directly on the staged files but only via golangci-lint's formatters, so a missing golangci-lint also drops the format check, and package-level linting can block on unstaged files."
+      },
+      {
+        "name": "restraint",
+        "score": 3,
+        "rationale": "No workflow was added and other languages' configs and the Markdown/YAML opt-outs are untouched, but the agent edited main.go to add a package comment, which fails go-sources-unchanged and caps restraint at 3."
+      },
+      {
+        "name": "explanation",
+        "score": 9,
+        "rationale": "The reply states the check lives only in the local hook, that no lint workflow exists so no CI step was added and why, flags the stale code-quality.yml claim in the hook header, and clearly separates what was run (golangci-lint, go test, manual hook probes) from what was not (config verify, ShellCheck, shfmt, yamllint), only lightly implying rather than stating that contributors without golangci-lint commit unchecked."
+      }
+    ],
+    "overall": 6.799999999999999
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 22,
+      "output_tokens": 6160,
+      "cache_read_input_tokens": 423770,
+      "cache_creation_input_tokens": 53898,
+      "canonical_model": "claude-opus-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 3499,
+      "cache_read_input_tokens": 110082,
+      "cache_creation_input_tokens": 40113,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.24108389250165477,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "8b97b4ddd081bf5d3d31887b874d4acfd7ab93d99888fb6a9b7226c9cf366e03",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/adamdaniel.ai",
+    "revision": "2a994ee0219679ef85e908bbc1119f386dd33768",
+    "digest": "f95a12371888915a55bdbfcb93ac6066178d94728213e95825217af25e50f4a6",
+    "lock_digest": "6a57e6571be27aa87980cff6d9b99bc038164ae2dbc6b7db178e7d83b352f4da",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      },
+      {
+        "registry": "Adam-S-Daniel/cms-platform",
+        "revision": "fe2290a1c4e009c5dadc146dd86edafe0f0a27e2",
+        "digest": "730aa42530e23385e80dca4f7f1698b38e4fe0502f2eef9f53f669cfae7dd1f8",
+        "bundles": [
+          {
+            "name": "cms-platform",
+            "digest": "51c09e4f1832cf85b7ea37457fd0bd6752a6b40f25f20cbe5e47472120d03b7b"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "6a1ca565a57195c51a9d40cdf534a3f059ea1b89",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 14803,
+      "skill_payload_bytes": 875774
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/cms-platform",
+    "bundle": "cms-platform",
+    "skill": "code-quality",
+    "action": "removed",
+    "deployed_digest": "00feb6dc9faaa857e7e949484405c9540a8ff51b0c7e034fc866c9d7be5ae33b",
+    "tested_digest": "00feb6dc9faaa857e7e949484405c9540a8ff51b0c7e034fc866c9d7be5ae33b",
+    "bytes": 6204,
+    "subject_source": "main",
+    "subject_revision": "77510f78ac0fc3231bb5a77f69a6535629b435cc"
+  },
+  "arm_context": {
+    "skills": 24,
+    "skills_digest": "b8767a7e4385e2a398d4866c436233e1c2a69e6a233c0e8e6cf75773ee592a07",
+    "others_digest": "b19139d2d1f4867a283ccc36fe80bd24abea7724b7c87963a7e3e6cd4284de73",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261103T080227Z-a4e443",
+    "session_id": "cse_01SphsQDptKj4AF4yPNZYqdd",
+    "harness_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T08:04:41Z",
+    "ended_at": "2026-11-03T08:10:41Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-03T08:04:48.020Z",
+      "to_at": "2026-11-03T08:09:56.442Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.36,
+          "to": 0.36,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQDptKj4AF4yPNZYqdd",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 2.66439285,
+      "agent_usd": 1.3986426,
+      "judge_usd": 1.2657502500000002,
+      "guard_usd": 0,
+      "metered_usd": 2.2369726,
+      "last_agent_call_usd": 0.6131158999999999,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T08:04:41Z",
+      "ended_at": "2026-11-03T08:09:47Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T08:04:42Z",
+          "ended_at": "2026-11-03T08:07:26Z",
+          "duration_ms": 164077,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T08:09:29Z",
+          "ended_at": "2026-11-03T08:09:47Z",
+          "duration_ms": 17838,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-03T08:04:48.020Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.36,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.36,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-03T08:09:46.712Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.36,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.36,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 164077,
+        "num_turns": 11,
+        "cost_usd": 0.7855267,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 22,
+            "output_tokens": 6160,
+            "cache_read_input_tokens": 423770,
+            "cache_creation_input_tokens": 53898,
+            "cost_usd": 0.639226
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 3499,
+            "cache_read_input_tokens": 110082,
+            "cache_creation_input_tokens": 40113,
+            "cost_usd": 0.1463007
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 53898
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 17838,
+        "num_turns": 1,
+        "cost_usd": 0.8383300000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 2,
+            "output_tokens": 1287,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 38698,
+            "cost_usd": 0.8383300000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 38698
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
