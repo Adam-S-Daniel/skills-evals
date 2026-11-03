@@ -365,6 +365,37 @@ class Select(Case):
         self.assertEqual(dns.eligibility("a", {"a": {"hook-first"}}, set()), (False, False))
         self.assertEqual(dns.eligibility("a", {"a": {"hook-first"}}, {"a"}), (True, True))
         self.assertEqual(dns.eligibility("a", {"a": {"accepted"}}, {"a"}), (False, False))
+        two = {f"unmeasured@{RUN_ID[:-1]}{k}" for k in "01"}
+        self.assertEqual(dns.eligibility("a", {"a": two}, set()), (True, False))
+        three = two | {f"unmeasured@{RUN_ID[:-1]}2"}
+        self.assertEqual(dns.eligibility("a", {"a": three}, set()), (False, False))
+        self.assertEqual(dns.eligibility("a", {"a": two | {"rejected"}}, set()),
+                         (False, False))
+
+    def test_an_unmeasured_rejection_leaves_the_subject_eligible(self):
+        self.put("2026-10-26", proposal())
+        self.write(self.drafted, f"{SUBJECT} unmeasured@{RUN_ID}\n")
+        self.assertEqual(self.select()["count"], "1")
+        self.write(self.drafted, "".join(f"{SUBJECT} unmeasured@{RUN_ID[:-1]}{k}\n"
+                                         for k in "012"))
+        self.assertEqual(self.select()["count"], "0")
+        # A malformed tag is skipped, not counted.
+        self.write(self.drafted, f"{SUBJECT} unmeasured@nope\n")
+        self.assertEqual(self.select()["count"], "1")
+
+    def test_measured_reads_whether_any_fixture_ran_both_arms(self):
+        ok = {"n": 1, "errors": 0, "passed": 4, "total": 4}
+        bad = {"n": 1, "errors": 1, "passed": 0, "total": 0}
+        self.assertFalse(dns.measured({"fixtures": {}}))
+        self.assertFalse(dns.measured({}))
+        self.assertFalse(dns.measured({"fixtures": {"x": {"with_skill": bad,
+                                                          "without_skill": bad}}}))
+        self.assertFalse(dns.measured({"fixtures": {"x": {"with_skill": ok,
+                                                          "without_skill": None}}}))
+        self.assertTrue(dns.measured({"fixtures": {"x": {"with_skill": bad,
+                                                         "without_skill": bad},
+                                                   "y": {"with_skill": ok,
+                                                         "without_skill": ok}}}))
 
 
 class IssueProposals(Case):
@@ -567,6 +598,11 @@ class DraftedSubjects(Case):
             "20261026T000000Z-bbbbbb": hook_record(subject="two-thing"),
             "20261026T000000Z-cccccc": {"subject": "Bad Subject", "decision": "accepted"},
             "20261026T000000Z-dddddd": MARKER,
+            "20261026T000000Z-eeeeee": skill_record(
+                run_id="x", subject="three-thing", decision="rejected", plugin=None,
+                fixtures={}),
+            "20261026T000000Z-ffffff": skill_record(
+                run_id="x", subject="four-thing", decision="rejected"),
         }
         for run_id, doc in branches.items():
             git(repo, "checkout", "-q", "-b", f"b-{run_id}", base)
@@ -580,7 +616,9 @@ class DraftedSubjects(Case):
         git(repo, "checkout", "-q", "main")
         code, out, err = run_main("drafted-subjects", "--repo", str(repo))
         self.assertEqual(code, 0, err)
-        self.assertEqual(out.splitlines(), ["one-thing accepted", "two-thing hook-first"])
+        self.assertEqual(out.splitlines(), [
+            "four-thing rejected", "one-thing accepted",
+            "three-thing unmeasured@20261026T000000Z-eeeeee", "two-thing hook-first"])
         self.assertNotIn(MARKER, out + err)
 
 

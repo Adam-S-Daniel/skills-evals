@@ -49,7 +49,9 @@ values only):
             --evals DIR --drafted FILE [--hook-declined FILE]
             -> proposal=<proposals/... or issue-proposals/...>, count=0|1,
                hook_declined=0|1
-  drafted-subjects --repo DIR      -> `<subject> <decision>` per line
+  drafted-subjects --repo DIR      -> `<subject> <decision>` per line, or
+                                      `<subject> unmeasured@<run_id>` for a
+                                      rejection that measured no fixture
   payload   --lessons DIR --proposal RELPATH --run-id ID [--hook-declined]
             -> the fire payload JSON on stdout (DIR is lessons/ for a
                proposals/ path, the issue-proposals --out DIR for an
@@ -629,14 +631,38 @@ def skill_exists(registry: Path, subject: str) -> bool:
     return any(p.is_file() for p in registry.glob(f"plugins/*/skills/{subject}/SKILL.md"))
 
 
+# Unmeasured rejections a subject may collect before it is retired anyway,
+# so a proposal no drafter can stage correctly stops costing a fire a day.
+MAX_UNMEASURED = 3
+UNMEASURED_PREFIX = "unmeasured@"
+
+
+def measured(doc: dict) -> bool:
+    """True when some fixture of a draft record ran both arms without error."""
+    fixtures = doc.get("fixtures")
+    if not isinstance(fixtures, dict):
+        return False
+    for row in fixtures.values():
+        arms = [row.get(a) for a in ("with_skill", "without_skill")] \
+            if isinstance(row, dict) else []
+        if arms and all(isinstance(a, dict) and a.get("total") and not a.get("errors")
+                        for a in arms):
+            return True
+    return False
+
+
 def parse_drafted(path: Path) -> dict[str, set[str]]:
-    """`<subject> <decision>` lines (drafted-subjects' output) by subject;
-    anything else is skipped."""
+    """`<subject> <decision>` and `<subject> unmeasured@<run_id>` lines
+    (drafted-subjects' output) by subject; anything else is skipped."""
     out: dict[str, set[str]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         parts = line.split()
-        if len(parts) == 2 and SUBJECT_RE.fullmatch(parts[0]) and parts[1] in DECISIONS:
-            out.setdefault(parts[0], set()).add(parts[1])
+        if len(parts) != 2 or not SUBJECT_RE.fullmatch(parts[0]):
+            continue
+        tag = parts[1]
+        if tag in DECISIONS or (tag.startswith(UNMEASURED_PREFIX)
+                                and RUN_ID_RE.fullmatch(tag[len(UNMEASURED_PREFIX):])):
+            out.setdefault(parts[0], set()).add(tag)
     return out
 
 
@@ -650,10 +676,13 @@ def parse_subjects(path: Path | None) -> set[str]:
 def eligibility(subject: str, drafted: dict[str, set[str]],
                 declined: set[str]) -> tuple[bool, bool]:
     """(eligible, via a declined hook proposal). A skill record (accepted or
-    rejected) is final; a hook-first record holds the subject until the
+    rejected) is final; a rejection that measured nothing is not, until
+    MAX_UNMEASURED of them; a hook-first record holds the subject until the
     agent-checks lane declines it."""
     decisions = drafted.get(subject, set())
     if decisions & {"accepted", "rejected"}:
+        return False, False
+    if sum(d.startswith(UNMEASURED_PREFIX) for d in decisions) >= MAX_UNMEASURED:
         return False, False
     if "hook-first" in decisions:
         return (True, True) if subject in declined else (False, False)
@@ -735,7 +764,14 @@ def drafted_subjects(repo: str) -> list[str]:
         if isinstance(doc, dict) and isinstance(doc.get("subject"), str) \
                 and SUBJECT_RE.fullmatch(doc["subject"]) \
                 and doc.get("decision") in DECISIONS:
-            lines.add(f"{doc['subject']} {doc['decision']}")
+            # A rejection that measured nothing (a shape mistake caught
+            # before any run, or every fixture's run_eval failing) says
+            # nothing about the proposal, so it is not final: it counts
+            # toward MAX_UNMEASURED instead, and the subject is drafted again
+            # with no branch to delete by hand.
+            unmeasured = doc["decision"] == "rejected" and not measured(doc)
+            lines.add(f"{doc['subject']} unmeasured@{match.group('run_id')}"
+                      if unmeasured else f"{doc['subject']} {doc['decision']}")
     return sorted(lines)
 
 
