@@ -2108,6 +2108,13 @@ jobs:
           snap="$RUNNER_TEMP/eval-outputs"
           rm -rf "$snap"; mkdir -p "$snap"
           [ -d results ] && cp -r results "$snap/results"
+          # The same helper copy for the collision check below.
+          cp scripts/relocate_colliding_runs.py "$RUNNER_TEMP/"
+          # Then take the untracked download out of the tree, so the branch
+          # switch never refuses over a path the branch already holds (run
+          # 41587675812: two legs of one guidance section started in the same
+          # second and named the same run directory).
+          rm -rf results
           # Build on the accumulated results branch (create on first run)
           git checkout -- .
           git fetch origin persistent/eval-results || true
@@ -2116,6 +2123,10 @@ jobs:
           else
             git checkout -B persistent/eval-results
           fi
+          # A downloaded run directory the branch already holds with other
+          # content moves to the next free second before the copy, so the
+          # copy never replaces another fixture's published run.
+          python3 "$RUNNER_TEMP/relocate_colliding_runs.py" "$snap/results" results
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
           # The `roster` job's own computed roster (B1, round 3 on #209):
           # threaded through `needs.roster.outputs.roster_latest_json`
