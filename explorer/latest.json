@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T16:54:13Z",
+ "generated_at": "2026-11-03T16:58:06Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:51:59Z",
+ "newest_run": "2026-11-03T16:55:57Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -10493,7 +10493,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 14,
+   "current_text_runs": 15,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -10504,6 +10504,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:55:57Z",
+     "cli_version": "2.1.317",
+     "fixture": "swallowed-failure",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T165330Z-54cb18/debug-github-workflows/20261103T165557Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.14294210000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.0934612,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T16:20:51Z",
      "cli_version": "2.1.317",
@@ -18878,7 +18899,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "d7f6435dbbdf61311a98ff6d9f30fd3172b62030",
-  "results_commit": "07d9e62d5d52ace3cc0cdbf1aac927f381192a9a"
+  "results_commit": "f70bdcb9adb3185fe109913a56412bad19fb8d29"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
