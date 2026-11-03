@@ -1,0 +1,484 @@
+#!/usr/bin/env python3
+"""The eval scope pass: decide which scheduled fixtures are worth running.
+
+Adam, 2026-11-03: make the call on which fixtures and subjects deserve evals
+autonomous and automatic, and run it often. This script is that call. `plan`
+reads the committed schedule, the explorer document and the usage census and
+writes the pauses and resumes the rules below produce; `apply` makes them in
+the tree; `summary` renders a plan as Markdown. `.github/workflows/eval-scope.yml`
+runs the three and opens one auto-merging pull request.
+
+Rules, each deterministic (thresholds are the constants below):
+
+  ceiling   a scheduled fixture with at least CEILING_MIN_RUNS runs after the
+            fixture directory's last commit whose WITHOUT arm passes
+            CEILING_SHARE of its checks on average, and (when the without arm
+            has judge figures) scores at least CEILING_JUDGE. It cannot show a
+            gain. Paused.
+  floor     the same run filter, both arms pass at most FLOOR_SHARE. Paused.
+  zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
+            surfaces it reaches (`skill_usage.zero_use`; unknown means do
+            nothing). All of its scheduled fixtures are paused.
+  resume    a fixture this pass paused earlier returns when its content digest
+            differs from the one recorded at the pause (ceiling, floor) or when
+            `zero_use` is False (zero-use).
+
+Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures, and
+any evals/unscheduled.yml row this pass did not write (a human decision
+stands). Every pause is recorded in evals/scope-auto.yml with what resume
+needs. A pause removes the path from evals/scheduled.yml and, for a skill
+fixture, adds an evals/unscheduled.yml row whose reason starts "Auto scope (";
+a resume reverses all of it.
+
+Usage:
+  eval_scope.py plan --repo-root . --explorer E.json --usage U.json \\
+      [--registry-layout plugin_layout.json] --now ISO --out plan.json
+  eval_scope.py apply --plan plan.json [--repo-root .]
+  eval_scope.py summary --plan plan.json
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "harness"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+
+import skill_usage  # noqa: E402
+import stakes as stakes_file  # noqa: E402
+
+CEILING_MIN_RUNS = 4
+CEILING_SHARE = 0.85
+CEILING_JUDGE = 8.5
+FLOOR_SHARE = 0.10
+ZERO_USE_WEEKS = 8
+LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
+RULES = ("ceiling", "floor", "zero-use")
+AUTO_PREFIX = "Auto scope ("
+
+SCHEDULED = "evals/scheduled.yml"
+UNSCHEDULED = "evals/unscheduled.yml"
+SCOPE_AUTO = "evals/scope-auto.yml"
+SCHEMA = 1
+
+SCOPE_AUTO_HEADER = """\
+# Fixtures the eval scope pass (scripts/eval_scope.py, eval-scope.yml) paused,
+# with what it needs to bring each back. Adam, 2026-11-03: decide which
+# fixtures are worth running automatically, and decide often.
+#
+# `rule` is ceiling, floor or zero-use. `fixture_digest` is the sha256 of the
+# fixture directory when it was paused (sorted relative paths and bytes): a
+# ceiling or floor pause ends when the digest changes, a zero-use pause when
+# the skill is used again. `readiness` is the evals/scheduled.yml note, kept
+# so a resume restores it. A skill fixture also has an evals/unscheduled.yml
+# row whose reason starts "Auto scope ("; a guidance fixture has none.
+# test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
+# is also scheduled. Edit by script, not by hand.
+"""
+
+
+class ScopeError(Exception):
+    pass
+
+
+# --- reading -------------------------------------------------------------
+
+
+def _load_yaml(path: Path):
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise ScopeError(f"{path.name} could not be read as YAML") from exc
+
+
+def read_rows(root: Path, rel: str, key: str) -> list[dict]:
+    path = root / rel
+    if not path.is_file():
+        return []
+    doc = _load_yaml(path)
+    rows = doc.get(key) if isinstance(doc, dict) else None
+    if rows is None:
+        return []
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        raise ScopeError(f"{rel}: `{key}` must be a list of mappings")
+    return rows
+
+
+def fixture_digest(directory: Path) -> str:
+    """sha256 over the sorted relative paths and bytes of every file under
+    `directory`."""
+    digest = hashlib.sha256()
+    for file in sorted(p for p in directory.rglob("*") if p.is_file()):
+        rel = file.relative_to(directory).as_posix()
+        digest.update(len(rel.encode()).to_bytes(4, "big") + rel.encode())
+        data = file.read_bytes()
+        digest.update(len(data).to_bytes(8, "big") + data)
+    return digest.hexdigest()
+
+
+def last_commit_time(root: Path, rel: str) -> datetime | None:
+    """Committer time of the newest commit touching `rel`, None when git does
+    not know the path (no history, or an uncommitted directory)."""
+    try:
+        out = subprocess.run(["git", "-C", str(root), "log", "-1", "--format=%cI", "--", rel],
+                             capture_output=True, text=True, check=True, timeout=120).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if not out:
+        return None
+    try:
+        return datetime.fromisoformat(out)
+    except ValueError:
+        return None
+
+
+def _parse_now(text: str) -> datetime:
+    parsed = skill_usage.parse_ts(text)
+    if parsed is None:
+        raise ScopeError("--now must be an ISO 8601 time")
+    return parsed
+
+
+def _share(arm) -> float | None:
+    if not isinstance(arm, dict):
+        return None
+    passed, total = arm.get("checks_passed"), arm.get("checks_total")
+    if not isinstance(passed, (int, float)) or not isinstance(total, (int, float)) or total <= 0:
+        return None
+    return passed / total
+
+
+def _judge(arm) -> float | None:
+    value = arm.get("judge_mean") if isinstance(arm, dict) else None
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def subject_of(path: str) -> tuple[str, str]:
+    """('guidance', section) for evals/guidance/<section>/..., else
+    ('skill', skill) for evals/<skill>[/...]."""
+    parts = path.split("/")
+    if len(parts) >= 3 and parts[1] == "guidance":
+        return "guidance", parts[2]
+    return "skill", parts[1]
+
+
+def _arms(kind: str, run: dict) -> tuple[dict | None, dict | None]:
+    """(with-side arm, without-side arm) of one run: skills `with`/`without`,
+    guidance `full`/`full_minus_section`."""
+    if kind == "skill":
+        return run.get("with"), run.get("without")
+    modes = run.get("modes") if isinstance(run.get("modes"), dict) else {}
+    return modes.get("full"), modes.get("full_minus_section")
+
+
+def fixture_runs(explorer: dict, kind: str, name: str, path: str, since: datetime) -> list[dict]:
+    """The subject's runs of the fixture at `path` made after `since`."""
+    if kind == "skill":
+        entries = [s for s in explorer.get("skills") or [] if isinstance(s, dict) and s.get("name") == name]
+    else:
+        entries = [s for s in (explorer.get("guidance") or {}).get("sections") or []
+                   if isinstance(s, dict) and s.get("id") == name]
+    out = []
+    for entry in entries:
+        for run in entry.get("runs") or []:
+            if not isinstance(run, dict):
+                continue
+            fixture = run.get("fixture")
+            where = (f"evals/guidance/{name}/{fixture}" if kind == "guidance"
+                     else (f"evals/{name}/{fixture}" if fixture else f"evals/{name}"))
+            at = skill_usage.parse_ts(run.get("at"))
+            if where == path and at is not None and at > since:
+                out.append(run)
+    return out
+
+
+def measure(kind: str, runs: list[dict]) -> dict:
+    """What the ceiling and floor rules read from a fixture's filtered runs."""
+    without = [(_share(_arms(kind, r)[1]), _judge(_arms(kind, r)[1])) for r in runs]
+    without_shares = [s for s, _ in without if s is not None]
+    judges = [j for s, j in without if s is not None and j is not None]
+    both = [(_share(_arms(kind, r)[0]), _share(_arms(kind, r)[1])) for r in runs]
+    both = [(a, b) for a, b in both if a is not None and b is not None]
+    return {
+        "without_runs": len(without_shares),
+        "without_share": _mean(without_shares) if without_shares else None,
+        "without_judge": _mean(judges) if judges else None,
+        "both_runs": len(both),
+        "with_share": _mean([a for a, _ in both]) if both else None,
+        "both_without_share": _mean([b for _, b in both]) if both else None,
+    }
+
+
+def ceiling_or_floor(m: dict) -> tuple[str, str] | None:
+    """(rule, why) when measurements trip the ceiling or the floor."""
+    if m["without_runs"] >= CEILING_MIN_RUNS and m["without_share"] >= CEILING_SHARE and (
+            m["without_judge"] is None or m["without_judge"] >= CEILING_JUDGE):
+        judge = ("" if m["without_judge"] is None
+                 else f" and the judge scored it {m['without_judge']:.1f}")
+        return "ceiling", (f"the without arm passed {m['without_share']:.2f} of its checks{judge} "
+                           f"over {m['without_runs']} runs since the fixture last changed, so it "
+                           "cannot show a gain; it returns when the fixture's content changes")
+    if (m["both_runs"] >= CEILING_MIN_RUNS and m["with_share"] <= FLOOR_SHARE
+            and m["both_without_share"] <= FLOOR_SHARE):
+        return "floor", (f"both arms passed at most {FLOOR_SHARE:.2f} of their checks "
+                         f"(with {m['with_share']:.2f}, without {m['both_without_share']:.2f}) over "
+                         f"{m['both_runs']} runs since the fixture last changed, so it cannot show "
+                         "a gain; it returns when the fixture's content changes")
+    return None
+
+
+# --- plan ----------------------------------------------------------------
+
+
+def _skill_plugins(layout_path: Path | None) -> dict[str, str]:
+    if layout_path is None:
+        return {}
+    try:
+        doc = json.loads(layout_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ScopeError("the registry layout file could not be read") from exc
+    out = {}
+    for plugin, body in (doc.get("plugins") or {}).items():
+        for skill in (body or {}).get("skills") or []:
+            out[skill] = plugin
+    return out
+
+
+def _surfaces(skill: str, plugins: dict[str, str]) -> tuple:
+    if plugins.get(skill) in LOCAL_ONLY_PLUGINS:
+        return (skill_usage.SURFACE_LOCAL,)
+    return (skill_usage.SURFACE_LOCAL, skill_usage.SURFACE_CLOUD)
+
+
+def _is_draft(directory: Path) -> bool:
+    try:
+        doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return True  # unreadable: leave it alone
+    return isinstance(doc, dict) and doc.get("draft") is True
+
+
+def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
+               now: datetime) -> dict:
+    scheduled = read_rows(root, SCHEDULED, "fixtures")
+    auto = read_rows(root, SCOPE_AUTO, "rows")
+    table = stakes_file.load(root / "evals" / "stakes.yml", root / "evals")
+    today = now.date().isoformat()
+
+    resume, resumed = [], set()
+    for row in auto:
+        path, rule = row.get("path"), row.get("rule")
+        subject_kind, subject = subject_of(path)
+        directory = root / path
+        if rule in ("ceiling", "floor"):
+            if directory.is_dir() and fixture_digest(directory) != row.get("fixture_digest"):
+                resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
+                               "why": "the fixture's content changed since it was paused"})
+                resumed.add(path)
+        elif rule == "zero-use" and subject_kind == "skill" and directory.is_dir():
+            used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
+                                        surfaces=_surfaces(subject, plugins))
+            if used is False:
+                resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
+                               "why": f"the skill was used in the last {ZERO_USE_WEEKS} weeks"})
+                resumed.add(path)
+
+    pause = []
+    for entry in scheduled:
+        path, readiness = entry.get("path"), entry.get("readiness")
+        kind, subject = subject_of(path)
+        directory = root / path
+        if (path in resumed or not directory.is_dir() or _is_draft(directory)
+                or stakes_file.level_of(table, kind, subject) == "high"):
+            continue
+        found = None
+        since = last_commit_time(root, path)
+        if since is not None:
+            found = ceiling_or_floor(measure(kind, fixture_runs(explorer, kind, subject, path, since)))
+        if found is None and kind == "skill":
+            used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
+                                        surfaces=_surfaces(subject, plugins))
+            if used is True:
+                found = ("zero-use", f"no recorded use of the skill in the last {ZERO_USE_WEEKS} "
+                         "weeks on the surfaces it reaches; it returns when the skill is used again")
+        if found is None:
+            continue
+        pause.append({"path": path, "kind": kind, "subject": subject, "rule": found[0],
+                      "why": found[1], "since": today, "fixture_digest": fixture_digest(directory),
+                      "readiness": readiness})
+    return {"schema": SCHEMA, "now": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "pause": pause, "resume": resume}
+
+
+# --- apply ---------------------------------------------------------------
+
+
+def _scalar(value: str) -> str:
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _split_blocks(text: str, key: str) -> tuple[list[str], list[list[str]]]:
+    """Header lines and one line-list per `  - ` entry of the `fixtures:`
+    style file. Each block is checked by parsing it with yaml, so a file this
+    cannot cut cleanly fails instead of being edited."""
+    lines = text.splitlines(keepends=True)
+    starts = [i for i, line in enumerate(lines) if line.startswith("  - ")]
+    if not starts:
+        return lines, []
+    header = lines[:starts[0]]
+    blocks = [lines[a:b] for a, b in zip(starts, starts[1:] + [len(lines)])]
+    parsed = yaml.safe_load(text)[key]
+    if len(parsed) != len(blocks):
+        raise ScopeError("an entry could not be cut cleanly")
+    for block, entry in zip(blocks, parsed):
+        if yaml.safe_load(f"{key}:\n" + "".join(block))[key] != [entry]:
+            raise ScopeError("an entry could not be cut cleanly")
+    return header, blocks
+
+
+def _remove(text: str, key: str, path: str) -> str:
+    header, blocks = _split_blocks(text, key)
+    kept = [b for b in blocks if yaml.safe_load(f"{key}:\n" + "".join(b))[key][0].get("path") != path]
+    if len(kept) == len(blocks):
+        raise ScopeError(f"{path} is not in the file")
+    return "".join(header) + "".join("".join(b) for b in kept)
+
+
+def _append(text: str, key: str, path: str, field: str, value: str) -> str:
+    text = text + ("" if text.endswith("\n") else "\n")
+    return text + f"  - path: {path}\n    {field}: {_scalar(value)}\n"
+
+
+def render_scope_auto(rows: list[dict]) -> str:
+    if not rows:
+        return SCOPE_AUTO_HEADER + "rows: []\n"
+    out = [SCOPE_AUTO_HEADER, "rows:\n"]
+    for row in rows:
+        out.append(f"  - path: {row['path']}\n")
+        for field in ("rule", "since", "fixture_digest", "readiness"):
+            out.append(f"    {field}: {_scalar(row[field])}\n")
+    return "".join(out)
+
+
+def apply_plan(root: Path, plan: dict) -> None:
+    if plan.get("schema") != SCHEMA:
+        raise ScopeError("the plan has an unknown schema")
+    sched_path, unsched_path, auto_path = (root / SCHEDULED, root / UNSCHEDULED, root / SCOPE_AUTO)
+    sched = sched_path.read_text(encoding="utf-8")
+    unsched = unsched_path.read_text(encoding="utf-8")
+    auto = read_rows(root, SCOPE_AUTO, "rows")
+    scheduled_paths = [r.get("path") for r in read_rows(root, SCHEDULED, "fixtures")]
+    unsched_rows = {r.get("path"): r for r in read_rows(root, UNSCHEDULED, "fixtures")}
+
+    for item in plan.get("resume") or []:
+        path = item["path"]
+        row = next((r for r in auto if r.get("path") == path), None)
+        if row is None or path in scheduled_paths:
+            raise ScopeError(f"{path}: not a fixture this pass paused")
+        sched = _append(sched, "fixtures", path, "readiness", row["readiness"])
+        if item["kind"] == "skill":
+            old = unsched_rows.get(path)
+            if old is None or not str(old.get("reason", "")).startswith(AUTO_PREFIX):
+                raise ScopeError(f"{path}: its unscheduled row is not this pass's")
+            unsched = _remove(unsched, "fixtures", path)
+        auto = [r for r in auto if r.get("path") != path]
+        scheduled_paths.append(path)
+
+    for item in plan.get("pause") or []:
+        path = item["path"]
+        if path not in scheduled_paths or any(r.get("path") == path for r in auto):
+            raise ScopeError(f"{path}: not a scheduled fixture")
+        if fixture_digest(root / path) != item["fixture_digest"]:
+            raise ScopeError(f"{path}: changed since the plan was made")
+        sched = _remove(sched, "fixtures", path)
+        scheduled_paths.remove(path)
+        if item["kind"] == "skill":
+            if path in unsched_rows:
+                raise ScopeError(f"{path}: already has an unscheduled row")
+            reason = f"{AUTO_PREFIX}{item['rule']}), {item['since']}: {item['why']}."
+            unsched = _append(unsched, "fixtures", path, "reason", reason)
+        auto.append({"path": path, "rule": item["rule"], "since": item["since"],
+                     "fixture_digest": item["fixture_digest"], "readiness": item["readiness"]})
+
+    sched_path.write_text(sched, encoding="utf-8")
+    unsched_path.write_text(unsched, encoding="utf-8")
+    auto_path.write_text(render_scope_auto(auto), encoding="utf-8")
+    # Everything must load back, and no paused path may stay scheduled.
+    again = [r["path"] for r in read_rows(root, SCHEDULED, "fixtures")]
+    read_rows(root, UNSCHEDULED, "fixtures")
+    if set(again) & {r["path"] for r in read_rows(root, SCOPE_AUTO, "rows")}:
+        raise ScopeError("a paused fixture is still scheduled")
+
+
+def summary(plan: dict) -> str:
+    lines = []
+    for item in plan.get("pause") or []:
+        lines.append(f"- Pause `{item['path']}` ({item['rule']}): {item['why']}.")
+    for item in plan.get("resume") or []:
+        lines.append(f"- Resume `{item['path']}` ({item['rule']}): {item['why']}.")
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+# --- command line --------------------------------------------------------
+
+
+def _read_json(path: Path | None):
+    if path is None:
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ScopeError(f"{path.name} could not be read as JSON") from exc
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("plan")
+    p.add_argument("--repo-root", type=Path, default=Path("."))
+    p.add_argument("--explorer", type=Path, required=True)
+    p.add_argument("--usage", type=Path)
+    p.add_argument("--registry-layout", type=Path)
+    p.add_argument("--now", required=True)
+    p.add_argument("--out", type=Path, required=True)
+    a = sub.add_parser("apply")
+    a.add_argument("--plan", type=Path, required=True)
+    a.add_argument("--repo-root", type=Path, default=Path("."))
+    s = sub.add_parser("summary")
+    s.add_argument("--plan", type=Path, required=True)
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "plan":
+            explorer = _read_json(args.explorer)
+            if not isinstance(explorer, dict):
+                raise ScopeError("the explorer document is not an object")
+            usage_doc = skill_usage.load(args.usage) if args.usage else None
+            plan = build_plan(args.repo_root.resolve(), explorer, usage_doc,
+                              _skill_plugins(args.registry_layout), _parse_now(args.now))
+            args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+            print(f"count={len(plan['pause']) + len(plan['resume'])}")
+        elif args.command == "apply":
+            apply_plan(args.repo_root.resolve(), _read_json(args.plan))
+        else:
+            sys.stdout.write(summary(_read_json(args.plan)))
+    except ScopeError as exc:
+        print(f"eval_scope: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

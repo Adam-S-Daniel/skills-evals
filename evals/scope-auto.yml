@@ -1,0 +1,13 @@
+# Fixtures the eval scope pass (scripts/eval_scope.py, eval-scope.yml) paused,
+# with what it needs to bring each back. Adam, 2026-11-03: decide which
+# fixtures are worth running automatically, and decide often.
+#
+# `rule` is ceiling, floor or zero-use. `fixture_digest` is the sha256 of the
+# fixture directory when it was paused (sorted relative paths and bytes): a
+# ceiling or floor pause ends when the digest changes, a zero-use pause when
+# the skill is used again. `readiness` is the evals/scheduled.yml note, kept
+# so a resume restores it. A skill fixture also has an evals/unscheduled.yml
+# row whose reason starts "Auto scope ("; a guidance fixture has none.
+# test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
+# is also scheduled. Edit by script, not by hand.
+rows: []

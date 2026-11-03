@@ -751,6 +751,40 @@ request in `_agent-guidance` that passes that repository's own checks; in
 verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
 
+### The eval scope pass
+
+Adam, 2026-11-03: which fixtures and subjects are worth running is decided
+automatically, and often. `scripts/eval_scope.py` holds the rules and
+`.github/workflows/eval-scope.yml` runs them after every ingest of routine
+results, daily and on dispatch. The `plan` job writes the changes with a
+reason each to its job summary; the `propose` job applies them on
+`eval-scope/<run id>` and opens one pull request with auto-merge (merge
+commit), with the roster App token and at most one such pull request open.
+The rules, in order:
+
+- **Ceiling.** A scheduled fixture with at least 4 runs after its directory's
+  last commit whose without arm (guidance: `full_minus_section`) passes 0.85
+  or more of its checks on average, and, when that arm has judge figures,
+  scores 8.5 or more, cannot show a gain. Paused.
+- **Floor.** The same runs, both arms (guidance: `full` and
+  `full_minus_section`) at 0.10 or less. Paused.
+- **Zero use.** A skill with no use in the last 8 weeks
+  (`skill_usage.zero_use`, local surface only for the two local-only plugins
+  in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
+  unknown answer does nothing) has all its scheduled fixtures paused.
+- **Resume.** A ceiling or floor pause ends when the fixture directory's
+  content digest (sha256 over sorted relative paths and bytes) differs from
+  the one recorded at the pause; a zero-use pause ends when `zero_use` is
+  false.
+
+A pause removes the path from `evals/scheduled.yml`, records it in
+`evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume
+restores) and, for a skill fixture, adds an `evals/unscheduled.yml` row whose
+reason starts `Auto scope (<rule>), <date>:`. A resume reverses all three.
+Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures,
+and any `unscheduled.yml` row the pass did not write. The unscheduled rule
+(`test_issue_371_scheduled_fixtures.py`) therefore keeps holding.
+
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected
