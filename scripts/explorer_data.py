@@ -209,24 +209,41 @@ def skill_runs(index: dict) -> dict:
 REMOVED_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2}) — ([a-z0-9][a-z0-9-]{0,63}) — remove\s*$",
                                 re.MULTILINE)
 GUIDANCE_REPO_URL = "https://github.com/Adam-S-Daniel/_agent-guidance"
+_NEXT_ENTRY_RE = re.compile(r"^## ", re.MULTILINE)
+
+
+def _removal_pr_url(text: str, heading_end: int, repo: str) -> str | None:
+    """The first pull request of `repo` that the entry body (the text after
+    its heading up to the next `## ` line) names, as a full URL, or None: a
+    pull request URL (so also a `[#N](URL)` link) or a bare `PR #N`; issue
+    links never count."""
+    nxt = _NEXT_ENTRY_RE.search(text, heading_end)
+    body = text[heading_end:nxt.start() if nxt else len(text)]
+    base = f"https://github.com/Adam-S-Daniel/{repo}"
+    found = re.search(rf"{re.escape(base)}/pull/(\d+)(?!\d)|\bPR #(\d+)(?!\d)(?!\]\()", body)
+    if found is None:
+        return None
+    return f"{base}/pull/{found.group(1) or found.group(2)}"
 
 
 def removed_sections(guidance_dir: Path | None) -> list:
     """The guidance sections removed so far (#557: Adam, 2026-11-02, every
     removal tracked and reversible), newest first, from the `remove` entries
     of _agent-guidance's docs/guidance-impact.md: {"id", "date",
-    "reverse_url"}, the last the section's removal pull requests, whose
-    Revert button restores it. [] without a checkout or that file."""
+    "reverse_url"}, the last the removal pull request the entry names, else a
+    search for a `retire-guidance/<id>` branch, whose Revert button restores
+    it. [] without a checkout or that file."""
     if guidance_dir is None:
         return []
     try:
         text = (guidance_dir / "docs" / "guidance-impact.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    out = [{"id": section, "date": date,
-            "reverse_url": (f"{GUIDANCE_REPO_URL}/pulls?q=is%3Apr+head%3Aretire-guidance%2F"
-                            f"{section}")}
-           for date, section in REMOVED_HEADING_RE.findall(text)]
+    out = [{"id": m.group(2), "date": m.group(1),
+            "reverse_url": (_removal_pr_url(text, m.end(), "_agent-guidance")
+                            or f"{GUIDANCE_REPO_URL}/pulls?q=is%3Apr+head%3Aretire-guidance%2F"
+                               f"{m.group(2)}")}
+           for m in REMOVED_HEADING_RE.finditer(text)]
     return sorted(out, key=lambda r: (r["date"], r["id"]), reverse=True)
 
 
@@ -241,8 +258,9 @@ def removed_skills(registries: dict | None) -> list:
     """The skills removed so far from the public registry (#557: Adam,
     2026-11-02, every removal tracked and reversible), newest first, from
     the `remove` entries of its docs/skill-impact.md: {"name", "plugin",
-    "date", "reverse_url"}, the last the skill's removal pull requests,
-    whose Revert button restores it. [] without that checkout or file."""
+    "date", "reverse_url"}, the last the removal pull request the entry names,
+    else a search for a `retire-skill/<name>` branch, whose Revert button
+    restores it. [] without that checkout or file."""
     entry = (registries or {}).get(SKILL_REGISTRY)
     # compute_gates.flag_registries' entries carry the checkout as `path`.
     root = entry.get("path") if isinstance(entry, dict) else entry
@@ -252,10 +270,11 @@ def removed_skills(registries: dict | None) -> list:
         text = (Path(root) / "docs" / "skill-impact.md").read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return []
-    out = [{"name": skill, "plugin": plugin, "date": date,
-            "reverse_url": (f"https://github.com/Adam-S-Daniel/{SKILL_REGISTRY}/pulls"
-                            f"?q=is%3Apr+head%3Aretire-skill%2F{skill}")}
-           for date, plugin, skill in REMOVED_SKILL_RE.findall(text)]
+    out = [{"name": m.group(3), "plugin": m.group(2), "date": m.group(1),
+            "reverse_url": (_removal_pr_url(text, m.end(), SKILL_REGISTRY)
+                            or f"https://github.com/Adam-S-Daniel/{SKILL_REGISTRY}/pulls"
+                               f"?q=is%3Apr+head%3Aretire-skill%2F{m.group(3)}")}
+           for m in REMOVED_SKILL_RE.finditer(text)]
     return sorted(out, key=lambda r: (r["date"], r["name"]), reverse=True)
 
 
