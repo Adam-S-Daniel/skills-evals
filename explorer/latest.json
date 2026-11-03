@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T07:11:32Z",
+ "generated_at": "2026-11-03T07:24:58Z",
  "guidance": {
   "removed": [
    {
@@ -9164,7 +9164,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T07:09:40Z",
+ "newest_run": "2026-11-03T07:23:02Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13309,11 +13309,11 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0850092381086558,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Rename already-searchable PDFs in a specified folder to descriptive, date-prefixed names, proposing each name from the PDF's own content and prompting for per-file confirmation or edit before applying. Use after running `ocr-pdfs` to clean up scanner-output filenames like \"Scan from 2024-03-15.pdf\", \"QuickScan_001.pdf\", or \"Document(47).pdf\" \u2014 or for any folder of PDFs that already have text layers but unhelpful filenames. Triggers: \"rename my pdfs\", \"clean up pdf filenames\", \"rename searchable pdfs\", \"give my pdfs descriptive names\", \"rename scanned pdfs\", \"tidy pdf names\".",
    "name": "rename-pdfs",
    "next_test": {
@@ -13324,6 +13324,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T07:23:02Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T072138Z-12affc/rename-pdfs/20261103T072302Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.1820931,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 8,
+      "cost_usd": 0.1021834,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:22:53Z",
      "cli_version": "2.1.316",
@@ -16350,7 +16371,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "7fb575e3981f65ba9c3a755388eebb9d80199285"
+  "results_commit": "3b0d369b357d1bb7059a09c3b61fab2cf0716a93"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
