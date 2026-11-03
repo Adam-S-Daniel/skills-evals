@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 9
  },
- "generated_at": "2026-11-03T16:11:16Z",
+ "generated_at": "2026-11-03T16:13:10Z",
  "guidance": {
   "removed": [
    {
@@ -18646,8 +18646,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "1da7627546c47a6ccedeab6360e2d09f783cc1ba",
-  "results_commit": "a5ca5fe024ae00d0d7f5923f5b52042a80c5521d"
+  "repository_commit": "e69fe5c7354a16bcad15778bc8e130e4b2f1b0f4",
+  "results_commit": "fdd168768a4dd6c7d0f98e4e5e2b669cfdbf1a62"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
