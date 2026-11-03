@@ -14,8 +14,8 @@
   "sweeps": [
    {
     "end": "2026-10-31T13:05:58Z",
-    "fires": 2,
-    "start": "2026-10-31T13:04:45Z"
+    "fires": 1,
+    "start": "2026-10-31T13:05:58Z"
    },
    {
     "end": "2026-11-01T06:06:37Z",
@@ -34,9 +34,9 @@
    }
   ],
   "window_days": 14,
-  "without_results": 10
+  "without_results": 9
  },
- "generated_at": "2026-11-03T14:56:12Z",
+ "generated_at": "2026-11-03T15:06:45Z",
  "guidance": {
   "removed": [
    {
@@ -3421,7 +3421,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 10,
+     "position": 9,
      "scheduled": true
     },
     "runs": [
@@ -4660,10 +4660,10 @@
     "heading": "\"The watch finished\" is not \"CI passed\"",
     "id": "watch-finished-is-not-ci-passed",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 12,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -6487,10 +6487,10 @@
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
-     "band": "guidance-rest",
+     "band": null,
      "due": null,
-     "position": 9,
-     "scheduled": true
+     "position": null,
+     "scheduled": false
     },
     "runs": [
      {
@@ -7022,7 +7022,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 11,
+     "position": 10,
      "scheduled": true
     },
     "runs": [
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T14:53:03Z",
+ "newest_run": "2026-11-03T15:04:33Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13642,18 +13642,18 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
-    "helps": 0.9469475613534195,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 0,
    "description": "Audit PDF files to determine whether OCR (optical character recognition) is needed to make them fully text-searchable. Use this skill whenever the user asks about PDF searchability, OCR status, whether PDFs have embedded text, which PDFs are scans, or wants to audit/inventory a folder of PDFs for text extraction readiness. Also triggers for: \"which PDFs need OCR\", \"are my PDFs searchable\", \"do these PDFs have text layers\", \"audit my PDFs\", \"find scanned PDFs\".",
    "name": "pdf-ocr-audit",
    "next_test": {
     "band": null,
-    "due": "2026-12-29T07:09:40Z",
+    "due": null,
     "position": null,
-    "scheduled": true
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -13708,27 +13708,48 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "keep",
-   "verdict_reason": "a cell shows benefit"
+   "verdict": "insufficient",
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
+    "helps": 0.9999163675720176,
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "Cut a new cms-platform release (vX.Y.Z) and reconcile BOTH consumer repos (adamdaniel.ai, jodidaniel.com) to it in single-version lockstep. Use when you've merged a platform fix and need it to flow to consumers, when bumping platform_ref, or when the pin-consistency guard fails after a partial bump. Covers the release dispatch, the exact set of references to bump (platform_ref, gem tag+revision, workflow and composite ref pins), the pin-consistency check, and the lockstep invariant. Trigger on \"cut a release\", \"release vX.Y.Z\", \"bump platform_ref\", \"reconcile consumers\", \"platform-pin-consistency\", or \"flow the fix to consumers\".",
    "name": "platform-release-and-bump",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 6,
+    "band": null,
+    "due": "2026-12-29T09:52:00Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T15:04:33Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T150234Z-c42a66/platform-release-and-bump/20261103T150433Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.2408536,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 10,
+      "cost_usd": 0.15168369999999998,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T09:52:00Z",
      "cli_version": "2.1.317",
@@ -13780,8 +13801,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": null,
@@ -13796,7 +13817,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13939,7 +13960,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14158,7 +14179,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14272,7 +14293,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14869,7 +14890,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15409,18 +15430,18 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 7,
+   "current_text_runs": 0,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected (for example a Remove-Item on a system or VM-storage path). Covers getting the real error out of the first failure, the two-strikes stop rule, treating a policy block as a decision to report rather than a bug to route around, and previewing deletions before running them. For \"Access is denied\" from powershell.exe inside WSL, use windows-elevation-from-wsl instead.",
    "name": "tool-powershell",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 10,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -15644,7 +15665,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -15659,7 +15680,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16183,18 +16204,18 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": 0.0,
-    "no_help": 0.0
+    "helps": null,
+    "no_help": null
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 0,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL \u2014 Register-ScheduledTask / Set-ScheduledTask on a RunLevel=HighestAvailable task, a service change (Set-Service, Stop-Service, New-Service), an LSA rights grant such as \"Log on as a batch job\" (SeBatchLogonRight, secedit, ntrights), an HKLM registry write, or any other change to Windows state from a WSL session. Use it BEFORE attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 12,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -16544,7 +16565,7 @@
     "invocations": 0
    },
    "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict_reason": "no fixture on main"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -16559,7 +16580,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17156,7 +17177,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18226,8 +18247,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "3083ceb22426c15a1379c29ecf172b23cc0c85ab",
-  "results_commit": "81f290429d96c87ef2a7ffbaa75bf5102b0dc269"
+  "repository_commit": "e29f8fe27a6b72c3bfe7b46d843f087011cc6143",
+  "results_commit": "f92dce8e0bbd2de9e1e5926d877d7563e7fe7735"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
