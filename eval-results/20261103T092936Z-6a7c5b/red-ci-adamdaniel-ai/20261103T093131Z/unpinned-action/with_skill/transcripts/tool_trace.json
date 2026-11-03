@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KVwqCWrrTTboqwq3Z6EhZU",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && ls -a && ls .github/workflows && cat .github/workflows/*.yml; ls .github/workflows/actions.lock 2><path>; cat AGENTS.md 2><path> | head -50",
+      "input_chars": 191,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KVwqCWrrTTboqwq3Z6EhZU",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nc21d157 initial commit\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\ndocs...",
+      "output_chars": 375,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WdiZpzCaPXouEXUdnFRwBG",
+      "name": "Bash",
+      "input": "git ls-files && cat README.md && find workflows docs -type f | head -50",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WdiZpzCaPXouEXUdnFRwBG",
+      "is_error": false,
+      "output": "README.md\ndocs/pins.txt\nworkflows/ci.yml\n# example-site\nThe repo requires every `uses:` to be a full 40-character commit SHA. The\n`test` job now fails at \"Set up job\" before any step runs.\nworkflows/ci.yml\ndocs/pins.txt",
+      "output_chars": 219,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UPWPVFpmSUouVgT7LEHpAK",
+      "name": "Bash",
+      "input": "cat -A workflows/ci.yml; echo ----; cat docs/pins.txt",
+      "input_chars": 53,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UPWPVFpmSUouVgT7LEHpAK",
+      "is_error": false,
+      "output": "name: CI$\non:$\n  pull_request:$\njobs:$\n  test:$\n    runs-on: ubuntu-latest$\n    steps:$\n      - uses: actions/checkout@v4$\n      - run: echo \"test the site\"$\n----\n# Approved pins for this repo: full commit SHA per action. No version comments in workflows.\nactions/checkout 0123456789abcdef0123456789a...",
+      "output_chars": 368,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0134Vsri6awpLjSnp1D1yNnu",
+      "name": "Agent",
+      "input": "Pin checkout to approved SHA",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VeEFh4X3qoMSUchfziYyD6",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VeEFh4X3qoMSUchfziYyD6",
+      "is_error": false,
+      "output": "1\tname: CI\n2\ton:\n3\t  pull_request:\n4\tjobs:\n5\t  test:\n6\t    runs-on: ubuntu-latest\n7\t    steps:\n8\t      - uses: actions/checkout@v4\n9\t      - run: echo \"test the site\"\n10\t",
+      "output_chars": 170,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XQgJGo36SqGmKtzNtxpdi9",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HwShcYhZcRp4QHyjMm6CFp",
+      "name": "Bash",
+      "input": "git status --short && python3 -c \"import yaml,re,sys; d=yaml.safe_load(open('<path>')); u=[s['uses'] for j in d['jobs'].values() for s in j['steps'] if 'uses' in s]; print(len(u), u); sys.exit(0 if u ...",
+      "input_chars": 327,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XQgJGo36SqGmKtzNtxpdi9",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 156,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HwShcYhZcRp4QHyjMm6CFp",
+      "is_error": false,
+      "output": " M workflows/ci.yml\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n1 ['actions/checkout@0123456789abcdef0123456789abcdef01234567']\nexit=0",
+      "output_chars": 229,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QFFdxxKMmFvYwSw6QoXjjk",
+      "name": "Bash",
+      "input": "python3 -c \"import yaml,re,sys; d=yaml.safe_load(open('<path>')); u=[s['uses'] for j in d['jobs'].values() for s in j['steps'] if 'uses' in s]; print(len(u), u); sys.exit(0 if u and all(re.fullmatch(r...",
+      "input_chars": 289,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QFFdxxKMmFvYwSw6QoXjjk",
+      "is_error": false,
+      "output": "1 ['actions/checkout@0123456789abcdef0123456789abcdef01234567']",
+      "output_chars": 63,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H91xrCziGaD6wmj9584vKc",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Changed one line in <path>: line 8 `      - uses: actions/checkout@v4` is now `      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567` (six-space indent kept, no trailing...",
+      "input_chars": 945,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H91xrCziGaD6wmj9584vKc",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0134Vsri6awpLjSnp1D1yNnu",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a05b4d650b2433c55\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a05b4d650b2433c55 (use SendMessage with to: 'a05b4d650b2433c55', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ESP2aC8hfS87JX86LeNEB5",
+      "name": "Bash",
+      "input": "git diff && V='import yaml,re,sys; d=yaml.safe_load(open(sys.argv[1])); u=[s[\"uses\"] for j in d[\"jobs\"].values() for s in j[\"steps\"] if \"uses\" in s]; print(len(u), u); sys.exit(0 if u and all(re.fullm...",
+      "input_chars": 408,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ESP2aC8hfS87JX86LeNEB5",
+      "is_error": false,
+      "output": "diff --git a/workflows/ci.yml b/workflows/ci.yml\nindex c8d772b..4f1a314 100644\n--- a/workflows/ci.yml\n+++ b/workflows/ci.yml\n@@ -5,5 +5,5 @@ jobs:\n   test:\n     runs-on: ubuntu-latest\n     steps:\n-      - uses: actions/checkout@v4\n+      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234...",
+      "output_chars": 450,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
