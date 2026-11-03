@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T01:02:16Z",
+ "generated_at": "2026-11-03T01:18:39Z",
  "guidance": {
   "removed": [
    {
@@ -473,7 +473,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 3,
+    "current_text_runs": 5,
     "heading": "Security",
     "id": "security",
     "next_test": {
@@ -483,6 +483,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T01:04:20Z",
+      "cli_version": "2.1.316",
+      "fixture": "search-query",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0777762,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.06843179999999999,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0372649,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0403689,
+        "judge_mean": 9.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T010420Z/report.md"
+     },
      {
       "at": "2026-11-02T23:23:12Z",
       "cli_version": "2.1.316",
@@ -2181,7 +2218,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T00:20:27Z",
+ "newest_run": "2026-11-03T01:16:41Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -5809,11 +5846,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -5824,6 +5861,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T01:16:41Z",
+     "cli_version": "2.1.316",
+     "fixture": "test-runner-assertions",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T011514Z-aef4d0/review-bash-ci-reliability/20261103T011641Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.147059,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.11163970000000001,
+      "judge_mean": 8.1,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-10-30T17:13:01Z",
      "cli_version": "2.1.314",
@@ -8546,8 +8604,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "beb7cbb47bcce8cb6ac946bbd162e354ae2ed61d",
-  "results_commit": "e7489d759cbabfca8956f8a87b329a92ab290090"
+  "repository_commit": "0cc3987f44646cf41e0d2069b7281dcf525f0146",
+  "results_commit": "6fb81a3be6c8b60caeae8b6f0ee2a95373b04ee8"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
