@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T04:11:28Z",
+ "generated_at": "2026-11-03T04:14:14Z",
  "guidance": {
   "removed": [
    {
@@ -6019,7 +6019,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T04:09:32Z",
+ "newest_run": "2026-11-03T04:12:32Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6664,7 +6664,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -7085,17 +7085,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 1,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T04:12:32Z",
+     "cli_version": "2.1.317",
+     "fixture": "git-identity",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T041055Z-42a60d/debug-github-workflows/20261103T041232Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.1207038,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.08150450000000001,
+      "judge_mean": 8.2,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:58:00Z",
      "cli_version": "2.1.316",
@@ -8578,7 +8599,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 2,
+    "position": 1,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -9909,7 +9930,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11410,7 +11431,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12826,7 +12847,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "067be06c054204622db7d30667942a3e957381b2",
-  "results_commit": "c9f61daf324f030b5208d9d6e272ae5e7c7f7c06"
+  "results_commit": "a023b11c8e016cbc2d540b5c49de4ec691172599"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
