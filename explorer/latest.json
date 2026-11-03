@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T09:24:32Z",
+ "generated_at": "2026-11-03T09:31:20Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T09:20:36Z",
+ "newest_run": "2026-11-03T09:27:10Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13502,7 +13502,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 6,
+   "current_text_runs": 7,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -13513,6 +13513,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T09:27:10Z",
+     "cli_version": "2.1.317",
+     "fixture": "timeout-wall",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T092518Z-72166a/red-ci-adamdaniel-ai/20261103T092710Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.3704656600000001,
+      "judge_mean": 2.5,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.31022514500000004,
+      "judge_mean": 4.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T09:20:36Z",
      "cli_version": "2.1.317",
@@ -16976,8 +16997,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "a4bcb23e996176d9437ad3224224707db78590e0",
-  "results_commit": "4b305d8bbb6b21b8f5e2600a79157044809b97bb"
+  "repository_commit": "0aaa424ffad755d45432d1536bafa0820ed030e9",
+  "results_commit": "bcb92f1bcd8ea47166cdfdd049d7e2dbf26ab67b"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
