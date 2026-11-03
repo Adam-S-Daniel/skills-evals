@@ -30,7 +30,8 @@
 #     test (D > -margin) agrees, so a harm beyond the margin parks only at
 #     that test's error rate (for a fixture the eval scope pass did not
 #     pause: a pause stops the firing, so an undecided harm stays undecided
-#     and its subject `insufficient`). A milder harm can still end parked or
+#     and its subject `insufficient` when every cell is parked, else a
+#     `retire` proposal, never automatic). A milder harm can still end parked or
 #     with no clear effect.
 #   * `max_runs_high_cell` (20): a cell whose without arm is above
 #     1 - `objective_margin`, still undecided after this many pairs, whose
@@ -55,7 +56,9 @@
 #     is `ceiling` only when each shows it on its own runs (a ceiling class,
 #     or a ceiling pause of a cell that was one, or whose no-harm test had
 #     rejected with a without arm of at least 0.90); otherwise it is
-#     `insufficient` and a `paused-unmeasured` work item.
+#     `insufficient` and a `paused-unmeasured` work item. A `ceiling` subject
+#     with a paused cell among them is a `paused-ceiling` work item asking for
+#     a harder fixture.
 #   * The judge is reported but no longer votes on keep or removal (its
 #     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
 #     figure the explorer shows). Single checks no longer keep on their own.

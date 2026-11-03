@@ -562,3 +562,31 @@ in round 4's fixes, fixed here.
 - *m3:* the `class_before_pause` branch of `_shows_ceiling` is kept. Deleting
   it leaves the 8-module set green (601 passed), but the report called it
   only near-equivalent, so a unit test names its contract instead.
+
+### Adversarial round 6 (2026-11-03)
+
+The sixth round found no path to a wrong automatic removal (a 5,400-subject
+fuzz of pauses found none) and two Major gaps, both off the removal side.
+
+- *M1:* a skill whose every fixture the scope pass paused, on cells that
+  show the ceiling on their own runs, was `ceiling` with no work item: a
+  paused fixture has no planner cell, and with all of them paused the skill
+  was not in `skill_contexts`, so no `needs-harder-fixtures` item either.
+  A `ceiling` verdict with a `paused` cell among its cells is now marked
+  `paused_ceiling` (a separate flag, since `unmeasured` says "no fixture is
+  measuring the subject", which is untrue here), `guidance_verdict` copies
+  it, and `plan_week.paused_ceiling_items` lists a `paused-ceiling` work
+  item (change type `fixture`, summary-routed, no issue) asking for the
+  harder fixture. `skill_contexts` still drops paused fixtures. An
+  end-to-end test runs the reviewer's input through `compute` and the
+  planner.
+- *M2:* text merged from main said a skill fixture's pause drops its cells
+  from the gate (how-it-works, the `eval_scope.py` docstring and comment,
+  and the resume reason the pass prints into its pull request). On this
+  branch the gate keeps them, parked. All four now say so; the keep guard
+  is redundant for safety and keeps a kept subject's fixtures measured.
+- *m1, m2:* tests pin `_shows_ceiling` at exactly `HIGH_STOP_MIN_WITHOUT`
+  (`>=`) and that a paused `no-clear-effect` cell stays `paused`.
+- *m3:* "undecided harm leaves the subject `insufficient`" held only when
+  every cell is parked; beside decided `no-benefit` cells it is a `retire`
+  proposal. how-it-works and `gate-policy.yml` say both.

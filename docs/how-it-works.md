@@ -633,7 +633,8 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   cap, `no-clear-effect` (a proposal at most). A fixture the eval scope
   pass pauses stops being fired, so a harm it had not yet decided stays
   undecided (`paused`, below); the subject is then `insufficient`, not
-  `ceiling`.
+  `ceiling`, when every cell is parked, and otherwise a `retire` proposal
+  (a parked cell beside decided `no-benefit` cells), never automatic.
 - *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
@@ -651,9 +652,12 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   (and for a floor or zero-use pause) the subject is `insufficient`, and the
   planner lists it as a `paused-unmeasured` work item: a paused fixture is
   off the schedule, so it has no planner cell to carry a `fixture-ceiling`
-  item.
-- *Where work items go.* `fixture-ceiling`, `cell-at-cap` and
-  `paused-unmeasured` items are counted in the weekly sweep's step summary
+  item. A `ceiling` subject with a paused cell among its cells (round 6's
+  M1) is the same gap: no planner cell, and with every fixture paused no
+  improve item either. The planner lists it as a `paused-ceiling` work item
+  asking for a harder fixture.
+- *Where work items go.* `fixture-ceiling`, `cell-at-cap`,
+  `paused-unmeasured` and `paused-ceiling` items are counted in the weekly sweep's step summary
   and listed in its plan JSON; no issue is filed for them
   (`scripts/work_item_issues.py` files only `fixture-broken`,
   `routine-outage`, `needs-fixtures` and `needs-harder-fixtures`).
@@ -949,9 +953,10 @@ The rules, in order:
 - **Floor.** The same runs, both arms (guidance: `full` and
   `full_minus_section`) at 0.10 or less, on every roster model. Paused.
 - **Keep guard.** Neither rule pauses a subject whose explorer verdict is
-  `keep` or whose confidence that it helps is 0.5 or more. A skill fixture's
-  pause drops its cells from the gate, so it could take a keep with it and
-  leave a removal.
+  `keep` or whose confidence that it helps is 0.5 or more. The gate keeps a
+  paused fixture's cells as parked `paused` cells (below), and a decided
+  `keep` or `no-benefit` cell still counts, so the guard is not needed for
+  safety; it keeps a kept subject's fixtures measured.
 - **Zero use.** A skill with no use in the last 8 weeks
   (`skill_usage.zero_use`, local surface only for the two local-only plugins
   in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an

@@ -247,6 +247,9 @@ averaging at least HIGH_STOP_MIN_WITHOUT), and `insufficient` otherwise,
 marked `unmeasured` so scripts/plan_week.py lists a `paused-unmeasured` work
 item (a floor or zero-use pause measures nothing, and a pooled sample is not
 a bound).
+A `ceiling` subject with a paused cell among them is marked `paused_ceiling`,
+for a `paused-ceiling` work item that asks for a harder fixture: a paused
+fixture has no planner cell to carry a `fixture-ceiling` one.
 HEADROOM cells are the `no-benefit` and `no-clear-effect` ones. First match:
 
   * no fixture on main -> `insufficient`;
@@ -1345,8 +1348,15 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
                 "broken: both arms pass almost nothing"}
     if classes <= PARKED_CLASSES and classes:
         if all(_shows_ceiling(c) for c in counted):
-            return {"verdict": "ceiling", "reason": "every cell's without arm is at the "
-                    "ceiling: the subject needs a fixture with headroom, not more runs"}
+            out = {"verdict": "ceiling", "reason": "every cell's without arm is at the "
+                   "ceiling: the subject needs a fixture with headroom, not more runs"}
+            if any(c["class"] == "paused" for c in counted):
+                # Round 6's M1: a scope-paused fixture is off the schedule, so
+                # it has no planner cell and no `fixture-ceiling` item.
+                # scripts/plan_week.py lists the subject as a `paused-ceiling`
+                # work item asking for the harder fixture.
+                out["paused_ceiling"] = True
+            return out
         # `unmeasured`: scripts/plan_week.py lists the subject as a
         # `paused-unmeasured` work item, since a paused fixture has no
         # planner cell to carry one.
@@ -1484,7 +1494,8 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
            for pair in GUIDANCE_PAIRS}
     in_situ, alone = out["in_situ"], out["alone"]
     verdict, reason = in_situ["verdict"], in_situ["reason"]
-    extra = {k: in_situ[k] for k in ("removal", "removal_reason", "unmeasured")
+    extra = {k: in_situ[k] for k in ("removal", "removal_reason", "unmeasured",
+                                         "paused_ceiling")
              if k in in_situ}
     if verdict == "retire" and any(c["class"] == "benefit" for c in alone["cells"]):
         verdict, reason = ("shorten-or-merge", "no marginal benefit inside the whole "

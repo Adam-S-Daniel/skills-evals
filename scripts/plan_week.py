@@ -296,6 +296,9 @@ WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures`,
 gates reason; none for a kept subject), `paused-unmeasured` (change type
 `fixture`: a subject the gate marked `unmeasured`, every cell parked and a
 scope-paused one showing no ceiling on its own runs; `unmeasured_items`),
+`paused-ceiling` (change type `fixture`: a `ceiling` subject with a scope-paused
+cell, which has no planner cell to ask for the harder fixture;
+`paused_ceiling_items`),
 `routine-outage` and `routine-down` (change type None: the routine failed,
 not a subject; see EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
@@ -303,7 +306,7 @@ fire workflow refuses, see above). Every item carries `change_type`:
 `skill-edit` for an improve fire, `guidance-edit` for a guidance-improve
 fire, `fixture`, `trigger` for a trigger-only improve fire (THE
 TRIGGER LANE), or None for `routine-outage` and
-`routine-down`. `fixture-ceiling`, `cell-at-cap` and `paused-unmeasured` are
+`routine-down`. `fixture-ceiling`, `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` are
 routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
 them, but scripts/work_item_issues.py files no issue for them (round 4's
 m1). Lesson proposals of kind `agent-check` are not planned
@@ -520,7 +523,7 @@ BLOCKING_MIN_RUNS = 3
 PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed", "paused")
 #: The route of a work item listed only in the sweep's step summary (its
 #: kind and count, `summary_lines`) and the plan JSON: `fixture-ceiling`,
-#: `cell-at-cap` and `paused-unmeasured` (round 4's m1 and M1). scripts/work_item_issues.py files issues
+#: `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` (round 4's m1 and M1, round 6's M1). scripts/work_item_issues.py files issues
 #: for its KINDS only, so routing these to `issue` promised one that never came.
 SUMMARY_ROUTE = "summary"
 IMPROVE_TRIALS = 3
@@ -1253,6 +1256,31 @@ def unmeasured_items(gates_doc: dict, private: frozenset = frozenset()) -> list:
                     or (half == "skills" and name in private):
                 continue
             item = {"kind": "paused-unmeasured", "change_type": "fixture",
+                    "skill": name if half == "skills" else "", "route": SUMMARY_ROUTE,
+                    "fixtures": sorted({c.get("fixture") or "" for c in verdict.get("cells", [])
+                                        if c.get("class") == "paused"})}
+            if half == "guidance":
+                item["section"] = name
+            out.append(item)
+    return out
+
+
+def paused_ceiling_items(gates_doc: dict, private: frozenset = frozenset()) -> list:
+    """Round 6's M1: one `paused-ceiling` work item (change type `fixture`,
+    SUMMARY_ROUTE) per skill or guidance section whose verdict is `ceiling`
+    with a scope-paused cell among its cells (`paused_ceiling`). A paused
+    fixture is off evals/scheduled.yml, so it has no planner cell and no
+    `fixture-ceiling` item, and a skill whose fixtures are all paused is not
+    in `skill_contexts` either; without this the subject would sit at
+    `ceiling` with nothing asking for the harder fixture the verdict says it
+    needs. A private skill gets none."""
+    out = []
+    for half in ("skills", "guidance"):
+        for name, verdict in sorted((gates_doc.get(half) or {}).items()):
+            if not isinstance(verdict, dict) or verdict.get("paused_ceiling") is not True \
+                    or (half == "skills" and name in private):
+                continue
+            item = {"kind": "paused-ceiling", "change_type": "fixture",
                     "skill": name if half == "skills" else "", "route": SUMMARY_ROUTE,
                     "fixtures": sorted({c.get("fixture") or "" for c in verdict.get("cells", [])
                                         if c.get("class") == "paused"})}
@@ -2693,7 +2721,8 @@ def gather(args, now: datetime) -> dict:
             "guidance_policy": gates_doc.get("guidance_policy"),
             "guidance_removal_prs": gremoval,
             "cells": cells, "outages": outages, "routine_down": down,
-            "unmeasured": unmeasured_items(gates_doc, private_skills(evals_dir)),
+            "unmeasured": unmeasured_items(gates_doc, private_skills(evals_dir))
+            + paused_ceiling_items(gates_doc, private_skills(evals_dir)),
             "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
