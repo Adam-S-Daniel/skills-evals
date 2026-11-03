@@ -34,6 +34,8 @@ delays=(5 10 20 40 80)
 read -r -a sleep_cmd <<<"${SLEEP_CMD:-sleep}"
 read -r -a now_cmd <<<"${NOW_CMD:-date +%s}"
 
+errf="$(mktemp)"
+trap 'rm -f "$errf"' EXIT
 start="$("${now_cmd[@]}")"
 elapsed() { echo $(("$("${now_cmd[@]}")" - start)); }
 
@@ -61,12 +63,18 @@ attempt_once() {
   ((vt >= 1)) || vt=1
   ((vt <= 60)) || vt=60
   rc=0
-  out="$(timeout -k 10 "$vt" claude --version 2>&1)" || rc=$?
+  # stdout alone is the version; stderr (update notices, warnings) stays out
+  # of it and is only read to explain a failure.
+  out="$(timeout -k 10 "$vt" claude --version 2>"$errf")" || rc=$?
   if ((rc != 0)); then
+    [[ -n "$out" ]] || out="$(<"$errf")"
     note_error "${out:-claude --version exited ${rc}}"
     return 1
   fi
+  # First line only, and only characters a version string needs.
   local first="${out%%$'\n'*}"
+  first="${first:0:80}"
+  first="${first//[^A-Za-z0-9._() -]/}"
   if [[ "${first%% *}" != "$latest" ]]; then
     note_error "claude --version reported '${first}', expected ${latest}"
     return 1

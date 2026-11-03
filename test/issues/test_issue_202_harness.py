@@ -273,7 +273,7 @@ class TestHarnessInstallStep(unittest.TestCase):
         fakes, tools, shadow = tmp / "fakes", tmp / "tools", tmp / "shadow"
         for d in (fakes, tools, shadow):
             d.mkdir()
-        for tool in ("timeout", "cp", "bash"):
+        for tool in ("timeout", "cp", "bash", "mktemp", "rm"):
             (tools / tool).symlink_to(shutil.which(tool))
         # The step runs the script from its own checkout.
         script = tmp / "ws" / "skills-evals" / "scripts" / "install_claude_code.sh"

@@ -26,12 +26,13 @@ BAD = "Error: claude native binary not installed."
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout")
-                     and shutil.which("cat") and shutil.which("chmod"),
-                     "needs bash, timeout, cat and chmod")
+                     and shutil.which("cat") and shutil.which("chmod")
+                     and shutil.which("mktemp") and shutil.which("rm"),
+                     "needs bash and coreutils")
 class InstallClaudeCodeTests(unittest.TestCase):
 
     def run_script(self, latest="2.1.290", *, bad_attempts=0, bad_version=None,
-                   install_seconds=0, arg=None):
+                   install_seconds=0, arg=None, noisy=False):
         """Run the script. The first `bad_attempts` npm installs leave a broken
         `claude` (BAD, exit 1) or, when `bad_version` is set, one that reports
         that version; later installs leave a good one."""
@@ -40,7 +41,7 @@ class InstallClaudeCodeTests(unittest.TestCase):
         fakes, tools = tmp / "fakes", tmp / "tools"
         fakes.mkdir()
         tools.mkdir()
-        for tool in ("timeout", "cat", "chmod"):
+        for tool in ("timeout", "cat", "chmod", "mktemp", "rm"):
             (tools / tool).symlink_to(shutil.which(tool))
         clock, count = tmp / "clock", tmp / "count"
         npm_log, sleep_log = tmp / "npm.log", tmp / "sleep.log"
@@ -55,7 +56,8 @@ class InstallClaudeCodeTests(unittest.TestCase):
         bad_body = (f"echo {shlex.quote(bad_version + ' (Claude Code)')}\n"
                     if bad_version else f"echo {shlex.quote(BAD)}\nexit 1\n")
         tool(tmp / "claude.bad", bad_body)
-        tool(tmp / "claude.good", f"echo '{latest} (Claude Code)'\n")
+        tool(tmp / "claude.good", ("echo 'update available' >&2\n" if noisy else "")
+             + f"echo '{latest} (Claude Code)'\n")
         tool(fakes / "npm", (
             f'echo "$*" >> {q(npm_log)}\n'
             f'n=$(( $(<{q(count)}) + 1 )); echo $n > {q(count)}\n'
@@ -85,6 +87,11 @@ class InstallClaudeCodeTests(unittest.TestCase):
         self.assertEqual(done.stdout.strip().splitlines(),
                          ["Claude Code 2.1.290 installed and verified on "
                           "attempt 1 (0s)"])
+
+    def test_stderr_noise_does_not_hide_the_version(self):
+        done, npm, _ = self.run_script(noisy=True)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertEqual(len(npm), 1)
 
     def test_success_on_the_third_try_records_the_sleeps(self):
         done, npm, sleeps = self.run_script(bad_attempts=2)
@@ -133,7 +140,8 @@ class InstallClaudeCodeTests(unittest.TestCase):
         (tmp / "npm").write_text("#!/bin/bash\nprintf 'E503 busy\\nextra line\\n' >&2\n"
                                  "exit 1\n")
         (tmp / "npm").chmod(0o755)
-        (tmp / "timeout").symlink_to(shutil.which("timeout"))
+        for t in ("timeout", "mktemp", "rm"):
+            (tmp / t).symlink_to(shutil.which(t))
         env = {"PATH": str(tmp), "SLEEP_CMD": "true", "NOW_CMD": "echo 0"}
         done = subprocess.run([shutil.which("bash"), str(SCRIPT), "2.1.290"],
                               capture_output=True, text=True, timeout=60, env=env)
