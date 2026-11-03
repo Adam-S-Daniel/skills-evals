@@ -72,7 +72,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T03:28:58Z",
+ "generated_at": "2026-11-03T03:30:08Z",
  "guidance": {
   "removed": [
    {
@@ -4765,7 +4765,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T03:27:11Z",
+ "newest_run": "2026-11-03T03:28:15Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6445,11 +6445,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.8436332149655559,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
@@ -6460,6 +6460,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T03:28:15Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T032632Z-652f18/disarm-inherited-reach/20261103T032815Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 9,
+      "cost_usd": 0.1596839,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.10551180000000002,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:28:29Z",
      "cli_version": "2.1.316",
@@ -11424,8 +11445,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "6bf23c614eb0466722bc8edf72e492f390a088ed",
-  "results_commit": "52d38c1ed2dff6c8d6c002a65180b7b2640d62d9"
+  "repository_commit": "54801c6a380b2f09fb5d71504fd6fcfd9b8fe380",
+  "results_commit": "e6e86a9175511993c946dbc1ec52c39bba9bb53d"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
