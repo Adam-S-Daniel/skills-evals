@@ -670,7 +670,8 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(jobs["plan"]["outputs"],
                          {"matrix": "${{ steps.plan.outputs.matrix }}",
                           "count": "${{ steps.plan.outputs.count }}",
-                          "batch_started": "${{ steps.plan.outputs.batch_started }}"})
+                          "batch_started": "${{ steps.plan.outputs.batch_started }}",
+                          "sweep_started": "${{ steps.sweep.outputs.started }}"})
         self.assertEqual(jobs["dispatch"]["strategy"],
                          {"fail-fast": False, "max-parallel": 1,
                           "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})
@@ -689,6 +690,13 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(steps[order[3]]["run"], "sleep 60")
         fire = steps[order[2]]
         wait = steps[order[1]]
+        # A full cap skips the fire and its spacing; the sweep's legs share
+        # one wait budget counted from the plan job's start step.
+        self.assertEqual(wait["id"], "slot")
+        self.assertIn('--sweep-started "$SWEEP_STARTED"', wait["run"])
+        self.assertEqual(wait["env"]["SWEEP_STARTED"], "${{ needs.plan.outputs.sweep_started }}")
+        for skipped in (fire, steps[order[3]]):
+            self.assertEqual(skipped["if"], "steps.slot.outputs.open == 'true'")
         # The watchdog arm (routine-eval-watchdog.yml) dispatches with the job
         # token and nothing else.
         arm = jobs["watchdog"]["steps"][0]

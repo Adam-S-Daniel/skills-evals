@@ -6,7 +6,7 @@ improve, by priority band, inside the weekly allowance (G5, G6).
                       [--guidance DIR] [--evidence FILE] [--lessons DIR]
                       [--max-fires 30] [--out FILE]
     plan_week.py validate-fire        (the matrix leg's env; exit 0 or 1)
-    plan_week.py wait-slot [--max-wait SECONDS]
+    plan_week.py wait-slot [--max-wait SECONDS] [--sweep-started TIME]
     plan_week.py watchdog --mode wait|check [--max-wait SECONDS]
 
 The rules are the thresholds design's (eval-loop thresholds, version 2,
@@ -495,6 +495,14 @@ MAX_IN_FLIGHT = 3
 EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
+#: wait-slot: the whole sweep's dispatch legs share this much waiting, counted
+#: from the plan (--sweep-started). The legs run one at a time, so 25 minutes
+#: of waiting per leg kept the 2026-11-02 22:50 UTC sweep running until 04:30
+#: and held every ingest's re-plan queued behind it. A leg past the budget
+#: checks once and, while the cap is still full, skips its fire; the next
+#: re-plan (after an ingest or the watchdog) plans that cell again, since an
+#: undispatched cell has no fire run.
+SWEEP_MAX_WAIT = 1500
 #: watchdog (routine-eval-watchdog.yml): re-plan this long after the last
 #: sweep when nothing else has started one, and this long after a fire's
 #: hold ends, so the guard's own clock is past it. A fire that never pushes
@@ -2637,9 +2645,13 @@ def in_flight(runs: list, now: datetime) -> int:
 
 
 def wait_slot(fetch, max_wait: int, clock=lambda: datetime.now(timezone.utc),
-              sleep=time.sleep) -> bool:
+              sleep=time.sleep, sweep_started: datetime | None = None) -> bool:
     """Poll until fewer than MAX_IN_FLIGHT fires are in flight; False after
-    `max_wait` seconds. `fetch(since)` returns the fire runs."""
+    `max_wait` seconds, or once SWEEP_MAX_WAIT has passed since
+    `sweep_started` (always one check). `fetch(since)` returns the fire runs."""
+    if sweep_started is not None:
+        left = SWEEP_MAX_WAIT - (clock() - sweep_started).total_seconds()
+        max_wait = max(0, min(max_wait, int(left)))
     waited = 0
     while True:
         now = clock()
@@ -2792,6 +2804,7 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--evals-dir", type=Path, default=REPO_ROOT / "evals")
     p = sub.add_parser("wait-slot")
     p.add_argument("--max-wait", type=int, default=1500)
+    p.add_argument("--sweep-started", default=None)
     p = sub.add_parser("watchdog")
     p.add_argument("--mode", choices=("wait", "check"), required=True)
     p.add_argument("--max-wait", type=int, default=WATCHDOG_MAX_WAIT)
@@ -2809,11 +2822,22 @@ def main(argv: list | None = None) -> int:
             return 0 if ok else 1
         if args.command == "wait-slot":
             token = os.environ.get("GH_TOKEN", "")
+            started = None
+            if args.sweep_started:
+                started = outcomes_mod.parse_time(args.sweep_started)
+                if started is None:
+                    raise PlanError("--sweep-started is not a time")
             ok = wait_slot(lambda since: outcomes_mod.fetch_fire_runs(SELF_REPO, token, since),
-                           args.max_wait)
+                           args.max_wait, sweep_started=started)
+            # A full cap is a hold, not a failure: the leg skips its fire and
+            # the next re-plan picks the cell up again.
             if not ok:
-                print(f"::error::{MAX_IN_FLIGHT} or more fires stayed in flight; not dispatching")
-            return 0 if ok else 1
+                print(f"::notice::{MAX_IN_FLIGHT} or more fires stayed in flight; "
+                      "this fire is held for the next re-plan")
+            if os.environ.get("GITHUB_OUTPUT"):
+                with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                    out.write(f"open={'true' if ok else 'false'}\n")
+            return 0
         if args.command == "watchdog":
             token = os.environ.get("GH_TOKEN", "")
             stamp = lambda moment: ">=" + moment.strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731

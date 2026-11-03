@@ -819,6 +819,73 @@ class DispatchLegTests(unittest.TestCase):
         self.assertFalse(plan_week.wait_slot(fetch, 300, lambda: clock[0], sleep))
         self.assertEqual(slept, [60] * 5)
 
+    def full_cap(self):
+        """Three improve fires in flight for the next three hours."""
+        return [fire(n, "Fire eval routine: improve a ", NOW - timedelta(minutes=1))
+                for n in (1, 2, 3)]
+
+    def test_the_sweep_shares_one_wait_budget(self):
+        # Regression: the 2026-11-02 22:50 UTC sweep waited 25 minutes in
+        # each of its serial legs and ran until 04:30. Legs share
+        # SWEEP_MAX_WAIT from the plan; once it is spent a leg checks once.
+        runs = self.full_cap()
+        clock = [NOW]
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            clock[0] += timedelta(seconds=seconds)
+        started = NOW
+        legs = []
+        for _ in range(5):
+            slept.clear()
+            legs.append(plan_week.wait_slot(lambda since: runs, 1500, lambda: clock[0],
+                                            sleep, sweep_started=started))
+            legs[-1] = (legs[-1], sum(slept))
+        self.assertEqual([ok for ok, _ in legs], [False] * 5)
+        self.assertEqual(legs[0][1], 1500)
+        self.assertEqual([waited for _, waited in legs[1:]], [0] * 4)
+        self.assertEqual(clock[0] - NOW, timedelta(seconds=plan_week.SWEEP_MAX_WAIT))
+        # Partway into the budget, a leg gets only what is left.
+        clock[0] = NOW + timedelta(seconds=1000)
+        slept.clear()
+        self.assertFalse(plan_week.wait_slot(lambda since: runs, 1500, lambda: clock[0],
+                                             sleep, sweep_started=started))
+        self.assertEqual(sum(slept), 480)
+        # A free slot past the budget still dispatches.
+        clock[0] = NOW + timedelta(hours=1)
+        self.assertTrue(plan_week.wait_slot(lambda since: [], 1500, lambda: clock[0],
+                                            sleep, sweep_started=started))
+
+    def test_a_full_cap_is_a_green_hold(self):
+        # Regression: legs 4, 9 and 10 of run 41540618531 exited 1 on a full
+        # cap. It is a hold: exit 0, a notice, and open=false so the
+        # dispatch and spacing steps skip.
+        # main() reads the real clock, so the fires start just before it.
+        recent = datetime.now(timezone.utc) - timedelta(minutes=1)
+        full = [fire(n, "Fire eval routine: improve a ", recent) for n in (1, 2, 3)]
+        for runs, expected in ((full, "false"), ([], "true")):
+            with tempfile.TemporaryDirectory() as tmp:
+                output = Path(tmp) / "out"
+                output.write_text("")
+                stdout = io.StringIO()
+                with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(output), "GH_TOKEN": "t"}), \
+                        mock.patch.object(io_mod, "fetch_fire_runs", return_value=runs), \
+                        mock.patch.object(plan_week.time, "sleep"), \
+                        contextlib.redirect_stdout(stdout):
+                    code = plan_week.main(["wait-slot", "--max-wait", "0",
+                                           "--sweep-started", "2026-11-02T22:50:00Z"])
+                self.assertEqual(code, 0)
+                self.assertEqual(output.read_text(), f"open={expected}\n")
+                if expected == "false":
+                    self.assertIn("::notice::", stdout.getvalue())
+                    self.assertNotIn("::error::", stdout.getvalue())
+
+    def test_a_malformed_sweep_start_is_refused(self):
+        with mock.patch.object(io_mod, "fetch_fire_runs", return_value=[]), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            self.assertNotEqual(plan_week.main(["wait-slot", "--sweep-started", "soon"]), 0)
+
     def test_validate_fire_accepts_only_planned_shapes(self):
         good = {"MODE": "eval", "ARMS": "both", "FIXTURE": "evals/writing-adrs/bootstrap",
                 "EVAL_KEY": "writing-adrs/bootstrap", "MODEL": "claude-opus-5-5",

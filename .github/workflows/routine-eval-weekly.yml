@@ -26,6 +26,9 @@ name: Weekly routine evals
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
 #   fewer than three fires are in flight (`plan_week.py wait-slot`), fires,
 #   then waits 60 seconds before the next leg (the routine's fire limit).
+#   All legs share 25 minutes of waiting from the plan; a leg that finds the
+#   cap still full after that skips its fire and ends green, and the next
+#   re-plan (an ingest or the watchdog) plans the cell again.
 #   Improve fires are planned last, so a long improve run never holds up
 #   the evals.
 # * A manual dispatch runs the same sweep (no inputs). GitHub did not start
@@ -82,6 +85,7 @@ jobs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
       batch_started: ${{ steps.plan.outputs.batch_started }}
+      sweep_started: ${{ steps.sweep.outputs.started }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -89,6 +93,11 @@ jobs:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: false
+      # The dispatch legs share one wait budget counted from here
+      # (plan_week.py SWEEP_MAX_WAIT).
+      - name: Record the sweep start
+        id: sweep
+        run: echo "started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Set up Python
         uses: actions/setup-python@v7.1.0
         with:
@@ -381,11 +390,16 @@ jobs:
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
         run: python3 scripts/plan_week.py validate-fire
+      # A cap still full when the sweep's wait budget is spent skips this
+      # leg's fire (exit 0, open=false); the next re-plan plans it again.
       - name: Wait until fewer than three fires are in flight
+        id: slot
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/plan_week.py wait-slot --max-wait 1500
+          SWEEP_STARTED: ${{ needs.plan.outputs.sweep_started }}
+        run: python3 scripts/plan_week.py wait-slot --max-wait 1500 --sweep-started "$SWEEP_STARTED"
       - name: Dispatch the validated fire
+        if: steps.slot.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -429,6 +443,7 @@ jobs:
           fi
       # The routine's fire limit: about one fire a minute.
       - name: Space the next fire
+        if: steps.slot.outputs.open == 'true'
         run: sleep 60
 
   # Arms the re-plan timer (routine-eval-watchdog.yml) at every sweep's end,
