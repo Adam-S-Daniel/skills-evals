@@ -879,7 +879,10 @@ class PublishWorkflowTests(unittest.TestCase):
         adds = [line.strip() for line in script.splitlines() if "git add" in line]
         self.assertEqual(adds, ["git add -f regressions/latest.json"])
         self.assertIn("persistent/eval-results", script)
-        self.assertIn("for attempt in 1 2 3", script)
+        self.assertIn("for attempt in 1 2 3 4 5 6", script)
+        self.assertIn("6 attempts", script)
+        # A sleep with exponential backoff and jitter sits between attempts.
+        self.assertIn("sleep $(( (1 << attempt) + RANDOM % 5 ))", script)
 
 
 if __name__ == "__main__":
