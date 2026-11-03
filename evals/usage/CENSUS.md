@@ -75,6 +75,27 @@ trigger a commit.
   one-turn arm without session persistence and moves a multi-turn arm's
   transcripts out of `~/.claude/projects` when it ends.
 
+## Listing rows
+
+Each weekly row with `kind: "listing"` counts the local sessions whose first
+skill listing (the `attachment` entry of type `skill_listing` with
+`isInitial: true`) was:
+
+- `truncated`: some namespaced skill (`plugin:skill`) was listed with no
+  description. Claude Code keeps the listing under a character budget
+  (`skillListingBudgetFraction`) and, over it, lists the last skills by name
+  only, so they can rarely trigger ([#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)).
+  A bare built-in such as `init` can have no description of its own, so it
+  does not count.
+- `full`: a listing was found and nothing was cut.
+- `unknown`: the file has no initial listing.
+
+Sessions are counted the way guidance rows are (one per session, in the week
+of its first entry, cross-root deduped, subagents left out). While any local
+session in a skill's 4-week window was `truncated`, `skill_usage.zero_use`
+answers unknown for the local surface, so the eval scope pass pauses nothing
+for zero use until the budget or the descriptions are fixed.
+
 ## Guidance rows
 
 Each weekly row with `kind: "guidance"` counts the local sessions whose
