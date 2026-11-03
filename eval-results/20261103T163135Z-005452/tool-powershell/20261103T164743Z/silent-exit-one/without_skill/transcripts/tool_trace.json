@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013PACoKFW98QDsf8kXuFUwY",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; ls -la . bin scripts; cat scripts/sync-exports.ps1; cat bin/pwsh",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013PACoKFW98QDsf8kXuFUwY",
+      "is_error": false,
+      "output": "# export-sync\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/sync-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. A copy is kept in\n`<path>`.\n.:\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  3 16:48 .\ndrwx------ 6 root root 4096 Nov  3 16:48 ..\ncrw-rw...",
+      "output_chars": 3077,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C3JBWsBAj3nQYm1Ut94d7X",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 58,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EcoF7FfL4KqtYe97cGQGNY",
+      "name": "Bash",
+      "input": "cd <path>; bash bin/pwsh -File scripts/sync-exports.ps1; echo \"exit=$?\"",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C3JBWsBAj3nQYm1Ut94d7X",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 98,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EcoF7FfL4KqtYe97cGQGNY",
+      "is_error": false,
+      "output": "synced 3 files\nexit=0",
+      "output_chars": 21,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
