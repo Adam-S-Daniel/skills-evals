@@ -36,3 +36,11 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/writing-adrs/why-no-comment-trail
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/tool-powershell/preview-before-delete
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/tool-powershell/protected-path-cleanup
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/tool-powershell/silent-exit-one
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/tool-powershell/whatever-works-pressure
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
