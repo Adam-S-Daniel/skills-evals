@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T19:51:20Z",
+  "generated_at": "2026-11-03T19:55:27Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T19:50:08Z",
+ "generated_at": "2026-11-03T19:53:02Z",
  "guidance": {
   "removed": [
    {
@@ -9817,7 +9817,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T19:45:42Z",
+ "newest_run": "2026-11-03T19:48:53Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13725,7 +13725,7 @@
    "bundle": "adam-coding-anywhere",
    "confidence": {
     "helps": 0.0,
-    "no_help": 0.0
+    "no_help": 0.5510742197665387
    },
    "copies": {
     "alert": {
@@ -13739,17 +13739,59 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 5,
+   "current_text_runs": 7,
    "description": "Configure and enforce GitHub repository security settings as code: require actions to be pinned to full-length commit SHAs, require approval for all outside collaborators' fork pull-request workflow runs, and protect the default branch via a repository ruleset. The settings-as-code engine, its schema, and the fleet fan-out live in the repo-settings repo, which this skill points to; it also carries manual `gh api` recipes. Trigger when: setting up a new repo, running a security audit, onboarding a repo to org standards, enforcing settings across a fleet, or when asked to configure or harden Actions security settings. Trigger on mentions of \"actions settings\", \"repo security settings\", \"repo settings as code\", \"settings drift\", \"fork approval\", \"outside collaborators\", \"actions policy\", \"branch protection\", \"ruleset\", \"harden repo\", \"actions event policy\", or \"pull_request_target policy\".",
    "name": "github-actions-repo-settings",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T19:48:53Z",
+     "cli_version": "2.1.317",
+     "fixture": "drift-diagnosis",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T193555Z-67300d/github-actions-repo-settings/20261103T194853Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.1376206,
+      "judge_mean": 3.3,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 9,
+      "cost_usd": 0.0892623,
+      "judge_mean": 7.699999999999999,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-03T19:46:49Z",
+     "cli_version": "2.1.317",
+     "fixture": "drift-diagnosis",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T193007Z-8d2ec8/github-actions-repo-settings/20261103T194649Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.35225880000000004,
+      "judge_mean": 8.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 9,
+      "cost_usd": 0.1949642,
+      "judge_mean": 7.699999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T18:51:05Z",
      "cli_version": "2.1.317",
@@ -15477,7 +15519,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20694,7 +20736,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "8361b115aabe564f5a401f001d1ec44a4c09c5c9"
+  "results_commit": "70faf87026feab466a6a825989723fd2df4e1a4c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
