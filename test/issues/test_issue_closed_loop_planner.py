@@ -789,6 +789,8 @@ class TriggerLaneTests(unittest.TestCase):
         self.assertIn("--trigger-eval-set evals/<skill>/trigger-eval-set.json", text)
 
 
+# These tests fill a cap of three; MAX_IN_FLIGHT itself is a spending lever.
+@mock.patch.object(plan_week, "MAX_IN_FLIGHT", 3)
 class DispatchLegTests(unittest.TestCase):
 
     def test_in_flight_and_waiting(self):

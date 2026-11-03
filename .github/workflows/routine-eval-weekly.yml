@@ -24,7 +24,7 @@ name: Weekly routine evals
 #   plans nothing (fail closed). When nothing fits, `count` is 0 and the
 #   dispatch job is skipped.
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
-#   fewer than three fires are in flight (`plan_week.py wait-slot`), fires,
+#   fewer than MAX_IN_FLIGHT fires are in flight (`plan_week.py wait-slot`), fires,
 #   then waits 60 seconds before the next leg (the routine's fire limit).
 #   All legs share 25 minutes of waiting from the plan; a leg that finds the
 #   cap still full after that skips its fire and ends green, and the next
@@ -392,7 +392,7 @@ jobs:
         run: python3 scripts/plan_week.py validate-fire
       # A cap still full when the sweep's wait budget is spent skips this
       # leg's fire (exit 0, open=false); the next re-plan plans it again.
-      - name: Wait until fewer than three fires are in flight
+      - name: Wait until a fire slot is free
         id: slot
         env:
           GH_TOKEN: ${{ github.token }}

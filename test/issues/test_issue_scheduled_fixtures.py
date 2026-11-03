@@ -684,7 +684,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         steps = jobs["dispatch"]["steps"]
         names = [s["name"] for s in steps]
         order = [names.index("Revalidate the planned fire"),
-                 names.index("Wait until fewer than three fires are in flight"),
+                 names.index("Wait until a fire slot is free"),
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))

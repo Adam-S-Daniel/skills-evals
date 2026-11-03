@@ -490,8 +490,11 @@ USE_WINDOW_DAYS = 28
 BARE_TRIALS = 3
 #: wait-slot: at most this many fires in flight, each counted in flight this
 #: long after it started (an eval run takes 4 to 12 minutes, an improve run
-#: a few hours), polled once a minute.
-MAX_IN_FLIGHT = 3
+#: a few hours), polled once a minute. 6 for the allowance week ending
+#: 2026-11-09 17:00 UTC only (Adam, 2026-11-03: spend the rest of the week's
+#: allowance as fast as possible before his manual reset); restore to 3 with
+#: evals/budget.yml's restore after that reset.
+MAX_IN_FLIGHT = 6
 EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
