@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T20:19:34Z",
+  "generated_at": "2026-11-03T20:29:33Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T20:18:08Z",
+ "generated_at": "2026-11-03T20:23:47Z",
  "guidance": {
   "removed": [
    {
@@ -9817,7 +9817,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T20:10:24Z",
+ "newest_run": "2026-11-03T20:21:04Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -17437,7 +17437,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 16,
+   "current_text_runs": 17,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
@@ -17448,6 +17448,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T20:21:04Z",
+     "cli_version": "2.1.317",
+     "fixture": "silent-exit-one",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T200456Z-cf3279/tool-powershell/20261103T202104Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.26285440000000004,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 5,
+      "cost_usd": 0.16860959999999997,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T20:10:24Z",
      "cli_version": "2.1.317",
@@ -20841,7 +20862,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "67afb4cd2d083157ce2e03c1b131f07172f2ab11"
+  "results_commit": "370e8f9afefd9b46db8e98f5593937034531f728"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
