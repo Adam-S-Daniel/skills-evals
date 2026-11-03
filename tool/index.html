@@ -194,8 +194,9 @@ const TIME_ZONE = 'America/New_York';
 
 const pts = (x) => Math.round(Math.abs(x) * 100);
 /* The keep and removal levels when the data carries no policy; the page
-   shows the data's own `policy.benefit_confidence` and `retire_confidence`. */
-const KEEP_AT = 0.85, REMOVE_AT = 0.90;
+   shows the data's own `policy.benefit_confidence`, `retire_confidence` and
+   `max_runs_per_cell`. */
+const KEEP_AT = 0.80, REMOVE_AT = 0.90;
 const ordinal = (n) => { const t = n % 100, u = n % 10;
   return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
 /* A level in [0, 1) as a whole percent, never rounded up to a certainty. */
@@ -256,9 +257,9 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it — specifically, an 85% confidence range that stays above zero, and stays valid no matter how often the loop checks.',
+    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps at the level shown on each card.',
     alone: 'It helps when it\'s the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
-    none: 'The loop is at least 95% confident the gain is under ' + pts(HELPS_MIN_GAIN) + ' percentage points, so it decided to remove it.',
+    none: 'On every model and task with room to show a gain, the loop is confident, at the removal level shown on each card, that the gain is under the margin shown there, so it decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
     early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
@@ -294,6 +295,8 @@ const STRINGS = {
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
   confidence: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + keepAt + ' and removes one at ' + removeAt + '.',
   confidenceSection: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + keepAt + ' and removes one at ' + removeAt + '.',
+  confidenceCap: (n) => ' A test still undecided after ' + n + ' comparison runs stops, and can only propose a removal.',
+  confidenceNoRoom: (helps, margin) => 'How sure the loop is: ' + helps + ' that it helps. No task leaves room to show a gain of ' + margin + ' points, because Claude already passes without it, so it needs a harder test.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
@@ -1052,12 +1055,18 @@ function stakesLine(st) {
 
 function confidenceLine(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
-  if (!c || !ok(c.helps) || !ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
+  if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
+  /* No cell with headroom (every one at the ceiling or broken): no removal
+     level to show. */
+  if (c.no_help === null) return h('p', { class: 'meta' }, STRINGS.confidenceNoRoom(pctOf(c.helps), margin));
+  if (!ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const level = (key, fallback) => Math.round((policy && ok(policy[key]) ? policy[key] : fallback) * 100) + '%';
   const f = subject === 'guidance' ? STRINGS.confidenceSection : STRINGS.confidence;
+  const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
+    ? STRINGS.confidenceCap(policy.max_runs_per_cell) : '';
   return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin,
-    level('benefit_confidence', KEEP_AT), level('retire_confidence', REMOVE_AT)));
+    level('benefit_confidence', KEEP_AT), level('retire_confidence', REMOVE_AT)) + cap);
 }
 
 function usageLine(u, window, refMs) {

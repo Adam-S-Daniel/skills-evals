@@ -1,9 +1,12 @@
 # ADR 0014: A skill removal pull request merges automatically, with no human review
 
-- **Status:** accepted (2026-10-26); auto mode is wired and committed
-  (`retirement_mode: auto`, second addendum below). A removal still merges
-  only once the improvement gate's GitHub App secrets are set in
-  skills-evals; until then the workflow falls back to `proposal`.
+- **Status:** accepted (2026-10-26); auto mode is wired (second addendum
+  below), but both blocks of `evals/gate-policy.yml` commit
+  `retirement_mode: proposal` since Adam's 2026-11-03 "Resume, auto-removal
+  off", pending his decision on the betting-bound rule (last addendum
+  below). In `auto`, a removal merges only once the improvement gate's
+  GitHub App secrets are set in skills-evals; until then the workflow falls
+  back to `proposal`.
 - **Issue:** [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)
   (part 2; part 1, the verdict, is
   [#411](https://github.com/Adam-S-Daniel/skills-evals/pull/411)).
@@ -210,3 +213,50 @@ text-only skill changes addendum: a removal falls back to the issue only
 when plugin-runtime-review would hold it (the skill has its own `hooks/`
 or `bin/`, or a hook of its plugin names a path in it), not for every skill
 of a plugin that has hooks. Adam, 2026-11-03: "Yes, auto-merge them."
+
+
+## Betting-bound addendum (2026-11-03)
+
+A statistics review of the gate on 2026-11-03 found the removal bound
+invalid at the run counts where it decided. It was a normal-mixture
+confidence sequence over run means whose variance came from a prior, so
+four identical runs per arm read as certainty and removed a skill, and a
+subject that helped by exactly the margin was removed 15-53% of the time
+against a 5% target. It also found that cells at the ceiling decided
+removals they could not show, that a guidance section's older strata were
+weighted toward removal, and that the judge, having to agree to a removal,
+blocked it for good wherever its call was skipped. Adam turned removals to
+proposals that day ("Resume, auto-removal off"). A threshold sweep the same
+day simulated replacements on the real outcome shapes. What
+`harness/gates.py` now does, with the levels the sweep chose:
+
+- The bound is a betting confidence sequence on the paired per-fire
+  difference D = with minus without (Waudby-Smith and Ramdas, aGRAPA bets
+  capped at 0.9 of the safe stake). It needs no variance prior and is valid
+  at every pair count.
+- Keep when the subject's keep test shows D above 0 at 80%, the alpha split
+  over its cells (Bonferroni). A cell shows no benefit when its test shows
+  D below 0.15 at 90%. Removal is the silent, unchecked error, so it keeps
+  the stricter level.
+- A cell whose without arm averages above 1 minus the margin is `ceiling`:
+  it does not vote, the planner stops firing it and asks for a harder
+  fixture, and a subject whose every cell is at the ceiling is `ceiling`.
+- A cell undecided after 40 pairs is `no-clear-effect`.
+- The judge is reported and does not vote, and single checks no longer
+  keep on their own.
+- Cells decide on current content only: for a guidance section, the runs
+  beside the current rest of the guidance. Older strata are ignored.
+- The first bet starts from a prior learned from other subjects' earlier
+  pairs, which changes how soon a cell decides but not the bound's level.
+
+What this addendum changes about removal: **an automatic removal needs at
+least two cells with headroom, every one no-benefit.** A `retire` verdict
+with one headroom cell, or with any `no-clear-effect` cell, carries
+`removal: proposal`, and `scripts/retire_skill.py` files the issue for it
+even in `auto` mode. A ceiling or broken-fixture cell may stand beside a
+removal, but at least one cell must have headroom. The 2026-11-02
+addendum's per-route keep and its 85% level are superseded, as is its
+note that both blocks commit `auto`. Whether removals go back to `auto`
+under this rule, or stay proposals only, is Adam's decision, still
+pending; `retirement_mode` stays a policy knob at `proposal` until he
+makes it.

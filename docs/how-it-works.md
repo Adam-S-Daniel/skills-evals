@@ -253,8 +253,8 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
 2. **Missing evidence** (at least 30% of the room): skill cells with no run,
    heaviest-used model first. A cell whose fires twice produced nothing
    becomes a "fixture broken" work item instead (a guidance cell too).
-3. **Near a decision** (at least 20%): skill cells fewest runs short of
-   their next look.
+3. **Near a decision** (at least 20%): undecided skill cells, nearest a
+   verdict first.
 4. **Guidance focus** (at least 15%): the undecided guidance cells (no run,
    or not yet decided) of the two sections nearest a verdict, below.
 5. **Improvements** (at least 20%): skills with four or more fixtures, train
@@ -279,6 +279,17 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
 6. **Re-checks**: decided cells not measured for eight weeks (four for a
    high-stakes subject).
+
+Two rules from the 2026-11-03 gate change apply across the bands. A cell
+whose verdict class is `ceiling` (its without arm already passes more than
+1 minus the margin, so it cannot show the gain) plans no fire in any band
+but safety, re-checks included, and becomes a "fixture ceiling" work item:
+it needs a harder fixture, not more runs. And the cheaper model goes first:
+in the missing, near, focus and guidance-rest bands a cell waits while its
+subject's cell of the same fixture on a model with a lower known cost is
+still open (`cheaper_first`). A keep on the cheaper model keeps the subject,
+and a removal needs both cells, so the dearer model is fired only once the
+cheaper cell has decided without a keep.
 7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
@@ -298,16 +309,14 @@ does not improve results by 0.15 or more). Guidance fires used to spread over
 every section's cells, so none came near a verdict; the focus spends them on
 the two sections nearest one until those decide.
 
-- **Progress.** A cell's *retire progress* is the no-help confidence of the
-  figures that decide it, divided by `retire_confidence` from the verdict
-  document's `guidance_policy` (0.90 when absent): for a judge-carried cell
-  its judge's, min'd with its objective's when it has objective checks; for
-  any other cell its objective's min'd with its judge's. A cell with no
-  judge block scores 0, since `harness/gates.py` retires no cell without a
-  usable judge. Its *keep progress* is the larger of its objective's and its
-  judge's helps confidence divided by `benefit_confidence` (0.85 when
-  absent); that understates the per-check (Holm) keep route, which has no
-  single confidence to read. An absent value is 0.
+- **Progress.** A cell's *retire progress* is its objective's no-help
+  confidence (the level the remove test has reached), divided by
+  `retire_confidence` from the verdict document's `guidance_policy` (0.90
+  when absent). Its *keep progress* is its objective's helps confidence
+  divided by `benefit_confidence` (0.80 when absent); that is a per-cell
+  level, and the section's keep family asks more of it. Since 2026-11-03 the
+  judge is reported and does not vote, so neither reads it. An absent value
+  is 0.
 - **Score.** A section's score is the larger of its weakest cell's retire
   progress (it retires only when every cell clears) and its strongest cell's
   keep progress (one benefit keeps it). Ties go to the section with fewer
@@ -315,10 +324,12 @@ the two sections nearest one until those decide.
   runs; then to more counted runs; then to the section id.
 - **Eligibility.** The section's verdict is still `insufficient` (or it has
   none): keep, every retire verdict, `shorten-or-merge` and
-  cannot-discriminate are not focused. (Since 2026-11-03 no cell or verdict
-  is `ceiling`: a cell at the ceiling is decided by the removal rule, and a
-  `cannot-discriminate` cell is one whose arms both pass almost nothing over
-  three runs each, left out of the verdict as a broken fixture.) At least one of its cells must be
+  cannot-discriminate and `ceiling` are not focused. (A `ceiling` cell is
+  one whose without arm averages above 1 minus the margin over three pairs:
+  it is parked and does not vote on removal, and a section whose every cell
+  is parked is `ceiling`. A `cannot-discriminate` cell is one whose arms
+  both pass almost nothing over three pairs, left out of the verdict as a
+  broken fixture.) At least one of its cells must be
   able to plan a fire (schedulable, stakes not `none`, not a "fixture
   broken" missing cell), no `retire-guidance/<section>` pull request may be
   open in _agent-guidance, and no cell may be BLOCKING: one whose no-benefit
@@ -328,7 +339,8 @@ the two sections nearest one until those decide.
   toward removal; under three runs one more can still change its class.
 - **Order.** The higher-scored section's fires go first; within a section the
   binding cell first (the lowest retire progress, or the highest keep
-  progress when the score came from the keep side), then the cheaper model.
+  progress when the score came from the keep side), then the cheaper model,
+  whose cell the dearer one waits on.
   The plan records the two sections, with their scores, as `guidance_focus`,
   and the job summary names them. There is no stall rule: the 2026-11-02
   design review found one could not be built from the fire history without
@@ -345,12 +357,7 @@ the two sections nearest one until those decide.
   `agent-contribution-markers` (score 0, first of the two-cell sections with
   the most counted runs, by id), 10 fires in focus and 51 in the guidance
   rest.
-- **Known limits.** A cell that is not judge-carried still needs a usable
-  judge to retire unless every judge call it is missing was skipped because
-  the with arm was ahead (#557, 2026-11-02): such a cell is decided on its
-  objective, and its retire progress reads the objective's. A cell whose
-  reason says the judge is still needed scores 0 for retire, and its section
-  stays eligible only through keep progress. The explorer's test queue reads
+- **Known limits.** The explorer's test queue reads
   no pull requests, so it can show a focus place for a section whose removal
   pull request is open, which the planner would not focus.
 
@@ -561,13 +568,58 @@ GUIDANCE-IMPROVE MODE (payload "mode": "guidance-improve" only). You run the gui
 
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
-then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
-`retire` (90% confidence on an anytime-valid bound, on every fixture and roster model, that the skill does not improve results by 0.15 or more: Adam, 2026-11-02)
-gets, in `retirement_mode: auto` (the committed value in
-`evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
+then `scripts/retire_skill.py` over its verdicts.
+
+**The rule** (2026-11-03, replacing the normal-mixture bound after that
+day's statistics review and threshold sweep; Adam's decision on it is
+pending, and `harness/gates.py`'s docstring is the full statement):
+
+- *The pair is the unit.* A cell (skill, fixture, roster model) pairs each
+  with run with the without run of the same fire (the same timestamp), and
+  decides on the per-fire difference D = with minus without.
+- *The bound.* A betting confidence sequence on D (Waudby-Smith and Ramdas,
+  aGRAPA bets capped at 0.9 of the safe stake). It needs no variance prior
+  and holds at every run count, so a cell is checked after every pair; four
+  identical runs per arm, which removed a skill under the old bound, now
+  decide nothing (identical arms need 18 pairs).
+- *Keep* when the keep test shows D above 0 at 80% (`benefit_confidence`),
+  split across the subject's cells (fixtures on main times roster models,
+  Bonferroni). *No benefit* in a cell when its test shows D below 0.15
+  (`objective_margin`) at 90% (`retire_confidence`). Whichever test rejects
+  first decides the cell; a tie keeps.
+- *Ceiling.* A cell whose without arm averages above 1 minus the margin
+  cannot show the margin. It is `ceiling`: it does not vote on removal, the
+  planner stops firing it, and a subject whose every cell is at the ceiling
+  is `ceiling`.
+- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`) is
+  `no-clear-effect`.
+- *Removal.* `retire` needs every cell with headroom to be no-benefit or
+  no-clear-effect, none undecided. It may be automatic only with two or
+  more such cells, every one no-benefit; one headroom cell, or any
+  no-clear-effect cell, makes it a proposal (`removal: proposal` in the
+  verdict). Removals also need runs on two Claude Code versions.
+- *The judge* is reported beside each cell and does not vote; single
+  checks no longer keep on their own.
+- *Current content only.* A cell decides on runs of the skill and fixture
+  on main; for a guidance section, on runs beside the current rest of the
+  guidance. Older runs are ignored.
+- *The bet prior.* Each cell's first bet starts from a prior learned from
+  other subjects' pairs made before the Monday of the cell's first pair
+  (three pseudo-runs, mean clamped to -0.2..0.5, variance at least 0.001).
+  It only steers the bets, so it changes how soon a cell decides, never the
+  bound's level. The weekly plan's verdicts refit it each run and record
+  its version (that Monday's date) on every cell.
+
+A skill whose verdict is `retire` with `removal: auto`
+gets, in `retirement_mode: auto`, a ready removal pull request in adam-agentskills,
 labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
-adam-agentskills ADR 0021). Each removal also files an `agent-authored`
+adam-agentskills ADR 0021, and the
+[2026-11-03 addendum](decisions/0014-removal-pull-requests-merge-without-review.md#betting-bound-addendum-2026-11-03)).
+The committed value is `proposal` (Adam, 2026-11-03, "Resume, auto-removal
+off") while he decides between automatic removal and proposals only under
+the new rule, and a `removal: proposal` verdict files the issue whatever
+the mode. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
@@ -737,11 +789,11 @@ fixtures under `evals/guidance/<section id>/<name>/`, and
 `anything-you-name-gets-its-link` has four. Each fixture runs the section
 inside the whole guidance against the guidance without it, and the section
 alone against no guidance. The in-situ runs are pooled by the rest of the
-guidance each ran beside (#557): every version of the rest counts, as a
-stratum, so an edit elsewhere in the guidance no longer starts the evidence
-over. A section is `retire` when the gate is 90% confident that it does not
-improve results by 0.15 or more across those strata (Adam, 2026-11-02:
-the guidance block of `evals/gate-policy.yml`; skills use the same rule).
+guidance each ran beside, and only the runs beside the current rest decide
+(2026-11-03; #557's weighting across older rests favored removal, so older
+rests are ignored and an edit elsewhere in the guidance starts the evidence
+over). A section is `retire` by the skills' rule above, with the guidance
+block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
 guidance already covers it. In `auto` mode, the committed

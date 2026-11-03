@@ -398,8 +398,10 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   itself refuses a host without a namespace id (`fleet_hooks_no_receipt`),
   without `python3` where the guard looks (`fleet_hooks_no_python`), or whose
   managed settings set `disableAllHooks` or `allowManagedHooksOnly`
-  (`fleet_hooks_managed_hooks_off`). `run_priors` and the regression window
-  group by `fixture_digest` and the hook digest together. The receipt rests on the sandbox's `--unshare-net`, which the tests stand
+  (`fleet_hooks_managed_hooks_off`). The regression window groups by
+  `fixture_digest` and the hook digest together, and so do the history cells
+  of the gate's learned bet prior (`paired_history`; until 2026-11-03,
+  `run_priors`). The receipt rests on the sandbox's `--unshare-net`, which the tests stand
   in for with `bwrap --unshare-net`, and on the live probes below. The CLI was seen to
   rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
   pairs and setting `hook.<event>.enabled=false`). One live call on WSL
