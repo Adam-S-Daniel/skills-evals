@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 9
  },
- "generated_at": "2026-11-03T15:54:25Z",
+ "generated_at": "2026-11-03T15:56:08Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T15:52:32Z",
+ "newest_run": "2026-11-03T15:54:08Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9895,7 +9895,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -10499,7 +10499,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12768,7 +12768,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14027,7 +14027,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -14170,7 +14170,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14545,7 +14545,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15184,7 +15184,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17482,21 +17482,42 @@
   {
    "bundle": "adam-anything-anywhere",
    "confidence": {
-    "helps": 0.0,
+    "helps": 0.9874898151436245,
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 4,
+   "current_text_runs": 5,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 3,
+    "band": null,
+    "due": "2026-12-29T13:24:33Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T15:54:08Z",
+     "cli_version": "2.1.317",
+     "fixture": "bootstrap",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T155142Z-70e02a/writing-adrs/20261103T155408Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 9,
+      "cost_usd": 0.14729920000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.1190546,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T14:51:33Z",
      "cli_version": "2.1.317",
@@ -18556,14 +18577,14 @@
    "usage": {
     "invocations": 6
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   }
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "d4ef8e143d34296ec5e8e8c9f8f1eb59b2ca6ab5",
-  "results_commit": "bff327340889dfee8da73e9897b25ecd41e02d8b"
+  "results_commit": "fee43d1b34a5a122594c8426894c0410fd9e20bf"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
