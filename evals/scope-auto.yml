@@ -11,16 +11,6 @@
 # test/issues/test_issue_eval_scope.py holds the shape, and that no row's path
 # is also scheduled. Edit by script, not by hand.
 rows:
-  - path: evals/guidance/watch-finished-is-not-ci-passed/legacy-status-failure
-    rule: "ceiling"
-    since: "2026-11-03"
-    fixture_digest: "d43eebccb684a6f01157e3f2f2da81859c287dd009e0ed25596e23abe06d6aa3"
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-26)."
-  - path: evals/guidance/subagent-delegation/verifier-that-cannot-fail
-    rule: "ceiling"
-    since: "2026-11-03"
-    fixture_digest: "f24eea38ea433be35fc21f226b413441dfe2b3b64ec9bd0488303592c9121af1"
-    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
   - path: evals/pdf-ocr-audit
     rule: "zero-use"
     since: "2026-11-03"

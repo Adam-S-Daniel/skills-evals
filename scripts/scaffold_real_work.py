@@ -1761,7 +1761,8 @@ def fired_candidates(titles: list[str]) -> set[str]:
 
 
 def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], limit: int,
-         usage: Mapping[str, int] | None = None) -> list[str]:
+         usage: Mapping[str, int] | None = None,
+         lessons: Mapping[str, int] | None = None) -> list[str]:
     """Up to `limit` miner keys to scaffold, best first.
 
     A candidate is skipped when the routine would refuse it or has it already:
@@ -1771,12 +1772,16 @@ def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], lim
     fire refuses them), a pull request of this repository (SELF_REPO), a
     truncated file list, an existing `evals/real-work/<id>/`, an existing
     `claude/scaffold-<id>` branch, or a fire within REFIRE_AFTER_DAYS. The
-    rest rank by their subject skills (SUBJECT_BY_TOUCH): most used first
-    (`usage`, a count per skill; none is known today, so every count is 0),
-    then fewest existing fixtures for that skill, then newest merge, then key.
+    rest rank by their subject skills (SUBJECT_BY_TOUCH): most real-session
+    failure evidence first (`lessons`, the session miner's
+    `fixture-candidate` evidence_count per skill, scripts/lesson_evidence.py,
+    #657), then most used (`usage`, a count per skill; none is known today,
+    so every count is 0), then fewest existing fixtures for that skill, then
+    newest merge, then key.
     """
     counts = _fixture_counts(evals)
     usage = usage or {}
+    lessons = lessons or {}
     ranked = []
     for row in candidates:
         if not isinstance(row, dict) or not isinstance(row.get("key"), str):
@@ -1802,10 +1807,11 @@ def pick(candidates: list, evals: Path, branches: set[str], fired: set[str], lim
         touches = row.get("touches") if isinstance(row.get("touches"), list) else []
         subjects = sorted({SUBJECT_BY_TOUCH[t] for t in touches if t in SUBJECT_BY_TOUCH})
         if subjects:
-            rank = min((-usage.get(skill, 0), counts.get(skill, 0)) for skill in subjects)
+            rank = min((-lessons.get(skill, 0), -usage.get(skill, 0), counts.get(skill, 0))
+                       for skill in subjects)
             rank = (0, *rank)
         else:
-            rank = (1, 0, 0)
+            rank = (1, 0, 0, 0)
         merged = row.get("merged_at") if isinstance(row.get("merged_at"), str) else ""
         ranked.append((rank, merged, key))
     # Stable sorts, last key first: key, then newest merge, then rank.
@@ -1974,10 +1980,14 @@ def _read_lines(path: Path) -> list[str]:
 
 
 def supply_plan(candidates: Path, branches: Path, fired: Path, tree: Path, limit: int,
-                now=None) -> dict:
+                now=None, lessons: Path | None = None) -> dict:
     """PICK's whole plan: the picks cut to what the routine and the weekly
     allowance allow now, as a fire matrix. Fails closed: an allowance that
-    cannot be read plans nothing (allowance_guard.GuardError)."""
+    cannot be read plans nothing (allowance_guard.GuardError). `lessons` is
+    adam-agentskills-private's lessons/proposals/ (#657); only its
+    fixture-candidate counts for SUBJECT_BY_TOUCH's public skills are used,
+    and the log line gains only how many picks they steered."""
+    import lesson_evidence  # noqa: PLC0415
     import allowance_guard  # noqa: PLC0415
     from datetime import datetime, timezone  # noqa: PLC0415
 
@@ -1995,7 +2005,12 @@ def supply_plan(candidates: Path, branches: Path, fired: Path, tree: Path, limit
         ref = line.split("\t", 1)[-1].strip()
         if ref.startswith("refs/heads/"):
             names.add(ref[len("refs/heads/"):])
-    picks = pick(rows, REPO_ROOT / "evals", names, fired_candidates(_read_lines(fired)), limit)
+    public = set(SUBJECT_BY_TOUCH.values())
+    evidence = {skill: n for skill, n in
+                lesson_evidence.skill_evidence(lessons, "fixture-candidate").items()
+                if skill in public}
+    picks = pick(rows, REPO_ROOT / "evals", names, fired_candidates(_read_lines(fired)), limit,
+                 lessons=evidence)
     try:
         state = allowance_state(tree, now or datetime.now(timezone.utc))
     except (allowance_guard.GuardError, allowance_guard.budget_file.BudgetError) as error:
@@ -2003,7 +2018,8 @@ def supply_plan(candidates: Path, branches: Path, fired: Path, tree: Path, limit
     room = min(allowance_guard.fits(state), MAX_IN_FLIGHT - state["recent"])
     picks = picks[:max(0, room)]
     return {"include": [{"candidate": key, "slot": slot} for slot, key in enumerate(picks)],
-            "line": allowance_guard.describe(state)}
+            "line": allowance_guard.describe(state)
+            + f"; fixture-candidate lessons for {len(evidence)} skill(s)"}
 
 
 # ---------------------------------------------------------------------------
@@ -2053,6 +2069,8 @@ def main(argv: list[str] | None = None) -> int:
     pk.add_argument("--fired", type=Path, required=True)
     pk.add_argument("--results-tree", type=Path, required=True)
     pk.add_argument("--max", type=int, default=MAX_IN_FLIGHT)
+    pk.add_argument("--lessons", type=Path, default=None,
+                    help="adam-agentskills-private lessons/proposals/ (fixture-candidate lessons)")
     pr = sub.add_parser("promote", help="promote drafts that ran cleanly")
     pr.add_argument("--results-tree", type=Path, required=True)
     pr.add_argument("--as-of", required=True)
@@ -2084,7 +2102,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "pick":
             plan = supply_plan(args.candidates, args.branches, args.fired,
-                               args.results_tree, args.max)
+                               args.results_tree, args.max, lessons=args.lessons)
             # Numbers only on stderr; stdout is the workflow's $GITHUB_OUTPUT.
             print(plan.pop("line"), file=sys.stderr)
             print("matrix=" + json.dumps(plan, separators=(",", ":")))

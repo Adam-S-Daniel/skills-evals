@@ -428,8 +428,8 @@ nothing (with the reason in the job summary) while the App's secrets are unset
 or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
-`routine-outage`, and `agent-check` items read from lesson proposals) are
-listed in the plan, not fired; each carries a `change_type`. A skill run
+`routine-outage`) are listed in the plan, not fired; each carries a
+`change_type`. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such
@@ -735,6 +735,18 @@ lesson, otherwise a skill or guidance edit, a new skill, a memory note, or a
 fixture candidate that a fixture writer turns into an eval. The layout and
 schema are in that repo's `lessons/README.md`. Commands: DESIGN.md, "Lessons
 from real sessions".
+
+Who reads each kind (#657), always the newest day's directory and, but for
+`new-skill`, only a per-skill evidence count (`scripts/lesson_evidence.py`),
+so no excerpt reaches this repository:
+
+| Kind | Reader |
+|---|---|
+| `new-skill` | `routine-draft-skill.yml` (draft mode, below) |
+| `fixture-candidate` | `routine-fixture-supply.yml`: `scaffold_real_work.py pick` ranks real-work candidates for a skill with this evidence first |
+| `skill-edit` | `routine-eval-weekly.yml`: `plan_week.py --lessons` multiplies that public skill's improve value by up to 2 |
+| `agent-check` | _agent-guidance's fleet worker (its ADR 0027), not this repository |
+| `memory-note`, `guidance-edit` | _agent-guidance's memory curation; it does not read them yet |
 
 ### Guidance section retirement (#124)
 

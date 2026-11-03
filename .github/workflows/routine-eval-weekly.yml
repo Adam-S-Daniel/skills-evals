@@ -24,7 +24,10 @@ name: Weekly routine evals
 #   retirement verdicts as scripts/compute_gates.py does, and reads the
 #   GitHub evidence (fire runs, improve and guidance-improve branches,
 #   adam-agentskills and _agent-guidance pull requests, open on-hold
-#   issues) with its read-only token. A read failure
+#   issues) with its read-only token. With the read-only registry App it
+#   also reads the session miner's `skill-edit` lessons from
+#   adam-agentskills-private's persistent/lessons, as an evidence count per
+#   public skill that boosts its improve value (#657). A read failure
 #   plans nothing (fail closed). When nothing fits, `count` is 0 and the
 #   dispatch job is skipped.
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
@@ -166,6 +169,34 @@ jobs:
           persist-credentials: false
           sparse-checkout: plugins
           token: ${{ steps.private-token.outputs.token }}
+      # The session miner's skill-edit lessons (#657) boost a public skill's
+      # improve candidate (plan_week.py, SKILL-EDIT LESSONS). Data only, from
+      # persistent/lessons; plan_week reads the newest day's skill-edit
+      # proposals for an evidence count and nothing else. No branch (or no
+      # App) plans without them.
+      - name: Look for the lessons branch
+        id: lessons-branch
+        if: steps.private-token.outputs.token != ''
+        env:
+          PRIVATE_READ_TOKEN: ${{ steps.private-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if GH_TOKEN="$PRIVATE_READ_TOKEN" gh api repos/Adam-S-Daniel/adam-agentskills-private/branches/persistent/lessons \
+               --silent 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out the lessons (data only)
+        if: steps.lessons-branch.outputs.exists == 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/lessons
+          path: private-lessons
+          persist-credentials: false
+          sparse-checkout: lessons/proposals
+          token: ${{ steps.private-token.outputs.token }}
       - name: Check out adam-agentskills
         uses: actions/checkout@v7.0.1
         with:
@@ -210,6 +241,9 @@ jobs:
           private=()
           if [ -d registry-private/plugins ]; then
             private=(--registry "adam-agentskills-private=$GITHUB_WORKSPACE/registry-private")
+          fi
+          if [ -d private-lessons/lessons/proposals ]; then
+            private+=(--lessons "$GITHUB_WORKSPACE/private-lessons/lessons/proposals")
           fi
           python3 scripts/plan_week.py plan --results-tree eval-results-branch \
             --as-of "$as_of" --max-fires 30 \
@@ -340,7 +374,12 @@ jobs:
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git config user.name "skills-evals real-eval bot"
           git config user.email "skills-evals@users.noreply.github.com"
-          for attempt in 1 2 3; do
+          for attempt in 1 2 3 4 5 6; do
+            # Other publishers push this branch every minute or two, so wait
+            # (about 2, 4, 8, 16 and 32 s plus jitter) before each retry.
+            if [ "$attempt" -gt 1 ]; then
+              sleep $(( (1 << attempt) + RANDOM % 5 ))
+            fi
             git fetch origin refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results
             git checkout -B persistent/eval-results origin/persistent/eval-results
             if [ -L batches ] || { [ -e batches ] && [ ! -d batches ]; }; then
@@ -367,7 +406,7 @@ jobs:
             fi
             echo "Push attempt $attempt failed; retrying from a fresh fetch." >&2
           done
-          echo "Could not publish batches/current.json after 3 attempts." >&2
+          echo "Could not publish batches/current.json after 6 attempts." >&2
           exit 1
 
   dispatch:
