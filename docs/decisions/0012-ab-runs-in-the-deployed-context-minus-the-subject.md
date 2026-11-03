@@ -407,8 +407,9 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   showed it does not do so for sandboxed Bash tool commands: it appends
   two `safe.directory` pairs and keeps the include at index 0, an
   included pre-commit hook fired, and it fired in a network namespace
-  other than the launching process's. The routine container and the CI
-  runner still need the same probe. A managed
+  other than the launching process's. The cloud container probe (2026-11-03)
+  matched it, and no Actions runner hosts a hooked arm; both are recorded in
+  [ADR 0016](0016-the-arm-sandboxs-network-namespace-marks-where-fleet-hooks-run.md). A managed
   `disableAllHooks` would drop the guard without a word. And the agent can
   still switch its own hooks off, by `git remote set-url origin` to a
   non-fleet URL or `env -u GIT_CONFIG_COUNT`: the guard stops habit, not

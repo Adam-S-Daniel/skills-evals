@@ -181,6 +181,11 @@ def freeze(frozen: context.FrozenContext, repositories: Mapping[str, Path], *,
     else:
         source_name, revision = repository, frozen.manifest["revision"]
         paths = CONSUMER_PATHS
+        if repository == context.GUIDANCE_REPOSITORY:
+            # The sync skips its own repository, so _agent-guidance carries no
+            # `.claude/hooks/` copy of the guard: its own settings register
+            # the template file, which is what its sessions run.
+            paths = {**CONSUMER_PATHS, GUARD: f"{TEMPLATE_DIR}/{GUARD}"}
     try:
         source = context._Git(source_name, repositories)
         tree = source.tree(source.revision(revision))

@@ -61,6 +61,10 @@ registry: https://github.com/Adam-S-Daniel/adam-agentskills
 # 50d66105, guidance proven at 570544a8 (26 eligible revisions matched; the
 # newest was chosen). Measured then: context 25528, 7447, 688780; with arm
 # 25528, 7987, 698461 bytes. Both fit the limits below, which are unchanged.
+# The arms run the fleet hooks the context deployed (#535; ADR 0012, fleet
+# hooks addendum). Audited in #535's PR 5: proven pin, no seed hook or
+# `origin`, and no refusal on the task's expected path.
+fleet_hooks: true
 context:
   repository: Adam-S-Daniel/wsl-automation
   revision: 50d661059e67ae65610115eb009bd0f03dc0f851

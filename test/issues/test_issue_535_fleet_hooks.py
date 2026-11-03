@@ -231,6 +231,27 @@ class FreezeTests(HookBase):
         self.metadata["guidance_revision"] = self.guidance_sha
         self.refused("fleet_hooks_unproven", lambda: self.freeze(guidance_subject=True))
 
+    def test_an_agent_guidance_context_takes_the_guard_its_settings_register(self):
+        # The sync skips _agent-guidance itself: it has `.githooks/` but its
+        # guard is the template file its own `.claude/settings.json` names.
+        own = {path: raw for path, raw in SHIPPED.items() if not path.startswith(".claude/")}
+        revision = self.commit(self.guidance, own)
+        for name in EXECUTABLE - {"agent-checks-guard.sh"}:
+            (self.guidance / fleet_hooks.CONSUMER_PATHS[name]).chmod(0o755)
+        revision = self.commit(self.guidance, {})
+        frozen = self.frozen()
+        manifest = dict(frozen.manifest, repository=GUIDANCE_REPO, revision=revision)
+        own_context = context.FrozenContext(manifest, frozen.skills, frozen.guidance, frozen.digest)
+        hooks = fleet_hooks.freeze(own_context, self.repositories, guidance_subject=False)
+        self.assertEqual(dict(hooks.files), TEMPLATES)
+        self.assertEqual(hooks.revision, revision)
+        # Only _agent-guidance reads the template path: a consumer without
+        # its `.claude/hooks/` copy is still unproven.
+        self.git(self.consumer, "rm", "-q", ".claude/hooks/agent-checks-guard.sh")
+        self.commit(self.consumer, {"templates/agent-checks/agent-checks-guard.sh": GUARD})
+        self.metadata["revision"] = self.commit(self.consumer, {})
+        self.refused("fleet_hooks_unproven", self.freeze)
+
     def test_a_non_fleet_context_is_unproven(self):
         frozen = self.frozen()
         manifest = dict(frozen.manifest, repository="example/consumer")
