@@ -686,8 +686,8 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         # A voting cell with no figure blocks a no-help claim; no figure at all is None.
         verdict["cells"].append({"class": "missing"})
         self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
-        empty = {k: None for k in ("helps", "no_help", "keep_pairs", "no_help_pairs",
-                                   "max_pairs", "keep_family")}
+        empty = {**{k: None for k in ("helps", "no_help", "keep_pairs", "no_help_pairs",
+                                      "max_pairs", "keep_family")}, "cells": []}
         self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}), empty)
         self.assertEqual(explorer_data.subject_confidence({}), empty)
 
@@ -706,6 +706,47 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         got = explorer_data.subject_confidence(verdict)
         self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"]),
                          (None, None, 11))
+
+    def test_confidence_lists_each_figured_cell_for_the_gain_range_chart(self):
+        # The page's gain range chart: one row per cell with an objective
+        # figure, in percentage points, rounded to one decimal only here.
+        verdict = {"keep_family": 2, "cells": [
+            {"fixture": "fx-two", "model": "model-b", "class": "benefit",
+             "objective": {"delta": 0.22049, "pairs": 5, "benefit_lower": 0.0123456,
+                           "retire_upper": 0.61449, "no_help_confidence": 0.0},
+             "keep_tests": [{"route": "objective", "p": 0.01}]},
+            {"fixture": "fx-one", "model": "model-a", "class": "ceiling",
+             "objective": {"delta": -0.05, "pairs": 12, "benefit_lower": -1.7,
+                           "retire_upper": 0.04449, "no_help_confidence": 0.95}},
+            {"fixture": "fx-three", "model": "model-a", "class": "missing"}]}
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual(got, [
+            {"model": "model-a", "task": "fx-one", "pairs": 12, "gain": -5.0,
+             "low": -100.0, "high": 4.4, "votes": False, "status": "no-room"},
+            {"model": "model-b", "task": "fx-two", "pairs": 5, "gain": 22.0,
+             "low": 1.2, "high": 61.4, "votes": True, "status": "keeps"}])
+        # Each class maps to one status; an unlisted one is open.
+        for cls, status in (("no-benefit", "removes-ready"), ("ceiling-unconfirmed", "no-room"),
+                            ("paused", "paused"), ("insufficient", "open"),
+                            ("cannot-discriminate", "open")):
+            verdict["cells"][1]["class"] = cls
+            row = explorer_data.subject_confidence(verdict)["cells"][0]
+            self.assertEqual(row["status"], status, cls)
+            self.assertEqual(row["votes"], cls in ("no-benefit", "insufficient"), cls)
+        # A gain that rounds to zero is 0.0, never -0.0.
+        verdict["cells"][1]["objective"]["delta"] = -0.0001
+        self.assertEqual(str(explorer_data.subject_confidence(verdict)["cells"][0]["gain"]), "0.0")
+        # A number that is not finite drops the cell; a fixtureless one has no task.
+        verdict["cells"][1]["objective"]["retire_upper"] = float("nan")
+        verdict["cells"][0]["fixture"] = None
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual([(r["model"], r["task"]) for r in got], [("model-b", None)])
+        # The document's last gate holds every row to its fields.
+        doc = {"skills": [{"confidence": {"cells": got}}]}
+        explorer_data.finish(doc)
+        doc["skills"][0]["confidence"]["cells"][0]["extra"] = 1
+        with self.assertRaises(explorer_data.Refused):
+            explorer_data.finish(doc)
 
     def test_usage_counts_listed_skills_and_names_its_window(self):
         t = Tree(self)
