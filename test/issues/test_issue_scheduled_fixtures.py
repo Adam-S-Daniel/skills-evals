@@ -500,6 +500,7 @@ class TestScheduledFixtures(unittest.TestCase):
             scripts = workspace / "scripts"
             scripts.mkdir(parents=True)
             shutil.copyfile(ROOT / "scripts/make_badge.py", scripts / "make_badge.py")
+            shutil.copyfile(ROOT / "scripts/push_with_rebase_retry.sh", scripts / "push_with_rebase_retry.sh")
             history = base / "history"
             history.mkdir()
             runner = base / "runner"
