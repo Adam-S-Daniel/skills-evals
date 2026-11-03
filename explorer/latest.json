@@ -26,12 +26,17 @@
     "end": "2026-11-01T15:55:21Z",
     "fires": 1,
     "start": "2026-11-01T15:55:21Z"
+   },
+   {
+    "end": "2026-11-03T07:15:09Z",
+    "fires": 1,
+    "start": "2026-11-03T07:15:09Z"
    }
   ],
   "window_days": 14,
-  "without_results": 10
+  "without_results": 11
  },
- "generated_at": "2026-11-03T09:12:57Z",
+ "generated_at": "2026-11-03T09:14:38Z",
  "guidance": {
   "removed": [
    {
@@ -9201,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T09:06:26Z",
+ "newest_run": "2026-11-03T09:11:04Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -13497,7 +13502,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 4,
+   "current_text_runs": 5,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -13508,6 +13513,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T09:11:04Z",
+     "cli_version": "2.1.317",
+     "fixture": "concurrency-cancel",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T090928Z-5f3511/red-ci-adamdaniel-ai/20261103T091104Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 2,
+      "cost_usd": 0.37835800999999997,
+      "judge_mean": 8.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 2,
+      "cost_usd": 0.27927563,
+      "judge_mean": 7.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T05:11:33Z",
      "cli_version": "2.1.317",
@@ -16930,7 +16956,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "01093cf8ea3de7a1071c6cd704bb2bff5faa7db7"
+  "results_commit": "a6be240244cca40d5dba97a9888171f1829cb9b3"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
