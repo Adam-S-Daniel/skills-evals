@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015XcQBxFSuzWg8Sj7rZao26",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; find . -path ./.git -prune -o -print | grep -i -E 'release-notes|skills.lock|settings|bootstrap|manifest' | head -50",
+      "input_chars": 162,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015XcQBxFSuzWg8Sj7rZao26",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov  3 23:52 .\ndrwx------ 6 root root 4096 Nov  3 23:52 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 22:51 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  3 22:51 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  3 23:52 .claude\ndrwxr-xr-x 9 root root 4096 Nov  3 23:52 .git\ncrw-r...",
+      "output_chars": 1120,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WLbrDuNznH8iEXSarJ6e71",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find . -path ./.git -prune -o -type f -print | grep -v '^./.git/' ; echo; cat session/skills/.skills-bootstrap-installed.json repo/skills.lock; ls -la session/skills session/...",
+      "input_chars": 395,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WLbrDuNznH8iEXSarJ6e71",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 3744,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012aJM7hQZyeoQLkhYkM6nBE",
+      "name": "Bash",
+      "input": "cd <path>; git log --oneline | head; git status --short | head",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012aJM7hQZyeoQLkhYkM6nBE",
+      "is_error": false,
+      "output": "0c5480c initial commit\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile",
+      "output_chars": 151,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WHcb9X6fpSZVb1RV8uWRtJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WHcb9X6fpSZVb1RV8uWRtJ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
