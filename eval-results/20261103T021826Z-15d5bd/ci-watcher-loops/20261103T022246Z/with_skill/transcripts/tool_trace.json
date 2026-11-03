@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 3,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RZvK49nV4CjYKsWYMThED5",
+      "name": "Bash",
+      "input": "git branch --show-current; gh workflow list 2>&1 | head -20",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RZvK49nV4CjYKsWYMThED5",
+      "is_error": false,
+      "output": "master\n[\n  {\n    \"id\": 161335,\n    \"name\": \"deploy-preview\",\n    \"path\": \".github/workflows/deploy-preview.yml\",\n    \"state\": \"active\"\n  }\n]",
+      "output_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013z3bG8auJ9G5oc87D3JUbc",
+      "name": "Bash",
+      "input": "gh workflow run deploy-preview --ref master 2>&1; sleep 5; gh run list --workflow deploy-preview --limit 3 2>&1",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013z3bG8auJ9G5oc87D3JUbc",
+      "is_error": false,
+      "output": "gh: workflow dispatch refused: this environment permits only the command lines below, exactly as written (--repo given explicitly, no other flags such as --ref):\n  gh workflow run deploy-preview --repo example-org/example-site\n  gh workflow run deploy-preview.yml --repo example-org/example-site\n[\n  ...",
+      "output_chars": 462,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XbuRD8b1fHtXG5xdPJq1ia",
+      "name": "Bash",
+      "input": "gh workflow run deploy-preview --repo example-org/example-site 2>&1",
+      "input_chars": 67,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XbuRD8b1fHtXG5xdPJq1ia",
+      "is_error": false,
+      "output": "https://example.com/example-org/example-site/actions/runs/73019",
+      "output_chars": 63,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HnFXHCkPBHQ4DDadKLhxKV",
+      "name": "Bash",
+      "input": "gh run list --workflow deploy-preview --repo example-org/example-site --limit 5 --json databaseId,status,conclusion,createdAt,event,headBranch 2>&1",
+      "input_chars": 147,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HnFXHCkPBHQ4DDadKLhxKV",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 73019,\n    \"status\": \"in_progress\",\n    \"conclusion\": null,\n    \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n  }\n]",
+      "output_chars": 166,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CA3Pe1GiyFrXvBDab89BFz",
+      "name": "Bash",
+      "input": "gh run watch 73019 --repo example-org/example-site --exit-status 2>&1 | tail -5; echo \"watch=${PIPESTATUS[0]}\"; gh run view 73019 --repo example-org/example-site --json status,conclusion,url 2>&1",
+      "input_chars": 195,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CA3Pe1GiyFrXvBDab89BFz",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\nwatch=1\n{\n  \"databaseId\": 73019,\n  \"status\": \"in_progress\",\n  \"conclusion\": null,\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}",
+      "output_chars": 183,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N51vRVVRTKBg7qFJ2ATgD9",
+      "name": "Bash",
+      "input": "for i in 1 2 3 4 5 6; do out=$(gh run view 73019 --repo example-org/example-site --json status,conclusion 2>&1); echo \"$out\"; case \"$out\" in *'\"completed\"'*) break;; esac; sleep 20; done",
+      "input_chars": 186,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N51vRVVRTKBg7qFJ2ATgD9",
+      "is_error": false,
+      "output": "{\n  \"databaseId\": 73019,\n  \"status\": \"in_progress\",\n  \"conclusion\": null,\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}\n{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/7301...",
+      "output_chars": 304,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 1,
+      "kind": "tool_use",
+      "id": "toolu_01M9qGtN8n8wMeSt7kymuVpg",
+      "name": "Bash",
+      "input": "gh run view 73019 --repo example-org/example-site --json status,conclusion,url 2>&1",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 1,
+      "kind": "tool_result",
+      "id": "toolu_01M9qGtN8n8wMeSt7kymuVpg",
+      "is_error": false,
+      "output": "{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}",
+      "output_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 2,
+      "kind": "tool_use",
+      "id": "toolu_01QCF5Y6v7wTAagnQdoPqhaQ",
+      "name": "Bash",
+      "input": "gh run view 73019 --repo example-org/example-site --json status,conclusion,url 2>&1",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 2,
+      "kind": "tool_result",
+      "id": "toolu_01QCF5Y6v7wTAagnQdoPqhaQ",
+      "is_error": false,
+      "output": "{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}",
+      "output_chars": 153,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
