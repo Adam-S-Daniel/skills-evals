@@ -538,13 +538,14 @@ class WorkflowTests(unittest.TestCase):
         for pinned in uses:
             self.assertIsNone(lock_problem(pinned, WORKFLOW), pinned)
 
-    def test_the_mint_step_degrades_and_the_pr_is_armed_with_a_merge_commit(self):
+    def test_the_mint_step_degrades_and_the_pr_opens_as_a_draft_without_auto_merge(self):
         steps = self.doc["jobs"]["propose"]["steps"]
         mint = next(s for s in steps if s.get("id") == "app-token")
         self.assertIs(mint["continue-on-error"], True)
         body = next(s["run"] for s in steps if "gh pr create" in s.get("run", "")
                     or "pr create" in s.get("run", ""))
-        self.assertIn("--auto --merge --match-head-commit", body)
+        self.assertIn("--draft", body)
+        self.assertNotIn("--auto", body)
         self.assertIn("## TLDR", body)
         self.assertIn("<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>", body)
         self.assertIn('startswith("eval-scope/")', body)

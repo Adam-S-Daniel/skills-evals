@@ -11,7 +11,8 @@ name: Scope the evals
 # local usage census, both data) and adam-agentskills' plugin layout, and
 # uploads the plan; its job summary lists every change with its reason.
 # `propose` applies a non-empty plan on `eval-scope/<run id>` and opens one
-# pull request, with auto-merge (merge commit) on, using the roster App token
+# DRAFT pull request (no auto-merge until a repo-settings ADR declares this
+# lane, per ADR 0001), using the roster App token
 # the fixture-promotion job in routine-fixture-supply.yml uses. At most one
 # `eval-scope/` pull request is open at a time, and no token means nothing is
 # pushed: the next run tries again.
@@ -136,7 +137,7 @@ jobs:
           repositories: skills-evals
           permission-contents: write
           permission-pull-requests: write
-      - name: Open the scope pull request and turn on auto-merge
+      - name: Open the scope pull request as a draft
         env:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -216,16 +217,15 @@ jobs:
             echo
             python3 scripts/eval_scope.py summary --plan "$plan"
             echo
-            echo "Rules and thresholds: \`scripts/eval_scope.py\` and docs/how-it-works.md, \"The eval scope pass\". Each pause is recorded in \`evals/scope-auto.yml\` with what its resume needs. Opened by eval-scope.yml; it merges automatically once \`test\` passes."
+            echo "Rules and thresholds: \`scripts/eval_scope.py\` and docs/how-it-works.md, \"The eval scope pass\". Each pause is recorded in \`evals/scope-auto.yml\` with what its resume needs. Opened by eval-scope.yml as a draft: auto-merge waits for a repo-settings ADR that declares this lane."
             echo
             echo "<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"
           } > "$body"
           url="$(app_gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
-            --title "Rescope the evals" --body-file "$body")"
+            --title "Rescope the evals" --body-file "$body" --draft)"
           number="${url##*/}"
           if ! [[ "$number" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::could not read the new pull request's number"
             exit 1
           fi
-          app_gh pr merge "$number" --repo "$REPO" --auto --merge --match-head-commit "$sha"
-          echo "auto-merge is on for #${number} at ${sha}"
+          echo "opened draft #${number} at ${sha}"
