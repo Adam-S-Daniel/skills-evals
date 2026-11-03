@@ -478,6 +478,42 @@ test('no markup is built from data strings', () => {
   ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(html), 'page must not use HTML-string sinks');
 });
 
+// --- trend chart ----------------------------------------------------------------------
+const trendPts = (specs) => specs.map(([week, gain]) => ({ week, start: Date.UTC(2026, 0, 1) + (25 - week) * 7 * 86400000, gain }));
+const trendRef = Date.UTC(2026, 6, 1);
+test('trendChart: no points gives the none caption and no svg', () => {
+  const n = P.trendChart([], trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  eq(P.textOf(n).trim(), P.STRINGS.trendNone);
+});
+test('trendChart: one point gives a sentence and no svg', () => {
+  const n = P.trendChart(trendPts([[0, 0.07]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  const t = P.textOf(n);
+  ok(t.includes('only one week'), t);
+  ok(t.includes('7 points better with it'), t);
+});
+test('trendChart: three points span the plot with labeled axis', () => {
+  const n = P.trendChart(trendPts([[2, 0.07], [1, -0.03], [0, 0.12]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 1);
+  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
+  for (const want of ['0', '+15', '\u221215']) ok(labels.includes(want), 'label ' + want + ' in ' + labels.join('|'));
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 3);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[2].attrs.cx) - 292) < 0.5, 'last cx ' + dots[2].attrs.cx);
+  const targets = P.findAll(n, (x) => x.tag === 'circle' && x.attrs.class === 'mark');
+  eq(targets.length, 3);
+  ok(targets.every((x) => x.attrs['data-tip-pos'] === 'below'), 'every target is below');
+});
+test('trendChart: old weeks still span the full width', () => {
+  const n = P.trendChart(trendPts([[25, 0.02], [24, 0.04]]), trendRef);
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 2);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[1].attrs.cx) - 292) < 0.5, 'last cx ' + dots[1].attrs.cx);
+});
+
 // --- size -----------------------------------------------------------------------------
 test('tool/index.html is under 200 KB', () => {
   const size = fs.statSync(PAGE).size;

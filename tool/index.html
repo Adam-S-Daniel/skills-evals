@@ -115,7 +115,7 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
 .card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
 .card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
-.card .sent { font-size: 0.95rem; }
+.card .sent { font-size: 0.95rem; margin-top: 10px; }
 .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
 .model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
 .chip {
@@ -137,8 +137,8 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .sw.tick { width: 2px; height: 12px; border-radius: 0; background: var(--ink); }
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 svg text { font-family: Helvetica, Arial, sans-serif; }
-.chart { max-width: 360px; }
-.spark { max-width: 260px; margin-top: 6px; }
+.chart { max-width: 396px; }
+.spark { max-width: 320px; margin-top: 10px; }
 .mark:hover, .mark:focus { opacity: 0.8; outline: none; }
 .trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
@@ -269,9 +269,9 @@ const STRINGS = {
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
+  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
+  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the 0 line means it helped that week.',
   sortLabel: 'Order sections by',
   sortNext: 'Next test',
   sortValue: 'Help per word',
@@ -317,7 +317,8 @@ const STRINGS = {
   barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
   tickTip: (a, b, rate) => 'All the rules: ' + a + ' of ' + b + ' checks (' + rate + ')',
   chartLabel: (m) => 'Checks passed by ' + m,
-  trendCaption: 'Week by week, last ' + WINDOW_WEEKS + ' weeks. Above the line: it helped that week.',
+  trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
+  trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
   trendNone: 'No weekly trend yet.',
   trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
   gainUp: (p) => p + ' points better with it',
@@ -819,7 +820,7 @@ function barPath(x, y, w, hgt, r) {
 
 /* rows: [{label, p, t, color, tick?:{p,t}}] */
 function barChart(rows, label) {
-  const W = 300, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
+  const W = 330, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
   const H = TOP + rows.length * (BH + GAP) + 2;
   const span = R - L;
   const kids = [];
@@ -843,23 +844,40 @@ function barChart(rows, label) {
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
 }
 
-function sparkline(points, refMs) {
+function trendChart(points, refMs) {
   if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
-  const W = 260, H = 36, PAD = 6;
-  const maxAbs = Math.max(0.1, ...points.map((p) => Math.abs(p.gain)));
-  const x = (w) => PAD + ((WINDOW_WEEKS - 1 - w) / (WINDOW_WEEKS - 1)) * (W - 2 * PAD);
-  const y = (g) => H / 2 - (g / maxAbs) * (H / 2 - PAD);
-  const kids = [h('line', { x1: PAD, x2: W - PAD, y1: y(0), y2: y(0), stroke: 'var(--base)', 'stroke-width': 1 })];
-  if (points.length > 1) {
-    kids.push(h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
-      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  if (points.length === 1) {
+    const p = points[0];
+    return h('p', { class: 'trend-cap' }, STRINGS.trendOne(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)));
   }
+  const W = 300, H = 124, XL = 34, XR = 292, YT = 10, YB = 102;
+  const m = Math.max(...points.map((p) => Math.abs(p.gain * 100)));
+  const top = Math.max(5, Math.ceil(m / 5) * 5);
+  const oldest = points[0], newest = points[points.length - 1];
+  const wOld = oldest.week, wNew = newest.week;
+  const x = (w) => (wOld === wNew ? XR : XL + ((wOld - w) / (wOld - wNew)) * (XR - XL));
+  const y = (g) => YT + ((top - g * 100) / (2 * top)) * (YB - YT);
+  const yMid = y(0);
+  const lab = { 'font-size': 11, fill: 'var(--muted)' };
+  const kids = [
+    h('line', { x1: XL, x2: XR, y1: YT, y2: YT, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: YB, y2: YB, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: yMid, y2: yMid, stroke: 'var(--axis)', 'stroke-width': 1 }),
+    h('text', { ...lab, x: 28, y: YT, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '+' + top),
+    h('text', { ...lab, x: 28, y: yMid, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '0'),
+    h('text', { ...lab, x: 28, y: YB, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '\u2212' + top),
+    h('text', { ...lab, x: XL, y: 118, 'text-anchor': 'start' }, fmtDay(oldest.start + 1000, refMs)),
+    h('text', { ...lab, x: XR, y: 118, 'text-anchor': 'end' }, fmtDay(newest.start + 1000, refMs)),
+    h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
+      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
+  ];
   points.forEach((p, i) => {
     const last = i === points.length - 1;
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: last ? 4 : 2.5, fill: 'var(--s1)',
-      stroke: 'var(--surface)', 'stroke-width': 2, 'pointer-events': 'none' }));
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)) }));
+    const cx = x(p.week).toFixed(1), cy = y(p.gain).toFixed(1);
+    kids.push(h('circle', { cx, cy, r: last ? 4.5 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+      'pointer-events': 'none' }));
+    kids.push(h('circle', { cx, cy, r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)), 'data-tip-pos': 'below' }));
   });
   return h('div', null,
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
@@ -1097,7 +1115,7 @@ function skillCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs)] : null,
     confidenceLine(it.raw.confidence, doc && doc.policy, 'skills'),
     verdictLine(it.raw.verdict));
 }
@@ -1111,7 +1129,7 @@ function sectionCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'section'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
     confidenceLine(it.raw.confidence, doc && doc.policy, 'guidance'),
     verdictLine(it.raw.verdict));
 }
@@ -1271,7 +1289,7 @@ function buildPage(doc, mode, opts) {
           h('p', { class: 'note' }, STRINGS.wholeNote),
           h('p', { class: 'sent' }, clean(whole.sentence)),
           legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-          sparkline(whole.trend, refMs))),
+          trendChart(whole.trend, refMs))),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
         h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
@@ -1347,14 +1365,26 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
       const r = target.getBoundingClientRect();
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
-      let top = r.top - th - 8;
-      if (top < 8) top = r.bottom + 8;
+      let top;
+      if (target.getAttribute('data-tip-pos') === 'below') {
+        top = r.bottom + 8;
+        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      } else {
+        top = r.top - th - 8;
+        if (top < 8) top = r.bottom + 8;
+      }
       tip.style.left = left + 'px';
       tip.style.top = top + 'px';
     }
     app.addEventListener('pointerover', (e) => showTip(e.target.closest ? e.target.closest('[data-tip]') : null));
     app.addEventListener('pointerout', () => { tip.hidden = true; });
-    app.addEventListener('focusin', (e) => showTip(e.target));
+    app.addEventListener('focusin', (e) => {
+      let kb = true;
+      try { kb = e.target.matches(':focus-visible'); } catch (err) { /* old browser */ }
+      if (kb) showTip(e.target);
+    });
+    app.addEventListener('pointerdown', () => { tip.hidden = true; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') tip.hidden = true; });
     app.addEventListener('focusout', () => { tip.hidden = true; });
     window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
@@ -1377,7 +1407,7 @@ if (typeof module !== 'undefined') {
     STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-    poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
+    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
     skillItems, sectionItems, wholeGuidance, buildPage, buildFailure, h, textOf, findAll, toDom
   };
 }
