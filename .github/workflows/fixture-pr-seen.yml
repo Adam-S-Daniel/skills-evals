@@ -1,0 +1,29 @@
+name: Fixture PR seen
+
+# Hands a pull request that touches evals/ to fixture-pr-gate.yml, which runs
+# the default branch's copy (scripts/fixture_pr_gate.py) and arms or disarms
+# auto-merge for a fleet worker pull request answering a fixture-need issue
+# (skills-evals#659; repo-settings ADR 0018).
+#
+# * Holds no permissions, checks nothing out and runs nothing from the
+#   branch: a pull request's own copy of a workflow cannot arm itself.
+# * Not a required check (AGENTS.md says why): it reports nothing about the
+#   change, so it may filter on its salient path, evals/**.
+# * `edited` and `labeled` too: the gate reads the body's issue reference
+#   and the `agent-authored` label.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, ready_for_review]
+    paths:
+      - "evals/**"
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hand off to the fixture pull request gate
+        run: echo "fixture-pr-gate.yml judges this pull request from the default branch."
