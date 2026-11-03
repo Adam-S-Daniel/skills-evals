@@ -248,6 +248,44 @@ class AcceptTests(GitCase):
                     if not name.endswith("tool_trace.json")}
         self.assertEqual(staged, expected)
 
+    def test_an_over_cap_detail_is_cut_on_ingest_not_rejected(self):
+        # 2026-11-03: a passing files_unchanged naming every file wrote a
+        # 6129-char detail, and the run's paid results were rejected whole.
+        files = good_files()
+        name = next(n for n in files if n.endswith("with_skill/summary.json"))
+        long = "unchanged (" + ", ".join(f"node_modules/f{i}.js" for i in range(400)) + ")"
+        doc = summary(objective_checks=[
+            {"id": "instrument-unchanged", "passed": True, "detail": long},
+            {"id": "short", "passed": True, "detail": "ok"}],
+            error={"type": "nonzero_exit", "detail": "e" * 5000})
+        files[name] = json.dumps(doc, indent=2).encode()
+        sha = self.commit(files)
+        out = self.tmp / "staged"
+        self.assertEqual(self.validate(expect=sha, out=out)["files"], "3")
+        (staged,) = [p for p in out.rglob("summary.json") if "with_skill" in str(p)]
+        got = json.loads(staged.read_text(encoding="utf-8"))
+        cut = got["objective_checks"][0]["detail"]
+        self.assertEqual(len(cut), ingest.MAX_STRING)
+        self.assertTrue(cut.startswith(long[:1000]))
+        self.assertTrue(cut.endswith(f" [truncated: {len(long)} chars]"))
+        self.assertEqual(got["objective_checks"][1]["detail"], "ok")
+        self.assertTrue(got["error"]["detail"].endswith(" [truncated: 5000 chars]"))
+        self.assertEqual(len(got["error"]["detail"]), ingest.MAX_STRING)
+        rest = {k: v for k, v in got.items() if k not in ("objective_checks", "error")}
+        self.assertEqual(rest, {k: v for k, v in doc.items()
+                                if k not in ("objective_checks", "error")})
+
+    def test_an_at_cap_detail_is_staged_byte_for_byte(self):
+        files = good_files()
+        name = next(n for n in files if n.endswith("with_skill/summary.json"))
+        files[name] = json.dumps(summary(objective_checks=[
+            {"id": "a", "passed": True, "detail": "x" * ingest.MAX_STRING}])).encode()
+        sha = self.commit(files)
+        out = self.tmp / "staged"
+        self.validate(expect=sha, out=out)
+        (staged,) = [p for p in out.rglob("summary.json") if "with_skill" in str(p)]
+        self.assertEqual(staged.read_bytes(), files[name])
+
     def test_legacy_root_only_for_its_own_run(self):
         legacy = "20261006T192432Z-93755e"
         self.assertEqual(ingest.LEGACY_ROOTS,
@@ -501,6 +539,32 @@ class HarnessWriterTests(GitCase):
                     "report.md": REPORT.encode()})
         sha = self.commit({})
         self.assertEqual(self.validate(expect=sha)["files"], "3")
+
+    def test_the_harness_cuts_a_long_detail_to_the_ingest_cap(self):
+        long = "unchanged (" + "a/b.js, " * 900 + ")"
+        checks = [{"id": "instrument-unchanged", "passed": True, "detail": long}]
+        error = {"type": "nonzero_exit", "detail": "e" * 9000}
+        results = self.repo / ingest.SOURCE_ROOT / RUN_ID
+        for arm in ("with_skill", "without_skill"):
+            run_eval._write_summary(
+                results, "writing-adrs", arm, STAMP, error, None, checks, None,
+                None, extra={"n": 1}, harness_version="2.1.296 (Claude Code)")
+        self.assertEqual(len(checks[0]["detail"]), len(long), "caller's copy kept whole")
+        written = json.loads((results / "writing-adrs" / STAMP / "with_skill"
+                              / "summary.json").read_text(encoding="utf-8"))
+        cut = written["objective_checks"][0]["detail"]
+        self.assertEqual(len(cut), ingest.MAX_STRING)
+        self.assertTrue(cut.endswith(f" [truncated: {len(long)} chars]"))
+        self.assertEqual(len(written["error"]["detail"]), ingest.MAX_STRING)
+        self.assertEqual(run_eval.SUMMARY_DETAIL_MAX, ingest.MAX_STRING)
+        self.write({f"{ingest.SOURCE_ROOT}/{RUN_ID}/writing-adrs/{STAMP}/"
+                    "report.md": REPORT.encode()})
+        sha = self.commit({})
+        out = self.tmp / "staged"
+        self.assertEqual(self.validate(expect=sha, out=out)["files"], "3")
+        (staged,) = [p for p in out.rglob("summary.json") if "with_skill" in str(p)]
+        self.assertEqual(json.loads(staged.read_text(encoding="utf-8")), written,
+                         "a summary already within the cap is not cut again")
 
 
 class InPlaceSemanticConsistencyTests(unittest.TestCase):
@@ -813,6 +877,8 @@ class RejectContentTests(GitCase):
             ("judge score", {"judge": {"dimensions": [{"score": -2}]}}),
             ("passed not a bool", {"objective_checks": [{"id": "a",
                                                          "passed": "yes"}]}),
+            ("objective detail", {"objective_checks": [{"id": "a", "passed": True,
+                                                        "detail": 5}]}),
             ("models_used", {"models_used": ["has space"]}),
             ("models_used", {"models_used": "model-a"}),
             ("harness: missing", {"harness": {"name": "claude-code",
