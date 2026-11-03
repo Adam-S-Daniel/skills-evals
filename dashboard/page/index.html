@@ -28,6 +28,11 @@
 .pd-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); vertical-align: top; }
 .pd-table td.num, .pd-table th.num { text-align: right; }
 .pd-table a { color: inherit; }
+.pd-alert { border-width: 1px 1px 1px 0.375rem; }
+.pd-alert[data-state="attention"] { border-color: var(--color-bad); }
+.pd-alert[data-state="clear"] { border-color: var(--color-ok); }
+.pd-alert-line { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--cds-gap-xs) var(--cds-gap-md); }
+.pd-alert-num { font-family: var(--font-anthropic-serif); font-size: var(--cds-font-size-title); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .pd-pill { display: inline-block; padding: 0 var(--cds-pad-xs); border-radius: 999px; border: 1px solid var(--color-border-line); white-space: nowrap; }
 .pd-good { color: var(--color-ok); }
 .pd-warn { color: var(--color-warn); }
@@ -83,6 +88,24 @@
 
   <!-- OVERVIEW -->
   <section class="pd-page" id="overview" data-page-id="overview">
+    <div class="pd-card pd-alert" id="card-halfbuilt" role="region" aria-labelledby="hb-title" data-state="loading">
+      <h2 id="hb-title">Half-built and broken features</h2>
+      <p class="pd-alert-line">
+        <span><span class="pd-alert-num dash-skeleton" data-source="half_built_summary" data-field="open">—</span> open</span>
+        <span><b data-source="half_built_summary" data-field="high">—</b> high severity</span>
+        <span><b data-source="half_built_summary" data-field="broken">—</b> broken</span>
+        <span><b data-source="half_built_summary" data-field="fixed_7d">—</b> fixed in the last 7 days</span>
+      </p>
+      <p class="pd-note" id="hb-checked">Last checked: —</p>
+      <p class="pd-note" id="hb-empty" hidden></p>
+      <div class="pd-scroll" id="hb-wrap" style="max-height: 20rem" hidden>
+        <table class="pd-table" id="tbl-halfbuilt" data-source="half_built_issues" data-row-key="key">
+          <thead><tr><th data-field="repo">Repo</th><th data-field="kind">Kind</th><th data-field="severity">Severity</th><th data-field="title">Finding</th><th data-field="age_days">Age</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="pd-tiles">
       <button class="pd-tile" data-go="routines" id="tile-routines">
         <span class="pd-tile-label">Routines healthy</span>
@@ -547,7 +570,7 @@
 // dashboard/build.py writes one placeholder row (key field "none") instead of an empty
 // list, because an empty dataset reads as "failed to load". Calcs and tables never see them.
 (() => {
-  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
+  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', half_built_issues: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
   const real = (id, rows) => (PH[id] && Array.isArray(rows) ? rows.filter((r) => r[PH[id]] !== 'none') : rows);
   try {
     const calc = dash.calc.bind(dash);
@@ -1000,9 +1023,9 @@ dash.calc('new_runs', {
     const s = document.createElement('span');
     s.className = 'pd-pill';
     const t = String(txt || '');
-    if (/^(Done|OK|Met|Succeeded|Passed|ok)$/i.test(t)) s.classList.add('pd-good');
-    else if (/stalled|stopped|not started|failed/i.test(t)) s.classList.add('pd-bad');
-    else if (/waiting|partly|needs|not yet|in progress|^(Running|Queued)$/i.test(t)) s.classList.add('pd-warn');
+    if (/^(Done|OK|Met|Succeeded|Passed|ok|clear)$/i.test(t)) s.classList.add('pd-good');
+    else if (/stalled|stopped|not started|failed|^(high|broken)$/i.test(t)) s.classList.add('pd-bad');
+    else if (/waiting|partly|needs|not yet|in progress|^(Running|Queued|medium)$/i.test(t)) s.classList.add('pd-warn');
     s.textContent = t;
     return s;
   };
@@ -1242,6 +1265,23 @@ dash.calc('new_runs', {
       { field: 'changes', num: true }, { field: 'real_work_reach', num: true }, { field: 'owner_messages', num: true }, { field: 'decisions', num: true },
     ], (r) => r.week, { sort: { field: 'week', dir: 'desc' } });
   };
+  const drawHalfBuilt = () => {
+    const card = document.getElementById('card-halfbuilt');
+    const empty = document.getElementById('hb-empty'), wrap = document.getElementById('hb-wrap');
+    if (status('half_built_summary') !== 'ok') { card.dataset.state = 'loading'; return; }
+    const sm = one_('half_built_summary');
+    card.dataset.state = sm.status || 'loading';
+    document.getElementById('hb-checked').textContent = sm.checked_at
+      ? 'Last checked ' + dt(sm.checked_at) + (sm.incomplete ? '. The list may be incomplete: the search hit a limit.' : '')
+      : 'Last checked: never';
+    const msg = { clear: 'No open findings.', 'not-checked': 'The weekly check has not run yet.' }[sm.status] || '';
+    empty.textContent = msg; empty.hidden = !msg;
+    wrap.hidden = !rowsOf('half_built_issues').length;
+    renderTable('tbl-halfbuilt', 'half_built_issues', [
+      { field: 'repo' }, { field: 'kind' }, { field: 'severity', pill: true }, { field: 'title', link: 'url' },
+      { field: 'age_days', num: true, fmt: (v, r) => (r.state === 'closed' ? 'fixed ' + String(r.closed_at || '').slice(0, 10) : v == null ? '' : v + ' d') },
+    ], (r) => r.key);
+  };
   const drawImpact = () => {
     const page = document.getElementById('impact');
     if (page.hidden) return;
@@ -1299,6 +1339,7 @@ dash.calc('new_runs', {
   function draw() {
     drawImpact();
     fillMarks();
+    drawHalfBuilt();
     drawCostBenefit();
     drawMeters();
     drawDumbbell();
