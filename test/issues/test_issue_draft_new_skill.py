@@ -1294,7 +1294,9 @@ class Bodies(Staged):
         self.assertIn("merges itself (merge commit)", skill)
         self.assertIn(dns.improve_gate.REGISTRY_ADR, skill)
         _, fixtures = self.body("pr-body", "--repo", "skills-evals", "--mode", "auto")
-        self.assertIn("Auto-merge (merge commit) is enabled", fixtures)
+        self.assertIn("Follow drafted-skill fixtures", fixtures)
+        self.assertIn("Once the skill's pull request has merged", fixtures)
+        self.assertNotIn("job token", fixtures)
         _, draft = self.body("pr-body", "--repo", "adam-agentskills")
         self.assertIn("nothing merges itself", draft)
         with self.assertRaises(SystemExit):

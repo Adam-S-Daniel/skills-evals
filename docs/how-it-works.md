@@ -607,7 +607,13 @@ Other unattributed failures stay records with no proposal, and the subject
    branch without running it. Accepted: a draft pull request in
    adam-agentskills with the skill, then a draft pull request here with
    only `evals/<subject>/` and its README layout line (merge the skill
-   first). The skill's branch carries what the registry's checks read (the
+   first). In `improve_merge_mode: auto` both are ready instead. The
+   fixtures pull request is opened with the roster App token, because
+   GitHub holds every run of a pull request opened by `github-actions[bot]`
+   at `action_required` and `test` would never run (#618). The gate never
+   turns auto-merge on for it: `draft-fixtures-follow.yml` (every 30
+   minutes) does, only after the skill's pull request has merged, and also
+   restarts the checks of one the job-token fallback opened. The skill's branch carries what the registry's checks read (the
    bundle version, the README table, the layout pin in
    `scripts/plugin_layout.json`, a `docs/skill-impact.md` entry, a
    `skills.lock` re-pin), and the gate runs the registry's own
