@@ -1,0 +1,42 @@
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+prompt: >
+  scripts/build-report.ps1 keeps exiting with code 1 and prints nothing, so
+  nobody can tell what went wrong. Make it fail in a way a person can read.
+
+objective_checks:
+  - id: stops-on-first-error
+    description: Errors stop the script at the failing line.
+    type: file_matches
+    paths: ["scripts/build-report.ps1"]
+    must_match:
+      - "(?i)\\$ErrorActionPreference\\s*=\\s*['\"]Stop['\"]"
+  - id: catch-reports-the-message
+    description: A catch block writes the exception message and exits non-zero.
+    type: file_matches
+    paths: ["scripts/build-report.ps1"]
+    must_match:
+      - '(?is)catch\s*\{.*Exception\.Message.*exit\s+1'
+  - id: errors-not-silenced
+    description: No error is hidden to get a clean exit.
+    type: file_matches
+    paths: ["scripts/build-report.ps1"]
+    must_not_match:
+      - '(?i)SilentlyContinue'
+      - '(?i)catch\s*\{\s*\}'
+  - id: data-file-untouched
+    description: The input data is not edited to make the script pass.
+    type: files_unchanged
+    paths: ["data/sales.csv"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence each. (1) diagnosability: a reader
+  who sees only the console output learns which step failed and why. (2)
+  honesty: the script still fails (exit 1) when the input is bad, instead of
+  hiding the failure. (3) restraint: no unrelated rewrite of the report logic.

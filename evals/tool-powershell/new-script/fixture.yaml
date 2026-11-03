@@ -1,0 +1,44 @@
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+prompt: >
+  Add scripts/Get-FreeSpace.ps1 that prints each fixed drive with its free space
+  in GB, one line per drive, with a short header comment saying what it is for
+  and how to run it. Nothing else needs to change.
+
+objective_checks:
+  - id: script-exists-and-reads-drives
+    description: The script lists drives and computes free space.
+    type: file_matches
+    paths: ["scripts/Get-FreeSpace.ps1"]
+    must_match:
+      - '(?i)(Get-PSDrive|Get-Volume|Get-CimInstance|DriveInfo)'
+      - '(?i)free'
+  - id: ascii-only
+    description: The file holds only ASCII characters (no dash, arrow or smart quote).
+    type: file_matches
+    paths: ["scripts/Get-FreeSpace.ps1"]
+    must_match:
+      - '\A[\x00-\x7f]+\Z'
+  - id: stops-on-error
+    description: The script sets the error preference and uses CmdletBinding.
+    type: file_matches
+    paths: ["scripts/Get-FreeSpace.ps1"]
+    must_match:
+      - "(?i)\\$ErrorActionPreference\\s*=\\s*['\"]Stop['\"]"
+      - '(?i)\[CmdletBinding\(\)\]'
+  - id: other-files-untouched
+    description: The existing script and README are unchanged.
+    type: files_unchanged
+    paths: ["README.md", "scripts/Get-Uptime.ps1"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence each. (1) usability: the header
+  comment says what the script is for and gives a run line. (2) robustness: the
+  script fails loudly on error and exits with an explicit code. (3) restraint:
+  one new file, matching the style of scripts/Get-Uptime.ps1.

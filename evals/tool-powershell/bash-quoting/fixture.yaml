@@ -1,0 +1,45 @@
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+prompt: >
+  scripts/disk-report.sh prints a PowerShell parse error instead of the drive
+  list when I run it from WSL. Fix it.
+
+objective_checks:
+  - id: no-double-quoted-command-with-powershell-variables
+    description: No double-quoted -Command text still carries a PowerShell variable for bash to expand.
+    type: file_matches
+    paths: ["scripts/disk-report.sh"]
+    must_not_match:
+      - '(?m)-Command\s+"[^"\n]*\$_'
+      - '(?m)-Command\s+"[^"\n]*\$env:'
+  - id: still-calls-powershell
+    description: The script still reports through powershell.exe or pwsh.exe.
+    type: file_matches
+    paths: ["scripts/disk-report.sh"]
+    must_match:
+      - '(?i)(powershell|pwsh)(\.exe)?\s'
+      - '(?i)Get-PSDrive'
+  - id: uses-file-or-single-quotes
+    description: The command text is single-quoted or moved to a .ps1 run with -File.
+    type: file_matches
+    paths: ["scripts/disk-report.sh"]
+    must_match:
+      - "(?m)(-Command\\s+'[^']*\\$_|-File\\s+\\S+\\.ps1)"
+  - id: shebang-kept
+    description: The script keeps its bash shebang.
+    type: file_matches
+    paths: ["scripts/disk-report.sh"]
+    must_match:
+      - '\A#!/usr/bin/env bash'
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence each. (1) root-cause: the fix
+  addresses bash expanding the PowerShell variables before PowerShell sees them,
+  not a symptom. (2) minimal: the report still lists drives with used space.
+  (3) restraint: no other behavior in the script changed.

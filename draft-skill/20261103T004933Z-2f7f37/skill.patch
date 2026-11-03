@@ -1,0 +1,105 @@
+diff --git a/plugins/adam-coding-local/skills/tool-powershell/PURPOSE.md b/plugins/adam-coding-local/skills/tool-powershell/PURPOSE.md
+new file mode 100644
+--- /dev/null
++++ b/plugins/adam-coding-local/skills/tool-powershell/PURPOSE.md
+@@ -0,0 +1,15 @@
++# Purpose: tool-powershell
++
++Maintenance context; never loaded at inference.
++
++Answers a mined lesson (4 sessions, 3 repos) where the PowerShell tool failed
++repeatedly: runs ending in a bare `Exit code 1` six and eight times in a row,
++and a `Remove-Item` on a protected system path that was refused and then
++retried. Triage: not mechanical, because the failures only show at run time and
++no commit, push or CI input exposes them (see the record's triage reason).
++
++Decisions taken without a person to ask (skill-creator non-interactive flow):
++the skill is machine-bound (adam-coding-local) because it concerns Windows
++interop; it points to `windows-elevation-from-wsl` for the elevation case
++instead of repeating it; it says to stop at a protected path and hand over,
++not to look for a workaround.
+diff --git a/plugins/adam-coding-local/skills/tool-powershell/SKILL.md b/plugins/adam-coding-local/skills/tool-powershell/SKILL.md
+new file mode 100644
+--- /dev/null
++++ b/plugins/adam-coding-local/skills/tool-powershell/SKILL.md
+@@ -0,0 +1,80 @@
++---
++name: tool-powershell
++description: >-
++  Drive PowerShell (the PowerShell tool, powershell.exe or pwsh.exe from WSL,
++  or a .ps1 script) without burning repeated failures. Use it when a PowerShell
++  command exits 1 with no useful message, when the same command has failed
++  twice, when Remove-Item or another write is refused on a protected system
++  path, when a Windows script is called from bash and the quoting breaks, or
++  before writing a new .ps1 file.
++license: MIT
++compatibility: >-
++  A session that runs PowerShell 5.1 or 7 on Windows, directly or through WSL
++  interop. Not for plain Linux shells.
++---
++
++# PowerShell without repeated failures
++
++Most repeated PowerShell failures are one of four things: an exit code that
++says nothing, a retry of a failure that cannot change, a refusal that is a
++policy and not a bug, or quoting that bash mangled before PowerShell saw it.
++
++## 1. Make an exit 1 say why
++
++A bare `Exit code 1` means a non-terminating error went by or a script ended
++with `exit 1` and no message. Before you run it again:
++
++- Put `$ErrorActionPreference = 'Stop'` at the top of every script you write or
++  edit, so the first error stops the run at its own line.
++- Wrap the body in `try { ... } catch { ... }`. In the catch, write
++  `$_.Exception.Message` and `$_.InvocationInfo.PositionMessage` to the error
++  stream (`[Console]::Error.WriteLine(...)` or `Write-Error`), then
++  `exit 1`.
++- Never hide an error with `-ErrorAction SilentlyContinue` or an empty catch
++  to get a clean exit. A hidden error comes back later as a different failure.
++- Use `-NoProfile` for one-off commands, so a user profile cannot add output
++  or errors of its own.
++
++## 2. Two failures means change something
++
++If the same command has failed twice, a third identical run is wasted. Read the
++message, change the command or the approach, or stop and report. Retry only a
++failure that can pass on its own (a locked file, a network blip) and cap it at
++three tries with a pause. Access denied, path protected and file not found do
++not get better by waiting.
++
++## 3. A protected path is a stop sign
++
++`Remove-Item ... is blocked. This path is protected from removal` (and any
++"Access is denied" on a system location) is a deliberate refusal. Do not
++retry it, add `-Force` or `-Recurse`, switch to `cmd /c rd`, `[IO.Directory]::Delete`
++or `robocopy /MIR` to get around it, or rename the folder first.
++
++- Keep every delete inside a directory the task created, such as a scratch
++  folder under `$env:TEMP`. Resolve the path with `Resolve-Path` and refuse to
++  delete unless the result starts with that folder.
++- Run a destructive command with `-WhatIf` first and read what it lists.
++- For anything outside that folder, write down the exact command and what it
++  removes in a hand-over note for the owner (`HANDOFF.md` in the repo, or the
++  final message) and leave the system untouched. For elevation failures see
++  the `windows-elevation-from-wsl` skill.
++
++## 4. Quoting from bash
++
++`powershell.exe -Command "..."` inside bash is double-quoted, so bash expands
++`$_`, `$env:X` and `$(...)` before PowerShell runs. The symptom is a parse
++error about a missing property or an unexpected token.
++
++- Prefer `-File script.ps1` and put the logic in the script.
++- For a one-liner, use single quotes around the whole `-Command` text; inside
++  it use double quotes for PowerShell strings.
++- Pass values as parameters (`-File script.ps1 -Name "$name"`), not spliced into
++  the command text.
++
++## 5. New .ps1 files
++
++Keep new scripts ASCII only (use `-` for a dash, `->` for an arrow): Windows
++PowerShell 5.1 reads a file without a byte order mark as the ANSI code page
++and a smart quote can end a string early. Start with `[CmdletBinding()]`,
++`param(...)` and `$ErrorActionPreference = 'Stop'`, and finish with an
++explicit exit code.
