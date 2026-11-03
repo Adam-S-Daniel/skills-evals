@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T09:31:20Z",
+ "generated_at": "2026-11-03T09:34:47Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T09:27:10Z",
+ "newest_run": "2026-11-03T09:31:31Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9316,7 +9316,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9467,7 +9467,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 17,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -9800,7 +9800,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -10383,7 +10383,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11621,7 +11621,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11693,7 +11693,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12202,7 +12202,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12505,7 +12505,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12808,7 +12808,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13407,7 +13407,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13502,17 +13502,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 7,
+   "current_text_runs": 8,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
-    "band": "missing",
+    "band": "near",
     "due": null,
-    "position": 2,
+    "position": 20,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T09:31:31Z",
+     "cli_version": "2.1.317",
+     "fixture": "unpinned-action",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T092936Z-6a7c5b/red-ci-adamdaniel-ai/20261103T093131Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 2,
+      "cost_usd": 0.31127651000000006,
+      "judge_mean": 10.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 2,
+      "cost_usd": 0.211603445,
+      "judge_mean": 9.3,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T09:27:10Z",
      "cli_version": "2.1.317",
@@ -13685,7 +13706,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13778,7 +13799,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14228,7 +14249,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14673,7 +14694,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14808,7 +14829,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15195,7 +15216,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15519,7 +15540,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16011,7 +16032,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16998,7 +17019,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "0aaa424ffad755d45432d1536bafa0820ed030e9",
-  "results_commit": "bcb92f1bcd8ea47166cdfdd049d7e2dbf26ab67b"
+  "results_commit": "f9623382adbed594c2b92d2e2315d662ebad44c3"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
