@@ -557,7 +557,7 @@ test('issue lessons show in the skills view after the miner rows, with their sou
   eq(rows[4].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
   eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | My own proposal | — | Oct 27 | — | #88 (open)');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
-  ok(hrefs.includes('https://github.com/Adam-S-Daniel/example-repo/issues/17'), hrefs.join(' '));
+  eq(hrefs.filter((u) => u === 'https://github.com/Adam-S-Daniel/example-repo/issues/17').length, 1, 'the issue link: ' + hrefs.join(' '));
   eq(lessonRows(lessonsSection(fixture, 'guidance')).length, 2, 'the guidance view shows no issue rows');
 });
 
