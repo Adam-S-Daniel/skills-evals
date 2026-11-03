@@ -1,0 +1,470 @@
+{
+  "skill": "post-failure-comment",
+  "arm": "with_skill",
+  "timestamp": "20261103T090626Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.6445098,
+    "num_turns": 10,
+    "duration_ms": 80428,
+    "usage": {
+      "input_tokens": 20,
+      "cache_creation_input_tokens": 40964,
+      "cache_read_input_tokens": 343959,
+      "output_tokens": 6377,
+      "output_tokens_details": {
+        "thinking_tokens": 2327
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 40964,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 984,
+          "cache_read_input_tokens": 52863,
+          "cache_creation_input_tokens": 2462,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2462
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "schedule-only-workflow-untouched",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/nightly-audit.yml)"
+    },
+    {
+      "id": "e2e-inline-block-removed",
+      "passed": false,
+      "detail": ".github/workflows/e2e-tests.yml contains /gh pr comment/; .github/workflows/e2e-tests.yml contains /steps\\.capture\\.outputs\\.log/"
+    },
+    {
+      "id": "e2e-post-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job='e2e', job_if_equals=None, job_needs_nonempty=False, if_contains='failure()', if_gates_on_outcome='failure', with_present=['log-file', 'marker', 'title'], with_equals={'mode': 'post'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='resolve') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "e2e-resolve-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job='e2e', job_if_equals=None, job_needs_nonempty=False, if_contains='success()', if_gates_on_outcome='success', with_present=['marker', 'title'], with_equals={'mode': 'resolve'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='post') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-report-job-shape",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=['always()', '!cancelled()'], job_needs_nonempty=True, if_contains=None, if_gates_on_outcome=None, with_present=None, with_equals=None, with_tag_ref=None, marker_not_html_comment=False, with_forbids_job_status=False, marker_pairs_with_mode=None) \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-post-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='failure', with_present=['log-file', 'marker', 'title'], with_equals={'mode': 'post'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='resolve') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-resolve-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='success', with_present=['marker', 'title'], with_equals={'mode': 'resolve'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='post') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "post-failure-comment-reference-valid",
+      "passed": false,
+      "detail": "no step found with a `uses:` ending '/post-failure-comment'"
+    },
+    {
+      "id": "markers-unique-per-workflow",
+      "passed": true,
+      "detail": "every 'marker' distinct across workflows (0 value(s) seen)"
+    },
+    {
+      "id": "no-event-or-input-interpolation-in-run",
+      "passed": false,
+      "detail": ".github/workflows/e2e-tests.yml:e2e:Post failure comment: ${{ github.event.pull_request.number }}, ${{ github.event.pull_request.head.ref }}"
+    },
+    {
+      "id": "cms-platform-vendored-contract-unchanged",
+      "passed": true,
+      "detail": "unchanged (.cms-platform/.github/actions/post-failure-comment/action.yml)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "convention_fidelity",
+        "score": 4,
+        "rationale": "The single-job e2e wiring as described (caller-side if: failure()/if: success(), post+resolve pair, one marker, log path from the tee) matches the convention, but the multi-job visual-regression workflow was wired as per-job bare failure()/success() steps inside chromium and firefox instead of the documented final needs: job with if: always()/!cancelled() gating on needs.<job>.result, and with two markers in one workflow rather than one per workflow; no job.status or in-action gating is evident, but the empty diff and vanished worktree mean none of this can be verified against actual files."
+      },
+      {
+        "name": "gitleaks_explanation",
+        "score": 3,
+        "rationale": "The reply only notes that the old inline block posted the raw log unscrubbed and that the stub action lacks a gitleaks install; it never explains that every comment through the composite is scrubbed by its bundled gitleaks pass-through, that there is no caller-side opt-out, or that this is why no caller-side redaction step was (or should be) added."
+      },
+      {
+        "name": "restraint",
+        "score": 6,
+        "rationale": "nightly-audit.yml was correctly left alone, the vendored action contract was not edited (only reported as a stub), and all edits stayed within the two Playwright workflows (the shell: bash additions are in-scope and justified), but the agent invented a per-browser marker convention and a per-job report shape the skill does not document for multi-job workflows."
+      }
+    ],
+    "overall": 4.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 20,
+      "output_tokens": 6377,
+      "cache_read_input_tokens": 343959,
+      "cache_creation_input_tokens": 40964,
+      "canonical_model": "claude-opus-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 1803,
+      "cache_read_input_tokens": 69940,
+      "cache_creation_input_tokens": 38140,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.2192478586777173,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "a107e7d3d6035db5741d1c7d8ab3870e373ed06f196d07a014ef40b1c72b7aad",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/adamdaniel.ai",
+    "revision": "2a994ee0219679ef85e908bbc1119f386dd33768",
+    "digest": "f95a12371888915a55bdbfcb93ac6066178d94728213e95825217af25e50f4a6",
+    "lock_digest": "6a57e6571be27aa87980cff6d9b99bc038164ae2dbc6b7db178e7d83b352f4da",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      },
+      {
+        "registry": "Adam-S-Daniel/cms-platform",
+        "revision": "fe2290a1c4e009c5dadc146dd86edafe0f0a27e2",
+        "digest": "730aa42530e23385e80dca4f7f1698b38e4fe0502f2eef9f53f669cfae7dd1f8",
+        "bundles": [
+          {
+            "name": "cms-platform",
+            "digest": "51c09e4f1832cf85b7ea37457fd0bd6752a6b40f25f20cbe5e47472120d03b7b"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "6a1ca565a57195c51a9d40cdf534a3f059ea1b89",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 14803,
+      "skill_payload_bytes": 875774
+    },
+    "fleet_hooks_digest": "db0c214831787f99084c1ad0e50a8be74fac798cf470eb57a441a006428c0ded"
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/cms-platform",
+    "bundle": "cms-platform",
+    "skill": "post-failure-comment",
+    "action": "removed",
+    "deployed_digest": "c4fd98edccd36946b9be3b7d2d0665d35a5291ba1a18ff110e3d0aa025d692d8",
+    "tested_digest": "c4fd98edccd36946b9be3b7d2d0665d35a5291ba1a18ff110e3d0aa025d692d8",
+    "bytes": 14188,
+    "subject_source": "main",
+    "subject_revision": "77510f78ac0fc3231bb5a77f69a6535629b435cc"
+  },
+  "arm_context": {
+    "skills": 24,
+    "skills_digest": "b8767a7e4385e2a398d4866c436233e1c2a69e6a233c0e8e6cf75773ee592a07",
+    "others_digest": "b2d59e5d46637182c7547dd9f6e32e3a2f96f14723b8a6e4547a5fb8b5be35c4",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261103T090409Z-7cf88e",
+    "session_id": "cse_01SphsQED2LcaQfBweukH4R1",
+    "harness_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T09:06:26Z",
+    "ended_at": "2026-11-03T09:11:33Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-03T09:06:31.589Z",
+      "to_at": "2026-11-03T09:11:00.675Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.37,
+          "to": 0.37,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQED2LcaQfBweukH4R1",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 2.33241466,
+      "agent_usd": 1.1822549100000002,
+      "judge_usd": 1.1501597499999998,
+      "guard_usd": 0,
+      "metered_usd": 1.71386191,
+      "last_agent_call_usd": 0.53774511,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T09:06:27Z",
+      "ended_at": "2026-11-03T09:10:45Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T09:06:27Z",
+          "ended_at": "2026-11-03T09:07:50Z",
+          "duration_ms": 82094,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T09:09:44Z",
+          "ended_at": "2026-11-03T09:10:45Z",
+          "duration_ms": 60418,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-03T09:06:31.589Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.37,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.37,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-03T09:09:51.664Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.37,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.37,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.01,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 82094,
+        "num_turns": 10,
+        "cost_usd": 0.6445098,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 20,
+            "output_tokens": 6377,
+            "cache_read_input_tokens": 343959,
+            "cache_creation_input_tokens": 40964,
+            "cost_usd": 0.5241238
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 1803,
+            "cache_read_input_tokens": 69940,
+            "cache_creation_input_tokens": 38140,
+            "cost_usd": 0.12038599999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 40964
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 60418,
+        "num_turns": 7,
+        "cost_usd": 0.5316069999999999,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 194,
+            "output_tokens": 3239,
+            "cache_read_input_tokens": 265028,
+            "cache_creation_input_tokens": 15073,
+            "cost_usd": 0.5316069999999999
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 15073
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
