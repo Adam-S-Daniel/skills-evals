@@ -155,12 +155,13 @@ class PolicyTests(unittest.TestCase):
         # to remove.
         # Adam, 2026-11-02 (#557): skills take the guidance removal rule,
         # 90% that the skill does not help by 0.15 (judge 1.5); keep at 85%.
+        # Adam, 2026-11-03: removals are proposals until the stats fixes land.
         self.assertEqual(POLICY, {
             "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.85,
             "retire_confidence": 0.90, "check_confidence": 0.85,
             "min_cli_versions": 2, "prior_strength": 4, "ceiling_fraction": 0.90,
             "judge_ceiling": 9.0, "floor_fraction": 0.10,
-            "retirement_mode": "auto"})
+            "retirement_mode": "proposal"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -1674,7 +1675,7 @@ class ComputeGatesTests(unittest.TestCase):
         entry = doc["skills"]["flat"]["cells"][0]["runs"]["with"][0]
         self.assertEqual(entry["run"]["billing"], "api")
         self.assertTrue((self.tree / entry["report"]["path"]).is_file())
-        self.assertEqual(doc["retirement_mode"], "auto")
+        self.assertEqual(doc["retirement_mode"], "proposal")
         self.assertNotIn("previous", doc)
 
     def in_place_fixture(self, skill):
@@ -1768,10 +1769,10 @@ class ComputeGatesTests(unittest.TestCase):
             "skills:\n  objective_margin: 0.05\n  judge_margin: 0.5").replace(
             "  retire_confidence: 0.90\n  check_confidence: 0.85\n  min_cli_versions: 2\n"
             "  prior_strength: 4\n  ceiling_fraction: 0.90\n  judge_ceiling: 9.0\n"
-            "  floor_fraction: 0.10\n  retirement_mode: auto\n# Guidance",
+            "  floor_fraction: 0.10\n  retirement_mode: proposal\n# Guidance",
             "  retire_confidence: 0.95\n  check_confidence: 0.85\n  min_cli_versions: 2\n"
             "  prior_strength: 4\n  ceiling_fraction: 0.90\n  judge_ceiling: 9.0\n"
-            "  floor_fraction: 0.10\n  retirement_mode: auto\n# Guidance"), encoding="utf-8")
+            "  floor_fraction: 0.10\n  retirement_mode: proposal\n# Guidance"), encoding="utf-8")
         self.assertEqual(gates.load_gate_policy(legacy)["skills"]["retire_confidence"], 0.95)
         self.write("flat", FLAT[:5], FLAT_JUDGE)
         _, doc = self.run_gates("1.json", policy_file=legacy)

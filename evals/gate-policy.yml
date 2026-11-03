@@ -34,8 +34,10 @@
 # adam-agentskills that auto-merges with no human review) or `proposal` (an
 # issue is filed and a human removes). A missing or invalid value is
 # `proposal`. It is `auto` by Adam's 2026-10-26 decision (removal pull
-# requests auto-merge with no human; ADR 0014 and adam-agentskills ADR 0021);
-# set it to `proposal` to turn removal pull requests off. Even in `auto`,
+# requests auto-merge with no human; ADR 0014 and adam-agentskills ADR 0021).
+# Adam set both blocks to `proposal` on 2026-11-03 ("Resume, auto-removal
+# off") after a statistics review found the removal bound unreliable at small
+# run counts: removals are proposals for him until those fixes land. Even in `auto`,
 # scripts/retire_skill.py files the issue instead when plugin-runtime-review
 # would hold the removal or the scheduled workflow has no adam-agentskills
 # write token,
@@ -58,7 +60,7 @@ skills:
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
-  retirement_mode: auto
+  retirement_mode: proposal
 # Guidance sections (skills-evals#124): the same verdict over each section's
 # ablation pair (full vs full-minus-section), with the section-vs-none pair
 # read only for the `shorten-or-merge` outcome (harness/gates.py,
@@ -88,4 +90,4 @@ guidance:
   ceiling_fraction: 0.90
   judge_ceiling: 9.0
   floor_fraction: 0.10
-  retirement_mode: auto
+  retirement_mode: proposal

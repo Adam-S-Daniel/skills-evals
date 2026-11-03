@@ -976,10 +976,10 @@ class GuidanceVerdictTests(unittest.TestCase):
 
 class GuidancePolicyTests(unittest.TestCase):
 
-    def test_the_committed_policy_has_its_own_guidance_block_in_auto_mode(self):
+    def test_the_committed_policy_has_its_own_guidance_block_in_proposal_mode(self):
         policy = gates.load_gate_policy()
         self.assertIsNotNone(policy["guidance"])
-        self.assertEqual(policy["guidance"]["retirement_mode"], "auto")
+        self.assertEqual(policy["guidance"]["retirement_mode"], "proposal")
         self.assertEqual(set(policy["guidance"]), set(policy["skills"]))
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
@@ -1084,7 +1084,7 @@ class ComputeGuidanceTests(unittest.TestCase):
     def test_flat_runs_of_both_pairs_retire_the_section(self):
         self.write_runs()
         doc = self.compute()
-        self.assertEqual(doc["guidance_retirement_mode"], "auto")
+        self.assertEqual(doc["guidance_retirement_mode"], "proposal")
         verdict = doc["guidance"]["bravo"]
         self.assertEqual(verdict["verdict"], "retire", verdict["reason"])
         self.assertEqual(verdict["cells"][0]["with"]["runs"], 20)
