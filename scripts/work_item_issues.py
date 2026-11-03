@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
-"""Keep one issue per lost-fire work item the weekly sweep plans (Adam, 2026-11-03).
+"""Keep one issue per issue-routed work item the weekly sweep plans (Adam, 2026-11-03).
 
   work_item_issues.py --items FILE [--dry-run] [--run-url URL]
 
-`--items` is `{"routine_down": bool, "work": [...]}`, the weekly plan's
-`fixture-broken` and `routine-outage` work items (scripts/plan_week.py, EMPTY
-FIRES), which until now reached only the sweep's step summary. A cell is
-fixture-broken after two fires that delivered nothing; the planner already
-re-fires a lost fire once (PENDING_WINDOW), so an issue means the re-fire
-was lost too and the fixture, the routine or the harness needs a fix.
+`--items` is `{"routine_down": bool, "work": [...]}` plus, optionally,
+`"subjects": {"skills": [...], "guidance": [...]}`: the weekly plan's
+work items routed to an issue (scripts/plan_week.py) and the skills and
+guidance sections that plan judged. Until now they reached only the
+sweep's step summary.
+
+* `fixture-broken` and `routine-outage` (EMPTY FIRES): a cell is
+  fixture-broken after two fires that delivered nothing; the planner already
+  re-fires a lost fire once (PENDING_WINDOW), so an issue means the re-fire
+  was lost too and the fixture, the routine or the harness needs a fix.
+* `needs-fixtures` and `needs-harder-fixtures` (IMPROVE ELIGIBILITY,
+  skills-evals#659): a skill or guidance section the improve lane cannot
+  work on until it has more fixtures, or a fixture it fails. These are the
+  fixture writers' queue, so the issue is labeled `agent-ready` (the fleet
+  worker's issue pass, _agent-guidance docs/reference/agent-issue-worker.md).
 
 ONE ISSUE PER ITEM, in skills-evals, found by a marker line in its body:
-`<!-- skills-evals:fixture-broken:<fixture>:<model> -->` for a cell and
-`<!-- skills-evals:routine-outage:<sweep start> -->` for an outage. Only
-issues github-actions[bot] opened count (retire_skill.ISSUE_AUTHOR).
+`<!-- skills-evals:fixture-broken:<fixture>:<model> -->` for a cell,
+`<!-- skills-evals:routine-outage:<sweep start> -->` for an outage and
+`<!-- skills-evals:<kind>:<skill or guidance/section> -->` for a fixture
+need. Only issues github-actions[bot] opened count (retire_skill.ISSUE_AUTHOR).
 
   item listed, no open issue          create-issue
   item listed, open issue             none (the issue says what it needs)
@@ -21,11 +31,18 @@ issues github-actions[bot] opened count (retire_skill.ISSUE_AUTHOR).
                                       empty fires aged out and it is retried
   outage no longer listed, open       close-issue, unless the routine is
   issue                               still down
+  fixture need no longer listed,      close-issue when the plan judged that
+  open issue                          subject (`subjects`); a subject the plan
+                                      did not see (an input it lacked) keeps
+                                      its issue, so a partial plan never
+                                      closes and refiles the queue
 
 A failed `gh` call for one item is recorded and the others still run; the
 exit code is then 1. Exit 2 is bad input. `--dry-run` prints the plan as
 JSON and writes nothing. Issue bodies are public: the plan's items carry
-public fixture paths and model ids only (a private cell enters no band).
+public fixture paths and model ids only (a private cell enters no band), and
+a fixture need names only a skill whose fixtures all name adam-agentskills,
+or a guidance section.
 """
 
 from __future__ import annotations
@@ -42,8 +59,13 @@ import regression_issue  # noqa: E402
 import retire_skill  # noqa: E402
 
 EVALS_REPO = retire_skill.EVALS_REPO
-KINDS = ("fixture-broken", "routine-outage")
-_MARKER = re.compile(r"<!-- skills-evals:(fixture-broken|routine-outage):(\S+) -->")
+FIXTURE_NEEDS = ("needs-fixtures", "needs-harder-fixtures")
+KINDS = ("fixture-broken", "routine-outage", *FIXTURE_NEEDS)
+_MARKER = re.compile(r"<!-- skills-evals:(" + "|".join(KINDS) + r"):(\S+) -->")
+#: The label the fleet worker's issue pass works (agent-issue-worker.md).
+READY_LABEL = "agent-ready"
+_SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_SECTION = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _FIXTURE = re.compile(r"evals/[A-Za-z0-9._/-]{1,200}")
 _MODEL = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}|[a-z0-9][a-z0-9.-]{0,62}")
 _START = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
@@ -53,6 +75,18 @@ DOCS = "docs/how-it-works.md"
 
 def key_of(item: dict) -> str:
     """The item's marker id, after checking every field that reaches the body."""
+    if item.get("kind") in FIXTURE_NEEDS:
+        section, skill = item.get("section") or "", item.get("skill") or ""
+        count = item.get("fixtures")
+        if type(count) is not int or count < 0 or bool(section) == bool(skill):
+            raise ValueError(f"a {item['kind']} item names no one skill or section")
+        if section:
+            if not isinstance(section, str) or not _SECTION.fullmatch(section):
+                raise ValueError(f"a {item['kind']} item has no valid section")
+            return f"guidance/{section}"
+        if not isinstance(skill, str) or not _SKILL.fullmatch(skill):
+            raise ValueError(f"a {item['kind']} item has no valid skill")
+        return skill
     if item.get("kind") == "fixture-broken":
         fixture, model = item.get("fixture"), item.get("model")
         if not (isinstance(fixture, str) and _FIXTURE.fullmatch(fixture)
@@ -71,9 +105,55 @@ def marker(kind: str, key: str) -> str:
     return f"<!-- skills-evals:{kind}:{key} -->"
 
 
+def _headroom(item: dict) -> str:
+    value = item.get("headroom")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "unknown"
+    return f"{value:.2f}"
+
+
+def fixture_need_body(item: dict, key: str) -> tuple:
+    """(title, lines) of a needs-fixtures or needs-harder-fixtures issue."""
+    harder = item["kind"] == "needs-harder-fixtures"
+    section = key.startswith("guidance/")
+    name = key.split("/", 1)[1] if section else key
+    what = f"guidance section `{name}`" if section else f"skill `{name}`"
+    where = (f"`evals/guidance/{name}/<name>/fixture.yaml` (`subject: guidance`, "
+             f"`section: {name}`, declaring the `full` ablation arm)" if section else
+             f"`evals/{name}/<name>/fixture.yaml` (`skill: {name}`, naming "
+             "adam-agentskills, nested beside its other fixtures)")
+    title = (f"Needs a harder fixture: {what}" if harder
+             else f"Needs more fixtures: {what}").replace("`", "")
+    lines = [marker(item["kind"], key), ""]
+    if harder:
+        lines += [f"The improve lane cannot work on the {what}: it already passes "
+                  f"enough of its checks that no edit can show a gain (train headroom "
+                  f"{_headroom(item)}, under the 0.10 an edit must gain; "
+                  f"{item['fixtures']} fixture(s)). The next step is a fixture it FAILS: "
+                  "a realistic task where the subject's advice matters and an agent "
+                  "without it gets something checkably wrong."]
+    else:
+        lines += [f"The improve lane cannot work on the {what}: it has "
+                  f"{item['fixtures']} fixture(s), under the 4 an improve run needs "
+                  f"(one is held out), and train headroom {_headroom(item)}. "
+                  "Add fixtures until it has at least four."]
+    lines += ["", "What a fix PR adds, in this repository:",
+              f"- a new fixture at {where}, with objective checks that fail "
+              "without the subject's advice and pass with it;",
+              "- its path in `evals/scheduled.yml`, so the weekly sweep runs it;",
+              "- nothing under `harness/` or `scripts/`.",
+              "", "Use `Refs` for this issue in the pull request, not `Closes`: the "
+              "weekly sweep closes it once the plan stops listing this need, which "
+              "takes runs of the new fixture.",
+              "", f"The rule: `{DOCS}` and `scripts/plan_week.py`, IMPROVE ELIGIBILITY."]
+    return title, lines
+
+
 def body_of(item: dict, key: str, run_url: str | None) -> tuple:
     """(title, body) of a new issue."""
-    if item["kind"] == "fixture-broken":
+    if item["kind"] in FIXTURE_NEEDS:
+        title, lines = fixture_need_body(item, key)
+    elif item["kind"] == "fixture-broken":
         title = f"Fixture broken: {item['fixture']} on {item['model']}"
         lines = [marker("fixture-broken", key), "",
                  f"Two eval fires of `{item['fixture']}` on `{item['model']}` delivered "
@@ -115,10 +195,24 @@ def open_issues(issues: list) -> dict:
     return found
 
 
+def judged_subjects(items: dict) -> set:
+    """The marker keys of every skill and section the plan judged."""
+    subjects = items.get("subjects")
+    if subjects is None:
+        return set()
+    if not isinstance(subjects, dict) or any(
+            not isinstance(subjects.get(k, []), list)
+            or not all(isinstance(v, str) for v in subjects.get(k, []))
+            for k in ("skills", "guidance")):
+        raise ValueError("--items `subjects` is not {skills: [...], guidance: [...]}")
+    return set(subjects.get("skills", [])) | {f"guidance/{s}" for s in subjects.get("guidance", [])}
+
+
 def plan(items: dict, issues: list, run_url: str | None) -> list:
     if not isinstance(items, dict) or not isinstance(items.get("work"), list) \
             or not isinstance(items.get("routine_down"), bool):
         raise ValueError("--items is not {routine_down, work}")
+    judged = judged_subjects(items)
     listed = {}
     for item in items["work"]:
         if isinstance(item, dict) and item.get("kind") in KINDS:
@@ -141,9 +235,18 @@ def plan(items: dict, issues: list, run_url: str | None) -> list:
             actions.append({"kind": kind, "key": key, "issue": found["number"],
                             "action": "none", "reason": "the routine is still down"})
             continue
-        why = ("the routine is delivering again" if kind == "routine-outage" else
-               "the cell is no longer fixture-broken: it delivered, or its empty fires "
-               "aged out and it is being retried")
+        if kind in FIXTURE_NEEDS and key not in judged:
+            actions.append({"kind": kind, "key": key, "issue": found["number"],
+                            "action": "none", "reason": "the plan did not judge this subject"})
+            continue
+        if kind in FIXTURE_NEEDS:
+            why = ("the plan no longer lists this need: the subject has the fixtures "
+                   "and headroom it needed, or it is retiring, paused or out of scope")
+        elif kind == "routine-outage":
+            why = "the routine is delivering again"
+        else:
+            why = ("the cell is no longer fixture-broken: it delivered, or its empty fires "
+                   "aged out and it is being retried")
         actions.append({"kind": kind, "key": key, "issue": found["number"],
                         "action": "close-issue", "reason": why,
                         "comment": f"The weekly sweep no longer lists this: {why}. Closing."
@@ -154,8 +257,9 @@ def plan(items: dict, issues: list, run_url: str | None) -> list:
 def commands(action: dict) -> list:
     issue = str(action["issue"])
     if action["action"] == "create-issue":
+        label = ["--label", READY_LABEL] if action["kind"] in FIXTURE_NEEDS else []
         return [["gh", "issue", "create", "-R", EVALS_REPO, "--title", action["title"],
-                 "--body-file", "-"]]
+                 *label, "--body-file", "-"]]
     if action["action"] == "close-issue":
         return [["gh", "issue", "comment", issue, "-R", EVALS_REPO, "--body-file", "-"],
                 ["gh", "issue", "close", issue, "-R", EVALS_REPO, "--reason", "completed"]]
