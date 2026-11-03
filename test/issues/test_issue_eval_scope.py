@@ -137,8 +137,11 @@ def usage_doc(used: dict | None = None, *, cloud: bool = True) -> dict:
             for name, count in (used or {}).items()]
     doc = skill_usage.document(rows, NOW_DT, floor, sessions_scanned=1)
     if cloud:
-        skill_usage.add_rows(doc, [], skill_usage.digest_source(
-            floor, NOW_DT, 0, surface=skill_usage.SURFACE_CLOUD))
+        # One cloud use of an unrelated skill: the cloud surface is still
+        # recording (`skill_usage.still_counting`).
+        skill_usage.add_rows(doc, [skill_usage.digest_row(
+            "2026-10-26", "unrelated", None, "unknown:gone", 1, 1, skill_usage.SURFACE_CLOUD)],
+            skill_usage.digest_source(floor, NOW_DT, 1, surface=skill_usage.SURFACE_CLOUD))
     return doc
 
 
@@ -271,6 +274,13 @@ class ZeroUseTests(unittest.TestCase):
         self.assertEqual(self.paused(usage_doc({"beta": 3})),
                          ["evals/alpha/one", "evals/alpha/two"])
 
+    def test_no_pause_when_local_uses_stopped_being_recorded(self):
+        # Sessions scanned, but no use of ANY skill in the last two weeks:
+        # the recorder stopped, not every skill (#658).
+        doc = usage_doc()
+        doc["rows"] = [skill_usage.row("2026-W42", "skill", "beta", 3, 1)]
+        self.assertEqual(self.paused(doc), [])
+
     def test_a_used_skill_is_kept(self):
         self.assertEqual(self.paused(usage_doc({"alpha": 1, "beta": 1})), [])
 
@@ -283,7 +293,7 @@ class ZeroUseTests(unittest.TestCase):
         self.assertEqual(self.paused(doc), [])
 
     def test_a_local_only_plugin_skill_needs_only_the_local_surface(self):
-        doc = usage_doc(cloud=False)
+        doc = usage_doc({"beta": 1}, cloud=False)
         # Cloud is not counted: unknown for an ordinary skill ...
         self.assertEqual(self.paused(doc), [])
         # ... known for a skill of a local-only plugin.
@@ -381,11 +391,21 @@ class ApplyAndResumeTests(unittest.TestCase):
         self.assertEqual((self.root / "evals/unscheduled.yml").read_text(),
                          self.before["evals/unscheduled.yml"])
 
-    def test_zero_use_resumes_when_the_skill_is_used_and_stays_when_unknown(self):
+    def test_zero_use_resumes_when_use_becomes_unknown(self):
+        # #658: local skill uses stopped being recorded, so pauses made on
+        # those zeros must come back once the gap shows.
+        eval_scope.apply_plan(self.root, plan_for(self.root, explorer(), usage_doc({"zzz": 1})))
+        self.assertEqual(len(self.rows("evals/scope-auto.yml", "rows")), 2)
+        for usage in (None, usage_doc()):
+            plan = plan_for(self.root, explorer(), usage)
+            self.assertEqual(sorted(r["path"] for r in plan["resume"]),
+                             ["evals/alpha/one", "evals/alpha/two"])
+            self.assertEqual(plan["pause"], [])
+
+    def test_zero_use_resumes_when_the_skill_is_used(self):
         eval_scope.apply_plan(self.root, plan_for(self.root, explorer(), usage_doc({"zzz": 1})))
         self.assertEqual(sorted(r["rule"] for r in self.rows("evals/scope-auto.yml", "rows")),
                          ["zero-use", "zero-use"])
-        self.assertEqual(plan_for(self.root, explorer(), None)["resume"], [])
         plan = plan_for(self.root, explorer(), usage_doc({"alpha": 2}))
         self.assertEqual(sorted(r["path"] for r in plan["resume"]),
                          ["evals/alpha/one", "evals/alpha/two"])

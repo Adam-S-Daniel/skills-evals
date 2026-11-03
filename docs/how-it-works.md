@@ -771,11 +771,15 @@ The rules, in order:
 - **Zero use.** A skill with no use in the last 8 weeks
   (`skill_usage.zero_use`, local surface only for the two local-only plugins
   in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
-  unknown answer does nothing) has all its scheduled fixtures paused.
+  unknown answer does nothing) has all its scheduled fixtures paused. A
+  surface that recorded no use of any skill in the current or previous ISO
+  week (`skill_usage.still_counting`) reads as unknown, not zero: local skill
+  uses stopped being recorded on 2026-10-22 while sessions were still scanned
+  ([#658](https://github.com/Adam-S-Daniel/skills-evals/issues/658)).
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
-  the one recorded at the pause; a zero-use pause ends when `zero_use` is
-  false.
+  the one recorded at the pause; a zero-use pause ends when `zero_use` is no
+  longer true: the skill was used, or its use can no longer be known.
 
 A pause removes the path from `evals/scheduled.yml`, records it in
 `evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume

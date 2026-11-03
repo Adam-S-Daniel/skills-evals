@@ -861,6 +861,12 @@ class CloudUseTests(unittest.TestCase):
         return skill_usage.digest_row(week, name, None, "unknown:gone", n, 1,
                                       skill_usage.SURFACE_CLOUD)
 
+    @staticmethod
+    def local_row(name="workflow-path-audit"):
+        """A local use of another skill this week: the local surface is still
+        recording."""
+        return skill_usage.row("2026-W36", "skill", name, 1, 1)
+
     def test_weight_adds_cloud_digest_invocations(self):
         doc = self.doc([skill_usage.row("2026-W36", "skill", "finding-unknowns", 3, 1),
                         self.cloud_row(n=2)])
@@ -904,8 +910,26 @@ class CloudUseTests(unittest.TestCase):
         recent = self.doc(cloud_from=datetime(2026, 8, 17, tzinfo=timezone.utc))
         self.assertIsNone(skill_usage.zero_use(recent, "finding-unknowns", NOW))
 
+    def test_zero_use_is_unknown_when_a_surface_stopped_recording(self):
+        # #658: no use of any skill in the current or previous week.
+        old_local = skill_usage.row("2026-W34", "skill", "workflow-path-audit", 4, 1)
+        doc = self.doc([old_local, self.cloud_row(name="workflow-path-audit")])
+        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW,
+                                           surfaces=(skill_usage.SURFACE_CLOUD,)), True)
+
+    def test_still_counting_reads_the_current_and_previous_week(self):
+        local, cloud = skill_usage.SURFACE_LOCAL, skill_usage.SURFACE_CLOUD
+        previous = self.doc([skill_usage.row("2026-W35", "skill", "x", 1, 1)])
+        self.assertTrue(skill_usage.still_counting(previous, local, NOW))
+        self.assertFalse(skill_usage.still_counting(previous, cloud, NOW))
+        older = self.doc([skill_usage.row("2026-W34", "skill", "x", 1, 1)])
+        self.assertFalse(skill_usage.still_counting(older, local, NOW))
+        self.assertTrue(skill_usage.still_counting(self.doc([self.cloud_row()]), cloud, NOW))
+        self.assertFalse(skill_usage.still_counting(self.doc(), "other", NOW))
+
     def test_zero_use_true_when_covered_and_unused(self):
-        doc = self.doc([self.cloud_row(name="workflow-path-audit")])
+        doc = self.doc([self.cloud_row(name="workflow-path-audit"), self.local_row()])
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
 
     def test_zero_use_false_for_a_cloud_only_use(self):
@@ -913,7 +937,7 @@ class CloudUseTests(unittest.TestCase):
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
 
     def test_zero_use_local_surface_ignores_a_missing_cloud_source(self):
-        doc = self.doc(cloud_from=None)
+        doc = self.doc([self.local_row()], cloud_from=None)
         self.assertIs(skill_usage.zero_use(
             doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)), True)
 

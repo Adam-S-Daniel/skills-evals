@@ -17,11 +17,12 @@ Rules, each deterministic (thresholds are the constants below):
             gain. Paused.
   floor     the same run filter, both arms pass at most FLOOR_SHARE. Paused.
   zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
-            surfaces it reaches (`skill_usage.zero_use`; unknown means do
-            nothing). All of its scheduled fixtures are paused.
+            surfaces it reaches (`skill_usage.zero_use`; unknown, including
+            a surface that stopped recording uses, means do not pause). All
+            of its scheduled fixtures are paused.
   resume    a fixture this pass paused earlier returns when its content digest
             differs from the one recorded at the pause (ceiling, floor) or when
-            `zero_use` is False (zero-use).
+            `zero_use` is no longer True (zero-use): used, or unknown.
 
 Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures, and
 any evals/unscheduled.yml row this pass did not write (a human decision
@@ -291,9 +292,16 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
         elif rule == "zero-use" and subject_kind == "skill" and directory.is_dir():
             used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
-            if used is False:
+            # A zero-use pause holds only while zero use is known: resume it
+            # when the skill was used, and also when use can no longer be
+            # known (a stale census, or a surface that stopped recording),
+            # since the pause may rest on that missing data (#658).
+            if used is not True:
+                why = (f"the skill was used in the last {ZERO_USE_WEEKS} weeks" if used is False
+                       else "its use can no longer be known, so the pause may rest on "
+                            "missing data")
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
-                               "why": f"the skill was used in the last {ZERO_USE_WEEKS} weeks"})
+                               "why": why})
                 resumed.add(path)
 
     pause = []

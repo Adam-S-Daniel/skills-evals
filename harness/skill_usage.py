@@ -395,17 +395,52 @@ def counted_from(doc, surface: str) -> datetime | None:
     return None
 
 
+#: ISO weeks, ending with the current one, in which a surface must record at
+#: least one use of ANY skill to count as still recording. Two, because the
+#: current week is only partly over when the census is generated.
+COUNTING_WEEKS = 2
+
+
+def still_counting(doc, surface: str, now: datetime) -> bool:
+    """True when `doc` records a use of any skill on `surface` in the
+    COUNTING_WEEKS ISO weeks ending with `now`'s.
+
+    A surface that records no use of any skill for that long, while its
+    sessions are still scanned, has most likely stopped recording rather than
+    gone unused (skills-evals#658), so its zeros mean unknown. Local uses are
+    the `skill` rows; cloud uses are the cloud `skill-digest` rows, as in
+    `weight`.
+    """
+    if not isinstance(doc, dict) or not isinstance(doc.get("rows"), list):
+        return False
+    mondays = {week_monday(label) for label in window_weeks(now, COUNTING_WEEKS)}
+    if surface == SURFACE_LOCAL:
+        def counts(entry):
+            return entry.get("kind") == "skill"
+    elif surface == SURFACE_CLOUD:
+        def counts(entry):
+            return entry.get("kind") == DIGEST_KIND and entry.get("surface") == SURFACE_CLOUD
+    else:
+        return False
+    return any(isinstance(entry, dict) and counts(entry) and entry.get("week") in mondays
+               and _count(entry.get("invocations")) and entry["invocations"] > 0
+               for entry in doc["rows"])
+
+
 def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
              surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD)) -> bool | None:
     """True when `skill` had no use on any of `surfaces` over the `weeks`
-    window ending with `now`'s week; False when it had one; None when that
-    cannot be known.
+    window ending with `now`'s week; False when it had one (on any surface);
+    None when that cannot be known.
 
     This is the contract the eval-scope automation uses to stop evals on
     skills nobody uses. Unknown (None) when `doc` is None or stale, or when
     any surface in `surfaces` is not counted back to the window's start
     (`counted_from` is missing or later than the Monday of its earliest week):
-    a surface that was not yet counting must not read as zero. Pass only the
+    a surface that was not yet counting must not read as zero. Unknown, too,
+    when a surface has stopped recording uses (`still_counting`): local skill
+    uses stopped on 2026-10-22 while sessions kept being scanned
+    (skills-evals#658), and that gap must not read as zero either. Pass only the
     surfaces the skill actually reaches, for example `(SURFACE_LOCAL,)` for a
     plugin delivered only to the owner's machines. Cloud coverage means
     sessions that can push to the private usage store: records seen, never
@@ -413,14 +448,16 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
     """
     if doc is None or not is_fresh(doc, now):
         return None
+    used = weight(doc, skill, now, weeks)
+    if used:
+        return False  # a recorded use is known, whatever the coverage
     earliest = week_monday(window_weeks(now, weeks)[-1])
     start = datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc)
     for surface in surfaces:
         counted = counted_from(doc, surface)
-        if counted is None or counted > start:
+        if counted is None or counted > start or not still_counting(doc, surface, now):
             return None
-    used = weight(doc, skill, now, weeks)
-    return None if used is None else used == 0
+    return None if used is None else True
 
 
 def session_rate(doc, now: datetime, days: int = 28) -> float | None:
