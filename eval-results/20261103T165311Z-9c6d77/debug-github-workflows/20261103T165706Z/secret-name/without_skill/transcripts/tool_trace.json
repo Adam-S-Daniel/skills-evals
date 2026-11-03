@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lv3nvyTfy1oT1yMdxLXHR5",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -il \"release notes\" .github/workflows/*",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lv3nvyTfy1oT1yMdxLXHR5",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ndocs.yml\nrelease-notes.yml\n.github/workflows/release-notes.yml",
+      "output_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017gkTPCJnAhzSec8y6oVH5q",
+      "name": "Bash",
+      "input": "cat .github/workflows/release-notes.yml; ls; git log --oneline | head",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017gkTPCJnAhzSec8y6oVH5q",
+      "is_error": false,
+      "output": "name: Release notes\n\non:\n  release:\n    types: [published]\n\npermissions:\n  contents: read\n\njobs:\n  notes:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Publish release notes\n        env:\n          # The release bot's token...",
+      "output_chars": 697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V5xZXxcCK6VV664k8Pumoj",
+      "name": "Bash",
+      "input": "ls scripts bin; cat scripts/render_notes.py; head -30 CHANGES.md; gh run list --limit 3 2>&1 | head",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V5xZXxcCK6VV664k8Pumoj",
+      "is_error": false,
+      "output": "bin:\ngh\n\nscripts:\nrender_notes.py\n\"\"\"Print the CHANGES.md section for one tag.\"\"\"\n\nimport sys\nfrom pathlib import Path\n\n\ndef section(text, tag):\n    lines, keep = [], False\n    for line in text.splitlines():\n        if line.startswith(\"## \"):\n            keep = line[3:].strip() == tag\n            co...",
+      "output_chars": 898,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PJXTY26gTvnsfYoY4YNpwN",
+      "name": "Bash",
+      "input": "cat bin/gh | head -40; gh run list --limit 3 2>&1 | grep -E 'headBranch|conclusion|databaseId'; gh run view 43002 --log-failed 2>&1 | head -40",
+      "input_chars": 142,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PJXTY26gTvnsfYoY4YNpwN",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 3610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AuhV7dNjwMqceKECez8DCq",
+      "name": "Bash",
+      "input": "cat .github/workflows/docs.yml; grep -rn -i \"RELEASE_NOTES_TOKEN\\|secret\" README.md .github | head",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AuhV7dNjwMqceKECez8DCq",
+      "is_error": false,
+      "output": "name: Docs\n\non:\n  release:\n    types: [edited]\n\npermissions:\n  contents: read\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Build the site\n        run: python3 -m compileall -q scripts\n.github/workflows/rel...",
+      "output_chars": 372,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
