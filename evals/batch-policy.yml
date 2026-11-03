@@ -1,0 +1,40 @@
+# The two-week batch: the steady-state eval loop (scripts/plan_week.py,
+# "THE BATCH").
+#
+# Adam's goal (2026-11-02 18:57 UTC): at 25% of the weekly allowance, every
+# two weeks the planner picks a batch of skills and guidance sections
+# numbering about three times the historical weekly addition rate, brings
+# every one to a verdict, then starts the next batch. While a batch is open,
+# the missing, near, focus and guidance-rest bands measure its members only;
+# safety, re-checks, improvements and bare baselines are unchanged. A member
+# still open when the period ends is carried into the next batch first, and
+# a batch whose members have all finished early is replaced at once.
+#
+# Sizing (/mnt/project-files/loop/cohort-sizing-2026-11-02.md in the
+# project's files): the base cohort of 2 skills and 2 sections costs about
+# 40 points per two weeks with the guidance judge margin at 1.5, inside the
+# 50 points that 25% a week gives.
+#
+# plan_week.load_batch_policy validates it strictly: exactly these four
+# keys. A change here changes what the loop spends its allowance on: it
+# is Adam's.
+
+# The first batch starts at the first plan after this instant: the account's
+# weekly reset that ends the finish-week push (budget.yml's 1.00 cap), when
+# weekly_cap returns to 0.25.
+start: "2026-11-09T17:00:00Z"
+
+# Days from a batch's start to its due time. A batch whose members have all
+# finished is replaced before it is due.
+period_days: 14
+
+# Batch size per kind = max(1, round(multiplier x rate)), half rounded up.
+multiplier: 3
+
+# Historical additions per week, measured over the 8 weeks to 2026-11-02
+# (skills across the public registries, guidance `##` sections in
+# _agent-guidance's agents-md/base.md). Re-measure by hand: git history
+# here reads bulk moves (adam-agentskills' 2026-10-23 import) as additions.
+rates:
+  skill: 0.75
+  guidance: 0.5

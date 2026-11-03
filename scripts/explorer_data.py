@@ -899,7 +899,7 @@ QUEUE_BANDS = ("safety", "missing", "near", "focus", "recheck", "guidance-rest")
 
 
 def test_queue(cells: list, model_weights: dict, now,
-               guidance_policy: dict | None = None) -> dict:
+               guidance_policy: dict | None = None, batch: dict | None = None) -> dict:
     """{(kind, name): {"position", "band", "due"}} for every subject with a
     scheduled cell: `position` (1 = next) is the subject's first cell in the
     planner's eval bands, in `plan_week.allocate`'s order before the budget
@@ -911,11 +911,15 @@ def test_queue(cells: list, model_weights: dict, now,
     not a date. `guidance_policy` (the verdict document's) sets the levels
     the planner's guidance focus is normalized by; open removal pull
     requests are not read here, so a section whose removal is open can
-    still show a focus place the planner would not give it."""
+    still show a focus place the planner would not give it. `batch` is the
+    published batch record (plan_week.BATCH_RECORD), or None: with one, only
+    its members are queued in the bands the batch restricts, as the planner
+    does while it is open."""
     # The focus's blocking rule reads every cell of a section, held ones too.
     ctx = {"cells": cells, "model_weights": model_weights, "removal_prs": [],
            "guidance_policy": guidance_policy,
-           "reservation": 1.0, "overrun": 1.0, "points_per_usd": None}
+           "reservation": 1.0, "overrun": 1.0, "points_per_usd": None,
+           "batch": {"record": batch} if batch else None}
     cells = [c for c in cells if c.get("schedulable", True)]
     bands, _work = plan_week.eval_items(ctx, now)
 
@@ -1105,8 +1109,12 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     queue, cells = {}, []
     if (evals_dir / "scheduled.yml").is_file():
         cells = plan_week.eval_cells(evals_dir, gates_doc, [], now)
+        try:
+            batch = plan_week.read_batch(tree)
+        except plan_week.PlanError:
+            batch = None  # the planner stops on it; the page shows the unbatched queue
         queue = test_queue(cells, plan_week.model_weights(tree, gates_doc["roster_models"]), now,
-                           gates_doc.get("guidance_policy"))
+                           gates_doc.get("guidance_policy"), batch)
     counts, usage_window = usage_counts(tree)
     unqueued = {"position": None, "band": None, "due": None, "scheduled": False}
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
