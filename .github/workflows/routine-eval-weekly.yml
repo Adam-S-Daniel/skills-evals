@@ -259,16 +259,23 @@ jobs:
           path: ${{ runner.temp }}/improve-ranking.json
           retention-days: 30
           if-no-files-found: error
-      # Lost-fire work items (fixture-broken cells, routine outages) for the
-      # work-issues job. Public by construction: a private cell enters no
-      # band, so it is never fixture-broken, and an outage names no fixture.
-      - name: Extract the lost-fire work items
+      # Issue-routed work items for the work-issues job: lost fires
+      # (fixture-broken cells, routine outages) and fixture needs
+      # (needs-fixtures, needs-harder-fixtures, #659), plus the skills and
+      # sections whose headroom the plan measured, the only ones whose
+      # fixture-need issue may close. Public by construction: a private cell
+      # enters no band, an outage names no fixture, and a fixture need names
+      # only an adam-agentskills skill or a guidance section.
+      - name: Extract the issue-routed work items
         run: |
           set -euo pipefail
           jq '{routine_down: (.routine_down == true),
-               work: [.work[] | select(.kind == "fixture-broken" or .kind == "routine-outage")]}' \
+               subjects: {skills: [(.skills // {}) | to_entries[] | select(.value.headroom != null) | .key],
+                          guidance: [(.guidance // {}) | to_entries[] | select(.value.headroom != null) | .key]},
+               work: [.work[] | select(.kind == "fixture-broken" or .kind == "routine-outage"
+                                       or .kind == "needs-fixtures" or .kind == "needs-harder-fixtures")]}' \
             "$RUNNER_TEMP/plan.json" > "$RUNNER_TEMP/work-items.json"
-      - name: Upload the lost-fire work items
+      - name: Upload the issue-routed work items
         uses: actions/upload-artifact@v7.0.2
         with:
           name: work-items
@@ -286,8 +293,9 @@ jobs:
 
   # LOST FIRES (Adam, 2026-11-03: "addressed so in the future it won't
   # require special detection and intervention"): one issue per
-  # fixture-broken cell and routine outage the plan lists, closed when the
-  # plan stops listing it (scripts/work_item_issues.py). The planner has
+  # fixture-broken cell and routine outage the plan lists, and one
+  # `agent-ready` issue per fixture need (#659), closed when the plan stops
+  # listing it (scripts/work_item_issues.py). The planner has
   # already re-fired a lost fire once, so an issue means a second loss.
   work-issues:
     needs: plan
@@ -309,7 +317,7 @@ jobs:
           python-version: "3.12"
       - name: Install the pins regression_issue.py's imports need
         run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
-      - name: Download the lost-fire work items
+      - name: Download the issue-routed work items
         uses: actions/download-artifact@v8.0.2
         with:
           name: work-items
