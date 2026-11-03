@@ -1,6 +1,6 @@
 {
   "color": "yellow",
   "label": "guidance eval: data-exposure-in-ci/http-error-body",
-  "message": "with 3/3 vs without 2.7/3 \u00b7 n=3 \u00b7 2026-11-03",
+  "message": "with 3/3 vs without 2.5/3 \u00b7 n=4 \u00b7 2026-11-03",
   "schemaVersion": 1
 }
