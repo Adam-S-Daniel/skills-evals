@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T00:17:39Z",
+ "generated_at": "2026-11-03T00:22:30Z",
  "guidance": {
   "removed": [
    {
@@ -2181,7 +2181,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T23:59:31Z",
+ "newest_run": "2026-11-03T00:20:27Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -2291,7 +2291,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2400,7 +2400,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -2598,7 +2598,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2649,7 +2649,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2700,7 +2700,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4134,7 +4134,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -5639,17 +5639,39 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
    "name": "post-failure-comment",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
-   "runs": [],
+   "runs": [
+    {
+     "at": "2026-11-03T00:20:27Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T001844Z-fb5768/post-failure-comment/20261103T002027Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 12,
+      "cost_usd": 0.193439,
+      "judge_mean": 5.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 9,
+      "checks_total": 12,
+      "cost_usd": 0.1310487,
+      "judge_mean": 5.1,
+      "trials": 1
+     }
+    }
+   ],
    "skip_reason": null,
    "stakes": {
     "level": "normal"
@@ -5658,8 +5680,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": null,
-   "verdict_reason": null
+   "verdict": "insufficient",
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": null,
@@ -5775,7 +5797,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6099,7 +6121,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6460,7 +6482,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -8503,7 +8525,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a1434e98db4fb3db37789740ff92e34d96d99279",
-  "results_commit": "4cad0112b504ad1cc96276196a9bf2c27f5433c0"
+  "results_commit": "3a041a60b94b364fefce041299997de310b73ac5"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
