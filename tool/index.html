@@ -193,7 +193,9 @@ const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Adam-S-Daniel/skills-
 const TIME_ZONE = 'America/New_York';
 
 const pts = (x) => Math.round(Math.abs(x) * 100);
-const KEEP_AT = '85%', REMOVE_AT = '95%';
+/* The keep and removal levels when the data carries no policy; the page
+   shows the data's own `policy.benefit_confidence` and `retire_confidence`. */
+const KEEP_AT = 0.85, REMOVE_AT = 0.90;
 const ordinal = (n) => { const t = n % 100, u = n % 10;
   return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
 /* A level in [0, 1) as a whole percent, never rounded up to a certainty. */
@@ -290,8 +292,8 @@ const STRINGS = {
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
   stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
-  confidence: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
-  confidenceSection: (helps, noHelp, margin) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + KEEP_AT + ' and removes one at ' + REMOVE_AT + '.',
+  confidence: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + keepAt + ' and removes one at ' + removeAt + '.',
+  confidenceSection: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + keepAt + ' and removes one at ' + removeAt + '.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
@@ -1052,8 +1054,10 @@ function confidenceLine(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps) || !ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
+  const level = (key, fallback) => Math.round((policy && ok(policy[key]) ? policy[key] : fallback) * 100) + '%';
   const f = subject === 'guidance' ? STRINGS.confidenceSection : STRINGS.confidence;
-  return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin));
+  return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin,
+    level('benefit_confidence', KEEP_AT), level('retire_confidence', REMOVE_AT)));
 }
 
 function usageLine(u, window, refMs) {
