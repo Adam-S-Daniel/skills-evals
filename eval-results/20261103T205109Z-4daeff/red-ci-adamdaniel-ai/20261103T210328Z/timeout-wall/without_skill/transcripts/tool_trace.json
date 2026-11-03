@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015Rt5LsZ4MEPASZ8ojHKHF5",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -n \"\" .github/workflows/*.yml | grep -nE \"name:|timeout|concurrency|cancel|group|on:|test\" | head -80",
+      "input_chars": 155,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015Rt5LsZ4MEPASZ8ojHKHF5",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nls: cannot access '.github/workflows': No such file or directory\ngrep: .github/workflows/*.yml: No such file or directory",
+      "output_chars": 250,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hx8ctYCnPojZoi8XxfnKUo",
+      "name": "Bash",
+      "input": "git ls-files | head -50; find . -path ./.git -prune -o \\( -name \"*.yml\" -o -name \"*.yaml\" \\) -print | head -30",
+      "input_chars": 110,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hx8ctYCnPojZoi8XxfnKUo",
+      "is_error": false,
+      "output": "README.md\nworkflows/ci.yml\n./workflows/ci.yml",
+      "output_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XnncS1yj88wbkk5Q79w3Kw",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml README.md",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XnncS1yj88wbkk5Q79w3Kw",
+      "is_error": false,
+      "output": "name: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo \"slow end-to-end suite\"\n# example-site\n`test` is the required status check. Its end-to-end suite sometimes passes the\n10 minute wall and the check then shows `cancelled`, which ...",
+      "output_chars": 317,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012fkrB1uiBM8Ne4X7j2vx8C",
+      "name": "Bash",
+      "input": "cat > workflows/ci.yml <<'EOF'\nname: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    # Backstop only. A job-level timeout reports `cancelled`, which blocks the\n    # merge; the ste...",
+      "input_chars": 406,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012fkrB1uiBM8Ne4X7j2vx8C",
+      "is_error": false,
+      "output": " workflows/ci.yml | 8 ++++++--\n 1 file changed, 6 insertions(+), 2 deletions(-)",
+      "output_chars": 79,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
