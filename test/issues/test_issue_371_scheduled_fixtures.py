@@ -201,7 +201,14 @@ def scheduled() -> list[dict]:
     `scaffold_real_work.py promote` appended (its readiness note starts
     "Promoted automatically") is a real-work or other draft promoted after
     clean runs; test_issue_scheduled_fixtures.py checks those."""
-    return [row for row in yaml.safe_load(SCHEDULE.read_text(encoding="utf-8"))["fixtures"]
+    rows = yaml.safe_load(SCHEDULE.read_text(encoding="utf-8"))["fixtures"]
+    # A fixture the eval scope pass paused (evals/scope-auto.yml keeps its
+    # readiness note) is still one of these: it comes back by rule, so its
+    # recorded figures must keep holding while it is off the schedule.
+    auto = yaml.safe_load((ROOT / "evals/scope-auto.yml").read_text(encoding="utf-8")) or {}
+    rows = rows + [{"path": row["path"], "readiness": row["readiness"]}
+                   for row in auto.get("rows") or []]
+    return [row for row in rows
             if not row["readiness"].startswith("Promoted automatically")]
 
 
