@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T22:42:04Z",
+  "generated_at": "2026-11-03T22:44:22Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T22:40:50Z",
+ "generated_at": "2026-11-03T22:43:23Z",
  "guidance": {
   "removed": [
    {
@@ -10094,7 +10094,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T22:37:59Z",
+ "newest_run": "2026-11-03T22:40:29Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10446,7 +10446,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13875,17 +13875,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 7,
+   "current_text_runs": 8,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:40:29Z",
+     "cli_version": "2.1.317",
+     "fixture": "single-file",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T223608Z-e88775/fan-out-triage/20261103T224029Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1683087,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 6,
+      "cost_usd": 0.1112848,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:37:59Z",
      "cli_version": "2.1.317",
@@ -14915,7 +14936,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 27,
+   "current_text_runs": 28,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -19288,7 +19309,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20365,7 +20386,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -22132,7 +22153,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
-  "results_commit": "dd1387ba87ae796b84c5ca87861b30e1481e5989"
+  "results_commit": "7cff71368eee644c1002141bdcc9ce61ef0bafde"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
