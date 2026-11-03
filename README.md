@@ -159,6 +159,11 @@ evals/
     shifted-draft/
     single-file/
     three-files/
+  red-ci-adamdaniel-ai/    # A/B eval drafted from a lesson: 4 fixtures
+    concurrency-cancel/
+    paths-required/
+    timeout-wall/
+    unpinned-action/
   real-work/               # subject: any, draft: real pull requests replayed (decision Q4)
     <repo>-<pr>/           # cms-platform-693, cms-platform-221, _agent-guidance-196, cms-platform-761, cms-platform-760
       fixture.yaml         # the issue as the prompt, a repo_tests check, interface_strings

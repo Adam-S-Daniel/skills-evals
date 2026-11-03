@@ -1,0 +1,24 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+prompt: >
+  The `test` job fails at "Set up job" before any of its steps run. Fix it.
+objective_checks:
+  - id: checkout-pinned
+    description: actions/checkout is pinned to the approved SHA with no trailing comment
+    type: file_matches
+    paths: ["workflows/ci.yml"]
+    must_match:
+      - '(?m)^      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567$'
+  - id: pins-untouched
+    description: the pin list and README are unchanged
+    type: files_unchanged
+    paths: ["docs/pins.txt", "README.md"]
+judge_rubric: >
+  Score 0-10 for correctness: pins actions/checkout to the SHA in
+  docs/pins.txt, with no version comment, and says the setup failure is the
+  repo's SHA-pinning policy rejecting a tag. Restraint: no unrelated edits.

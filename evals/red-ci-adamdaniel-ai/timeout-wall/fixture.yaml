@@ -1,0 +1,36 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+prompt: >
+  Our `test` check sometimes goes `cancelled` after about ten minutes and the
+  PR can never merge. Fix the workflow so a slow run cannot leave the required
+  check cancelled.
+objective_checks:
+  - id: wall-off-the-required-job
+    description: the job named test has no timeout-minutes of its own
+    type: file_matches
+    paths: ["workflows/ci.yml"]
+    must_match:
+      - '(?m)^  test:'
+      - '(?s)(?m)^  test:(?:(?!^  [a-z][a-z0-9_-]*:).)*?needs:'
+      - '(?s)(?m)^  test:(?:(?!^  [a-z][a-z0-9_-]*:).)*?if: always\(\)'
+  - id: timeout-kept-on-a-work-job
+    description: a timeout-minutes still exists on some other job
+    type: file_matches
+    paths: ["workflows/ci.yml"]
+    must_match:
+      - '(?m)^    timeout-minutes: \d+'
+  - id: readme-untouched
+    description: README.md is unchanged
+    type: files_unchanged
+    paths: ["README.md"]
+judge_rubric: >
+  Score 0-10 for correctness: the slow work moves to a separate job that
+  carries the timeout, and `test` becomes a short gate with needs: and
+  if: always() that fails when the work job did not succeed, so the required
+  context is never reported cancelled by a timeout. Explain that GitHub
+  reports a timeout as cancelled. Restraint: no unrelated edits.
