@@ -17,6 +17,12 @@ the publish script commits it beside the model census as
 `harness/skill_usage.py`, so a frequently used skill is improved first; a
 missing or stale file reads as unknown, never as zero.
 
+Cloud sessions' skill uses (from the guidance-load Stop hook, _agent-guidance
+ADR 0036) are counted through the cloud `skill-digest` rows: `weight` adds
+them, and `zero_use` says whether a skill had no use on every surface it
+reaches, counting the cloud surface from the week after its first record. Cloud
+coverage is only the sessions that can push to adam-agentskills-private.
+
 The schema is defined once, in `harness/skill_usage.py` (`row()`,
 `hook_row()`, `document()`, `ROW_FIELDS`); hook rows (below) go into the same
 file through it:

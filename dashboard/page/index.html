@@ -72,6 +72,7 @@
     <button class="pd-tab" role="tab" id="tab-overview" data-page="overview">Overview</button>
     <button class="pd-tab" role="tab" id="tab-loop" data-page="loop">Self-improvement loop</button>
     <button class="pd-tab" role="tab" id="tab-impact" data-page="impact">Real-work impact</button>
+    <button class="pd-tab" role="tab" id="tab-costbenefit" data-page="costbenefit">Cost and benefit</button>
     <button class="pd-tab" role="tab" id="tab-evals" data-page="evals">Test results</button>
     <button class="pd-tab" role="tab" id="tab-cleanup" data-page="cleanup">Cleanup</button>
     <button class="pd-tab" role="tab" id="tab-work" data-page="work">PRs and issues</button>
@@ -279,6 +280,41 @@
       <div class="pd-scroll">
         <table class="pd-table" id="tbl-impact-sources" data-source="usage_sources" data-row-key="key">
           <thead><tr><th data-field="file">File</th><th data-field="surface">Where</th><th data-field="scope">Scope</th><th data-field="from">From</th><th data-field="to">To</th><th class="num" data-field="scanned">Read</th><th data-field="generated_at">Made</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- COST AND BENEFIT -->
+  <section class="pd-page" id="costbenefit" data-page-id="costbenefit" hidden>
+    <div class="pd-card" id="card-costbenefit-summary">
+      <h2>What the eval system costs and what it gives back</h2>
+      <p class="pd-note">Weeks run Monday 5 PM UTC to the next Monday, when your account's usage resets. Dollars are API-equivalent, not what you pay. Points are your account's usage meter. Project threads counts every thread in the project, not only the eval system's own work, and it misses scheduled-task sessions (routines and watch passes). Points per dollar is worked out from your account meter, so it is an upper bound.</p>
+      <div class="pd-tiles" id="costbenefit-tiles">
+        <div class="pd-tile"><span class="pd-tile-label">Cost per decided verdict</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="cost_per_verdict">—</span><span class="pd-tile-note" data-source="costbenefit_tiles" data-field="cost_per_verdict_note">—</span></div>
+        <div class="pd-tile"><span class="pd-tile-label">Decision yield</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="decision_yield">—</span><span class="pd-tile-note">loop changes merged, out of decided verdicts</span></div>
+        <div class="pd-tile"><span class="pd-tile-label">Real-work reach</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="real_work_reach">—</span><span class="pd-tile-note">uses of changed skills and guidance, latest complete week</span></div>
+        <div class="pd-tile"><span class="pd-tile-label">Project-thread points</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="build_points">—</span><span class="pd-tile-note">latest complete week</span></div>
+      </div>
+    </div>
+
+    <div class="pd-card" id="card-costbenefit-bar">
+      <h2>The Dec 15 bar</h2>
+      <div class="pd-scroll">
+        <table class="pd-table" id="tbl-costbenefit-bar" data-source="cost_benefit_summary" data-row-key="key">
+          <thead><tr><th data-field="label">Measure</th><th class="num" data-field="value">Value</th><th data-field="target">Target</th><th data-field="status">Status</th><th data-field="note">Note</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="pd-card" id="card-costbenefit-weeks">
+      <h2>By week, newest first</h2>
+      <p class="pd-note">* estimated from session totals, not measured between samples</p>
+      <div class="pd-scroll">
+        <table class="pd-table" id="tbl-costbenefit-weeks" data-source="cost_benefit_weeks" data-row-key="week">
+          <thead><tr><th data-field="week">Week</th><th class="num" data-field="run_count">Eval runs</th><th class="num" data-field="run_points_est">Run points</th><th class="num" data-field="api_usd">API $</th><th class="num" data-field="build_usd">Project threads $</th><th class="num" data-field="build_points">Project-thread points</th><th class="num" data-field="changes">Changes</th><th class="num" data-field="real_work_reach">Real-work reach</th><th class="num" data-field="owner_messages">Your messages</th><th class="num" data-field="decisions">Decisions</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -511,7 +547,7 @@
 // dashboard/build.py writes one placeholder row (key field "none") instead of an empty
 // list, because an empty dataset reads as "failed to load". Calcs and tables never see them.
 (() => {
-  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key' };
+  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
   const real = (id, rows) => (PH[id] && Array.isArray(rows) ? rows.filter((r) => r[PH[id]] !== 'none') : rows);
   try {
     const calc = dash.calc.bind(dash);
@@ -785,6 +821,21 @@ dash.calc('usage_summary', {
       hook_blocked: d3.sum(runs, (r) => r.blocked || 0),
       hook_runs_local: d3.sum(runs.filter((r) => r.kind === 'hook_all'), (r) => r.invocations || 0),
       weeks: weeks.length, latest_week: weeks.length ? weeks[weeks.length - 1] : null }];
+  },
+});
+dash.calc('costbenefit_tiles', {
+  title: 'Cost and benefit tiles',
+  description: 'The four headline numbers of the Cost and benefit tab, as text.',
+  inputs: ['cost_benefit_summary'],
+  fn: (summary) => {
+    const by = Object.fromEntries(summary.map((r) => [r.key, r]));
+    const num = (v, f) => (v == null ? '—' : f(v));
+    const latest = (by.bar_build || {}).value;
+    return [{ cost_per_verdict: num((by.cost_per_verdict || {}).value, d3.format('$,.2f')),
+      cost_per_verdict_note: (by.cost_per_verdict || {}).note || '—',
+      decision_yield: (by.decision_yield || {}).value ?? '—',
+      real_work_reach: num((by.real_work_reach || {}).value, d3.format(',')),
+      build_points: num(latest, d3.format(',.1f')) }];
   },
 });
 dash.calc('headline', {
@@ -1181,6 +1232,16 @@ dash.calc('new_runs', {
     const tr = e.target.closest('tr[data-key]');
     if (tr) dash.setParams({ orepo: dash.params().orepo === tr.dataset.key ? '' : tr.dataset.key });
   });
+  const drawCostBenefit = () => {
+    const money = (v) => (v == null ? '—' : d3.format('$,.2f')(v));
+    const dec = (v) => (v == null ? '—' : d3.format(',.2f')(v));
+    renderTable('tbl-costbenefit-bar', 'cost_benefit_summary', [{ field: 'label' }, { field: 'value', num: true, fmt: (v) => (v == null ? '—' : typeof v === 'number' ? d3.format(',')(v) : v) }, { field: 'target' }, { field: 'status', pill: true }, { field: 'note' }], (r) => r.key);
+    renderTable('tbl-costbenefit-weeks', 'cost_benefit_weeks', [
+      { field: 'week' }, { field: 'run_count', num: true }, { field: 'run_points_est', num: true, fmt: dec }, { field: 'api_usd', num: true, fmt: money },
+      { field: 'build_usd', num: true, fmt: (v, r) => money(v) + (r.build_estimated ? '*' : '') }, { field: 'build_points', num: true, fmt: dec },
+      { field: 'changes', num: true }, { field: 'real_work_reach', num: true }, { field: 'owner_messages', num: true }, { field: 'decisions', num: true },
+    ], (r) => r.week, { sort: { field: 'week', dir: 'desc' } });
+  };
   const drawImpact = () => {
     const page = document.getElementById('impact');
     if (page.hidden) return;
@@ -1238,6 +1299,7 @@ dash.calc('new_runs', {
   function draw() {
     drawImpact();
     fillMarks();
+    drawCostBenefit();
     drawMeters();
     drawDumbbell();
     drawTrend();

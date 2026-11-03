@@ -15,4 +15,40 @@
 # the fixture.
 fixtures:
   - path: evals/browser-testing
-    reason: "Adam's 2026-10-26 decision is to skip browser-testing (scaffold_real_work.py NEVER_PROMOTE), and an in-place plan cannot resolve its skill: it is neither adopted by the pinned context nor in a registry checkout (skill_not_found), so no budget can be measured."
+    reason: "Adam's 2026-10-26 decision is to skip browser-testing (scaffold_real_work.py NEVER_PROMOTE), and an in-place plan cannot resolve its skill: it is neither adopted by the pinned context nor in a registry checkout (skill_not_found), so no budget can be measured. Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+  - path: evals/workflow-path-audit/required-check-routing
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/admin-config-render
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+  - path: evals/code-quality
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+  - path: evals/ci-watcher-loops
+    reason: "Scope decision 2026-11-03: paused; current fixture cannot show a 0.15 gain (both arms at ceiling or both at floor). Reschedule with a fixture whose without arm scores <= 0.85."
+  - path: evals/editorial-label-audit
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+  - path: evals/adam-writing-style/proposal-bio
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+  - path: evals/adam-writing-style/recruiter-reply
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+  - path: evals/adam-writing-style/self-appraisal-opening
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+  - path: evals/finding-unknowns
+    reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
+  - path: evals/review-bash-ci-reliability/empty-repo-discovery
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/skills-doctor/one-row-rejects-the-lock
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/skills-doctor/ssh-remote-is-durable
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/workflow-path-audit/moved-test-dir
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/writing-adrs/supersede
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/writing-adrs/why-no-comment-trail
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/red-ci-adamdaniel-ai/concurrency-cancel
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/red-ci-adamdaniel-ai/unpinned-action
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+  - path: evals/tool-powershell/whatever-works-pressure
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."

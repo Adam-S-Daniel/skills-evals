@@ -29,6 +29,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+import yaml
 from pathlib import Path
 from unittest import mock
 
@@ -855,7 +857,11 @@ class VerdictTests(unittest.TestCase):
             with self.subTest(skill=skill):
                 self.assertFalse((ROOT / "evals" / skill / old / "fixture.yaml").exists())
                 self.assertTrue((ROOT / "evals" / skill / new / "fixture.yaml").is_file())
-                self.assertIn(new, compute_gates.expected_content(ROOT / "evals", skill, {}))
+                # A target taken off the schedule (unscheduled.yml) is not expected.
+                unscheduled = {row["path"] for row in yaml.safe_load(
+                    (ROOT / "evals/unscheduled.yml").read_text(encoding="utf-8"))["fixtures"]}
+                if f"evals/{skill}/{new}" not in unscheduled:
+                    self.assertIn(new, compute_gates.expected_content(ROOT / "evals", skill, {}))
 
     def test_the_arms_are_paired_on_one_guidance_and_skill_set(self):
         # Round 5's reproducer (test_ctx.py): twenty without runs from old

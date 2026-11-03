@@ -52,6 +52,28 @@
   "staleAfterHours": 168,
   "title": "Cleanup list C1 to C15"
  },
+ "cost_benefit_summary": {
+  "description": "Cost per decided verdict, decision yield, real-work reach, the Dec 15 bar and the points-per-dollar rate used. Built by Claude with the weekly rows.",
+  "schedule": "Updated by Claude on every refresh",
+  "source": {
+   "kind": "file",
+   "name": "cost_benefit_summary.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 48,
+  "title": "Cost and benefit, summary"
+ },
+ "cost_benefit_weeks": {
+  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, your messages and decisions. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
+  "schedule": "Updated by Claude on every refresh",
+  "source": {
+   "kind": "file",
+   "name": "cost_benefit_weeks.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 48,
+  "title": "Cost and benefit, by week"
+ },
  "decisions": {
   "description": "Decisions you made in this project, from project memory and the records they landed in.",
   "schedule": "Updated by Claude on request",

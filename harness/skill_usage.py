@@ -86,7 +86,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from timeweeks import parse_ts, week_monday, window_weeks
@@ -345,6 +345,12 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     """Invocations of `skill` over the `weeks` ISO weeks ending with `now`'s,
     summed across every surface and repo.
 
+    Local uses come from the `skill` rows. Cloud uses come from the cloud
+    `skill-digest` rows, because no cloud `skill` rows are written. There is no
+    double count: the census counts a use whose id was also seen locally once,
+    as local, so a cloud digest row never repeats a local use, and local
+    `skill-digest` rows (which would repeat the `skill` rows) are never added.
+
     None when `doc` is None or stale (unknown); 0 when a fresh census has no
     row for it.
     """
@@ -352,9 +358,69 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
         return None
     mondays = {week_monday(label) for label in window_weeks(now, weeks)}
     return sum(entry["invocations"] for entry in doc["rows"]
-               if isinstance(entry, dict) and entry.get("kind") == "skill"
+               if isinstance(entry, dict)
+               and (entry.get("kind") == "skill"
+                    or (entry.get("kind") == DIGEST_KIND
+                        and entry.get("surface") == SURFACE_CLOUD))
                and entry.get("name") == skill and entry.get("week") in mondays
                and _count(entry.get("invocations")))
+
+
+def counted_from(doc, surface: str) -> datetime | None:
+    """The first moment from which `doc` counts skill uses on `surface`.
+
+    Local: the `from` of the local `transcripts` source, the start of the
+    census window. Cloud: the `from` of the cloud `skill-records` source plus
+    7 days. That `from` is the Monday of the week of the earliest cloud record,
+    and the records started mid-week (the hook was new), so that first week is
+    only partly covered; counting from the next week is the conservative
+    reading.
+
+    None when the source is missing, its `from` is unparseable, or `surface`
+    is neither.
+    """
+    if not isinstance(doc, dict):
+        return None
+    if surface == SURFACE_LOCAL:
+        scope, extra = "transcripts", timedelta(0)
+    elif surface == SURFACE_CLOUD:
+        scope, extra = DIGEST_SCOPE, timedelta(days=7)
+    else:
+        return None
+    for source in doc.get("sources") or []:
+        if (isinstance(source, dict) and source.get("scope") == scope
+                and source.get("surface") == surface):
+            start = parse_ts(source.get("from"))
+            return None if start is None else start + extra
+    return None
+
+
+def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
+             surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD)) -> bool | None:
+    """True when `skill` had no use on any of `surfaces` over the `weeks`
+    window ending with `now`'s week; False when it had one; None when that
+    cannot be known.
+
+    This is the contract the eval-scope automation uses to stop evals on
+    skills nobody uses. Unknown (None) when `doc` is None or stale, or when
+    any surface in `surfaces` is not counted back to the window's start
+    (`counted_from` is missing or later than the Monday of its earliest week):
+    a surface that was not yet counting must not read as zero. Pass only the
+    surfaces the skill actually reaches, for example `(SURFACE_LOCAL,)` for a
+    plugin delivered only to the owner's machines. Cloud coverage means
+    sessions that can push to the private usage store: records seen, never
+    complete.
+    """
+    if doc is None or not is_fresh(doc, now):
+        return None
+    earliest = week_monday(window_weeks(now, weeks)[-1])
+    start = datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc)
+    for surface in surfaces:
+        counted = counted_from(doc, surface)
+        if counted is None or counted > start:
+            return None
+    used = weight(doc, skill, now, weeks)
+    return None if used is None else used == 0
 
 
 def session_rate(doc, now: datetime, days: int = 28) -> float | None:
