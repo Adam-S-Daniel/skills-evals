@@ -28,7 +28,15 @@ digest comes from the `--guidance` checkout (harness/guidance.py
 `guidance:` block in the policy, the document gains `guidance` (a verdict
 per section seen, harness/gates.py `guidance_verdict`) and
 `guidance_retirement_mode`, and one section at most retires per
-evaluation, apart from the one skill.
+evaluation, apart from the one skill. An in-situ cell is decided on the
+runs made beside the rest of the guidance on main: the `--guidance`
+checkout's `rest` digest (`expected_guidance`'s `rest_digest`).
+
+THE BET PRIOR. Each kind (skills; guidance in-situ) learns the betting
+bound's starting bet from its other subjects (harness/gates.py
+`paired_history`, `prior_from_history`): a cell bets from the pairs of
+other subjects stamped before the Monday of its first pair, and records
+that prior's version (harness/gates.py, THE BET PRIOR).
 
 THE CONTENT ON MAIN. Each skill's fixtures are enumerated from `--evals-dir`
 (`run_eval.resolve_fixture_dirs`: `<skill>/fixture.yaml`, or every
@@ -50,8 +58,9 @@ whose role is `with` or `without` (the summary's `role`, else
 run_eval writes (`gates.trial_record`), are numbered 1 to n and agree with
 the arm summary's `n` and `errors` (one trial and no trial files is `n` 1),
 and whose `report.md` exists.
-Everything else is counted under `skipped` by reason. The arms are
-independent samples (harness/gates.py), so an arm run needs no partner. Runs
+Everything else is counted under `skipped` by reason. An arm run is
+validated on its own; harness/gates.py pairs the two arms of one fire by
+timestamp, and a run left without a partner is listed there, not used. Runs
 under `results/` and `routine-results/` count alike: the gate guards against
 honest mistakes, not forged results, since anyone who can write the results
 can also remove a skill. The tree is data: it is read, never executed; NaN
@@ -586,21 +595,23 @@ def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
 
 
 def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) -> dict:
-    """{fixture name: {"fixture_digest", "tested_digest"}} for every fixture
-    of guidance `section` on main (`evals/guidance/<section>/<name>/`); the
-    tested digest is the section's extent in `guidance_dir` (None without
-    one, or when the manifest has no such row)."""
+    """{fixture name: {"fixture_digest", "tested_digest", "rest_digest"}}
+    for every fixture of guidance `section` on main
+    (`evals/guidance/<section>/<name>/`); the tested digest is the section's
+    extent in `guidance_dir`, the rest digest its corpus without the extent
+    (both None without one, or when the manifest has no such row)."""
     root = evals_dir / "guidance" / section
     if section.startswith("_") or not root.is_dir() or root.is_symlink():
         return {}
-    tested = None
+    tested = rest = None
     if guidance_dir is not None:
         try:
             row = guidance.find_row(guidance.load_manifest(guidance_dir), section,
                                     guidance_dir)
-            tested = guidance.content_digests(guidance_dir, row)["section"]
+            digests = guidance.content_digests(guidance_dir, row)
+            tested, rest = digests["section"], digests["rest"]
         except (guidance.GuidanceError, OSError, UnicodeDecodeError):
-            tested = None
+            tested = rest = None
     out = {}
     for directory in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
         try:
@@ -610,7 +621,7 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
         if isinstance(doc, dict) and doc.get("subject") == "guidance" \
                 and doc.get("section") == section:
             out[directory.name] = {"fixture_digest": run_eval.fixture_digest(directory),
-                                   "tested_digest": tested}
+                                   "tested_digest": tested, "rest_digest": rest}
     return out
 
 
@@ -646,12 +657,14 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
         raise ValueError("the roster has no arm, or an arm that is not an id")
     models = sorted(arm_ids)
     index = build_index(tree, evals_dir, as_of)
+    history = gates.paired_history(index["runs"])
     skills = {}
     for skill in index["skills"]:
         try:
-            skills[skill] = gates.retirement(index, models, skill, policy,
-                                             expected_content(evals_dir, skill,
-                                                              registries or {}))
+            skills[skill] = gates.retirement(
+                index, models, skill, policy,
+                expected_content(evals_dir, skill, registries or {}),
+                gates.prior_from_history(history, skill, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one skill's failure is its own
             skills[skill] = {"verdict": "insufficient", "cells": [], "runs_used": [],
                              "reason": f"the verdict raised {type(exc).__name__}"}
@@ -679,12 +692,15 @@ def guidance_section_verdicts(index: dict, models: list, policy: dict, evals_dir
     """The document's guidance half (#124): a verdict per section seen, one
     retirement at most among them, and the guidance policy and mode."""
     guidance_index = {"runs": index["guidance_runs"]}
+    history = gates.paired_history([r for r in index["guidance_runs"]
+                                    if r.get("pair") == "in_situ"])
     sections = {}
     for section in index["sections"]:
         try:
             sections[section] = gates.guidance_verdict(
                 guidance_index, models, section, policy,
-                expected_guidance(evals_dir, section, guidance_dir))
+                expected_guidance(evals_dir, section, guidance_dir),
+                gates.prior_from_history(history, section, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one section's failure is its own
             sections[section] = {"verdict": "insufficient", "cells": [], "runs_used": [],
                                  "reason": f"the verdict raised {type(exc).__name__}"}

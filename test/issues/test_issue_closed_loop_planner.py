@@ -535,10 +535,36 @@ class BandTests(unittest.TestCase):
         self.assertEqual(plan_week.model_costs(priced), {"heavy": 0.33, "light": 0.11})
         plan = plan_week.build_plan(ctx(cells=priced, room=1.0), NOW)
         order = [(f["fixture"], f["model"]) for f in plan["fires"]]
-        # A model with no known cost goes after the priced ones.
-        self.assertLess(order.index(("evals/b", "light")), order.index(("evals/b", "heavy")))
-        self.assertLess(order.index(("evals/b", "heavy")), order.index(("evals/c", "other")))
-        self.assertLess(order.index(("evals/a", "light")), order.index(("evals/a", "heavy")))
+        # Within a fixture, the dearer model waits while the cheaper model's
+        # cell is open (2026-11-03): only light fires on evals/a and evals/b
+        # (the costs are per model). A model with no known cost and no
+        # cheaper cell beside it is not held, and goes after the priced ones.
+        self.assertEqual(sorted(order), [("evals/a", "light"), ("evals/b", "light"),
+                                         ("evals/c", "other")])
+        self.assertLess(order.index(("evals/b", "light")), order.index(("evals/c", "other")))
+        self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)),
+                         {id(priced[0]), id(priced[2])})
+        # With no cost known for either model, neither waits.
+        unpriced = [cell("evals/b", "heavy", "missing"), cell("evals/b", "light", "missing")]
+        self.assertEqual(plan_week.cheaper_first(unpriced, {}), set())
+
+    def test_the_dearer_model_fires_once_the_cheaper_cell_did_not_keep(self):
+        # The cheaper cell decided without a keep (no benefit, a ceiling, a
+        # cap): the dearer model's cell is free to fire.
+        for decided in ("no-benefit", "no-clear-effect", "ceiling"):
+            with self.subTest(decided=decided):
+                priced = [{**cell("evals/a", "heavy", "insufficient", runs=1),
+                           "usd_per_arm_trial": 0.33},
+                          {**cell("evals/a", "light", decided, runs=20),
+                           "usd_per_arm_trial": 0.11}]
+                plan = plan_week.build_plan(ctx(cells=priced, room=1.0), NOW)
+                self.assertIn(("evals/a", "heavy"),
+                              [(f["fixture"], f["model"]) for f in plan["fires"]])
+        # So is one whose cheaper cell's fires keep coming back empty.
+        priced = [{**cell("evals/a", "heavy", "insufficient", runs=1), "usd_per_arm_trial": 0.33},
+                  {**cell("evals/a", "light", "missing"), "usd_per_arm_trial": 0.11,
+                   "empty_fires": plan_week.BROKEN_AFTER_FIRES}]
+        self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)), set())
 
     def test_historical_cost_is_clamped_and_breaks_ties(self):
         c = ctx(points_per_usd=0.01)
@@ -1346,7 +1372,8 @@ class ImproveValueTests(unittest.TestCase):
                 ROOT / "evals", tree, "20261026T120000Z", doc, None), {})
             # done-summary, handoff, no-url are train; waiting-on-review (last
             # in name order) is the holdout and must not count.
-            expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t"}
+            expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t",
+                            "rest_digest": "rest"}
                         for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
 
             def run(name, role, checks):
@@ -1378,13 +1405,14 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(got["finding-your-unknowns"]["verdict"], "insufficient")
         self.assertNotIn("_delivery", got)
 
-    def test_guidance_contexts_pool_every_rest_of_guidance_as_the_gate_does(self):
-        # #557: the gate pools an in-situ cell's current-content runs across
-        # every rest of the guidance (strata), so the improve evidence must
-        # count a run beside a minority rest too, not only `_joint_context`'s
-        # largest same-rest group.
+    def test_guidance_contexts_pool_the_current_rest_as_the_gate_does(self):
+        # 2026-11-03: the gate decides an in-situ cell on its current-content
+        # runs beside the rest of the guidance on main, ignoring older rests,
+        # so the improve evidence must count those runs, even when they are
+        # the minority, and not `_joint_context`'s largest same-rest group.
         section = "anything-you-name-gets-its-link"
-        expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t"}
+        expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t",
+                        "rest_digest": "rest-2"}
                     for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
 
         def run(name, role, checks, rest, stamp):
@@ -1413,9 +1441,10 @@ class ImproveValueTests(unittest.TestCase):
                                    return_value=expected):
                 got = plan_week.guidance_contexts(ROOT / "evals", tree, "20261026T120000Z",
                                                   doc, tree)
-        # 4 of 6 with-arm checks passed over both rests: headroom 1/3. The
-        # largest group alone (rest-1) would read 0.
-        self.assertAlmostEqual(got[section]["evidence"]["headroom"], 1 / 3)
+        # 0 of 2 with-arm checks passed beside rest-2, the rest on main:
+        # headroom 1. Pooling every rest would read 1/3, and the largest
+        # group alone (rest-1) 0.
+        self.assertAlmostEqual(got[section]["evidence"]["headroom"], 1.0)
 
     def test_the_fire_check_refuses_a_section_with_no_train_headroom(self):
         # 2026-10-28: a hand-dispatched guidance-improve fire on a section at

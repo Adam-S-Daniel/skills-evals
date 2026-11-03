@@ -49,8 +49,8 @@ import guidance  # noqa: E402
 import retire_skill as rs  # noqa: E402
 import run_eval  # noqa: E402
 from scorers import objective  # noqa: E402
-from test_issue_70_retirement import (FLAT, FLAT_JUDGE, GAIN, TEST_POLICY,  # noqa: E402
-                                      series)
+from test_issue_70_retirement import (FLAT, FLAT_JUDGE, GAIN, LOSS,  # noqa: E402
+                                      TEST_POLICY, series)
 from test_issue_97 import REAL_GUIDANCE_DIR, make_guidance_checkout  # noqa: E402
 
 GUIDANCE_EVALS = ROOT / "evals" / "guidance"
@@ -926,7 +926,9 @@ def pair_runs(pair, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JU
     return runs
 
 
-EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1"}}
+#: In situ, only runs beside the current rest of the guidance pool (`rest`,
+#: the pair key `pair_runs` records).
+EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1", "rest_digest": "rest"}}
 
 
 class GuidanceVerdictTests(unittest.TestCase):
@@ -940,33 +942,33 @@ class GuidanceVerdictTests(unittest.TestCase):
         self.assertEqual(v["alone"]["verdict"], "retire")
 
     def test_a_section_that_helps_only_alone_is_shorten_or_merge(self):
-        gain = GAIN * 2
         v = self.verdict(pair_runs("in_situ", FLAT, FLAT)
-                         + pair_runs("alone", gain, FLAT, ([8.0] * 20, FLAT_JUDGE)))
+                         + pair_runs("alone", GAIN, LOSS, ([8.0] * 20, FLAT_JUDGE)))
         self.assertEqual(v["in_situ_verdict"], "retire")
         self.assertEqual(v["alone"]["verdict"], "keep")
         self.assertEqual(v["verdict"], "shorten-or-merge")
 
     def test_a_marginal_benefit_keeps_whatever_alone_shows(self):
-        v = self.verdict(pair_runs("in_situ", GAIN * 2, FLAT, ([8.0] * 20, FLAT_JUDGE))
+        v = self.verdict(pair_runs("in_situ", GAIN, LOSS, ([8.0] * 20, FLAT_JUDGE))
                          + pair_runs("alone", FLAT, FLAT))
         self.assertEqual(v["verdict"], "keep")
 
     def test_only_a_retire_becomes_shorten_or_merge(self):
-        # One in-situ run per arm shows one CLI version: insufficient, which
-        # stands whatever the alone pair shows.
-        alone = pair_runs("alone", GAIN, FLAT[:10], ([8.0] * 10, FLAT_JUDGE))
+        # One in-situ pair: insufficient, which stands whatever the alone pair
+        # shows.
+        alone = pair_runs("alone", GAIN, LOSS, ([8.0] * 10, FLAT_JUDGE))
         v = self.verdict(pair_runs("in_situ", FLAT[:1], FLAT[:1]) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("insufficient", "insufficient"))
         self.assertEqual(v["alone"]["verdict"], "keep")
-        # Three runs no longer retire in situ (#557): a cell's prior is its
-        # own, and under 20 degrees of freedom it is the 0.25 fallback.
+        # Three identical pairs never retire (the 2026-11-03 review's repro):
+        # the betting bound needs no variance prior to be fooled by.
         v = self.verdict(pair_runs("in_situ", FLAT[:3], FLAT[:3]) + alone)
         self.assertEqual(v["in_situ_verdict"], "insufficient")
         # Twenty retire in situ, and the alone benefit makes it
-        # shorten-or-merge.
+        # shorten-or-merge, which is never a removal.
         v = self.verdict(pair_runs("in_situ", FLAT, FLAT) + alone)
         self.assertEqual((v["in_situ_verdict"], v["verdict"]), ("retire", "shorten-or-merge"))
+        self.assertNotIn("removal", v)
 
     def test_runs_of_the_other_pair_never_enter_a_cell(self):
         v = self.verdict(pair_runs("alone", FLAT, FLAT))
@@ -992,12 +994,13 @@ class GuidancePolicyTests(unittest.TestCase):
 
     def test_the_committed_guidance_removal_rule_is_adams(self):
         # Adam, 2026-11-02 (#557): remove at 90% confidence that a section does
-        # not improve results by 0.15 or more; keep at 85%.
+        # not improve results by 0.15 or more. Keep at 80% since the
+        # 2026-11-03 threshold sweep (Adam's decision pending).
         policy = gates.load_gate_policy()
         self.assertEqual((policy["guidance"]["objective_margin"],
                           policy["guidance"]["retire_confidence"],
                           policy["guidance"]["benefit_confidence"],
-                          policy["guidance"]["judge_margin"]), (0.15, 0.90, 0.85, 1.5))
+                          policy["guidance"]["judge_margin"]), (0.15, 0.90, 0.80, 1.5))
         # The judge's margin is the objective's on its 0-to-10 scale.
         self.assertEqual(policy["guidance"]["judge_margin"],
                          policy["guidance"]["objective_margin"] * 10)
@@ -1112,15 +1115,22 @@ class ComputeGuidanceTests(unittest.TestCase):
         edited = {**self.digests, "rest": "e" * 64}
         self.two_halves(self.digests, edited)
         self.assertEqual(self.cell_runs("alone"), (20, 20))
-        # In situ pools both rests as two strata (#557), and the key names them.
-        self.assertEqual(self.cell_runs(), (20, 20))
+        # In situ decides on runs beside the current rest only (2026-11-03:
+        # the strata's weighting favored removal); older rests are ignored,
+        # and the key names the current one.
+        self.assertEqual(self.cell_runs(), (12, 12))
         key = self.compute()["guidance"]["bravo"]["cells"][0]["key"]
-        self.assertEqual(sorted(key["strata"]), sorted([self.digests["rest"], "e" * 64]))
+        self.assertEqual(key["rest_digest"], self.digests["rest"])
+        self.assertNotIn("strata", key)
 
     def test_alone_runs_with_another_section_payload_do_not_pool(self):
         # Same section extent, different file intro: the arm loaded other text.
         self.two_halves(self.digests, {**self.digests, "section_payload": "d" * 64})
-        self.assertEqual(self.cell_runs("alone"), (12, 20))
+        # Twelve fires have both alone arms in one pool; the eight without
+        # arms beside another payload are unpaired.
+        self.assertEqual(self.cell_runs("alone"), (12, 12))
+        doc = self.compute()["guidance"]["bravo"]
+        self.assertEqual(doc["alone"]["cells"][0]["unpaired"], 8)
         self.assertEqual(self.cell_runs(), (20, 20))
 
     def test_alone_runs_without_a_section_payload_keep_the_rest_key(self):
@@ -1181,7 +1191,8 @@ class ComputeGuidanceTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # retire_skill.py --target guidance.
 
-def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=None):
+def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=None,
+                   removal="auto"):
     roster = ["model-a", "model-b"]
     cells = [{"fixture": "fx", "model": m, "class": (classes or {}).get(m, "no-benefit"),
               "with": {"runs": 10}, "without": {"runs": 10},
@@ -1190,6 +1201,7 @@ def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=N
     return {"schema_version": 1, "as_of": "20261020T000000Z", "roster_models": roster,
             "skills": {}, "guidance_retirement_mode": mode,
             "guidance": {section: {"verdict": verdict, "reason": "every cell shows no benefit",
+                                   **({"removal": removal} if removal else {}),
                                    "cells": cells,
                                    "alone": {"verdict": "keep", "cells": []}}}}
 

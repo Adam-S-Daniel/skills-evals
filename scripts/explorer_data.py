@@ -866,31 +866,28 @@ def current_text_runs(verdict: dict) -> int:
 
 
 def subject_confidence(verdict: dict) -> dict:
-    """How sure the gate is, as levels in [0, 1): `helps`, the highest
-    confidence at which some cell's delta (objective or judge) is above 0
-    (with a per-subject keep family, `keep_family`, the family's level), and
-    `no_help`, the highest at which every cell's objective delta is under the
-    margin (a cell with no objective figure gives 0). Both None while no
-    cell has a figure. The keep and remove rules compare these with the policy levels;
-    the page shows them as percentages."""
+    """How sure the gate is, as levels in [0, 1) of its betting tests
+    (harness/gates.py, THE BOUNDS): `helps`, the subject's keep level, 1 - m
+    x the smallest objective keep-test p over its cells (m its keep family,
+    `keep_family`; 1 without one), and `no_help`, the lowest no-help level
+    over its cells with headroom (the cells that vote on removal: neither
+    `ceiling` nor `cannot-discriminate`; a cell with no objective figure
+    gives 0). The judge does not vote, so it is not read. Both None while no
+    cell has an objective figure. The keep and remove rules compare these
+    with the policy levels; the page shows them as percentages."""
     cells = verdict.get("cells") or []
-    if not cells:
-        return {"helps": None, "no_help": None}
-    helps = [d["helps_confidence"] for c in cells for d in (c.get("objective"), c.get("judge"))
-             if isinstance(d, dict) and "helps_confidence" in d]
-    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
-    if not helps:
+    figured = [c for c in cells if isinstance(c.get("objective"), dict)]
+    if not figured:
         return {"helps": None, "no_help": None}
     family = verdict.get("keep_family")
-    if isinstance(family, int) and family >= 1:
-        # The keep is per subject (#557 follow-up): its level is 1 - m x the
-        # smallest keep-test p, which crosses the keep level exactly when the
-        # subject keeps.
-        ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
-              if isinstance(t, dict) and isinstance(t.get("p"), (int, float))]
-        if ps:
-            return {"helps": max(0.0, 1 - family * min(ps)), "no_help": min(no_help)}
-    return {"helps": max(helps), "no_help": min(no_help)}
+    family = family if isinstance(family, int) and family >= 1 else 1
+    ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
+          if isinstance(t, dict) and t.get("route") == "objective"
+          and isinstance(t.get("p"), (int, float))]
+    voting = [c for c in cells if c.get("class") not in ("ceiling", "cannot-discriminate")]
+    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in voting]
+    return {"helps": max(0.0, 1 - family * min(ps)) if ps else 0.0,
+            "no_help": min(no_help) if no_help else None}
 
 
 #: The eval bands the page lists as the test queue, in the planner's order
@@ -1205,8 +1202,10 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                             for a in roster["arms"]],
                    "judge": {"model": roster["judge"]["id"],
                              "reason": roster["judge"].get("reason")}},
-        "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
-                                          "min_cli_versions", "objective_margin")},
+        # max_runs_per_cell (2026-11-03) is absent from an older gates file.
+        "policy": {**{k: policy[k] for k in ("benefit_confidence", "retire_confidence",
+                                             "min_cli_versions", "objective_margin")},
+                   "max_runs_per_cell": policy.get("max_runs_per_cell")},
         "skills": skills, "removed_skills": removed_skills(registries),
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,

@@ -57,15 +57,13 @@ THE BANDS (rule D), in order:
      2026-11-02 18:42 UTC: remove a section at 90% confidence it does not
      improve results by 0.15 or more): the undecided cells of the
      GUIDANCE_FOCUS_SECTIONS (2) eligible sections nearest a verdict.
-       progress: a cell's retire progress is the no-help confidence of
-         what decides it, over `retire_confidence` (the verdict document's
-         `guidance_policy`, else DEFAULT_RETIRE_CONFIDENCE): a
-         judge-carried cell's judge, min'd with its objective's when it
-         has one; any other cell's objective min'd with its judge's. No
-         judge block is 0 either way (gates._classify retires no cell
-         without a usable judge). Its keep progress is the larger helps
-         confidence of the two over `benefit_confidence` (it understates
-         the per-check Holm keep). An absent value is 0.
+       progress: a cell's retire progress is its objective's no-help
+         confidence (the level its remove test reached) over
+         `retire_confidence` (the verdict document's `guidance_policy`,
+         else DEFAULT_RETIRE_CONFIDENCE); its keep progress is its
+         objective's helps confidence over `benefit_confidence`. The judge
+         does not vote (harness/gates.py, 2026-11-03). An absent value is
+         0.
        score: max(min over the section's cells of retire progress, max
          over them of keep progress), since it retires only when every
          cell clears and keeps on one; ties by fewer cells (a smaller
@@ -463,7 +461,7 @@ GUIDANCE_FOCUS_SECTIONS = 2
 #: The decision levels a cell's progress is normalized by when the verdict
 #: document carries no `guidance_policy` (evals/gate-policy.yml's).
 DEFAULT_RETIRE_CONFIDENCE = 0.90
-DEFAULT_BENEFIT_CONFIDENCE = 0.85
+DEFAULT_BENEFIT_CONFIDENCE = 0.80
 #: The verdicts more runs on the current content may still change: every
 #: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
 #: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
@@ -761,45 +759,19 @@ def _level(block, field: str) -> float:
         and not isinstance(value, bool) else 0.0
 
 
-#: The start of gates._classify's reason for a cell that is not judge-carried
-#: and still needs a usable judge to retire (test_issue_guidance_focus checks
-#: it against harness/gates.py's own text).
-JUDGE_NEEDED_REASON = ("the objective interval is not tight enough yet, and the "
-                       "judge is needed to remove")
-
-
 def retire_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to no-benefit, as a share of the decision
-    level: the no-help confidence of the figures that decide it. A
-    judge-carried cell's judge, min'd with its objective's when it has an
-    objective block; any other cell's objective min'd with its judge's. No
-    judge block gives 0 for a judge-carried cell, and for any other cell
-    whose reason says the judge is still needed; a cell whose judge was
-    skipped only because the with arm was ahead reads its objective."""
-    judge, objective = cell.get("judge"), cell.get("objective")
-    if not isinstance(judge, dict):
-        # #557 (2026-11-02): an in-situ cell whose every missing judge figure
-        # was skipped because the with arm was ahead is decided on its
-        # objective alone. gates._classify marks only the other case, where
-        # the judge is still needed, with JUDGE_NEEDED_REASON; a judge-carried
-        # cell always needs its judge.
-        if cell.get("judge_carried") \
-                or str(cell.get("reason") or "").startswith(JUDGE_NEEDED_REASON):
-            return 0.0
-        return _level(objective, "no_help_confidence") / level
-    if cell.get("judge_carried") and not isinstance(objective, dict):
-        return _level(judge, "no_help_confidence") / level
-    return min(_level(objective, "no_help_confidence"),
-               _level(judge, "no_help_confidence")) / level
+    level: its objective's no-help confidence (the remove test's level so
+    far). The judge does not vote (harness/gates.py, 2026-11-03), so it is
+    not read. An absent value is 0."""
+    return _level(cell.get("objective"), "no_help_confidence") / level
 
 
 def keep_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to benefit, as a share of the decision
-    level: the larger of its objective's and its judge's helps confidence.
-    It understates the per-check (Holm) keep route, which has no single
-    confidence to read."""
-    return max(_level(cell.get("objective"), "helps_confidence"),
-               _level(cell.get("judge"), "helps_confidence")) / level
+    level: its objective's helps confidence (the keep test's level so far,
+    per cell; the subject's keep family asks more of it)."""
+    return _level(cell.get("objective"), "helps_confidence") / level
 
 
 def _produces_item(cell: dict) -> bool:
@@ -1070,6 +1042,16 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     enters neither missing nor near: `focus` for a section of
     `guidance_focus`, `guidance-rest` otherwise (`_guidance_band`).
 
+    A `ceiling` cell (harness/gates.py) plans no fire in any band but
+    safety, re-checks included: it is a `fixture-ceiling` work item, since
+    only a harder fixture can let it vote.
+
+    CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
+    allocation): in the missing, near, focus and guidance-rest bands a cell
+    plans no fire while its subject's cell of the same fixture on a cheaper
+    model (`model_costs`) is still open (`cheaper_first`). A keep there keeps
+    the subject, and a removal needs both cells, so only the cost changes.
+
     A cell bound for the missing, near, recheck, focus or guidance-rest
     band with at least BROKEN_AFTER_FIRES `empty_fires` is a
     `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
@@ -1086,6 +1068,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
     _focus, focused = guidance_focus(ctx)
+    held = cheaper_first(ctx["cells"], costs)
     members = batch_members(ctx)
     bands = {band: [] for band in BANDS}
     work = []
@@ -1105,6 +1088,17 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         due = newest is not None and now - newest >= recheck_after(cell)
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
+        elif cell["class"] == "ceiling":
+            # Parked (harness/gates.py rule 4): its without arm leaves no room
+            # to show the margin, so no fire, re-checks included, can move
+            # it. It needs a harder fixture.
+            parked = {"kind": "fixture-ceiling", "change_type": "fixture",
+                      "skill": cell["skill"], "fixture": cell["fixture"],
+                      "model": cell["model"], "route": "issue"}
+            if cell.get("section"):
+                parked["section"] = cell["section"]
+            work.append(parked)
+            band, order = None, None
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -1127,6 +1121,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             else ("skill", cell["skill"])
         if members is not None and band in BATCH_BANDS and subject not in members:
             continue  # THE BATCH: measured once its subject joins one
+        if band in CHEAPER_FIRST_BANDS and id(cell) in held:
+            continue  # its cheaper model's cell of the same fixture goes first
         if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
             broken = {"kind": "fixture-broken", "change_type": "fixture",
                       "skill": cell["skill"], "fixture": cell["fixture"],
@@ -1149,6 +1145,34 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         outages.insert(0, {"kind": "routine-down", "change_type": None, "route": "issue",
                            "since": _iso(down)})
     return bands, outages + work
+
+
+#: The bands where a cell waits for its cheaper model's cell (`eval_items`).
+CHEAPER_FIRST_BANDS = ("missing", "near", "focus", "guidance-rest")
+
+
+def cheaper_first(cells: list, costs: dict) -> set:
+    """The `id()`s of the cells that wait (`eval_items`, CHEAPER MODEL
+    FIRST): an open cell (missing or insufficient) whose subject has a cell
+    of the same fixture on a model with a lower known cost (`costs`) that
+    would still be fired (`_produces_item`: open, schedulable, not stakes
+    `none`, its fires not coming back empty). With no cost known for either
+    model, neither waits."""
+    def subject(cell):
+        return ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+    open_classes = ("missing", "insufficient")
+    by_fixture: dict = {}
+    for cell in cells:
+        by_fixture.setdefault((subject(cell), cell["fixture"]), []).append(cell)
+    held = set()
+    for group in by_fixture.values():
+        for cell in group:
+            price = costs.get(cell["model"], math.inf)
+            if cell["class"] in open_classes and any(
+                    _produces_item(other) and costs.get(other["model"], math.inf) < price
+                    for other in group if other is not cell):
+                held.add(id(cell))
+    return held
 
 
 def neutral_weights(raw: dict) -> dict:
@@ -2223,10 +2247,10 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
-        # Pooled as the gate pools in-situ cells (#557): every current-content
-        # run grouped by the rest of the guidance it ran beside, not only the
-        # largest same-rest group `_joint_context` keeps, so the improve
-        # evidence counts the same runs the section's verdict does.
+        # Pooled as the gate pools in-situ cells: the current-content runs
+        # beside the rest of the guidance on main (2026-11-03; older rests
+        # are ignored), so the improve evidence counts the same runs the
+        # section's verdict does.
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
                                  compute_gates.expected_guidance(evals_dir, section,
                                                                  guidance_dir),

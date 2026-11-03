@@ -10,16 +10,21 @@ an auto-merging removal pull request in adam-agentskills.
 verdict there is `retire`, and this script re-checks what that verdict
 means before acting: every (fixture, roster model) cell of the cells'
 fixtures crossed with the gates file's roster models present exactly once,
-and every one `no-benefit` (as harness/gates.py defines the verdict). Any
-field of the wrong type is a refusal, never a crash or a pass.
+every one `no-benefit`, `no-clear-effect`, `ceiling` or
+`cannot-discriminate`, and at least one `no-benefit` or `no-clear-effect`
+(a cell with headroom; harness/gates.py, THE VERDICT). Any field of the
+wrong type is a refusal, never a crash or a pass.
 compute_gates lets one skill retire per evaluation; two `retire` verdicts
 here are refused, never a pick.
 
 THE MODE is the gates file's `retirement_mode` (from evals/gate-policy.yml;
-anything but `auto` is `proposal`), lowered to `proposal` in two cases (the
+anything but `auto` is `proposal`), lowered to `proposal` in three cases (the
 removal path's `effective_mode`, as scripts/improve_gate.py lowers an
 improvement to a draft):
 
+  * the verdict's own `removal` is not `auto` (2026-11-03: a subject with
+    one cell with headroom, or a cell that reached the run cap with no clear
+    effect, is only ever proposed; harness/gates.py, THE VERDICT);
   * removing the skill would wait on adam-agentskills' plugin-runtime-review,
     which auto-merge cannot approve (adam-agentskills ADR 0021, decision 4):
     improve_gate.py's `auto_refusal`, a skill with its own `hooks/` or `bin/`
@@ -217,6 +222,10 @@ REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
 PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
 GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance reached this run "
                          "(the GitHub App token was not minted)")
+#: The cell classes a `retire` verdict may hold, and those with headroom,
+#: of which it needs one (harness/gates.py, THE VERDICT).
+RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "ceiling", "cannot-discriminate")
+HEADROOM_CLASSES = ("no-benefit", "no-clear-effect")
 NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
                  "GitHub App token was not minted)")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -356,13 +365,16 @@ def retiring(gates: dict) -> str | None:
     if not isinstance(cells, list) or not cells or not _names(roster):
         raise RetireError(f"{skill}: a retire verdict with no cell")
     for c in cells:
-        if not isinstance(c, dict) or c.get("class") != "no-benefit":
+        if not isinstance(c, dict) or c.get("class") not in RETIRE_CELL_CLASSES:
             raise RetireError(f"{skill}: a retire verdict with a cell that is not "
-                              "no-benefit")
+                              "no-benefit, no-clear-effect, ceiling or "
+                              "cannot-discriminate")
         fixture = c.get("fixture")
         if not (fixture is None or isinstance(fixture, str) and NAME_RE.fullmatch(fixture)) \
                 or not isinstance(c.get("model"), str):
             raise RetireError(f"{skill}: a retire verdict with a malformed cell")
+    if not any(c["class"] in HEADROOM_CLASSES for c in cells):
+        raise RetireError(f"{skill}: a retire verdict with no cell with headroom")
     pairs = [(c["fixture"], c["model"]) for c in cells]
     fixtures = {f for f, _ in pairs}
     want = {(f, m) for f in fixtures for m in roster}
@@ -819,6 +831,14 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
             f"workflow.\n\n{AGENT_MARKER}\n")
 
 
+def proposal_only(verdict: dict) -> str:
+    """Why a `retire` verdict's `removal` keeps it a proposal (the verdict's
+    `removal_reason`, when it is text)."""
+    why = verdict.get("removal_reason")
+    return ("the verdict allows only a proposal"
+            + (f" ({why})" if isinstance(why, str) and why else ""))
+
+
 def _lowered(mode_reason: str, allowed) -> str:
     """`proposal`, the mode auto falls back to; RetireError when the caller
     has not allowed it either."""
@@ -837,6 +857,9 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     if skill is None:
         return {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
     mode_reason = None
+    if mode == "auto" and gates["skills"][skill].get("removal") != "auto":
+        mode_reason = proposal_only(gates["skills"][skill])
+        mode = _lowered(mode_reason, allowed)
     if mode == "auto" and "auto" not in allowed and fallback:
         mode_reason = NO_CREDENTIAL
         mode = _lowered(mode_reason, allowed)
@@ -906,8 +929,8 @@ def skill_notice(gates: dict, skill: str, location: dict, run_url: str | None) -
             "body": (f"{marker}\n@{NOTICE_OWNER}: the skill `{location['plugin']}/{skill}` "
                      f"is being removed from adam-agentskills: its verdict is **retire** as of "
                      f"{gates['as_of']} ({verdict.get('reason')}). The rule is 90% confidence "
-                     "that it does not improve results by 0.15 or more "
-                     "(`evals/gate-policy.yml` `skills:`; Adam, 2026-11-02).\n\n"
+                     "that it does not improve results by 0.15 or more, on every cell with "
+                     "room to show it (`evals/gate-policy.yml` `skills:`).\n\n"
                      "Removal pull request: {removal_pr} (auto-merges once its checks "
                      "pass).\n\n**To reverse it:** before it merges, close that pull "
                      "request. After it merges, open it and press **Revert**: GitHub opens "
@@ -1326,6 +1349,9 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         section, kind = shortening[0], "shorten"
     else:
         kind = "retire"
+        if mode == "auto" and guidance_block(gates)[section].get("removal") != "auto":
+            mode_reason = proposal_only(guidance_block(gates)[section])
+            mode = _lowered(mode_reason, allowed)
         if mode == "auto" and "auto" not in allowed and fallback:
             mode_reason = GUIDANCE_NO_CREDENTIAL
             mode = _lowered(mode_reason, allowed)
@@ -1385,8 +1411,8 @@ def guidance_notice(gates: dict, section: str, row: dict, run_url: str | None) -
                      f"(`## {row['heading']}` in `{row['file']}`) is being removed: its "
                      f"verdict is **retire** as of {gates['as_of']} ({verdict.get('reason')}). "
                      "The rule is 90% confidence that it does not improve results by 0.15 "
-                     "or more, pooled over every version of the rest of the guidance "
-                     "(`evals/gate-policy.yml` `guidance:`; Adam, 2026-11-02).\n\n"
+                     "or more beside the current rest of the guidance, on every cell with "
+                     "room to show it (`evals/gate-policy.yml` `guidance:`).\n\n"
                      "Removal pull request: {removal_pr} (auto-merges once its checks "
                      "pass).\n\n**To reverse it:** before it merges, close that pull "
                      "request. After it merges, open it and press **Revert**: GitHub opens "
