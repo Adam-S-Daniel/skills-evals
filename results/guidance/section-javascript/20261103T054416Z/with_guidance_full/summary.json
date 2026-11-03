@@ -1,0 +1,328 @@
+{
+  "arm": "with_guidance_full",
+  "timestamp": "20261103T054416Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.212691125,
+    "num_turns": 5,
+    "duration_ms": 55534,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 24246,
+      "cache_read_input_tokens": 147799,
+      "output_tokens": 2687,
+      "output_tokens_details": {
+        "thinking_tokens": 455
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 24246
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 606,
+          "cache_read_input_tokens": 36274,
+          "cache_creation_input_tokens": 378,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 378,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "helper-exported",
+      "passed": true,
+      "detail": "src/client.js matches"
+    },
+    {
+      "id": "no-swallowed-error",
+      "passed": true,
+      "detail": "src/client.js matches"
+    },
+    {
+      "id": "same-module-system",
+      "passed": true,
+      "detail": "src/client.js matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "JavaScript rules",
+        "score": 10,
+        "rationale": "Each thrown error is caught, the run ends by rethrowing with the last failure attached as `cause`, and the code keeps CommonJS (`module.exports`, `type: commonjs`), so nothing was missed."
+      },
+      {
+        "name": "Behavior",
+        "score": 10,
+        "rationale": "It retries on a thrown error or any 500\u2013599 status, stops after exactly `attempts` calls, and returns the first response that isn't a 5xx, and the tests cover each of these paths."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff leaves `getJson` unchanged; the only change near it adds `fetchWithRetry` to the export."
+      }
+    ],
+    "overall": 10.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-haiku-5-5",
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-haiku-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 6525,
+      "cache_read_input_tokens": 157675,
+      "cache_creation_input_tokens": 26247,
+      "canonical_model": "claude-haiku-5-5"
+    },
+    "claude-opus-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2687,
+      "cache_read_input_tokens": 147799,
+      "cache_creation_input_tokens": 24246,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.5215182871897941,
+    "threshold": 0.5,
+    "flagged": true
+  },
+  "subject": "guidance",
+  "section": "section-javascript",
+  "mode": "full",
+  "bytes": 25811,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v4ebf3f63, 25811 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-opus-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "GAEKJWVS-4506"
+  },
+  "fixture_name": "fetch-retry",
+  "guidance_digests": {
+    "section": "143cd4707858d96114b03d99478c04f2640f9e7eceb94667d903ff8c06181cd5",
+    "rest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "section_payload": "143cd4707858d96114b03d99478c04f2640f9e7eceb94667d903ff8c06181cd5"
+  },
+  "fixture_digest": "107870b20fd9bea915f26c5fbcf015f96d3414a3624c9eb2b8c083d340437e45",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 25676,
+        "sha256": "2a017c002f180b23f54fe6e8b752cd54156c7d3c6c6e61a75aba1e87bd74c00b"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "41585078142",
+    "session_id": null,
+    "harness_commit": "1c3ba2e3d8c552f2139e3f4d3c2820d6f47660a0",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T05:44:15Z",
+    "ended_at": "2026-11-03T05:47:07Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.929542455,
+      "agent_usd": 0.597765055,
+      "judge_usd": 0.1598966,
+      "guard_usd": 0.1718808,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.20119912999999998,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T05:44:55Z",
+      "ended_at": "2026-11-03T05:46:52Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-03T05:44:55Z",
+          "ended_at": "2026-11-03T05:44:57Z",
+          "duration_ms": 2401,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T05:44:57Z",
+          "ended_at": "2026-11-03T05:45:54Z",
+          "duration_ms": 56429,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-03T05:46:48Z",
+          "ended_at": "2026-11-03T05:46:52Z",
+          "duration_ms": 4075,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 56429,
+        "num_turns": 5,
+        "cost_usd": 0.212691125,
+        "cost_basis": "list",
+        "models": {
+          "claude-haiku-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 6525,
+            "cache_read_input_tokens": 157675,
+            "cache_creation_input_tokens": 26247,
+            "cost_usd": 0.008121325
+          },
+          "claude-opus-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2687,
+            "cache_read_input_tokens": 147799,
+            "cache_creation_input_tokens": 24246,
+            "cost_usd": 0.20456980000000002
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 24246,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 4075,
+        "num_turns": 1,
+        "cost_usd": 0.0434354,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 358,
+            "cache_read_input_tokens": 12262,
+            "cache_creation_input_tokens": 6763,
+            "cost_usd": 0.0434354
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 6763,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 2401,
+        "num_turns": 1,
+        "cost_usd": 0.0683502,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8461,
+            "cache_creation_input_tokens": 13278,
+            "cost_usd": 0.0683502
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13278,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
