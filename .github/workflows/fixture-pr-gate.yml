@@ -1,0 +1,176 @@
+name: Fixture PR gate
+
+# Closes the last human step of the fixture-need queue (skills-evals#659;
+# Adam, 2026-10-26: "closed loop with no human in the loop"; repo-settings
+# ADR 0018). The weekly sweep files an `agent-ready` issue per skill or
+# guidance section that needs fixtures; the fleet worker answers it with a
+# pull request and never merges. This gate turns auto-merge on (merge commit,
+# `--match-head-commit`) for such a pull request when
+# scripts/fixture_pr_gate.py finds it only adds fixtures for that issue's
+# subject, and off again when a later push makes it anything else. `test`,
+# the required check, still decides the merge; nothing here approves.
+#
+# * Runs only the default branch's copy (`workflow_run`); the pull request's
+#   head is fetched into a private ref and read with git plumbing as data.
+# * Only a pull request in the lane (author Adam-S-Daniel, label
+#   `agent-authored`, same-repository head, body naming one open fixture-need
+#   issue) is armed or disarmed. Promotion, eval-scope and scaffold pull
+#   requests arm themselves and are left alone.
+# * The roster App token is minted only to arm, under `continue-on-error`:
+#   no App leaves the pull request for a person, with a warning.
+# * Every value reaching a `run:` block comes from the event file or a
+#   pattern-checked output, never an expression. No `concurrency` group; not
+#   a required check.
+
+on:
+  workflow_run:
+    workflows: [Fixture PR seen]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  judge:
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      && github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.pr.outputs.number }}
+      sha: ${{ steps.pr.outputs.sha }}
+      lane: ${{ steps.classify.outputs.lane }}
+      eligible: ${{ steps.classify.outputs.eligible }}
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: python3 -m pip install pyyaml==6.0.3
+      # The pull request from the event file; a fork's run lists none. The
+      # head must still be the commit the signal ran on: a newer push has
+      # its own run.
+      - name: Read the pull request and the open fixture-need issues
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          number="$(jq -r '.workflow_run.pull_requests[0].number // ""' "${GITHUB_EVENT_PATH:?}")"
+          head_sha="$(jq -r '.workflow_run.head_sha // ""' "$GITHUB_EVENT_PATH")"
+          if ! [[ "$number" =~ ^[1-9][0-9]{0,6}$ ]] || ! [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "no same-repository pull request in this run; nothing to judge"
+            echo "number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api "repos/${REPO}/pulls/${number}" > "$RUNNER_TEMP/pr.json"
+          state="$(jq -r '.state' "$RUNNER_TEMP/pr.json")"
+          sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pr.json")"
+          if [ "$state" != open ] || [ "$sha" != "$head_sha" ]; then
+            echo "#${number} is closed or has moved past this run; nothing to judge"
+            echo "number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api --paginate "repos/${REPO}/issues?state=open&creator=github-actions%5Bbot%5D&per_page=100" \
+            --jq '.[] | select(.pull_request == null) | {number, state, body, user: {login: .user.login}}' \
+            | jq -s . > "$RUNNER_TEMP/issues.json"
+          git fetch --no-tags origin "+refs/pull/${number}/head:refs/fixture-pr/source"
+          if [ "$(git rev-parse refs/fixture-pr/source)" != "$sha" ]; then
+            echo "#${number} moved while it was fetched; its newer push has its own run"
+            echo "number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+      - name: Classify the pull request
+        id: classify
+        if: steps.pr.outputs.number != ''
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          python3 scripts/fixture_pr_gate.py classify --repo . \
+            --base "refs/remotes/origin/${DEFAULT_BRANCH}" --source refs/fixture-pr/source \
+            --pr "$RUNNER_TEMP/pr.json" --issues "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/gate.out"
+          cat "$RUNNER_TEMP/gate.out"
+          grep -E '^(lane|eligible)=(true|false)$' "$RUNNER_TEMP/gate.out" >> "$GITHUB_OUTPUT"
+
+  arm:
+    needs: judge
+    if: needs.judge.outputs.lane == 'true' && needs.judge.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint the roster App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Turn on auto-merge at the judged commit
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ needs.judge.outputs.number }}
+          SHA: ${{ needs.judge.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$NUMBER" =~ ^[1-9][0-9]{0,6}$ ]] || ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::the judged pull request has an unexpected shape"
+            exit 1
+          fi
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*)
+              echo "::warning::the roster App token is unavailable; #${NUMBER} waits for a person"
+              exit 0 ;;
+          esac
+          GH_TOKEN="$APP_TOKEN" GITHUB_TOKEN="" \
+            gh pr merge "$NUMBER" --repo "$REPO" --auto --merge --match-head-commit "$SHA"
+          echo "auto-merge is on for #${NUMBER} at ${SHA}"
+
+  disarm:
+    needs: judge
+    if: needs.judge.outputs.lane == 'true' && needs.judge.outputs.eligible != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Turn off auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ needs.judge.outputs.number }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$NUMBER" =~ ^[1-9][0-9]{0,6}$ ]]; then
+            echo "::error::the judged pull request has an unexpected shape"
+            exit 1
+          fi
+          armed="$(gh api "repos/${REPO}/pulls/${NUMBER}" --jq '.auto_merge != null')"
+          if [ "$armed" != true ]; then
+            echo "auto-merge is off on #${NUMBER}; it waits for a person"
+            exit 0
+          fi
+          gh pr merge "$NUMBER" --repo "$REPO" --disable-auto > /dev/null
+          echo "turned off auto-merge on #${NUMBER}: it no longer only adds fixtures for its issue"

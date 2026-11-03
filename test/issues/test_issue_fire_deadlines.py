@@ -178,6 +178,84 @@ class WorkItemIssueTests(unittest.TestCase):
                 code, calls, _ = self.run_main({"routine_down": False, "work": [bad]}, [])
                 self.assertEqual((code, self.writes(calls)), (2, []))
 
+    def test_fixture_needs_open_agent_ready_issues(self):
+        # skills-evals#659: the plan's issue-routed fixture needs reach a queue.
+        harder = {"kind": "needs-harder-fixtures", "change_type": "fixture",
+                  "skill": "writing-adrs", "fixtures": 5, "headroom": 0.04, "route": "issue"}
+        more = {"kind": "needs-fixtures", "change_type": "fixture", "skill": "",
+                "section": "example-section", "fixtures": 2, "headroom": 0.3,
+                "value": None, "route": "issue"}
+        code, calls, _ = self.run_main({"routine_down": False, "work": [harder, more]}, [])
+        self.assertEqual(code, 0)
+        creates = [(args, stdin) for args, stdin in calls if args[:2] == ["issue", "create"]]
+        self.assertEqual(len(creates), 2)
+        for args, _ in creates:
+            self.assertEqual(args[args.index("--label") + 1], "agent-ready")
+        bodies = {stdin.splitlines()[0]: stdin for _, stdin in creates}
+        self.assertIn("<!-- skills-evals:needs-harder-fixtures:writing-adrs -->", bodies)
+        self.assertIn("<!-- skills-evals:needs-fixtures:guidance/example-section -->", bodies)
+        self.assertIn("0.04", bodies["<!-- skills-evals:needs-harder-fixtures:writing-adrs -->"])
+        self.assertIn("`Refs`", bodies["<!-- skills-evals:needs-fixtures:guidance/example-section -->"])
+        # Lost-fire issues stay unlabeled.
+        code, calls, _ = self.run_main({"routine_down": False, "work": [BROKEN]}, [])
+        self.assertNotIn("--label", next(a for a, _ in calls if a[:2] == ["issue", "create"]))
+
+    def test_a_fixture_need_closes_only_when_the_plan_judged_its_subject(self):
+        body = "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->\n"
+        issue = [{"number": 11, "state": "open", "body": body}]
+        # Not judged (an input the plan lacked): the queue keeps the issue.
+        for items in ({"routine_down": False, "work": []},
+                      {"routine_down": False, "work": [], "subjects": {"skills": ["other"]}}):
+            with self.subTest(items=items):
+                self.assertEqual(self.writes(self.run_main(items, issue)[1]), [])
+        judged = {"routine_down": False, "work": [], "subjects": {"skills": ["writing-adrs"]}}
+        self.assertEqual(self.writes(self.run_main(judged, issue)[1]),
+                         [["issue", "comment"], ["issue", "close"]])
+        gbody = "<!-- skills-evals:needs-fixtures:guidance/example-section -->\n"
+        gjudged = {"routine_down": False, "work": [],
+                   "subjects": {"skills": [], "guidance": ["example-section"]}}
+        self.assertEqual(
+            self.writes(self.run_main(gjudged, [{"number": 12, "state": "open", "body": gbody}])[1]),
+            [["issue", "comment"], ["issue", "close"]])
+
+    def test_a_malformed_fixture_need_writes_nothing(self):
+        good = {"kind": "needs-fixtures", "skill": "writing-adrs", "fixtures": 2}
+        for bad in ({**good, "skill": "../x"}, {**good, "fixtures": "2"},
+                    {**good, "section": "example-section"}, {**good, "skill": ""},
+                    {"kind": "needs-fixtures", "skill": "", "section": "Bad_Id", "fixtures": 1}):
+            with self.subTest(bad=bad):
+                code, calls, _ = self.run_main({"routine_down": False, "work": [bad]}, [])
+                self.assertEqual((code, self.writes(calls)), (2, []))
+        code, _, _ = self.run_main({"routine_down": False, "work": [], "subjects": {"skills": "x"}}, [])
+        self.assertEqual(code, 2)
+
+    def test_the_sweep_extracts_every_issue_kind_and_the_measured_subjects(self):
+        # The workflow's own jq filter, run on a plan-shaped document.
+        import shutil
+        import subprocess
+        import yaml
+        jq = shutil.which("jq")
+        if jq is None:
+            self.skipTest("jq is not installed")
+        doc = yaml.safe_load((ROOT / ".github/workflows/routine-eval-weekly.yml")
+                             .read_text(encoding="utf-8"))
+        step = next(s for s in doc["jobs"]["plan"]["steps"]
+                    if s.get("name") == "Extract the issue-routed work items")
+        program = step["run"].split("jq '", 1)[1].split("' \\", 1)[0]
+        plan = {"routine_down": False,
+                "skills": {"writing-adrs": {"headroom": 0.04}, "unmeasured": {"headroom": None}},
+                "guidance": {"example-section": {"headroom": 0.3}},
+                "work": [{"kind": k} for k in ("fixture-broken", "routine-outage",
+                                                "needs-fixtures", "needs-harder-fixtures",
+                                                "needs-trigger-set", "agent-check")]}
+        out = json.loads(subprocess.run([jq, program], input=json.dumps(plan), text=True,
+                                        capture_output=True, check=True).stdout)
+        self.assertEqual([w["kind"] for w in out["work"]],
+                         ["fixture-broken", "routine-outage", "needs-fixtures",
+                          "needs-harder-fixtures"])
+        self.assertEqual(out["subjects"], {"skills": ["writing-adrs"],
+                                           "guidance": ["example-section"]})
+
     def test_a_dry_run_writes_nothing(self):
         code, calls, out = self.run_main({"routine_down": False, "work": [BROKEN]}, [],
                                          "--dry-run")
