@@ -257,6 +257,82 @@ class GuidanceTests(unittest.TestCase):
         self.assertEqual(plan["pause"], [])
 
 
+ROSTER = {"arms": [{"model": "opus"}, {"model": "sonnet"}]}
+
+
+def on(model: str, runs: list[dict]) -> list[dict]:
+    return [{**r, "model": model} for r in runs]
+
+
+class PerModelAndKeepTests(unittest.TestCase):
+    """The ceiling and floor read each roster model's cell on its own, and a
+    kept (or nearly kept) subject is never paused (adversarial round 3 on
+    #649: C1 and M1)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = make_repo(self._tmp.name, ["evals/alpha/one", "evals/guidance/sec/fx"])
+
+    def exp(self, opus, sonnet, **entry):
+        doc = explorer({"alpha": on("opus", opus) + on("sonnet", sonnet)})
+        doc["roster"] = ROSTER
+        doc["skills"][0].update(entry)
+        return doc
+
+    def paused(self, exp):
+        return [p["path"] for p in plan_for(self.root, exp)["pause"]]
+
+    def test_a_pooled_ceiling_with_one_model_below_it_does_not_pause(self):
+        # Pooled without share is 0.875, but sonnet's own cell is 0.75.
+        self.assertEqual(self.paused(self.exp(four("one", arm(10), arm(10)),
+                                              four("one", arm(10), arm(7)) + four(
+                                                  "one", arm(10), arm(8)))), [])
+
+    def test_every_model_at_the_ceiling_pauses(self):
+        self.assertEqual(self.paused(self.exp(four("one", arm(10), arm(10)),
+                                              four("one", arm(10), arm(9)))),
+                         ["evals/alpha/one"])
+
+    def test_a_roster_model_without_enough_runs_does_not_pause(self):
+        self.assertEqual(self.paused(self.exp(four("one", arm(10), arm(10)),
+                                              four("one", arm(10), arm(10), count=3))), [])
+
+    def test_a_kept_subject_is_never_paused(self):
+        at = (four("one", arm(10), arm(10)), four("one", arm(10), arm(10)))
+        self.assertEqual(self.paused(self.exp(*at, verdict="keep")), [])
+        self.assertEqual(self.paused(self.exp(*at, confidence={"helps": 0.6})), [])
+        self.assertEqual(self.paused(self.exp(*at, confidence={"helps": 0.4})),
+                         ["evals/alpha/one"])
+
+    def paused_then(self, exp):
+        eval_scope.apply_plan(self.root, plan_for(self.root, self.exp(
+            four("one", arm(10), arm(10)), four("one", arm(10), arm(10)))))
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "-m", "pause", when=COMMITTED)
+        return [(r["path"], r["rule"]) for r in plan_for(self.root, exp)["resume"]]
+
+    def test_a_pause_resumes_when_the_subject_is_kept(self):
+        at = (four("one", arm(10), arm(10)), four("one", arm(10), arm(10)))
+        self.assertEqual(self.paused_then(self.exp(*at)), [])
+        plan = plan_for(self.root, self.exp(*at, verdict="keep"))
+        self.assertEqual([(r["path"], r["rule"]) for r in plan["resume"]],
+                         [("evals/alpha/one", "ceiling")])
+
+    def test_a_pooled_pause_resumes_when_one_model_has_room(self):
+        # The live case: a pause the pooled rule made, read per model.
+        self.assertEqual(self.paused_then(self.exp(four("one", arm(10), arm(10)),
+                                                   four("one", arm(10), arm(7)))),
+                         [("evals/alpha/one", "ceiling")])
+
+    def test_a_guidance_cell_with_room_is_not_paused(self):
+        runs = (on("opus", [guidance_run("fx", arm(10), arm(10, judge=9.0))] * 4)
+                + on("sonnet", [guidance_run("fx", arm(10), arm(6, judge=9.0))] * 4))
+        doc = explorer(sections={"sec": runs})
+        doc["roster"] = ROSTER
+        self.assertEqual(self.paused(doc), [])
+
+
 class ZeroUseTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
