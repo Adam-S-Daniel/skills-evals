@@ -5,8 +5,9 @@ Adam's decisions: build automatic removal (2026-10-25); removal pull requests
 auto-merge with no human review (2026-10-25, ADR 0014); results are not
 signed, the gate guards against honest mistakes (2026-10-26); removal pull
 requests auto-merge with no human (2026-10-26, adam-agentskills ADR 0021),
-so the committed `retirement_mode` is `auto`, lowered to `proposal` (an
-issue) when the skill's plugin runs code or the workflow has no write token.
+and `auto` is lowered to `proposal` (an issue) when the skill's plugin runs
+code or the workflow has no write token. Adam set the committed
+`retirement_mode` to `proposal` on 2026-11-03 until the statistics fixes land.
 
 Hermetic: a hand-written gates document, registry checkouts in a temporary
 directory (local git only), and a fake `gh` and `push`; no network, no clock.
@@ -317,11 +318,11 @@ class ProposalTests(Base):
         block["retirement_mode"] = "sometimes"
         return block
 
-    def test_the_committed_policy_is_auto(self):
-        """Adam, 2026-10-26: removal pull requests auto-merge, no human."""
+    def test_the_committed_policy_is_proposal(self):
+        """Adam, 2026-11-03: removals are proposals until the stats fixes land."""
         doc = yaml.safe_load((ROOT / "evals" / "gate-policy.yml").read_text())
-        self.assertEqual(doc["skills"]["retirement_mode"], "auto")
-        self.assertEqual(doc["guidance"]["retirement_mode"], "auto")
+        self.assertEqual(doc["skills"]["retirement_mode"], "proposal")
+        self.assertEqual(doc["guidance"]["retirement_mode"], "proposal")
 
 
 class AutoTests(Base):
