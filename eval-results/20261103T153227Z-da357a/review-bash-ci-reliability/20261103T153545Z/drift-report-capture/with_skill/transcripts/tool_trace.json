@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MzGzPSi4f9e6BZiCnLUUxD",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:review-bash-ci-reliability",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MzGzPSi4f9e6BZiCnLUUxD",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:review-bash-ci-reliability",
+      "output_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S9dRKfsEcktsNRcvoSzLrU",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; ls .github/workflows 2><path>; find . -name '*.sh' -not -path './.git/*' | head -50",
+      "input_chars": 120,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S9dRKfsEcktsNRcvoSzLrU",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\ndeploy\nscripts\ntemplates\ndrif...",
+      "output_chars": 330,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UudrNpa4nyUGdLvZNNMmqU",
+      "name": "Bash",
+      "input": "cat -n scripts/check-drift.sh .github/workflows/drift.yml; ls deploy templates scripts; git log --oneline | head -5",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UudrNpa4nyUGdLvZNNMmqU",
+      "is_error": false,
+      "output": "     1\t#!<path> bash\n     2\t# Compare every deployed config with the template it was rendered from and\n     3\t# report each file that drifted, with the team that owns its template.\n     4\tset -euo pipefail\n     5\t\n     6\tchecked=0\n     7\tdrifted=0\n     8\t\n     9\tfor expected in templates/*.conf; do\n...",
+      "output_chars": 1648,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Sx12hc3HAgWNaETxPwxEzT",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace(\"\"\"checked=0\ndrifted=0\n\nfor expected in templates/*.conf; do\"\"\",\"\"\"checked=0\ndrifted=0\n\nshopt -s nullglob\ntemplates=(templates/*...",
+      "input_chars": 1359,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Sx12hc3HAgWNaETxPwxEzT",
+      "is_error": false,
+      "output": "drift check: 3 checked, 0 drifted\nexit=0\n workers = 4\n log_level = info\ndrift check: 3 checked, 1 drifted\nexit=1\nERROR: no templates found in templates/\nexit=1\nShell cwd was reset to <path>",
+      "output_chars": 216,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
