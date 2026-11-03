@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CevTn5XqhpYPFJFJDVbsrd",
+      "name": "Bash",
+      "input": "git status --short && ls -R . | grep -v '^./.git' | head -50 && cat docs/vendor-tracking.md",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M8DZcq7sbKgyfKiw12se8X",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CevTn5XqhpYPFJFJDVbsrd",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n# ExampleCLI release reviews\n\n|...",
+      "output_chars": 407,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M8DZcq7sbKgyfKiw12se8X",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AELpDdQ9u7wK5MbyGC4VyW",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json; cat README.md hooks/warm-cache.sh .gitmodules; git log --oneline | head",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AELpDdQ9u7wK5MbyGC4VyW",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1225,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ApZFt1KUbLxKkEeLXXmr9Q",
+      "name": "Bash",
+      "input": "ls -a . .example-cli 2>&1 | head -30; cat .example-cli/settings.json; grep -rn \"example-cli\\|ExampleCLI\" --include=* -I . 2><path> | grep -v '^./.git/' | grep -v '^./vendor' | head -20",
+      "input_chars": 187,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ApZFt1KUbLxKkEeLXXmr9Q",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.example-cli\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n.example-cli:\n.\n..\nsettings.json\n{\n  \"telemetryOptOut\": true,\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher...",
+      "output_chars": 1004,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BTknR8tocymCEGLbpKdcC4",
+      "name": "Bash",
+      "input": "mkdir -p issues && \nFIX='## If behavior and the notes disagree\n\nWhile working this issue, if ExampleCLI does something the quoted changes don'\"'\"'t\ndescribe, or doesn'\"'\"'t do what they say:\n\n- Record...",
+      "input_chars": 5024,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BTknR8tocymCEGLbpKdcC4",
+      "is_error": false,
+      "output": "issues/01-sessionstart-hook-timeout.md ['**hooks:** honor `timeout` for SessionStart hooks, fixes #88']\nissues/02-reject-unknown-config-keys.md ['**config:** reject unknown top-level keys instead of ignoring them, closes #91']\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | ...",
+      "output_chars": 886,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
