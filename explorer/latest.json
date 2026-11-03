@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 9
  },
- "generated_at": "2026-11-03T15:14:30Z",
+ "generated_at": "2026-11-03T15:16:19Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T15:12:27Z",
+ "newest_run": "2026-11-03T15:13:46Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -10493,7 +10493,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 10,
+   "current_text_runs": 11,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -10504,6 +10504,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T15:13:46Z",
+     "cli_version": "2.1.317",
+     "fixture": "swallowed-failure",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T151146Z-7cdf63/debug-github-workflows/20261103T151346Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1222381,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.0941557,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:12:27Z",
      "cli_version": "2.1.317",
@@ -13023,7 +13044,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 13,
+   "current_text_runs": 14,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -13034,6 +13055,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T15:11:29Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T150914Z-d8adc8/github-actions-sha-pinning/20261103T151129Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.43939733,
+      "judge_mean": 9.7,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.34293919500000003,
+      "judge_mean": 9.299999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:10:54Z",
      "cli_version": "2.1.317",
@@ -18310,8 +18352,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "d75231d948d28298dc20d3e313d0c50fe31a90e8",
-  "results_commit": "148d26cdd3ed11c3b5fbe93995cf89e18c6a6a23"
+  "repository_commit": "45c8bdec619d69fd31be0a139870829b97f3d897",
+  "results_commit": "d2431fee79b3e64562940155c7c34a06c8cad7a3"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
