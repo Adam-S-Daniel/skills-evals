@@ -372,6 +372,36 @@ class Select(Case):
         self.assertEqual(dns.eligibility("a", {"a": two | {"rejected"}}, set()),
                          (False, False))
 
+    def test_family_names_the_miners_cluster(self):
+        self.assertEqual(dns.family("tool-bash-gh"), "tool-bash")
+        self.assertEqual(dns.family("tool-bash-sleep"), "tool-bash")
+        self.assertEqual(dns.family("tool-edit"), "tool-edit")
+        self.assertEqual(dns.family("red-ci-adamdaniel-ai"), "red-ci")
+        self.assertEqual(dns.family("github-batch-writes"), "github-batch-writes")
+
+    def test_two_measured_sibling_rejections_close_the_family(self):
+        one = {"tool-bash-gh": {"rejected"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", one, set()), (True, False))
+        two = {**one, "tool-bash-sleep": {"rejected"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", two, set()), (False, False))
+        # Another family, or a subject that is its own family, is untouched.
+        self.assertEqual(dns.eligibility("tool-edit", two, set()), (True, False))
+        self.assertEqual(dns.eligibility("red-ci-x", two, set()), (True, False))
+        # An accepted sibling keeps the family open.
+        opened = {**two, "tool-bash-git": {"accepted"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", opened, set()), (True, False))
+        # Rejections that measured nothing say nothing about the family.
+        unmeasured = {"tool-bash-gh": {f"unmeasured@{RUN_ID}"},
+                      "tool-bash-sleep": {f"unmeasured@{RUN_ID}"}}
+        self.assertEqual(dns.eligibility("tool-bash-cd", unmeasured, set()), (True, False))
+
+    def test_select_skips_a_subject_in_a_closed_family(self):
+        self.put("2026-10-26", proposal(subject="tool-bash-cd"))
+        self.write(self.drafted, "tool-bash-gh rejected\ntool-bash-sleep rejected\n")
+        self.assertEqual(self.select()["count"], "0")
+        self.write(self.drafted, "tool-bash-gh rejected\n")
+        self.assertEqual(self.select()["count"], "1")
+
     def test_an_unmeasured_rejection_leaves_the_subject_eligible(self):
         self.put("2026-10-26", proposal())
         self.write(self.drafted, f"{SUBJECT} unmeasured@{RUN_ID}\n")

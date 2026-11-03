@@ -673,14 +673,47 @@ def parse_subjects(path: Path | None) -> set[str]:
             if SUBJECT_RE.fullmatch(line.strip())}
 
 
+# A closed family: this many siblings measured and rejected, none accepted.
+MAX_FAMILY_REJECTED = 2
+
+
+def family(subject: str) -> str:
+    """The cluster a mined subject belongs to (mine_sessions.py's
+    `cluster_subject` names): `tool-<tool>` for `tool-<tool>-<word>`, `red-ci`
+    for `red-ci-<repo>`; any other subject is a family of its own."""
+    if subject.startswith("red-ci-"):
+        return "red-ci"
+    parts = subject.split("-")
+    if parts[0] == "tool" and len(parts) > 2:
+        return "-".join(parts[:2])
+    return subject
+
+
+def family_closed(subject: str, drafted: dict[str, set[str]]) -> bool:
+    """True when MAX_FAMILY_REJECTED other subjects of the same family were
+    measured and rejected and none was accepted: siblings of a signal that
+    keeps producing skills that add nothing are not drafted again under a
+    new name."""
+    fam = family(subject)
+    if fam == subject:
+        return False
+    siblings = [d for s, d in drafted.items() if s != subject and family(s) == fam]
+    if any("accepted" in d for d in siblings):
+        return False
+    return sum("rejected" in d for d in siblings) >= MAX_FAMILY_REJECTED
+
+
 def eligibility(subject: str, drafted: dict[str, set[str]],
                 declined: set[str]) -> tuple[bool, bool]:
     """(eligible, via a declined hook proposal). A skill record (accepted or
     rejected) is final; a rejection that measured nothing is not, until
     MAX_UNMEASURED of them; a hook-first record holds the subject until the
-    agent-checks lane declines it."""
+    agent-checks lane declines it; a subject in a closed family
+    (`family_closed`) is not drafted."""
     decisions = drafted.get(subject, set())
     if decisions & {"accepted", "rejected"}:
+        return False, False
+    if family_closed(subject, drafted):
         return False, False
     if sum(d.startswith(UNMEASURED_PREFIX) for d in decisions) >= MAX_UNMEASURED:
         return False, False
