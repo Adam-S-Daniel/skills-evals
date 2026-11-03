@@ -179,6 +179,37 @@ THE BANDS (rule D), in order:
      (fewest runs, so missing cells first, then the cheaper model). When
      the 30-fire cap binds, a section outside the focus can wait weeks.
 
+THE BATCH (Adam's steady-state goal, 2026-11-02 18:57 UTC: at 25% of the
+weekly allowance, every two weeks pick a batch of skills and guidance
+sections numbering about three times the historical weekly addition rate,
+bring them all to a verdict, then start a new batch). Only with
+`--batch-policy` (evals/batch-policy.yml; the weekly workflow passes it),
+and only from the policy's `start`. `batch_state` decides it each plan:
+  members: per kind (skill, guidance section), max(1, multiplier x the
+    policy's weekly addition rate, half rounded up). Candidates are the
+    subjects with a schedulable cell, never a private skill, whose status
+    is open (`batch_subjects`: verdict open, no removal pull request, no
+    blocking cell, some cell would plan a fire). High stakes first, then
+    the longest without a run (never run first), then name.
+  lifetime: a batch stays until every member has left `open` (decided,
+    blocked, stalled or gone) or it is due (`period_days` after its start),
+    whichever is first. Then the next one starts at once: the old batch's
+    open members carried first, keeping their `joined` number, then new
+    picks to fill each kind. Nothing to carry and nothing to pick keeps the
+    old record.
+  effect: bands 2, 3, 4 and 8 (BATCH_BANDS) take only member cells; the
+    guidance focus is every guidance member, not the top
+    GUIDANCE_FOCUS_SECTIONS. Safety, re-checks, improvements and bare
+    baselines are unchanged.
+  record: BATCH_RECORD (batches/current.json) on the results branch, read
+    with the results tree. A plan that starts a batch writes it to
+    `--batch-out` and sets `batch_started=true`; the weekly workflow's
+    batch-publish job commits it there and as batches/<number>.json. The
+    record carries the previous batch's members with their final status.
+    A malformed record stops the plan (fail closed). The plan's `batch`
+    adds each member's status now and `outside`, the cells the batch held
+    back.
+
 Each band first gets its minimum share of the room left after safety;
 what is left then goes to the bands in order. Within a band ties break on
 cost, cheapest first, and the plan stops at `--max-fires`. A fire is
@@ -479,6 +510,14 @@ HOOK_RULE_SHARE = 0.5
 HOOK_HEADING_RE = re.compile(r"\b(?:checklist|rules|checks)\b", re.IGNORECASE)
 MARKDOWN_HEADING_RE = re.compile(r"(#{1,6})\s+(.*)")
 STAMP = "%Y%m%dT%H%M%SZ"
+# THE BATCH (module docstring): its policy, and its record on the results
+# branch (written by routine-eval-weekly.yml's batch-publish job).
+BATCH_KINDS = ("skill", "guidance")
+BATCH_RECORD = "batches/current.json"
+BATCH_SUBJECT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
+# The bands a batch restricts to its members; safety, recheck, improve and
+# bare are not.
+BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
 
 
 class PlanError(Exception):
@@ -777,9 +816,11 @@ def guidance_focus(ctx: dict) -> tuple:
     retire_level = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
     benefit_level = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
     removals = set(ctx.get("guidance_removal_prs") or ())
+    members = batch_members(ctx)
     sections: dict = {}
     for cell in ctx["cells"]:
-        if cell.get("section"):
+        if cell.get("section") and (members is None
+                                    or ("guidance", cell["section"]) in members):
             sections.setdefault(cell["section"], []).append(cell)
     ranked = []
     for section, cells in sections.items():
@@ -791,7 +832,8 @@ def guidance_focus(ctx: dict) -> tuple:
         runs = sum((c.get("with_counted") or 0) + (c.get("without_counted") or 0) for c in cells)
         ranked.append((-max(retire, keep), len(cells), -runs, section, keep > retire))
     ranked.sort()
-    chosen = ranked[:GUIDANCE_FOCUS_SECTIONS]
+    # With a batch open its guidance members are the focus, however many.
+    chosen = ranked if members is not None else ranked[:GUIDANCE_FOCUS_SECTIONS]
     return ([{"section": r[3], "score": -r[0]} for r in chosen],
             {r[3]: {"position": place, "side": "keep" if r[4] else "retire",
                     "retire_level": retire_level, "benefit_level": benefit_level}
@@ -817,6 +859,183 @@ def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
     else:
         progress = retire_progress(cell, focus["retire_level"])
     return "focus", (rank, focus["position"], progress, price)
+
+
+# ---------------------------------------------------------------------------
+# The two-week batch (module docstring, THE BATCH).
+
+def load_batch_policy(path: Path) -> dict | None:
+    """evals/batch-policy.yml, validated, or None when the file is absent:
+    {start, period, multiplier, rates: {kind: per week}}. Any other shape is
+    a PlanError (fixed text)."""
+    import yaml  # noqa: PLC0415
+    if not path.exists():
+        return None
+    try:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+        raise PlanError("the batch policy is unreadable") from exc
+    bad = PlanError("the batch policy is malformed")
+    if not isinstance(doc, dict) or set(doc) != {"start", "period_days", "multiplier", "rates"}:
+        raise bad
+    start = outcomes_mod.parse_time(doc["start"])
+    period, multiplier, rates = doc["period_days"], doc["multiplier"], doc["rates"]
+    numbers = [multiplier, *(rates.values() if isinstance(rates, dict) else ())]
+    if start is None or not isinstance(period, int) or isinstance(period, bool) \
+            or not 1 <= period <= 60 or not isinstance(rates, dict) \
+            or set(rates) != set(BATCH_KINDS) \
+            or any(not isinstance(n, (int, float)) or isinstance(n, bool)
+                   or not math.isfinite(n) or n < 0 for n in numbers) or multiplier <= 0:
+        raise bad
+    return {"start": start, "period": timedelta(days=period), "multiplier": float(multiplier),
+            "rates": {kind: float(rates[kind]) for kind in BATCH_KINDS}}
+
+
+def batch_sizes(policy: dict) -> dict:
+    """Members per kind: max(1, multiplier x weekly rate, half rounded up)."""
+    return {kind: max(1, math.floor(policy["multiplier"] * policy["rates"][kind] + 0.5))
+            for kind in BATCH_KINDS}
+
+
+def read_batch(tree: Path) -> dict | None:
+    """The open batch's record from the results tree (BATCH_RECORD), or None
+    when there is none. A record of any other shape is a PlanError: it is
+    this planner's own output, so a bad one means something wrote over it."""
+    path = tree / BATCH_RECORD
+    if not path.exists():
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise PlanError("the batch record is unreadable") from exc
+    bad = PlanError("the batch record is malformed")
+    if not isinstance(doc, dict) or doc.get("schema_version") != 1:
+        raise bad
+    number, members = doc.get("number"), doc.get("members")
+    if not isinstance(number, int) or isinstance(number, bool) or number < 1 \
+            or not isinstance(members, list) \
+            or outcomes_mod.parse_time(doc.get("started_at")) is None \
+            or outcomes_mod.parse_time(doc.get("due_at")) is None:
+        raise bad
+    for member in members:
+        if not isinstance(member, dict) or member.get("kind") not in BATCH_KINDS \
+                or not isinstance(member.get("subject"), str) \
+                or not BATCH_SUBJECT_RE.fullmatch(member["subject"]) \
+                or not isinstance(member.get("joined"), int) \
+                or isinstance(member.get("joined"), bool) \
+                or not 1 <= member["joined"] <= number:
+            raise bad
+    return doc
+
+
+def batch_subjects(ctx: dict) -> dict:
+    """{(kind, subject): {status, rank, newest}} for every subject with a
+    schedulable eval cell. Private skills are never listed (the record is
+    public). Status, first match:
+      decided  its verdict is closed (anything but FOCUS_VERDICTS) or a
+               removal pull request is open for it;
+      blocked  some cell is blocking (`_blocking`): more runs on the current
+               content cannot move it;
+      stalled  no cell would plan a fire (`_produces_item`: fixture-broken,
+               every cell held or stakes `none`);
+      open     otherwise.
+    `rank` is 0 for a high-stakes subject, else 1; `newest` its newest run
+    on any cell (None for never run)."""
+    private = set(ctx.get("private_skills") or ())
+    removal_skills = set(ctx.get("removal_prs") or ())
+    removal_sections = set(ctx.get("guidance_removal_prs") or ())
+    grouped: dict = {}
+    for cell in ctx["cells"]:
+        key = ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+        grouped.setdefault(key, []).append(cell)
+    subjects = {}
+    for (kind, name), cells in grouped.items():
+        live = [c for c in cells if c.get("schedulable", True)]
+        if not live or (kind == "skill" and name in private) \
+                or not BATCH_SUBJECT_RE.fullmatch(name or ""):
+            continue
+        removal = name in (removal_sections if kind == "guidance" else removal_skills)
+        if removal or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells):
+            status = "decided"
+        elif any(_blocking(c) for c in cells):
+            status = "blocked"
+        elif not any(_produces_item(c) for c in live):
+            status = "stalled"
+        else:
+            status = "open"
+        stamps = [t for t in (_stamp_time(c.get("newest")) for c in cells) if t is not None]
+        subjects[(kind, name)] = {
+            "status": status, "newest": max(stamps) if stamps else None,
+            "rank": 0 if any(c.get("stakes") == "high" for c in cells) else 1}
+    return subjects
+
+
+def batch_state(ctx: dict, now: datetime) -> dict | None:
+    """The batch this plan works on, or None before the policy's start (or
+    without a policy). Pure. Returns {record, started, status}: `record` is
+    what BATCH_RECORD holds, `started` whether this plan began it (so the
+    weekly workflow publishes it), `status` each member's status now.
+
+    The previous record stays while some member is open and it is not yet
+    due. Otherwise a new batch starts: the previous batch's open members
+    first, in their order, keeping their `joined`; then, per kind, open
+    subjects not already in it up to `batch_sizes` (high stakes first, then
+    the longest without a run, never run first, then name). Decided,
+    blocked, stalled and gone members are not carried: each ended on its
+    own work item or verdict. When there is nothing to start (no carry and
+    no pick) the previous record stays, so a finished batch with no
+    candidates is not renumbered on every sweep."""
+    policy = ctx.get("batch_policy")
+    if not policy or now < policy["start"]:
+        return None
+    subjects = batch_subjects(ctx)
+    previous = ctx.get("previous_batch")
+
+    def status_of(member):
+        return subjects.get((member["kind"], member["subject"]), {}).get("status", "gone")
+
+    def described(record, started):
+        return {"record": record, "started": started,
+                "status": [{"kind": m["kind"], "subject": m["subject"], "status": status_of(m)}
+                           for m in record["members"]]}
+
+    old = previous["members"] if previous else []
+    carry = [m for m in old if status_of(m) == "open"]
+    if previous and carry and now < outcomes_mod.parse_time(previous["due_at"]):
+        return described(previous, False)
+    sizes = batch_sizes(policy)
+    floor = datetime.min.replace(tzinfo=timezone.utc)
+    taken = {(m["kind"], m["subject"]) for m in carry}
+    number = previous["number"] + 1 if previous else 1
+    picks = []
+    for kind in BATCH_KINDS:
+        room = sizes[kind] - sum(1 for m in carry if m["kind"] == kind)
+        ranked = sorted((info["rank"], info["newest"] or floor, name)
+                        for (k, name), info in subjects.items()
+                        if k == kind and info["status"] == "open" and (k, name) not in taken)
+        picks += [{"kind": kind, "subject": name, "joined": number}
+                  for _rank, _newest, name in ranked[:max(0, room)]]
+    if previous and not carry and not picks:
+        return described(previous, False)
+    record = {"schema_version": 1, "number": number, "started_at": _iso(now),
+              "due_at": _iso(now + policy["period"]), "sizes": sizes,
+              "multiplier": policy["multiplier"], "rates": policy["rates"],
+              "members": [{"kind": m["kind"], "subject": m["subject"], "joined": m["joined"]}
+                          for m in carry] + picks,
+              "previous": None if not previous else {
+                  "number": previous["number"],
+                  "members": [{"kind": m["kind"], "subject": m["subject"],
+                               "status": status_of(m)} for m in old]}}
+    return described(record, True)
+
+
+def batch_members(ctx: dict) -> set | None:
+    """{(kind, subject)} of the batch `build_plan` put in ctx["batch"], or
+    None when no batch is active (every subject is measured as before)."""
+    batch = ctx.get("batch")
+    if not batch:
+        return None
+    return {(m["kind"], m["subject"]) for m in batch["record"]["members"]}
 
 
 def eval_items(ctx: dict, now: datetime) -> tuple:
@@ -845,6 +1064,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
     _focus, focused = guidance_focus(ctx)
+    members = batch_members(ctx)
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
@@ -881,6 +1101,10 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             band, order = None, None
         if band is None:
             continue
+        subject = ("guidance", cell["section"]) if cell.get("section") \
+            else ("skill", cell["skill"])
+        if members is not None and band in BATCH_BANDS and subject not in members:
+            continue  # THE BATCH: measured once its subject joins one
         if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
             broken = {"kind": "fixture-broken", "change_type": "fixture",
                       "skill": cell["skill"], "fixture": cell["fixture"],
@@ -1258,7 +1482,15 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     else, with the guard's refresh, one that fits a reservation; none while
     `probe_blocked`. With no schedulable eval cell at all it plans normally
     (`probe_only` False)."""
+    batch = batch_state(ctx, now)
+    outside = 0
+    if batch is not None:
+        unbatched, _work = eval_items(ctx, now)
+        ctx = {**ctx, "batch": batch}
     bands, work = eval_items(ctx, now)
+    if batch is not None:
+        # Cells a sweep without the batch would have queued in its bands.
+        outside = sum(len(unbatched[b]) - len(bands[b]) for b in BATCH_BANDS)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
     triggers, hooks = trigger_items(ctx)
     improve_state = ctx.get("improve_state")
@@ -1323,6 +1555,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             "improve_allowed": None if improve_state is None else
             {mode: guard.improve_cap(improve_state, mode) for mode in IMPROVE_MODES},
             "guidance_focus": guidance_focus(ctx)[0],
+            # THE BATCH: None before the policy's start; `started` tells the
+            # weekly workflow to publish `record` to BATCH_RECORD.
+            "batch": None if batch is None else {**batch, "outside": outside},
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
@@ -2227,7 +2462,13 @@ def gather(args, now: datetime) -> dict:
             "triggers": triggers,
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
                                            now, private_skills(evals_dir)),
-            "lessons": read_lessons(args.lessons)}
+            "lessons": read_lessons(args.lessons),
+            # THE BATCH: only with --batch-policy (the weekly workflow's).
+            "batch_policy": (load_batch_policy(args.batch_policy)
+                             if args.batch_policy is not None else None),
+            "previous_batch": (read_batch(args.results_tree)
+                               if args.batch_policy is not None else None),
+            "private_skills": private_skills(evals_dir)}
 
 
 def _fire_pair(runs: list, now: datetime, since: datetime | None = None) -> tuple:
@@ -2268,6 +2509,13 @@ def summary_lines(plan: dict) -> list:
         lines.append("Routine down: no schedulable eval cell to probe, planned normally")
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
+    batch = plan.get("batch")
+    if batch:
+        record = batch["record"]
+        members = ", ".join(f"{s['subject']} ({s['status']})" for s in batch["status"])
+        lines.append(f"Batch {record['number']}{' (started now)' if batch['started'] else ''}"
+                     f", due {record['due_at']}: {members or 'no members'}; "
+                     f"{batch['outside']} cell(s) outside it wait")
     lines.append("Guidance focus: " + (", ".join(
         f"{f['section']} ({f['score']:.3f})" for f in plan.get("guidance_focus", []))
         or "none"))
@@ -2480,6 +2728,11 @@ def guidance_headroom(section: str, tree: Path, evals_dir: Path, guidance_dir: P
     return True, f"section {section}: train headroom {headroom:.3f}"
 
 
+def _utcnow() -> datetime:
+    """The plan's `now` (a seam for the plan command's tests)."""
+    return datetime.now(timezone.utc)
+
+
 def main(argv: list | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -2497,6 +2750,10 @@ def main(argv: list | None = None) -> int:
     p.add_argument("--out", type=Path, default=None)
     p.add_argument("--ranking-out", type=Path, default=None,
                    help="the improve ranking alone (public-safe), as JSON")
+    p.add_argument("--batch-policy", type=Path, default=None,
+                   help="evals/batch-policy.yml: plan within the two-week batch")
+    p.add_argument("--batch-out", type=Path, default=None,
+                   help="the batch record, written only when this plan started it")
     sub.add_parser("validate-fire")
     p = sub.add_parser("guidance-headroom")
     p.add_argument("section")
@@ -2546,7 +2803,7 @@ def main(argv: list | None = None) -> int:
             return 0
         if not 1 <= args.max_fires <= 30:
             raise PlanError("the fire cap must be 1 to 30")
-        now = datetime.now(timezone.utc)
+        now = _utcnow()
         plan = build_plan(gather(args, now), now, args.max_fires)
     except (PlanError, outcomes_mod.EvidenceError, guard.GuardError,
             guard.budget_file.BudgetError) as exc:
@@ -2565,6 +2822,10 @@ def main(argv: list | None = None) -> int:
             {"schema_version": 1, "generated_at": plan["generated_at"],
              "improve_ranking": plan["improve_ranking"]}, indent=2, sort_keys=True) + "\n",
             encoding="utf-8")
+    started = bool(plan["batch"] and plan["batch"]["started"])
+    if args.batch_out is not None and started:
+        args.batch_out.write_text(json.dumps(plan["batch"]["record"], indent=2, sort_keys=True)
+                                  + "\n", encoding="utf-8")
     if os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as out:
             out.write("\n".join(lines) + "\n")
@@ -2572,6 +2833,7 @@ def main(argv: list | None = None) -> int:
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
             out.write("matrix=" + json.dumps(plan["matrix"], separators=(",", ":")) + "\n")
             out.write(f"count={len(plan['fires'])}\n")
+            out.write(f"batch_started={'true' if started else 'false'}\n")
     return 0
 
 

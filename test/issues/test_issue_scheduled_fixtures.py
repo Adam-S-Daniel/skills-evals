@@ -650,7 +650,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(workflow["concurrency"],
                          {"group": "routine-eval-weekly", "cancel-in-progress": False})
         jobs = workflow["jobs"]
-        self.assertEqual(set(jobs), {"plan", "dispatch", "watchdog"})
+        self.assertEqual(set(jobs), {"plan", "dispatch", "watchdog", "batch-publish"})
         self.assertEqual(jobs["plan"]["permissions"],
                          {"contents": "read", "actions": "read", "issues": "read",
                           "pull-requests": "read"})
@@ -661,7 +661,8 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                          jobs["plan"]["if"] + " && needs.plan.outputs.count != '0'")
         self.assertEqual(jobs["plan"]["outputs"],
                          {"matrix": "${{ steps.plan.outputs.matrix }}",
-                          "count": "${{ steps.plan.outputs.count }}"})
+                          "count": "${{ steps.plan.outputs.count }}",
+                          "batch_started": "${{ steps.plan.outputs.batch_started }}"})
         self.assertEqual(jobs["dispatch"]["strategy"],
                          {"fail-fast": False, "max-parallel": 1,
                           "matrix": "${{ fromJSON(needs.plan.outputs.matrix) }}"})

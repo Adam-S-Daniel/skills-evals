@@ -81,6 +81,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
+      batch_started: ${{ steps.plan.outputs.batch_started }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -205,7 +206,9 @@ jobs:
             "${private[@]}" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \
             --out "$RUNNER_TEMP/plan.json" \
-            --ranking-out "$RUNNER_TEMP/improve-ranking.json"
+            --ranking-out "$RUNNER_TEMP/improve-ranking.json" \
+            --batch-policy evals/batch-policy.yml \
+            --batch-out "$RUNNER_TEMP/batch.json"
       - name: Upload the improve ranking
         uses: actions/upload-artifact@v7.0.2
         with:
@@ -213,6 +216,79 @@ jobs:
           path: ${{ runner.temp }}/improve-ranking.json
           retention-days: 30
           if-no-files-found: error
+      - name: Upload the new batch record
+        if: steps.plan.outputs.batch_started == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: batch
+          path: ${{ runner.temp }}/batch.json
+          retention-days: 30
+          if-no-files-found: error
+
+  # THE BATCH (scripts/plan_week.py): a plan that started a two-week batch
+  # commits its record to persistent/eval-results, where the next plan reads
+  # it. Only then: a sweep that keeps the open batch writes nothing. The
+  # sweeps' concurrency group keeps two from starting batches at once; the
+  # ingest and explorer jobs also push to the branch, so the push retries
+  # from a fresh fetch. The job token's pushes start no workflow.
+  batch-publish:
+    needs: plan
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && needs.plan.outputs.batch_started == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Download the batch record
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: batch
+          path: ${{ runner.temp }}/batch
+      - name: Publish batches/current.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          source="$RUNNER_TEMP/batch/batch.json"
+          number="$(jq -er '.number | select(type == "number" and . >= 1 and . == floor)' "$source")"
+          jq -e '.schema_version == 1 and (.members | type == "array")' "$source" >/dev/null
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git config user.name "skills-evals real-eval bot"
+          git config user.email "skills-evals@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            git fetch origin refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results
+            git checkout -B persistent/eval-results origin/persistent/eval-results
+            if [ -L batches ] || { [ -e batches ] && [ ! -d batches ]; }; then
+              echo "Unsafe batch output path." >&2
+              exit 1
+            fi
+            for name in current.json "$number.json"; do
+              if [ -L "batches/$name" ] || { [ -e "batches/$name" ] && [ ! -f "batches/$name" ]; }; then
+                echo "Unsafe batch output path." >&2
+                exit 1
+              fi
+            done
+            mkdir -p batches
+            cp "$source" batches/current.json
+            cp "$source" "batches/$number.json"
+            git add -f batches/current.json "batches/$number.json"
+            if git diff --cached --quiet; then
+              echo "No batch change to commit."
+              exit 0
+            fi
+            git commit -m "batches: start batch $number [skip ci]"
+            if git -c "http.https://github.com/.extraheader=$auth" push origin HEAD:refs/heads/persistent/eval-results; then
+              exit 0
+            fi
+            echo "Push attempt $attempt failed; retrying from a fresh fetch." >&2
+          done
+          echo "Could not publish batches/current.json after 3 attempts." >&2
+          exit 1
 
   dispatch:
     needs: plan
