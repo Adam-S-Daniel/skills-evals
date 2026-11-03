@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T17:23:11Z",
+ "generated_at": "2026-11-03T17:36:38Z",
  "guidance": {
   "removed": [
    {
@@ -9317,7 +9317,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T17:20:20Z",
+ "newest_run": "2026-11-03T17:34:22Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -12883,7 +12883,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Configure and enforce GitHub repository security settings as code: require actions to be pinned to full-length commit SHAs, require approval for all outside collaborators' fork pull-request workflow runs, and protect the default branch via a repository ruleset. The settings-as-code engine, its schema, and the fleet fan-out live in the repo-settings repo, which this skill points to; it also carries manual `gh api` recipes. Trigger when: setting up a new repo, running a security audit, onboarding a repo to org standards, enforcing settings across a fleet, or when asked to configure or harden Actions security settings. Trigger on mentions of \"actions settings\", \"repo security settings\", \"repo settings as code\", \"settings drift\", \"fork approval\", \"outside collaborators\", \"actions policy\", \"branch protection\", \"ruleset\", \"harden repo\", \"actions event policy\", or \"pull_request_target policy\".",
    "name": "github-actions-repo-settings",
    "next_test": {
@@ -12894,6 +12894,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T17:34:22Z",
+     "cli_version": "2.1.317",
+     "fixture": "drift-diagnosis",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T172614Z-e6b192/github-actions-repo-settings/20261103T173422Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.1379841,
+      "judge_mean": 8.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 9,
+      "cost_usd": 0.0810146,
+      "judge_mean": 7.699999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:31:37Z",
      "cli_version": "2.1.317",
@@ -19082,8 +19103,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "d7f6435dbbdf61311a98ff6d9f30fd3172b62030",
-  "results_commit": "2dbcb4c026c7a6b59ee063853cb5e94c10180b44"
+  "repository_commit": "99eae178eb398fd10b2db29a6942435ad327145a",
+  "results_commit": "a31d356a08eac2bb40e8f9656f5b3c1785f2262d"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
