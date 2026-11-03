@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BvDdUC6Eeajr1kQmpJisKj",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BvDdUC6Eeajr1kQmpJisKj",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n784f8d3 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc...",
+      "output_chars": 434,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LGV3Y18j8C6FgRS9bL5hE3",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md docs/vendor-tracking.md vendor/RELEASES.md vendor/releases.json .example-cli/settings.json hooks/warm-cache.sh; do echo \"=== $f\"; cat \"$f\"; done; ls -la .idea .vscode; git...",
+      "input_chars": 228,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LGV3Y18j8C6FgRS9bL5hE3",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n=== AGENTS.md\n# AGENTS.md...",
+      "output_chars": 2525,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016zpfJqAKXASwVcmikbP3LB",
+      "name": "Bash",
+      "input": "grep -rn \"telemetryOptOut\\|--config\\|status\" --exclude-dir=.git . 2><path> | grep -v \"^./vendor\"; date -u +%F",
+      "input_chars": 112,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016zpfJqAKXASwVcmikbP3LB",
+      "is_error": false,
+      "output": "./.example-cli/settings.json:2:  \"telemetryOptOut\": true,\n2026-11-03",
+      "output_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014amAnfPe5hwpqffnpLt1Ta",
+      "name": "Bash",
+      "input": "mkdir -p issues && printf '| 4.4.0 | 2026-11-03 | 2 filed |\\n' >> docs/vendor-tracking.md && cat docs/vendor-tracking.md\ncat > issues/01-sessionstart-hook-timeout-kills-warm-cache.md <<'EOF'\n# Example...",
+      "input_chars": 3470,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014amAnfPe5hwpqffnpLt1Ta",
+      "is_error": false,
+      "output": "# ExampleCLI release reviews\n\n| Version | Reviewed | Issues |\n|---|---|---|\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-03 | 2 filed |",
+      "output_chars": 171,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RbWdU6LJjZZVuCBnr6cTJL",
+      "name": "Bash",
+      "input": "cat > pr-body.md <<'EOF'\n## TLDR\n\nThis PR records the review of ExampleCLI 4.4.0 against this repo by adding a row to `docs/vendor-tracking.md`. Two of the four changes in the release can affect us, a...",
+      "input_chars": 2854,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RbWdU6LJjZZVuCBnr6cTJL",
+      "is_error": false,
+      "output": "closing-keyword hits: 1\n M docs/vendor-tracking.md\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? commit-message.txt\n?? issues/\n?? pr-body.md",
+      "output_chars": 236,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

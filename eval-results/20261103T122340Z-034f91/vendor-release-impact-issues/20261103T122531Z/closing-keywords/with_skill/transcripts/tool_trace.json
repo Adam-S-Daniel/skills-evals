@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cmmzb8FLYxZbAvYPpM4roM",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cmmzb8FLYxZbAvYPpM4roM",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndfb209b initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc...",
+      "output_chars": 434,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JyATgce16SiD5z7osB5V5z",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md docs/vendor-tracking.md vendor/RELEASES.md vendor/releases.json .example-cli/settings.json hooks/warm-cache.sh; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JyATgce16SiD5z7osB5V5z",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n=== AGENTS.md\n# AGENTS.md...",
+      "output_chars": 1957,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013kbiBQvhv4y1y1QWpTHFcd",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013kbiBQvhv4y1y1QWpTHFcd",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P6eupZwBhftRXQqRVFU4BV",
+      "name": "Bash",
+      "input": "grep -rnI -e '--config' -e 'statusLine\\|status line' -i -e windows . --exclude-dir=.git | grep -v '^./vendor'; ls -la .idea .vscode; cat .gitmodules .mcp.json; git ls-files",
+      "input_chars": 172,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P6eupZwBhftRXQqRVFU4BV",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 699,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F3y1CfE7UTNz7GKDPpNWwh",
+      "name": "Bash",
+      "input": "mkdir -p \"$TMPDIR/gen\" && cat > \"$TMPDIR/gen/gen.py\" <<'PY'\nimport json, re, sys, pathlib\nws = pathlib.Path(sys.argv[1])\nnotes = (ws/\"vendor/RELEASES.md\").read_text().splitlines()\nrel = json.loads((ws...",
+      "input_chars": 5683,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F3y1CfE7UTNz7GKDPpNWwh",
+      "is_error": false,
+      "output": "4.4.0/1 | **hooks:** honor `timeout` for SessionSt\n4.4.0/2 | **config:** reject unknown top-level key\n4.4.0/3 | **windows:** handle network drive paths \n4.4.0/4 | **ui:** add a compact status line\n01-sessionstart-hook-timeout-enforced.md\n02-config-rejects-unknown-top-level-keys.md\n# ExampleCLI 4.4.0...",
+      "output_chars": 4073,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017iygpkyixuLRYSbGNgMP1a",
+      "name": "Bash",
+      "input": "sed -i 's|return f\"{VER} (published {PUB}):|return f\"[v{VER}]({URL}) (published {PUB}):|' \"$TMPDIR/gen/gen.py\" && python3 -I \"$TMPDIR/gen/gen.py\" . \"$TMPDIR/gen/spec.json\" 2><path> && grep -n 'publish...",
+      "input_chars": 2528,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017iygpkyixuLRYSbGNgMP1a",
+      "is_error": false,
+      "output": "01-sessionstart-hook-timeout-enforced.md\n02-config-rejects-unknown-top-level-keys.md\nissues/01-sessionstart-hook-timeout-enforced.md:7:[v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0) (published 2026-10-06T18:31Z):\nissues/02-config-rejects-unknown-top-level-keys.md:<redact...",
+      "output_chars": 773,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
