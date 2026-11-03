@@ -1,6 +1,9 @@
 # ADR 0012: An A/B runs both arms in the context the subject deploys into, and removes only the subject
 
-- **Status:** accepted (2026-10-07). Nothing is built yet.
+- **Status:** accepted (2026-10-07). Status note (2026-11-03): built. In-place
+  fixtures (a top-level `context:` mapping) are loaded by `harness/context.py`
+  and run through the routine, and the addenda below describe what was added
+  since.
 - **Amended 2026-11-02:** keep-or-remove runs test main's copy of a skill
   subject (see "Addendum: main's copy").
 - **Amended 2026-11-02:** arms that stand for the real setup run the fleet

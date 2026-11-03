@@ -1,6 +1,11 @@
 # ADR 0015: Real sessions are mined only on Adam's own computer, into redacted records in the private registry
 
-- **Status:** accepted (2026-10-26). Built; not yet scheduled on the machine.
+- **Status:** accepted (2026-10-26). Built. Status note (2026-11-03): the daily
+  `Session Miner` scheduled task was added by
+  [wsl-automation#83](https://github.com/Adam-S-Daniel/wsl-automation/pull/83),
+  merged 2026-11-02 (`scripts/run-session-miner.sh`, a daily trigger at 12:47
+  by default). Whether the task is registered on the machine is not visible
+  from this repository.
 - **Deciders:** Adam, directly: real session transcripts are read only on his
   own computer, never in the cloud (2026-10-24); proposal files, not issues,
   are the primary sink, because cloud readers hold only Contents: read on

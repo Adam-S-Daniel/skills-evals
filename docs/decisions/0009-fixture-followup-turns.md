@@ -1,6 +1,10 @@
 # ADR 0009: A fixture may send scripted follow-up turns, identically in both arms
 
-- **Status:** proposed (2026-10-05)
+- **Status:** proposed (2026-10-05). Status note (2026-11-03): implemented.
+  `validate_followups` in `harness/run_eval.py` reads `followups:`, and
+  fixtures such as `evals/debug-github-workflows/git-identity/fixture.yaml`
+  use it. The status line was not changed to accepted because no acceptance
+  is recorded here ("Decider: Adam (pending)").
 - **Issue:** none; found by the session-9 triage of the rename-pdfs
   qualification runs, which scored both arms at the same objective floor.
 - **Decider:** Adam (pending).

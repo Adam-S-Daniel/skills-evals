@@ -57,7 +57,8 @@ September pause, and is not updated any more.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in
-  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372).
+  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372) (closed
+  2026-10-29 as completed).
 - **Improvement loop:** a writing-adrs pass with 1 trial on 2026-10-25
   proposed no edit. A pass with 3 trials is running.
 - **Closed loop (2026-10-26, [#423](https://github.com/Adam-S-Daniel/skills-evals/pull/423)):**
@@ -83,8 +84,9 @@ September pause, and is not updated any more.
     `EVAL_IMPROVE_APP_PEM`; without them it opens nothing.
   - *Draft mode* also waits on a routine prompt edit that Adam owns.
 - **Status board:** [#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
-  points here; its body below the pointer is the 2026-10-10 state. Live
-  progress is in #372 and the open PRs.
+  is closed (2026-10-29) and no longer updated; its closing comment points
+  to "Current state" at the top of this file. Live progress is in the open
+  PRs and issues.
 
 
 **Read this first.** This is the one place that describes the whole
@@ -103,8 +105,9 @@ reconstructed from memory.
 - **Live operational state** (rewritten hourly while the programme ran, final
   at the pause): the status board,
   [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126),
-  marker `<!-- skills-evals:orchestration -->`. Its last body is the
-  authoritative state; this file is the map to it.
+  marker `<!-- skills-evals:orchestration -->`. It was closed on 2026-10-29
+  and its body stopped being updated before that, so "Current state" at the
+  top of this file is the authority now; the issue's last body is history.
 - **Every review report, worker brief, review prompt and verification log**:
   the branch
   [`persistent/orchestration-state`](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/orchestration-state/.orchestration)
@@ -299,7 +302,8 @@ the issue is the later word.
   `adam-agentskills`; links to the old number in this file now point there.
 - **A calibration sweep is planned** as the pilot's first sweep, to measure
   what a sweep costs against the weekly allowance:
-  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372). Its
+  [#372](https://github.com/Adam-S-Daniel/skills-evals/issues/372) (since
+  closed as completed, 2026-10-29). Its
   pre-run work is listed there and waits for Adam's approval.
 
 Measured the same day: the weekly routine had not yet fired on schedule (first
@@ -446,7 +450,7 @@ remaining steps and cost ranges is [`docs/how-it-works.md`](docs/how-it-works.md
 the results branch README carries a per-fixture table and a pointer to it. Issues closed today: #152, #161, #164; opened:
 #162 (by the workflow), #166. The
 [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
-body's current-state header was rewritten to this state and every step is a
+(since closed) body's current-state header was rewritten to this state and every step is a
 linked comment there.
 
 - **#162, the first roster proposal:** Adam chose to publish the census
@@ -684,7 +688,8 @@ no cleanup blocker remains.
 Portable resume sequence (Codex or Claude):
 
 1. Read this Git-backed §0A and the
-   [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
+   [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
+   (closed 2026-10-29; "Current state" at the top of this file replaces it).
    If available, also read the local
    `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`. Fetch the
    named remote refs and create dedicated worktrees when the listed local

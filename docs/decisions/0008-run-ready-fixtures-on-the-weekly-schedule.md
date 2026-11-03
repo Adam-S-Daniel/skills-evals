@@ -1,6 +1,10 @@
 # ADR 0008: Run ready fixtures on the weekly schedule
 
-- **Status:** proposed (2026-10-04)
+- **Status:** proposed (2026-10-04). Status note (2026-11-03): in effect. The
+  reviewed list is `evals/scheduled.yml`, and
+  [`routine-eval-weekly.yml`](../../.github/workflows/routine-eval-weekly.yml)
+  plans and fires it (see the 2026-10-06 amendment). The status line was not
+  changed to accepted because no acceptance is recorded here.
 - **Issue:** [#68](https://github.com/Adam-S-Daniel/skills-evals/issues/68), partially implemented.
 - **Deciders:** the owner requested that scheduled runs include additional ready evals; this package fixes the initial four entries and then appends the fixtures that qualified locally on 2026-10-05. On 2026-10-06, Adam decided the weekly routine replaces `eval.yml`'s Tuesday schedule after the [weekly routine PR](https://github.com/Adam-S-Daniel/skills-evals/pull/331) merged.
 
