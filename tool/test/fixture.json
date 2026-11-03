@@ -1340,5 +1340,120 @@
       "text": "Example guidance alert.",
       "url": null
     }
-  ]
+  ],
+  "lessons": {
+    "date": "2026-10-30",
+    "items": [
+      {
+        "kind": "new-skill",
+        "subject": "tool-bash-make",
+        "evidence_count": 7,
+        "first_seen": "2026-10-01",
+        "last_seen": "2026-10-29",
+        "sources": [
+          "windows",
+          "wsl"
+        ],
+        "signals": {
+          "repeated-tool-failure": 7
+        },
+        "draft": {
+          "number": 41,
+          "state": "open",
+          "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/41"
+        }
+      },
+      {
+        "kind": "new-skill",
+        "subject": "red-ci-example-site",
+        "evidence_count": 5,
+        "first_seen": "2026-10-02",
+        "last_seen": "2026-10-28",
+        "sources": [
+          "wsl"
+        ],
+        "signals": {
+          "red-ci-after-push": 5
+        },
+        "draft": null
+      },
+      {
+        "kind": "skill-edit",
+        "subject": "skill:example-skill-alpha",
+        "evidence_count": 3,
+        "first_seen": "2026-10-10",
+        "last_seen": "2026-10-20",
+        "sources": [
+          "cloud"
+        ],
+        "signals": {
+          "rule": 3
+        }
+      },
+      {
+        "kind": "guidance-edit",
+        "subject": "guidance:security",
+        "evidence_count": 2,
+        "first_seen": "2026-10-11",
+        "last_seen": "2026-10-21",
+        "sources": [
+          "wsl"
+        ],
+        "signals": {
+          "rule": 2
+        }
+      },
+      {
+        "kind": "fixture-candidate",
+        "subject": "guidance:example-unknown-section",
+        "evidence_count": 1,
+        "first_seen": "2026-10-12",
+        "last_seen": "2026-10-12",
+        "sources": [
+          "other"
+        ],
+        "signals": {
+          "correction": 1
+        }
+      }
+    ],
+    "left_out": {
+      "memory_note": 2,
+      "agent_check": 1,
+      "private": 4,
+      "other": 0
+    },
+    "issues": [
+      {
+        "source": "memory",
+        "repo": "Adam-S-Daniel/example-repo",
+        "number": 17,
+        "state": "open",
+        "opened": "2026-10-29",
+        "count": 3,
+        "target": "docs/EXAMPLE.md",
+        "url": "https://github.com/Adam-S-Daniel/example-repo/issues/17"
+      },
+      {
+        "source": "memory",
+        "repo": "jodidaniel/example-site",
+        "number": 5,
+        "state": "closed",
+        "opened": "2026-10-28",
+        "count": 1,
+        "target": "agent-checks",
+        "url": "https://github.com/jodidaniel/example-site/issues/5"
+      },
+      {
+        "source": "proposal",
+        "repo": "Adam-S-Daniel/adam-agentskills",
+        "number": 88,
+        "state": "open",
+        "opened": "2026-10-27",
+        "count": null,
+        "target": "example-new-skill",
+        "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/88"
+      }
+    ]
+  }
 }

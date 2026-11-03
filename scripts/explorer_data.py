@@ -8,6 +8,8 @@
                    [--guidance DIR] [--registry NAME=PATH ...]
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
                    [--fire-runs FILE] [--fixture-queue FILE]
+                   [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
+                   [--lesson-issues FILE]
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -101,6 +103,46 @@ and `finish` checks it with the rest. None is unknown: no readable report,
 or one that is not schema 1. Its own `generated_at` moves with every build,
 so explorer-data.yml's publish step ignores it beside the document's.
 
+`lessons` (Adam, 2026-11-03) lists the session miner's lesson proposals
+(`--lessons`: adam-agentskills-private's `lessons/proposals/` on
+`persistent/lessons`, read with scripts/lesson_evidence.py's `newest_day`),
+from the newest day's directory only. The proposals come from private local
+sessions, so each item carries EXACTLY `kind`, `subject`, `evidence_count`,
+`first_seen` and `last_seen` (and `draft` for a new skill), never a
+proposal's `examples`, `repos`, `id` or `check_sketch`, and only for a
+public subject (`lesson_item`): a new skill for a generic tool name
+(`tool-<tool>[-<word>]`) or for red CI in a public repository (`red-ci-<slug>`,
+the slug of a public `--registry`, a `--context-repo` or this repository); a
+skill edit or fixture idea for a skill that passes the PRIVACY GATE and is
+not a private one; a guidance edit or fixture idea for a section in the
+guidance manifest. Everything else is only counted in `left_out`
+(`memory_note`, `agent_check`, `private` for a skill or repository that
+fails the gate, `other`). A new skill's `draft` is its newest
+`draft-skill/<subject>` pull request in adam-agentskills from `--draft-prs`
+(number, state and a URL built here), or None. Each item also carries
+`sources` (the sorted machine surfaces its records came from, `wsl`,
+`windows` or `cloud`, any other label `other`) and `signals` ({signal: records},
+mine_sessions.py's LESSON_SIGNALS only), counted over the records under
+`--lesson-records` that mine_sessions.py `route` files under the item's
+(subject, kind) (`record_target`); both None without that directory. A
+record's excerpt, session, record id and repository are never published; the
+excerpt and repository are read in memory only, through route's own
+functions, to tell which proposal a record belongs to, and the record id only
+to count a record once, as route does.
+
+`lessons.issues` (`--lesson-issues`, Adam, 2026-11-03) adds lessons from two
+other sources: `memory`, the memory curation routine's `Memory promotion
+<date>: <n> facts for <target>` issues in a public repository of either fleet
+owner, and `proposal`, the owner's own `skill-proposal` issues in
+adam-agentskills with a "Skill name:" line (draft_new_skill.py's rules).
+Each carries EXACTLY source, repo, number, state, opened, count (from the
+title, or None), target (a safe file path, `<n> files` or `agent-checks`
+from a memory title; the skill name of a proposal) and a URL built here;
+never a body or any other title text. None without the file. `lessons` is None
+when neither the proposals directory nor the issues file is readable; with
+only the issues, its `date`, `items` and `left_out` are None (unknown, not
+empty). `finish` holds every item and issue to its keys.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran. Counts are per arm over the scored trials (infrastructure failures and
@@ -125,9 +167,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import compute_gates  # noqa: E402
+import draft_new_skill  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import improve_outcomes  # noqa: E402
+import lesson_evidence  # noqa: E402
+import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
 import skill_digest  # noqa: E402
@@ -679,6 +724,330 @@ def load_fixture_queue(path: Path | None) -> dict | None:
     return doc
 
 
+#: The lesson kinds the page lists, in its order (`lessons`).
+LESSON_KINDS = ("new-skill", "skill-edit", "guidance-edit", "fixture-candidate")
+LESSON_ITEM_KEYS = frozenset({"kind", "subject", "evidence_count", "first_seen",
+                              "last_seen", "sources", "signals", "draft"})
+#: The machine surfaces a record's `source` may name (mine_sessions.py
+#: `--root LABEL=PATH`, `wsl` by default); any other label is `other`.
+LESSON_SOURCES = frozenset({"wsl", "windows", "cloud"})
+#: A records file larger than this is not read (records are one-line JSON).
+MAX_RECORDS_FILE = 64 * 1024 * 1024
+LESSON_LEFT_OUT = ("memory_note", "agent_check", "private", "other")
+#: A generic tool subject from mine_sessions.py `cluster_subject`.
+_TOOL_SUBJECT_RE = re.compile(r"tool-[a-z]+(-[a-z0-9-]+)?")
+_RED_CI_RE = re.compile(r"red-ci-(?P<slug>[a-z0-9][a-z0-9-]*)")
+_GUIDANCE_SUBJECT_RE = re.compile(r"guidance:(?P<id>[a-z0-9][a-z0-9-]{0,63})")
+_DRAFT_HEAD_RE = re.compile(r"draft-skill/(?P<subject>[a-z0-9][a-z0-9:-]{0,127})")
+DRAFT_PR_URL = "https://github.com/Adam-S-Daniel/adam-agentskills/pull/{number}"
+
+
+def _lesson_day(value) -> str | None:
+    """`value` when it is a real `YYYY-MM-DD` date, else None."""
+    if not isinstance(value, str) or not lesson_evidence.DATE_RE.fullmatch(value):
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return value
+
+
+def repo_slugs(name: str) -> set:
+    """The `red-ci-<slug>` forms of a repository name (`owner/` dropped):
+    dots turned to dashes, and mine_sessions.py's `_slug` of it, which also
+    drops a leading underscore (`_agent-guidance` -> `agent-guidance`)."""
+    repo = name.rsplit("/", 1)[-1].lower()
+    return {repo.replace(".", "-"),
+            re.sub(r"-+", "-", re.sub(r"[^a-z0-9]", "-", repo)).strip("-")} - {""}
+
+
+def load_draft_prs(path: Path | None) -> dict | None:
+    """{subject: {"number", "state", "url"}} of adam-agentskills' newest
+    `draft-skill/<subject>` pull request per subject, from `--draft-prs` (a
+    list of {head, number, state: open|closed, merged: bool}), or None when
+    the file is absent or not a list. A row off that shape is ignored; the
+    URL is built here from the number, never copied."""
+    if path is None:
+        return None
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(rows, list):
+        return None
+    out: dict = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("head"), str):
+            continue
+        match = _DRAFT_HEAD_RE.fullmatch(row["head"])
+        number, state, merged = row.get("number"), row.get("state"), row.get("merged")
+        if (match is None or type(number) is not int or not 0 < number < 10 ** 9
+                or state not in ("open", "closed") or type(merged) is not bool
+                or (merged and state == "open")):
+            continue
+        subject = match["subject"]
+        if subject in out and out[subject]["number"] >= number:
+            continue
+        out[subject] = {"number": number,
+                        "state": "merged" if merged else state,
+                        "url": DRAFT_PR_URL.format(number=number)}
+    return out
+
+
+def lesson_item(doc, public_skills: set, public_slugs: set,
+                section_ids: set) -> tuple[str, dict | None]:
+    """(bucket, item) for one proposal: bucket `item` with the public item,
+    `skip` for a file off the schema, or a `left_out` key with None. Only
+    the fields the item names are ever read."""
+    if not isinstance(doc, dict) or doc.get("schema_version") != 1 \
+            or not isinstance(doc.get("kind"), str) or not isinstance(doc.get("subject"), str):
+        return "skip", None
+    kind, subject = doc["kind"], doc["subject"]
+    if kind == "memory-note":
+        return "memory_note", None
+    if kind == "agent-check":
+        return "agent_check", None
+    count = doc.get("evidence_count")
+    first, last = _lesson_day(doc.get("first_seen")), _lesson_day(doc.get("last_seen"))
+    if type(count) is not int or not 1 <= count <= lesson_evidence.MAX_EVIDENCE \
+            or first is None or last is None:
+        return "skip", None
+    bucket = "other"
+    skill = lesson_evidence.SKILL_SUBJECT_RE.fullmatch(subject)
+    section = _GUIDANCE_SUBJECT_RE.fullmatch(subject)
+    red_ci = _RED_CI_RE.fullmatch(subject)
+    if kind == "new-skill":
+        if _TOOL_SUBJECT_RE.fullmatch(subject):
+            bucket = "item"
+        elif red_ci:
+            bucket = "item" if red_ci["slug"] in public_slugs else "private"
+    elif kind in ("skill-edit", "fixture-candidate") and skill:
+        bucket = "item" if skill["name"] in public_skills else "private"
+    elif kind in ("guidance-edit", "fixture-candidate") and section:
+        bucket = "item" if section["id"] in section_ids else "other"
+    if bucket != "item":
+        return bucket, None
+    item = {"kind": kind, "subject": subject, "evidence_count": count,
+            "first_seen": first, "last_seen": last}
+    if kind == "new-skill":
+        item["draft"] = None
+    return "item", item
+
+
+def record_target(record) -> tuple[str, str] | None:
+    """The (subject, kind) proposal mine_sessions.py `route` files a lesson
+    record under, by route's own rules (`check_sketch`, `_kind`,
+    `cluster_subject`): None for a usage record or one that stays a record.
+    The excerpt and repository are read only here, in memory, through those
+    functions, to tell which proposal a record belongs to; neither is kept."""
+    if not isinstance(record, dict) or record.get("schema_version") != mine_sessions.SCHEMA:
+        return None
+    signal, subj = record.get("signal"), record.get("subject")
+    if signal not in mine_sessions.LESSON_SIGNALS or not isinstance(subj, dict):
+        return None
+    skind, sname = subj.get("kind", "none"), subj.get("name", "")
+    excerpt, repo = record.get("excerpt", ""), record.get("repo", "")
+    if not all(isinstance(v, str) for v in (skind, sname, excerpt, repo)):
+        return None
+    subject = mine_sessions.subject_label({"kind": skind, "name": sname})
+    if mine_sessions.check_sketch(excerpt):
+        return subject, "agent-check"
+    kind = mine_sessions._kind(signal, skind)
+    if kind is not None:
+        return subject, kind
+    if skind == "none":
+        cluster = mine_sessions.cluster_subject(
+            {"signal": signal, "excerpt": excerpt, "repo": repo})
+        if cluster:
+            return cluster, "new-skill"
+    return None
+
+
+def lesson_origins(records_dir: Path | None) -> dict | None:
+    """{(subject, kind): {"sources": Counter-like dict, "signals": dict}}
+    over every lesson record under `records_dir` (`lessons/records/*.jsonl`),
+    or None without a readable directory. Only `source` (allowlisted, else
+    `other`) and `signal` are counted, once per `record_id` as route counts;
+    no other field leaves this function."""
+    if records_dir is None:
+        return None
+    try:
+        paths = sorted(records_dir.glob("*.jsonl")) if records_dir.is_dir() else None
+    except OSError:
+        return None
+    if paths is None:
+        return None
+    out: dict = {}
+    seen: set = set()
+    for path in paths:
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RECORDS_FILE:
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            target = record_target(record)
+            # route keeps the first record per record_id; the id is compared
+            # in memory only, never kept past this function.
+            rid = record.get("record_id") if target is not None else None
+            if not isinstance(rid, str) or not rid or rid in seen:
+                continue
+            seen.add(rid)
+            source = record.get("source")
+            entry = out.setdefault(target, {"sources": set(), "signals": {}})
+            entry["sources"].add(source if source in LESSON_SOURCES else "other")
+            entry["signals"][record["signal"]] = entry["signals"].get(record["signal"], 0) + 1
+    return out
+
+
+#: The two owners the fleet spans; a memory promotion issue elsewhere is dropped.
+FLEET_OWNERS = ("Adam-S-Daniel", "jodidaniel")
+LESSON_ISSUE_KEYS = frozenset({"source", "repo", "number", "state", "opened", "count",
+                               "target", "url"})
+_REPO_RE = re.compile(r"(?P<owner>[A-Za-z0-9-]{1,39})/(?P<name>[A-Za-z0-9._-]{1,100})")
+#: The memory curation routine's issue titles (_agent-guidance
+#: docs/routines/memory-curation.md, step 4).
+_MEMORY_TITLE_RE = re.compile(
+    r"Memory promotion (?P<date>\d{4}-\d{2}-\d{2}): (?P<n>[0-9]{1,6}) "
+    r"(?:(?:facts?) for (?:(?P<files>[0-9]{1,6}) files|(?P<file>\S+))|(?P<checks>agent-checks?))")
+#: A file a memory promotion names: a relative path of plain segments.
+_SAFE_PATH_RE = re.compile(r"(?!\.)(?!.*\.\.)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,7}")
+ISSUE_URL = "https://github.com/{repo}/issues/{number}"
+
+
+def _issue_core(row) -> dict | None:
+    """The validated (number, state, opened) of an issue row, or None."""
+    if not isinstance(row, dict):
+        return None
+    number, state, created = row.get("number"), row.get("state"), row.get("created_at")
+    opened = _lesson_day(created[:10]) if isinstance(created, str) else None
+    if type(number) is not int or not 0 < number < 10 ** 9 \
+            or state not in ("open", "closed") or opened is None:
+        return None
+    return {"number": number, "state": state, "opened": opened}
+
+
+def memory_issue(row) -> dict | None:
+    """A published memory promotion item from one reduced search row
+    ({repo, number, state, created_at, title, private}), or None: a
+    repository that is not exactly `private: false`, outside the fleet's
+    owners, or a title off the routine's shape. Only the count and the target
+    are taken from the title."""
+    core = _issue_core(row)
+    if core is None or row.get("private") is not False or not isinstance(row.get("repo"), str) \
+            or not isinstance(row.get("title"), str):
+        return None
+    repo = _REPO_RE.fullmatch(row["repo"])
+    title = _MEMORY_TITLE_RE.fullmatch(row["title"].strip())
+    if repo is None or repo["owner"] not in FLEET_OWNERS or title is None:
+        return None
+    if title["checks"]:
+        target = "agent-checks"
+    elif title["files"]:
+        target = f"{int(title['files'])} files"
+    else:
+        target = title["file"] if _SAFE_PATH_RE.fullmatch(title["file"]) \
+            and len(title["file"]) <= 120 else None
+    return {"source": "memory", "repo": row["repo"], **core, "count": int(title["n"]),
+            "target": target, "url": ISSUE_URL.format(repo=row["repo"], number=core["number"])}
+
+
+def proposal_issue(row) -> dict | None:
+    """A published skill proposal item from one `skill-proposal` issue row of
+    adam-agentskills, or None: not the owner's own issue in that label, a pull
+    request, or no valid "Skill name:" line (draft_new_skill.py's rules). The
+    body is read here only for that line and is never published."""
+    core = _issue_core(row)
+    if core is None or "pull_request" in row:
+        return None
+    user, labels, body = row.get("user"), row.get("labels"), row.get("body")
+    if (row.get("author_association") != "OWNER" or not isinstance(user, dict)
+            or user.get("login") != draft_new_skill.ISSUE_OWNER or not isinstance(labels, list)
+            or not any(isinstance(label, dict) and label.get("name") == draft_new_skill.ISSUE_LABEL
+                       for label in labels)
+            or not isinstance(body, str)):
+        return None
+    subject = draft_new_skill.issue_subject(body)
+    if subject is None:
+        return None
+    repo = f"{draft_new_skill.ISSUE_OWNER}/{draft_new_skill.REGISTRY_NAME}"
+    return {"source": "proposal", "repo": repo, **core, "count": None, "target": subject,
+            "url": ISSUE_URL.format(repo=repo, number=core["number"])}
+
+
+def load_lesson_issues(path: Path | None) -> list | None:
+    """`lessons.issues` from `--lesson-issues` ({"memory": [rows], "proposals":
+    [issue rows]}, written by explorer-data.yml), or None when the file is
+    absent or not that shape. Bad rows are dropped."""
+    if path is None:
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or not isinstance(doc.get("memory"), list) \
+            or not isinstance(doc.get("proposals"), list):
+        return None
+    items = {}
+    for row, read in ([(r, memory_issue) for r in doc["memory"]]
+                      + [(r, proposal_issue) for r in doc["proposals"]]):
+        item = read(row)
+        if item is not None:
+            items[(item["repo"], item["number"])] = item
+    # Memory first, then proposals; newest opened first; then repo and number.
+    ordered = sorted(items.values(), key=lambda i: (i["repo"], i["number"]))
+    ordered.sort(key=lambda i: i["opened"], reverse=True)
+    ordered.sort(key=lambda i: i["source"] != "memory")
+    return ordered
+
+
+def build_lessons(proposals: Path | None, public_skills: set, public_slugs: set,
+                  section_ids: set, drafts: dict | None,
+                  origins: dict | None = None, issues: list | None = None) -> dict | None:
+    """The document's `lessons`: the newest day's public proposals and the
+    counts of what was left out, plus `issues` (`load_lesson_issues`' items,
+    None without the file). Without a readable proposals directory `date`,
+    `items` and `left_out` are None; with neither source, `lessons` is None."""
+    day = lesson_evidence.newest_day(proposals) if proposals is not None else None
+    if day is None:
+        return None if issues is None else {"date": None, "items": None, "left_out": None,
+                                             "issues": issues}
+    left_out = dict.fromkeys(LESSON_LEFT_OUT, 0)
+    items: dict = {}
+    for path in sorted(day.glob("*.json")):
+        try:
+            if path.is_symlink() or not path.is_file() \
+                    or path.stat().st_size > lesson_evidence.MAX_FILE:
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+            continue
+        bucket, item = lesson_item(doc, public_skills, public_slugs, section_ids)
+        if bucket == "skip":
+            continue
+        if item is None:
+            left_out[bucket] += 1
+            continue
+        key = (item["kind"], item["subject"])
+        origin = None if origins is None else origins.get((item["subject"], item["kind"]))
+        item["sources"] = None if origins is None else sorted((origin or {}).get("sources", ()))
+        item["signals"] = (None if origins is None else
+                           {k: v for k, v in sorted((origin or {}).get("signals", {}).items())})
+        if key not in items or items[key]["evidence_count"] < item["evidence_count"]:
+            if item["kind"] == "new-skill":
+                item["draft"] = (drafts or {}).get(item["subject"])
+            items[key] = item
+    ordered = sorted(items.values(), key=lambda i: (LESSON_KINDS.index(i["kind"]),
+                                                    -i["evidence_count"], i["subject"]))
+    return {"date": day.name, "items": ordered, "left_out": left_out, "issues": issues}
+
+
 def load_fire_runs(path: Path | None):
     """{"fetched_at": the wrapper's string, "runs": [run rows]} from
     `--fire-runs` (`{"fetched_at", "pages"}`, the pages of a slurped
@@ -1142,11 +1511,17 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           guidance_dir: Path | None = None, manifest: list | None = None,
           issues: dict | None = None, context_repos: dict | None = None,
           fire_runs: dict | None = None, wall_clock: datetime | None = None,
-          fixture_queue: dict | None = None) -> dict:
+          fixture_queue: dict | None = None, lessons: Path | None = None,
+          draft_prs: dict | None = None, lesson_records: Path | None = None,
+          lesson_issues: list | None = None) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
-    is `load_fixture_queue`'s result, carried as `fixture_queue`."""
+    is `load_fixture_queue`'s result, carried as `fixture_queue`. `lessons`
+    is the proposals directory and `draft_prs` `load_draft_prs`' result,
+    which `build_lessons` turns into `lessons`, with each item's sources and
+    signals counted from the records directory `lesson_records`, and
+    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`."""
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
@@ -1242,6 +1617,18 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                            {r["id"] for r in (manifest or [])})
         fires = fire_counts(fire_runs, index, compute_gates._summaries(tree), scope, now,
                             wall_clock or datetime.now(timezone.utc))
+    public_slugs = set(repo_slugs("Adam-S-Daniel/skills-evals"))
+    for name in context_repos or {}:
+        public_slugs |= repo_slugs(name)
+    public_registries = public_registry_repos() if registries else {}
+    for name in registries or {}:
+        public = public_registries.get(name)
+        if public is not None:
+            public_slugs |= repo_slugs(name) | repo_slugs(public["repo"])
+    lesson_doc = build_lessons(
+        lessons, {s["name"] for s in skills} - plan_week.private_skills(evals_dir),
+        public_slugs, {r["id"] for r in (manifest or [])}, draft_prs,
+        lesson_origins(lesson_records), lesson_issues)
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
@@ -1262,7 +1649,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
-        "fixture_queue": fixture_queue, "usage": usage_window}
+        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window}
 
 
 def finish(doc: dict) -> str:
@@ -1290,6 +1677,37 @@ def finish(doc: dict) -> str:
                         for k in ("loaded", "main"))
                     or _LONG_HEX_RE.search(json.dumps(alert))):
                 raise Refused("a loaded-copy alert carries a value that is not a prefix")
+    # The lessons come from private sessions: each item holds its fields only.
+    lessons = doc.get("lessons")
+    if lessons is not None:
+        if not isinstance(lessons, dict) or set(lessons) != {"date", "items", "left_out", "issues"} \
+                or (lessons["items"] is not None and (
+                    not isinstance(lessons["left_out"], dict)
+                    or set(lessons["left_out"]) != set(LESSON_LEFT_OUT)
+                    or not isinstance(lessons["items"], list))) \
+                or not isinstance(lessons["issues"], (list, type(None))):
+            raise Refused("the lessons are not in their published shape")
+        for issue in lessons["issues"] or []:
+            if not isinstance(issue, dict) or set(issue) != LESSON_ISSUE_KEYS \
+                    or issue["source"] not in ("memory", "proposal") \
+                    or issue["url"] != ISSUE_URL.format(repo=issue["repo"], number=issue["number"]):
+                raise Refused("a lesson issue carries a field it may not publish")
+        for item in lessons["items"] or []:
+            want = (LESSON_ITEM_KEYS if isinstance(item, dict) and item.get("kind") == "new-skill"
+                    else LESSON_ITEM_KEYS - {"draft"})
+            if not isinstance(item, dict) or set(item) != want:
+                raise Refused("a lesson item carries a field it may not publish")
+            sources, signals = item.get("sources"), item.get("signals")
+            if (sources is not None and (not isinstance(sources, list) or not all(
+                    v in LESSON_SOURCES | {"other"} for v in sources))) or (
+                    signals is not None and (not isinstance(signals, dict) or not all(
+                        k in mine_sessions.LESSON_SIGNALS and type(v) is int
+                        for k, v in signals.items()))):
+                raise Refused("a lesson's sources or signals are off their allowlists")
+            draft = item.get("draft")
+            if draft is not None and (not isinstance(draft, dict)
+                                      or set(draft) != {"number", "state", "url"}):
+                raise Refused("a lesson's draft carries a field it may not publish")
     return text
 
 
@@ -1348,6 +1766,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixture-queue", type=Path, metavar="FILE",
                         help="scripts/fixture_queue.py's report; absent or unreadable "
                              "is unknown")
+    parser.add_argument("--lessons", type=Path, metavar="DIR",
+                        help="adam-agentskills-private's lessons/proposals/; absent or "
+                             "unreadable is unknown")
+    parser.add_argument("--lesson-records", type=Path, metavar="DIR",
+                        help="adam-agentskills-private's lessons/records/, for each "
+                             "lesson's sources and signals; absent is unknown")
+    parser.add_argument("--lesson-issues", type=Path, metavar="FILE",
+                        help="{memory: [rows], proposals: [issue rows]}: memory promotion "
+                             "and skill-proposal issues; absent is unknown")
+    parser.add_argument("--draft-prs", type=Path, metavar="FILE",
+                        help="[{head, number, state, merged}] of adam-agentskills' pull "
+                             "requests, for each new-skill lesson's draft")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -1368,7 +1798,9 @@ def main(argv: list[str] | None = None) -> int:
                     load_manifest(args.guidance_manifest), issues,
                     context_mod.parse_context_repos(args.context_repo),
                     load_fire_runs(args.fire_runs), datetime.now(timezone.utc),
-                    load_fixture_queue(args.fixture_queue))
+                    load_fixture_queue(args.fixture_queue), args.lessons,
+                    load_draft_prs(args.draft_prs), args.lesson_records,
+                    load_lesson_issues(args.lesson_issues))
         text = finish(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)

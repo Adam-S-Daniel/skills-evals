@@ -159,7 +159,7 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
                                      "coverage", "fires_without_results",
                                      "fixture_queue", "generated_at",
-                                     "guidance", "newest_run", "policy", "removed_skills",
+                                     "guidance", "lessons", "newest_run", "policy", "removed_skills",
                                      "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
@@ -168,6 +168,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertIsNone(d["fires_without_results"])
         # No --fixture-queue report: unknown, not an empty queue.
         self.assertIsNone(d["fixture_queue"])
+        # No --lessons directory: unknown, not an empty list.
+        self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
