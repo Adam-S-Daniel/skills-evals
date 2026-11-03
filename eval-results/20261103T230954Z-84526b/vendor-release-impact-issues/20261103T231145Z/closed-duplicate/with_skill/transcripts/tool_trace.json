@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E5XeKZVUH3E61ZnrHiaY4m",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016rHoBU3GotertVWpD1ye8Y",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor",
+      "input_chars": 37,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E5XeKZVUH3E61ZnrHiaY4m",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016rHoBU3GotertVWpD1ye8Y",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 415,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MtREQyuK2phNLDJo3ZEbZR",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json | head -80; echo ----; cat README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/aut...",
+      "input_chars": 212,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MtREQyuK2phNLDJo3ZEbZR",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2248,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0189jqHLDa7y24quh49MXiAj",
+      "name": "Bash",
+      "input": "grep -n '^## ' vendor/RELEASES.md; wc -l vendor/RELEASES.md; cat vendor/releases.json | wc -c; sed -n 1,60p bin/gh; cat .gh/replay/issue-list.json .gh/replay/auth-status.txt; head -c 1500 .gh/replay/i...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0189jqHLDa7y24quh49MXiAj",
+      "is_error": false,
+      "output": "3:## v4.2.0\n12 vendor/RELEASES.md\n178\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re...",
+      "output_chars": 6468,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TQB6B5TvwzKCYuT2tGoGFZ",
+      "name": "bash",
+      "input": "cd <path> && grep -rniE 'synced|proxy|review-checklist|windows|palette|theme' --exclude-dir=.git --exclude=gh . | grep -v '^./vendor' | head; ls -a; ls .gh/replay/api/repos/example-org/example-repo/is...",
+      "input_chars": 308,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TQB6B5TvwzKCYuT2tGoGFZ",
+      "is_error": true,
+      "output": "<tool_use_error>Error: No such tool available: bash. Tool names are case-sensitive: call Bash instead.</tool_use_error>",
+      "output_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C3Rs7X8wV8CPbsWEqKXdcu",
+      "name": "Bash",
+      "input": "grep -rniE 'synced|proxy|review-checklist|windows|palette|theme' --exclude-dir=.git --exclude=gh . | grep -v '^./vendor' | head; ls -a; ls .gh/replay/api/repos/example-org/example-repo/issues",
+      "input_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C3Rs7X8wV8CPbsWEqKXdcu",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 712,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QFj8BaWsFisuqrpb4mcLqR",
+      "name": "Bash",
+      "input": "mkdir -p issues && python3 -I - <<'EOF'\nimport re,json\nsrc=open('vendor/RELEASES.md').read()\nsec=src.split('## v4.2.0')[1]\nbullets=[re.sub(r'\\s*\\n\\s*',' ',b.strip()) for b in re.split(r'\\n- ',  '\\n'+s...",
+      "input_chars": 4134,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QFj8BaWsFisuqrpb4mcLqR",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 synced skills renamed synced:NAME: README invokes /review-checklist by bare name\n\nFound in the ExampleCLI 4.2.0 release review. Not yet verified against this repo.\n\n## ExampleCLI change\n\n> Synced skills are now named `synced:NAME` instead of `NAME`.\n>\n> \u2014 [v4.2.0](https://github.c...",
+      "output_chars": 570,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
