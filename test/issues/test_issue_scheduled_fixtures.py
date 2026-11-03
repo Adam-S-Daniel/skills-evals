@@ -650,7 +650,13 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(workflow["concurrency"],
                          {"group": "routine-eval-weekly", "cancel-in-progress": False})
         jobs = workflow["jobs"]
-        self.assertEqual(set(jobs), {"plan", "dispatch", "watchdog", "batch-publish"})
+        self.assertEqual(set(jobs), {"plan", "dispatch", "watchdog", "batch-publish",
+                                     "work-issues"})
+        # Lost fires (2026-11-03): only this job writes issues, from the
+        # plan's extracted work items, never from the plan job itself.
+        self.assertEqual(jobs["work-issues"]["permissions"],
+                         {"contents": "read", "issues": "write"})
+        self.assertEqual(jobs["work-issues"]["needs"], "plan")
         self.assertEqual(jobs["plan"]["permissions"],
                          {"contents": "read", "actions": "read", "issues": "read",
                           "pull-requests": "read"})
@@ -685,6 +691,10 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         # token and nothing else.
         arm = jobs["watchdog"]["steps"][0]
         self.assertEqual(jobs["watchdog"]["permissions"], {"actions": "write"})
+        # The issue step holds the work-issues job's token (issues: write).
+        issues = next(item for item in jobs["work-issues"]["steps"]
+                      if "work_item_issues.py" in item.get("run", ""))
+        self.assertEqual(issues["env"]["GH_TOKEN"], "${{ github.token }}")
         for job in jobs.values():
             self.assertNotIn("concurrency", job)
             for item in job["steps"]:
@@ -693,7 +703,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                     self.assertIsNone(lock_problem(item["uses"], "routine-eval-weekly.yml"))
                     if "checkout@" in item["uses"]:
                         self.assertEqual(item["with"]["persist-credentials"], False)
-                if item not in (fire, plan_step, wait, arm):
+                if item not in (fire, plan_step, wait, arm, issues):
                     self.assertNotIn("GH_TOKEN", item.get("env", {}))
                 # The private results (#81): the read-only registry App's
                 # token, never the job's, reaches the lookup and checkouts.
