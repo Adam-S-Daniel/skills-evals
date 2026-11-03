@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F2TGGwWP8JvTC7dW1BA2Um",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && ls -la && ls .github/workflows && cat AGENTS.md 2><path>; git ls-files | head -100",
+      "input_chars": 131,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F2TGGwWP8JvTC7dW1BA2Um",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nca8edd1 initial commit\ntotal 64\ndrwxr-xr-x 11 root root 4096 Nov  3 12:44 .\ndrwx------  6 root root 4096 Nov  3 12:44 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  3 00:0...",
+      "output_chars": 2239,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018191UpVA3Gc3uZsiy5Nyxb",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml .github/rulesets/main.json README.md package.json mkdocs.yml scripts/sweep-stale.sh bin/gh .editorconfig; do echo \"=== $f\"; cat \"$f\"; done; ls .claude; cat .gh/replay/...",
+      "input_chars": 251,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018191UpVA3Gc3uZsiy5Nyxb",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.3KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths...",
+      "output_chars": 2258,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WXyzmwY4YdJ9bBTxF8RHLU",
+      "name": "Bash",
+      "input": "sed -n 1,400p .github/workflows/tests.yml; echo ===; cat .github/rulesets/main.json; echo; for f in README.md package.json mkdocs.yml scripts/sweep-stale.sh .editorconfig src/*.js test/*.js; do echo \"...",
+      "input_chars": 280,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WXyzmwY4YdJ9bBTxF8RHLU",
+      "is_error": true,
+      "output": "Exit code 2\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json).\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/tests.yml\"\n\npermissions:\n  contents: r...",
+      "output_chars": 5397,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DAbq8jgsMYbz2EkgkC3acQ",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/example-org/example-service/rulesets/4410273.json .gh/replay/api/repos/example-org/example-service/rules/branches/main.json .gh/replay/repo-view.json .gh/replay/auth-status.tx...",
+      "input_chars": 263,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DAbq8jgsMYbz2EkgkC3acQ",
+      "is_error": false,
+      "output": "{\n  \"id\": 4410273,\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"source_type\": \"Repository\",\n  \"source\": \"example-org/example-service\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n...",
+      "output_chars": 2168,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EJyiHhep1j6NtbDuTXfnHe",
+      "name": "Bash",
+      "input": "cd $TMPDIR && npm view yaml time --json 2>&1 | tail -8; npm view yaml dist-tags --json 2>&1",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EJyiHhep1j6NtbDuTXfnHe",
+      "is_error": true,
+      "output": "Exit code 1\n{\n  \"error\": {\n    \"code\": \"E403\",\n    \"summary\": \"403 host is not on the allow list - GET https://registry.npmjs.org/yaml\",\n    \"detail\": \"In most cases, you or one of your dependencies are requesting\\na package version that is forbidden by your security policy, or\\non a server you do n...",
+      "output_chars": 1503,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KBQZQpXJzsknHNxBwWZkWX",
+      "name": "Agent",
+      "input": "Replace path-filtered required check",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016SiiisaecfmAoFRqx9Bsus",
+      "name": "Bash",
+      "input": "git rm -q .github/workflows/tests-skip.yml && cat .github/workflows/tests.yml && ls",
+      "input_chars": 83,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016SiiisaecfmAoFRqx9Bsus",
+      "is_error": false,
+      "output": "name: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json).\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/tests.yml\"\n\npermissions:\n  contents: read\n\njobs:\n ...",
+      "output_chars": 678,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012XmEmajAY3MDg9e8KdRTxT",
+      "name": "Bash",
+      "input": "cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so the\n# trigger has no `paths` filter: a filtered-out run would leave th...",
+      "input_chars": 2598,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012XmEmajAY3MDg9e8KdRTxT",
+      "is_error": false,
+      "output": "yaml ok\n\n> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n#     at defaultResolveImpl (node:internal/modules...",
+      "output_chars": 1477,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W23gffmkaG8ZSFcvFMGiVB",
+      "name": "Bash",
+      "input": "ls test; git stash list | head -1; node --version",
+      "input_chars": 49,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W23gffmkaG8ZSFcvFMGiVB",
+      "is_error": false,
+      "output": "util.test.js\nv22.23.4",
+      "output_chars": 21,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KzASKMnv2ofxTUg2Tm7LRx",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All three edits are made, but the verification command exited 1, so it did not pass. The failure comes from `npm test`, not from the workflow edits.\\n\\n**Edits (not committed or pushed):*...",
+      "input_chars": 1670,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KzASKMnv2ofxTUg2Tm7LRx",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KBQZQpXJzsknHNxBwWZkWX",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a9f7333f1cff80ee9\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a9f7333f1cff80ee9 (use SendMessage with to: 'a9f7333f1cff80ee9', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0122zAJLmZ5YXHcah7WLr2tU",
+      "name": "Bash",
+      "input": "git diff HEAD --stat && git diff HEAD -- .github/workflows/tests.yml && cat AGENTS.md && git diff --quiet HEAD -- package.json test/ && echo \"package.json/test unchanged\"; node --test test/ ><path> 2>...",
+      "input_chars": 339,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0122zAJLmZ5YXHcah7WLr2tU",
+      "is_error": false,
+      "output": " .github/workflows/tests-skip.yml | 24 ------------------------\n .github/workflows/tests.yml      | 36 ++++++++++++++++++++++++++----------\n 2 files changed, 26 insertions(+), 34 deletions(-)\ndiff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml\nindex ee99094..d178169 100644\n--- a/....",
+      "output_chars": 3114,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
