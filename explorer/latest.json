@@ -36,7 +36,106 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T17:38:29Z",
+ "fixture_queue": {
+  "findings": [],
+  "fixtures": [],
+  "generated_at": "2026-11-03T17:51:51Z",
+  "requests": [
+   {
+    "closed_at": null,
+    "issue": 679,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-03T16:21:21Z",
+    "prs": [],
+    "state": "open",
+    "subject": "github-actions-repo-settings"
+   },
+   {
+    "closed_at": null,
+    "issue": 680,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-03T16:21:22Z",
+    "prs": [],
+    "state": "open",
+    "subject": "red-ci-adamdaniel-ai"
+   },
+   {
+    "closed_at": null,
+    "issue": 681,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-03T16:21:24Z",
+    "prs": [],
+    "state": "open",
+    "subject": "skills-doctor"
+   },
+   {
+    "closed_at": null,
+    "issue": 682,
+    "kind": "needs-harder-fixtures",
+    "opened_at": "2026-11-03T16:21:25Z",
+    "prs": [],
+    "state": "open",
+    "subject": "ci-job-performance"
+   },
+   {
+    "closed_at": "2026-11-03T17:37:15Z",
+    "issue": 683,
+    "kind": "needs-harder-fixtures",
+    "opened_at": "2026-11-03T16:21:26Z",
+    "prs": [],
+    "state": "closed",
+    "subject": "tool-powershell"
+   },
+   {
+    "closed_at": null,
+    "issue": 684,
+    "kind": "needs-harder-fixtures",
+    "opened_at": "2026-11-03T16:21:28Z",
+    "prs": [],
+    "state": "open",
+    "subject": "vendor-release-impact-issues"
+   },
+   {
+    "closed_at": null,
+    "issue": 685,
+    "kind": "needs-harder-fixtures",
+    "opened_at": "2026-11-03T16:21:29Z",
+    "prs": [],
+    "state": "open",
+    "subject": "workflow-path-audit"
+   },
+   {
+    "closed_at": null,
+    "issue": 686,
+    "kind": "needs-harder-fixtures",
+    "opened_at": "2026-11-03T16:21:30Z",
+    "prs": [],
+    "state": "open",
+    "subject": "writing-adrs"
+   },
+   {
+    "closed_at": null,
+    "issue": 693,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-03T17:37:13Z",
+    "prs": [],
+    "state": "open",
+    "subject": "tool-powershell"
+   }
+  ],
+  "schema": 1,
+  "totals": {
+   "cost_points": 0,
+   "cost_usd": 0,
+   "fixture_runs": 0,
+   "fixtures_invented": 0,
+   "fixtures_real_work": 0,
+   "prs_merged": 0,
+   "requests_closed": 1,
+   "requests_open": 8
+  }
+ },
+ "generated_at": "2026-11-03T17:49:54Z",
  "guidance": {
   "removed": [
    {
@@ -9354,7 +9453,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T17:34:22Z",
+ "newest_run": "2026-11-03T17:45:46Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -15117,7 +15216,7 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": 0.8093802508865879,
+    "helps": 0.9986595040094987,
     "no_help": 0.0
    },
    "copies": {
@@ -15132,17 +15231,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 13,
+   "current_text_runs": 14,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 9,
+    "band": null,
+    "due": "2026-12-29T08:39:29Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T17:45:46Z",
+     "cli_version": "2.1.317",
+     "fixture": "nightly-snapshot",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T173313Z-10451d/review-bash-ci-reliability/20261103T174546Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.1400888,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 8,
+      "cost_usd": 0.0853064,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T16:57:31Z",
      "cli_version": "2.1.317",
@@ -15782,8 +15902,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -15809,7 +15929,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -19579,8 +19699,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "99eae178eb398fd10b2db29a6942435ad327145a",
-  "results_commit": "d8a6b565bbcd458c0564735f5fd950b2c1a5beb6"
+  "repository_commit": "75d32a912acef2a25311568c5801eb89c1c3a389",
+  "results_commit": "ebed9afd1cdb981efb74f818e86b911f5296d9ff"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
