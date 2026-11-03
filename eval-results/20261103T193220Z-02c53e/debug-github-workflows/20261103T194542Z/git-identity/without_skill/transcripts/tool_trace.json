@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VP6kBS8r8Bq8SJ44tXxnVr",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -la && ls test .github/workflows 2><path> && cat .github/workflows/*.yml test/run-tests.sh",
+      "input_chars": 142,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VP6kBS8r8Bq8SJ44tXxnVr",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n7938d06 initial commit\ntotal 40\ndrwxr-xr-x 9 root root 4096 Nov  3 19:46 .\ndrwx------ 6 root root 4096 Nov  3 19:46 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 10:13 ....",
+      "output_chars": 2235,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XsVNvKSRETH724pQfnMv3L",
+      "name": "Bash",
+      "input": "cat test/test_changelog.py src/* bin/* README.md; ls .gh .claude -R | head -30",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XsVNvKSRETH724pQfnMv3L",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.3KB). Full output saved to: <path>\n\nPreview (first 2KB):\nimport os\nimport unittest\n\nfrom src.changelog import render, subjects\n\n\nclass ChangelogTests(unittest.TestCase):\n    def test_sections_from_a_real_history(self):\n        repo = os.environ[\"CHANGELOG_REPO...",
+      "output_chars": 2224,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UohTr2WYfPaPiptCP7CawC",
+      "name": "Bash",
+      "input": "ls bin src; cat README.md; ls -R .gh | head; ",
+      "input_chars": 45,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UohTr2WYfPaPiptCP7CawC",
+      "is_error": false,
+      "output": "bin:\ngh\n\nsrc:\nchangelog.py\n# Example changelog\n\nTurns a repository's conventional commit subjects (`feat: ...`, `fix: ...`)\ninto the sections of a release changelog.\n\nRun the tests from the repository root:\n\n```bash\nbash test/run-tests.sh\n```\n.gh:\nreplay\n\n.gh/replay:\napi\nauth-status.txt\nrun-list.jso...",
+      "output_chars": 359,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SmepbV6UwRM8BVPpwjLx3d",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-list.json | head -40; cat .gh/replay/run-view-52001.log",
+      "input_chars": 74,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SmepbV6UwRM8BVPpwjLx3d",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 52001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"4f2a9c1e5b7d3f8a0c6e2b4d9f1a3c5e7b9d0f2a\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\n    \"url\": \"https://example.com/example-org/example-changelog/a...",
+      "output_chars": 707,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CRWVNg7EMBtYim1Hd8NHTx",
+      "name": "Bash",
+      "input": "export GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOSYSTEM=1; unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL EMAIL; bash test/run-tests.sh; echo \"exit=$?\"; d=$(mktemp -d); git ...",
+      "input_chars": 265,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CRWVNg7EMBtYim1Hd8NHTx",
+      "is_error": false,
+      "output": "Testing changelog at 7938d06\nBuilding a scratch repository for the changelog tests\nexit=128\nOmit --global to set the identity only in this repository.\n\nfatal: unable to auto-detect email address (got 'root@vm.(none)')",
+      "output_chars": 217,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vqvo92qPBXKHfoWtZ2zUoP",
+      "name": "Agent",
+      "input": "Fix scratch repo git identity",
+      "input_chars": 29,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xzbo59nGbyChpVeFfTV2FB",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xzbo59nGbyChpVeFfTV2FB",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Build a scratch repository with a known history, then run the unit tests\n3\t# against it.\n4\tset -euo pipefail\n5\t\n6\troot=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n7\techo \"Testing changelog at $(git -C \"$root\" describe --tags --always)\"\n8\t\n9\twork=\"$(mktemp -d)\"\n10\ttrap 'rm -rf \"$work\"' EX...",
+      "output_chars": 748,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PkKtQ5UttyQ1ZcAm91cm2c",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q1oPDeac5xDt9j4vb1UL7J",
+      "name": "Bash",
+      "input": "env GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOSYSTEM=1 -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u EMAIL bash test/run-tests.sh; echo \"EXIT=$?\"",
+      "input_chars": 185,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PkKtQ5UttyQ1ZcAm91cm2c",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 157,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q1oPDeac5xDt9j4vb1UL7J",
+      "is_error": false,
+      "output": "env: '-u': No such file or directory\nEXIT=127",
+      "output_chars": 45,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GZbZjqbcNRy8Np7NAfaAtR",
+      "name": "Bash",
+      "input": "env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u EMAIL GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOSYSTEM=1 bash test/run-tests.sh; echo \"EXIT=$?\"",
+      "input_chars": 185,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GZbZjqbcNRy8Np7NAfaAtR",
+      "is_error": false,
+      "output": "Testing changelog at 7938d06\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK\nEXIT=0",
+      "output_chars": 187,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TZqjRJc8B7hM4c3HgB2XH8",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Edit done. I changed only <path>: added the two `git -C \\\"$repo\\\" config` lines (user.name \\\"Changelog Tests\\\", user.email \\\"<email>\\\") with the comment after `git init`, and removed `> <...",
+      "input_chars": 1394,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TZqjRJc8B7hM4c3HgB2XH8",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vqvo92qPBXKHfoWtZ2zUoP",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a62794b34d465d8e0\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a62794b34d465d8e0 (use SendMessage with to: 'a62794b34d465d8e0', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qge78WQigAdLPJ6FurcMFb",
+      "name": "Bash",
+      "input": "git diff; git status --short | grep -v '^??'; echo ---isolated; env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u EMAIL GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOS...",
+      "input_chars": 305,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qge78WQigAdLPJ6FurcMFb",
+      "is_error": false,
+      "output": "diff --git a/test/run-tests.sh b/test/run-tests.sh\nindex bac0ac8..af3a00b 100644\n--- a/test/run-tests.sh\n+++ b/test/run-tests.sh\n@@ -12,8 +12,11 @@ repo=\"$work/history\"\n \n echo \"Building a scratch repository for the changelog tests\"\n git init --quiet \"$repo\"\n+# CI runners have no global git identity...",
+      "output_chars": 1085,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
