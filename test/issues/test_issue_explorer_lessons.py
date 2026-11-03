@@ -31,17 +31,17 @@ from test_issue_72_explorer_data import AS_OF, SHA_A, SHA_B, Tree  # noqa: E402
 from lockfile_pins import lock_problem  # noqa: E402
 
 WORKFLOW = ROOT / ".github" / "workflows" / "explorer-data.yml"
-SECRET_TEXT = "invented-secret-excerpt"
+UNPUBLISHED_TEXT = "invented-unpublished-excerpt"
 MANIFEST = [{"id": "sec-one", "heading": "Section one", "bytes": 100, "status": "covered"}]
 
 
 def proposal(subject, kind, count=3, first="2026-10-01", last="2026-10-20"):
     doc = {"schema_version": 1, "id": "0123456789ab", "subject": subject, "kind": kind,
            "evidence_count": count, "first_seen": first, "last_seen": last,
-           "examples": [f"2026-10-01 private-repo [rule] {SECRET_TEXT}"],
+           "examples": [f"2026-10-01 private-repo [rule] {UNPUBLISHED_TEXT}"],
            "repos": ["private-repo-name"]}
     if kind == "agent-check":
-        doc["check_sketch"] = f"block {SECRET_TEXT}"
+        doc["check_sketch"] = f"block {UNPUBLISHED_TEXT}"
     return doc
 
 
@@ -50,7 +50,7 @@ _IDS = iter(range(10 ** 6))
 
 def record(signal, kind, name, source="wsl", excerpt="something went wrong", repo="example-repo",
            record_id=None):
-    return {"schema_version": 1, "record_id": record_id or f"r{next(_IDS)}{SECRET_TEXT}", "session": "s" + SECRET_TEXT,
+    return {"schema_version": 1, "record_id": record_id or f"r{next(_IDS)}{UNPUBLISHED_TEXT}", "session": "s" + UNPUBLISHED_TEXT,
             "date": "2026-10-05", "source": source, "repo": repo, "signal": signal,
             "excerpt": excerpt, "subject": {"kind": kind, "name": name}}
 
@@ -67,7 +67,7 @@ class LessonTree:
     def day(self, date, *docs):
         folder = self.proposals / date
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / "DIGEST.md").write_text(f"# Lessons {date}\n{SECRET_TEXT}\n")
+        (folder / "DIGEST.md").write_text(f"# Lessons {date}\n{UNPUBLISHED_TEXT}\n")
         for n, doc in enumerate(docs):
             (folder / f"p{n}__{doc.get('kind', 'x')}.json").write_text(json.dumps(doc))
 
@@ -88,7 +88,7 @@ class LessonsTests(unittest.TestCase):
 
     def setUp(self):
         self.lt = LessonTree(self)
-        # alpha, beta, gamma are public in the census; "secret-skill" is not.
+        # alpha, beta, gamma are public in the census; "hidden-skill" is not.
         self.lt.day("2026-10-30",
                     proposal("tool-bash-git", "new-skill", 9))
         self.lt.day("2026-11-01",
@@ -96,11 +96,11 @@ class LessonsTests(unittest.TestCase):
                     proposal("tool-bash-git", "new-skill", 6),
                     proposal("red-ci-skills-evals", "new-skill", 5),
                     proposal("red-ci-agent-guidance", "new-skill", 2),
-                    proposal("red-ci-secret-repo", "new-skill", 8),
+                    proposal("red-ci-hidden-repo", "new-skill", 8),
                     proposal("skill:alpha", "skill-edit", 3),
                     proposal("skill:alpha", "fixture-candidate", 2),
-                    proposal("skill:secret-skill", "skill-edit", 7),
-                    proposal("skill:secret-skill", "fixture-candidate", 1),
+                    proposal("skill:hidden-skill", "skill-edit", 7),
+                    proposal("skill:hidden-skill", "fixture-candidate", 1),
                     proposal("guidance:sec-one", "guidance-edit", 2),
                     proposal("guidance:sec-one", "fixture-candidate", 1),
                     proposal("guidance:not-in-manifest", "guidance-edit", 1),
@@ -124,7 +124,7 @@ class LessonsTests(unittest.TestCase):
             record("interrupted", "skill", "alpha"),
             record("redirection", "skill", "alpha"),
             record("rule", "skill", "alpha", source="windows",
-                   excerpt="never commit `secrets.env` to the repo"),
+                   excerpt="never commit `local-settings.env` to the repo"),
             record("skill-invoked", "skill", "alpha"),
             record("rule", "guidance", "sec-one", record_id="dup-1"),
             record("rule", "guidance", "sec-one", record_id="dup-1"),  # counted once
@@ -157,15 +157,15 @@ class LessonsTests(unittest.TestCase):
         self.assertEqual(set(self.lessons), {"date", "items", "left_out", "issues"})
         self.assertIsNone(self.lessons["issues"])  # no --lesson-issues file
         text = explorer_data.finish(self.doc)
-        for forbidden in (SECRET_TEXT, "private-repo-name", "0123456789ab", "check_sketch",
-                          "examples", "\"repos\"", "secret-skill", "secret-repo",
-                          "a-private-host", "secrets.env", "record_id", "excerpt"):
+        for forbidden in (UNPUBLISHED_TEXT, "private-repo-name", "0123456789ab", "check_sketch",
+                          "examples", "\"repos\"", "hidden-skill", "hidden-repo",
+                          "a-private-host", "local-settings.env", "record_id", "excerpt"):
             self.assertNotIn(forbidden, text)
 
     def test_left_out_counts(self):
         self.assertEqual(self.lessons["left_out"], {
             "memory_note": 2, "agent_check": 1,
-            # red-ci-secret-repo, and secret-skill's edit and fixture idea
+            # red-ci-hidden-repo, and hidden-skill's edit and fixture idea
             "private": 3,
             # guidance:not-in-manifest, an unknown kind, a new skill named none
             "other": 3})
@@ -293,9 +293,9 @@ def memory_row(repo="Adam-S-Daniel/example-repo", number=4, title=None, private=
             "private": private}
 
 
-def proposal_row(number=8, body="Skill name: `example-new-skill`\n" + SECRET_TEXT, **over):
+def proposal_row(number=8, body="Skill name: `example-new-skill`\n" + UNPUBLISHED_TEXT, **over):
     row = {"number": number, "state": "open", "created_at": "2026-10-27T10:00:00Z",
-           "updated_at": "2026-10-28T10:00:00Z", "title": f"Proposal {SECRET_TEXT}",
+           "updated_at": "2026-10-28T10:00:00Z", "title": f"Proposal {UNPUBLISHED_TEXT}",
            "body": body, "author_association": "OWNER", "user": {"login": "Adam-S-Daniel"},
            "labels": [{"name": "skill-proposal"}]}
     row.update(over)
@@ -331,7 +331,7 @@ class LessonIssueTests(unittest.TestCase):
         rows = [memory_row(private=True), memory_row(private=None), memory_row(private="false"),
                 memory_row(repo="someone-else/example-repo"), memory_row(repo="no-slash"),
                 memory_row(title="Something else entirely"),
-                memory_row(title="Memory promotion 2026-10-29: 3 facts for x " + SECRET_TEXT),
+                memory_row(title="Memory promotion 2026-10-29: 3 facts for x " + UNPUBLISHED_TEXT),
                 memory_row(state="merged"), memory_row(number=True), memory_row(created="soon"),
                 "x", None]
         self.assertEqual(self.load({"memory": rows, "proposals": []}), [])
@@ -374,7 +374,7 @@ class LessonIssueTests(unittest.TestCase):
         self.assertEqual(doc["lessons"], {"date": None, "items": None, "left_out": None,
                                           "issues": issues})
         text = explorer_data.finish(doc)
-        self.assertNotIn(SECRET_TEXT, text)
+        self.assertNotIn(UNPUBLISHED_TEXT, text)
         self.assertNotIn("Memory promotion", text)
         for bad in ({**issues[0], "title": "x"}, {**issues[0], "url": "https://github.com/x/y/issues/1"},
                     {k: v for k, v in issues[0].items() if k != "count"}):
