@@ -8,8 +8,8 @@ value is a fraction of the subscription's weekly allowance, read the way the
 CLI's meter reports it (`unifiedWindows.seven_day.utilization`, 0 to 1).
 
 Strict, because a typo here is a spending decision nobody made: exactly the
-four keys, no duplicates, each a finite number above 0 and at most 1 (a
-bool is not a number), and `per_run_cap` no larger than `weekly_cap`. A
+four keys (plus the optional `points_per_usd`), no duplicates, each a
+finite number above 0 and at most 1 (a bool is not a number), and `per_run_cap` no larger than `weekly_cap`. A
 problem is a BudgetError whose message names the key and the rule, never a
 value from the file.
 """
@@ -24,6 +24,13 @@ import yaml
 #: The committed budget, beside the roster and the schedule.
 DEFAULT_BUDGET = Path(__file__).resolve().parent.parent / "evals" / "budget.yml"
 KEYS = ("weekly_cap", "per_run_cap", "per_run_overrun", "stop_when_account_above")
+#: Keys a budget may leave out. `points_per_usd` is the allowance fraction one
+#: dollar of the CLI's own reported call cost moves the meter, measured with
+#: `scripts/run_costs.py` (2026-11-03). With it, run_eval charges
+#: `per_run_cap` with the run's own calls' dollars at that rate instead of
+#: the account-wide meter, which reads whole points and moves with Adam's
+#: other use too. Absent, `per_run_cap` reads the meter as before.
+OPTIONAL_KEYS = ("points_per_usd",)
 
 
 class BudgetError(ValueError):
@@ -55,14 +62,14 @@ def parse_budget(text: str) -> dict:
         raise BudgetError("budget is not valid YAML") from None
     if not isinstance(document, dict):
         raise BudgetError("budget must be a mapping")
-    unknown = sorted(set(document) - set(KEYS))
+    unknown = sorted(set(document) - set(KEYS) - set(OPTIONAL_KEYS))
     if unknown:
         raise BudgetError(f"budget has unknown keys {unknown}")
     missing = [key for key in KEYS if key not in document]
     if missing:
         raise BudgetError(f"budget is missing keys {missing}")
     budget = {}
-    for key in KEYS:
+    for key in (*KEYS, *(key for key in OPTIONAL_KEYS if key in document)):
         value = document[key]
         if isinstance(value, bool) or not isinstance(value, (int, float)) \
                 or not math.isfinite(value) or not 0 < value <= 1:

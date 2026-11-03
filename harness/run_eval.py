@@ -4606,9 +4606,18 @@ def _seven_day(info) -> tuple | None:
     return week["utilization"], week.get("resetsAt")
 
 
-def budget_stop_reading(readings: list, limits: dict) -> dict | None:
+def budget_stop_reading(readings: list, limits: dict,
+                        own_usd: float | None = None) -> dict | None:
     """The budget stop (#68) a run's weekly-window readings call for, oldest
     first, or None. `limits` is `budget.load_budget()`'s.
+
+    With `limits["points_per_usd"]` and `own_usd`, the dollars of every call
+    the run has made (None when any call's cost is unknown), `per_run_cap`
+    is charged the run's own spend, `own_usd * points_per_usd`, and that is
+    what `moved` records. The meter reads whole points and moves with the
+    account's other use too, so a tick during a run is not the run's: read
+    that way, one run in six lost its second arm on 2026-11-03. Without
+    either, `moved` is the meter's movement as below.
 
     `moved` is the latest reading less the first, rounded as `_meter_delta`
     rounds a window's delta so the two agree; when the window's reset time
@@ -4620,6 +4629,9 @@ def budget_stop_reading(readings: list, limits: dict) -> dict | None:
         return None
     (start, start_reset), (latest, latest_reset) = readings[0], readings[-1]
     moved = round(latest - start, 6) if latest_reset == start_reset else latest
+    rate = limits.get("points_per_usd")
+    if rate is not None and own_usd is not None:
+        moved = round(own_usd * rate, 6)
     if latest >= limits["stop_when_account_above"]:
         reason, limit = "account_above", limits["stop_when_account_above"]
     elif moved >= limits["per_run_cap"]:
@@ -4730,7 +4742,15 @@ class _RunTelemetry:
             event["info"] for group in self.pending for call in group["calls"]
             for event in call.get("events") or ()]
         readings = [r for r in map(_seven_day, infos) if r is not None]
-        self.stop = budget_stop_reading(readings, self.budget)
+        own_usd = None
+        if self.budget.get("points_per_usd") is not None:
+            # Queued calls get their duration when flushed; cost ignores it.
+            costs = [cost for _, cost in self.call_costs] + [
+                cost for group in self.pending for cost in _call_costs(
+                    group["role"], [{**call, "duration_ms": 0}
+                                    for call in group["calls"]], group["results"])]
+            own_usd = None if None in costs else sum(costs)
+        self.stop = budget_stop_reading(readings, self.budget, own_usd)
         return self.stop
 
     def _call_snapshots(self, events: list, role: str, index: int,
@@ -8193,9 +8213,11 @@ def main() -> int:
     parser.add_argument("--budget", type=Path, default=budget.DEFAULT_BUDGET,
                         metavar="PATH",
                         help="the weekly allowance budget (#68): a run stops "
-                             "starting trials and judge calls once the weekly "
-                             "meter has moved per_run_cap since its first "
-                             "reading, or reads stop_when_account_above "
+                             "starting trials and judge calls once its own "
+                             "calls have cost per_run_cap (at points_per_usd; "
+                             "without it, once the weekly meter has moved "
+                             "that much since its first reading), or the "
+                             "meter reads stop_when_account_above "
                              "(default: evals/budget.yml)")
     parser.add_argument("--asserted-quiet", default=None, type=_run_name,
                         metavar="WHO",

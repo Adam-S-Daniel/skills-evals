@@ -109,6 +109,8 @@ class RunCostsTests(unittest.TestCase):
         expected = 1.95 * 3 / 4.05 / 100
         self.assertIn(f"per_run_overrun for evals/budget.yml (p95 of the largest call): "
                       f"{expected:.4f}", printed.getvalue())
+        self.assertIn("points_per_usd for evals/budget.yml (allowance per dollar): "
+                      f"{3 / 4.05 / 100:.5f}", printed.getvalue())
         self.assertEqual(len(out.read_text(encoding="utf-8").splitlines()), 4)
 
 

@@ -30,14 +30,15 @@
 # the next.
 weekly_cap: 1.00
 
-# 1 point: one run stops starting new work once the meter has moved this
-# much since the run's first reading. Adam, 2026-11-01, permanently: of the
+# 1 point: one run stops starting new work once its own calls have cost this
+# much at `points_per_usd` (below); before 2026-11-03, once the meter had
+# moved this much since the run's first reading. Adam, 2026-11-01, permanently: of the
 # 258 metered runs to then, none moved the meter 3 points, 5 moved it 2 and
 # 74 moved it 1 (95th and 97.5th percentiles 1 point, 99th 2), so the
 # 3-point value (set with the guard in #388, before any run was measured)
 # reserved several times what a run spends. The meter reads whole points
-# only, so a run stops at its first 1-point tick, which Adam's own use can
-# also cause.
+# only, so a run stopped at its first 1-point tick, which Adam's own use can
+# also cause; `points_per_usd` ended that.
 per_run_cap: 0.01
 
 # Added to every run's measured spend: the meter is read as each call
@@ -49,6 +50,17 @@ per_run_cap: 0.01
 # dollar of agent, judge and guard calls, that call was 0.180 points at p95
 # (0.311 at most). Was 0.5 points, then 0.2.
 per_run_overrun: 0.0018
+
+# The allowance one dollar of the CLI's own reported call cost uses: 0.214
+# points per dollar over 288 metered runs (2026-11-03, `python3
+# scripts/run_costs.py --results-tree <persistent/eval-results>`, which prints
+# the value to use). With it, `per_run_cap` is charged the run's own calls'
+# dollars at this rate, not the account meter: the meter reads whole points
+# and moves with Adam's own use, so on 2026-11-03, with the account ticking a
+# point every 25 minutes, one run in six lost its second arm to a tick that
+# was not its own. A run with any call of unknown cost falls back to the
+# meter. Recalculate with the same script.
+points_per_usd: 0.00214
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of

@@ -112,7 +112,8 @@ class BudgetFileTests(unittest.TestCase):
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 1.00,
                           "stop_when_account_above": 0.95,
-                          "per_run_cap": 0.01, "per_run_overrun": 0.0018})
+                          "per_run_cap": 0.01, "per_run_overrun": 0.0018,
+                          "points_per_usd": 0.00214})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -184,6 +185,58 @@ class StopReadingTests(unittest.TestCase):
             {"reason": "per_run_cap", "utilization": 0.04, "moved": 0.04,
              "limit": 0.03})
         self.assertIsNone(run_eval.budget_stop_reading([(0.70, 1), (0.02, 2)], LIMITS))
+
+
+class OwnCostStopTests(unittest.TestCase):
+    """per_run_cap charges the run's own calls' dollars at points_per_usd,
+    not the account meter (2026-11-03: a whole-point tick from Adam's own
+    use stranded one run's second arm in six)."""
+
+    COSTED = {**LIMITS, "per_run_cap": 0.01, "points_per_usd": 0.00214}
+
+    def test_a_meter_tick_mid_pair_does_not_stop_a_cheap_run(self):
+        # The meter moves a whole point while the run itself spent $0.13,
+        # 0.028 points: the second arm still runs.
+        self.assertIsNone(run_eval.budget_stop_reading(
+            [(0.28, 1), (0.29, 1)], self.COSTED, own_usd=0.13))
+
+    def test_the_run_stops_once_its_own_cost_reaches_the_cap(self):
+        self.assertEqual(
+            run_eval.budget_stop_reading([(0.28, 1), (0.28, 1)], self.COSTED,
+                                         own_usd=5.0),
+            {"reason": "per_run_cap", "utilization": 0.28, "moved": 0.0107,
+             "limit": 0.01})
+        self.assertIsNone(run_eval.budget_stop_reading(
+            [(0.28, 1)], self.COSTED, own_usd=4.6))
+
+    def test_an_unknown_cost_or_no_rate_falls_back_to_the_meter(self):
+        tick = [(0.28, 1), (0.29, 1)]
+        for limits, own in ((self.COSTED, None),
+                            ({**LIMITS, "per_run_cap": 0.01}, 0.13)):
+            with self.subTest(own=own, rate="points_per_usd" in limits):
+                self.assertEqual(
+                    run_eval.budget_stop_reading(tick, limits, own_usd=own)["reason"],
+                    "per_run_cap")
+
+    def test_the_account_limit_still_reads_the_meter(self):
+        self.assertEqual(
+            run_eval.budget_stop_reading([(0.79, 1), (0.80, 1)], self.COSTED,
+                                         own_usd=0.01)["reason"],
+            "account_above")
+
+    def test_telemetry_sums_the_run_s_recorded_and_queued_call_costs(self):
+        run_eval._TELEMETRY.begin(flags())
+        self.addCleanup(run_eval._TELEMETRY.begin)
+        run_eval._TELEMETRY.budget = dict(self.COSTED)
+        run_eval._TELEMETRY.call_costs = [("agent", 0.10)]
+        now = datetime(2026, 10, 12, 17, 0, tzinfo=timezone.utc)
+        run_eval._TELEMETRY.record("judge", [{
+            "started": now, "ended": now, "outcome": "ok",
+            "events": [{"at": None, "info": meter(week)} for week in (0.28, 0.29)]}],
+            [{"total_cost_usd": 0.03}])
+        self.assertIsNone(run_eval._TELEMETRY.budget_stop())
+        run_eval._TELEMETRY.call_costs = [("agent", 4.80)]
+        self.assertEqual(run_eval._TELEMETRY.budget_stop()["reason"], "per_run_cap")
 
 
 class TelemetryStopTests(unittest.TestCase):
@@ -318,11 +371,27 @@ class EndToEndStopTests(unittest.TestCase):
             with self.subTest(summary=rel):
                 ingest.check_summary(summary, rel, ingest.parse_result_path(rel))
 
+    def test_a_meter_tick_from_other_use_leaves_the_second_arm_running(self):
+        # 2026-11-03: the account meter moved past the cap mid-pair while the
+        # run's own calls cost cents. With the committed points_per_usd the
+        # cap charges the run's own dollars, so both arms and judges run.
+        self.fixture(batches=[[meter(0.28)], [meter(0.30)], [meter(0.31)],
+                              [meter(0.31)]])
+        proc = self.run_eval("--judge", "always", "--run-billing", "subscription")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.calls(), ["agent", "judge", "agent", "judge"])
+        for summary in self.summaries().values():
+            self.assertNotIn("budget_stop", summary["usage"])
+
     def test_the_per_run_cap_stops_new_trials_and_judge_calls(self):
+        # Without points_per_usd the cap falls back to the meter's movement.
+        meter_only = self.tmp / "budget.yml"
+        meter_only.write_text(VALID_BUDGET, encoding="utf-8")
         self.fixture(batches=[[meter(0.70)], [meter(0.74)], [meter(0.74)],
                               [meter(0.74)]])
         proc = self.run_eval("--trials", "2", "--judge", "always",
-                             "--run-billing", "subscription")
+                             "--run-billing", "subscription",
+                             "--budget", str(meter_only))
         said = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 2, said)
         self.assertIn("Budget stop: per_run_cap", proc.stdout)
@@ -333,7 +402,7 @@ class EndToEndStopTests(unittest.TestCase):
         self.assertEqual(len(found), 6, sorted(found))
         self.assert_ingests(found)
         stop = {"reason": "per_run_cap", "utilization": 0.74, "moved": 0.04,
-                "limit": budget.load_budget()["per_run_cap"]}
+                "limit": budget.load_budget(meter_only)["per_run_cap"]}
         for rel, summary in found.items():
             with self.subTest(summary=rel):
                 self.assertEqual(summary["usage"]["budget_stop"], stop)

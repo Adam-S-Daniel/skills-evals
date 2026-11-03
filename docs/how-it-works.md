@@ -136,16 +136,20 @@ weekly allowance):
 | `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
 | `per_run_overrun` | 0.0018 | added to every run: its last call is never measured. The 95th percentile of each run's largest single call (Adam, 2026-11-01, standing rule; `scripts/run_costs.py` prints the value; was 0.005, then 0.002) |
+| `points_per_usd` | 0.00214 | the allowance one dollar of the CLI's reported call cost uses (`scripts/run_costs.py` prints it), so `per_run_cap` is charged the run's own spend (2026-11-03) |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 
 Three layers enforce it:
 
 1. **The in-run stop** (`harness/run_eval.py`). The CLI prints the account's
    weekly meter as each agent call begins. Before each trial and each judge
-   call, a run checks the latest reading: once the meter has moved
-   `per_run_cap` since the run's first reading (after a window reset, the
-   new reading alone counts), or reads `stop_when_account_above`, nothing
-   more is started. Skipped trials are written with error `budget_stop`, a
+   call, a run checks its spend and the latest reading: once its own calls
+   have cost `per_run_cap` at `points_per_usd`, or the meter reads
+   `stop_when_account_above`, nothing more is started. The cap is charged the
+   run's own dollars because the meter reads whole points and moves with the
+   account's other use too; when any call's cost is unknown, or the file sets
+   no `points_per_usd`, the cap falls back to the meter's movement since the
+   run's first reading (after a window reset, the new reading alone counts). Skipped trials are written with error `budget_stop`, a
    skipped judge call as a judge error, and every summary of the run carries
    `usage.budget_stop` naming the limit. A guidance run, being one pair, ends
    with exit 2 instead. A run with no reading yet, or an API-billed one, is
