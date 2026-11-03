@@ -1,0 +1,32 @@
+# Skills whose recorded use cannot be read as their real use, so the eval
+# scope pass (scripts/eval_scope.py) treats their use as unknown: it never
+# pauses their fixtures for zero use, and it resumes any zero-use pause it
+# made for them. Ceiling and floor pauses are unaffected.
+#
+# Remove an entry once its reason is gone; the next scope run can then pause
+# the skill again on real data.
+skills:
+  # Claude Code's skill-listing budget drops these descriptions in Windows
+  # desktop sessions, so the skills are listed by name only and can rarely
+  # trigger (skills-evals#668). Their zero use says nothing about their value.
+  - skill: tool-powershell
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: windows-elevation-from-wsl
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: launch-top-level-claude-session
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: fan-out-triage
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: red-ci-adamdaniel-ai
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: skills-doctor
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: workflow-path-audit
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
