@@ -41,6 +41,13 @@ prompt that tells it to.
    | `open_pr_heads.json` | Open PRs' head shas, keyed by repo, for the same repos (`list_pull_requests`, `state: open`) |
    | `link_states.json` | Optional. `{url: "open" \| "closed" \| "merged"}` for each `waiting_manual` link |
    | `loop_status.json` | The loop's gap list (`gaps[]`: `gap`, `title`, `status`, `owner`, `pr`), kept by the loop thread |
+   | `session_costs.jsonl` | One line appended per thread session on every refresh, from `get_session` on every thread session active since the last refresh: `v`, `at` (when sampled), `source` (`backfill` or `refresh`), `thread_id`, `session_id`, `created_at`, `updated_at`, `cost_usd` (the session's cumulative API-equivalent dollars, `ccr.external_metadata.usage.cost_usd`), `output_tokens`, `error` (`null` or `not_found`) |
+   | `owner_messages.jsonl` | One line per message the owner wrote in the project, from `read_project_chat` and `read_thread` on threads active since the last refresh: `v`, `message_id`, `sent_at`, `thread_id`. The owner's own messages only, ids and times only, never text |
+   | `loop_prs.json` | Pull requests from GitHub search by head-branch prefix (`eval-improve/`, `draft-skill/`, `retire-skill/`, `eval-guidance-improve/`, `retire-guidance/`) in adam-agentskills and _agent-guidance: `repo`, `number`, `url`, `head_ref`, `title`, `state`, `merged_at` |
+
+   `session_costs.jsonl` and `owner_messages.jsonl` are ledgers, not dumps: copy the
+   previous run's file into the new inputs directory first, then append, so history
+   is never lost.
 
    A missing optional dump builds as empty. Never paste a credential into a dump.
 3. **Build.** `python3 dashboard/build.py --results <results> --inputs <inputs> --config <config> --out <ds>`.
@@ -67,6 +74,30 @@ The run console is fed by the watcher: it writes `inputs/run_stream.json` (workf
 runs from `gh api repos/<repo>/actions/runs?created=>=<7 days ago>`, plus
 scheduled-task runs from `list_triggers`/`get_trigger`, accumulated across passes)
 and uploads `run_stream.json`.
+
+## Cost and benefit
+
+`build.py` writes two datasets for the Cost and benefit tab. A week runs Monday
+17:00 UTC to the next Monday and is labeled by its start date; the first is set by
+`COST_START`.
+
+- `cost_benefit_weeks`: per week, plan eval runs (`run_count`, `run_meter_points` from the
+  account meter, `run_points_est` from their dollars), API-billed eval dollars (`api_usd`,
+  from `results/` summaries whose `usage.reasons.meter` is the harness's "API-billed run"
+  text), project-thread spend (`build_usd`, `build_points`, `build_estimated`), loop
+  changes merged, real-work reach, owner messages and decisions. `verdicts` is the current
+  count of decided skill and guidance verdicts, on the latest week only.
+- `cost_benefit_summary`: cost per verdict, decision yield, real-work reach, the Dec 15 bar
+  (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the points-per-dollar rate.
+
+Project-thread spend is attributed from `session_costs.jsonl`: the rise in a session's
+cumulative cost between two samples is spread evenly over the time between them, and cost
+before its first sample is spread from the session's creation, which marks the week
+estimated. It counts every thread in the project, not only the eval system's own work.
+It misses scheduled-task sessions (routines and watch passes), which `get_session` on
+threads does not see. Points per dollar is the account meter's reading divided by all
+API-equivalent spend over complete weeks, so it is an upper bound; with no such week it
+falls back to `DEFAULT_POINTS_PER_USD`.
 
 ## What stays hand-maintained, and why
 

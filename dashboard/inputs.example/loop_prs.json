@@ -1,0 +1,6 @@
+[
+ {"repo": "example-owner/skills-registry", "number": 11, "url": "https://github.com/example-owner/skills-registry/pull/11",
+  "head_ref": "eval-improve/writing-adrs", "title": "Improve writing-adrs", "state": "closed", "merged_at": "2026-10-27T10:00:00Z"},
+ {"repo": "example-owner/skills-registry", "number": 12, "url": "https://github.com/example-owner/skills-registry/pull/12",
+  "head_ref": "draft-skill/new-example", "title": "Draft new-example", "state": "open", "merged_at": null}
+]

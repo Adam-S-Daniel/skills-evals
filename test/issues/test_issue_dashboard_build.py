@@ -322,6 +322,158 @@ class DashboardBuildTests(unittest.TestCase):
             rows = build.run_stream(dump, NOW)
             self.assertEqual([r["key"] for r in rows], ["none"])
 
+    # --- Cost and benefit ---------------------------------------------------------
+
+    def cb_now(self):
+        return datetime(2026, 11, 5, 13, 0, tzinfo=timezone.utc)  # a Thursday, in the week of 2026-11-02
+
+    def cb_starts(self):
+        return build.week_starts(build.COST_START, self.cb_now())
+
+    def sample(self, at, cost, session="cse_s1", created="2026-10-25T17:00:00Z", updated=None, **kw):
+        return {"v": 1, "at": at, "source": "refresh", "thread_id": "cmsg_thread0001", "session_id": session,
+                "created_at": created, "updated_at": updated or at, "cost_usd": cost, "output_tokens": 1,
+                "error": None, **kw}
+
+    def test_weeks_start_monday_17_utc_and_run_through_the_week_holding_now(self):
+        starts = self.cb_starts()
+        self.assertEqual([s.date().isoformat() for s in starts], ["2026-10-19", "2026-10-26", "2026-11-02"])
+        self.assertEqual(build.week_of(datetime(2026, 10, 26, 16, 59, tzinfo=timezone.utc), starts), 0)
+        self.assertEqual(build.week_of(datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc), starts), 1)
+        self.assertEqual(build.week_starts(build.COST_START, datetime(2026, 10, 1, tzinfo=timezone.utc)), [])
+
+    def test_session_spend_between_two_samples_splits_at_the_week_boundary(self):
+        # $10 rose over 48 hours; 24 of them fall before Monday 2026-10-26 17:00.
+        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-27T17:00:00Z", 10),
+                   self.sample("2026-10-28T00:00:00Z", None)]
+        usd, estimated = build.session_spend(samples, self.cb_starts())
+        self.assertEqual((usd[0], usd[1]), (5, 5))
+        self.assertEqual(estimated, set())
+        # A cost that falls back between samples adds nothing.
+        usd, _ = build.session_spend([self.sample("2026-10-27T00:00:00Z", 0), self.sample("2026-10-28T00:00:00Z", 0)],
+                                     self.cb_starts())
+        self.assertEqual(usd, {})
+
+    def test_a_single_backfill_sample_is_spread_from_creation_and_marked_estimated(self):
+        s = self.sample("2026-10-28T00:00:00Z", 8, created="2026-10-25T17:00:00Z", updated="2026-10-27T17:00:00Z",
+                        source="backfill")
+        usd, estimated = build.session_spend([s], self.cb_starts())
+        self.assertEqual((usd[0], usd[1], estimated), (4, 4, {0, 1}))
+        # An empty span puts it all at that instant.
+        s = self.sample("2026-10-28T00:00:00Z", 3, created="2026-10-27T00:00:00Z", updated="2026-10-27T00:00:00Z")
+        self.assertEqual(build.session_spend([s], self.cb_starts())[0], {1: 3})
+
+    def plan_row(self, at, cost, after=None, points=None):
+        return {"run_id": "r" + at, "fired_at": at, "cost_usd": cost, "meter_points": points, "account_week_after": after}
+
+    def test_points_per_usd_is_the_account_reading_over_all_spend_of_complete_weeks(self):
+        starts = self.cb_starts()
+        rows = [self.plan_row("2026-10-20T10:00:00Z", 5, after=20), self.plan_row("2026-10-22T10:00:00Z", 5, after=30),
+                self.plan_row("2026-11-03T10:00:00Z", 50, after=90)]  # the current week is not complete
+        rate, basis, weeks = build.points_per_usd(rows, {0: 20, 2: 999}, starts, self.cb_now())
+        self.assertEqual((rate, weeks), (1.0, 1))  # the week's largest reading, 30, over $20 + $10
+        self.assertIn("upper bound", basis)
+        rate, basis, weeks = build.points_per_usd([self.plan_row("2026-10-27T10:00:00Z", 5)], {}, starts, self.cb_now())
+        self.assertEqual((rate, weeks), (build.DEFAULT_POINTS_PER_USD, 0))
+        self.assertEqual(build.DEFAULT_POINTS_PER_USD, 0.07)
+        self.assertIn("default", basis)
+
+    def test_loop_changes_parse_each_prefix_and_ignore_unmerged_prs(self):
+        def pr(n, ref, merged="2026-10-27T10:00:00Z"):
+            return {"repo": "example-owner/r", "number": n, "url": "https://example.com/" + str(n), "head_ref": ref,
+                    "title": "t", "state": "closed", "merged_at": merged}
+        got = build.loop_changes([
+            pr(1, "eval-improve/writing-adrs"), pr(2, "draft-skill/new-one"), pr(3, "retire-skill/old-one"),
+            pr(4, "eval-guidance-improve/links/extra"), pr(5, "retire-guidance/handoff"),
+            pr(6, "eval-improve/unmerged", merged=None), pr(7, "feature/other"), pr(1, "eval-improve/writing-adrs")])
+        self.assertEqual([(c["kind"], c["subject"]) for c in got],
+                         [("edit", "writing-adrs"), ("new skill", "new-one"), ("removal", "old-one"),
+                          ("guidance edit", "links"), ("guidance removal", "handoff")])
+
+    def cb(self, **kw):
+        args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], decisions=[], samples=[],
+                    owner_msgs=[], prs=[], explorer={}, now=self.cb_now())
+        args.update(kw)
+        return build.cost_benefit(*args.values())
+
+    def test_real_work_reach_counts_uses_in_weeks_after_a_change_merged(self):
+        pr = {"repo": "example-owner/r", "number": 1, "url": "u", "head_ref": "eval-improve/writing-adrs",
+              "title": "t", "state": "closed", "merged_at": "2026-10-27T10:00:00Z"}
+        gpr = dict(pr, number=2, head_ref="eval-guidance-improve/links", merged_at="2026-10-20T10:00:00Z")
+        usage = [{"week": "2026-10-19", "kind": "skill", "name": "writing-adrs", "invocations": 4},
+                 {"week": "2026-10-26", "kind": "skill", "name": "writing-adrs", "invocations": 3},
+                 {"week": "2026-11-02", "kind": "skill", "name": "writing-adrs", "invocations": 2},
+                 {"week": "2026-10-26", "kind": "guidance", "name": "full", "invocations": 0, "sessions": 5},
+                 {"week": "2026-11-02", "kind": "skill", "name": "other-skill", "invocations": 9}]
+        weeks, summary = self.cb(prs=[pr, gpr], usage_rows=usage)
+        by = {w["week"]: w for w in weeks}
+        # The skill change merged in week 2 does not count week 1's uses; the guidance change counts its sessions.
+        self.assertEqual([by[k]["real_work_reach"] for k in ("2026-10-19", "2026-10-26", "2026-11-02")], [0, 8, 2])
+        self.assertEqual([by[k]["changes"] for k in ("2026-10-19", "2026-10-26", "2026-11-02")], [1, 1, 0])
+        sm = {r["key"]: r for r in summary}
+        self.assertEqual(sm["bar_changes"]["value"], 2)
+        self.assertEqual(sm["real_work_reach"]["value"], 8)  # the latest complete week is 2026-10-26
+        self.assertEqual(sm["decision_yield"]["value"], "2 of 0")
+
+    def test_owner_messages_dedupe_and_decisions_fall_in_their_week(self):
+        msgs = [{"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
+                {"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
+                {"message_id": "cmsg_m2", "sent_at": "2026-10-26T17:00:00Z"}]
+        decisions = [{"date": "2026-10-25"}, {"date": "2026-10-26"}, {"date": "2026-10-27"}]
+        weeks, _ = self.cb(owner_msgs=msgs, decisions=decisions)
+        self.assertEqual([(w["owner_messages"], w["decisions"]) for w in weeks], [(1, 1), (1, 2), (0, 0)])
+        path = self.tmp / "m.jsonl"
+        path.write_text(json.dumps(msgs[0]) + "\nnot json\n\n" + json.dumps(dict(msgs[2], v=2)) + "\n")
+        self.assertEqual(len(build.load_jsonl(str(path))), 1)
+        self.assertEqual(build.load_jsonl(str(self.tmp / "missing.jsonl")), [])
+
+    def test_build_cost_points_api_dollars_and_verdicts_reach_the_week_rows(self):
+        write(self.tmp / "res" / "results" / "run" / "with_skill" / "summary.json",
+              summary("with_skill", 9, 10, usage={"started_at": "2026-10-21T10:00:00Z",
+                                                  "reasons": {"meter": build.API_BILLED}}))
+        write(self.tmp / "res" / "results" / "run" / "other" / "summary.json",
+              summary("with_skill", 9, 10, usage={"started_at": "2026-10-21T10:00:00Z", "reasons": {}}))
+        self.assertIn(build.API_BILLED, (REPO / "harness" / "run_eval.py").read_text())
+        explorer = {"skills": [{"verdict": "keep"}, {"verdict": "insufficient"}, {"verdict": None}],
+                    "guidance": {"sections": [{"verdict": "retire"}]}}
+        plan = [self.plan_row("2026-10-21T10:00:00Z", 10, after=10, points=2)]
+        samples = [self.sample("2026-10-25T17:00:00Z", 0), self.sample("2026-10-26T17:00:00Z", 10)]
+        weeks, summary_rows = self.cb(er=str(self.tmp / "res"), plan_rows=plan, samples=samples, explorer=explorer)
+        w = weeks[0]
+        rate = 10 / (10 + 10)  # reading 10 over thread $10 + plan-run $10 in the one complete week with a reading
+        self.assertEqual((w["api_usd"], w["build_usd"], w["build_estimated"]), (1.0, 10.0, False))
+        self.assertEqual((w["run_count"], w["run_meter_points"], w["run_points_est"]), (1, 2, 10 * rate))
+        self.assertEqual((w["build_points"], w["total_points"]), (10 * rate, 10 * rate + 10 * rate + 1.0 * rate))
+        self.assertEqual([x["verdicts"] for x in weeks], [None, None, 2])
+        sm = {r["key"]: r for r in summary_rows}
+        self.assertEqual(sm["points_per_usd"]["value"], rate)
+        self.assertEqual(sm["cost_per_verdict"]["value"], round((10 + 10 + 1.0) / 2, 2))
+
+    def test_the_bars_follow_the_week_and_the_date(self):
+        def bars(now, **kw):
+            _, rows = self.cb(now=now, **kw)
+            return {r["key"]: r for r in rows}
+        sm = bars(self.cb_now())
+        self.assertEqual((sm["bar_changes"]["status"], sm["bar_build"]["status"]), ("Not met", "Met"))
+        self.assertIn("Due 2026-12-15", sm["bar_build"]["note"])
+        self.assertNotIn("bar_verdict", sm)
+        prs = [{"repo": "o/r", "number": n, "url": "u", "head_ref": f"eval-improve/s{n}", "title": "t",
+                "state": "closed", "merged_at": "2026-10-20T10:00:00Z"} for n in (1, 2, 3)]
+        usage = [{"week": "2026-10-19", "kind": "skill", "name": f"s{n}", "invocations": 1} for n in (1, 2, 3)]
+        late = datetime(2026, 12, 16, 0, 0, tzinfo=timezone.utc)
+        sm = bars(late, prs=prs, usage_rows=usage)
+        self.assertEqual((sm["bar_changes"]["status"], sm["bar_verdict"]["value"]), ("Met", "Met: keep the eval system"))
+        hot = [self.sample("2026-12-10T00:00:00Z", 100000, created="2026-12-10T00:00:00Z")]
+        ppu_rows = [self.plan_row("2026-10-20T10:00:00Z", 1, after=50)]
+        sm = bars(late, prs=prs, usage_rows=usage, samples=hot, plan_rows=ppu_rows)
+        self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
+                         ("Not met", "Missed: cut back to guidance-only evals"))
+
+    def test_cost_benefit_placeholder_before_the_first_week(self):
+        weeks, summary_rows = self.cb(now=datetime(2026, 10, 1, tzinfo=timezone.utc))
+        self.assertEqual([w["week"] for w in weeks], ["none"])
+        self.assertTrue(summary_rows)
+
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())

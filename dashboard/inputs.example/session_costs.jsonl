@@ -1,0 +1,3 @@
+{"v":1,"at":"2026-10-26T12:00:00Z","source":"backfill","thread_id":"cmsg_thread0001","session_id":"cse_example0001","created_at":"2026-10-24T09:00:00Z","updated_at":"2026-10-26T11:30:00Z","cost_usd":42.5,"output_tokens":120000,"error":null}
+{"v":1,"at":"2026-10-29T12:00:00Z","source":"refresh","thread_id":"cmsg_thread0001","session_id":"cse_example0001","created_at":"2026-10-24T09:00:00Z","updated_at":"2026-10-29T11:30:00Z","cost_usd":61.25,"output_tokens":180000,"error":null}
+{"v":1,"at":"2026-10-29T12:00:00Z","source":"refresh","thread_id":"cmsg_thread0002","session_id":"cse_example0002","created_at":"2026-10-28T09:00:00Z","updated_at":"2026-10-29T11:00:00Z","cost_usd":null,"output_tokens":null,"error":"not_found"}

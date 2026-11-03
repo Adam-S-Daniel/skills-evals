@@ -575,6 +575,257 @@ def loop(cfg, status, site):
     return stages, cfg["grid"], lanes, gaps
 
 
+# --- Cost and benefit tab --------------------------------------------------------
+
+# A cost week starts Monday 17:00 UTC (the account's weekly reset) and is labeled by that date.
+COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
+WEEK = timedelta(days=7)
+DEFAULT_POINTS_PER_USD = 0.07
+BAR_DUE = "2026-12-15"
+BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
+BAR_MIN_CHANGES = 3
+BAR_MAX_BUILD_POINTS = 10
+# The run-level `usage.reasons.meter` of an API-billed summary (harness/run_eval.py `_API_BILLED`);
+# a test holds this copy to the harness's.
+API_BILLED = "API-billed run: the subscription's account meter does not apply"
+# Loop PR head-branch prefix -> kind of change.
+LOOP_KINDS = {"eval-improve/": "edit", "draft-skill/": "new skill", "retire-skill/": "removal",
+              "eval-guidance-improve/": "guidance edit", "retire-guidance/": "guidance removal"}
+
+
+def load_jsonl(path):
+    """Rows of a JSON-lines file; a missing file is empty and a damaged line is skipped."""
+    if not os.path.exists(path):
+        return []
+    rows = []
+    with open(path) as f:
+        for line in f:
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(row, dict) and row.get("v", 1) == 1:
+                rows.append(row)
+    return rows
+
+
+def week_starts(start, now):
+    out = [start]
+    while out[-1] + WEEK <= now:
+        out.append(out[-1] + WEEK)
+    return out if now >= start else []
+
+
+def week_of(t, starts):
+    """Index of the week holding instant t, or None outside the weeks."""
+    if t is None or not starts or t < starts[0] or t >= starts[-1] + WEEK:
+        return None
+    return int((t - starts[0]) / WEEK)
+
+
+def spread(amount, a, b, starts):
+    """{week index: share} of `amount` spread uniformly over [a, b]; an empty span is one instant (a)."""
+    if not amount or amount <= 0:
+        return {}
+    if b <= a:
+        i = week_of(a, starts)
+        return {} if i is None else {i: amount}
+    out = {}
+    for i, s in enumerate(starts):
+        overlap = (min(b, s + WEEK) - max(a, s)).total_seconds()
+        if overlap > 0:
+            out[i] = amount * overlap / (b - a).total_seconds()
+    return out
+
+
+def session_spend(samples, starts):
+    """({week index: dollars}, {week indexes holding backfilled spend}) from session_costs rows.
+
+    Per session, spend between two samples is the rise in cumulative cost (never negative), spread over
+    the time between them. A session's cost before its first sample is spread from its creation to
+    min(last update, first sample), so it is an estimate."""
+    usd, estimated = {}, set()
+    by = {}
+    for r in samples:
+        at = parse(r.get("at"))
+        if r.get("cost_usd") is None or not r.get("session_id") or at is None:
+            continue
+        by.setdefault(r["session_id"], []).append((at, float(r["cost_usd"]), r))
+    for rows in by.values():
+        rows.sort(key=lambda x: x[0])
+        at0, cost0, first = rows[0]
+        created = parse(first.get("created_at")) or at0
+        updated = parse(first.get("updated_at")) or at0
+        for i, share in spread(cost0, created, min(updated, at0), starts).items():
+            usd[i] = usd.get(i, 0) + share
+            if share > 0:
+                estimated.add(i)
+        for (a, ca, _), (b, cb, _) in zip(rows, rows[1:]):
+            for i, share in spread(max(0, cb - ca), a, b, starts).items():
+                usd[i] = usd.get(i, 0) + share
+    return usd, estimated
+
+
+def points_per_usd(rows, build_usd, starts, now):
+    """(points per dollar, basis, weeks used): the account meter's reading over all API-equivalent spend.
+
+    For each complete cost week with an account reading (the largest `account_week_after`, a percent, so
+    points, among plan runs fired in it): reading divided by that week's thread spend plus plan-run dollars,
+    summed over the weeks. Without such a week, the default."""
+    points = usd = weeks = 0
+    for i, s in enumerate(starts):
+        if s + WEEK > now:
+            continue
+        mine = [r for r in rows if week_of(parse(r["fired_at"]), starts) == i]
+        seen = [r["account_week_after"] for r in mine if r.get("account_week_after") is not None]
+        if not seen:
+            continue
+        points += max(seen)
+        usd += build_usd.get(i, 0) + sum(r["cost_usd"] or 0 for r in mine)
+        weeks += 1
+    if not weeks or usd <= 0:
+        return DEFAULT_POINTS_PER_USD, f"default {DEFAULT_POINTS_PER_USD}: no complete week with an account reading yet", 0
+    return points / usd, (f"account meter \u00f7 all API-equivalent spend over {weeks} complete weeks; assumes nearly "
+                          "all account use is this project, so it is an upper bound on points per dollar"), weeks
+
+
+def api_billed_usd(er, starts):
+    """{week index: dollars} of API-billed eval runs (eval.yml's `results/` tree).
+
+    The marker is the run-level `usage.reasons.meter` that harness/run_eval.py writes into every summary
+    of an API-billed run; the week is the summary's `usage.started_at`. Trial summaries are skipped:
+    their arm's summary already carries their sum."""
+    out = {}
+    for path in sorted(glob.glob(os.path.join(er, "results", "**", "summary.json"), recursive=True)):
+        if "trial-" in path:
+            continue
+        try:
+            d = json.load(open(path))
+        except ValueError:
+            continue
+        usage_ = d.get("usage") if isinstance(d, dict) else None
+        if not isinstance(usage_, dict) or (usage_.get("reasons") or {}).get("meter") != API_BILLED:
+            continue
+        i = week_of(parse(usage_.get("started_at") or usage_.get("ended_at")), starts)
+        spent = cost(d)
+        if i is not None and spent:
+            out[i] = out.get(i, 0) + spent
+    return out
+
+
+def loop_changes(prs):
+    """Merged loop PRs: {repo, number, url, kind, subject, merged_at}; unmerged ones are not changes."""
+    out, seen = [], set()
+    for p in prs:
+        ref, merged = p.get("head_ref") or "", parse(p.get("merged_at"))
+        kind = next((k for pre, k in LOOP_KINDS.items() if ref.startswith(pre)), None)
+        key = (p.get("repo"), p.get("number"))
+        if not kind or merged is None or key in seen:
+            continue
+        seen.add(key)
+        out.append({"repo": p.get("repo"), "number": p.get("number"), "url": p.get("url"), "kind": kind,
+                    "subject": ref.split("/", 1)[1].split("/")[0], "merged_at": merged})
+    return out
+
+
+def decided_count(explorer):
+    """Skills plus guidance sections whose verdict is a decided one (anything but none or insufficient)."""
+    rows = list(explorer.get("skills") or []) + list((explorer.get("guidance") or {}).get("sections") or [])
+    return sum(1 for r in rows if r.get("verdict") not in (None, "insufficient"))
+
+
+def week_uses(change, label, usage_rows):
+    """Uses in one cost week of a change's subject: a skill's invocations, or the sessions that loaded guidance."""
+    if change["kind"].startswith("guidance"):
+        return sum(r.get("sessions") or 0 for r in usage_rows
+                   if r["kind"] == "guidance" and r["name"] == "full" and r["week"] == label)
+    return sum(r.get("invocations") or 0 for r in usage_rows
+               if r["kind"] == "skill" and r["name"] == change["subject"] and r["week"] == label)
+
+
+def r2(v):
+    return None if v is None else round(v, 2)
+
+
+def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs, explorer, now, start=COST_START):
+    """(weeks rows, summary rows) for the Cost and benefit tab."""
+    plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
+    usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
+    starts = week_starts(start, now)
+    build_usd, build_est = session_spend(samples, starts)
+    ppu, basis, _ = points_per_usd(plan, build_usd, starts, now)
+    api = api_billed_usd(er, starts)
+    changes = [c for c in loop_changes(prs) if week_of(c["merged_at"], starts) is not None]
+    verdicts = decided_count(explorer)
+    msgs = {m["message_id"]: m for m in owner_msgs if m.get("message_id") and parse(m.get("sent_at"))}
+    weeks, run_usd = [], 0
+    for i, s in enumerate(starts):
+        label, end = s.date().isoformat(), s + WEEK
+        mine = [r for r in plan if week_of(parse(r["fired_at"]), starts) == i]
+        run_meter_points = sum(r["meter_points"] or 0 for r in mine)
+        week_run_usd = sum(r["cost_usd"] or 0 for r in mine)
+        run_usd += week_run_usd
+        run_points_est = week_run_usd * ppu
+        build_points = build_usd.get(i, 0) * ppu
+        api_usd = api.get(i, 0)
+        weeks.append({
+            "week": label, "run_count": len(mine), "run_points_est": run_points_est, "run_meter_points": run_meter_points, "api_usd": api_usd,
+            "build_usd": build_usd.get(i, 0), "build_points": build_points, "build_estimated": i in build_est,
+            "total_points": run_points_est + build_points + api_usd * ppu,
+            "changes": sum(1 for c in changes if week_of(c["merged_at"], starts) == i),
+            "real_work_reach": sum(week_uses(c, label, usage_rows) for c in changes if c["merged_at"] < end),
+            "owner_messages": sum(1 for m in msgs.values() if week_of(parse(m["sent_at"]), starts) == i),
+            "decisions": sum(1 for d in decisions
+                             if week_of(parse(d["date"] + "T17:00:00Z"), starts) == i),
+            "verdicts": verdicts if i == len(starts) - 1 else None})
+    complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
+    last = complete[-1] if complete else None
+    total_usd = run_usd + sum(build_usd.values()) + sum(api.values())
+    reached = 0
+    for c in changes:
+        if any(week_uses(c, s.date().isoformat(), usage_rows) for s in starts if c["merged_at"] < s + WEEK):
+            reached += 1
+    bar_changes = reached >= BAR_MIN_CHANGES
+    bar_build = last is not None and last["build_points"] < BAR_MAX_BUILD_POINTS
+    due = f"Due {BAR_DUE}"
+    status = lambda ok: "Met" if ok else "Not met"
+    summary = [
+        {"key": "cost_per_verdict", "label": "Cost per decided verdict", "value": total_usd / verdicts if verdicts else None,
+         "target": None, "status": None,
+         "note": f"API-equivalent dollars since {start.date()}: ${total_usd:,.2f} over {verdicts} decided verdicts"},
+        {"key": "decision_yield", "label": "Decision yield", "value": f"{len(changes)} of {verdicts}",
+         "target": None, "status": None,
+         "note": "Loop changes merged since " + str(start.date()) + " out of decided verdicts"
+                 + ("" if verdicts else " (no decided verdicts yet)")},
+        {"key": "real_work_reach", "label": "Real-work reach, latest complete week",
+         "value": last["real_work_reach"] if last else None, "target": None, "status": None,
+         "note": "Uses of changed skills and guidance in the week of " + last["week"] if last else "No complete week yet"},
+        {"key": "bar_changes", "label": "Changes used in real work", "value": reached,
+         "target": f"at least {BAR_MIN_CHANGES}", "status": status(bar_changes),
+         "note": f"{due}. Merged loop changes whose subject was used at least once after the merge"},
+        {"key": "bar_build", "label": "Build cost, latest complete week", "value": r2(last["build_points"]) if last else None,
+         "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build),
+         "note": f"{due}. " + ("Build spend in the week of " + last["week"] if last else "No complete week yet")},
+        {"key": "points_per_usd", "label": "Points per dollar", "value": round(ppu, 4), "target": None,
+         "status": None, "note": basis},
+    ]
+    if now >= BAR_JUDGED_AT:
+        summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None,
+                        "value": "Met: keep the eval system" if bar_changes and bar_build
+                        else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {BAR_DUE}"})
+    if not weeks:
+        weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
+                  "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
+                  "real_work_reach": None, "owner_messages": None, "decisions": None, "verdicts": None}]
+    for w in weeks:
+        for k in ("run_points_est", "run_meter_points", "api_usd", "build_usd", "build_points", "total_points"):
+            w[k] = r2(w[k])
+    for row in summary:
+        if isinstance(row["value"], float):
+            row["value"] = r2(row["value"]) if row["key"] != "points_per_usd" else row["value"]
+    return weeks, summary
+
+
 # --- main ----------------------------------------------------------------------
 
 def build(results, inputs, config, now):
@@ -600,6 +851,11 @@ def build(results, inputs, config, now):
     out["gate"] = snap["gate"]
     out["decisions"] = snap["decisions"]
     loop_cfg = os.path.join(config, "loop.json")
+    explorer = load(os.path.join(results, "explorer", "latest.json"), {})
+    out["cost_benefit_weeks"], out["cost_benefit_summary"] = cost_benefit(
+        results, out["eval_runs"], out["usage_rows"], snap["decisions"],
+        load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
+        load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now)
     if os.path.exists(loop_cfg):
         (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
          out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
