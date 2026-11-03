@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BFGe8BCC7Yq1GABKCnEFSS",
+      "name": "Bash",
+      "input": "git status --short | head; ls; grep -rn \"v0\\.1\\.\\|0\\.1\\.[0-9]*\" --include=*.yml --include=*.yaml --include=*.md --include=Gemfile* --include=*.json --include=*.lock . 2><path> | grep -v node_modules |...",
+      "input_chars": 212,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BFGe8BCC7Yq1GABKCnEFSS",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nGemfile\nGemfile.lock\nPLATFORM_REF\nREADME.md\nassets\nbin\nplatform.lock\n./platform.lock:2:platform_ref: v0.1.103\n./Gemfile:2:gem \"cms-platform-theme\", git: \"https://github.co...",
+      "output_chars": 3258,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QyMGGboZhAeyGJnqWtoSEu",
+      "name": "Bash",
+      "input": "cat PLATFORM_REF platform.lock; cat README.md | head -30; ls bin; git log --oneline | head -5; grep -rn \"0\\.1\\.103\" . --exclude-dir=.git -l; sed -n 1,12p Gemfile.lock; cat .gitmodules",
+      "input_chars": 183,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QyMGGboZhAeyGJnqWtoSEu",
+      "is_error": true,
+      "output": "Exit code 1\ntag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\nExample site checkout. The deployment workflow uses the shared platform release.\nA changelog entry for v0.1.99 is historical context, not a current pin.\ngh\n9f23...",
+      "output_chars": 1643,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0113Kv4TqyPCz1tZ73fnGegp",
+      "name": "Bash",
+      "input": "sed -n 50,60p .github/workflows/deploy-production.yml; sed -n 8,18p .github/workflows/platform-bump.yml; ls .cms-platform | head; git ls-remote https://github.com/Adam-S-Daniel/cms-platform 'refs/tags...",
+      "input_chars": 320,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0113Kv4TqyPCz1tZ73fnGegp",
+      "is_error": false,
+      "output": "      # optional per-site inputs, so uncommenting them does not trip\n      # workflow-content: DRIFT -- but it separately requires platform_ref\n      # whenever media_archive_bucket is set (this reusable's platform_ref\n      # input defaults to `main`, so leaving it commented out here would\n      # ...",
+      "output_chars": 1963,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CMTNWvhyyGu3dkB9L3FG5d",
+      "name": "Bash",
+      "input": "git ls-files .cms-platform | head -2; \nsed -i 's/v0\\.1\\.103/v0.1.104/g' platform.lock Gemfile Gemfile.lock .github/actions/local/action.yml $(ls .github/workflows/*.yml | grep -v platform-bump)\nsed -i...",
+      "input_chars": 640,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CMTNWvhyyGu3dkB9L3FG5d",
+      "is_error": false,
+      "output": ".cms-platform/e2e/node_modules/yaml/LICENSE\n.cms-platform/e2e/node_modules/yaml/dist/compose/compose-collection.js\n./.github/workflows/platform-bump.yml:13:      # The push credential, and the ONLY one since v0.1.103: the CMS automation\n Gemfile.lock                                     | 6 +++---\n p...",
+      "output_chars": 592,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T3sUMhoA7Sksn2Qrx8J2mZ",
+      "name": "Bash",
+      "input": "git diff --stat | grep -v workflows/",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T3sUMhoA7Sksn2Qrx8J2mZ",
+      "is_error": false,
+      "output": " .github/actions/local/action.yml                 | 2 +-\n Gemfile                                          | 2 +-\n Gemfile.lock                                     | 6 +++---\n platform.lock                                    | 2 +-\n 16 files changed, 29 insertions(+), 29 deletions(-)",
+      "output_chars": 284,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UEnYVTR4hH3fpSCWwt5tJd",
+      "name": "Bash",
+      "input": "git diff --stat | head -20; git diff Gemfile.lock platform.lock",
+      "input_chars": 63,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UEnYVTR4hH3fpSCWwt5tJd",
+      "is_error": false,
+      "output": " .github/actions/local/action.yml                 | 2 +-\n .github/workflows/cms-editorial-workflow.yml     | 4 ++--\n .github/workflows/cms-media-roundtrip.yml        | 4 ++--\n .github/workflows/cms-preview-loops.yml          | 4 ++--\n .github/workflows/cms-publish-loop-host.yml      | 4 ++--\n .githu...",
+      "output_chars": 1656,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
