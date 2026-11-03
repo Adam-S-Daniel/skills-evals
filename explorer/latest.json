@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 11
  },
- "generated_at": "2026-11-03T09:34:47Z",
+ "generated_at": "2026-11-03T09:36:57Z",
  "guidance": {
   "removed": [
    {
@@ -9206,7 +9206,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T09:31:31Z",
+ "newest_run": "2026-11-03T09:34:24Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9316,7 +9316,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -9467,7 +9467,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -9800,7 +9800,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 17,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -10383,7 +10383,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11621,7 +11621,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11693,7 +11693,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12202,7 +12202,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12505,7 +12505,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12808,7 +12808,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13407,7 +13407,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13508,7 +13508,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13700,17 +13700,38 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Rename already-searchable PDFs in a specified folder to descriptive, date-prefixed names, proposing each name from the PDF's own content and prompting for per-file confirmation or edit before applying. Use after running `ocr-pdfs` to clean up scanner-output filenames like \"Scan from 2024-03-15.pdf\", \"QuickScan_001.pdf\", or \"Document(47).pdf\" \u2014 or for any folder of PDFs that already have text layers but unhelpful filenames. Triggers: \"rename my pdfs\", \"clean up pdf filenames\", \"rename searchable pdfs\", \"give my pdfs descriptive names\", \"rename scanned pdfs\", \"tidy pdf names\".",
    "name": "rename-pdfs",
    "next_test": {
-    "band": "missing",
+    "band": "near",
     "due": null,
-    "position": 2,
+    "position": 20,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T09:34:24Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T093048Z-6c7f78/rename-pdfs/20261103T093424Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.42260860000000006,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 8,
+      "cost_usd": 0.24481499999999998,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T07:23:02Z",
      "cli_version": "2.1.317",
@@ -13799,7 +13820,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14249,7 +14270,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14694,7 +14715,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14829,7 +14850,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15216,7 +15237,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15540,7 +15561,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16032,7 +16053,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17019,7 +17040,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "0aaa424ffad755d45432d1536bafa0820ed030e9",
-  "results_commit": "f9623382adbed594c2b92d2e2315d662ebad44c3"
+  "results_commit": "f019381ba0b31be415d897db6a308f59917dfd30"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
