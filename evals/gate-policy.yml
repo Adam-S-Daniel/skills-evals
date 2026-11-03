@@ -1,28 +1,76 @@
 # Thresholds for the retirement verdict, read by harness/gates.py (#70).
+# harness/gates.py's docstring says how each number is used.
 #
-# Adam set the skills' removal rule to the guidance one on 2026-11-02 (#557):
-# remove at 90% confidence (`retire_confidence` 0.90) that the skill does not
-# improve results by 0.15 or more (`objective_margin` 0.15; the judge's
-# `judge_margin` 1.5 on its 0-to-10 scale); keeping stays at 85%. Every
-# removal notifies him and can be reverted.
+# THE RULE SINCE 2026-11-03 (Adam's decision of that day is pending; these
+# are the recommended values). A statistics review of the gate that day found
+# the old bound invalid where it decided: a normal-mixture confidence
+# sequence over run means whose variance came from a prior, which removed a
+# skill after four identical runs per arm and wrongly removed subjects that
+# helped by exactly the margin 15-53% of the time against a 5% target. It
+# also found cells at the ceiling deciding removals they could not show, and
+# a weighting across guidance strata that favored removal. A threshold sweep
+# the same day simulated the replacement on the real outcome shapes and
+# chose these levels. So:
 #
-# Adam set the thresholds on 2026-10-10 (#70) and chose POOLED evidence on
-# 2026-10-25, replacing #70's four weekly sweeps: a cell (skill, fixture,
-# requested arm model) pools every validated run whose fixture, arm context
-# and (for the with arm) skill content match the current ones, the run is
-# the unit, and bounds over run means decide it. harness/gates.py's
-# docstring says how each number is used.
+#   * The bound is a betting confidence sequence on the PAIRED per-fire
+#     difference D = with - without (Waudby-Smith and Ramdas, aGRAPA bets
+#     capped at 0.9 of the safe stake). It needs no variance prior and holds
+#     at every run count, so a cell is checked after every pair.
+#   * Keep when the subject's keep test shows D > 0 at `benefit_confidence`
+#     (0.80), split over the subject's cells (Bonferroni). A cell shows no
+#     benefit when its test shows D < `objective_margin` (0.15) at
+#     `retire_confidence` (0.90). Removal is the silent, unchecked error, so
+#     it takes the stricter level.
+#   * A cell whose without arm a betting bound at `retire_confidence` shows
+#     above 1 - `objective_margin` cannot show the margin: it parks as
+#     `ceiling`, does not vote on removal and is not fired again; it needs a
+#     harder fixture. A retire verdict beside one is only a proposal. A
+#     harm test (D < 0) runs at such cells and makes a harmful one
+#     no-benefit once it decides, and the cell parks only when a no-harm
+#     test (D > -margin) agrees, so a harm beyond the margin parks only at
+#     that test's error rate (for a fixture the eval scope pass did not
+#     pause: a pause stops the firing, so an undecided harm stays undecided
+#     and its subject `insufficient` when every cell is parked, else a
+#     `retire` proposal, never automatic). A milder harm can still end parked or
+#     with no clear effect.
+#   * `max_runs_high_cell` (20): a cell whose without arm is above
+#     1 - `objective_margin`, still undecided after this many pairs, whose
+#     no-harm test has rejected and whose without arm averages at least
+#     0.90 (harness/gates.py HIGH_STOP_MIN_WITHOUT) stops being fired as
+#     `ceiling-unconfirmed`. It does not vote either, so a retire verdict
+#     beside it is a proposal. A budget rule: a bound at 0.95 needs about 28
+#     pairs, at 0.90 more than the cap. A high cell that does not meet it is
+#     fired on to the cap.
+#   * A cell that reaches `max_runs_per_cell` (40) pairs with neither test
+#     crossed, on pairs spanning `min_cli_versions`, has `no-clear-effect`,
+#     which can only PROPOSE a removal. With one version, or with a test that
+#     crossed but has not decided, it stays `insufficient`: it is no longer
+#     fired, and the planner lists it as a `cell-at-cap` work item (a step
+#     summary count, not an issue). An
+#     automatic removal needs two or more cells with headroom, every one
+#     no-benefit, and no parked cell; with one, the removal is a proposal too.
+#   * A fixture the eval scope pass paused keeps its cells: a `benefit` cell
+#     still keeps, a decided `no-benefit` cell still votes, and any other is
+#     `paused`, parked like a ceiling cell, so it never lets the other cells
+#     remove the subject automatically. A subject whose every cell is parked
+#     is `ceiling` only when each shows it on its own runs (a ceiling class,
+#     or a ceiling pause of a cell that was one, or whose no-harm test had
+#     rejected with a without arm of at least 0.90); otherwise it is
+#     `insufficient` and a `paused-unmeasured` work item. A `ceiling` subject
+#     with a paused cell among them is a `paused-ceiling` work item asking for
+#     a harder fixture.
+#   * The judge is reported but no longer votes on keep or removal (its
+#     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
+#     figure the explorer shows). Single checks no longer keep on their own.
+#   * Removals still need runs on `min_cli_versions` (2) Claude Code
+#     versions: a removal decides at the first pair where its test is at
+#     its level and the pairs so far span them.
+#   * In-situ guidance cells decide on runs beside the current rest of the
+#     guidance only.
 #
-# Confidences (Adam, 2026-10-31: decide on confidence alone, 85% to keep and
-# 95% to remove): each is the two-sided level of an anytime-valid confidence
-# sequence over run means (harness/gates.py, `confidence_sequence`), so a
-# cell is checked after every run with no minimum run count and no fixed
-# looks. Keep when the `benefit_confidence` sequence's lower end is above 0
-# (or a check's, Holm-corrected at `check_confidence`); no benefit when the
-# `retire_confidence` sequence's upper end is under the margin, and only
-# once the runs span `min_cli_versions` Claude Code versions (removals
-# only). `prior_strength` is how many runs' worth of weight the run-to-run
-# spread measured across every evaluation gets against a cell's own spread.
+# A cell whose arms both pass at most `floor_fraction` over harness/gates.py
+# FLOOR_MIN_RUNS pairs is set aside as a broken fixture and left out of the
+# verdict.
 #
 # Every validated run counts, from `results/` and `routine-results/` alike
 # (scripts/compute_gates.py): the gate guards against honest mistakes (a
@@ -30,64 +78,43 @@
 # arms, errored trials, a copy of a run ingested twice), not against forged
 # results, since anyone who can write the results can also remove a skill.
 #
-# `retirement_mode` is `auto` (a `retire` verdict opens a removal PR in
-# adam-agentskills that auto-merges with no human review) or `proposal` (an
-# issue is filed and a human removes). A missing or invalid value is
-# `proposal`. It is `auto` by Adam's 2026-10-26 decision (removal pull
-# requests auto-merge with no human; ADR 0014 and adam-agentskills ADR 0021).
-# Adam set both blocks to `proposal` on 2026-11-03 ("Resume, auto-removal
-# off") after a statistics review found the removal bound unreliable at small
-# run counts: removals are proposals for him until those fixes land. Even in `auto`,
-# scripts/retire_skill.py files the issue instead when plugin-runtime-review
-# would hold the removal or the scheduled workflow has no adam-agentskills
-# write token,
-# opens nothing while another loop pull request is open there, and acts only
-# from the scheduled workflow, never a dispatched or pull-request run.
-# Since 2026-11-03 (Adam: "Judge them by the removal rule"), for skills and
-# guidance alike, a cell at the ceiling (ceiling_fraction, judge_ceiling) is
-# decided by the margins like any other and only names the ceiling in its
-# reason; a cell whose arms both pass at most floor_fraction over
-# harness/gates.py FLOOR_MIN_RUNS runs each is set aside as a broken fixture
-# and left out of the verdict.
+# `retirement_mode` is `auto` (a `retire` verdict whose removal may be
+# automatic opens a removal PR that auto-merges with no human review) or
+# `proposal` (an issue is filed and a human removes). A missing or invalid
+# value is `proposal`. It was `auto` by Adam's 2026-10-26 decision (ADR 0014
+# and adam-agentskills ADR 0021); Adam set both blocks to `proposal` on
+# 2026-11-03 ("Resume, auto-removal off") after the statistics review, and
+# is deciding between automatic removal and proposals only under the rule
+# above. Even in `auto`, scripts/retire_skill.py files the issue instead for
+# a verdict whose `removal` is `proposal`, when plugin-runtime-review would
+# hold the removal, or when the scheduled workflow has no write token; it
+# opens nothing while another loop pull request is open, and acts only from
+# the scheduled workflow, never a dispatched or pull-request run.
 skills:
   objective_margin: 0.15
   judge_margin: 1.5
-  benefit_confidence: 0.85
+  benefit_confidence: 0.80
   retire_confidence: 0.90
-  check_confidence: 0.85
   min_cli_versions: 2
-  prior_strength: 4
-  ceiling_fraction: 0.90
-  judge_ceiling: 9.0
+  max_runs_per_cell: 40
+  max_runs_high_cell: 20
   floor_fraction: 0.10
   retirement_mode: proposal
 # Guidance sections (skills-evals#124): the same verdict over each section's
 # ablation pair (full vs full-minus-section), with the section-vs-none pair
 # read only for the `shorten-or-merge` outcome (harness/gates.py,
-# `guidance_verdict`). Kept apart from skills so the two can diverge, and
-# they did on 2026-11-02 (Adam, #557): a section is removed when the gate is
-# 90% confident (`retire_confidence` 0.90) that it does not improve results by
-# 0.15 or more (`objective_margin` 0.15), with no separate confirmation step;
-# the judge's margin scales with it on its 0-to-10 scale (`judge_margin` 1.5,
-# the integrator, 2026-11-02), so the judge never holds a removal to a
-# stricter bar than Adam set;
-# keeping stays at 85%. The in-situ runs are pooled by the rest of the
-# guidance each ran beside (harness/gates.py `classify_strata`). Each
-# removal is tracked and can be reverted (#564). Adam made section removal automatic on 2026-10-10 (#124) and
-# removal pull requests auto-merging on 2026-10-25. The write path is the
-# eval-improve GitHub App's token for _agent-guidance alone; with no token
-# (the secrets are unset, the mint failed, or the App is not installed on
-# _agent-guidance), scripts/retire_skill.py --target guidance files the
-# issue instead. Set it to `proposal` to turn removal pull requests off.
+# `guidance_verdict`). Kept apart from skills so the two can diverge; today
+# they are the same. Each removal is tracked and can be reverted (#564). The
+# write path for an automatic removal is the eval-improve GitHub App's token
+# for _agent-guidance alone; with no token, scripts/retire_skill.py --target
+# guidance files the issue instead.
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
-  benefit_confidence: 0.85
+  benefit_confidence: 0.80
   retire_confidence: 0.90
-  check_confidence: 0.85
   min_cli_versions: 2
-  prior_strength: 4
-  ceiling_fraction: 0.90
-  judge_ceiling: 9.0
+  max_runs_per_cell: 40
+  max_runs_high_cell: 20
   floor_fraction: 0.10
   retirement_mode: proposal

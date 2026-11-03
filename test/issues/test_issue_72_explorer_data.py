@@ -177,8 +177,9 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["roster"], {"arms": [{"model": "model-a", "reason": "invented reason a"}],
                                        "judge": {"model": "model-j",
                                                  "reason": "invented judge reason"}})
-        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.90,
-                                       "min_cli_versions": 2, "objective_margin": 0.15})
+        self.assertEqual(d["policy"], {"benefit_confidence": 0.80, "retire_confidence": 0.90,
+                                       "min_cli_versions": 2, "objective_margin": 0.15,
+                                       "max_runs_per_cell": 40})
         self.assertIsInstance(d["skills"], list)
         self.assertIsInstance(d["guidance"]["sections"], list)
         self.assertIsInstance(d["alerts"], list)
@@ -660,14 +661,27 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         explorer_data.renumber(rows)
         self.assertEqual([r["next_test"]["position"] for r in rows], [2, None, 1])
 
-    def test_confidence_is_the_best_help_and_the_weakest_no_help(self):
-        verdict = {"cells": [
+    def test_confidence_is_the_family_keep_level_and_the_weakest_no_help(self):
+        # 2026-11-03: `helps` is the subject's keep level, 1 - m x the
+        # smallest objective keep p (the judge does not vote, so its levels
+        # are not read); `no_help` the weakest no-help level over the cells
+        # that vote on removal.
+        verdict = {"keep_family": 2, "cells": [
             {"objective": {"helps_confidence": 0.4, "no_help_confidence": 0.7},
+             "keep_tests": [{"route": "objective", "p": 0.6}],
              "judge": {"helps_confidence": 0.9, "no_help_confidence": 0.1}},
-            {"objective": {"helps_confidence": 0.2, "no_help_confidence": 0.3}}]}
+            {"objective": {"helps_confidence": 0.95, "no_help_confidence": 0.3},
+             "keep_tests": [{"route": "objective", "p": 0.05}]}]}
         self.assertEqual(explorer_data.subject_confidence(verdict),
                          {"helps": 0.9, "no_help": 0.3})
-        # A cell with no figure blocks a no-help claim; no figure at all is None.
+        # A family of one, or none recorded, is m = 1.
+        self.assertEqual(explorer_data.subject_confidence(
+            {**verdict, "keep_family": None})["helps"], 0.95)
+        # A ceiling or broken cell does not vote, so it does not lower no_help.
+        verdict["cells"].append({"class": "ceiling", "objective": {"no_help_confidence": 0.0}})
+        verdict["cells"].append({"class": "cannot-discriminate"})
+        self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.3)
+        # A voting cell with no figure blocks a no-help claim; no figure at all is None.
         verdict["cells"].append({"class": "missing"})
         self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
         self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}),

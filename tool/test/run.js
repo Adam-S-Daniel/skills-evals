@@ -242,8 +242,20 @@ test('the confidence line shows whole percents and never rounds up to certainty'
   doc.skills[0].confidence = { helps: 0.8571, no_help: 0.9999 };
   doc.skills[1].confidence = { helps: null, no_help: null };
   const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('How sure the loop is: 85% that it helps, over 99% that any gain is under 5 points. It keeps a skill at 85% and removes one at 90%.'), 'levels');
+  ok(text.includes('How sure the loop is: 85% that it helps, over 99% that any gain is under 5 points. It keeps a skill at 80% and removes one at 90%.'), 'levels');
   ok(text.includes(P.STRINGS.confidenceNone), 'no-figure line');
+});
+test('the confidence line names the run cap and a subject with no room to show a gain', () => {
+  // 2026-11-03: a cell undecided at the cap can only propose a removal, and a
+  // subject whose every cell is at the ceiling has no removal level at all.
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.policy = { ...doc.policy, max_runs_per_cell: 40 };
+  doc.skills[0].confidence = { helps: 0.5, no_help: 0.25 };
+  doc.skills[1].confidence = { helps: 0, no_help: null };
+  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(text.includes('removes one at 90%. A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
+  ok(text.includes('How sure the loop is: 0% that it helps. No task leaves room to show a gain of 5 points, because Claude already passes without it, so it needs a harder test.'), 'no room');
+  ok(!/\b(85|95)% confiden/.test(P.STRINGS.chipRules.helps + P.STRINGS.chipRules.none), 'no fixed levels in the chip rules');
 });
 test('the confidence line takes its keep and removal levels from the data policy', () => {
   // Regression: the page hard-coded "removes one at 95%" after the removal

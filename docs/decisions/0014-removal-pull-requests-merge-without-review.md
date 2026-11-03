@@ -1,9 +1,12 @@
 # ADR 0014: A skill removal pull request merges automatically, with no human review
 
-- **Status:** accepted (2026-10-26); auto mode is wired and committed
-  (`retirement_mode: auto`, second addendum below). A removal still merges
-  only once the improvement gate's GitHub App secrets are set in
-  skills-evals; until then the workflow falls back to `proposal`.
+- **Status:** accepted (2026-10-26); auto mode is wired (second addendum
+  below), but both blocks of `evals/gate-policy.yml` commit
+  `retirement_mode: proposal` since Adam's 2026-11-03 "Resume, auto-removal
+  off", pending his decision on the betting-bound rule (last addendum
+  below). In `auto`, a removal merges only once the improvement gate's
+  GitHub App secrets are set in skills-evals; until then the workflow falls
+  back to `proposal`.
 - **Issue:** [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)
   (part 2; part 1, the verdict, is
   [#411](https://github.com/Adam-S-Daniel/skills-evals/pull/411)).
@@ -210,3 +213,456 @@ text-only skill changes addendum: a removal falls back to the issue only
 when plugin-runtime-review would hold it (the skill has its own `hooks/`
 or `bin/`, or a hook of its plugin names a path in it), not for every skill
 of a plugin that has hooks. Adam, 2026-11-03: "Yes, auto-merge them."
+
+
+## Betting-bound addendum (2026-11-03)
+
+A statistics review of the gate on 2026-11-03 found the removal bound
+invalid at the run counts where it decided. It was a normal-mixture
+confidence sequence over run means whose variance came from a prior, so
+four identical runs per arm read as certainty and removed a skill, and a
+subject that helped by exactly the margin was removed 15-53% of the time
+against a 5% target. It also found that cells at the ceiling decided
+removals they could not show, that a guidance section's older strata were
+weighted toward removal, and that the judge, having to agree to a removal,
+blocked it for good wherever its call was skipped. Adam turned removals to
+proposals that day ("Resume, auto-removal off"). A threshold sweep the same
+day simulated replacements on the real outcome shapes. What
+`harness/gates.py` now does, with the levels the sweep chose:
+
+- The bound is a betting confidence sequence on the paired per-fire
+  difference D = with minus without (Waudby-Smith and Ramdas, aGRAPA bets
+  capped at 0.9 of the safe stake). It needs no variance prior and is valid
+  at every pair count.
+- Keep when the subject's keep test shows D above 0 at 80%, the alpha split
+  over its cells (Bonferroni). A cell shows no benefit when its test shows
+  D below 0.15 at 90%. Removal is the silent, unchecked error, so it keeps
+  the stricter level.
+- A cell whose without arm a betting bound at 90% shows above 1 minus
+  the margin is `ceiling`: it does not vote, the planner stops firing it
+  and asks for a harder fixture (without blocking the subject's other
+  cells), and a subject whose every cell is at the ceiling is `ceiling`. A
+  harm test (D below 0 at 90%) runs wherever the without arm is high, so a
+  cell the skill makes worse is `no-benefit`, never hidden as a ceiling.
+- A cell undecided after 40 pairs is `no-clear-effect`.
+- The judge is reported and does not vote, and single checks no longer
+  keep on their own.
+- Cells decide on current content only: for a guidance section, the runs
+  beside the current rest of the guidance. Older strata are ignored.
+- The first bet starts from a prior learned from other subjects' earlier
+  pairs, which changes how soon a cell decides but not the bound's level.
+
+What this addendum changes about removal: **an automatic removal needs at
+least two cells with headroom, every one no-benefit.** A `retire` verdict
+with one headroom cell, with any `no-clear-effect` cell, or with any
+`ceiling` cell, carries `removal: proposal`, and `scripts/retire_skill.py`
+files the issue for it even in `auto` mode; it re-derives the mode from the
+cells and lowers a gates file whose `removal: auto` the cells do not
+support. A broken-fixture cell may stand beside a removal, but at least
+one cell must have headroom. The 2026-11-02
+addendum's per-route keep and its 85% level are superseded, as is its
+note that both blocks commit `auto`. Whether removals go back to `auto`
+under this rule, or stay proposals only, is Adam's decision, still
+pending; `retirement_mode` stays a policy knob at `proposal` until he
+makes it.
+
+### Adversarial round 1 (2026-11-03)
+
+An adversarial review of the change before merge found that a ceiling was
+judged on a sample mean over three pairs, so three perfect pairs parked a
+cell for good and let two flat cells remove the subject automatically. A
+cell is now `ceiling` only when a betting bound on the without arm's run
+means, at the remove level, shows the mean above 1 minus the margin (at
+least 18 pairs at 1.0, 25 at 0.95; 0.90 does not reject inside the cap),
+and any retire verdict that includes a ceiling cell is a proposal. A harm
+test at high cells keeps a harmful cell from hiding as a ceiling. The
+planner no longer lets a parked cell block its subject, and the cheaper
+model no longer holds the dearer one when the cheaper cell is stuck.
+Known limits it left:
+
+- *Late arrivals and prior refits re-sort a cell* (m2). A cell is
+  re-classified over every run each evaluation, so a run ingested late, or
+  a bet prior refit on newer results, can move the pair at which a test
+  rejects and so its class. Each evaluation is still a valid test at its
+  level, and the seeded simulations' rejection rates stay under alpha, but
+  the sequence of verdicts a cell shows over time is not itself one
+  sequential test.
+- *In-situ guidance errored trials do not block* (m5). A guidance cell's
+  agent-errored trial scores 0 and does not keep the cell from removal, as
+  a skill's does: the section is measured beside the whole guidance, where
+  an agent failure is part of the outcome. It is a deliberate asymmetry, not
+  a guarantee that errors only help keep.
+- *Each guidance edit resets the evidence* (m6). A cell decides only on runs
+  beside the current rest of the guidance, so an edit to any other section
+  starts every in-situ cell over. A frequently edited guidance file may
+  never let a section accumulate the 18 or more pairs a decision needs.
+- *The current keeps restart as insufficient* (m7). The 8 subjects kept
+  under the old bound (4 skills and 4 guidance sections) had 1 to 3 pairs
+  per cell. A valid bound needs 4 to 17 pairs to keep, depending on the
+  effect size, and 18 to remove identical arms, so each returns to
+  `insufficient` and is measured again rather than carrying a keep the new
+  bound cannot support.
+
+### Adversarial round 2 (2026-11-03)
+
+The second round found that round 1's CLI rule had opened a worse hole:
+versions were counted only over the pairs up to a test's first crossing,
+which never moves, so a removal first reached inside one Claude Code
+release could never decide, and the planner fired the cell forever. Pairs
+arrive in bursts, and most cells carried one version. A removal (or harm)
+now decides at a stopping time: the first pair at which the test's wealth
+is at its level AND the pairs so far span two versions. Ville's inequality
+bounds that stopping time as it bounds the first crossing, and a late pair
+that knocks the wealth under the level does not decide. A cell whose pairs
+reach the 40-pair cap undecided is no longer fired, and blocks its subject.
+
+It also found that a perfect without arm let the ceiling test park a cell
+at pair 18, before the harm test could show a harm of up to about 0.17. A
+cell now parks as `ceiling` only when a no-harm test (D above minus the
+margin, at 90%) rejects too; equal arms pass it with the ceiling, so the
+clean case costs nothing.
+
+**The budget trade-off (round 2's M2).** A valid ceiling bound costs pairs:
+at 90%, a perfect without arm needs at least 15 and the implementation 18;
+0.95 about 28; 0.90 does not decide inside the cap. 32 cells on the data of
+2026-11-03 sat above 0.85 with 1 to 4 pairs, on the order of 500 to 1,100
+more paired fires for a class that does not vote. So a cell whose without
+arm is above 1 minus the margin and undecided after `max_runs_high_cell`
+(20) pairs stops being fired and ends `ceiling-unconfirmed`: it does not
+vote, a retire verdict beside it is only a proposal, and it becomes a
+fixture-ceiling work item. The cost is that such a cell hides a harm the
+harm test had not shown by pair 20 (about D = -0.15 and milder at a perfect
+without arm); a subject whose cells all end that way is `ceiling`, never
+removed or proposed. That is the price of not spending the batch on cells
+that cannot vote, and only a harder fixture lifts it.
+
+Known limits it left:
+
+- *A second route around errored trials for guidance* (round 2's m3,
+  extending round 1's m5). In-situ guidance cells do not let an
+  agent-errored trial block removal, and with-arm timeouts at a perfect
+  without arm drive D negative, so the harm test, not only the remove test,
+  can reach `no-benefit` on them, and with two such cells an automatic
+  removal.
+- *Keep is compared with the remove test only* (round 2's m5). A cell keeps
+  when the keep test crossed no later than the remove test, even if the
+  harm test crossed earlier still. Both crossing needs D near 0 with errors
+  on both sides, and the order errs toward keep.
+- *Two removal routes per cell* (round 2's m2). `no-benefit` is the union of
+  the remove test and, at high cells, the harm test, so its worst-case
+  level is twice alpha; the simulations found no measurable excess at
+  D at or above the margin, and a harm rejection also shows D below the
+  margin.
+
+### Adversarial round 3 (2026-11-03)
+
+The third round found the stopping-time rule sound and named four gaps,
+fixed here.
+
+**A paused fixture no longer leaves the verdict (C1).** The eval scope pass
+(`scripts/eval_scope.py`) pauses a fixture whose pooled without arm averages
+0.85 or more over four runs, a sample mean the gate had stopped trusting in
+round 1. For a skill, the pause's `evals/unscheduled.yml` row made
+`scripts/compute_gates.py` drop the fixture, so a subject that clearly
+helped on it could be removed automatically through its other cells (the
+reviewer's repro: `keep` became `retire` with `removal: auto`). For
+guidance, a paused fixture's cells stayed `insufficient` with nothing to
+fire them. Now `compute_gates` reads `evals/scope-auto.yml` and the
+`Auto scope (` rows, and keeps a paused fixture's cells:
+
+- a cell that already showed `benefit` keeps it. A keep earned before the
+  pause still counts: the keep test holds its level at whatever pair it
+  stops, and the fixture was in the keep family from the start;
+- any other cell is `paused`, a parked class beside `ceiling` and
+  `ceiling-unconfirmed`. It does not vote, a retire verdict beside it is
+  only a proposal, and `scripts/retire_skill.py`'s re-derivation
+  (`cells_allow_auto`, from `gates.PARKED_CLASSES`) agrees;
+- a subject whose every cell is parked is `ceiling` when each is at the
+  ceiling or paused for the ceiling, and `insufficient` when a floor or
+  zero-use pause leaves nothing measuring it.
+
+The scope pass's own rule, which still pauses on a pooled sample mean, is
+another thread's (round 3's M1); this makes the gate safe whatever it
+pauses. On the results of 2026-11-03 the two guidance sections it had
+paused (watch-finished-is-not-ci-passed, subagent-delegation) are now
+`ceiling` rather than stuck `insufficient`, and 10 skill cells of
+zero-use pauses are `paused`.
+
+**The 20-pair stop needs the no-harm test and some slack (M2).** Round 2's
+`ceiling-unconfirmed` stop read the without arm's sample mean on every
+pair from 20 on. A high cell now stops at `max_runs_high_cell` pairs only
+when the no-harm test (D above minus the margin, at 90%) has rejected AND
+its without arm averages at least 0.90 (`HIGH_STOP_MIN_WITHOUT`). Any other
+high cell is fired on to the cap, where the harm test catches a harm beyond
+the margin and the rest ends on the cap rule (`no-clear-effect`, a
+proposal at most); the remove test still does not decide a high cell. The
+reviewer's `sim_seq3.py` (4 checks per run, 1,000 runs each, versions
+alternating; "parked" is `ceiling` plus `ceiling-unconfirmed`):
+
+| with / without (D) | Before | No-harm gate only | Both (shipped) |
+|---|---|---|---|
+| 0.80 / 0.95 (-0.15): harm parked | 66.4% | 1.1% | 1.1% (94.9% `no-benefit`) |
+| 0.85 / 0.95 (-0.10): harm parked | 92.2% | 15.8% | 16.0% (64.4% `no-benefit`) |
+| 1.0 / 0.82 (+0.18), m = 4: helpful parked | 32.5% | 32.5% | 4.4% |
+| 1.0 / 0.80 (+0.20), m = 4: helpful parked | 17.9% | 17.9% | 1.8% |
+| 1.0 / 0.85 (+0.15), m = 4: parked | 65.2% | 65.2% | 19.2% |
+| 1.0 / 0.88 (+0.12), m = 4: parked | 91.3% | 91.3% | 52.0% |
+| 0.95 / 0.95 (0): parked, mean stop | 100%, 20.0 pairs | 99.7%, 22.0 | 99.5%, 22.1 |
+| 1.0 / 1.0 (0): `ceiling`, mean stop | 100%, 18.0 | 100%, 18.0 | 100%, 18.0 |
+| 0.65 / 0.50 (+0.15): `no-benefit` (the level) | 2.4% | 2.4% | 2.4% |
+
+So the no-harm gate closes the hidden harm and the slack the parked helpful
+cells; the clean case costs about two more pairs. A harm milder than the
+margin can still end parked (16% at D = -0.10): the no-harm test's null is
+D at or below minus the margin, so rejecting there is not an error, and
+that is the trade-off this rule keeps.
+
+**The order rule compares with the removal's stopping time (M3).** A keep
+used to lose to the remove test's first crossing even when that crossing
+never decided (one CLI version), so a cell that went on to show a clear
+gain sat `insufficient` at the cap for good (the reviewer's
+`repro_order_stuck.py`). The keep now loses only to a removal that decided
+first; the keep's own crossing bounds its error either way. In the
+reviewer's `sim_shift.py` (25 flat pairs on one version, then with 0.8
+against 0.5 on a second; 500 runs), cells stuck at the cap after their keep
+test had crossed fell from 3.0% to 0%, and `benefit` rose from 29.4% to
+32.6%.
+
+**An undecided cell at the cap is a work item (M3).** A cell whose 40 pairs
+span one CLI version, or whose test crossed but has not decided, stays
+`insufficient` and unfired. The planner now lists it as a `cell-at-cap`
+work item with the gate's reason (none for a kept subject), where it had
+been a silent dead end, and no longer re-checks a decided cell at the cap,
+whose window a new pair cannot enter (round 3's m5).
+
+**Tests** (`test/issues/test_issue_gate_round3.py`): the scope-drop repro
+for skills and guidance, the pause files, the 20-pair stop's two
+conditions, the order repro, `at_cap` at exactly the cap and through the
+planner (M4), and the surviving mutations [14] and [29]. `plan_week`'s
+literal `PARKED_CLASSES` is pinned to the gate's, since `plan_week`
+imports `gates` only lazily.
+
+Known limits it left:
+
+- *The scope pass still pauses on a pooled sample mean* (M1, m4): the gate
+  now parks what it pauses, so a wrong pause costs a measurement, not a
+  wrong removal, but a ceiling-paused guidance fixture has no planner cell
+  and so no `fixture-ceiling` item.
+- *A cell held at the cap only by `min_cli_versions`* still needs new
+  content or a person; letting it take pairs past the cap was not done.
+
+### Adversarial round 4 (2026-11-03)
+
+The fourth round found no new path to a wrong automatic removal and named
+two gaps in round 3's pause handling, fixed here.
+
+**A pause no longer hides a decided harm, and is not a ceiling by itself
+(M1).** Round 3 turned every non-`benefit` cell of a paused fixture into
+`paused`, including one whose harm test had already decided `no-benefit`,
+and called a subject whose every cell was parked `ceiling` whenever each
+was paused for the ceiling. The scope pass pauses on a pooled sample of the
+without arm over four runs, long before the harm test can decide (about 14
+to 25 pairs), so a harm of any size could end as `ceiling`: never removed or
+proposed, with the planner asking for harder fixtures. Round 3's "this makes
+the gate safe whatever it pauses" and its note that the two paused guidance
+sections were "now `ceiling`" overstated it. Now:
+
+- a decided `no-benefit` cell keeps its class through a pause and votes
+  (`PAUSE_KEEPS_CLASS`): its test was at its level at its stopping time,
+  and the pause only stopped the firing. With no parked cell beside it, a
+  removal it supports may be automatic, as it would be without the pause;
+- a subject whose every cell is parked is `ceiling` only when each cell
+  shows the ceiling on its own runs (`_shows_ceiling`): a ceiling class, or
+  a cell paused for the ceiling whose class before the pause was a ceiling
+  class, or whose no-harm test had rejected with a without arm averaging at
+  least `HIGH_STOP_MIN_WITHOUT` (0.90). Otherwise it is `insufficient`,
+  marked `unmeasured`, and `scripts/plan_week.py` lists a
+  `paused-unmeasured` work item for it: a paused fixture is off
+  `evals/scheduled.yml`, so it has no planner cell and no `fixture-ceiling`
+  item.
+
+The reviewer's `repro_paused_harm.py`, before and after:
+
+| Case | Before | After |
+|---|---|---|
+| Harmful (with 50, without 95), 40 pairs a model, paused | `ceiling` | `retire`, auto (cells `no-benefit`, as unpaused) |
+| Harmful, paused after 2 pairs a model | `ceiling` | `insufficient` |
+| One model 99/99, the other 75/75, paused | `ceiling` | `retire`, proposal |
+| Harmful fixture a paused, flat fixture b | `retire`, proposal | `retire`, auto (a's harm now votes) |
+
+On the results of 2026-11-03 (`cf913560`) with this branch's evals as of
+round 4, the two guidance sections that read `ceiling`
+(watch-finished-is-not-ci-passed, subagent-delegation) now read
+`insufficient`: their paused cells were `insufficient` before the pause.
+With main merged, the scope pass no longer pauses either.
+
+**`compute` is pinned end to end (M2).** Nothing ran
+`compute_gates.compute` over an `evals/` tree with a pause, so reverting
+its `keep_paused=True` brought round 3's C1 back with every test green. A
+test now builds a temporary tree (two fixtures, a `scope-auto.yml` row and
+an `Auto scope (ceiling)` row for the one that helps) and asserts a kept
+skill stays `keep`, and a pause before the keep leaves a proposal, not
+`auto`. It fails with the call flipped to `keep_paused=False`.
+
+**The minors.**
+
+- *m1:* `fixture-ceiling`, `cell-at-cap` and `paused-unmeasured` items are
+  routed `summary` (`plan_week.SUMMARY_ROUTE`), not `issue`: the sweep's
+  step summary counts them and its plan JSON lists them, and
+  `scripts/work_item_issues.py` files no issue for them. Round 3's "where it
+  had been a silent dead end" overstated what changed: a capped cell is a
+  count in the step summary, not an issue. Filing them would need a marker,
+  a closing rule and a privacy review per kind; the smaller change makes the
+  route say where they go.
+- *m2:* a keep at or before the removal's stopping time wins over a harm
+  the harm test decides later (a test pins it). The keep's own crossing
+  bounds its error. The reviewer's other ordering, a keep that crosses
+  after a decided harm, did not arise in the shapes tried: the remove test
+  (null D at or above the margin) decided at or before the harm test (null
+  D at or above 0), and a keep after the removal's stopping time already
+  loses to it.
+- *m4:* `plan_week` turns a malformed `evals/scope-auto.yml` or
+  `evals/unscheduled.yml` into a PlanError,
+  "evals/unscheduled.yml or evals/scope-auto.yml is malformed", on its
+  guidance path as on its skill path.
+
+Known limits it left:
+
+- *Pauses are read from the tree, not as of `--as-of`* (m3): a past
+  evaluation repeated after a pause or a resume gives its paused fixtures'
+  cells the current classes. `evals/` was already read from the tree, so
+  this adds no new kind of drift.
+- *A pause outlives the content it measured* (m5): a `ceiling` or `floor`
+  pause resumes only when the fixture's digest changes, not the tested
+  skill or section, or the guidance rest. After an edit, a paused fixture's
+  cells are `paused` (from `missing`) until someone resumes it; this can
+  never free a removal (a parked cell vetoes `auto`), but it is a slow loss
+  of measurement, which the `paused-unmeasured` item names only when every
+  cell of the subject is parked. The scope pass's rules are its own
+  thread's to change.
+- *A paused fixture's decided `no-benefit` is final:* no new pair can reach
+  it to let a later keep compete, as for any cell whose window is frozen.
+
+### Adversarial round 5 (2026-11-03)
+
+The fifth round found no path to a wrong automatic removal and three gaps
+in round 4's fixes, fixed here.
+
+- *M1:* `gates.guidance_verdict` copied `removal` and `removal_reason` from
+  the in-situ verdict but not `unmeasured`, so no guidance section, the
+  kind that motivated round 4, ever got a `paused-unmeasured` item. It
+  copies `unmeasured` too; a test runs a fully paused section through
+  `guidance_verdict` into `plan_week.unmeasured_items`.
+- *m1:* `_shows_ceiling` ignored a harm test that had crossed (`harm_at`
+  set), so a cell with 18 clean pairs then 8 harm pairs on one CLI version
+  read `ceiling` once paused, though unpaused it is `insufficient`. It now
+  returns False for such a cell, as `_classify` orders harm before ceiling.
+- *m2:* a test fails when `plan_week.gather` stops handing
+  `unmeasured_items` to the plan.
+- *m3:* the `class_before_pause` branch of `_shows_ceiling` is kept. Deleting
+  it leaves the 8-module set green (601 passed), but the report called it
+  only near-equivalent, so a unit test names its contract instead.
+
+### Adversarial round 6 (2026-11-03)
+
+The sixth round found no path to a wrong automatic removal (a 5,400-subject
+fuzz of pauses found none) and two Major gaps, both off the removal side.
+
+- *M1:* a skill whose every fixture the scope pass paused, on cells that
+  show the ceiling on their own runs, was `ceiling` with no work item: a
+  paused fixture has no planner cell, and with all of them paused the skill
+  was not in `skill_contexts`, so no `needs-harder-fixtures` item either.
+  A `ceiling` verdict with a `paused` cell among its cells is now marked
+  `paused_ceiling` (a separate flag, since `unmeasured` says "no fixture is
+  measuring the subject", which is untrue here), `guidance_verdict` copies
+  it, and `plan_week.paused_ceiling_items` lists a `paused-ceiling` work
+  item (change type `fixture`, summary-routed, no issue) asking for the
+  harder fixture. `skill_contexts` still drops paused fixtures. An
+  end-to-end test runs the reviewer's input through `compute` and the
+  planner.
+- *M2:* text merged from main said a skill fixture's pause drops its cells
+  from the gate (how-it-works, the `eval_scope.py` docstring and comment,
+  and the resume reason the pass prints into its pull request). On this
+  branch the gate keeps them, parked. All four now say so; the keep guard
+  is redundant for safety and keeps a kept subject's fixtures measured.
+- *m1, m2:* tests pin `_shows_ceiling` at exactly `HIGH_STOP_MIN_WITHOUT`
+  (`>=`) and that a paused `no-clear-effect` cell stays `paused`.
+- *m3:* "undecided harm leaves the subject `insufficient`" held only when
+  every cell is parked; beside decided `no-benefit` cells it is a `retire`
+  proposal. how-it-works and `gate-policy.yml` say both.
+
+### Adversarial round 7 (2026-11-03)
+
+The seventh round again found no path to a wrong automatic removal (7,800
+fuzzed subjects, six new invariants held) and two Major findings off the
+removal side.
+
+- *M1:* main's trigger lane judged "owned by retirement" from
+  `skill_contexts`, which drops scope-paused fixtures that the gate keeps. A
+  zero-use skill with every fixture paused and decided `no-benefit` cells was
+  `retire` (even `auto`) in the gate yet got a trigger-only improve fire or a
+  `needs-trigger-set` issue. `trigger_items` now reads the verdict from the
+  gates document (`gate_verdicts`, handed over by `gather`) and also skips a
+  skill with an open `retire-skill/<skill>` PR. A test runs the reviewer's
+  input through `compute_gates.compute`.
+- *M2:* how-it-works listed the issue-filed kinds without
+  `needs-trigger-set`; a test holds the list equal to
+  `work_item_issues.KINDS`.
+- *m1, m3:* `gather`'s hand-over of `paused_ceiling_items` is pinned by
+  running `plan_week.main("plan", ...)` with the function patched, and the
+  item's fixtures filter (paused cells only) by a unit test.
+- *m2 (known limit, routing unchanged):* `paused-ceiling` items are
+  summary-only. No issue is filed, so the fixture queue and the fleet
+  worker's fixture pass never see them; the step summary count and the plan
+  JSON are the only record.
+
+### Adversarial round 8 (2026-11-03)
+
+The eighth round again found no path to a wrong automatic removal (round 7's
+fuzz rerun over 7,800 subjects, plus a new cross-lane fuzz of 300) and one
+Major finding off the removal side.
+
+- *M1:* `improve_items` appended a `needs-fixtures` agent-ready issue before it
+  checked "owned by retirement", so a `retire` skill with fewer than
+  `MIN_IMPROVE_FIXTURES` fixtures (more often after a scope pause drops one)
+  fed the fleet worker's fixture queue, and `fixture-pr-gate.yml` could
+  auto-merge fixtures for a skill the gate was retiring. It could not change
+  the verdict. One helper, `retirement_owner`, now decides ownership for the
+  improve, trim and trigger lanes: the gates document's verdict when `gather`
+  supplied it, `retire` and `retire-pending` own the skill, and so does an open
+  removal PR. The `needs-fixtures` and `needs-harder-fixtures` items consult it
+  too. A test runs the reviewer's rows through `compute_gates.compute`.
+- *m1:* the improve and description-trim lanes now skip a skill with an open
+  `retire-skill/<skill>` PR, as the trigger lane does; a test each.
+- *m2:* a test sends `retire-pending` through `gate_verdicts` to the trigger
+  lane, killing the surviving mutation that narrowed the guard to `retire`.
+- *Known limit, to be solved before `retirement_mode: auto`:* an open automatic
+  removal PR is never withdrawn if the verdict later leaves `retire`.
+  `retire_skill.py` has no close path, so an armed `retire-skill/<skill>` PR
+  whose required checks fail stays armed, and a roster or fixture change that
+  makes the subject `insufficient` would not stop it merging on a re-run of
+  its checks. Unreachable today (`retirement_mode: proposal`); the fix is to
+  re-read the verdict in the PR's checks or have the coverage job disarm and
+  close the PR.
+
+### Adversarial round 9 (2026-11-03)
+
+The ninth round found no path to a wrong automatic removal (round 8's lane fuzz
+clean over 150 trials, a new context-level fuzz over 10,000 subjects) and three
+minor findings.
+
+- *m1:* the guidance half of `improve_items` filed `needs-fixtures` and
+  `needs-harder-fixtures` agent-ready issues for a section with an open
+  `retire-guidance/<section>` PR, because it judged ownership from the verdict
+  alone (pre-existing on main). `retirement_owner` now takes
+  `subject="guidance"` and reads the section's verdict and
+  `guidance_removal_prs`, so a section is owned the same way a skill is, and its
+  status says "owned by retirement (open removal PR)". The fuzz now finds no
+  guidance violation; tests with a no-PR control.
+- *m2:* a test pins that an open removal PR suppresses a skill's
+  `needs-harder-fixtures` item (verdict `insufficient`, four fixtures, headroom
+  0.05), killing the surviving mutation that narrowed that guard to the verdict.
+- *m3:* `plan_week.py`'s improve rules and `how-it-works.md` now say what the
+  code does: retirement owns a subject when its verdict is `retire` or
+  `retire-pending` or a removal PR is open, and an owned subject gets no
+  `needs-fixtures` or `needs-harder-fixtures` item.

@@ -159,12 +159,27 @@ class StatusTests(unittest.TestCase):
                  scell("broken", empty_fires=plan_week.BROKEN_AFTER_FIRES),
                  scell("checked", stakes="none"),
                  gcell("ceiling", cls="ceiling", with_counted=3, without_counted=3),
+                 gcell("broken", cls="cannot-discriminate", with_counted=3,
+                       without_counted=3),
                  gcell("retired", verdict="retire")]
         self.assertEqual(self.status(cells, removal_prs=["removing"]), {
             ("skill", "open"): "open", ("skill", "kept"): "decided",
             ("skill", "removing"): "decided", ("skill", "blocked"): "blocked",
             ("skill", "broken"): "stalled", ("skill", "checked"): "stalled",
-            ("guidance", "ceiling"): "blocked", ("guidance", "retired"): "decided"})
+            # A parked ceiling cell does not block (round 1's M2); alone it
+            # plans nothing, so its section is stalled.
+            ("guidance", "ceiling"): "stalled", ("guidance", "broken"): "blocked",
+            ("guidance", "retired"): "decided"})
+
+    def test_a_ceiling_cell_does_not_block_its_subjects_other_cells(self):
+        # Round 1's M2, the reviewer's repro: a ceiling cell beside an open
+        # one once marked the subject `blocked`, so from the first batch its
+        # open cell was never fired again.
+        cells = [scell("demo", cls="ceiling", fixture="evals/demo/a", verdict="insufficient",
+                       with_counted=3, without_counted=3),
+                 scell("demo", cls="insufficient", fixture="evals/demo/b",
+                       verdict="insufficient", with_counted=5, without_counted=5)]
+        self.assertEqual(self.status(cells), {("skill", "demo"): "open"})
 
     def test_private_and_held_subjects_are_never_listed(self):
         cells = [scell("secret"), scell("held", schedulable=False), scell("public")]

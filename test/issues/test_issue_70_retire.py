@@ -65,6 +65,7 @@ def cell(fixture, model, cls="no-benefit"):
 def gates_doc(mode="proposal", verdicts=None):
     verdicts = verdicts if verdicts is not None else {
         SKILL: {"verdict": "retire", "reason": "every cell shows no benefit",
+                "removal": "auto", "removal_reason": "4 cells with headroom",
                 "cells": [cell("basic", m) for m in MODELS] +
                          [cell("edge", m) for m in MODELS]},
         "kept-skill": {"verdict": "keep", "reason": "a cell shows benefit", "cells": []}}
@@ -654,6 +655,8 @@ class VerdictTests(Base):
             "a roster model is missing": [cell("basic", MODELS[0])],
             "an extra model": [cell("basic", m) for m in [*MODELS, "claude-old"]],
             "no cell": [],
+            # 2026-11-03: a retire needs a cell with headroom to vote.
+            "every cell parked": [cell("basic", m, "ceiling") for m in MODELS],
         }
         for name, cells in bad.items():
             with self.subTest(name):
@@ -662,6 +665,63 @@ class VerdictTests(Base):
                 code, _, err, fake = self.run_main(doc)
                 self.assertEqual(code, 2)
                 self.assertEqual(fake.writes(), [])
+
+    def test_parked_and_capped_cells_may_stand_beside_a_retire(self):
+        # 2026-11-03 (harness/gates.py, THE VERDICT): ceiling and broken
+        # cells do not vote, and a capped cell's no-clear-effect votes for a
+        # proposal.
+        cells = [cell("basic", MODELS[0], "no-clear-effect"),
+                 cell("basic", MODELS[1], "ceiling"),
+                 cell("edge", MODELS[0], "cannot-discriminate"),
+                 cell("edge", MODELS[1])]
+        doc = gates_doc("proposal", verdicts={SKILL: {
+            "verdict": "retire", "reason": "r", "removal": "proposal", "cells": cells}})
+        code, _, err, fake = self.run_main(doc)
+        self.assertEqual(code, 0, err)
+        self.assertEqual([w[:2] for w in fake.writes()], [["issue", "create"]])
+
+    def test_a_proposal_only_verdict_lowers_auto_to_the_issue(self):
+        # 2026-11-03: one cell with headroom, or a capped cell, is only ever
+        # proposed, whatever retirement_mode says; a verdict without
+        # `removal` is treated the same.
+        registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
+        for removal in ("proposal", None):
+            with self.subTest(removal=removal):
+                doc = gates_doc("auto")
+                doc["skills"][SKILL].pop("removal")
+                doc["skills"][SKILL]["removal_reason"] = "only 1 cell with headroom"
+                if removal:
+                    doc["skills"][SKILL]["removal"] = removal
+                action = retire_skill.plan(doc, registries, FakeGitHub().gh,
+                                           allowed=("auto", "proposal"))
+                self.assertEqual((action["action"], action["mode"]),
+                                 ("create-issue", "proposal"))
+                self.assertIn("only 1 cell with headroom", action["mode_reason"])
+                self.assertIn("only 1 cell with headroom", action["body"])
+
+    def test_removal_auto_is_rederived_from_the_cells(self):
+        # Round 1's m3: a gates file that says `removal: auto` over cells
+        # that do not allow it (a no-clear-effect cell, a ceiling cell, or
+        # one headroom cell) is lowered to the issue, never trusted.
+        registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
+        # The auto rule's cell count is the gates' own constant (round 2).
+        self.assertIs(retire_skill.AUTO_MIN_HEADROOM_CELLS, gates_module.AUTO_MIN_HEADROOM_CELLS)
+        for swap in ("no-clear-effect", "ceiling", "ceiling-unconfirmed", "one", "lone"):
+            with self.subTest(swap=swap):
+                doc = gates_doc("auto")
+                cells = doc["skills"][SKILL]["cells"]
+                if swap in ("one", "lone"):
+                    # One headroom cell beside a ceiling, or beside broken
+                    # fixtures only: under AUTO_MIN_HEADROOM_CELLS either way.
+                    for c in cells[1:]:
+                        c["class"] = "ceiling" if swap == "one" else "cannot-discriminate"
+                else:
+                    cells[0]["class"] = swap
+                action = retire_skill.plan(doc, registries, FakeGitHub().gh,
+                                           allowed=("auto", "proposal"))
+                self.assertEqual((action["action"], action["mode"]),
+                                 ("create-issue", "proposal"))
+                self.assertIn("its cells allow only a proposal", action["mode_reason"])
 
     def test_two_retire_verdicts_are_refused(self):
         cells = [cell("basic", m) for m in MODELS]

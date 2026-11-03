@@ -130,6 +130,27 @@ class GatesTests(unittest.TestCase):
         self.assertEqual(got["cells"][0]["run_stamps_on_model"], [stamp(moment)])
 
 
+class GatesFieldsReachThePlannerTests(unittest.TestCase):
+    """Round 2's m1: a skill cell's gates `reason`, `pairs` and `at_cap`
+    reach the planner's cell, which `_blocking` and `cheaper_first` read."""
+
+    def test_reason_pairs_and_at_cap_are_carried(self):
+        reason = ("no-benefit on the numbers, but the cell has 1 agent-errored "
+                  "trial(s) or a run skipped as anomalous, so it cannot retire")
+        row = {"fixture": "bootstrap", "model": MODEL, "class": "insufficient",
+               "reason": reason, "pairs": 12, "at_cap": False,
+               "runs": {"with": [], "without": []}, "newest_on_model": None,
+               "run_stamps_on_model": []}
+        doc = {"roster_models": [MODEL], "skills": {"writing-adrs": {"cells": [row]}}}
+        got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW), SKILL_FIXTURE)
+        self.assertEqual((got["reason"], got["pairs"], got["at_cap"]), (reason, 12, False))
+        self.assertTrue(plan_week._blocking(got))
+        row.update(reason="neither test has rejected yet", at_cap=True)
+        got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW), SKILL_FIXTURE)
+        self.assertIs(got["at_cap"], True)
+        self.assertTrue(plan_week._blocking(got))
+
+
 class EndToEndTests(unittest.TestCase):
     """gates.retirement and gates.guidance_verdict output through
     plan_week.eval_cells with fire rows."""

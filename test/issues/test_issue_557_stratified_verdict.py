@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""skills-evals#557: in-situ guidance cells pooled by rest of guidance.
+"""skills-evals#557: in-situ guidance cells and the rest of the guidance.
 
-Covered here: harness/gates.py `pool_cells(strata=True)`, `cell_priors`
-and `classify_strata` through `guidance_verdict`, with no separate
-confirmation beside the rest on main (Adam, 2026-11-02). Skills and the
-alone pair keep their own tests (test_issue_70_retirement.py,
-test_issue_124_guidance_gates.py), which this change leaves green.
+#557 pooled an in-situ cell's runs across every rest of the guidance they
+ran beside, as inverse-variance weighted strata. The statistics review of
+2026-11-03 found that weighting favored removal, so since then an in-situ
+cell decides on the runs beside the CURRENT rest of the guidance only
+(`expected`'s `rest_digest`); runs beside an older rest are ignored. Covered
+here: harness/gates.py `pool_cells(strata=True)` and `guidance_verdict` on
+that rule, errored trials (which do not block a guidance removal), ceiling
+parking and the shorten-or-merge twist. With the judge reported but not
+voting, a skipped or missing judge figure no longer blocks anything.
+
+Skills and the alone pair keep their own tests (test_issue_70_retirement.py,
+test_issue_124_guidance_gates.py).
 
 Hermetic and deterministic: canned runs, no network, no clock.
 """
@@ -23,12 +30,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ISSUES))
 
 import gates  # noqa: E402
-from test_issue_70_retirement import (FLAT, FLAT_JUDGE, GAIN, TEST_POLICY,  # noqa: E402
-                                      series, trial)
+from test_issue_70_retirement import (FLAT, FLAT_DECIDES, FLAT_JUDGE, GAIN, LOSS,  # noqa: E402
+                                      TEST_POLICY, series, trial)
 
-MAIN, OLD, OLDER = "rest-main", "rest-old", "rest-older"
-EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1"}}
-CEILING = [(96, 96, 96), (96, 96, 95)] * 10
+MAIN, OLD = "rest-main", "rest-old"
+EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1", "rest_digest": MAIN}}
+CEILING = [(100, 100, 100)] * 20
 
 
 def stratum(rest, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JUDGE),
@@ -51,18 +58,22 @@ def verdict(runs, models=("model-a",), expect=EXPECT):
 
 class PoolingTests(unittest.TestCase):
 
-    def test_cells_hold_every_rest_and_their_own_key(self):
+    def test_cells_hold_only_the_current_rest_and_their_own_key(self):
         runs = (stratum(OLD, FLAT[:4], FLAT[:4]) + stratum(MAIN, FLAT[:3], FLAT[:3], start=4)
                 + stratum(OLD, FLAT[:2], FLAT[:2], model="model-b"))
         cells = gates.pool_cells(runs, "sec", ["model-a", "model-b"], EXPECT, strata=True)
         a, b = cells[("fx", "model-a")], cells[("fx", "model-b")]
-        self.assertEqual(sorted(a["strata"]), [MAIN, OLD])
-        self.assertEqual((len(a["with"]), len(a["without"])), (7, 7))
-        self.assertEqual(a["key"], {"tested_digest": "t1", "fixture_digest": "f1"})
+        self.assertEqual(list(a["strata"]), [MAIN])
+        self.assertEqual((len(a["with"]), len(a["without"])), (3, 3))
+        self.assertEqual(a["key"], {"tested_digest": "t1", "fixture_digest": "f1",
+                                    "rest_digest": MAIN})
         self.assertIsNot(a["key"], b["key"])
-        self.assertEqual(sorted(b["strata"]), [OLD])
+        # model-b ran only beside an older rest: nothing of it is pooled.
+        self.assertEqual((b["strata"], b["with"], b["without"]), ({}, [], []))
+        # Its runs still show the planner that fires landed.
+        self.assertEqual(len(b["run_stamps_on_model"]), 4)
 
-    def test_other_content_never_enters_a_stratum(self):
+    def test_other_content_never_enters_a_cell(self):
         runs = stratum(MAIN, FLAT[:2], FLAT[:2])
         for run in runs[:1]:
             run["tested_digest"] = "t0"  # an older section text
@@ -70,38 +81,47 @@ class PoolingTests(unittest.TestCase):
         self.assertEqual(len(cells[("fx", "model-a")]["with"]), 1)
 
     def test_without_the_section_on_main_the_key_is_incomplete(self):
-        expect = {"fx": {"fixture_digest": "f1", "tested_digest": None}}
+        expect = {"fx": {**EXPECT["fx"], "tested_digest": None}}
         v = verdict(stratum(MAIN, FLAT, FLAT), expect=expect)
         self.assertEqual(v["cells"][0]["class"], "insufficient")
         self.assertIn("tested_digest", v["cells"][0]["reason"])
 
+    def test_without_the_rest_on_main_nothing_pools(self):
+        expect = {"fx": {**EXPECT["fx"], "rest_digest": None}}
+        v = verdict(stratum(MAIN, FLAT, FLAT), expect=expect)
+        self.assertEqual(v["cells"][0]["class"], "insufficient")
+        self.assertIn("rest_digest", v["cells"][0]["reason"])
+
 
 class ClassifyTests(unittest.TestCase):
 
-    def test_one_rest_retires(self):
+    def test_the_current_rest_retires(self):
         v = verdict(stratum(MAIN, FLAT, FLAT))
         cell = v["cells"][0]
         self.assertEqual((v["verdict"], cell["class"]), ("retire", "no-benefit"), cell["reason"])
-        self.assertEqual(cell["key"]["strata"], [MAIN])
+        self.assertEqual(cell["key"]["rest_digest"], MAIN)
+        # One cell with headroom: a removal can only be proposed.
+        self.assertEqual(v["removal"], "proposal")
 
-    def test_rests_pool_toward_a_verdict(self):
-        # Ten runs per arm beside each of two rests: neither alone decides
-        # (its own prior is the fallback), together they retire.
-        one = verdict(stratum(OLD, FLAT[:10], FLAT[:10]))
-        self.assertEqual(one["verdict"], "insufficient")
-        both = verdict(stratum(OLD, FLAT[:10], FLAT[:10])
-                       + stratum(MAIN, FLAT[10:], FLAT[10:], start=10))
-        self.assertEqual(both["verdict"], "retire", both["cells"][0]["reason"])
-        self.assertEqual(sorted(both["cells"][0]["key"]["strata"]), [MAIN, OLD])
-        self.assertEqual(both["cells"][0]["objective"]["strata"], 2)
+    def test_older_rests_are_ignored(self):
+        # Ten pairs beside an old rest and ten beside main: only main's ten
+        # count, short of the eighteen identical pairs a removal needs. The
+        # same twenty beside main retire.
+        split = verdict(stratum(OLD, FLAT[:10], FLAT[:10])
+                        + stratum(MAIN, FLAT[10:], FLAT[10:], start=10))
+        self.assertEqual(split["verdict"], "insufficient")
+        self.assertEqual(split["cells"][0]["pairs"], 10)
+        self.assertEqual(verdict(stratum(MAIN, FLAT, FLAT))["verdict"], "retire")
 
-    def test_a_benefit_in_an_old_rest_keeps(self):
-        runs = stratum(OLD, GAIN + GAIN, FLAT) + stratum(MAIN, FLAT[:2], FLAT[:2], start=20)
+    def test_a_benefit_beside_an_old_rest_no_longer_keeps(self):
+        runs = stratum(OLD, GAIN, LOSS) + stratum(MAIN, FLAT[:2], FLAT[:2], start=20)
         v = verdict(runs)
-        self.assertEqual(v["verdict"], "keep", v["cells"][0]["reason"])
-        self.assertEqual(v["cells"][0]["objective"]["strata"], 2)
+        self.assertEqual(v["verdict"], "insufficient", v["cells"][0]["reason"])
+        self.assertEqual(v["cells"][0]["pairs"], 2)
+        # Beside main, the same runs keep.
+        self.assertEqual(verdict(stratum(MAIN, GAIN, LOSS))["verdict"], "keep")
 
-    def test_an_unused_stratum_is_dropped(self):
+    def test_runs_beside_an_old_rest_are_not_used(self):
         runs = stratum(MAIN, FLAT, FLAT) + series(
             "with", FLAT[:2], FLAT_JUDGE, start=30, skill="sec", fixture="fx", ctx=OLD,
             pair=OLD)
@@ -110,7 +130,7 @@ class ClassifyTests(unittest.TestCase):
             run["path"] += "#old-only"
         v = verdict(runs)
         cell = v["cells"][0]
-        self.assertEqual(cell["key"]["strata"], [MAIN])
+        self.assertEqual(cell["key"]["rest_digest"], MAIN)
         self.assertEqual(len(cell["runs"]["with"]), 20)
         self.assertEqual(len(v["runs_used"]), 40)
         self.assertEqual(v["verdict"], "retire")
@@ -126,7 +146,7 @@ class ClassifyTests(unittest.TestCase):
         v = verdict(runs)
         cell = v["cells"][0]
         self.assertEqual(cell["errored_trials"], 1)
-        self.assertNotIn("errored", cell["reason"])
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
         self.assertLess(cell["with"]["mean_of_run_means"], cell["without"]["mean_of_run_means"])
 
     def test_an_anomalous_run_still_blocks_removal(self):
@@ -135,31 +155,28 @@ class ClassifyTests(unittest.TestCase):
         runs[0]["fixture_checks"] = True
         self.assertEqual(verdict(runs)["cells"][0]["class"], "insufficient")
 
-    def test_a_judge_unusable_in_one_rest_is_unusable(self):
-        skipped = stratum(OLD, FLAT[:4], FLAT[:4], judges=(None, None), conditional=True)
-        v = verdict(stratum(MAIN, FLAT, FLAT, start=4) + skipped)
-        self.assertEqual(v["cells"][0]["class"], "insufficient")
-        self.assertIn("judge", v["cells"][0]["reason"])
-
-    def test_pooled_ceiling_is_judged_by_the_removal_rule(self):
-        # 2026-11-03: no `ceiling` class; the pooled cell is decided.
+    def test_a_ceiling_cell_is_parked(self):
+        # The review's C2 (2026-11-03): a without arm above 1 - margin cannot
+        # show the margin, so the cell parks and the section is `ceiling`,
+        # never removed for it.
         v = verdict(stratum(MAIN, CEILING, CEILING))
-        self.assertNotEqual(v["cells"][0]["class"], "ceiling")
+        self.assertEqual((v["cells"][0]["class"], v["verdict"]), ("ceiling", "ceiling"))
+        self.assertNotIn("removal", v)
 
     def test_a_retire_that_helps_alone_is_shorten_or_merge(self):
-        alone = stratum("none", GAIN + GAIN, FLAT, judges=([8.0] * 20, FLAT_JUDGE),
-                        pair="alone")
-        v = verdict(stratum(OLD, FLAT[:10], FLAT[:10])
-                    + stratum(MAIN, FLAT[10:], FLAT[10:], start=10) + alone)
+        alone = stratum("none", GAIN, LOSS, judges=([8.0] * 20, FLAT_JUDGE), pair="alone")
+        v = verdict(stratum(MAIN, FLAT, FLAT) + alone)
         self.assertEqual((v["in_situ_verdict"], v["alone"]["verdict"], v["verdict"]),
                          ("retire", "keep", "shorten-or-merge"))
+        self.assertNotIn("removal", v)
 
 
-class WithAheadSkipTests(unittest.TestCase):
-    """T3's review (#557): guidance runs judge conditionally and skip the
-    judge when the with arm is strictly ahead, so requiring every run's
-    judge figure meant a cell could never retire. When every missing figure
-    is such a skip, the objective alone decides a removal."""
+class JudgeDoesNotBlockTests(unittest.TestCase):
+    """T3's review (#557) found that requiring every run's judge figure, when
+    guidance runs skip the judge whenever the with arm is ahead, meant a cell
+    could never retire. Since 2026-11-03 the judge does not vote, so no
+    missing figure, skipped or otherwise, holds a removal back; the judge is
+    reported only when every figure is there."""
 
     def skipped(self, runs, which):
         for run in runs:
@@ -177,52 +194,24 @@ class WithAheadSkipTests(unittest.TestCase):
         v = verdict(self.skipped(runs, stamps))
         cell = v["cells"][0]
         self.assertEqual((v["verdict"], cell["class"]), ("retire", "no-benefit"), cell["reason"])
-        self.assertIn("skipped because the with arm was ahead", cell["reason"])
+        self.assertIsNone(cell["judge"])
 
-    def test_a_judge_missing_for_another_reason_still_blocks(self):
+    def test_a_judge_missing_for_another_reason_does_not_block(self):
         runs = self.runs()
-        stamps = sorted({r["timestamp"] for r in runs})[:5]
-        runs = self.skipped(runs, stamps)
-        other = next(r for r in runs if r["timestamp"] == sorted({r["timestamp"] for r in runs})[6])
+        stamps = sorted({r["timestamp"] for r in runs})
+        runs = self.skipped(runs, stamps[:5])
+        other = next(r for r in runs if r["timestamp"] == stamps[6])
         other["trials"] = [gates.trial_record(trial(80)) for _ in other["trials"]]  # no judge
         cell = verdict(runs)["cells"][0]
-        self.assertEqual(cell["class"], "insufficient")
-        self.assertIn("judge", cell["reason"])
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
 
-    def test_skills_still_need_every_judge_figure(self):
+    def test_skills_do_not_need_every_judge_figure_either(self):
         runs = self.skipped(self.runs(), sorted({r["timestamp"] for r in self.runs()})[:5])
         with_runs = [r for r in runs if r["role"] == "with"]
         without_runs = [r for r in runs if r["role"] == "without"]
-        cell = gates.classify_cell(with_runs, without_runs, TEST_POLICY, False,
-                                   gates.run_priors(runs))
-        self.assertEqual(cell["class"], "insufficient")
-
-
-class CellPriorTests(unittest.TestCase):
-
-    def test_few_runs_give_the_fallback(self):
-        # Five runs per arm: 8 degrees of freedom for the run mean and the
-        # judge; the per-check figure pools 100 checks, so it has its own.
-        priors = gates.cell_priors(stratum(MAIN, FLAT[:5], FLAT[:5]))
-        self.assertEqual((priors["objective"], priors["judge"]), (0.25, 25.0))
-        self.assertNotEqual(priors["check"], 0.25)
-
-    def test_enough_runs_give_their_own_spread(self):
-        runs = stratum(MAIN, FLAT, FLAT)
-        priors = gates.cell_priors(runs)
-        means = [gates.run_numbers(r["trials"], True)["run_mean"] for r in runs]
-        self.assertAlmostEqual(priors["objective"],
-                               gates.pooled_variance([means[:20], means[20:]]), places=12)
-
-
-class ConfidenceInfoTests(unittest.TestCase):
-
-    def test_matches_confidence_reached_for_one_stratum(self):
-        a, b = [0.8, 0.6, 1.0], [0.6, 0.4, 0.6, 0.5]
-        d, info = gates.stratified_estimate([(a, b)], 0.05, 4)
-        for distance in (d, 0.4 - d, -0.1):
-            self.assertAlmostEqual(gates.confidence_reached_info(info, 0.05, distance),
-                                   gates.confidence_reached(a, b, 0.05, 4, distance), places=12)
+        cell = gates.classify_cell(with_runs, without_runs, TEST_POLICY)
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertGreaterEqual(cell["pairs"], FLAT_DECIDES)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,15 @@ digest comes from the `--guidance` checkout (harness/guidance.py
 `guidance:` block in the policy, the document gains `guidance` (a verdict
 per section seen, harness/gates.py `guidance_verdict`) and
 `guidance_retirement_mode`, and one section at most retires per
-evaluation, apart from the one skill.
+evaluation, apart from the one skill. An in-situ cell is decided on the
+runs made beside the rest of the guidance on main: the `--guidance`
+checkout's `rest` digest (`expected_guidance`'s `rest_digest`).
+
+THE BET PRIOR. Each kind (skills; guidance in-situ) learns the betting
+bound's starting bet from its other subjects (harness/gates.py
+`paired_history`, `prior_from_history`): a cell bets from the pairs of
+other subjects stamped before the Monday of its first pair, and records
+that prior's version (harness/gates.py, THE BET PRIOR).
 
 THE CONTENT ON MAIN. Each skill's fixtures are enumerated from `--evals-dir`
 (`run_eval.resolve_fixture_dirs`: `<skill>/fixture.yaml`, or every
@@ -50,8 +58,9 @@ whose role is `with` or `without` (the summary's `role`, else
 run_eval writes (`gates.trial_record`), are numbered 1 to n and agree with
 the arm summary's `n` and `errors` (one trial and no trial files is `n` 1),
 and whose `report.md` exists.
-Everything else is counted under `skipped` by reason. The arms are
-independent samples (harness/gates.py), so an arm run needs no partner. Runs
+Everything else is counted under `skipped` by reason. An arm run is
+validated on its own; harness/gates.py pairs the two arms of one fire by
+timestamp, and a run left without a partner is listed there, not used. Runs
 under `results/` and `routine-results/` count alike: the gate guards against
 honest mistakes, not forged results, since anyone who can write the results
 can also remove a skill. The tree is data: it is read, never executed; NaN
@@ -556,14 +565,64 @@ def unscheduled_paths(evals_dir: Path) -> set:
     return {row["path"] for row in rows}
 
 
-def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
+#: How scripts/eval_scope.py marks the `evals/unscheduled.yml` rows it
+#: writes (its AUTO_PREFIX; a test pins the two), and the file where it
+#: records every pause, skill and guidance alike (its SCOPE_AUTO).
+SCOPE_PAUSE_PREFIX = "Auto scope ("
+SCOPE_AUTO_FILE = "scope-auto.yml"
+
+
+def scope_paused(evals_dir: Path) -> dict:
+    """{fixture path: rule} for every fixture the eval scope pass paused:
+    each `evals/scope-auto.yml` row, and each `evals/unscheduled.yml` row
+    whose reason starts SCOPE_PAUSE_PREFIX (its rule is the text up to the
+    closing parenthesis). Round 3's C1: harness/gates.py keeps such a
+    fixture's cells, parked, rather than letting them vanish. Missing files
+    pause nothing; a malformed one raises ValueError, never an empty map,
+    so a broken file cannot quietly drop the parked cells' veto."""
+    out = {}
+    path = evals_dir / SCOPE_AUTO_FILE
+    if path.is_file():
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"{path.name} is unreadable") from exc
+        rows = doc.get("rows") if isinstance(doc, dict) else None
+        rows = [] if rows is None else rows
+        if not isinstance(rows, list) or not all(
+                isinstance(row, dict) and isinstance(row.get("path"), str)
+                and isinstance(row.get("rule"), str) for row in rows):
+            raise ValueError(f"{path.name} must hold a `rows` list of {{path, rule}}")
+        out.update({row["path"]: row["rule"] for row in rows})
+    path = evals_dir / "unscheduled.yml"
+    if path.is_file():
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"{path.name} is unreadable") from exc
+        for row in (doc.get("fixtures") if isinstance(doc, dict) else None) or []:
+            reason = row.get("reason") if isinstance(row, dict) else None
+            if isinstance(reason, str) and reason.startswith(SCOPE_PAUSE_PREFIX) \
+                    and isinstance(row.get("path"), str):
+                rule = reason[len(SCOPE_PAUSE_PREFIX):].partition(")")[0]
+                out.setdefault(row["path"], rule or "unknown")
+    return out
+
+
+def expected_content(evals_dir: Path, skill: str, registries: dict,
+                     keep_paused: bool = False) -> dict:
     """{fixture name, "" for a flat one: {"fixture_digest", "tested_digest"}}
     for every fixture of `skill` on main, except a fixture listed in
     `evals/unscheduled.yml` (it has a written reason to stay off the schedule)
     and a `draft: true` fixture (unready by definition; `promote` schedules it
-    later, and it joins this set then); {} when it has none. A malformed
-    unscheduled.yml raises ValueError."""
+    later, and it joins this set then); {} when it has none. With
+    `keep_paused` (the verdict's caller, `compute`), a fixture the eval scope
+    pass paused (`scope_paused`) is kept despite its unscheduled row, with
+    `scope_paused` set to the pause's rule (round 3's C1: harness/gates.py
+    parks its cells; the improve loop's callers leave it out, as before). A
+    malformed unscheduled.yml or scope-auto.yml raises ValueError."""
     unscheduled = unscheduled_paths(evals_dir)
+    paused = scope_paused(evals_dir) if keep_paused else {}
     eval_dir = evals_dir / skill
     try:
         directories = run_eval.resolve_fixture_dirs(eval_dir, None) if eval_dir.is_dir() else []
@@ -577,30 +636,39 @@ def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
             doc = None
         doc = doc if isinstance(doc, dict) else {}
         listed = "evals/" + directory.relative_to(evals_dir).as_posix()
-        if doc.get("draft") is True or listed in unscheduled:
+        if doc.get("draft") is True or (listed in unscheduled and listed not in paused):
             continue
-        out["" if directory == eval_dir else directory.name] = {
-            "fixture_digest": run_eval.fixture_digest(directory),
-            "tested_digest": tested_digest(registries, doc.get("skill"), doc.get("registry"))}
+        entry = {"fixture_digest": run_eval.fixture_digest(directory),
+                 "tested_digest": tested_digest(registries, doc.get("skill"),
+                                                doc.get("registry"))}
+        if listed in paused:
+            entry["scope_paused"] = paused[listed]
+        out["" if directory == eval_dir else directory.name] = entry
     return out
 
 
 def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) -> dict:
-    """{fixture name: {"fixture_digest", "tested_digest"}} for every fixture
-    of guidance `section` on main (`evals/guidance/<section>/<name>/`); the
-    tested digest is the section's extent in `guidance_dir` (None without
-    one, or when the manifest has no such row)."""
+    """{fixture name: {"fixture_digest", "tested_digest", "rest_digest"}}
+    for every fixture of guidance `section` on main
+    (`evals/guidance/<section>/<name>/`); the tested digest is the section's
+    extent in `guidance_dir`, the rest digest its corpus without the extent
+    (both None without one, or when the manifest has no such row). A
+    fixture the eval scope pass paused also has `scope_paused`, the pause's
+    rule (round 3's C1 and M1: harness/gates.py parks its cells, where they
+    sat `insufficient` with nothing to fire them)."""
+    paused = scope_paused(evals_dir)
     root = evals_dir / "guidance" / section
     if section.startswith("_") or not root.is_dir() or root.is_symlink():
         return {}
-    tested = None
+    tested = rest = None
     if guidance_dir is not None:
         try:
             row = guidance.find_row(guidance.load_manifest(guidance_dir), section,
                                     guidance_dir)
-            tested = guidance.content_digests(guidance_dir, row)["section"]
+            digests = guidance.content_digests(guidance_dir, row)
+            tested, rest = digests["section"], digests["rest"]
         except (guidance.GuidanceError, OSError, UnicodeDecodeError):
-            tested = None
+            tested = rest = None
     out = {}
     for directory in sorted(p for p in root.iterdir() if p.is_dir() and not p.is_symlink()):
         try:
@@ -610,7 +678,10 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
         if isinstance(doc, dict) and doc.get("subject") == "guidance" \
                 and doc.get("section") == section:
             out[directory.name] = {"fixture_digest": run_eval.fixture_digest(directory),
-                                   "tested_digest": tested}
+                                   "tested_digest": tested, "rest_digest": rest}
+            listed = "evals/" + directory.relative_to(evals_dir).as_posix()
+            if listed in paused:
+                out[directory.name]["scope_paused"] = paused[listed]
     return out
 
 
@@ -646,12 +717,14 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
         raise ValueError("the roster has no arm, or an arm that is not an id")
     models = sorted(arm_ids)
     index = build_index(tree, evals_dir, as_of)
+    history = gates.paired_history(index["runs"])
     skills = {}
     for skill in index["skills"]:
         try:
-            skills[skill] = gates.retirement(index, models, skill, policy,
-                                             expected_content(evals_dir, skill,
-                                                              registries or {}))
+            skills[skill] = gates.retirement(
+                index, models, skill, policy,
+                expected_content(evals_dir, skill, registries or {}, keep_paused=True),
+                gates.prior_from_history(history, skill, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one skill's failure is its own
             skills[skill] = {"verdict": "insufficient", "cells": [], "runs_used": [],
                              "reason": f"the verdict raised {type(exc).__name__}"}
@@ -679,12 +752,15 @@ def guidance_section_verdicts(index: dict, models: list, policy: dict, evals_dir
     """The document's guidance half (#124): a verdict per section seen, one
     retirement at most among them, and the guidance policy and mode."""
     guidance_index = {"runs": index["guidance_runs"]}
+    history = gates.paired_history([r for r in index["guidance_runs"]
+                                    if r.get("pair") == "in_situ"])
     sections = {}
     for section in index["sections"]:
         try:
             sections[section] = gates.guidance_verdict(
                 guidance_index, models, section, policy,
-                expected_guidance(evals_dir, section, guidance_dir))
+                expected_guidance(evals_dir, section, guidance_dir),
+                gates.prior_from_history(history, section, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one section's failure is its own
             sections[section] = {"verdict": "insufficient", "cells": [], "runs_used": [],
                                  "reason": f"the verdict raised {type(exc).__name__}"}

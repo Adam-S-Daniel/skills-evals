@@ -58,15 +58,13 @@ THE BANDS (rule D), in order:
      2026-11-02 18:42 UTC: remove a section at 90% confidence it does not
      improve results by 0.15 or more): the undecided cells of the
      GUIDANCE_FOCUS_SECTIONS (2) eligible sections nearest a verdict.
-       progress: a cell's retire progress is the no-help confidence of
-         what decides it, over `retire_confidence` (the verdict document's
-         `guidance_policy`, else DEFAULT_RETIRE_CONFIDENCE): a
-         judge-carried cell's judge, min'd with its objective's when it
-         has one; any other cell's objective min'd with its judge's. No
-         judge block is 0 either way (gates._classify retires no cell
-         without a usable judge). Its keep progress is the larger helps
-         confidence of the two over `benefit_confidence` (it understates
-         the per-check Holm keep). An absent value is 0.
+       progress: a cell's retire progress is its objective's no-help
+         confidence (the level its remove test reached) over
+         `retire_confidence` (the verdict document's `guidance_policy`,
+         else DEFAULT_RETIRE_CONFIDENCE); its keep progress is its
+         objective's helps confidence over `benefit_confidence`. The judge
+         does not vote (harness/gates.py, 2026-11-03). An absent value is
+         0.
        score: max(min over the section's cells of retire progress, max
          over them of keep progress), since it retires only when every
          cell clears and keeps on one; ties by fewer cells (a smaller
@@ -76,11 +74,14 @@ THE BANDS (rule D), in order:
          retire verdict, shorten-or-merge, ceiling and cannot-discriminate
          are not), some cell would plan a fire (schedulable, stakes not
          `none`, not fixture-broken), no removal pull request is open in
-         _agent-guidance, and no cell is BLOCKING: its no-benefit was
-         overruled by an errored trial or an anomalous skip, or it is
-         ceiling or cannot-discriminate with BLOCKING_MIN_RUNS (3) counted
-         runs on each arm. More runs on the current content cannot move a
-         blocking cell toward removal.
+         _agent-guidance, and no cell is BLOCKING: its no-benefit or
+         no-clear-effect was overruled by an errored trial or an anomalous
+         skip, or it is cannot-discriminate with BLOCKING_MIN_RUNS (3)
+         counted runs on each arm. More runs on the current content cannot
+         move a blocking cell toward removal, nor an `insufficient` cell at
+         `max_runs_per_cell` pairs (gates' `at_cap`). A ceiling or
+         ceiling-unconfirmed cell does not block: it is not fired, and the
+         section's other cells still are.
      Within it the higher-scored section goes first, then its binding
      cell: the lowest retire progress, or, when the section's score came
      from the keep side, the highest keep progress; then the cheaper
@@ -234,7 +235,8 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      adam-agentskills (the one registry the routine checks out); the first
      by name is the fixed holdout, passed as `holdout` so the proposer never
      sees it. Fewer fixtures with train headroom is a `needs-fixtures` work
-     item instead, ranked by headroom.
+     item instead, ranked by headroom, unless retirement owns the skill
+     (rule 4).
   2. train headroom: 1 - the pooled with-arm pass rate over the other
      fixtures is at least `MIN_GAIN` (propose_skill_edit's default gain). A
      skill below it (one that already passes at least 90% of its checks) can
@@ -244,8 +246,10 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   3. a target: some train check fails in at least 25% of at least 6 scored
      with-arm trials, at least twice, and has passed at least once in some
      arm. Infrastructure trials are not evidence (gates.trial_record).
-  4. not owned by retirement: its verdict is not `retire` or
-     `retire-pending`.
+  4. not owned by retirement (`retirement_owner`): owned means its verdict
+     is `retire` or `retire-pending`, or a `retire-skill/<skill>` pull
+     request is open in adam-agentskills. An owned skill gets no
+     `needs-fixtures` or `needs-harder-fixtures` item either.
   5. not paused (rule C, `pause`): no open improve pull request
      (`eval-improve/<skill>` in adam-agentskills), no attempt in flight, no
      open issue or pull request labeled `on-hold` whose title names the
@@ -257,8 +261,11 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   eligible with at least `MIN_IMPROVE_FIXTURES` such fixtures (the last in
   name order is the holdout, as the proposer picks it), train headroom of at
   least `MIN_GAIN` over its pooled in-situ `full` arm runs, and a guidance
-  verdict (the verdict document's `guidance` half) that is not `retire` or
-  `retire-pending`, an `eval-coverage.yml` row that is not `skipped` (the
+  not owned by retirement (`retirement_owner` with `subject="guidance"`: a
+  guidance verdict, the verdict document's `guidance` half, of `retire` or
+  `retire-pending`, or an open `retire-guidance/<section>` pull request in
+  _agent-guidance; an owned section gets no fixture work item either), an
+  `eval-coverage.yml` row that is not `skipped` (the
   proposer refuses one), and not paused: `pause` keyed by section over the
   guidance-improve outcomes (scripts/improve_outcomes.py, mode
   `guidance-improve`) and the `eval-guidance-improve/<section>` pull
@@ -289,17 +296,27 @@ retried at most twice, then the skill waits 14 days. After a merged
 improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
-WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
-`fixture-broken` (change type `fixture`), `routine-outage` and
-`routine-down` (change type None: the routine failed, not a subject; see
-EMPTY FIRES),
+WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures`,
+`fixture-ceiling` and `fixture-broken` (change type `fixture`), `cell-at-cap`
+(change type None: an undecided cell whose pairs reached the cap, with its
+gates reason; none for a kept subject), `paused-unmeasured` (change type
+`fixture`: a subject the gate marked `unmeasured`, every cell parked and a
+scope-paused one showing no ceiling on its own runs; `unmeasured_items`),
+`paused-ceiling` (change type `fixture`: a `ceiling` subject with a scope-paused
+cell, which has no planner cell to ask for the harder fixture;
+`paused_ceiling_items`),
+`routine-outage` and `routine-down` (change type None: the routine failed,
+not a subject; see EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
 fire workflow refuses, see above). Every item carries `change_type`:
 `skill-edit` for an improve fire or a description trim (`description-trim`,
 DESCRIPTION TRIMS), `guidance-edit` for a guidance-improve fire, `fixture`,
 `trigger` for a trigger-only improve fire (THE TRIGGER LANE), or None for
 `routine-outage` and
-`routine-down`. Lesson proposals of kind `agent-check` are not planned
+`routine-down`. `fixture-ceiling`, `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` are
+routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
+them, but scripts/work_item_issues.py files no issue for them (round 4's
+m1). Lesson proposals of kind `agent-check` are not planned
 here: _agent-guidance's fleet worker reads them (its ADR 0027), so a
 second reader would file each twice (#657).
 
@@ -510,19 +527,33 @@ GUIDANCE_FOCUS_SECTIONS = 2
 #: The decision levels a cell's progress is normalized by when the verdict
 #: document carries no `guidance_policy` (evals/gate-policy.yml's).
 DEFAULT_RETIRE_CONFIDENCE = 0.90
-DEFAULT_BENEFIT_CONFIDENCE = 0.85
+DEFAULT_BENEFIT_CONFIDENCE = 0.80
 #: The verdicts more runs on the current content may still change: every
 #: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
 #: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
 FOCUS_VERDICTS = (None, "insufficient")
 #: A cell more runs on the current content cannot move toward removal: one
-#: whose no-benefit was overruled by an agent-errored trial or a run skipped
-#: as anomalous (gates.classify_cell's reason), or a ceiling or
+#: whose no-benefit or no-clear-effect was overruled by an agent-errored
+#: trial or a run skipped as anomalous (gates.classify_cell's reason), or a
 #: cannot-discriminate cell with at least this many counted runs on each
-#: arm (under it one more run can still change the class).
+#: arm (under it one more run can still change the class), or an
+#: `insufficient` cell at `max_runs_per_cell` pairs (`at_cap`, round 2's C1).
+#: A parked cell (PARKED_CLASSES) is not blocking (round 1's M2): it only
+#: does not vote, and the subject's other cells must stay measured.
 BLOCKING_REASON = "no-benefit on the numbers, but the cell has"
-BLOCKING_CLASSES = ("ceiling", "cannot-discriminate")
+BLOCKING_REASONS = (BLOCKING_REASON, "no-clear-effect on the numbers, but the cell has")
+BLOCKING_CLASSES = ("cannot-discriminate",)
 BLOCKING_MIN_RUNS = 3
+#: The cell classes that are parked, not fired: harness/gates.py's
+#: PARKED_CLASSES, copied because this module imports gates only lazily (its
+#: lighter subcommands run where pyyaml is not installed);
+#: test_issue_gate_round3.py pins the two equal.
+PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed", "paused")
+#: The route of a work item listed only in the sweep's step summary (its
+#: kind and count, `summary_lines`) and the plan JSON: `fixture-ceiling`,
+#: `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` (round 4's m1 and M1, round 6's M1). scripts/work_item_issues.py files issues
+#: for its KINDS only, so routing these to `issue` promised one that never came.
+SUMMARY_ROUTE = "summary"
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
 #: workflow's `section` pattern refuses its id.
@@ -597,6 +628,11 @@ BATCH_SUBJECT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 # The bands a batch restricts to its members; safety, recheck, improve and
 # bare are not.
 BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
+
+
+#: The PlanError for a malformed evals/unscheduled.yml or evals/scope-auto.yml
+#: (compute_gates raises ValueError for either; round 4's m4).
+SCHEDULE_FILES_MALFORMED = "evals/unscheduled.yml or evals/scope-auto.yml is malformed"
 
 
 class PlanError(Exception):
@@ -825,45 +861,19 @@ def _level(block, field: str) -> float:
         and not isinstance(value, bool) else 0.0
 
 
-#: The start of gates._classify's reason for a cell that is not judge-carried
-#: and still needs a usable judge to retire (test_issue_guidance_focus checks
-#: it against harness/gates.py's own text).
-JUDGE_NEEDED_REASON = ("the objective interval is not tight enough yet, and the "
-                       "judge is needed to remove")
-
-
 def retire_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to no-benefit, as a share of the decision
-    level: the no-help confidence of the figures that decide it. A
-    judge-carried cell's judge, min'd with its objective's when it has an
-    objective block; any other cell's objective min'd with its judge's. No
-    judge block gives 0 for a judge-carried cell, and for any other cell
-    whose reason says the judge is still needed; a cell whose judge was
-    skipped only because the with arm was ahead reads its objective."""
-    judge, objective = cell.get("judge"), cell.get("objective")
-    if not isinstance(judge, dict):
-        # #557 (2026-11-02): an in-situ cell whose every missing judge figure
-        # was skipped because the with arm was ahead is decided on its
-        # objective alone. gates._classify marks only the other case, where
-        # the judge is still needed, with JUDGE_NEEDED_REASON; a judge-carried
-        # cell always needs its judge.
-        if cell.get("judge_carried") \
-                or str(cell.get("reason") or "").startswith(JUDGE_NEEDED_REASON):
-            return 0.0
-        return _level(objective, "no_help_confidence") / level
-    if cell.get("judge_carried") and not isinstance(objective, dict):
-        return _level(judge, "no_help_confidence") / level
-    return min(_level(objective, "no_help_confidence"),
-               _level(judge, "no_help_confidence")) / level
+    level: its objective's no-help confidence (the remove test's level so
+    far). The judge does not vote (harness/gates.py, 2026-11-03), so it is
+    not read. An absent value is 0."""
+    return _level(cell.get("objective"), "no_help_confidence") / level
 
 
 def keep_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to benefit, as a share of the decision
-    level: the larger of its objective's and its judge's helps confidence.
-    It understates the per-check (Holm) keep route, which has no single
-    confidence to read."""
-    return max(_level(cell.get("objective"), "helps_confidence"),
-               _level(cell.get("judge"), "helps_confidence")) / level
+    level: its objective's helps confidence (the keep test's level so far,
+    per cell; the subject's keep family asks more of it)."""
+    return _level(cell.get("objective"), "helps_confidence") / level
 
 
 def _produces_item(cell: dict) -> bool:
@@ -878,8 +888,12 @@ def _produces_item(cell: dict) -> bool:
 
 
 def _blocking(cell: dict) -> bool:
-    """A cell more runs on the current content cannot move (BLOCKING_REASON)."""
-    return str(cell.get("reason") or "").startswith(BLOCKING_REASON) \
+    """A cell more runs on the current content cannot move: BLOCKING_REASON,
+    a BLOCKING_CLASSES cell with BLOCKING_MIN_RUNS, or an undecided cell
+    whose pairs reached `max_runs_per_cell` (gates' `at_cap`, round 2's C1:
+    its window is frozen)."""
+    return str(cell.get("reason") or "").startswith(BLOCKING_REASONS) \
+        or (cell.get("at_cap") is True and cell["class"] == "insufficient") \
         or (cell["class"] in BLOCKING_CLASSES
             and (cell.get("with_counted") or 0) >= BLOCKING_MIN_RUNS
             and (cell.get("without_counted") or 0) >= BLOCKING_MIN_RUNS)
@@ -1134,6 +1148,22 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     enters neither missing nor near: `focus` for a section of
     `guidance_focus`, `guidance-rest` otherwise (`_guidance_band`).
 
+    A `ceiling` or `ceiling-unconfirmed` cell (harness/gates.py) plans no
+    fire in any band but safety, re-checks included: it is a
+    `fixture-ceiling` work item (none when its subject is kept), since only a
+    harder fixture can let it vote. An `insufficient` cell whose pairs
+    reached `max_runs_per_cell` (`at_cap`) plans no fire either: its window
+    is frozen. It is a `cell-at-cap` work item carrying its gates reason
+    (round 3's M3: it was a silent dead end; it is a step summary
+    count, not an issue), and a decided cell at the cap is not re-checked
+    (round 3's m5).
+
+    CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
+    allocation): in the missing, near, focus and guidance-rest bands a cell
+    plans no fire while its subject's cell of the same fixture on a cheaper
+    model (`model_costs`) is still open (`cheaper_first`). A keep there keeps
+    the subject, and a removal needs both cells, so only the cost changes.
+
     A cell bound for the missing, near, recheck, focus or guidance-rest
     band with at least BROKEN_AFTER_FIRES `empty_fires` is a
     `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
@@ -1150,6 +1180,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     costs = model_costs(ctx["cells"])
     removal = {s for s in ctx["removal_prs"]}
     _focus, focused = guidance_focus(ctx)
+    held = cheaper_first(ctx["cells"], costs)
     members = batch_members(ctx)
     bands = {band: [] for band in BANDS}
     work = []
@@ -1169,6 +1200,37 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         due = newest is not None and now - newest >= recheck_after(cell)
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
+        elif cell["class"] in PARKED_CLASSES:
+            # Parked (harness/gates.py PARKED_CLASSES): its without arm leaves
+            # no room to show the margin, so no fire, re-checks included, can
+            # move it. It needs a harder fixture, unless its subject is
+            # already kept (round 2's m6: then nothing is asked of it).
+            if not kept:
+                parked = {"kind": "fixture-ceiling", "change_type": "fixture",
+                          "skill": cell["skill"], "fixture": cell["fixture"],
+                          "model": cell["model"], "route": SUMMARY_ROUTE}
+                if cell.get("section"):
+                    parked["section"] = cell["section"]
+                work.append(parked)
+            band, order = None, None
+        elif cell.get("at_cap") is True and cell["class"] == "insufficient":
+            # Round 2's C1: `max_runs_per_cell` pairs freeze the window, so
+            # another fire cannot change the class. It is blocking instead,
+            # and round 3's M3: a work item says so, since only new content
+            # (or a person) can move it.
+            if not kept:
+                capped = {"kind": "cell-at-cap", "change_type": None,
+                          "skill": cell["skill"], "fixture": cell["fixture"],
+                          "model": cell["model"], "route": SUMMARY_ROUTE,
+                          "reason": cell.get("reason")}
+                if cell.get("section"):
+                    capped["section"] = cell["section"]
+                work.append(capped)
+            band, order = None, None
+        elif cell.get("at_cap") is True and cell["class"] != "missing":
+            # Round 3's m5: a decided cell at the cap is not re-checked; a
+            # new pair cannot enter its frozen window.
+            band, order = None, None
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -1191,6 +1253,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             else ("skill", cell["skill"])
         if members is not None and band in BATCH_BANDS and subject not in members:
             continue  # THE BATCH: measured once its subject joins one
+        if band in CHEAPER_FIRST_BANDS and id(cell) in held:
+            continue  # its cheaper model's cell of the same fixture goes first
         if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
             broken = {"kind": "fixture-broken", "change_type": "fixture",
                       "skill": cell["skill"], "fixture": cell["fixture"],
@@ -1212,7 +1276,95 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         # can outlast its routine-outage item.
         outages.insert(0, {"kind": "routine-down", "change_type": None, "route": "issue",
                            "since": _iso(down)})
-    return bands, outages + work
+    return bands, outages + work + list(ctx.get("unmeasured") or [])
+
+
+def unmeasured_items(gates_doc: dict, private: frozenset = frozenset()) -> list:
+    """Round 4's M1: one `paused-unmeasured` work item (change type
+    `fixture`, SUMMARY_ROUTE) per skill or guidance section whose verdict
+    the gate marked `unmeasured`: every cell parked, and a fixture the eval
+    scope pass paused shows no ceiling on its own runs. A paused fixture is
+    off evals/scheduled.yml, so it has no planner cell and no
+    `fixture-ceiling` item; without this the subject would sit
+    `insufficient` with nothing asking for a resumed or harder fixture. A
+    private skill gets none (the plan names only public subjects)."""
+    out = []
+    for half in ("skills", "guidance"):
+        for name, verdict in sorted((gates_doc.get(half) or {}).items()):
+            if not isinstance(verdict, dict) or verdict.get("unmeasured") is not True \
+                    or (half == "skills" and name in private):
+                continue
+            item = {"kind": "paused-unmeasured", "change_type": "fixture",
+                    "skill": name if half == "skills" else "", "route": SUMMARY_ROUTE,
+                    "fixtures": sorted({c.get("fixture") or "" for c in verdict.get("cells", [])
+                                        if c.get("class") == "paused"})}
+            if half == "guidance":
+                item["section"] = name
+            out.append(item)
+    return out
+
+
+def paused_ceiling_items(gates_doc: dict, private: frozenset = frozenset()) -> list:
+    """Round 6's M1: one `paused-ceiling` work item (change type `fixture`,
+    SUMMARY_ROUTE) per skill or guidance section whose verdict is `ceiling`
+    with a scope-paused cell among its cells (`paused_ceiling`). A paused
+    fixture is off evals/scheduled.yml, so it has no planner cell and no
+    `fixture-ceiling` item, and a skill whose fixtures are all paused is not
+    in `skill_contexts` either; without this the subject would sit at
+    `ceiling` with nothing asking for the harder fixture the verdict says it
+    needs. A private skill gets none."""
+    out = []
+    for half in ("skills", "guidance"):
+        for name, verdict in sorted((gates_doc.get(half) or {}).items()):
+            if not isinstance(verdict, dict) or verdict.get("paused_ceiling") is not True \
+                    or (half == "skills" and name in private):
+                continue
+            item = {"kind": "paused-ceiling", "change_type": "fixture",
+                    "skill": name if half == "skills" else "", "route": SUMMARY_ROUTE,
+                    "fixtures": sorted({c.get("fixture") or "" for c in verdict.get("cells", [])
+                                        if c.get("class") == "paused"})}
+            if half == "guidance":
+                item["section"] = name
+            out.append(item)
+    return out
+
+
+#: The bands where a cell waits for its cheaper model's cell (`eval_items`).
+CHEAPER_FIRST_BANDS = ("missing", "near", "focus", "guidance-rest")
+#: Pairs after which an undecided cheaper cell no longer holds its dearer
+#: sibling (the review's M3): it may never decide, and the dearer model may
+#: still show a keep.
+CHEAPER_FIRST_MAX_PAIRS = 10
+
+
+def cheaper_first(cells: list, costs: dict) -> set:
+    """The `id()`s of the cells that wait (`eval_items`, CHEAPER MODEL
+    FIRST): an open cell (missing or insufficient) whose subject has a cell
+    of the same fixture on a model with a lower known cost (`costs`) that
+    would still be fired (`_produces_item`: open, schedulable, not stakes
+    `none`, its fires not coming back empty), is not BLOCKING (`_blocking`:
+    more runs cannot move it) and has fewer than CHEAPER_FIRST_MAX_PAIRS
+    pairs (gates' `pairs`). A cheaper cell that is decided in any other way
+    (ceiling, no-clear-effect, cannot-discriminate, no-benefit) is not open,
+    so it holds nothing either. With no cost known for either model,
+    neither waits."""
+    def subject(cell):
+        return ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+    open_classes = ("missing", "insufficient")
+    by_fixture: dict = {}
+    for cell in cells:
+        by_fixture.setdefault((subject(cell), cell["fixture"]), []).append(cell)
+    held = set()
+    for group in by_fixture.values():
+        for cell in group:
+            price = costs.get(cell["model"], math.inf)
+            if cell["class"] in open_classes and any(
+                    _produces_item(other) and not _blocking(other)
+                    and (other.get("pairs") or 0) < CHEAPER_FIRST_MAX_PAIRS
+                    and costs.get(other["model"], math.inf) < price
+                    for other in group if other is not cell):
+                held.add(id(cell))
+    return held
 
 
 def neutral_weights(raw: dict) -> dict:
@@ -1259,6 +1411,34 @@ def cost_estimate(ctx: dict, subject: str, name: str) -> float | None:
     return IMPROVE_TRIALS * sum(sum(v) / len(v) for v in per_fixture.values())
 
 
+def retirement_owner(ctx: dict, name: str, skill: dict | None = None,
+                     subject: str = "skill") -> str | None:
+    """Why retirement owns skill `name`, or None. One rule for every lane that
+    edits a skill or asks for work on it: the gates document's verdict
+    (ctx["gate_verdicts"], which keeps a skill whose fixtures are all
+    scope-paused) when gather supplied it, else `skill["verdict"]`; `retire`
+    and `retire-pending` own it, and so does an open `retire-skill/<skill>`
+    pull request (ctx["removal_prs"]), whatever the verdict now reads.
+
+    With `subject="guidance"`, `name` is a guidance section and the same rule
+    reads its verdict from `skill` (the section's ctx["guidance"] entry) and
+    its open `retire-guidance/<section>` pull requests from
+    ctx["guidance_removal_prs"]."""
+    if subject == "guidance":
+        verdict = (skill or (ctx.get("guidance") or {}).get(name, {})).get("verdict")
+        removals = ctx.get("guidance_removal_prs")
+    else:
+        verdicts = ctx.get("gate_verdicts")
+        verdict = (verdicts.get(name) if verdicts is not None
+                   else (skill or ctx["skills"].get(name, {})).get("verdict"))
+        removals = ctx.get("removal_prs")
+    if verdict in ("retire", "retire-pending"):
+        return f"owned by retirement ({verdict})"
+    if name in (removals or ()):
+        return "owned by retirement (open removal PR)"
+    return None
+
+
 def improve_items(ctx: dict, now: datetime) -> tuple:
     """(improve fires, work items, per-skill status, per-section guidance
     status, improve ranking). Candidates, skills and guidance sections, are
@@ -1279,25 +1459,25 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
         evidence = skill["evidence"]
         headroom = evidence["headroom"]
         reasons = []
+        owner = retirement_owner(ctx, name, skill)
         if not skill["registry_ok"]:
             reasons.append("its fixtures do not all name adam-agentskills")
         if headroom is None or headroom < MIN_GAIN:
             reasons.append("no train headroom")
-            if (headroom is not None and skill["registry_ok"]
-                    and skill["verdict"] not in ("retire", "retire-pending")):
+            if headroom is not None and skill["registry_ok"] and owner is None:
                 work.append({"kind": "needs-harder-fixtures", "change_type": "fixture",
                              "skill": name, "fixtures": skill["fixtures"],
                              "headroom": headroom, "route": "issue"})
         if skill["fixtures"] < MIN_IMPROVE_FIXTURES:
-            if not reasons:
+            if not reasons and owner is None:
                 work.append({"kind": "needs-fixtures", "change_type": "fixture",
                              "skill": name, "fixtures": skill["fixtures"],
                              "headroom": headroom, "route": "issue"})
             reasons.append(f"{skill['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
         if not evidence["targets"]:
             reasons.append("no failing check to target")
-        if skill["verdict"] in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({skill['verdict']})")
+        if owner:
+            reasons.append(owner)
         if not reasons and skill["pause"]:
             reasons.append(skill["pause"])
         status[name] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
@@ -1317,8 +1497,9 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append("no train headroom")
         if info["fixtures"] < MIN_IMPROVE_FIXTURES:
             reasons.append(f"{info['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
-        if info["verdict"] in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({info['verdict']})")
+        owner = retirement_owner(ctx, section, info, subject="guidance")
+        if owner:
+            reasons.append(owner)
         if info.get("row_ok") is False:
             reasons.append("its eval-coverage.yml row is skipped or missing")
         if not reasons and info.get("pause"):
@@ -1330,7 +1511,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                            "use_known": guidance_use is not None, "headroom": headroom,
                            "cost": cost_estimate(ctx, "guidance", section),
                            "eligible": not reasons, "reasons": reasons})
-        gitems.append((section, info, headroom, reasons))
+        gitems.append((section, info, headroom, reasons, owner))
     known = sorted(c["cost"] for c in candidates if c["cost"] is not None)
     fallback = (known[len(known) // 2] if len(known) % 2
                 else (known[len(known) // 2 - 1] + known[len(known) // 2]) / 2) \
@@ -1365,7 +1546,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     # highest value first; a work item only when the fire workflow's section
     # pattern refuses its id.
     guidance_work, fired = [], None
-    for section, info, headroom, reasons in sorted(
+    for section, info, headroom, reasons, owner in sorted(
             gitems, key=lambda g: (value[("guidance", g[0])] is None,
                                    -(value[("guidance", g[0])] or 0.0), g[0])):
         v = value[("guidance", section)]
@@ -1385,10 +1566,12 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "cost": ctx["improve_charge"], "change_type": "guidance-edit",
                           "band": "improve", "value": v,
                           "order": (v is None, -(v or 0.0), section)})
-        elif headroom is not None and info["verdict"] not in ("retire", "retire-pending") \
+        elif headroom is not None and owner is None \
                 and (headroom < MIN_GAIN or info["fixtures"] < MIN_IMPROVE_FIXTURES):
-            # A paused section, or one whose manifest row is skipped, needs
-            # no fixture work; its reason is in `gstatus`.
+            # A section retirement owns (`retirement_owner`) gets no fixture
+            # work. A paused section, or one whose manifest row is skipped,
+            # still does when it lacks fixtures or headroom (as on the skill
+            # side); whether it should is an open policy question.
             kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
             guidance_work.append({
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,
@@ -1429,6 +1612,15 @@ def hook_candidate(text: str) -> bool:
     return bool(total) and under / total >= HOOK_RULE_SHARE
 
 
+def gate_verdicts(gates_doc: dict) -> dict:
+    """{skill: gate verdict} read from the gates document itself. Round 7's
+    M1: `skill_contexts` drops a skill whose fixtures are all scope-paused,
+    but the gate keeps those cells (`keep_paused`), so only the document
+    knows such a skill is `retire`."""
+    return {name: v.get("verdict") for name, v in (gates_doc.get("skills") or {}).items()
+            if isinstance(v, dict)}
+
+
 def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()) -> tuple:
     """(trigger fires, work items, hook candidates, per-skill status) for
     the trigger lane (module docstring, THE TRIGGER LANE; skills-evals#662).
@@ -1461,9 +1653,11 @@ def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()
         reasons = []
         if weight > TRIGGER_MAX_WEIGHT:
             reasons.append(f"used more than {TRIGGER_MAX_WEIGHT} time(s) in four weeks")
-        verdict = ctx["skills"].get(name, {}).get("verdict")
-        if verdict in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({verdict})")
+        # The gates document's verdict, not skill_contexts': that drops a
+        # skill whose fixtures are all scope-paused, which the gate keeps.
+        owner = retirement_owner(ctx, name)
+        if owner:
+            reasons.append(owner)
         path = f"evals/{name}/{TRIGGER_SET}"
         if not reasons and not info["trigger_set"]:
             work.append({"kind": "needs-trigger-set", "change_type": "fixture",
@@ -1529,8 +1723,9 @@ def trim_items(ctx: dict) -> tuple:
                 reasons.append("its fixtures do not all name adam-agentskills")
             if skill["fixtures"] < TRIM_MIN_FIXTURES:
                 reasons.append(f"{skill['fixtures']} fixture(s), under {TRIM_MIN_FIXTURES}")
-            if skill["verdict"] in ("retire", "retire-pending"):
-                reasons.append(f"owned by retirement ({skill['verdict']})")
+            owner = retirement_owner(ctx, name, skill)
+            if owner:
+                reasons.append(owner)
         if isinstance(chars, int) and chars <= TRIM_MAX_CHARS:
             reasons.append("already within the cap")
         if not reasons and skill["pause"]:
@@ -2181,6 +2376,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
+                # Gates' pair count and reason (`cheaper_first`, `_blocking`).
+                "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
+                "at_cap": (cell or {}).get("at_cap") is True,
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),
@@ -2348,7 +2546,10 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
         if directory.name == "guidance":
             # Guidance sections, not a skill: no improve loop, no usage weight.
             continue
-        expected = compute_gates.expected_content(evals_dir, directory.name, registries)
+        try:
+            expected = compute_gates.expected_content(evals_dir, directory.name, registries)
+        except ValueError:
+            raise PlanError(SCHEDULE_FILES_MALFORMED) from None
         if not expected:
             continue
         urls, names = set(), sorted(expected)
@@ -2421,13 +2622,18 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
-        # Pooled as the gate pools in-situ cells (#557): every current-content
-        # run grouped by the rest of the guidance it ran beside, not only the
-        # largest same-rest group `_joint_context` keeps, so the improve
-        # evidence counts the same runs the section's verdict does.
-        cells = gates.pool_cells(runs, section, gates_doc["roster_models"],
-                                 compute_gates.expected_guidance(evals_dir, section,
-                                                                 guidance_dir),
+        # Pooled as the gate pools in-situ cells: the current-content runs
+        # beside the rest of the guidance on main (2026-11-03; older rests
+        # are ignored), so the improve evidence counts the same runs the
+        # section's verdict does.
+        try:
+            expected = compute_gates.expected_guidance(evals_dir, section, guidance_dir)
+        except ValueError:
+            # Round 4's m4: expected_guidance reads the scope pauses, and a
+            # malformed file must fail the plan with a plain reason, as the
+            # skill path does, never a traceback or an opaque error.
+            raise PlanError(SCHEDULE_FILES_MALFORMED) from None
+        cells = gates.pool_cells(runs, section, gates_doc["roster_models"], expected,
                                  strata=True)
         try:
             row = proposer.load_row(guidance_dir, section)
@@ -2754,12 +2960,15 @@ def gather(args, now: datetime) -> dict:
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
+            "gate_verdicts": gate_verdicts(gates_doc),
             # The guidance focus's inputs (`guidance_focus`): its decision
             # levels, a separate top-level key of the verdict document, and
             # the sections whose removal pull request is open.
             "guidance_policy": gates_doc.get("guidance_policy"),
             "guidance_removal_prs": gremoval,
             "cells": cells, "outages": outages, "routine_down": down,
+            "unmeasured": unmeasured_items(gates_doc, private_skills(evals_dir))
+            + paused_ceiling_items(gates_doc, private_skills(evals_dir)),
             "real_work": real_work_rows(evals_dir),
             "bare": bare_cells(evals_dir, gates_doc, evidence["fire_runs"]),
             "skills": skills,
