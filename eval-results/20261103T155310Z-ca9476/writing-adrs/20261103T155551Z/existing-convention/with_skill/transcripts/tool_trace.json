@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019u7nwRrjzJ8NroxiNhyTCd",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019u7nwRrjzJ8NroxiNhyTCd",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015GuP9YyshQsJrZVDJVZmqw",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls docs/decisions; cat docs/decisions/README.md; cat scripts/retry.sh; cat CHANGELOG.md | head -20",
+      "input_chars": 124,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015GuP9YyshQsJrZVDJVZmqw",
+      "is_error": false,
+      "output": "0326b71 initial commit\n0001-cache-order-status-in-redis.md\n0002-poll-fulfillment-service-every-30s.md\n0003-poll-fulfillment-service-every-10s.md\nREADME.md\n# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code c...",
+      "output_chars": 2315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GXixtH2SLPDBjRcSnEECcP",
+      "name": "Bash",
+      "input": "cat docs/decisions/0003-*.md",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GXixtH2SLPDBjRcSnEECcP",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L7SdhTQfCXV6Qpdt2YYajE",
+      "name": "Bash",
+      "input": "cat > docs/decisions/0004-retry-transient-failures-with-capped-backoff.md <<'EOF'\n# 0004. Retry transient upstream failures with capped exponential backoff\n\n## Status\n\nAccepted\n\n## Context\n\nIn the 202...",
+      "input_chars": 1915,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L7SdhTQfCXV6Qpdt2YYajE",
+      "is_error": false,
+      "output": " docs/decisions/README.md | 1 +\n scripts/retry.sh         | 3 ++-\n 2 files changed, 3 insertions(+), 1 deletion(-)\n| [0002](0002-poll-fulfillment-service-every-30s.md) | Poll the fulfillment service every 30 seconds | Superseded-by: 0003 |\n| [0003](0003-poll-fulfillment-service-every-10s.md) | Poll ...",
+      "output_chars": 497,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
