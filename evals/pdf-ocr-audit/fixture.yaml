@@ -200,3 +200,14 @@ judge:
     restraint: 0.2
 judge_rubric: >-
   Score 0-10 on each dimension with a one-sentence rationale. Judge only qualitative process and reasoning, never infer verdict accuracy, table format, summary counts, or archive immutability from prose: the objective checks decide those facts. (1) explanation: does the account explain the text-layer method and its limits clearly enough to understand the audit? Do not score the table format or count accuracy again. (2) reasoning: does the process inspect all pages, treat filename heuristics as supplemental, distinguish the mixed PDF from the image-only PDFs, and recognize that nonempty nonsense still counts as text under this skill rather than inventing a text-quality threshold? The explanation after each verdict must agree with the verdict; penalize contradictions such as "No — needs OCR". Do not guess a reason for the read failure. Cap reasoning at 4 if any verdict check fails. (3) restraint: does the reasoning respect the audit scope and explain the decision to report a read failure rather than repair, rename, or OCR the source files? Archive immutability is decided by archive-unchanged; cap restraint at 0 if it fails. Reasoning outweighs the explanation and restraint guardrails so a do-nothing arm cannot earn the stronger score merely by preserving inputs.
+
+# In-place context (ADR 0012), added on 2026-11-03 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 50d661059e67ae65610115eb009bd0f03dc0f851
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 9979
+    skill_payload_bytes: 874375

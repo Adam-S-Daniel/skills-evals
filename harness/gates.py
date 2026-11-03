@@ -113,16 +113,23 @@ fixture's checks (`confident_checks`).
 A CELL'S CLASS (`_classify`), first match wins:
 
   1. `insufficient`: an arm has no counted run.
-  2. `cannot-discriminate`: some check fails in every scored trial of BOTH
-     arms, or both arms' pooled pass rate <= `floor_fraction`.
+  2. `cannot-discriminate`: both arms' pooled pass rate <= `floor_fraction`
+     with FLOOR_MIN_RUNS counted runs on each arm (the fixture looks
+     broken); with fewer, `insufficient`. A check both arms fail in every
+     trial no longer stops the cell: it adds the same 0 to both arms
+     (Adam, 2026-11-03: "Judge them by the removal rule").
   3. `benefit`: the objective delta's lower bound > 0; or some check
      confidently better with the skill (Holm); or, when the objective shows
      no confident gain, the judge delta's lower bound > 0. A judge-carried
      fixture keeps on any of the three too: its judge decides, but its
      objective checks are evidence of benefit. The judge figure is usable
      with one judged run on each arm (see THE NUMBERS for conditional runs).
-  4. `ceiling`: both arms' pooled pass rate >= `ceiling_fraction`; for a
-     judge-carried fixture, both arms' mean judge figure >= `judge_ceiling`.
+  4. (No class.) Both arms at the ceiling (pooled pass rate >=
+     `ceiling_fraction`, or for a judge-carried fixture mean judge figure >=
+     `judge_ceiling`) is judged by rule 5 like any other cell, since the
+     subject has no room to add its margin there; a no-benefit reason says
+     so. It was a terminal `ceiling` class until 2026-11-03, which parked
+     the cell and its subject with no verdict.
   5. `no-benefit`: the objective delta's `retire_confidence` upper bound <
      `objective_margin`, and the judge delta's < `judge_margin`; the judge
      figure must be usable, since rule 3 only reached it when the objective
@@ -142,8 +149,9 @@ evaluation can be repeated as of a time. A run is named by `run_key`,
 
 THE VERDICT (`retirement`), over every fixture on main x every current roster
 arm model: any `benefit` -> `keep`; any `insufficient` or missing cell, or no
-fixture on main -> `insufficient`; any `cannot-discriminate` ->
-`cannot-discriminate`; any `ceiling` -> `ceiling`; `retire` only when there is at least one cell and
+fixture on main -> `insufficient`; a `cannot-discriminate` cell is left out
+of the verdict (a broken fixture says nothing about the subject), and when
+every cell is one the verdict is `cannot-discriminate`; `retire` only when there is at least one cell and
 every cell is `no-benefit` (no roster model means no cell, never a
 retirement); anything else `insufficient`. scripts/compute_gates.py then lets
 one skill retire per evaluation. A standing retirement's stickiness, and
@@ -197,6 +205,11 @@ RESULTS_BLOB = ("https://github.com/Adam-S-Daniel/skills-evals/blob/"
 MODES = ("auto", "proposal")
 #: Scored trials an arm of one run needs to count (#70's 3).
 MIN_TRIALS_PER_RUN = 1
+#: Counted runs on each arm before a cell where both arms pass at most
+#: `floor_fraction` is set aside as `cannot-discriminate` (a fixture that
+#: looks broken); under it the cell is `insufficient`, so the planner fires
+#: it again rather than parking it on one unlucky run.
+FLOOR_MIN_RUNS = 3
 #: Trial error types that are the harness's, not the agent's.
 INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable",
                          # A guidance arm whose delivery was not proved
@@ -784,14 +797,20 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
     with_n, with_passed = _pooled(with_runs, "check_n"), _pooled(with_runs, "check_passed")
     without_n = _pooled(without_runs, "check_n")
     without_passed = _pooled(without_runs, "check_passed")
-    for key in sorted(set(with_n) & set(without_n)):
-        if not with_passed[key] and not without_passed[key]:
-            return done("cannot-discriminate", f"check {key} fails in every "
-                        "scored trial of both arms")
+    # A check both arms fail in every scored trial adds the same 0 to both
+    # arms, so it does not stop the cell: the delta still decides (Adam,
+    # 2026-11-03, "Judge them by the removal rule"). Only a cell where both
+    # arms pass almost nothing is set aside, once FLOOR_MIN_RUNS on each arm
+    # show it is not one unlucky run: that fixture looks broken.
     rates = [arms[a]["pass_rate"] for a in arms]
     if all(r is not None and r <= policy["floor_fraction"] for r in rates):
-        return done("cannot-discriminate", "both arms' pass rate at or below "
-                    f"{policy['floor_fraction']}")
+        if least >= FLOOR_MIN_RUNS:
+            return done("cannot-discriminate", "both arms' pass rate at or below "
+                        f"{policy['floor_fraction']} over {least}+ runs each: the "
+                        "fixture looks broken")
+        return done("insufficient", "both arms' pass rate at or below "
+                    f"{policy['floor_fraction']}; {FLOOR_MIN_RUNS} runs on each arm "
+                    "decide whether the fixture is broken")
 
     strength = policy["prior_strength"]
     objective_ceiling = all(r is not None and r >= policy["ceiling_fraction"]
@@ -872,6 +891,10 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
             return done("insufficient", f"no benefit on the numbers, but {len(cli)} "
                         f"CLI version(s), under the {policy['min_cli_versions']} "
                         "a removal needs")
+        if objective_ceiling or judge_ceiling:
+            # At the ceiling the subject has no room to add the margin on
+            # this task; it is judged like any other cell, and says so.
+            cls_reason += "; both arms are at the ceiling"
         return done("no-benefit", cls_reason)
 
     def with_ahead_skips_only():
@@ -949,9 +972,6 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                              "judge_mean")
         if out["judge"]["benefit_lower"] > 0:
             return done("benefit", "judge delta's lower bound is above 0")
-        if judge_ceiling:
-            return done("ceiling", "both arms' judge figure at or above "
-                        f"{policy['judge_ceiling']}")
         if out["judge"]["retire_upper"] >= policy["judge_margin"]:
             return done("insufficient", "the interval is not tight enough yet")
         if objective_ok and out["objective"]["retire_upper"] >= policy["objective_margin"]:
@@ -968,9 +988,6 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                              "judge_mean")
         if out["judge"]["benefit_lower"] > 0:
             return done("benefit", "judge delta's lower bound is above 0")
-    if objective_ceiling:
-        return done("ceiling", "both arms' pass rate at or above "
-                    f"{policy['ceiling_fraction']}")
     if not judge_ok and strata is not None and with_ahead_skips_only():
         # In-situ guidance (#557, T3's review): every missing judge figure is
         # a conditional skip made because the with arm was strictly ahead on
@@ -984,9 +1001,6 @@ def _classify(with_runs: list, without_runs: list, policy: dict,
                 out["judge"] = judged
                 return done("benefit", "judge delta's lower bound is above 0, on the "
                             "runs the conditional judge was called for")
-        if objective_ceiling:
-            return done("ceiling", "both arms' pass rate at or above "
-                        f"{policy['ceiling_fraction']}")
         if out["objective"]["retire_upper"] < policy["objective_margin"]:
             return no_benefit("the objective delta's upper bound is under its margin, and "
                               "every skipped judge call was skipped because the with arm "
@@ -1359,19 +1373,22 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                         f"benefit in this cell alone ({c['reason']}), not across the "
                         f"subject's {m} keep tests at {policy['benefit_confidence']:.0%} "
                         "each (Holm)")
-    classes = {c["class"] for c in cells}
+    # A cell whose fixture looks broken says nothing about the subject, so
+    # the verdict is decided by the other cells (Adam, 2026-11-03).
+    classes = {c["class"] for c in cells} - {"cannot-discriminate"}
     if not expected:
         verdict, reason = "insufficient", "no fixture on main"
     elif "benefit" in classes:
         verdict, reason = "keep", "a cell shows benefit"
     elif classes & {"insufficient", "missing"}:
         verdict, reason = "insufficient", "a cell is insufficient or missing"
-    elif "cannot-discriminate" in classes:
-        verdict, reason = "cannot-discriminate", "a cell cannot discriminate"
-    elif "ceiling" in classes:
-        verdict, reason = "ceiling", "a cell is at the ceiling"
-    elif cells and classes == {"no-benefit"}:
-        verdict, reason = "retire", "every cell shows no benefit"
+    elif cells and not classes:
+        verdict, reason = ("cannot-discriminate", "every cell's fixture looks broken: "
+                           "both arms pass almost nothing")
+    elif classes == {"no-benefit"}:
+        verdict, reason = "retire", ("every cell shows no benefit" if all(
+            c["class"] == "no-benefit" for c in cells) else
+            "every cell shows no benefit, apart from fixtures that look broken")
     else:
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.

@@ -94,7 +94,7 @@ SECRET_REF = "secrets.EVAL_ROUTINE_FIRE_BEARER"
 RUN_ID = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$")
 FIXTURE = "evals/writing-adrs/bootstrap"
 #: A committed fixture with no top-level `context` mapping (ADR 0012).
-NOT_IN_PLACE = "evals/writing-adrs/supersede"
+NOT_IN_PLACE = "evals/adam-writing-style/proposal-bio"
 CANDIDATE = "Adam-S-Daniel___agent-guidance__136"
 # A skill with at least three committed fixtures, and one of them.
 SKILL = "writing-adrs"

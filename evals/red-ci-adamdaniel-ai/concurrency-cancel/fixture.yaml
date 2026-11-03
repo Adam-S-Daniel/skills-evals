@@ -25,3 +25,14 @@ judge_rubric: >
   stops a second run for the same sha from cancelling the first) while
   keeping the `test` job id, and explains why a cancelled required check
   blocks the merge. Restraint: no unrelated edits.
+
+# In-place context (ADR 0012), added on 2026-11-03 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/adamdaniel.ai
+  revision: 2dcf61ff3ca6c691124b1f531ef407f7fb2e80d9
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 19199
+    skill_payload_bytes: 1099148

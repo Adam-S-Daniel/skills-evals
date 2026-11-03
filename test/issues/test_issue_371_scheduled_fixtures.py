@@ -36,17 +36,9 @@ PINNED_WITH_REASON: dict[str, str] = {}
 
 # A scheduled fixture with no provable `guidance_revision`, or no `context`
 # at all, stays an isolation pair and is named here with the reason.
-_NO_LOCK_CONTEXT = ("A machine-local skill (adam-non-coding-local) that no fleet "
-                    "skills.lock adopts and that works on folders, not repositories; "
-                    "no representative context exists, so it runs as an isolation pair.")
 _PRIVATE = ("A private-registry skill (adam-agentskills-private): no public "
             "context repository carries it, so it runs as an isolation pair.")
 ISOLATION_ONLY: dict[str, str] = {
-    # The registry that holds them is not a context (ADR 0012), and an
-    # added-subject pair would leave out sibling skills such as ocr-pdfs
-    # (skills-evals#574 review).
-    "evals/rename-pdfs": _NO_LOCK_CONTEXT,
-    "evals/pdf-ocr-audit": _NO_LOCK_CONTEXT,
     # In place would mean a context repository holding the private skill;
     # its results stay in the private repository (#81).
     "evals/adam-writing-style/proposal-bio": _PRIVATE,
@@ -61,8 +53,6 @@ ISOLATION_ONLY: dict[str, str] = {
 # converted sixteen of the last eighteen hermetic fixtures; the two PDF
 # skills stayed, with a reason of their own.
 LEGACY_ISOLATION = frozenset({
-    "evals/rename-pdfs",
-    "evals/pdf-ocr-audit",
     "evals/adam-writing-style/proposal-bio",
     "evals/adam-writing-style/recruiter-reply",
     "evals/adam-writing-style/self-appraisal-opening",
@@ -82,7 +72,19 @@ _ADAMDANIEL_AI = (25099, 14017, 885455)
 # 0295fa86), which deploy the same two adam-agentskills bundles.
 _ADAMDANIEL_AI_574 = (25528, 14803, 875774)
 _FLEET_574 = (25528, 7447, 688780)
+# 2026-11-03: the two PDF skills (adam-non-coding-local, which no fleet lock
+# adopts) are added to wsl-automation 50d66105 (guidance 570544a8), as
+# windows-elevation-from-wsl is: a session on the owner's machine loads the
+# same base guidance and both cloud-safe bundles. Their own bundle's other
+# skills (ocr-pdfs, compare-pdfpairs) are not in the context, a gap the
+# owner's machine does not have; without a context they could never reach a
+# verdict (adversarial gap review, 2026-11-03, item 5). Measured by
+# scripts/contextualize_fixtures.py's Measurer with main's copy at
+# adam-agentskills 6dd9b1e.
+_WSL_1103 = (25528, 7447, 688780)
 MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    "evals/rename-pdfs": (_WSL_1103, (25528, 8105, 709885)),
+    "evals/pdf-ocr-audit": (_WSL_1103, (25528, 7983, 699500)),
     "evals/workflow-path-audit/required-check-routing": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
     "evals/review-bash-ci-reliability/release-pipeline": (_CMS_PLATFORM, _CMS_PLATFORM),
@@ -355,7 +357,8 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
         self.assertEqual(set(MEASURED_KEYS), set(context.BUDGET_KEYS))
         self.assertLessEqual(set(REMEASURED), set(MEASURED))
         added = {"evals/finding-unknowns", "evals/embeddable-tool-pages",
-                 "evals/windows-elevation-from-wsl"}
+                 "evals/windows-elevation-from-wsl", "evals/rename-pdfs",
+                 "evals/pdf-ocr-audit"}
         self.assertFalse(added & ADOPTED)
         # A new in-place fixture is classified, never exempted by default.
         self.assertEqual(ADOPTED | added, set(MEASURED))

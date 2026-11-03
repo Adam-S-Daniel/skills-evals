@@ -5863,9 +5863,10 @@ class ContextRepositories(dict):
         return paths
 
 
-def _check_with_budget(frozen, subject, budget: dict) -> None:
-    """A subject added to `with` makes that arm the larger one; it must fit
-    the fixture's budget too, which `resolve_context` checked without it."""
+def with_arm_sizes(frozen, subject) -> dict:
+    """The `with` arm's context measurements: the frozen context's, with the
+    skill subject's tested copy in place of any deployed copy, or the section
+    subject's `with` guidance payload."""
     sizes = dict(frozen.manifest["measurements"])
     if isinstance(subject, delivery.SkillSubject):
         deployed = next((tree for tree in frozen.skills if (tree.registry, tree.bundle, tree.skill)
@@ -5879,6 +5880,13 @@ def _check_with_budget(frozen, subject, budget: dict) -> None:
             sizes["skill_payload_bytes"] -= sum(len(raw) for raw in deployed.files.values())
     if isinstance(subject, delivery.SectionSubject):
         sizes["guidance_bytes"] = len(delivery.guidance_payload(frozen, subject, "with"))
+    return sizes
+
+
+def _check_with_budget(frozen, subject, budget: dict) -> None:
+    """A subject added to `with` makes that arm the larger one; it must fit
+    the fixture's budget too, which `resolve_context` checked without it."""
+    sizes = with_arm_sizes(frozen, subject)
     copy = ""
     if isinstance(subject, delivery.SkillSubject) and subject.source == "main":
         # A skill edit on main can grow the with arm with no fixture change;

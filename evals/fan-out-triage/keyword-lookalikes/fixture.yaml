@@ -562,3 +562,14 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension with a one-sentence rationale. (1) triage-discipline - did the agent build a dependency inventory with real file:line references before judging items, keep one row per item in a fixed ID-first format, and verify IDs against the source text rather than trusting its own output, and accept a strong match only after reading the item against the code? Cap at 4 if it never checked its IDs. (2) restraint - did it avoid changing the repo's own files and notes and avoid flagging items that merely share a keyword with the repo? Cap at 4 if it edited a source file.
+
+# In-place context (ADR 0012), added on 2026-11-03 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: 7cf559388b9ea4b65966dd51a4e3d692cc083b78
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 9309
+    skill_payload_bytes: 860975

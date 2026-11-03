@@ -33,6 +33,14 @@ name: Fixture supply
 #   ADR 0003 round 6 and 7 do for the roster. One promotion pull request at
 #   a time: an open one holds the slot. No App token: nothing is pushed, and
 #   the next run tries again.
+# * The same job then runs `scripts/contextualize_fixtures.py`: a drafted
+#   skill's fixture (an isolation pair the draft loop listed in
+#   evals/unscheduled.yml) gets a measured in-place context once its skill
+#   is on adam-agentskills' main, and moves to evals/scheduled.yml, so its
+#   runs pool toward a verdict (adversarial gap review, 2026-11-03, item 2).
+#   It reads the context repositories and registries as data, from their
+#   default branches, with no credential; the same pull request carries both
+#   changes.
 #
 # * The results branch is bot-written and untrusted: it is checked out
 #   without credentials and read as data; nothing from it runs.
@@ -222,9 +230,63 @@ jobs:
           python3 scripts/scaffold_real_work.py promote --results-tree eval-results-branch \
             --as-of "$as_of" --apply > "$RUNNER_TEMP/promote.out"
           cat "$RUNNER_TEMP/promote.out" >> "$GITHUB_OUTPUT"
+      # Full history: a lock names its registry at an older commit, and the
+      # guidance pin is searched for in _agent-guidance's history.
+      - name: Check out _agent-guidance
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: ctx/_agent-guidance
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out adam-agentskills
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: ctx/adam-agentskills
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out cms-platform
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: ctx/cms-platform
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Check out adamdaniel.ai
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: ctx/adamdaniel.ai
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      - name: Check out wsl-automation
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/wsl-automation
+          path: ctx/wsl-automation
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Give drafted fixtures a context and schedule them
+        id: contextualize
+        run: |
+          set -euo pipefail
+          as_of="$(git -C eval-results-branch log -1 --format=%cI)"
+          args=()
+          for repo in _agent-guidance adam-agentskills cms-platform adamdaniel.ai wsl-automation; do
+            args+=(--context-repo "Adam-S-Daniel/${repo}=ctx/${repo}")
+          done
+          python3 scripts/contextualize_fixtures.py "${args[@]}" \
+            --registry adam-agentskills=ctx/adam-agentskills \
+            --registry cms-platform=ctx/cms-platform \
+            --registry adamdaniel.ai=ctx/adamdaniel.ai \
+            --as-of "$as_of" --apply > "$RUNNER_TEMP/contextualize.out"
+          cat "$RUNNER_TEMP/contextualize.out" >> "$GITHUB_OUTPUT"
       - name: Mint the roster App token
         id: app-token
-        if: steps.promote.outputs.count != '0'
+        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0'
         continue-on-error: true
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -235,15 +297,17 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Open the promotion pull request and turn on auto-merge
-        if: steps.promote.outputs.count != '0'
+        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           RUN_ID: ${{ github.run_id }}
-          COUNT: ${{ steps.promote.outputs.count }}
-          FIXTURES: ${{ steps.promote.outputs.fixtures }}
+          PROMOTED: ${{ steps.promote.outputs.count }}
+          PROMOTED_FIXTURES: ${{ steps.promote.outputs.fixtures }}
+          CONTEXTUALIZED: ${{ steps.contextualize.outputs.count }}
+          CONTEXTUALIZED_FIXTURES: ${{ steps.contextualize.outputs.fixtures }}
         run: |
           set -euo pipefail
           app_token=""
@@ -258,11 +322,14 @@ jobs:
           app_gh() {
             GH_TOKEN="$app_token" GITHUB_TOKEN="" gh "$@"
           }
-          if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]] || ! [[ "$COUNT" =~ ^[1-9][0-9]*$ ]] \
-             || ! [[ "$FIXTURES" =~ ^[A-Za-z0-9/_.\ -]+$ ]]; then
+          if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]] || ! [[ "$PROMOTED" =~ ^[0-9]+$ ]] \
+             || ! [[ "$CONTEXTUALIZED" =~ ^[0-9]+$ ]] \
+             || ! [[ "$PROMOTED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]] \
+             || ! [[ "$CONTEXTUALIZED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]]; then
             echo "::error::the promotion's outputs have an unexpected shape"
             exit 1
           fi
+          COUNT=$((PROMOTED + CONTEXTUALIZED))
           open="$(gh api "repos/${REPO}/pulls?state=open&base=${BASE}&per_page=100" \
             --jq '[.[] | select(.head.ref | startswith("fixture-promotion/"))] | length')" || open=""
           case "$open" in
@@ -278,7 +345,7 @@ jobs:
           git add -A -- evals
           while IFS= read -r changed; do
             case "$changed" in
-              evals/scheduled.yml|evals/*/fixture.yaml) ;;
+              evals/scheduled.yml|evals/unscheduled.yml|evals/*/fixture.yaml) ;;
               *)
                 echo "::error::the promotion changed a file it does not write"
                 exit 1 ;;
@@ -305,16 +372,30 @@ jobs:
           fi
           body="$RUNNER_TEMP/body.md"
           {
-            echo "Promotes ${COUNT} fixture(s) from \`draft: true\` to the weekly schedule (\`evals/scheduled.yml\`): each has at least two ingested runs on \`persistent/eval-results\` with both arms and no errored arm, for its committed content, and its red/green check passed when it was scaffolded."
+            echo "## TLDR"
             echo
-            for path in $FIXTURES; do
-              echo "- \`${path}\`"
-            done
+            echo "Puts ${COUNT} fixture(s) on the weekly schedule (\`evals/scheduled.yml\`) so their runs count toward their skills' verdicts."
             echo
-            echo "Opened by routine-fixture-supply.yml (\`scripts/scaffold_real_work.py promote\`); it merges automatically once \`test\` passes (ADR 0003's 2026-10-26 addendum)."
+            if [ "$PROMOTED" != 0 ]; then
+              echo "Promoted from \`draft: true\` (\`scripts/scaffold_real_work.py promote\`): each has at least two ingested runs on \`persistent/eval-results\` with both arms and no errored arm, for its committed content, and its red/green check passed when it was scaffolded."
+              echo
+              for path in $PROMOTED_FIXTURES; do
+                echo "- \`${path}\`"
+              done
+              echo
+            fi
+            if [ "$CONTEXTUALIZED" != 0 ]; then
+              echo "Given an in-place context (\`scripts/contextualize_fixtures.py\`): drafted isolation pairs whose skill is now on adam-agentskills' main, each pinned to its context repository's main and a byte-matching guidance revision, with budgets measured plus 25%, and moved off \`evals/unscheduled.yml\`."
+              echo
+              for path in $CONTEXTUALIZED_FIXTURES; do
+                echo "- \`${path}\`"
+              done
+              echo
+            fi
+            echo "Opened by routine-fixture-supply.yml; it merges automatically once \`test\` passes (ADR 0003's 2026-10-26 addendum)."
           } > "$body"
           url="$(app_gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
-            --title "Promote ${COUNT} fixture(s) to the weekly schedule" --body-file "$body")"
+            --title "Schedule ${COUNT} fixture(s) for the weekly run" --body-file "$body")"
           number="${url##*/}"
           if ! [[ "$number" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::could not read the new pull request's number"

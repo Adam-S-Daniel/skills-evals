@@ -247,3 +247,14 @@ judge_rubric: >
   resolve the duplicate-bill collision with a disambiguator instead of
   overwriting either copy? (Whether it touched anything outside inbox/ is
   decided by the nothing-outside-inbox objective check, not this rubric.)
+
+# In-place context (ADR 0012), added on 2026-11-03 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 50d661059e67ae65610115eb009bd0f03dc0f851
+  guidance_revision: 570544a88f7499f38538cb61fbec91935a657b53
+  budget:
+    guidance_bytes: 31910
+    skill_catalog_bytes: 10132
+    skill_payload_bytes: 887357
