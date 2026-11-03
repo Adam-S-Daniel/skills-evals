@@ -38,13 +38,7 @@ PINNED_WITH_REASON: dict[str, str] = {}
 # at all, stays an isolation pair and is named here with the reason.
 _PRIVATE = ("A private-registry skill (adam-agentskills-private): no public "
             "context repository carries it, so it runs as an isolation pair.")
-ISOLATION_ONLY: dict[str, str] = {
-    # In place would mean a context repository holding the private skill;
-    # its results stay in the private repository (#81).
-    "evals/adam-writing-style/proposal-bio": _PRIVATE,
-    "evals/adam-writing-style/recruiter-reply": _PRIVATE,
-    "evals/adam-writing-style/self-appraisal-opening": _PRIVATE,
-}
+ISOLATION_ONLY: dict[str, str] = {}
 
 # The ratchet: ISOLATION_ONLY may only shrink. Each conversion PR removes its
 # own entry here and in ISOLATION_ONLY and adds its MEASURED row, so a
@@ -52,11 +46,7 @@ ISOLATION_ONLY: dict[str, str] = {
 # fixture (no public context repository carries its skill). skills-evals#574
 # converted sixteen of the last eighteen hermetic fixtures; the two PDF
 # skills stayed, with a reason of their own.
-LEGACY_ISOLATION = frozenset({
-    "evals/adam-writing-style/proposal-bio",
-    "evals/adam-writing-style/recruiter-reply",
-    "evals/adam-writing-style/self-appraisal-opening",
-})
+LEGACY_ISOLATION: frozenset[str] = frozenset()
 
 # What each in-place arm measured on 2026-10-10, as (guidance, catalog,
 # payload) bytes: the context alone, then the `with` arm. The two differ only
@@ -85,7 +75,6 @@ _WSL_1103 = (25528, 7447, 688780)
 MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     "evals/rename-pdfs": (_WSL_1103, (25528, 8105, 709885)),
     "evals/pdf-ocr-audit": (_WSL_1103, (25528, 7983, 699500)),
-    "evals/workflow-path-audit/required-check-routing": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/embeddable-tool-pages": (_ADAMDANIEL_AI, (25099, 14646, 892334)),
     "evals/review-bash-ci-reliability/release-pipeline": (_CMS_PLATFORM, _CMS_PLATFORM),
     "evals/skills-doctor/bucketed-account-store": ((25099, 6115, 644882),) * 2,
@@ -99,23 +88,15 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # adamdaniel.ai lock already carries the cms-platform skill, so both arms
     # match.
     "evals/platform-release-and-bump": ((25099, 14017, 882787),) * 2,
-    # Not re-measured either: the largest figures its committed budget
-    # allows under HEADROOM, recorded for both arms. Back-computed from the
-    # budget, so not a measurement of either arm: its context carries no
-    # skill and its with arm adds one (skills-evals#559 measured 0 and 763
-    # catalog bytes).
-    "evals/finding-unknowns": ((25099, 763, 12452),) * 2,
     # Not re-measured either (context repo-settings): the largest figures
     # its committed budget allows under HEADROOM, recorded for both arms.
     "evals/github-actions-repo-settings/drift-diagnosis": ((24478, 6107, 672169),) * 2,
     # Measured 2026-11-02 through `run_eval._in_place_plan` against the local
     # clones; both arms match because the context already carries the skill.
     **{f"evals/review-bash-ci-reliability/{name}": (_CMS_PLATFORM, _CMS_PLATFORM)
-       for name in ("drift-report-capture", "empty-repo-discovery",
-                    "nightly-snapshot", "test-runner-assertions")},
-    **{f"evals/skills-doctor/{name}": ((25099, 6115, 644882),) * 2
-       for name in ("one-row-rejects-the-lock", "personal-copy-outranks-repo",
-                    "ssh-remote-is-durable")},
+       for name in ("drift-report-capture", "nightly-snapshot",
+                    "test-runner-assertions")},
+    "evals/skills-doctor/personal-copy-outranks-repo": ((25099, 6115, 644882),) * 2,
     # skills-evals#574, measured 2026-11-02 through `run_eval._in_place_plan`
     # against the local clones, with main's copy from registry checkouts at
     # adam-agentskills 6e6373cc and cms-platform cd59b51f. Every one is
@@ -123,8 +104,6 @@ MEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     # of its subject.
     **{path: (_ADAMDANIEL_AI_574, _ADAMDANIEL_AI_574)
        for path in ("evals/cms-stuck-pr-triage", "evals/post-failure-comment",
-                    "evals/admin-config-render", "evals/code-quality",
-                    "evals/ci-watcher-loops", "evals/editorial-label-audit",
                     "evals/consumer-repo-provisioning")},
     **{path: (_FLEET_574, _FLEET_574)
        for path in ("evals/ci-job-performance/browser-cache",
@@ -149,11 +128,9 @@ REMEASURED: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
     for path in (
         "evals/disarm-inherited-reach",
         "evals/review-bash-ci-reliability/drift-report-capture",
-        "evals/review-bash-ci-reliability/empty-repo-discovery",
         "evals/review-bash-ci-reliability/nightly-snapshot",
         "evals/review-bash-ci-reliability/release-pipeline",
         "evals/review-bash-ci-reliability/test-runner-assertions",
-        "evals/workflow-path-audit/required-check-routing",
         "evals/writing-adrs/bootstrap")}
 # Re-measured 2026-11-02 the same way after the skills-doctor fixtures moved
 # from adam-agentskills 2a322dde to its `main` at 064652db, the repo-settings
@@ -165,8 +142,7 @@ _REPO_SETTINGS_NOW = (25512, 7447, 688780)
 _ADAMDANIEL_AI_NOW = (25512, 14803, 861762)
 REMEASURED.update({
     **{f"evals/skills-doctor/{name}": (_ADAM_AGENTSKILLS_NOW,) * 2
-       for name in ("bucketed-account-store", "one-row-rejects-the-lock",
-                    "personal-copy-outranks-repo", "ssh-remote-is-durable")},
+       for name in ("bucketed-account-store", "personal-copy-outranks-repo")},
     "evals/github-actions-repo-settings/drift-diagnosis": (_REPO_SETTINGS_NOW,) * 2,
     "evals/github-actions-sha-pinning": (_ADAMDANIEL_AI_NOW,) * 2,
     # adamdaniel.ai ddf1c992 -> da05fc6b (after its #4569 lock re-pin).
@@ -181,7 +157,6 @@ REMEASURED.update({
 REMEASURED.update({
     "evals/embeddable-tool-pages": ((25528, 14803, 875774), (25528, 15395, 882224)),
     "evals/windows-elevation-from-wsl": ((25528, 7447, 688780), (25528, 7987, 698461)),
-    "evals/finding-unknowns": ((25528, 0, 0), (25528, 763, 14235)),
 })
 # REMEASURED is a recorded snapshot, not something this module can recompute.
 # Since skills-evals#559 the with arm tests main's copy of an adopted subject,
@@ -201,23 +176,17 @@ ADOPTED = frozenset({
     "evals/github-actions-sha-pinning",
     "evals/platform-release-and-bump",
     *(f"evals/review-bash-ci-reliability/{name}"
-      for name in ("drift-report-capture", "empty-repo-discovery", "nightly-snapshot",
+      for name in ("drift-report-capture", "nightly-snapshot",
                    "release-pipeline", "test-runner-assertions")),
     *(f"evals/skills-doctor/{name}"
-      for name in ("bucketed-account-store", "one-row-rejects-the-lock",
-                   "personal-copy-outranks-repo", "ssh-remote-is-durable")),
-    "evals/workflow-path-audit/required-check-routing",
+      for name in ("bucketed-account-store", "personal-copy-outranks-repo")),
     "evals/writing-adrs/bootstrap",
     # skills-evals#574.
-    "evals/admin-config-render",
     "evals/ci-job-performance/browser-cache",
-    "evals/ci-watcher-loops",
     "evals/cms-stuck-pr-triage",
-    "evals/code-quality",
     "evals/consumer-repo-provisioning",
     *(f"evals/debug-github-workflows/{name}"
       for name in ("git-identity", "secret-name", "swallowed-failure", "wrong-branch")),
-    "evals/editorial-label-audit",
     "evals/post-failure-comment",
     *(f"evals/vendor-release-impact-issues/{name}"
       for name in ("closed-duplicate", "closing-keywords", "issue-hygiene",
@@ -249,14 +218,18 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_thirty_nine_skill_and_thirty_five_guidance_fixtures(self):
+    def test_the_schedule_names_twenty_seven_skill_and_twenty_two_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 74)
-        self.assertEqual(len(set(paths)), 74)
-        self.assertEqual(len(fixtures()), 39)
-        self.assertEqual(sorted(set(all_fixtures()) - set(fixtures())),
-                         sorted(str(p.parent.relative_to(ROOT)) for p in
-                                (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")))
+        self.assertEqual(len(paths), 49)
+        self.assertEqual(len(set(paths)), 49)
+        self.assertEqual(len(fixtures()), 27)
+        # Guidance fixtures off the schedule (2026-11-03 scope decision) need
+        # no unscheduled.yml row; they are simply not scheduled.
+        scheduled_guidance = sorted(set(all_fixtures()) - set(fixtures()))
+        self.assertEqual(len(scheduled_guidance), 22)
+        on_disk = {str(p.parent.relative_to(ROOT)) for p in
+                   (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")}
+        self.assertLessEqual(set(scheduled_guidance), on_disk)
 
     def test_no_fixture_pins_a_model_without_a_stated_reason(self):
         for path, fixture in all_fixtures().items():
@@ -356,7 +329,7 @@ class ScheduledFixturesDeclareTheirContext(unittest.TestCase):
         self.assertEqual(set(MEASURED), set(fixtures()) - set(ISOLATION_ONLY))
         self.assertEqual(set(MEASURED_KEYS), set(context.BUDGET_KEYS))
         self.assertLessEqual(set(REMEASURED), set(MEASURED))
-        added = {"evals/finding-unknowns", "evals/embeddable-tool-pages",
+        added = {"evals/embeddable-tool-pages",
                  "evals/windows-elevation-from-wsl", "evals/rename-pdfs",
                  "evals/pdf-ocr-audit"}
         self.assertFalse(added & ADOPTED)

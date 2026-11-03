@@ -1915,6 +1915,8 @@ yet" must stay distinguishable.)
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
 | `fastmail` bundle | defer | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own |
 | `aws-bootstrap`, `preview-environments` | freshness lint | staleness is the failure mode, not procedure quality |
+| `admin-config-render`, `browser-testing`, `code-quality`, `editorial-label-audit` | freshness lint | reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval (scope decision 2026-11-03) |
+| `finding-unknowns`, `adam-writing-style` | owner review | process/taste skill; owner review replaces the eval (scope decision 2026-11-03) |
 
 ### Budget
 
