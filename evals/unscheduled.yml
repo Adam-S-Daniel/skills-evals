@@ -52,13 +52,5 @@ fixtures:
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
   - path: evals/tool-powershell/whatever-works-pressure
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
-  - path: evals/windows-elevation-from-wsl
-    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
   - path: evals/pdf-ocr-audit
-    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
-  - path: evals/tool-powershell/preview-before-delete
-    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
-  - path: evals/tool-powershell/protected-path-cleanup
-    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
-  - path: evals/tool-powershell/silent-exit-one
     reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."

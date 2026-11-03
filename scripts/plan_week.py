@@ -5,7 +5,8 @@ improve, by priority band, inside the weekly allowance (G5, G6).
     plan_week.py plan --results-tree DIR --as-of TIME [--registry NAME=PATH ...]
                       [--guidance DIR] [--evidence FILE] [--lessons DIR]
                       [--max-fires 30] [--out FILE]
-    plan_week.py validate-fire        (the matrix leg's env; exit 0 or 1)
+    plan_week.py validate-fire        (the matrix leg's env; exit 0 or 1; a stale leg exits 0
+                                       with fire=false)
     plan_week.py wait-slot [--max-wait SECONDS] [--sweep-started TIME]
     plan_week.py watchdog --mode wait|check [--max-wait SECONDS]
 
@@ -557,6 +558,13 @@ BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
 
 class PlanError(Exception):
     """The plan could not be made. Fixed text, never evidence content."""
+
+
+class PlanStale(PlanError):
+    """The plan went stale between the plan job and a dispatch leg: a fixture
+    it named was unscheduled or held after planning (the eval-scope pass
+    merged a pause). Refusing to fire is right, but it is a hold, not a
+    failure: the leg skips and the next re-plan drops the cell."""
 
 
 def _iso(moment: datetime) -> str:
@@ -2593,6 +2601,8 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     if mode == "eval":
         committed = schedule.committed_fixtures(root)
         scheduled = schedule.scheduled_fixtures(root / "evals" / "scheduled.yml", committed)
+        if fixture in committed and fixture not in scheduled:
+            raise PlanStale("the eval leg's fixture was unscheduled after the plan")
         if fixture not in scheduled or schedule.validate_fixture(fixture, committed) != key \
                 or skill or holdout or arms not in ("both", "bare") \
                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", model) \
@@ -2601,7 +2611,7 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
         if arms == "bare" and not schedule.declares_context(root / fixture):
             raise PlanError("the bare leg's fixture does not run in place")
         if arms == "both" and fixture_hold_reason(root / fixture) is not None:
-            raise PlanError("the eval leg's fixture is held, not schedulable")
+            raise PlanStale("the eval leg's fixture is held, not schedulable")
     elif mode == "improve":
         if fixture or key or model or arms or not outcomes_mod.SKILL_RE.fullmatch(skill) \
                 or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", holdout):
@@ -2810,7 +2820,16 @@ def main(argv: list | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "validate-fire":
-            validate_fire(dict(os.environ))
+            fire = True
+            try:
+                validate_fire(dict(os.environ))
+            except PlanStale as exc:
+                # A stale plan is a hold, like a full cap: skip, stay green.
+                print(f"::notice::{exc}; this leg is skipped and the next re-plan drops it")
+                fire = False
+            if os.environ.get("GITHUB_OUTPUT"):
+                with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                    out.write(f"fire={'true' if fire else 'false'}\n")
             return 0
         if args.command == "guidance-headroom":
             if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", args.section):

@@ -14,16 +14,24 @@ Rules, each deterministic (thresholds are the constants below):
             fixture directory's last commit whose WITHOUT arm passes
             CEILING_SHARE of its checks on average, and (when the without arm
             has judge figures) scores at least CEILING_JUDGE. It cannot show a
-            gain. Paused.
-  floor     the same run filter, both arms pass at most FLOOR_SHARE. Paused.
+            gain. Paused. Read per cell: every roster model's own runs must
+            trip it, since the gate decides per model and a pooled mean can
+            hide a model with room to gain.
+  floor     the same run filter, both arms pass at most FLOOR_SHARE, again on
+            every roster model's own runs. Paused.
+  keep      neither ceiling nor floor pauses a subject whose explorer verdict
+            is keep or whose confidence that it helps is at least KEEP_GUARD:
+            a pause drops the fixture's cells from the gate and can take the
+            keep with it.
   zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
             surfaces it reaches (`skill_usage.zero_use`; unknown means do
             nothing). All of its scheduled fixtures are paused. A skill in
             evals/usage-unknown.yml has unknown use: never paused for zero
             use, and an earlier zero-use pause of it resumes.
   resume    a fixture this pass paused earlier returns when its content digest
-            differs from the one recorded at the pause (ceiling, floor) or when
-            `zero_use` is False (zero-use).
+            differs from the one recorded at the pause, its subject is now
+            kept, or its runs no longer trip the rule per model (ceiling,
+            floor); or when `zero_use` is False (zero-use).
 
 Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures, and
 any evals/unscheduled.yml row this pass did not write (a human decision
@@ -62,6 +70,10 @@ CEILING_MIN_RUNS = 4
 CEILING_SHARE = 0.85
 CEILING_JUDGE = 8.5
 FLOOR_SHARE = 0.10
+#: A subject whose explorer confidence that it helps is at least this, or
+#: whose verdict is keep, is never paused for ceiling or floor: a pause drops
+#: the fixture's cells from the gate, and so can drop the keep they carry.
+KEEP_GUARD = 0.5
 ZERO_USE_WEEKS = 8
 LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
 RULES = ("ceiling", "floor", "zero-use")
@@ -237,6 +249,56 @@ def measure(kind: str, runs: list[dict]) -> dict:
     }
 
 
+def roster_models(explorer: dict) -> list[str]:
+    """The roster's models from the explorer document, in roster order."""
+    arms = (explorer.get("roster") or {}).get("arms") if isinstance(explorer.get("roster"), dict) else None
+    return [a["model"] for a in arms or [] if isinstance(a, dict) and isinstance(a.get("model"), str)]
+
+
+def per_model(kind: str, runs: list[dict], models: list[str]) -> tuple[str, str] | None:
+    """(rule, why) when EVERY model's cell trips the same rule.
+
+    The gate decides per cell (model), so a pooled mean can hide a model whose
+    without arm still has room to show a gain. Every model in `models` (the
+    roster; the models seen in `runs` when the roster is unknown) needs its
+    own cell to trip the rule on its own runs.
+    """
+    groups: dict = {}
+    for run in runs:
+        groups.setdefault(run.get("model"), []).append(run)
+    wanted = models or list(groups)
+    if not wanted:
+        return None
+    found = [ceiling_or_floor(measure(kind, groups.get(model, []))) for model in wanted]
+    rules = {f[0] if f else None for f in found}
+    if len(rules) != 1 or None in rules:
+        return None
+    rule = rules.pop()
+    if len(wanted) == 1:
+        return found[0]
+    why = "; ".join(f"{model or 'unknown model'}: {f[1].split(', so it')[0]}"
+                    for model, f in zip(wanted, found))
+    return rule, (f"on every roster model, {why}, so it cannot show a gain; it returns when "
+                  "the fixture's content changes")
+
+
+def protected(explorer: dict, kind: str, name: str) -> str | None:
+    """Why `name` must not be paused for ceiling or floor, or None."""
+    if kind == "skill":
+        entries = [s for s in explorer.get("skills") or [] if isinstance(s, dict) and s.get("name") == name]
+    else:
+        entries = [s for s in (explorer.get("guidance") or {}).get("sections") or []
+                   if isinstance(s, dict) and s.get("id") == name]
+    for entry in entries:
+        if entry.get("verdict") == "keep":
+            return "its verdict is keep"
+        helps = (entry.get("confidence") or {}).get("helps") if isinstance(
+            entry.get("confidence"), dict) else None
+        if isinstance(helps, (int, float)) and not isinstance(helps, bool) and helps >= KEEP_GUARD:
+            return f"the confidence that it helps is {helps:.2f}"
+    return None
+
+
 def ceiling_or_floor(m: dict) -> tuple[str, str] | None:
     """(rule, why) when measurements trip the ceiling or the floor."""
     if m["without_runs"] >= CEILING_MIN_RUNS and m["without_share"] >= CEILING_SHARE and (
@@ -295,15 +357,32 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
 
     unknown_use = usage_unknown(root)
 
+    models = roster_models(explorer)
+
     resume, resumed = [], set()
     for row in auto:
         path, rule = row.get("path"), row.get("rule")
         subject_kind, subject = subject_of(path)
         directory = root / path
         if rule in ("ceiling", "floor"):
+            why = None
             if directory.is_dir() and fixture_digest(directory) != row.get("fixture_digest"):
+                why = "the fixture's content changed since it was paused"
+            elif directory.is_dir() and protected(explorer, subject_kind, subject):
+                why = (f"{protected(explorer, subject_kind, subject)}, and a pause could drop "
+                       "the cells that carry it")
+            elif directory.is_dir():
+                since = last_commit_time(root, path)
+                runs = ([] if since is None
+                        else fixture_runs(explorer, subject_kind, subject, path, since))
+                # No runs at all means the explorer no longer lists them, not
+                # that the fixture has headroom: leave the pause alone.
+                if runs and per_model(subject_kind, runs, models) is None:
+                    why = ("the rule no longer holds on every roster model's own runs, "
+                           "so the fixture may still show a gain")
+            if why:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
-                               "why": "the fixture's content changed since it was paused"})
+                               "why": why})
                 resumed.add(path)
         elif rule == "zero-use" and subject_kind == "skill" and directory.is_dir():
             if subject in unknown_use:
@@ -329,8 +408,8 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
             continue
         found = None
         since = last_commit_time(root, path)
-        if since is not None:
-            found = ceiling_or_floor(measure(kind, fixture_runs(explorer, kind, subject, path, since)))
+        if since is not None and not protected(explorer, kind, subject):
+            found = per_model(kind, fixture_runs(explorer, kind, subject, path, since), models)
         if found is None and kind == "skill" and subject not in unknown_use:
             used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
