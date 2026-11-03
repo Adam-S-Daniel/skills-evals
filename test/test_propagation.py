@@ -2053,7 +2053,8 @@ class PropagationTriggerTests(unittest.TestCase):
                      ".claude/hooks/skills-bootstrap.sh", "skills.lock",
                      "evals/propagation/fixture.yaml",
                      "evals/some-skill/fixture.yaml",
-                     "evals/non-coverage.yml"):
+                     "evals/non-coverage.yml",
+                     "scripts/install_claude_code.sh"):
             self.assertTrue(self._matches(path, patterns), path)
         self.assertFalse(self._matches("dashboard/page/index.html", patterns))
 
