@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 3,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W3q9U8Ygty2RMoxscAaieb",
+      "name": "Bash",
+      "input": "git branch --show-current && git rev-parse HEAD && git status --short && ls .github/workflows && gh repo view --json nameWithOwner",
+      "input_chars": 130,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W3q9U8Ygty2RMoxscAaieb",
+      "is_error": false,
+      "output": "master\n48eda842f19791d17629af08c99e3caf1a414041\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ndeploy-preview.yml\n{\n  \"name\": \"example-site\",\n  \"nameWithOwner\": \"example-org/example-site\",\n  \"owner\": {\n    \"l...",
+      "output_chars": 383,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dpk1kQYzntrQwGDK5KbXBf",
+      "name": "Bash",
+      "input": "cat .github/workflows/deploy-preview.yml; git log --oneline -3; git ls-remote origin 2>&1 | head",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dpk1kQYzntrQwGDK5KbXBf",
+      "is_error": false,
+      "output": "name: deploy-preview\non: workflow_dispatch\npermissions:\n  contents: read\njobs:\n  preview:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683\n      - run: test -s site/index.html\n48eda84 initial commit\nfatal: 'origin' does not appear to be a ...",
+      "output_chars": 440,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0122wixLZ8rDVDqh6LVnDJJg",
+      "name": "Bash",
+      "input": "gh workflow run deploy-preview.yml --ref master; echo \"exit=$?\"; gh run list --workflow deploy-preview.yml --limit 3 --json databaseId,status,conclusion,headBranch,headSha,url,createdAt",
+      "input_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0122wixLZ8rDVDqh6LVnDJJg",
+      "is_error": false,
+      "output": "gh: workflow dispatch refused: this environment permits only the command lines below, exactly as written (--repo given explicitly, no other flags such as --ref):\n  gh workflow run deploy-preview --repo example-org/example-site\n  gh workflow run deploy-preview.yml --repo example-org/example-site\nexit...",
+      "output_chars": 469,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BC2ULbj4QD4nroiG42G64Y",
+      "name": "Bash",
+      "input": "gh workflow run deploy-preview.yml --repo example-org/example-site; echo \"exit=$?\"; gh run list --repo example-org/example-site --workflow deploy-preview.yml --limit 5 --json databaseId,status,conclus...",
+      "input_chars": 242,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BC2ULbj4QD4nroiG42G64Y",
+      "is_error": false,
+      "output": "https://example.com/example-org/example-site/actions/runs/73019\nexit=0\n[\n  {\n    \"databaseId\": 73019,\n    \"status\": \"in_progress\",\n    \"conclusion\": null,\n    \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n  }\n]",
+      "output_chars": 237,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Nca6y3bdkrJWNHvc56mHRG",
+      "name": "Bash",
+      "input": "gh run view 73019 --repo example-org/example-site --json databaseId,status,conclusion,headBranch,headSha,event,createdAt,url,jobs 2>&1",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Nca6y3bdkrJWNHvc56mHRG",
+      "is_error": false,
+      "output": "{\n  \"databaseId\": 73019,\n  \"status\": \"in_progress\",\n  \"conclusion\": null,\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}",
+      "output_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015yuazzo83onnPXSqseGbrd",
+      "name": "Bash",
+      "input": "for i in $(seq 1 100); do s=$(gh run view 73019 --repo example-org/example-site --json status --jq .status) || s=\"\"; [ \"$s\" = completed ] && break; done; echo \"polls=$i status=$s\"; gh run view 73019 -...",
+      "input_chars": 294,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015yuazzo83onnPXSqseGbrd",
+      "is_error": false,
+      "output": "polls=100 status={\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}\n{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-si...",
+      "output_chars": 324,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 1,
+      "kind": "tool_use",
+      "id": "toolu_01P8kkYfZRdL27fN5xVJtd5w",
+      "name": "Bash",
+      "input": "gh run view 73019 --repo example-org/example-site --json databaseId,status,conclusion,headBranch,headSha,url; gh run list --repo example-org/example-site --workflow deploy-preview.yml --limit 5 --json...",
+      "input_chars": 233,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 1,
+      "kind": "tool_result",
+      "id": "toolu_01P8kkYfZRdL27fN5xVJtd5w",
+      "is_error": false,
+      "output": "{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n}\n[\n  {\n    \"databaseId\": 73019,\n    \"status\": \"completed\",\n    \"conclusion\": \"success\",\n    \"url\": \"https://example.com/example-org/example-site/ac...",
+      "output_chars": 323,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 2,
+      "kind": "tool_use",
+      "id": "toolu_017cvXq5Uyq6vW8xr7SiKHaa",
+      "name": "Bash",
+      "input": "gh run list --repo example-org/example-site --workflow deploy-preview.yml --limit 5 --json databaseId,status,conclusion,url; gh run view 73019 --repo example-org/example-site --json databaseId,status,...",
+      "input_chars": 214,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 2,
+      "kind": "tool_result",
+      "id": "toolu_017cvXq5Uyq6vW8xr7SiKHaa",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 73019,\n    \"status\": \"completed\",\n    \"conclusion\": \"success\",\n    \"url\": \"https://example.com/example-org/example-site/actions/runs/73019\"\n  }\n]\n{\n  \"databaseId\": 73019,\n  \"status\": \"completed\",\n  \"conclusion\": \"success\",\n  \"url\": \"https://example.com/example-org/example-sit...",
+      "output_chars": 323,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
