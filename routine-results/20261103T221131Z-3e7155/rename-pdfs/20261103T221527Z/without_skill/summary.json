@@ -1,0 +1,398 @@
+{
+  "skill": "rename-pdfs",
+  "arm": "without_skill",
+  "timestamp": "20261103T221527Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.09553060000000001,
+    "num_turns": 6,
+    "duration_ms": 37507,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 13571,
+      "cache_read_input_tokens": 206226,
+      "output_tokens": 2060,
+      "output_tokens_details": {
+        "thinking_tokens": 564
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 13571,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 311,
+          "cache_read_input_tokens": 37872,
+          "cache_creation_input_tokens": 612,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 612
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "inbox-renamed-per-convention",
+      "passed": false,
+      "detail": "missing: 20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf, 20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf, 20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf, 20260303-Bill-Example Utilities Ltd-Account 9002.pdf; unexpected: .claude, 20260131-Statement-Example Utilities Ltd-Account Statement January 2026.pdf, 20260214-Invoice-Example Utilities Ltd-Water Service January 2026.pdf, 20260303-Bill-Example Utilities Ltd-Electric Service February 2026.pdf, Scan_20260306_071455.pdf"
+    },
+    {
+      "id": "inbox-content-preserved",
+      "passed": true,
+      "detail": "content preserved by digest (6 file(s))"
+    },
+    {
+      "id": "statement-date-ranged",
+      "passed": false,
+      "detail": "inbox/20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf: not found"
+    },
+    {
+      "id": "invoice-dated-from-body",
+      "passed": false,
+      "detail": "inbox/20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf: not found"
+    },
+    {
+      "id": "receipt-left-alone",
+      "passed": true,
+      "detail": "inbox/20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf: digest matches"
+    },
+    {
+      "id": "image-only-scan-left-alone",
+      "passed": true,
+      "detail": "inbox/Scan_20260118_161230.pdf: digest matches"
+    },
+    {
+      "id": "duplicate-bills-disambiguated",
+      "passed": false,
+      "detail": "inbox/20260303-Bill-Example Utilities Ltd-Account 9002.pdf: not found; inbox/20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf: not found"
+    },
+    {
+      "id": "nothing-outside-inbox",
+      "passed": true,
+      "detail": "./ matches the expected listing (1 entries)"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.317 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 2060,
+      "cache_read_input_tokens": 206226,
+      "cache_creation_input_tokens": 13571,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "8864a075255c529a950256fbca43ea09adc71c05bdc50697180731c24d50f74c",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/wsl-automation",
+    "revision": "50d661059e67ae65610115eb009bd0f03dc0f851",
+    "digest": "cd618bcd2b0c2eb6bed25171319cd43fff41e329cb3124506b8ca3ab579641c9",
+    "lock_digest": "e7c0f476b067e7c51c7f350ddc59a4b80bd7daeaf98b9bb39d160f3b8a1e125f",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "570544a88f7499f38538cb61fbec91935a657b53",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 7447,
+      "skill_payload_bytes": 688780
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-non-coding-local",
+    "skill": "rename-pdfs",
+    "action": "added",
+    "deployed_digest": null,
+    "tested_digest": "c5df383b6f9eaa1e686becfda4018c542e952976554c30282a12a92c0f7438f3",
+    "bytes": 21105,
+    "subject_source": "main",
+    "subject_revision": "13075c83be711d134d7e39e3d00584dea736b933"
+  },
+  "arm_context": {
+    "skills": 11,
+    "skills_digest": "0b20211ffb8de5b10b71ec1838008d1d2f95509000d0c6443bb85d08b5a520fd",
+    "others_digest": "0b20211ffb8de5b10b71ec1838008d1d2f95509000d0c6443bb85d08b5a520fd",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261103T221131Z-3e7155",
+    "session_id": "cse_01SphsQEcf9mrgz1iduLeBQ6",
+    "harness_commit": "2c005d724935a1835559dd7ec3d8fc792b0c9601",
+    "cli_version": "2.1.317 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-03T22:15:27Z",
+    "ended_at": "2026-11-03T22:16:57Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-03T22:15:32.033Z",
+      "to_at": "2026-11-03T22:16:56.750Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.76,
+          "to": 0.76,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEcf9mrgz1iduLeBQ6",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.28608900000000004,
+      "agent_usd": 0.28608900000000004,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": 0.27673980000000004,
+      "last_agent_call_usd": 0.009349200000000002,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-03T22:16:17Z",
+      "ended_at": "2026-11-03T22:16:57Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-03T22:16:17Z",
+          "ended_at": "2026-11-03T22:16:45Z",
+          "duration_ms": 28152,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 1,
+          "started_at": "2026-11-03T22:16:45Z",
+          "ended_at": "2026-11-03T22:16:57Z",
+          "duration_ms": 11618,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-03T22:16:23.068Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.76,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.76,
+                  "resetsAt": 1794243600,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-03T22:16:56.750Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 1
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.76,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.76,
+                  "resetsAt": 1794243600,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 2,
+        "duration_ms": 39770,
+        "num_turns": 6,
+        "cost_usd": 0.09553060000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 2060,
+            "cache_read_input_tokens": 206226,
+            "cache_creation_input_tokens": 13571,
+            "cost_usd": 0.09553060000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13571
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
