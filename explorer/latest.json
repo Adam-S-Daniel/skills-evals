@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 9
  },
- "generated_at": "2026-11-03T15:56:08Z",
+ "generated_at": "2026-11-03T15:57:56Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T15:54:08Z",
+ "newest_run": "2026-11-03T15:55:51Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -17486,7 +17486,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 5,
+   "current_text_runs": 6,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
@@ -17497,6 +17497,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T15:55:51Z",
+     "cli_version": "2.1.317",
+     "fixture": "existing-convention",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T155310Z-ca9476/writing-adrs/20261103T155551Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.13869879999999998,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.11803779999999998,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:54:08Z",
      "cli_version": "2.1.317",
@@ -18584,7 +18605,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "d4ef8e143d34296ec5e8e8c9f8f1eb59b2ca6ab5",
-  "results_commit": "fee43d1b34a5a122594c8426894c0410fd9e20bf"
+  "results_commit": "785ece4eec218fc759bc2e0508148a335f7bb19c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
