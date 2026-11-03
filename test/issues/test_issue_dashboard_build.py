@@ -619,6 +619,39 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertLess(page.index('id="loop"'), page.index("card-fixture-requests"))
         self.assertLess(page.index("card-fixture-requests"), page.index('id="impact"'))
 
+    def test_red_runs_list_links_public_runs_and_drops_bad_urls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            er = Path(tmp)
+            write(er / "usage" / "weekly-ci.json", {"schema": 1, "rows": [], "red_runs": [
+                {"week": "2026-10-19", "repo": "private", "created_at": None, "conclusion": None, "url": None},
+                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-27T08:00:00Z",
+                 "conclusion": "failure", "url": "https://github.com/example-owner/widgets/actions/runs/9100002"},
+                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-28T08:00:00Z",
+                 "conclusion": "timed_out", "url": "https://example.com/not-a-run"},
+                "not a dict"]})
+            rows = build.ci_red_runs(str(er))
+        self.assertEqual([(r["week"], r["created_at"]) for r in rows],
+                         [("2026-10-26", "2026-10-28T08:00:00Z"), ("2026-10-26", "2026-10-27T08:00:00Z"), ("2026-10-19", None)])
+        self.assertIsNone(rows[0]["url"])
+        self.assertEqual(rows[1]["url"], "https://github.com/example-owner/widgets/actions/runs/9100002")
+        self.assertEqual(len({r["key"] for r in rows}), 3)
+
+    def test_red_runs_placeholder_without_the_file_or_the_key(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
+            write(Path(tmp) / "usage" / "weekly-ci.json", {"schema": 1, "rows": []})
+            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
+
+    def test_the_page_shows_red_in_ci_by_repo_by_week_and_lists_the_runs(self):
+        page = (DASH / "page" / "index.html").read_text()
+        for table in ("tbl-impact-repos", "tbl-impact-weeks"):
+            head = page[page.index(f'id="{table}"'):]
+            head = head[:head.index("</thead>")]
+            self.assertIn('data-field="overridden">Red in CI', head)
+        self.assertIn('data-source="ci_red_runs"', page)
+        self.assertIn("ci_red_runs: 'key'", page)
+        self.assertIn("overridden: usageSum(rs, 'overridden') }));", page)
+
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())

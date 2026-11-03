@@ -284,7 +284,7 @@
         <p class="pd-note">PR counts per repo are in "PR outcomes by repo" below.</p>
         <div class="pd-scroll">
           <table class="pd-table" id="tbl-impact-repos" data-source="usage_by_repo" data-row-key="key">
-            <thead><tr><th data-field="repo">Repo</th><th class="num" data-field="invocations">Uses</th><th class="num" data-field="blocked">Blocked</th></tr></thead>
+            <thead><tr><th data-field="repo">Repo</th><th class="num" data-field="invocations">Uses</th><th class="num" data-field="blocked">Blocked</th><th class="num" data-field="overridden">Red in CI</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -294,10 +294,21 @@
         <p class="pd-note">Weeks start Monday (UTC). "Where" is "local" (your computers) or "ci" (GitHub Actions).</p>
         <div class="pd-scroll">
           <table class="pd-table" id="tbl-impact-weeks" data-source="usage_by_week" data-row-key="key">
-            <thead><tr><th data-field="week">Week of</th><th data-field="surface">Where</th><th class="num" data-field="invocations">Uses</th><th class="num" data-field="sessions">Sessions</th><th class="num" data-field="blocked">Blocked</th></tr></thead>
+            <thead><tr><th data-field="week">Week of</th><th data-field="surface">Where</th><th class="num" data-field="invocations">Uses</th><th class="num" data-field="sessions">Sessions</th><th class="num" data-field="blocked">Blocked</th><th class="num" data-field="overridden">Red in CI</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div class="pd-card" id="card-impact-red">
+      <h2>Red in CI runs</h2>
+      <p class="pd-note">Every agent-checks CI run that failed, newest first, from the daily impact report. A private repo's run shows only its week, with no link.</p>
+      <div class="pd-scroll">
+        <table class="pd-table" id="tbl-impact-red" data-source="ci_red_runs" data-row-key="key">
+          <thead><tr><th data-field="week">Week of</th><th data-field="repo">Repo</th><th data-field="created_at">When</th><th data-field="conclusion">Result</th><th data-field="url">Run</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
     </div>
 
@@ -596,7 +607,7 @@
 // dashboard/build.py writes one placeholder row (key field "none") instead of an empty
 // list, because an empty dataset reads as "failed to load". Calcs and tables never see them.
 (() => {
-  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', half_built_issues: 'key', fixture_requests: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
+  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', half_built_issues: 'key', fixture_requests: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key', ci_red_runs: 'key' };
   const real = (id, rows) => (PH[id] && Array.isArray(rows) ? rows.filter((r) => r[PH[id]] !== 'none') : rows);
   try {
     const calc = dash.calc.bind(dash);
@@ -1354,7 +1365,7 @@ dash.calc('new_runs', {
       const rows = rowsOf(src).filter(inScope);
       if (sel) return rows;
       return [...d3.group(rows, keyOf)].map(([key, rs]) => ({ key, ...rs[0], invocations: d3.sum(rs, (r) => r.invocations || 0),
-        sessions: usageSum(rs.filter((r) => r.kind !== 'guidance-check'), 'sessions'), blocked: usageSum(rs, 'blocked') }));
+        sessions: usageSum(rs.filter((r) => r.kind !== 'guidance-check'), 'sessions'), blocked: usageSum(rs, 'blocked'), overridden: usageSum(rs, 'overridden') }));
     };
     const fillRows = (id, rows, cols) => {
       const tbody = document.querySelector('#' + id + ' tbody');
@@ -1365,9 +1376,11 @@ dash.calc('new_runs', {
       }));
     };
     if (status('usage_by_repo') === 'ok') fillRows('tbl-impact-repos', roll('usage_by_repo', (r) => r.repo).sort((a, b) => d3.descending(a.invocations, b.invocations)),
-      [{ field: 'repo' }, { field: 'invocations', num: true }, { field: 'blocked', num: true }]);
+      [{ field: 'repo' }, { field: 'invocations', num: true }, { field: 'blocked', num: true }, { field: 'overridden', num: true }]);
     if (status('usage_by_week') === 'ok') fillRows('tbl-impact-weeks', roll('usage_by_week', (r) => r.week + '|' + r.surface).sort((a, b) => d3.descending(a.week, b.week)),
-      [{ field: 'week' }, { field: 'surface' }, { field: 'invocations', num: true }, { field: 'sessions', num: true }, { field: 'blocked', num: true }]);
+      [{ field: 'week' }, { field: 'surface' }, { field: 'invocations', num: true }, { field: 'sessions', num: true }, { field: 'blocked', num: true }, { field: 'overridden', num: true }]);
+    renderTable('tbl-impact-red', 'ci_red_runs', [{ field: 'week' }, { field: 'repo' }, { field: 'created_at', ago: true }, { field: 'conclusion' },
+      { field: 'url', link: 'url', fmt: (v) => (v ? 'Run' : '') }], (r) => r.key, { sort: { field: 'week', dir: 'desc' } });
     // PR outcomes: totals per repo, then by week for the clicked repo (or all repos)
     const orepo = p.orepo || '';
     document.getElementById('impact-sel-orepo').textContent = orepo || 'all repos';
