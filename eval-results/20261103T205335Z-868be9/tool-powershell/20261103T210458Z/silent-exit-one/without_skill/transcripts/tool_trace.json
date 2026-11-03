@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P5JNvwfkYWpi61fGdpLmsn",
+      "name": "Bash",
+      "input": "cat README.md && ls -R . | grep -v '^./.git/' | head -50 && cat scripts/sync-exports.ps1 && cat bin/pwsh | head -50",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P5JNvwfkYWpi61fGdpLmsn",
+      "is_error": false,
+      "output": "# export-sync\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/sync-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. A copy is kept in\n`<path>`.\n.:\nREADME.md\nbin\nscripts\n\n./bin:\npwsh\n\n./scripts:\nsync-exports.ps1\nparam(\n    [string]$Source = '<path>',...",
+      "output_chars": 1936,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DjyBG6JSX6twWYqETg3c9L",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 58,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012JbaFqdiVEzp648vomCmaC",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/sync-exports.ps1; echo \"exit=$?\"",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DjyBG6JSX6twWYqETg3c9L",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 98,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012JbaFqdiVEzp648vomCmaC",
+      "is_error": false,
+      "output": "synced 3 files\nexit=0",
+      "output_chars": 21,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
