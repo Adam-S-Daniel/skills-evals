@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T21:53:49Z",
+  "generated_at": "2026-11-03T22:03:08Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T21:52:07Z",
+ "generated_at": "2026-11-03T22:01:29Z",
  "guidance": {
   "removed": [
    {
@@ -9928,7 +9928,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T21:47:57Z",
+ "newest_run": "2026-11-03T21:59:07Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10256,7 +10256,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -10632,7 +10632,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 10,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11343,7 +11343,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12560,7 +12560,7 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": 0.0,
+    "helps": 0.02195706391510588,
     "no_help": 0.0
    },
    "copies": {
@@ -12575,7 +12575,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 5,
+   "current_text_runs": 6,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
@@ -12586,6 +12586,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:59:07Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T214859Z-4ab632/disarm-inherited-reach/20261103T215907Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 9,
+      "cost_usd": 0.1679593,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.1031668,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T06:35:58Z",
      "cli_version": "2.1.317",
@@ -13125,10 +13146,10 @@
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
    "name": "embeddable-tool-pages",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 8,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adamdaniel.ai",
    "runs": [
@@ -13546,7 +13567,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14025,7 +14046,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14505,10 +14526,10 @@
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 3,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -15551,7 +15572,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -15653,10 +15674,10 @@
    "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
    "name": "post-failure-comment",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 15,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "cms-platform",
    "runs": [
@@ -15904,7 +15925,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16344,7 +16365,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16488,10 +16509,10 @@
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
-    "band": "near",
+    "band": null,
     "due": null,
-    "position": 11,
-    "scheduled": true
+    "position": null,
+    "scheduled": false
    },
    "registry": "adam-agentskills",
    "runs": [
@@ -17245,7 +17266,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18709,7 +18730,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -19757,7 +19778,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20386,7 +20407,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21519,8 +21540,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "84ee89b62a0ea797df0926a8d1ec51fa0487f2b6",
-  "results_commit": "fedcaf76d89fcaa0e2ea335d2ab8cce253af771e"
+  "repository_commit": "2c005d724935a1835559dd7ec3d8fc792b0c9601",
+  "results_commit": "b3eaf8477a3729f99911005a45ece2328e43244b"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
