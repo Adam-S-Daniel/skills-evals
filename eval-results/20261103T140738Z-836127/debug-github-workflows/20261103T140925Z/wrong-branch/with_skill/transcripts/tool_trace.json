@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JQWZ5EKNUEcrQrAWD5sASf",
+      "name": "Bash",
+      "input": "git status -sb && git log --oneline -10 && ls -la && ls .github/workflows 2><path>; git remote -v",
+      "input_chars": 100,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JQWZ5EKNUEcrQrAWD5sASf",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nc984ab3 initial commit\nf0be913 Import example service\ntotal 40\ndrwxr-xr-x  9 root root 4096 Nov  3 14:09 .\ndrwx------  6 root root 4096 Nov  3 14:09 ..\nc...",
+      "output_chars": 1402,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DBH3f7iusSogqXrTNcfncA",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; ls -la bin src test .gh .claude; find .gh -type f | head -50; which gh; type gh",
+      "input_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DBH3f7iusSogqXrTNcfncA",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 2320,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TJVSbgkAyjQcYbXghxM9mS",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; echo ---; gh auth status; gh run list --limit 10; echo ---; gh run view 77001; echo ---; gh run view 77001 --log-failed 2>&1 | tail -40",
+      "input_chars": 177,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TJVSbgkAyjQcYbXghxM9mS",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n---\nexample.com\n  Logged in to examp...",
+      "output_chars": 2474,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017y44E3fUeLLbjHKi5RtWHv",
+      "name": "Bash",
+      "input": "git rev-parse HEAD origin/main 2>&1; git ls-remote origin; git log --all --oneline --stat | head -40; R=.gh/replay/api/repos/example-org/example-service; for f in branches/main.json branches/fix/ci-te...",
+      "input_chars": 376,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017y44E3fUeLLbjHKi5RtWHv",
+      "is_error": false,
+      "output": "c984ab35293e42b2c9e6b5b1db115774f642be1b\nf0be9137d6ed1769cd15652ffba4bd517e856b3b\nf0be9137d6ed1769cd15652ffba4bd517e856b3b\tHEAD\n093350486ff3efc5013d0416a70a4c6e1886778a\trefs/heads/fix/ci-test-discovery\nf0be9137d6ed1769cd15652ffba4bd517e856b3b\trefs/heads/main\nc984ab3 initial commit\n .../api/repos/exa...",
+      "output_chars": 4850,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lo1vacPCRQuo6kLsAGPkgV",
+      "name": "Bash",
+      "input": "git show 0933504 --format='%H %an %s' -- .github/workflows/ci.yml | cat; gh pr list --state all 2>&1 | head; export PYTHONDONTWRITEBYTECODE=1; echo \"== CI command\"; python3 -m unittest test.test_legac...",
+      "input_chars": 336,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lo1vacPCRQuo6kLsAGPkgV",
+      "is_error": false,
+      "output": "093350486ff3efc5013d0416a70a4c6e1886778a fixture Use current test discovery\n\ndiff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex 6e07470..8d98749 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -15,4 +15,4 @@ jobs:\n     steps:\n       - uses: actions/checkou...",
+      "output_chars": 1260,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0123WkVEishdBgdzFH6ehHwR",
+      "name": "Bash",
+      "input": "PYTHONDONTWRITEBYTECODE=1 python3 -c \"import test; print(test.__file__, list(getattr(test,'__path__',[])))\"; PYTHONDONTWRITEBYTECODE=1 python3 -m unittest test.test_current 2>&1 | tail -3; ls test/__i...",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0123WkVEishdBgdzFH6ehHwR",
+      "is_error": true,
+      "output": "Exit code 2\n<path> ['<path>']\nRan 1 test in 0.000s\n\nFAILED (errors=1)\nls: cannot access 'test/__init__.py': No such file or directory",
+      "output_chars": 181,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
