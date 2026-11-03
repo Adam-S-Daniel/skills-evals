@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T04:32:35Z",
+ "generated_at": "2026-11-03T04:35:20Z",
  "guidance": {
   "removed": [
    {
@@ -6759,7 +6759,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T04:30:27Z",
+ "newest_run": "2026-11-03T04:33:25Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9333,7 +9333,7 @@
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
@@ -9344,6 +9344,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T04:33:25Z",
+     "cli_version": "2.1.317",
+     "fixture": "single-file",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T043156Z-4c4403/fan-out-triage/20261103T043325Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1818882,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 6,
+      "cost_usd": 0.11493120000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T04:30:27Z",
      "cli_version": "2.1.317",
@@ -13630,7 +13651,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "651b742ca80c91a03afe877398b92de399d868c1",
-  "results_commit": "56656de74454a63d898bc434fc62b08566b6acc1"
+  "results_commit": "53a88f3e58a28bbbbb5fcb0a1e6abb1f674c7a45"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
