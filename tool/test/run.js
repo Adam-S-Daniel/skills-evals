@@ -238,50 +238,121 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
 });
 const cv = (c, policy) => P.confidenceView(c, { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, max_runs_per_cell: 40, ...policy }, 'skills');
-const tracks = (n) => P.findAll(n, (x) => x.attrs && /\btrack\b/.test(x.attrs.class || ''));
-const styleOf = (n, cls) => P.findAll(n, (x) => x.attrs && x.attrs.class === cls).map((x) => x.attrs.style);
+const svgs = (n) => P.findAll(n, (x) => x.tag === 'svg');
+const byClass = (n, cls) => P.findAll(n, (x) => x.attrs && x.attrs.class === cls);
+const axisX = (v) => 116 + ((v + 100) / 200) * (282 - 116);
+const cell = (over) => ({ model: 'claude-sonnet-5-5', task: 'fetch-retry', pairs: 5, gain: 22, low: -18, high: 61, votes: true, status: 'open', ...over });
+const twoCells = [cell({ status: 'keeps', low: 3.5, high: 70 }),
+  cell({ model: 'claude-opus-5-5', task: 'a-really-long-invented-task-name-here', pairs: 40, gain: -5, low: -60.2, high: 10, status: 'removes-ready' })];
+const withCells = (cells, over) => ({ helps: 0.5, no_help: 0.5, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10, cells, ...over });
 test('the confidence view with no figure says so', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   doc.skills[1].confidence = { helps: null, no_help: null };
   ok(P.textOf(P.buildPage(doc, 'skills', {})).includes(P.STRINGS.confidenceNone), 'page');
   ok(P.textOf(cv(null)).includes(P.STRINGS.confidenceNone), 'null');
-  eq(tracks(cv({ helps: null })).length, 0);
+  eq(svgs(cv({ helps: null })).length, 0);
 });
-test('the confidence view draws both gauges with the thresholds and the run count', () => {
-  const n = cv({ helps: 0.02, no_help: 0, keep_pairs: 6, no_help_pairs: 6, max_pairs: 11 });
-  eq(tracks(n).length, 2);
-  eq(styleOf(n, 'fill').map((x) => x.split(';')[0]).join(), 'width:2%,width:0%');
-  eq(styleOf(n, 'line').join(), 'left:80%,left:90%');
-  const t = P.textOf(n);
-  ok(t.includes('on its busiest task and model: 11 of 40'), 'runs');
-  ok(t.includes('2% \u00b7 keeps at 80%') && t.includes('0% \u00b7 removes at 90%'), 'values');
-  ok(t.includes('Sure any gain is under 15 points'), 'label');
-  ok(t.includes(P.STRINGS.confNoMove), 'remove gauge has no movement');
-  ok(t.includes(P.STRINGS.confPace), 'pace note');
+test('the gain range chart draws one row per cell, each range on the axis scale', () => {
+  const n = cv(withCells(twoCells));
+  const chart = svgs(n);
+  eq(chart.length, 1);
+  eq(chart[0].attrs.class, 'chart range');
+  eq(chart[0].attrs.role, 'img');
+  ok(/2 tasks and models/.test(chart[0].attrs['aria-label']), 'aria summary');
+  const bars = byClass(n, 'range-bar');
+  eq(bars.length, 2);
+  twoCells.forEach((c, i) => {
+    const x = Number(bars[i].attrs.x), w = Number(bars[i].attrs.width);
+    ok(Math.abs(x - axisX(c.low)) < 0.5, 'left end ' + i + ': ' + x);
+    ok(Math.abs(x + w - axisX(c.high)) < 0.5, 'right end ' + i + ': ' + (x + w));
+    eq(Number(bars[i].attrs.height), 10, 'height');
+  });
+  const dots = byClass(n, 'gain-dot');
+  eq(dots.length, 2);
+  twoCells.forEach((c, i) => ok(Math.abs(Number(dots[i].attrs.cx) - axisX(c.gain)) < 0.5, 'dot ' + i));
+  eq(dots[0].attrs.fill, 'var(--ink)');
+  eq(Number(dots[0].attrs.r), 4);
+  const marks = byClass(n, 'mark');
+  eq(marks.length, 2);
+  ok(marks.every((m) => m.attrs.tabindex === 0 && m.attrs['data-tip-pos'] === 'below'), 'focusable targets below');
+  eq(marks[0].attrs['data-tip'], 'Claude Sonnet 5.5, task fetch-retry: gain +22 points so far; likely between +4 and +70. 5 of 40 runs.');
+});
+test('the gain range chart marks 0 and the margin, labels the axis and colors by status', () => {
+  const n = cv(withCells(twoCells));
+  const line = (k) => P.findAll(n, (x) => x.tag === 'line' && x.attrs['data-line'] === k)[0];
+  ok(Math.abs(line('zero').attrs.x1 - axisX(0)) < 0.5, 'zero line');
+  ok(!line('zero').attrs['stroke-dasharray'], 'zero line is solid');
+  eq(line('margin').attrs['stroke-dasharray'], '3 3');
+  ok(Math.abs(line('margin').attrs.x1 - axisX(15)) < 0.5, 'margin line at +15');
+  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
+  for (const want of ['−100', '−50', '0', '+50', '+100', '+15']) ok(labels.includes(want), 'label ' + want);
+  const wider = cv(withCells(twoCells), { objective_margin: 0.2 });
+  ok(Math.abs(P.findAll(wider, (x) => x.attrs && x.attrs['data-line'] === 'margin')[0].attrs.x1 - axisX(20)) < 0.5, 'policy margin');
+  const fills = {};
+  for (const status of ['keeps', 'removes-ready', 'no-room', 'paused', 'open']) {
+    const bar = byClass(cv(withCells([cell({ status })])), 'range-bar')[0];
+    fills[status] = bar.attrs.fill + '@' + bar.attrs['fill-opacity'];
+  }
+  eq(JSON.stringify(fills), JSON.stringify({ keeps: 'var(--good)@1', 'removes-ready': 'var(--s2)@1', 'no-room': 'var(--axis)@1', paused: 'var(--axis)@1', open: 'var(--s1)@0.55' }));
+});
+test('the gain range chart shows runs toward the cap and clips long task names', () => {
+  const n = cv(withCells(twoCells));
+  const runs = byClass(n, 'runs').map((x) => P.textOf(x).trim());
+  eq(runs.join(), '5/40,40/40');
+  const fills = byClass(n, 'runs-fill').map((x) => Number(x.attrs.width));
+  ok(Math.abs(fills[0] - 42 * 5 / 40) < 0.01 && Math.abs(fills[1] - 42) < 0.01, 'meter widths ' + fills);
+  const task = P.findAll(n, (x) => x.tag === 'text' && x.attrs['data-tip'] === 'a-really-long-invented-task-name-here')[0];
+  ok(task, 'full name in data-tip');
+  const shown = P.textOf(task.children[0]);
+  ok(shown.endsWith('…') && shown.length <= 19, 'clipped: ' + shown);
+  eq(P.clipName('short', 19), 'short');
+  ok(byClass(n, 'mark')[1].attrs['data-tip'].includes('task a-really-long-invented-task-name-here:'), 'full name in the range tip');
+  // No cap in the policy: a count, no meter.
+  const free = cv(withCells(twoCells), { max_runs_per_cell: null });
+  eq(byClass(free, 'runs').map((x) => P.textOf(x).trim()).join(), '5,40');
+  eq(byClass(free, 'runs-fill').length, 0);
+});
+test('the gain range chart explains itself with the policy levels', () => {
+  const t = P.textOf(cv(withCells(twoCells), { benefit_confidence: 0.85, retire_confidence: 0.95, min_cli_versions: 3 }));
+  ok(t.includes('Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.'), 'what');
+  ok(t.includes('Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +15.'), 'rule');
+  ok(t.includes('The left end is held to 85% certainty shared across the skill\'s tasks and models, the right end to 95%; a decision also waits for runs on three Claude Code versions.'), 'levels');
+  const g = P.textOf(P.confidenceView(withCells(twoCells), { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, min_cli_versions: 2 }, 'guidance'));
+  ok(g.includes('shared across the section\'s tasks and models, the right end to 90%; a decision also waits for runs on two Claude Code versions.'), 'section wording');
 });
 test('the confidence view estimates the runs still needed, or says it is past the cap', () => {
-  const near = P.textOf(cv({ helps: 0.5, no_help: 0.5, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10 }));
-  ok(near.includes('about 24 more comparison runs on its leading task and model.'), 'estimate ' + near);
-  const far = P.textOf(cv({ helps: 0.5, no_help: 0.5, keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 }));
-  ok(far.includes('At this pace it would not get there before the 40-run limit.'), 'past cap');
-  ok(!far.includes('more comparison run'), 'no estimate past the cap');
-  const done = P.textOf(cv({ helps: 0.85, no_help: 0.2, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10 }));
-  ok(done.includes('Reached.'), 'reached');
-  eq(P.STRINGS.confMore(1), 'At this pace, about 1 more comparison run on its leading task and model.');
+  const near = P.textOf(cv(withCells(twoCells)));
+  ok(near.includes('Keep: at this pace, about 14 more runs.'), 'keep estimate ' + near);
+  ok(near.includes('Removal: at this pace, about 24 more runs.'), 'removal estimate');
+  ok(near.includes(P.STRINGS.confPace), 'pace note');
+  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. At 40 runs without a decision, the loop stops testing it and files a removal proposal for me to decide instead of removing it on its own.'), 'runs');
+  const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
+  ok(far.includes('Keep: not before the 40-run cap at this pace.') && far.includes('Removal: not before the 40-run cap at this pace.'), 'past cap');
+  ok(!far.includes('more run'), 'no estimate past the cap');
+  const done = P.textOf(cv(withCells(twoCells, { helps: 0.85, no_help: 0 })));
+  ok(done.includes('Keep: reached.') && done.includes('Removal: no movement yet.'), 'reached ' + done);
+  ok(!done.includes(P.STRINGS.confPace), 'no pace note without a projection');
+  eq(P.STRINGS.confMore('Keep', 1), 'Keep: at this pace, about 1 more run.');
 });
-test('the confidence view names a subject with no room to show a gain and uses the policy levels', () => {
-  const n = cv({ helps: 0.5, no_help: null, keep_pairs: 10, max_pairs: 10 }, { retire_confidence: 0.97 });
-  eq(tracks(n).length, 1);
-  ok(P.textOf(n).includes('Removal: no task leaves room to show a 15-point gain, because Claude already passes without it'), 'no room');
-  const m = cv({ helps: 0.5, no_help: 0.25 }, { retire_confidence: 0.97 });
-  eq(styleOf(m, 'line').join(), 'left:80%,left:97%');
-  ok(P.textOf(m).includes('removes at 97%'), 'policy level');
+test('the confidence view names a subject with no room to show a gain', () => {
+  const t = P.textOf(cv(withCells(twoCells, { no_help: null })));
+  ok(t.includes('Removal: no task leaves room for a 15-point gain (Claude already passes without it), so this needs a harder test.'), 'no room');
   ok(!/\b(85|95)% confiden/.test(P.STRINGS.chipRules.helps + P.STRINGS.chipRules.none), 'no fixed levels in the chip rules');
 });
-test('the confidence view falls back to the cap sentence for older data and shows no estimates', () => {
-  const t = P.textOf(cv({ helps: 0.5, no_help: 0.25 }));
+test('the confidence view without cells (older data) shows the sentences only', () => {
+  const n = cv({ helps: 0.5, no_help: 0.25 });
+  eq(svgs(n).length, 0);
+  const t = P.textOf(n);
   ok(t.includes('A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
-  ok(!t.includes('more comparison run') && !t.includes(P.STRINGS.confPace) && !t.includes('Comparison runs on its busiest'), 'no estimates');
+  ok(!t.includes('more run') && !t.includes(P.STRINGS.confPace) && !t.includes(P.STRINGS.rangeWhat), 'no estimates, no chart notes');
+  eq(svgs(cv({ helps: 0.5, no_help: 0.25, cells: [] })).length, 0);
+});
+test('no "Sure it helps" gauge text is left anywhere', () => {
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(fixture, m, {}));
+    ok(!/Sure it helps|Sure any gain/.test(t), m);
+  }
+  ok(!/Sure it helps|Sure any gain|class="gauge"|\.gauge\b|\.track\b/.test(html), 'page source');
 });
 test('real-use counts show on skill cards with the census window', () => {
   const doc = JSON.parse(JSON.stringify(fixture));

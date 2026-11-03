@@ -160,13 +160,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
 .conf { margin: 12px 0 0; }
 .conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
-.gauge { margin: 8px 0 0; }
-.gauge .lab { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; color: var(--ink-2); margin-bottom: 4px; }
-.gauge .lab b { color: var(--ink); font-variant-numeric: tabular-nums; margin-left: auto; }
-.track { position: relative; height: 10px; background: var(--base); border-radius: 5px; margin: 4px 0; }
-.track .fill { height: 100%; border-radius: 5px; }
-.track .line { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
-@media (forced-colors: active) { .track .fill, .track .line { forced-color-adjust: none; } }
+.chart.range { max-width: 420px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -207,8 +201,7 @@ const pts = (x) => Math.round(Math.abs(x) * 100);
 const KEEP_AT = 0.80, REMOVE_AT = 0.90;
 const ordinal = (n) => { const t = n % 100, u = n % 10;
   return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
-/* A level in [0, 1) as a whole percent, never rounded up to a certainty. */
-const pctOf = (x) => x >= 0.995 ? 'over 99%' : Math.floor(x * 100) + '%';
+const countWord = (n) => ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] || String(n);
 
 /* ------------------------------------------------------------------ */
 /* Every sentence the page shows, in one place.                       */
@@ -265,13 +258,13 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps at the level shown on each card.',
+    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.',
     alone: 'It helps when it\'s the only section present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once the rest of the guidance is there too.',
-    none: 'On every model and task with room to show a gain, the loop is confident, at the removal level shown on each card, that the gain is under the margin shown there, so it decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
+    none: 'On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
     early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
-    insufficient: 'The loop hasn\'t decided yet. Its confidence range is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
+    insufficient: 'The loop hasn\'t decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
   },
   chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
 
@@ -303,18 +296,23 @@ const STRINGS = {
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
   confidenceCap: (n) => 'A test still undecided after ' + n + ' comparison runs stops, and can only propose a removal.',
   confHeading: 'How close is a decision?',
-  confKeep: () => 'Sure it helps',
-  confKeepVal: (pct, keepPct) => pct + ' \u00b7 keeps at ' + keepPct,
-  confRemove: (margin) => 'Sure any gain is under ' + margin + ' points',
-  confRemoveVal: (pct, removePct) => pct + ' \u00b7 removes at ' + removePct,
-  confNoRoom: (margin) => 'Removal: no task leaves room to show a ' + margin + '-point gain, because Claude already passes without it, so this needs a harder test before it can be removed.',
-  confReached: 'Reached.',
-  confNoMove: 'No movement toward this line yet.',
-  confPastCap: (cap) => 'At this pace it would not get there before the ' + cap + '-run limit.',
-  confMore: (n) => 'At this pace, about ' + n + ' more comparison run' + (n === 1 ? '' : 's') + ' on its leading task and model.',
-  confRuns: (n, cap) => 'Comparison runs that count toward a decision, on its busiest task and model: ' + n + ' of ' + cap + '. Only runs of the current text count, so this can be lower than the totals above. A test still undecided at ' + cap + ' stops, and can only propose a removal.',
-  confPace: 'Estimates assume results keep coming in the way they have so far.',
-  confAria: (label, pct, rule) => label + ': ' + pct + '. ' + rule,
+  confKeepWord: 'Keep',
+  confRemoveWord: 'Removal',
+  confReached: (which) => which + ': reached.',
+  confNoMove: (which) => which + ': no movement yet.',
+  confPastCap: (which, cap) => which + ': not before the ' + cap + '-run cap at this pace.',
+  confMore: (which, n) => which + ': at this pace, about ' + n + ' more run' + (n === 1 ? '' : 's') + '.',
+  confNoRoom: (margin) => 'Removal: no task leaves room for a ' + margin + '-point gain (Claude already passes without it), so this needs a harder test.',
+  confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. At ' + cap + ' runs without a decision, the loop stops testing it and files a removal proposal for me to decide instead of removing it on its own.',
+  confPace: 'The run estimates project how fast certainty has grown per run so far; they are rough.',
+  rangeAria: (n, margin) => 'The range the gain likely falls in, for ' + n + (n === 1 ? ' task and model' : ' tasks and models') + ', from \u2212100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +' + margin + '.',
+  rangeAxis: 'Gain, points',
+  rangeRuns: 'Runs',
+  rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ', task ' + task : '') + ': gain ' + gain + ' points so far; likely between ' + low + ' and ' + high + '. ' + runs + '.' + (counted ? '' : ' Not counted toward removal.'),
+  rangeTipRuns: (n, cap) => cap ? n + ' of ' + cap + ' runs' : n + (n === 1 ? ' run' : ' runs'),
+  rangeWhat: 'Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.',
+  rangeRule: (margin) => 'Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +' + margin + '.',
+  rangeLevels: (keepPct, removePct, subject, versions) => 'The left end is held to ' + keepPct + ' certainty shared across the ' + (subject === 'guidance' ? 'section\'s' : 'skill\'s') + ' tasks and models, the right end to ' + removePct + '; a decision also waits for runs on ' + countWord(versions) + ' Claude Code version' + (versions === 1 ? '' : 's') + '.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
@@ -1123,25 +1121,87 @@ function stakesLine(st) {
 }
 
 /* Runs still needed to move a level from `conf` to `level`, assuming the
-   evidence (-ln(1 - level)) grows in step with the pair count. */
-function estimateLine(conf, level, pairs, cap, which) {
-  if (conf >= level) return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confReached);
-  if (!Number.isInteger(pairs) || pairs <= 0) return null;
-  if (conf <= 0) return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confNoMove);
+   evidence (-ln(1 - level)) grows in step with the pair count. Returns
+   { node, projected }: `projected` is true for a line that projects a pace. */
+function estimateLine(which, conf, level, pairs, cap) {
+  const line = (text) => h('p', { class: 'meta', 'data-est': which }, text);
+  if (conf >= level) return { node: line(STRINGS.confReached(which)), projected: false };
+  if (!Number.isInteger(pairs) || pairs <= 0) return { node: null, projected: false };
+  if (conf <= 0) return { node: line(STRINGS.confNoMove(which)), projected: false };
   const more = Math.max(1, Math.ceil(pairs * (-Math.log(1 - level)) / (-Math.log(1 - conf))) - pairs);
   if (Number.isInteger(cap) && cap > 0 && pairs + more > cap)
-    return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confPastCap(cap));
-  return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confMore(more));
+    return { node: line(STRINGS.confPastCap(which, cap)), projected: true };
+  return { node: line(STRINGS.confMore(which, more)), projected: true };
 }
 
-function gauge(label, valueText, ariaText, conf, level, color) {
-  const pos = (x) => Math.min(100, Math.max(0, Math.round(x * 1000) / 10)) + '%';
-  return [
-    h('div', { class: 'lab' }, h('span', null, label), h('b', null, valueText)),
-    h('div', { class: 'track', role: 'img', 'aria-label': ariaText },
-      h('div', { class: 'fill', style: 'width:' + pos(conf) + ';background:' + color }),
-      h('div', { class: 'line', style: 'left:' + pos(level) })),
-  ];
+/* A name cut to `n` characters, the last one an ellipsis. */
+function clipName(text, n) {
+  const t = String(text);
+  return t.length > n ? t.slice(0, n - 1) + '…' : t;
+}
+
+/* Signed whole points with a real minus sign: +22, 0, −18. */
+function signedPoints(x) {
+  const n = Math.round(x);
+  return n > 0 ? '+' + n : n < 0 ? '−' + (-n) : '0';
+}
+
+/* The gain range chart's geometry: the label column, the axis from -100
+   to +100 points, and the runs meter on the right. */
+const RANGE = { W: 340, AX0: 116, AX1: 282, MX: 292, MW: 42, TOP: 16, ROW: 32, TASK_CHARS: 19 };
+const rangeX = (v) => RANGE.AX0 + ((Math.max(-100, Math.min(100, v)) + 100) / 200) * (RANGE.AX1 - RANGE.AX0);
+const RANGE_COLORS = { keeps: 'var(--good)', 'removes-ready': 'var(--s2)', 'no-room': 'var(--axis)', paused: 'var(--axis)', open: 'var(--s1)' };
+
+/* rows: confidence.cells, each {model, task, pairs, gain, low, high, votes, status}. */
+function rangeChart(rows, margin, cap) {
+  const fin = (x) => typeof x === 'number' && isFinite(x);
+  rows = rows.filter((r) => r && fin(r.gain) && fin(r.low) && fin(r.high));
+  if (!rows.length) return null;
+  const { W, AX0, AX1, MX, MW, TOP, ROW } = RANGE;
+  const H = TOP + rows.length * ROW + 18;
+  const bottom = TOP + rows.length * ROW;
+  const lab = { 'font-size': 10, fill: 'var(--muted)' };
+  const kids = [];
+  for (const v of [-100, -50, 0, 50, 100]) {
+    const x = rangeX(v);
+    if (v !== 0) kids.push(h('line', { x1: x, x2: x, y1: TOP - 2, y2: bottom, stroke: 'var(--grid)', 'stroke-width': 1 }));
+    kids.push(h('text', { ...lab, x: x, y: H - 3, 'text-anchor': 'middle', 'data-axis': v }, signedPoints(v)));
+  }
+  kids.push(h('line', { x1: rangeX(0), x2: rangeX(0), y1: TOP - 2, y2: bottom, stroke: 'var(--axis)', 'stroke-width': 1.5, 'data-line': 'zero' }));
+  const mx = rangeX(margin);
+  kids.push(h('line', { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'data-line': 'margin' }));
+  kids.push(h('text', { ...lab, x: mx, y: TOP - 5, 'text-anchor': 'middle' }, '+' + margin));
+  kids.push(h('text', { ...lab, x: 0, y: H - 3 }, STRINGS.rangeAxis));
+  kids.push(h('text', { ...lab, x: MX, y: TOP - 5 }, STRINGS.rangeRuns));
+  rows.forEach((r, i) => {
+    const y = TOP + i * ROW;
+    const model = friendlyModel(r.model);
+    const task = typeof r.task === 'string' && r.task ? clean(r.task) : null;
+    kids.push(h('text', { x: 0, y: y + 12, 'font-size': 11, fill: 'var(--ink-2)' }, model));
+    if (task) kids.push(h('text', { x: 0, y: y + 25, 'font-size': 10, fill: 'var(--muted)', 'data-tip': task }, clipName(task, RANGE.TASK_CHARS)));
+    const x0 = rangeX(Math.min(r.low, r.high)), x1 = rangeX(Math.max(r.low, r.high));
+    const width = Math.max(2, x1 - x0);
+    const color = RANGE_COLORS[r.status] || RANGE_COLORS.open;
+    kids.push(h('rect', { class: 'range-bar', x: x0.toFixed(2), y: y + 10, width: width.toFixed(2), height: 10,
+      rx: Math.min(5, width / 2).toFixed(2), fill: color, 'fill-opacity': r.status === 'open' || !RANGE_COLORS[r.status] ? 0.55 : 1,
+      'data-status': r.status, 'pointer-events': 'none' }));
+    kids.push(h('circle', { class: 'gain-dot', cx: rangeX(r.gain).toFixed(2), cy: y + 15, r: 4, fill: 'var(--ink)',
+      stroke: 'var(--surface)', 'stroke-width': 1.5, 'pointer-events': 'none' }));
+    const pairs = Number.isInteger(r.pairs) ? r.pairs : 0;
+    kids.push(h('text', { x: MX, y: y + 12, 'font-size': 11, fill: 'var(--ink)', class: 'runs' }, cap ? pairs + '/' + cap : String(pairs)));
+    if (cap) {
+      kids.push(h('rect', { x: MX, y: y + 17, width: MW, height: 4, rx: 2, fill: 'var(--base)' }));
+      const fw = MW * Math.min(1, pairs / cap);
+      if (fw > 0) kids.push(h('rect', { class: 'runs-fill', x: MX, y: y + 17, width: fw.toFixed(2), height: 4, rx: 2, fill: 'var(--ink-2)' }));
+      kids.push(h('line', { x1: MX + MW, x2: MX + MW, y1: y + 15, y2: y + 23, stroke: 'var(--ink)', 'stroke-width': 1 }));
+    }
+    kids.push(h('rect', { x: AX0 - 4, y: y + 4, width: AX1 - AX0 + 8, height: 22, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip-pos': 'below',
+      'data-tip': STRINGS.rangeTip(model, task, signedPoints(r.gain), signedPoints(r.low), signedPoints(r.high),
+        STRINGS.rangeTipRuns(pairs, cap), r.votes !== false) }));
+  });
+  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart range', role: 'img',
+    'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
 }
 
 function confidenceView(c, policy, subject) {
@@ -1150,30 +1210,30 @@ function confidenceView(c, policy, subject) {
   const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
   const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
   const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
+  const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0
+    ? policy.min_cli_versions : 2;
   const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
     ? policy.max_runs_per_cell : null;
   const whole = (x) => Math.round(x * 100) + '%';
-  const keepLab = STRINGS.confKeep(subject);
-  const removeLab = STRINGS.confRemove(margin);
   const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
-  const keepEst = estimateLine(c.helps, keep, c.keep_pairs, cap, 'keep');
-  kids.push(h('div', { class: 'gauge' },
-    gauge(keepLab, STRINGS.confKeepVal(pctOf(c.helps), whole(keep)),
-      STRINGS.confAria(keepLab, pctOf(c.helps), 'It is kept at ' + whole(keep) + '.'),
-      c.helps, keep, 'var(--good)'), keepEst));
-  let removeEst = null;
-  if (c.no_help === null) {
-    kids.push(h('p', { class: 'meta' }, STRINGS.confNoRoom(margin)));
-  } else if (ok(c.no_help)) {
-    removeEst = estimateLine(c.no_help, remove, c.no_help_pairs, cap, 'remove');
-    kids.push(h('div', { class: 'gauge' },
-      gauge(removeLab, STRINGS.confRemoveVal(pctOf(c.no_help), whole(remove)),
-        STRINGS.confAria(removeLab, pctOf(c.no_help), 'It is removed at ' + whole(remove) + '.'),
-        c.no_help, remove, 'var(--s2)'), removeEst));
+  const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
+  if (chart) {
+    kids.push(chart);
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeRule(margin)));
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
+  }
+  const keepEst = estimateLine(STRINGS.confKeepWord, c.helps, keep, c.keep_pairs, cap);
+  kids.push(keepEst.node);
+  let removeEst = { node: null, projected: false };
+  if (c.no_help === null) kids.push(h('p', { class: 'meta' }, STRINGS.confNoRoom(margin)));
+  else if (ok(c.no_help)) {
+    removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
+    kids.push(removeEst.node);
   }
   if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
   else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
-  if (keepEst || removeEst) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
+  if (keepEst.projected || removeEst.projected) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
   return h('div', { class: 'conf' }, kids);
 }
 
@@ -1642,7 +1702,7 @@ if (typeof module !== 'undefined') {
     clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
     poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
-    skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, buildFailure, confidenceView, h, textOf, findAll, toDom
+    skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom
   };
 }
 </script>

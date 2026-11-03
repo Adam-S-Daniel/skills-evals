@@ -31,10 +31,13 @@ more than what it carries:
     of publishing; under `copies` and in `loaded-copy` alerts it also
     refuses any value that is not a 12-hex prefix or a known
     `unknown:<reason>`, and any hex run longer than 12 (the 40-hex commits in
-    `source` are outside that scope).
+    `source` are outside that scope). It also holds each `confidence.cells`
+    row to exactly CONFIDENCE_CELL_KEYS.
 
 Each skill and section also carries `confidence` (the levels its gate
-bounds reach, `subject_confidence`) and `next_test` (its place in the
+bounds reach, and per cell the gain measured so far and the range it likely
+falls in, `subject_confidence`; a cell's `task` is its fixture name, which
+for a listed subject is a public registry's fixture under evals/) and `next_test` (its place in the
 planner's eval queue or its next re-check, `test_queue`) and `stakes`
 (its evals/stakes.yml level, `normal` with no row; scripts/stakes.py); each
 skill carries
@@ -155,6 +158,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import os
 import re
 import subprocess
@@ -1278,9 +1282,14 @@ def subject_confidence(verdict: dict) -> dict:
     of the voting cell `no_help` comes from (the lowest no-help level);
     `max_pairs`, the largest objective pair count over figured cells (progress
     toward the per-cell run cap); and `keep_family`, the family size used for
-    `helps`. All four are None while no cell has an objective figure."""
+    `helps`. All four are None while no cell has an objective figure.
+
+    `cells` (the page's gain range chart) lists every cell of `verdict["cells"]`
+    with an objective figure, by `confidence_cell`, sorted by model then task;
+    [] when none has one. A guidance section's `alone` cells are not listed:
+    they decide neither its keep nor its removal."""
     none = {"helps": None, "no_help": None, "keep_pairs": None,
-            "no_help_pairs": None, "max_pairs": None, "keep_family": None}
+            "no_help_pairs": None, "max_pairs": None, "keep_family": None, "cells": []}
     cells = verdict.get("cells") or []
     figured = [c for c in cells if isinstance(c.get("objective"), dict)]
     if not figured:
@@ -1306,7 +1315,44 @@ def subject_confidence(verdict: dict) -> dict:
             "keep_pairs": pairs_of(keep_cell) if keep_cell else None,
             "no_help_pairs": pairs_of(weakest[1]) if weakest[1] else None,
             "max_pairs": max(all_pairs) if all_pairs else None,
-            "keep_family": family}
+            "keep_family": family,
+            "cells": sorted((row for row in map(confidence_cell, figured) if row is not None),
+                            key=lambda r: (r["model"], r["task"] or ""))}
+
+
+#: The keys of one `confidence.cells` row; `finish` holds every row to them.
+CONFIDENCE_CELL_KEYS = frozenset({"model", "task", "pairs", "gain", "low", "high",
+                                  "votes", "status"})
+
+#: A cell's class as the page's range chart colors it; any other is "open".
+CELL_STATUS = {"benefit": "keeps", "no-benefit": "removes-ready", "ceiling": "no-room",
+               "ceiling-unconfirmed": "no-room", "paused": "paused"}
+
+
+def confidence_cell(cell: dict) -> dict | None:
+    """One row of the gain range chart from a verdict cell with an objective
+    figure (harness/gates.py `sequence_block`), or None when a number is
+    missing or not finite: `gain` the mean paired difference, `low` the keep
+    test's lower end, `high` the remove test's upper end, each in percentage
+    points of checks passed, clamped to [-100, 100] and rounded to one
+    decimal only here; `votes` whether the cell votes on removal (neither
+    parked nor `cannot-discriminate`); `status` from CELL_STATUS."""
+    objective = cell["objective"]
+    numbers = [objective.get(k) for k in ("delta", "benefit_lower", "retire_upper")]
+    pairs = objective.get("pairs")
+    model = cell.get("model")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in numbers) or not isinstance(model, str) \
+            or not isinstance(pairs, int) or isinstance(pairs, bool):
+        return None
+    # + 0.0 turns a rounded -0.0 into 0.0.
+    gain, low, high = (round(min(100.0, max(-100.0, v * 100)), 1) + 0.0 for v in numbers)
+    task = cell.get("fixture")
+    return {"model": model, "task": task if isinstance(task, str) and task else None,
+            "pairs": pairs, "gain": gain, "low": low, "high": high,
+            "votes": cell.get("class") not in gates.PARKED_CLASSES
+            and cell.get("class") != "cannot-discriminate",
+            "status": CELL_STATUS.get(cell.get("class"), "open")}
 
 
 #: The eval bands the page lists as the test queue, in the planner's order
@@ -1677,6 +1723,14 @@ def finish(doc: dict) -> str:
                         for k in ("loaded", "main"))
                     or _LONG_HEX_RE.search(json.dumps(alert))):
                 raise Refused("a loaded-copy alert carries a value that is not a prefix")
+    # The gain range chart's rows hold their fields only.
+    for subject in [*(doc.get("skills") or []),
+                    *((doc.get("guidance") or {}).get("sections") or [])]:
+        rows = ((subject.get("confidence") or {}).get("cells")
+                if isinstance(subject, dict) else None) or []
+        if not isinstance(rows, list) or not all(
+                isinstance(r, dict) and set(r) == CONFIDENCE_CELL_KEYS for r in rows):
+            raise Refused("a confidence cell carries a field it may not publish")
     # The lessons come from private sessions: each item holds its fields only.
     lessons = doc.get("lessons")
     if lessons is not None:
