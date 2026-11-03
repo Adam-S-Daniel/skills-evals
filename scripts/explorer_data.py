@@ -900,21 +900,44 @@ def subject_confidence(verdict: dict) -> dict:
     parked, `gates.PARKED_CLASSES`, nor `cannot-discriminate`; a cell with no objective figure
     gives 0). The judge does not vote, so it is not read. Both None while no
     cell has an objective figure. The keep and remove rules compare these
-    with the policy levels; the page shows them as percentages."""
+    with the policy levels; the page shows them as percentages.
+
+    The page also draws how far each level is from its line, so four more
+    keys carry the evidence behind them (each an int, or None when absent):
+    `keep_pairs`, the objective pair count of the cell `helps` comes from (the
+    one with the smallest objective keep p); `no_help_pairs`, the pair count
+    of the voting cell `no_help` comes from (the lowest no-help level);
+    `max_pairs`, the largest objective pair count over figured cells (progress
+    toward the per-cell run cap); and `keep_family`, the family size used for
+    `helps`. All four are None while no cell has an objective figure."""
+    none = {"helps": None, "no_help": None, "keep_pairs": None,
+            "no_help_pairs": None, "max_pairs": None, "keep_family": None}
     cells = verdict.get("cells") or []
     figured = [c for c in cells if isinstance(c.get("objective"), dict)]
     if not figured:
-        return {"helps": None, "no_help": None}
+        return none
+
+    def pairs_of(cell):
+        n = (cell.get("objective") or {}).get("pairs")
+        return n if isinstance(n, int) and not isinstance(n, bool) else None
+
     family = verdict.get("keep_family")
     family = family if isinstance(family, int) and family >= 1 else 1
-    ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
-          if isinstance(t, dict) and t.get("route") == "objective"
-          and isinstance(t.get("p"), (int, float))]
+    tests = [(t["p"], c) for c in cells for t in (c.get("keep_tests") or [])
+             if isinstance(t, dict) and t.get("route") == "objective"
+             and isinstance(t.get("p"), (int, float))]
     voting = [c for c in cells if c.get("class") not in gates.PARKED_CLASSES
               and c.get("class") != "cannot-discriminate"]
-    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in voting]
-    return {"helps": max(0.0, 1 - family * min(ps)) if ps else 0.0,
-            "no_help": min(no_help) if no_help else None}
+    levels = [((c.get("objective") or {}).get("no_help_confidence", 0.0), c) for c in voting]
+    keep_p, keep_cell = min(tests, key=lambda t: t[0]) if tests else (None, None)
+    weakest = min(levels, key=lambda t: t[0]) if levels else (None, None)
+    all_pairs = [n for n in map(pairs_of, figured) if n is not None]
+    return {"helps": max(0.0, 1 - family * keep_p) if tests else 0.0,
+            "no_help": weakest[0],
+            "keep_pairs": pairs_of(keep_cell) if keep_cell else None,
+            "no_help_pairs": pairs_of(weakest[1]) if weakest[1] else None,
+            "max_pairs": max(all_pairs) if all_pairs else None,
+            "keep_family": family}
 
 
 #: The eval bands the page lists as the test queue, in the planner's order

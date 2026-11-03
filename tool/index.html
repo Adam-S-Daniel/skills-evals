@@ -115,7 +115,7 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
 .card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
 .card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
-.card .sent { font-size: 0.95rem; }
+.card .sent { font-size: 0.95rem; margin-top: 10px; }
 .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
 .model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
 .chip {
@@ -134,11 +134,10 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
-.sw.tick { width: 2px; height: 12px; border-radius: 0; background: var(--ink); }
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 svg text { font-family: Helvetica, Arial, sans-serif; }
-.chart { max-width: 360px; }
-.spark { max-width: 260px; margin-top: 6px; }
+.chart { max-width: 396px; }
+.spark { max-width: 320px; margin-top: 10px; }
 .mark:hover, .mark:focus { opacity: 0.8; outline: none; }
 .trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
@@ -159,6 +158,15 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tip[hidden] { display: none; }
 .headline .answer { font-size: 1.1rem; font-weight: 600; }
 @media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
+.conf { margin: 12px 0 0; }
+.conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
+.gauge { margin: 8px 0 0; }
+.gauge .lab { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 0.82rem; color: var(--ink-2); margin-bottom: 4px; }
+.gauge .lab b { color: var(--ink); font-variant-numeric: tabular-nums; margin-left: auto; }
+.track { position: relative; height: 10px; background: var(--base); border-radius: 5px; margin: 4px 0; }
+.track .fill { height: 100%; border-radius: 5px; }
+.track .line { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink); }
+@media (forced-colors: active) { .track .fill, .track .line { forced-color-adjust: none; } }
 </style>
 </head>
 <body>
@@ -222,12 +230,12 @@ const STRINGS = {
   introSkills: [
     'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don\'t write most of them myself. I\'ve set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
     'So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
-    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Tried" says how many times the comparison has run — the more runs, the more the result can be trusted.'
+    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
   ],
   introGuidance: [
-    'The guidance is a page of rules Claude reads at the start of every working session on my projects. Claude writes most of the rules too: when something goes wrong, the session that hit it records the lesson as a rule so it doesn\'t happen twice. This page shows whether each one earns its place. The page is split into sections, one topic each.',
-    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and run it four ways: with only that section, with no rules at all, with every rule, and with every rule except that one. Fixed checks score each attempt.',
-    'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the other rules are present; the "all but this one" bar shows that.'
+    'The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
+    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it four ways: with only that section, with no guidance at all, with all the guidance, and with all of it but that section. Fixed checks score each attempt.',
+    'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.'
   ],
   glossaryHeading: 'Words used on this page',
   glossary: [
@@ -237,12 +245,12 @@ const STRINGS = {
     ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
     ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
     ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
-    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its rules and budget; day to day, it runs without me.'],
+    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its thresholds and budget; day to day, it runs without me.'],
     ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
   ],
   glossaryGuidance: [
     ['Section', 'One topic within the guidance, under its own heading.'],
-    ['Ablation', 'Running with every rule except one, to see whether that one rule still makes a difference when all the others are there.'],
+    ['Ablation', 'Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there.'],
     ['Cost per session', 'How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length.']
   ],
   chipGlossaryIntro: 'The colored label on each card means:',
@@ -258,7 +266,7 @@ const STRINGS = {
   },
   chipRules: {
     helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps at the level shown on each card.',
-    alone: 'It helps when it\'s the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
+    alone: 'It helps when it\'s the only section present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once the rest of the guidance is there too.',
     none: 'On every model and task with room to show a gain, the loop is confident, at the removal level shown on each card, that the gain is under the margin shown there, so it decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
@@ -269,9 +277,9 @@ const STRINGS = {
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
+  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
+  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no guidance; a dot above the 0 line means it helped that week.',
   sortLabel: 'Order sections by',
   sortNext: 'Next test',
   sortValue: 'Help per word',
@@ -281,10 +289,10 @@ const STRINGS = {
 
   sentenceSkill: (m, a, b, c, d) => 'With this skill, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
   sentenceSection: (m, a, b, c, d) => 'With this section, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
-  sentenceAblation: (e, f, g, h) => 'With all the rules, ' + e + ' of ' + f + '; with all the other rules but not this one, ' + g + ' of ' + h + '.',
-  sentenceWhole: (m, a, b, c, d) => 'With all the rules, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no rules, ' + c + ' of ' + d + '.',
-  tried: (n, when) => 'Tried ' + n + (n === 1 ? ' time' : ' times') + ', last on ' + when + '.',
-  notTried: 'Not tried in the last ' + WINDOW_WEEKS + ' weeks.',
+  sentenceAblation: (e, f, g, h) => 'With all the guidance, ' + e + ' of ' + f + '; with all of it but this section, ' + g + ' of ' + h + '.',
+  sentenceWhole: (m, a, b, c, d) => 'With all the guidance, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no guidance, ' + c + ' of ' + d + '.',
+  tried: (n, when) => n + (n === 1 ? ' trial' : ' trials') + ' in all, the last on ' + when + '.',
+  notTried: 'No trials in the last ' + WINDOW_WEEKS + ' weeks.',
   pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
   judgeScores: (a, b) => 'judge score ' + a + ' with, ' + b + ' without (out of 10)',
   nextQueued: (n, kind) => 'Next test: ' + ordinal(n) + ' ' + kind + ' in line for the next round of tests.',
@@ -293,10 +301,20 @@ const STRINGS = {
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
   stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
-  confidence: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + keepAt + ' and removes one at ' + removeAt + '.',
-  confidenceSection: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + keepAt + ' and removes one at ' + removeAt + '.',
-  confidenceCap: (n) => ' A test still undecided after ' + n + ' comparison runs stops, and can only propose a removal.',
-  confidenceNoRoom: (helps, margin) => 'How sure the loop is: ' + helps + ' that it helps. No task leaves room to show a gain of ' + margin + ' points, because Claude already passes without it, so it needs a harder test.',
+  confidenceCap: (n) => 'A test still undecided after ' + n + ' comparison runs stops, and can only propose a removal.',
+  confHeading: 'How close is a decision?',
+  confKeep: () => 'Sure it helps',
+  confKeepVal: (pct, keepPct) => pct + ' \u00b7 keeps at ' + keepPct,
+  confRemove: (margin) => 'Sure any gain is under ' + margin + ' points',
+  confRemoveVal: (pct, removePct) => pct + ' \u00b7 removes at ' + removePct,
+  confNoRoom: (margin) => 'Removal: no task leaves room to show a ' + margin + '-point gain, because Claude already passes without it, so this needs a harder test before it can be removed.',
+  confReached: 'Reached.',
+  confNoMove: 'No movement toward this line yet.',
+  confPastCap: (cap) => 'At this pace it would not get there before the ' + cap + '-run limit.',
+  confMore: (n) => 'At this pace, about ' + n + ' more comparison run' + (n === 1 ? '' : 's') + ' on its leading task and model.',
+  confRuns: (n, cap) => 'Comparison runs that count toward a decision, on its busiest task and model: ' + n + ' of ' + cap + '. Only runs of the current text count, so this can be lower than the totals above. A test still undecided at ' + cap + ' stops, and can only propose a removal.',
+  confPace: 'Estimates assume results keep coming in the way they have so far.',
+  confAria: (label, pct, rule) => label + ': ' + pct + '. ' + rule,
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
@@ -308,16 +326,15 @@ const STRINGS = {
   barWith: 'With the skill',
   barWithout: 'Without it',
   barSection: 'Only this section',
-  barNone: 'No rules',
-  barAblated: 'All but this one',
-  barAll: 'All the rules',
-  barWholeFull: 'All the rules',
-  barWholeNone: 'No rules',
-  tickAll: 'Line: all the rules',
+  barNone: 'No guidance',
+  barAblated: 'All but this section',
+  barAll: 'All the guidance',
+  barWholeFull: 'All the guidance',
+  barWholeNone: 'No guidance',
   barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
-  tickTip: (a, b, rate) => 'All the rules: ' + a + ' of ' + b + ' checks (' + rate + ')',
   chartLabel: (m) => 'Checks passed by ' + m,
-  trendCaption: 'Week by week, last ' + WINDOW_WEEKS + ' weeks. Above the line: it helped that week.',
+  trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
+  trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
   trendNone: 'No weekly trend yet.',
   trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
   gainUp: (p) => p + ' points better with it',
@@ -339,11 +356,11 @@ const STRINGS = {
   verdictOther: (v) => 'Official decision: ' + v + '.',
 
   wholeHeading: 'Does the guidance help at all?',
-  wholeNote: 'All the rules compared with no rules, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler rule: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the rules, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
-  wholeRule: 'The simple rule in the note above — not a decision by the improvement loop.',
+  wholeNote: 'All the guidance compared with no guidance, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the guidance, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
+  wholeRule: 'The simple test in the note above — not a decision by the improvement loop.',
   wholeAnswer: {
-    helps: 'Yes. With the rules, Claude passed measurably more checks.',
-    alone: 'Yes. With the rules, Claude passed measurably more checks.',
+    helps: 'Yes. With the guidance, Claude passed measurably more checks.',
+    alone: 'Yes. With the guidance, Claude passed measurably more checks.',
     none: 'Not clearly. The difference so far is too small to count.',
     worse: 'Results are getting worse and need a closer look.',
     early: 'Early results say yes, but there are not enough runs yet for a final answer.',
@@ -387,8 +404,8 @@ const STRINGS = {
   engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
   source: (repo, main, results) => 'Built from ' + repo + ' at ' + main + ', results at ' + results + '.',
   colName: 'Name', colFixture: 'Task', colModel: 'Model', colWhen: 'When', colCli: 'Tool version',
-  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No rules',
-  colFull: 'All rules', colAblated: 'All but this', colReport: 'Report', colVerdict: 'Decision and reason',
+  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No guidance',
+  colFull: 'All the guidance', colAblated: 'All but this section', colReport: 'Report', colVerdict: 'Decision and reason',
   report: 'report',
   dataFile: (url) => 'Data file: ' + url,
 
@@ -406,7 +423,7 @@ const STRINGS = {
 /* _agent-guidance's agents-md/eval-coverage.yml.                     */
 /* ------------------------------------------------------------------ */
 const GLOSSES = {
-  'working-in-these-repos': 'House rules for any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
+  'working-in-these-repos': 'For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
   'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
   'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
   'workstation-layout': 'Where project folders live on Adam\'s computers, so Claude looks in the right place.',
@@ -429,13 +446,13 @@ const GLOSSES = {
   'skills-ecosystem': 'Where Adam\'s skills come from, how they are installed, and how a project chooses which ones to load.',
   'two-setup-gaps': 'Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.',
   'git-practices': 'How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.',
-  'section-docker': 'Rules for building software containers: fixed versions, no administrator access, and no passwords inside.',
-  'section-dotnet': 'Rules for C# code: switch on the strictest warnings and keep to the version the project already uses.',
-  'section-go': 'Rules for Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
-  'section-javascript': 'Rules for JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
-  'section-python': 'Rules for Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
-  'section-rust': 'Rules for Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
-  'section-typescript': 'Rules for TypeScript code: no catch-all types, and respect the project\'s strict settings.'
+  'section-docker': 'For building software containers: fixed versions, no administrator access, and no passwords inside.',
+  'section-dotnet': 'For C# code: switch on the strictest warnings and keep to the version the project already uses.',
+  'section-go': 'For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
+  'section-javascript': 'For JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
+  'section-python': 'For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
+  'section-rust': 'For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
+  'section-typescript': 'For TypeScript code: no catch-all types, and respect the project\'s strict settings.'
 };
 const GLOSS_MISSING = 'A plain-language description of this section has not been written yet.';
 
@@ -817,9 +834,9 @@ function barPath(x, y, w, hgt, r) {
     + 'V' + (y + hgt - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w - rr) + ',' + (y + hgt) + 'H' + x + 'Z';
 }
 
-/* rows: [{label, p, t, color, tick?:{p,t}}] */
+/* rows: [{label, p, t, color}] */
 function barChart(rows, label) {
-  const W = 300, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
+  const W = 330, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
   const H = TOP + rows.length * (BH + GAP) + 2;
   const span = R - L;
   const kids = [];
@@ -834,32 +851,44 @@ function barChart(rows, label) {
       'data-tip': STRINGS.barTip(row.label, a, b, fmtRate(row.p, row.t)) }));
     if (w > 0) kids.push(h('path', { d: barPath(L, y, w, BH, 4), fill: row.color, 'pointer-events': 'none' }));
     kids.push(h('text', { x: L + w + 4, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink)', 'pointer-events': 'none' }, a + ' of ' + b));
-    if (row.tick && row.tick.t > 0) {
-      const tx = L + Math.max(0, Math.min(1, row.tick.p / row.tick.t)) * span;
-      kids.push(h('rect', { x: tx - 1, y: y - 3, width: 2, height: BH + 6, fill: 'var(--ink)', class: 'mark', tabindex: 0,
-        'data-tip': STRINGS.tickTip(fmtCount(row.tick.p), fmtCount(row.tick.t), fmtRate(row.tick.p, row.tick.t)) }));
-    }
   });
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
 }
 
-function sparkline(points, refMs) {
+function trendChart(points, refMs) {
   if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
-  const W = 260, H = 36, PAD = 6;
-  const maxAbs = Math.max(0.1, ...points.map((p) => Math.abs(p.gain)));
-  const x = (w) => PAD + ((WINDOW_WEEKS - 1 - w) / (WINDOW_WEEKS - 1)) * (W - 2 * PAD);
-  const y = (g) => H / 2 - (g / maxAbs) * (H / 2 - PAD);
-  const kids = [h('line', { x1: PAD, x2: W - PAD, y1: y(0), y2: y(0), stroke: 'var(--base)', 'stroke-width': 1 })];
-  if (points.length > 1) {
-    kids.push(h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
-      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  if (points.length === 1) {
+    const p = points[0];
+    return h('p', { class: 'trend-cap' }, STRINGS.trendOne(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)));
   }
+  const W = 300, H = 124, XL = 34, XR = 292, YT = 10, YB = 102;
+  const m = Math.max(...points.map((p) => Math.abs(p.gain * 100)));
+  const top = Math.max(5, Math.ceil(m / 5) * 5);
+  const oldest = points[0], newest = points[points.length - 1];
+  const wOld = oldest.week, wNew = newest.week;
+  const x = (w) => (wOld === wNew ? XR : XL + ((wOld - w) / (wOld - wNew)) * (XR - XL));
+  const y = (g) => YT + ((top - g * 100) / (2 * top)) * (YB - YT);
+  const yMid = y(0);
+  const lab = { 'font-size': 11, fill: 'var(--muted)' };
+  const kids = [
+    h('line', { x1: XL, x2: XR, y1: YT, y2: YT, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: YB, y2: YB, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: yMid, y2: yMid, stroke: 'var(--axis)', 'stroke-width': 1 }),
+    h('text', { ...lab, x: 28, y: YT, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '+' + top),
+    h('text', { ...lab, x: 28, y: yMid, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '0'),
+    h('text', { ...lab, x: 28, y: YB, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '\u2212' + top),
+    h('text', { ...lab, x: XL, y: 118, 'text-anchor': 'start' }, fmtDay(oldest.start + 1000, refMs)),
+    h('text', { ...lab, x: XR, y: 118, 'text-anchor': 'end' }, fmtDay(newest.start + 1000, refMs)),
+    h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
+      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
+  ];
   points.forEach((p, i) => {
     const last = i === points.length - 1;
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: last ? 4 : 2.5, fill: 'var(--s1)',
-      stroke: 'var(--surface)', 'stroke-width': 2, 'pointer-events': 'none' }));
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)) }));
+    const cx = x(p.week).toFixed(1), cy = y(p.gain).toFixed(1);
+    kids.push(h('circle', { cx, cy, r: last ? 4.5 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+      'pointer-events': 'none' }));
+    kids.push(h('circle', { cx, cy, r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)), 'data-tip-pos': 'below' }));
   });
   return h('div', null,
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
@@ -875,7 +904,7 @@ function chip(kind, ruleText) {
 
 function legend(items) {
   return h('div', { class: 'legend' }, items.map((it) =>
-    h('span', null, h('span', { class: it.tick ? 'sw tick' : 'sw', style: it.tick ? null : 'background:' + it.color }), it.label)));
+    h('span', null, h('span', { class: 'sw', style: 'background:' + it.color }), it.label)));
 }
 
 function modelCharts(pooled, subject) {
@@ -888,7 +917,10 @@ function modelCharts(pooled, subject) {
         rows.push({ label: STRINGS.barSection, p: m.wp, t: m.wt, color: 'var(--s1)' });
         rows.push({ label: STRINGS.barNone, p: m.op, t: m.ot, color: 'var(--s2)' });
       }
-      if (m.nAbl > 0) rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)', tick: { p: m.fp, t: m.ft } });
+      if (m.nAbl > 0) {
+        rows.push({ label: STRINGS.barAll, p: m.fp, t: m.ft, color: 'var(--axis)' });
+        rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)' });
+      }
     } else if (subject === 'whole') {
       rows = [{ label: STRINGS.barWholeFull, p: m.wp, t: m.wt, color: 'var(--s1)' },
         { label: STRINGS.barWholeNone, p: m.op, t: m.ot, color: 'var(--s2)' }];
@@ -907,8 +939,8 @@ function legendFor(subject, pooled) {
   if (subject === 'guidance') {
     const items = [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }];
     if (pooled.models.some((m) => m.nAbl > 0)) {
+      items.push({ label: STRINGS.barAll, color: 'var(--axis)' });
       items.push({ label: STRINGS.barAblated, color: 'var(--s3)' });
-      items.push({ label: STRINGS.tickAll, tick: true });
     }
     return legend(items);
   }
@@ -1053,20 +1085,59 @@ function stakesLine(st) {
   return null;
 }
 
-function confidenceLine(c, policy, subject) {
+/* Runs still needed to move a level from `conf` to `level`, assuming the
+   evidence (-ln(1 - level)) grows in step with the pair count. */
+function estimateLine(conf, level, pairs, cap, which) {
+  if (conf >= level) return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confReached);
+  if (!Number.isInteger(pairs) || pairs <= 0) return null;
+  if (conf <= 0) return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confNoMove);
+  const more = Math.max(1, Math.ceil(pairs * (-Math.log(1 - level)) / (-Math.log(1 - conf))) - pairs);
+  if (Number.isInteger(cap) && cap > 0 && pairs + more > cap)
+    return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confPastCap(cap));
+  return h('p', { class: 'meta', 'data-gauge': which }, STRINGS.confMore(more));
+}
+
+function gauge(label, valueText, ariaText, conf, level, color) {
+  const pos = (x) => Math.min(100, Math.max(0, Math.round(x * 1000) / 10)) + '%';
+  return [
+    h('div', { class: 'lab' }, h('span', null, label), h('b', null, valueText)),
+    h('div', { class: 'track', role: 'img', 'aria-label': ariaText },
+      h('div', { class: 'fill', style: 'width:' + pos(conf) + ';background:' + color }),
+      h('div', { class: 'line', style: 'left:' + pos(level) })),
+  ];
+}
+
+function confidenceView(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
-  /* No cell with headroom (every one at the ceiling or broken): no removal
-     level to show. */
-  if (c.no_help === null) return h('p', { class: 'meta' }, STRINGS.confidenceNoRoom(pctOf(c.helps), margin));
-  if (!ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
-  const level = (key, fallback) => Math.round((policy && ok(policy[key]) ? policy[key] : fallback) * 100) + '%';
-  const f = subject === 'guidance' ? STRINGS.confidenceSection : STRINGS.confidence;
+  const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
+  const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
   const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
-    ? STRINGS.confidenceCap(policy.max_runs_per_cell) : '';
-  return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin,
-    level('benefit_confidence', KEEP_AT), level('retire_confidence', REMOVE_AT)) + cap);
+    ? policy.max_runs_per_cell : null;
+  const whole = (x) => Math.round(x * 100) + '%';
+  const keepLab = STRINGS.confKeep(subject);
+  const removeLab = STRINGS.confRemove(margin);
+  const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
+  const keepEst = estimateLine(c.helps, keep, c.keep_pairs, cap, 'keep');
+  kids.push(h('div', { class: 'gauge' },
+    gauge(keepLab, STRINGS.confKeepVal(pctOf(c.helps), whole(keep)),
+      STRINGS.confAria(keepLab, pctOf(c.helps), 'It is kept at ' + whole(keep) + '.'),
+      c.helps, keep, 'var(--good)'), keepEst));
+  let removeEst = null;
+  if (c.no_help === null) {
+    kids.push(h('p', { class: 'meta' }, STRINGS.confNoRoom(margin)));
+  } else if (ok(c.no_help)) {
+    removeEst = estimateLine(c.no_help, remove, c.no_help_pairs, cap, 'remove');
+    kids.push(h('div', { class: 'gauge' },
+      gauge(removeLab, STRINGS.confRemoveVal(pctOf(c.no_help), whole(remove)),
+        STRINGS.confAria(removeLab, pctOf(c.no_help), 'It is removed at ' + whole(remove) + '.'),
+        c.no_help, remove, 'var(--s2)'), removeEst));
+  }
+  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
+  else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
+  if (keepEst || removeEst) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
+  return h('div', { class: 'conf' }, kids);
 }
 
 function usageLine(u, window, refMs) {
@@ -1097,8 +1168,8 @@ function skillCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
-    confidenceLine(it.raw.confidence, doc && doc.policy, 'skills'),
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'skills'),
     verdictLine(it.raw.verdict));
 }
 
@@ -1111,8 +1182,8 @@ function sectionCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'section'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
-    confidenceLine(it.raw.confidence, doc && doc.policy, 'guidance'),
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance'),
     verdictLine(it.raw.verdict));
 }
 
@@ -1271,7 +1342,7 @@ function buildPage(doc, mode, opts) {
           h('p', { class: 'note' }, STRINGS.wholeNote),
           h('p', { class: 'sent' }, clean(whole.sentence)),
           legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-          sparkline(whole.trend, refMs))),
+          trendChart(whole.trend, refMs))),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
         h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
@@ -1347,14 +1418,26 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
       const r = target.getBoundingClientRect();
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
-      let top = r.top - th - 8;
-      if (top < 8) top = r.bottom + 8;
+      let top;
+      if (target.getAttribute('data-tip-pos') === 'below') {
+        top = r.bottom + 8;
+        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      } else {
+        top = r.top - th - 8;
+        if (top < 8) top = r.bottom + 8;
+      }
       tip.style.left = left + 'px';
       tip.style.top = top + 'px';
     }
     app.addEventListener('pointerover', (e) => showTip(e.target.closest ? e.target.closest('[data-tip]') : null));
     app.addEventListener('pointerout', () => { tip.hidden = true; });
-    app.addEventListener('focusin', (e) => showTip(e.target));
+    app.addEventListener('focusin', (e) => {
+      let kb = true;
+      try { kb = e.target.matches(':focus-visible'); } catch (err) { /* old browser */ }
+      if (kb) showTip(e.target);
+    });
+    app.addEventListener('pointerdown', () => { tip.hidden = true; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') tip.hidden = true; });
     app.addEventListener('focusout', () => { tip.hidden = true; });
     window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
@@ -1377,8 +1460,8 @@ if (typeof module !== 'undefined') {
     STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-    poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
-    skillItems, sectionItems, wholeGuidance, buildPage, buildFailure, h, textOf, findAll, toDom
+    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
+    skillItems, sectionItems, wholeGuidance, buildPage, buildFailure, confidenceView, h, textOf, findAll, toDom
   };
 }
 </script>

@@ -77,14 +77,14 @@ test('skill sentence for a canned run', () => {
     skillRun('example-model-1-0', 14, 8, 5, 9)
   ];
   const s = P.sentenceFor(P.poolRuns(runs, 'skills', refMs, []), 'skills', refMs);
-  eq(s, 'With this skill, Example Model 1.0 passed 24 of 27 checks; without it, 15 of 27. Tried 9 times, last on Oct 31.');
+  eq(s, 'With this skill, Example Model 1.0 passed 24 of 27 checks; without it, 15 of 27. 9 trials in all, the last on Oct 31.');
 });
 
 test('guidance sentence includes the ablation clause', () => {
   const runs = [secRun('example-model-1-0', 1, 7, 4, 7, 5, 8)];
   const s = P.sentenceFor(P.poolRuns(runs, 'guidance', refMs, []), 'guidance', refMs);
   eq(s, 'With this section, Example Model 1.0 passed 7 of 8 checks; without it, 4 of 8. '
-    + 'With all the rules, 7 of 8; with all the other rules but not this one, 5 of 8. Tried 3 times, last on Oct 30.');
+    + 'With all the guidance, 7 of 8; with all of it but this section, 5 of 8. 3 trials in all, the last on Oct 30.');
 });
 
 test('runs older than the window are left out of the sentence', () => {
@@ -237,34 +237,51 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   ok(text.includes('No eval needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
   eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
 });
-test('the confidence line shows whole percents and never rounds up to certainty', () => {
+const cv = (c, policy) => P.confidenceView(c, { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, max_runs_per_cell: 40, ...policy }, 'skills');
+const tracks = (n) => P.findAll(n, (x) => x.attrs && /\btrack\b/.test(x.attrs.class || ''));
+const styleOf = (n, cls) => P.findAll(n, (x) => x.attrs && x.attrs.class === cls).map((x) => x.attrs.style);
+test('the confidence view with no figure says so', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
-  doc.skills[0].confidence = { helps: 0.8571, no_help: 0.9999 };
   doc.skills[1].confidence = { helps: null, no_help: null };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('How sure the loop is: 85% that it helps, over 99% that any gain is under 5 points. It keeps a skill at 80% and removes one at 90%.'), 'levels');
-  ok(text.includes(P.STRINGS.confidenceNone), 'no-figure line');
+  ok(P.textOf(P.buildPage(doc, 'skills', {})).includes(P.STRINGS.confidenceNone), 'page');
+  ok(P.textOf(cv(null)).includes(P.STRINGS.confidenceNone), 'null');
+  eq(tracks(cv({ helps: null })).length, 0);
 });
-test('the confidence line names the run cap and a subject with no room to show a gain', () => {
-  // 2026-11-03: a cell undecided at the cap can only propose a removal, and a
-  // subject whose every cell is at the ceiling has no removal level at all.
-  const doc = JSON.parse(JSON.stringify(fixture));
-  doc.policy = { ...doc.policy, max_runs_per_cell: 40 };
-  doc.skills[0].confidence = { helps: 0.5, no_help: 0.25 };
-  doc.skills[1].confidence = { helps: 0, no_help: null };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('removes one at 90%. A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
-  ok(text.includes('How sure the loop is: 0% that it helps. No task leaves room to show a gain of 5 points, because Claude already passes without it, so it needs a harder test.'), 'no room');
+test('the confidence view draws both gauges with the thresholds and the run count', () => {
+  const n = cv({ helps: 0.02, no_help: 0, keep_pairs: 6, no_help_pairs: 6, max_pairs: 11 });
+  eq(tracks(n).length, 2);
+  eq(styleOf(n, 'fill').map((x) => x.split(';')[0]).join(), 'width:2%,width:0%');
+  eq(styleOf(n, 'line').join(), 'left:80%,left:90%');
+  const t = P.textOf(n);
+  ok(t.includes('on its busiest task and model: 11 of 40'), 'runs');
+  ok(t.includes('2% \u00b7 keeps at 80%') && t.includes('0% \u00b7 removes at 90%'), 'values');
+  ok(t.includes('Sure any gain is under 15 points'), 'label');
+  ok(t.includes(P.STRINGS.confNoMove), 'remove gauge has no movement');
+  ok(t.includes(P.STRINGS.confPace), 'pace note');
+});
+test('the confidence view estimates the runs still needed, or says it is past the cap', () => {
+  const near = P.textOf(cv({ helps: 0.5, no_help: 0.5, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10 }));
+  ok(near.includes('about 24 more comparison runs on its leading task and model.'), 'estimate ' + near);
+  const far = P.textOf(cv({ helps: 0.5, no_help: 0.5, keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 }));
+  ok(far.includes('At this pace it would not get there before the 40-run limit.'), 'past cap');
+  ok(!far.includes('more comparison run'), 'no estimate past the cap');
+  const done = P.textOf(cv({ helps: 0.85, no_help: 0.2, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10 }));
+  ok(done.includes('Reached.'), 'reached');
+  eq(P.STRINGS.confMore(1), 'At this pace, about 1 more comparison run on its leading task and model.');
+});
+test('the confidence view names a subject with no room to show a gain and uses the policy levels', () => {
+  const n = cv({ helps: 0.5, no_help: null, keep_pairs: 10, max_pairs: 10 }, { retire_confidence: 0.97 });
+  eq(tracks(n).length, 1);
+  ok(P.textOf(n).includes('Removal: no task leaves room to show a 15-point gain, because Claude already passes without it'), 'no room');
+  const m = cv({ helps: 0.5, no_help: 0.25 }, { retire_confidence: 0.97 });
+  eq(styleOf(m, 'line').join(), 'left:80%,left:97%');
+  ok(P.textOf(m).includes('removes at 97%'), 'policy level');
   ok(!/\b(85|95)% confiden/.test(P.STRINGS.chipRules.helps + P.STRINGS.chipRules.none), 'no fixed levels in the chip rules');
 });
-test('the confidence line takes its keep and removal levels from the data policy', () => {
-  // Regression: the page hard-coded "removes one at 95%" after the removal
-  // level became 90% (Adam, 2026-11-02).
-  const doc = JSON.parse(JSON.stringify(fixture));
-  doc.policy = { ...doc.policy, benefit_confidence: 0.8, retire_confidence: 0.97 };
-  doc.skills[0].confidence = { helps: 0.5, no_help: 0.25 };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('It keeps a skill at 80% and removes one at 97%.'), 'policy levels');
+test('the confidence view falls back to the cap sentence for older data and shows no estimates', () => {
+  const t = P.textOf(cv({ helps: 0.5, no_help: 0.25 }));
+  ok(t.includes('A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
+  ok(!t.includes('more comparison run') && !t.includes(P.STRINGS.confPace) && !t.includes('Comparison runs on its busiest'), 'no estimates');
 });
 test('real-use counts show on skill cards with the census window', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
@@ -302,7 +319,7 @@ test('sections sort by gain per KB, or by size', () => {
 test('whole-guidance headline pools full vs none', () => {
   const w = P.wholeGuidance(fixture);
   eq(w.chip, 'helps');
-  ok(w.sentence.startsWith('With all the rules, Example Large 2.0 passed'), w.sentence);
+  ok(w.sentence.startsWith('With all the guidance, Example Large 2.0 passed'), w.sentence);
 });
 
 // --- failure states ---------------------------------------------------------
@@ -476,6 +493,51 @@ test('no @, /home/ or cse_ string from the data reaches rendered text', () => {
 });
 test('no markup is built from data strings', () => {
   ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(html), 'page must not use HTML-string sinks');
+});
+
+// --- trend chart ----------------------------------------------------------------------
+const trendPts = (specs) => specs.map(([week, gain]) => ({ week, start: Date.UTC(2026, 0, 1) + (25 - week) * 7 * 86400000, gain }));
+const trendRef = Date.UTC(2026, 6, 1);
+test('trendChart: no points gives the none caption and no svg', () => {
+  const n = P.trendChart([], trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  eq(P.textOf(n).trim(), P.STRINGS.trendNone);
+});
+test('trendChart: one point gives a sentence and no svg', () => {
+  const n = P.trendChart(trendPts([[0, 0.07]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  const t = P.textOf(n);
+  ok(t.includes('only one week'), t);
+  ok(t.includes('7 points better with it'), t);
+});
+test('trendChart: three points span the plot with labeled axis', () => {
+  const n = P.trendChart(trendPts([[2, 0.07], [1, -0.03], [0, 0.12]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 1);
+  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
+  for (const want of ['0', '+15', '\u221215']) ok(labels.includes(want), 'label ' + want + ' in ' + labels.join('|'));
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 3);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[2].attrs.cx) - 292) < 0.5, 'last cx ' + dots[2].attrs.cx);
+  const targets = P.findAll(n, (x) => x.tag === 'circle' && x.attrs.class === 'mark');
+  eq(targets.length, 3);
+  ok(targets.every((x) => x.attrs['data-tip-pos'] === 'below'), 'every target is below');
+});
+test('trendChart: old weeks still span the full width', () => {
+  const n = P.trendChart(trendPts([[25, 0.02], [24, 0.04]]), trendRef);
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 2);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[1].attrs.cx) - 292) < 0.5, 'last cx ' + dots[1].attrs.cx);
+});
+
+test('guidance bars draw "All the guidance" as its own bar, not a tick line', () => {
+  const page = P.buildPage(fixture, 'guidance', {});
+  const txt = P.findAll(page, (n) => n.tag === 'text').map((n) => P.textOf(n).trim());
+  ok(txt.includes(P.STRINGS.barAll), 'an All the guidance bar label');
+  ok(txt.includes(P.STRINGS.barAblated), 'an All but this section bar label');
+  ok(!/Line:/.test(JSON.stringify(page)), 'no tick-line legend');
+  ok(!/\brules?\b/i.test(P.STRINGS.barNone + P.STRINGS.barAll + P.STRINGS.barAblated + P.STRINGS.colNone + P.STRINGS.colFull), 'bars and columns say guidance or section, not rules');
 });
 
 // --- size -----------------------------------------------------------------------------
