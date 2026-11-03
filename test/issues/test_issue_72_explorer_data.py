@@ -382,6 +382,63 @@ class RemovedSectionsTests(unittest.TestCase):
         self.assertEqual(explorer_data.removed_skills({}), [])
         self.assertEqual(explorer_data.removed_skills({"other-registry": {"path": root}}), [])
 
+    def _skill_urls(self, body: str) -> dict:
+        root = Path(tempfile.mkdtemp(prefix="removed-skills-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "docs").mkdir()
+        (root / "docs" / "skill-impact.md").write_text(
+            "# Skill impact\n\n## 2026-11-21 — plug-one/gamma-skill — remove\n\n" + body +
+            "\n## 2026-11-19 — plug-one/other — edit\n\n- See PR #999.\n", encoding="utf-8")
+        return {r["name"]: r["reverse_url"]
+                for r in explorer_data.removed_skills({"adam-agentskills": {"path": root}})}
+
+    def _section_urls(self, body: str) -> dict:
+        root = Path(tempfile.mkdtemp(prefix="removed-"))
+        self.addCleanup(shutil.rmtree, root, True)
+        (root / "docs").mkdir()
+        (root / "docs" / "guidance-impact.md").write_text(
+            "# Guidance impact\n\n## 2026-11-20 — delta-section — remove\n" + body +
+            "\n## 2026-11-18 — alpha — add\n- See PR #999.\n", encoding="utf-8")
+        return {r["id"]: r["reverse_url"] for r in explorer_data.removed_sections(root)}
+
+    def test_a_linked_pull_request_beats_an_issue_link(self):
+        urls = self._skill_urls(
+            "- Motivation: [issue #23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)"
+            " step 2\n- Change: skill deleted ([#34](https://github.com/Adam-S-Daniel/"
+            "adam-agentskills/pull/34))\n")
+        self.assertEqual(urls["gamma-skill"],
+                         "https://github.com/Adam-S-Daniel/adam-agentskills/pull/34")
+
+    def test_a_bare_pr_number_names_the_guidance_pull_request(self):
+        urls = self._section_urls(
+            "- Change: removed the section and its eval-coverage.yml row (PR #213).\n")
+        self.assertEqual(urls["delta-section"],
+                         "https://github.com/Adam-S-Daniel/_agent-guidance/pull/213")
+        self.assertEqual(self._skill_urls("- Change: gone (PR #7).\n")["gamma-skill"],
+                         "https://github.com/Adam-S-Daniel/adam-agentskills/pull/7")
+
+    def test_the_first_pull_request_in_body_order_wins(self):
+        urls = self._skill_urls(
+            "- Change: see PR #5, then https://github.com/Adam-S-Daniel/adam-agentskills/pull/6\n")
+        self.assertEqual(urls["gamma-skill"],
+                         "https://github.com/Adam-S-Daniel/adam-agentskills/pull/5")
+
+    def test_an_issue_link_only_falls_back_to_the_search(self):
+        urls = self._skill_urls(
+            "- Motivation: https://github.com/Adam-S-Daniel/adam-agentskills/issues/23\n")
+        self.assertIn("pulls?q=is%3Apr+head%3Aretire-skill%2Fgamma-skill", urls["gamma-skill"])
+        urls = self._section_urls(
+            "- Motivation: [#9](https://github.com/Adam-S-Daniel/_agent-guidance/issues/9)\n")
+        self.assertIn("pulls?q=is%3Apr+head%3Aretire-guidance%2Fdelta-section",
+                      urls["delta-section"])
+
+    def test_no_link_falls_back_and_the_next_entry_is_not_read(self):
+        # The following entry names PR #999; it must not leak into this one.
+        self.assertIn("head%3Aretire-skill%2Fgamma-skill",
+                      self._skill_urls("- Motivation: m\n")["gamma-skill"])
+        self.assertIn("head%3Aretire-guidance%2Fdelta-section",
+                      self._section_urls("- Motivation: m\n")["delta-section"])
+
     def test_no_checkout_or_file_lists_nothing(self):
         self.assertEqual(explorer_data.removed_sections(None), [])
         self.assertEqual(explorer_data.removed_sections(Path("/nonexistent-dir")), [])
