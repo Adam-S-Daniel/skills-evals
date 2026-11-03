@@ -758,8 +758,8 @@ automatically, and often. `scripts/eval_scope.py` holds the rules and
 `.github/workflows/eval-scope.yml` runs them after every ingest of routine
 results, daily and on dispatch. The `plan` job writes the changes with a
 reason each to its job summary; the `propose` job applies them on
-`eval-scope/<run id>` and opens one draft pull request (auto-merge waits for
-a repo-settings ADR that declares this lane), with the roster App token and at most one such pull request open.
+`eval-scope/<run id>` and opens one pull request with auto-merge (merge
+commit; repo-settings ADR 0017), with the roster App token and at most one such pull request open.
 The rules, in order:
 
 - **Ceiling.** A scheduled fixture with at least 4 runs after its directory's

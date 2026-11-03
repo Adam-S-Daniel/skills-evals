@@ -11,8 +11,8 @@ name: Scope the evals
 # local usage census, both data) and adam-agentskills' plugin layout, and
 # uploads the plan; its job summary lists every change with its reason.
 # `propose` applies a non-empty plan on `eval-scope/<run id>` and opens one
-# DRAFT pull request (no auto-merge until a repo-settings ADR declares this
-# lane, per ADR 0001), using the roster App token
+# pull request with auto-merge (merge commit) on, a lane declared by
+# repo-settings ADR 0017, using the roster App token
 # the fixture-promotion job in routine-fixture-supply.yml uses. At most one
 # `eval-scope/` pull request is open at a time, and no token means nothing is
 # pushed: the next run tries again.
@@ -126,38 +126,18 @@ jobs:
         with:
           name: eval-scope-plan
           path: ${{ runner.temp }}/plan
-      - name: Mint the roster App token
-        id: app-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@v3.3.0
-        with:
-          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
-          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
-          owner: Adam-S-Daniel
-          repositories: skills-evals
-          permission-contents: write
-          permission-pull-requests: write
-      - name: Open the scope pull request as a draft
+      # The scope control runs BEFORE the App token exists (repo-settings ADR
+      # 0012 / 0017): apply the plan and refuse any change outside the three
+      # schedule files, and stand down while another scope PR is open.
+      - name: Apply the plan and check its scope
+        id: scope
         env:
           GH_TOKEN: ${{ github.token }}
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
-          app_token=""
-          case "${APP_TOKEN:-}" in
-            ''|*[!A-Za-z0-9_.-]*) : ;;
-            *) app_token="$APP_TOKEN" ;;
-          esac
-          if [ -z "$app_token" ]; then
-            echo "::warning::the roster App token is unavailable; nothing is published, and the next run tries again"
-            exit 0
-          fi
-          app_gh() {
-            GH_TOKEN="$app_token" GITHUB_TOKEN="" gh "$@"
-          }
           if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::the run id has an unexpected shape"
             exit 1
@@ -186,15 +166,55 @@ jobs:
                 exit 1 ;;
             esac
           done < <(git diff --cached --name-only)
+          if git diff --name-only | grep -q .; then
+            echo "::error::the scope pass left a change outside evals/"
+            exit 1
+          fi
           if [ "$count" = 0 ]; then
             echo "the plan changed nothing"
             exit 0
           fi
-          branch="eval-scope/${RUN_ID}"
           git -c core.hooksPath=/dev/null \
             -c user.name="skills-evals real-eval bot" \
             -c user.email="skills-evals@users.noreply.github.com" \
             commit -q -m "Rescope the evals (run ${RUN_ID})"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: Mint the roster App token
+        if: steps.scope.outputs.ready == 'true'
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Open the scope pull request and turn on auto-merge
+        if: steps.scope.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          app_token=""
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*) : ;;
+            *) app_token="$APP_TOKEN" ;;
+          esac
+          if [ -z "$app_token" ]; then
+            echo "::warning::the roster App token is unavailable; nothing is published, and the next run tries again"
+            exit 0
+          fi
+          app_gh() {
+            GH_TOKEN="$app_token" GITHUB_TOKEN="" gh "$@"
+          }
+          plan="$RUNNER_TEMP/plan/plan.json"
+          branch="eval-scope/${RUN_ID}"
           sha="$(git rev-parse HEAD)"
           # The App token as an HTTP header in the environment, never argv.
           header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$app_token" | base64 -w0)"
@@ -217,15 +237,16 @@ jobs:
             echo
             python3 scripts/eval_scope.py summary --plan "$plan"
             echo
-            echo "Rules and thresholds: \`scripts/eval_scope.py\` and docs/how-it-works.md, \"The eval scope pass\". Each pause is recorded in \`evals/scope-auto.yml\` with what its resume needs. Opened by eval-scope.yml as a draft: auto-merge waits for a repo-settings ADR that declares this lane."
+            echo "Rules and thresholds: \`scripts/eval_scope.py\` and docs/how-it-works.md, \"The eval scope pass\". Each pause is recorded in \`evals/scope-auto.yml\` with what its resume needs. Opened by eval-scope.yml; it merges automatically once \`test\` passes (repo-settings ADR 0017)."
             echo
             echo "<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"
           } > "$body"
           url="$(app_gh pr create --repo "$REPO" --base "$BASE" --head "$branch" \
-            --title "Rescope the evals" --body-file "$body" --draft)"
+            --title "Rescope the evals" --body-file "$body")"
           number="${url##*/}"
           if ! [[ "$number" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::could not read the new pull request's number"
             exit 1
           fi
-          echo "opened draft #${number} at ${sha}"
+          app_gh pr merge "$number" --repo "$REPO" --auto --merge --match-head-commit "$sha"
+          echo "auto-merge is on for #${number} at ${sha}"

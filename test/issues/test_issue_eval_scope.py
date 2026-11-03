@@ -538,18 +538,25 @@ class WorkflowTests(unittest.TestCase):
         for pinned in uses:
             self.assertIsNone(lock_problem(pinned, WORKFLOW), pinned)
 
-    def test_the_mint_step_degrades_and_the_pr_opens_as_a_draft_without_auto_merge(self):
+    def test_the_mint_step_degrades_and_the_pr_is_armed_with_a_merge_commit(self):
         steps = self.doc["jobs"]["propose"]["steps"]
         mint = next(s for s in steps if s.get("id") == "app-token")
         self.assertIs(mint["continue-on-error"], True)
         body = next(s["run"] for s in steps if "gh pr create" in s.get("run", "")
                     or "pr create" in s.get("run", ""))
-        self.assertIn("--draft", body)
-        self.assertNotIn("--auto", body)
+        self.assertIn("--auto --merge --match-head-commit", body)
+        self.assertNotIn("--draft", body)
         self.assertIn("## TLDR", body)
         self.assertIn("<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>", body)
-        self.assertIn('startswith("eval-scope/")', body)
         self.assertRegex(body, r'branch="eval-scope/\$\{RUN_ID\}"')
+        names = [s.get("name", "") for s in steps]
+        scope_i = names.index("Apply the plan and check its scope")
+        self.assertLess(scope_i, names.index("Mint the roster App token"),
+                        "the scope check must run before the App token is minted")
+        scope = steps[scope_i]["run"]
+        self.assertIn('startswith("eval-scope/")', scope)
+        self.assertIn("evals/scheduled.yml|evals/unscheduled.yml|evals/scope-auto.yml", scope)
+        self.assertNotIn("app_token", scope)
 
     def test_the_agents_md_row_exists(self):
         text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
