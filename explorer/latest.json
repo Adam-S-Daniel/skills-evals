@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T21:15:35Z",
+  "generated_at": "2026-11-03T21:25:02Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T21:13:20Z",
+ "generated_at": "2026-11-03T21:22:03Z",
  "guidance": {
   "removed": [
    {
@@ -9854,7 +9854,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T21:10:53Z",
+ "newest_run": "2026-11-03T21:19:27Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10558,7 +10558,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -15539,7 +15539,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17087,7 +17087,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17790,17 +17790,38 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 18,
+   "current_text_runs": 19,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 17,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T21:19:27Z",
+     "cli_version": "2.1.317",
+     "fixture": "preview-before-delete",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T210650Z-b1462c/tool-powershell/20261103T211927Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.11779019999999998,
+      "judge_mean": 8.3,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.0754285,
+      "judge_mean": 8.7,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:04:58Z",
      "cli_version": "2.1.317",
@@ -19033,7 +19054,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20123,7 +20144,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21257,7 +21278,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "85293783cea1e7d67b949901673db672d52a0046",
-  "results_commit": "7658202ac25da546073cfdd0f8d8487ffd6af7b6"
+  "results_commit": "466f87624d0f91eb0f7b76e5d033a9f0171a8812"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
