@@ -41,6 +41,17 @@
   "staleAfterHours": 48,
   "title": "Scheduled check-ins"
  },
+ "ci_red_runs": {
+  "description": "Every agent-checks CI run that failed (the Red in CI count), newest first, with its run page link; a private repo's run keeps only its week. Copied by Claude from skills-evals persistent/eval-results usage/weekly-ci.json red_runs, written by _agent-guidance's daily impact report.",
+  "schedule": "Updated by Claude on every refresh",
+  "source": {
+   "kind": "file",
+   "name": "ci_red_runs.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 48,
+  "title": "Red in CI runs"
+ },
  "cleanup": {
   "description": "The fixed cleanup list from the strategy, with each item's status checked against GitHub by Claude.",
   "schedule": "Updated by Claude on request",
