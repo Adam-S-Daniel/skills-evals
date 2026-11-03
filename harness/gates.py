@@ -1319,10 +1319,10 @@ def _shows_ceiling(cell: dict) -> bool:
         return True
     if cell["class"] != "paused" or cell.get("scope_paused") != "ceiling":
         return False
-    if cell.get("class_before_pause") in CEILING_CLASSES:
-        return True
     if cell.get("harm_at") is not None:
         return False
+    if cell.get("class_before_pause") in CEILING_CLASSES:
+        return True
     without = cell.get("without_mean")
     return cell.get("noharm_at") is not None and without is not None \
         and without >= HIGH_STOP_MIN_WITHOUT
