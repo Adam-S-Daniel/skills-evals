@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:22:57Z",
+  "generated_at": "2026-11-03T23:25:37Z",
   "requests": [
    {
     "closed_at": null,
@@ -69,15 +69,6 @@
     "subject": "skills-doctor"
    },
    {
-    "closed_at": null,
-    "issue": 682,
-    "kind": "needs-harder-fixtures",
-    "opened_at": "2026-11-03T16:21:25Z",
-    "prs": [],
-    "state": "open",
-    "subject": "ci-job-performance"
-   },
-   {
     "closed_at": "2026-11-03T17:37:15Z",
     "issue": 683,
     "kind": "needs-harder-fixtures",
@@ -96,12 +87,12 @@
     "subject": "vendor-release-impact-issues"
    },
    {
-    "closed_at": null,
+    "closed_at": "2026-11-03T23:23:21Z",
     "issue": 685,
     "kind": "needs-harder-fixtures",
     "opened_at": "2026-11-03T16:21:29Z",
     "prs": [],
-    "state": "open",
+    "state": "closed",
     "subject": "workflow-path-audit"
    },
    {
@@ -346,6 +337,15 @@
     "prs": [],
     "state": "open",
     "subject": "fan-out-triage"
+   },
+   {
+    "closed_at": null,
+    "issue": 735,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-03T23:23:20Z",
+    "prs": [],
+    "state": "open",
+    "subject": "workflow-path-audit"
    }
   ],
   "schema": 1,
@@ -356,11 +356,11 @@
    "fixtures_invented": 0,
    "fixtures_real_work": 0,
    "prs_merged": 0,
-   "requests_closed": 2,
-   "requests_open": 32
+   "requests_closed": 3,
+   "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T23:21:57Z",
+ "generated_at": "2026-11-03T23:24:37Z",
  "guidance": {
   "removed": [
    {
@@ -11191,7 +11191,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:20:07Z",
+ "newest_run": "2026-11-03T23:23:04Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -18002,11 +18002,11 @@
       "votes": true
      },
      {
-      "gain": 16.7,
-      "high": 56.4,
-      "low": -100.0,
+      "gain": 13.3,
+      "high": 48.4,
+      "low": -41.3,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "timeout-wall",
       "votes": true
@@ -18014,8 +18014,8 @@
     ],
     "helps": 0.0,
     "keep_family": 4,
-    "keep_pairs": 4,
-    "max_pairs": 4,
+    "keep_pairs": 5,
+    "max_pairs": 5,
     "no_help": 0.13705583756345174,
     "no_help_pairs": 4
    },
@@ -18031,7 +18031,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -18042,6 +18042,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T23:23:04Z",
+     "cli_version": "2.1.317",
+     "fixture": "timeout-wall",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T232029Z-04ea38/red-ci-adamdaniel-ai/20261103T232304Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.1294037,
+      "judge_mean": 4.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.0896889,
+      "judge_mean": 4.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:45:13Z",
      "cli_version": "2.1.317",
@@ -24259,7 +24280,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "80ef626f73478df6df5efd10c1d8ddb5ee7a7ec7",
-  "results_commit": "6d0fab231716c54b26f58815e4a92acbd0cb12f0"
+  "results_commit": "1a0a4d9681d74d092bfe5f5816d7d0fa233bd4d8"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
