@@ -312,7 +312,7 @@ class OutageFixture:
     """Fixtures, clock and verdict-document helpers the outage tests share."""
 
     FIXTURES = ["evals/github-actions-sha-pinning", "evals/writing-adrs/bootstrap",
-                "evals/disarm-inherited-reach", "evals/windows-elevation-from-wsl",
+                "evals/disarm-inherited-reach", "evals/consumer-repo-provisioning",
                 "evals/embeddable-tool-pages", "evals/review-bash-ci-reliability/release-pipeline"]
     DAY = plan_week.EMPTY_FIRES_SINCE + timedelta(days=2)  # 2026-11-05
     LATER = DAY + timedelta(days=3)  # inside RETRY_AFTER, past FIRE_RESULT_WINDOW
