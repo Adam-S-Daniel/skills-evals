@@ -55,6 +55,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import draft_new_skill  # noqa: E402
 import regression_issue  # noqa: E402
 import retire_skill  # noqa: E402
 
@@ -137,12 +138,22 @@ def fixture_need_body(item: dict, key: str) -> tuple:
                   f"{item['fixtures']} fixture(s), under the 4 an improve run needs "
                   f"(one is held out), and train headroom {_headroom(item)}. "
                   "Add fixtures until it has at least four."]
+    if section:
+        listing = ("- its path appended to `evals/scheduled.yml` with a `readiness` note, "
+                   "so the weekly sweep runs it;")
+    else:
+        listing = ("- its path appended to `evals/unscheduled.yml` with exactly the reason "
+                   f"\"{draft_new_skill.ISOLATION_REASON}\" (an isolation fixture, no "
+                   "`context:`): routine-fixture-supply.yml gives it a context and moves "
+                   "it to the schedule;")
     lines += ["", "What a fix PR adds, in this repository:",
               f"- a new fixture at {where}, with objective checks that fail "
-              "without the subject's advice and pass with it;",
-              "- its path in `evals/scheduled.yml`, so the weekly sweep runs it;",
-              "- nothing under `harness/` or `scripts/`.",
-              "", "Use `Refs` for this issue in the pull request, not `Closes`: the "
+              "without the subject's advice and pass with it, not `draft: true`;",
+              listing,
+              "- nothing else: no edit to an existing fixture, `harness/` or `scripts/`.",
+              "", "A pull request that does exactly that, labeled `agent-authored`, merges "
+              "itself once `test` passes (fixture-pr-gate.yml, scripts/fixture_pr_gate.py).",
+              "Use `Refs` for this issue in the pull request, not `Closes`: the "
               "weekly sweep closes it once the plan stops listing this need, which "
               "takes runs of the new fixture.",
               "", f"The rule: `{DOCS}` and `scripts/plan_week.py`, IMPROVE ELIGIBILITY."]
