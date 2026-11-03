@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GEPcphKAeJM6uGBZmzLQ2j",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows .github 2><path>; find . -path ./.git -prune -o -name '*.sh' -print | head -50",
+      "input_chars": 133,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GEPcphKAeJM6uGBZmzLQ2j",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\npackage.json\nscripts\n.github:\nworkflows\n\n.github/workflows:\nrelease.yml\n./scripts/collect.sh\n./scripts/bump.sh\n./scripts/publish.sh",
+      "output_chars": 270,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LBY2Tb3GR9GLXEhF8frx4V",
+      "name": "Bash",
+      "input": "for f in .github/workflows/release.yml scripts/*.sh package.json README.md; do echo \"=== $f\"; cat -A $f | sed 's/\\$$//' ; done",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LBY2Tb3GR9GLXEhF8frx4V",
+      "is_error": false,
+      "output": "=== .github/workflows/release.yml\nname: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Collect changed package...",
+      "output_chars": 2259,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FNofrrtUjAiz8wbL5jDVsk",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\np='scripts/collect.sh'\ns=open(p).read()\ns=s.replace('''out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || true\n''','''# The pulls API has no \"merged\" stat...",
+      "input_chars": 2711,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FNofrrtUjAiz8wbL5jDVsk",
+      "is_error": true,
+      "output": "Exit code 1\n .github/workflows/release.yml |  9 +++++++++\n scripts/bump.sh               | 10 ++++++++--\n scripts/collect.sh            |  8 +++++++-\n scripts/publish.sh            | 14 ++++++++++----\n 4 files changed, 34 insertions(+), 7 deletions(-)\nok scripts/bump.sh\nok scripts/collect.sh\nok scri...",
+      "output_chars": 314,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016LVKVHESx5nG5DCcoQn853",
+      "name": "Bash",
+      "input": "d=$(mktemp -d) && cat > $d/gh <<'EOF'\n#!<path> bash\ncase \"$1\" in\n api) [[ -n ${FAIL_API:-} ]] && { echo '{\"message\":\"boom\"}'; exit 1; }; echo \"pkg-a\";;\n run) [[ $2 == watch ]] && exit ${WATCH_RC:-0}; ...",
+      "input_chars": 639,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016LVKVHESx5nG5DCcoQn853",
+      "is_error": false,
+      "output": "env FAIL_API=1 bash <path> -> 1\nbash <path> -> 1\nbash <path> -> 1\nenv PUBLISH_RUN_ID=5 WATCH_RC=1 bash <path> -> 1\nenv PUBLISH_RUN_ID=5 bash <path> -> 0\nenv PUBLISH_RUN_ID=5 bash <path> -> 0\nenv PUBLISH_RUN_ID=5 bash <path> -> 0\nenv PUBLISH_RUN_ID=5 bash <path> -> 0\nenv PUBLISH_RUN_ID=5 bash <path> ...",
+      "output_chars": 775,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012G2GkFAQVrbiA5AG2VzbUj",
+      "name": "Bash",
+      "input": "d=$(ls -dt $TMPDIR/tmp.* | head -1); cd $d && PATH=$d:$PATH bash -x <path>; echo rc=$?",
+      "input_chars": 132,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012G2GkFAQVrbiA5AG2VzbUj",
+      "is_error": false,
+      "output": "+ set -euo pipefail\n+ REPO=example-org/example-repo\n++ gh api 'repos/example-org/example-repo/pulls?state=closed' --jq '.[] | select(.merged_at != null) | .title'\n+ out=pkg-a\n+ [[ -z pkg-a ]]\n+ echo pkg-a\n+ tmp_response=<path>\n+ printf %s pkg-a\n<path>: line 23: <path>: Read-only file system\nrc=1\nShe...",
+      "output_chars": 433,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014D1jHX26ror2RJq54E5WmL",
+      "name": "bash",
+      "input": "true",
+      "input_chars": 4,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014D1jHX26ror2RJq54E5WmL",
+      "is_error": true,
+      "output": "<tool_use_error>Error: No such tool available: bash. Tool names are case-sensitive: call Bash instead.</tool_use_error>",
+      "output_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TAwsfAbp2kxPkWxXEFaRHQ",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/collect.sh'\ns=open(p).read()\ni=s.index('\\ntmp_response=')\ns=s[:i]\nopen(p,'w').write(s)\nEOF\ntail -5 scripts/collect.sh; d=$(ls -dt $TMPDIR/tmp.* | head -1); cd $d && PATH=$...",
+      "input_chars": 303,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TAwsfAbp2kxPkWxXEFaRHQ",
+      "is_error": false,
+      "output": "    echo \"No merged PRs found; nothing to release.\"\n    exit 0\nfi\n\necho \"$out\" > changed-packages.txt\nrc=0\npkg-a\nShell cwd was reset to <path>",
+      "output_chars": 169,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
