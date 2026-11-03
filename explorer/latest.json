@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T06:39:05Z",
+ "generated_at": "2026-11-03T06:43:20Z",
  "guidance": {
   "removed": [
    {
@@ -9090,7 +9090,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T06:35:58Z",
+ "newest_run": "2026-11-03T06:41:26Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9190,21 +9190,42 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Understand and safely change how the Decap /admin config is built \u2014 the gem-shipped admin machinery, the build-time render hook, the site-owned collections seam, the window.CMS_* identity injection, and the base_collections opt-out. Use when editing theme/admin/* (config.base.yml, the JS/HTML shells, the reviews dashboards), changing the render hook or its CLI mirror, debugging why /admin renders wrong/missing collections or wrong identity, adding a per-site collection, or hiding the platform's built-in collections. Trigger on mentions of \"admin config\", \"config.base.yml\", \"render-decap-config\", \"decap_config_hook\", \"collections.site.yml\", \"base_collections\", \"CMS_REPO / window.CMS_*\", or \"/admin shows the wrong collections\".",
    "name": "admin-config-render",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 17,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T06:41:26Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T063941Z-7884ad/admin-config-render/20261103T064126Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.21624229999999997,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.18185720000000002,
+      "judge_mean": 8.399999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T02:42:16Z",
      "cli_version": "2.1.317",
@@ -11388,7 +11409,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -11876,7 +11897,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14410,7 +14431,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15163,7 +15184,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16150,7 +16171,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "89e4c8e7025262bcf867a66a0f6d404ce355c519",
-  "results_commit": "fe3fd8c720dd9d9b353231eb50f6c101ce919d71"
+  "results_commit": "b7b189eaf053bfad1fb64a542c9673ce32b403fe"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
