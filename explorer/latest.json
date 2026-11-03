@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T01:18:39Z",
+ "generated_at": "2026-11-03T01:26:40Z",
  "guidance": {
   "removed": [
    {
@@ -175,7 +175,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 11,
+    "current_text_runs": 15,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -185,6 +185,80 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T01:12:10Z",
+      "cli_version": "2.1.316",
+      "fixture": "handoff",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.07255890000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.06923220000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.0444451,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.047443299999999994,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T011210Z/report.md"
+     },
+     {
+      "at": "2026-11-03T01:12:01Z",
+      "cli_version": "2.1.316",
+      "fixture": "waiting-on-review",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0549663,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.054350300000000004,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.027000700000000002,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0313435,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T011201Z/report.md"
+     },
      {
       "at": "2026-11-02T23:09:53Z",
       "cli_version": "2.1.316",
@@ -2218,7 +2292,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T01:16:41Z",
+ "newest_run": "2026-11-03T01:25:03Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -6191,11 +6265,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
    "name": "skills-doctor",
    "next_test": {
@@ -6206,6 +6280,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T01:25:03Z",
+     "cli_version": "2.1.316",
+     "fixture": "one-row-rejects-the-lock",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T012234Z-dd66ce/skills-doctor/20261103T012503Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.1309319,
+      "judge_mean": 9.5,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 5,
+      "cost_usd": 0.0861479,
+      "judge_mean": 9.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:28:08Z",
      "cli_version": "2.1.316",
@@ -8605,7 +8700,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "0cc3987f44646cf41e0d2069b7281dcf525f0146",
-  "results_commit": "6fb81a3be6c8b60caeae8b6f0ee2a95373b04ee8"
+  "results_commit": "38c8fa4f1ca649dd683b87983f0d8263f5fffbd7"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
