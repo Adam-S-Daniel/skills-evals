@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T02:25:39Z",
+ "generated_at": "2026-11-03T02:42:44Z",
  "guidance": {
   "removed": [
    {
@@ -109,10 +109,10 @@
     "alone_verdict": "keep",
     "bytes": 1422,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
@@ -122,6 +122,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:28:48Z",
+      "cli_version": "2.1.317",
+      "fixture": "on-hold-pull-request",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0725991,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.06255290000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0322938,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.036120099999999995,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261103T022848Z/report.md"
+     },
      {
       "at": "2026-11-03T01:18:55Z",
       "cli_version": "2.1.316",
@@ -209,10 +246,10 @@
     "alone_verdict": "keep",
     "bytes": 886,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.17667279633252575,
      "no_help": 0.0
     },
-    "current_text_runs": 18,
+    "current_text_runs": 26,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -222,6 +259,154 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:23:14Z",
+      "cli_version": "2.1.317",
+      "fixture": "no-url",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.06216289999999999,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 3,
+        "cost_usd": 0.06371810000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 3,
+        "cost_usd": 0.03994110000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0373343,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022314Z/report.md"
+     },
+     {
+      "at": "2026-11-03T02:22:03Z",
+      "cli_version": "2.1.317",
+      "fixture": "done-summary",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.064365,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 3,
+        "cost_usd": 0.062042799999999995,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 3,
+        "cost_usd": 0.0336959,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.039261000000000004,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022203Z/report.md"
+     },
+     {
+      "at": "2026-11-03T02:22:01Z",
+      "cli_version": "2.1.317",
+      "fixture": "waiting-on-review",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0545319,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.054416900000000004,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0265131,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.030007900000000004,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022201Z/report.md"
+     },
+     {
+      "at": "2026-11-03T02:21:57Z",
+      "cli_version": "2.1.317",
+      "fixture": "handoff",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0731344,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.0729237,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 4,
+        "cost_usd": 0.0424217,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0483237,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022157Z/report.md"
+     },
      {
       "at": "2026-11-03T01:13:37Z",
       "cli_version": "2.1.316",
@@ -658,7 +843,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 5,
+    "current_text_runs": 7,
     "heading": "Security",
     "id": "security",
     "next_test": {
@@ -668,6 +853,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:34:54Z",
+      "cli_version": "2.1.317",
+      "fixture": "search-query",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0762982,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07581099999999999,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.035933599999999996,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0381267,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T023454Z/report.md"
+     },
      {
       "at": "2026-11-03T01:04:20Z",
       "cli_version": "2.1.316",
@@ -797,7 +1019,7 @@
      "helps": 1.0,
      "no_help": 0.0
     },
-    "current_text_runs": 13,
+    "current_text_runs": 15,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
@@ -807,6 +1029,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:29:08Z",
+      "cli_version": "2.1.317",
+      "fixture": "dispatch-email-input",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.0771496,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.07984480000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 4,
+        "checks_total": 6,
+        "cost_usd": 0.038984099999999994,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 5,
+        "checks_total": 6,
+        "cost_usd": 0.047578,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T022908Z/report.md"
+     },
      {
       "at": "2026-11-03T01:18:49Z",
       "cli_version": "2.1.316",
@@ -1109,7 +1368,7 @@
      "helps": null,
      "no_help": null
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
@@ -1119,6 +1378,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:27:48Z",
+      "cli_version": "2.1.317",
+      "fixture": "required-check-concurrency",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.07616469999999999,
+        "judge_mean": 7.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0652788,
+        "judge_mean": 6.5,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0369262,
+        "judge_mean": 6.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0435725,
+        "judge_mean": 7.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261103T022748Z/report.md"
+     },
      {
       "at": "2026-11-03T01:17:36Z",
       "cli_version": "2.1.316",
@@ -1228,13 +1524,13 @@
     "verdict_reason": null
    },
    {
-    "alone_verdict": "keep",
+    "alone_verdict": "insufficient",
     "bytes": 622,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.17667279633252575,
      "no_help": 0.0
     },
-    "current_text_runs": 6,
+    "current_text_runs": 8,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -1244,6 +1540,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:34:04Z",
+      "cli_version": "2.1.317",
+      "fixture": "open-pull-request",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0918472,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.0701437,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.0348532,
+        "judge_mean": 2.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.0413574,
+        "judge_mean": 1.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261103T023404Z/report.md"
+     },
      {
       "at": "2026-11-03T01:25:02Z",
       "cli_version": "2.1.316",
@@ -1432,10 +1765,10 @@
     "alone_verdict": "keep",
     "bytes": 875,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
     "id": "github-404-means-not-authorized",
     "next_test": {
@@ -1445,6 +1778,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:31:27Z",
+      "cli_version": "2.1.317",
+      "fixture": "private-repo-404",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.078455,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0785603,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0431916,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.043812399999999994,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261103T023127Z/report.md"
+     },
      {
       "at": "2026-11-03T01:21:16Z",
       "cli_version": "2.1.316",
@@ -1535,7 +1905,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
     "id": "fleet-spans-two-owners",
     "next_test": {
@@ -1545,6 +1915,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:30:25Z",
+      "cli_version": "2.1.317",
+      "fixture": "skills-lock-census",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.0830586,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.08378630000000001,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0504529,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.0489986,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261103T023025Z/report.md"
+     },
      {
       "at": "2026-11-03T01:20:41Z",
       "cli_version": "2.1.316",
@@ -1635,7 +2042,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "\"The watch finished\" is not \"CI passed\"",
     "id": "watch-finished-is-not-ci-passed",
     "next_test": {
@@ -1645,6 +2052,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:24:11Z",
+      "cli_version": "2.1.317",
+      "fixture": "legacy-status-failure",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07672960000000001,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.07538,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.031732800000000005,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.044187800000000006,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/watch-finished-is-not-ci-passed/20261103T022411Z/report.md"
+     },
      {
       "at": "2026-11-03T01:13:46Z",
       "cli_version": "2.1.316",
@@ -1735,7 +2179,7 @@
      "helps": null,
      "no_help": null
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "A successful `git push` does not mean your commit exists",
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
@@ -1745,6 +2189,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:24:26Z",
+      "cli_version": "2.1.317",
+      "fixture": "hook-refused-commit",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.08153770000000002,
+        "judge_mean": 7.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0800468,
+        "judge_mean": 6.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0437915,
+        "judge_mean": 5.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.044466,
+        "judge_mean": 6.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-push-does-not-mean-commit-exists/20261103T022426Z/report.md"
+     },
      {
       "at": "2026-11-03T01:14:05Z",
       "cli_version": "2.1.316",
@@ -1835,7 +2316,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Dependency updates",
     "id": "dependency-updates",
     "next_test": {
@@ -1845,6 +2326,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:33:18Z",
+      "cli_version": "2.1.317",
+      "fixture": "dependabot-cooldown",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0652079,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 4,
+        "cost_usd": 0.06393960000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 4,
+        "cost_usd": 0.0326379,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.0363415,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261103T023318Z/report.md"
+     },
      {
       "at": "2026-11-03T01:23:22Z",
       "cli_version": "2.1.316",
@@ -1932,10 +2450,10 @@
     "alone_verdict": "keep",
     "bytes": 1003,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.38250459724939434,
      "no_help": 0.0
     },
-    "current_text_runs": 7,
+    "current_text_runs": 9,
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
@@ -1945,6 +2463,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:30:17Z",
+      "cli_version": "2.1.317",
+      "fixture": "bundle-lock-name",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.064552,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.068221,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.03672360000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.0378327,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/name-becomes-scanner-data/20261103T023017Z/report.md"
+     },
      {
       "at": "2026-11-03T01:20:05Z",
       "cli_version": "2.1.316",
@@ -2111,7 +2666,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 6,
+    "current_text_runs": 8,
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
@@ -2121,6 +2676,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:25:15Z",
+      "cli_version": "2.1.317",
+      "fixture": "new-workflow",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.07343039999999999,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0752158,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.0440932,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.046615,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261103T022515Z/report.md"
+     },
      {
       "at": "2026-11-03T01:15:21Z",
       "cli_version": "2.1.316",
@@ -2281,13 +2873,13 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "keep",
+    "alone_verdict": "insufficient",
     "bytes": 918,
     "confidence": {
-     "helps": 0.0,
+     "helps": 0.5883363981662628,
      "no_help": 0.0
     },
-    "current_text_runs": 5,
+    "current_text_runs": 7,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
@@ -2297,6 +2889,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:31:55Z",
+      "cli_version": "2.1.317",
+      "fixture": "stop-worker",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0864909,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0739377,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0404934,
+        "judge_mean": 4.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.050267400000000004,
+        "judge_mean": 9.3,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261103T023155Z/report.md"
+     },
      {
       "at": "2026-11-03T01:21:58Z",
       "cli_version": "2.1.316",
@@ -2426,7 +3055,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
@@ -2436,6 +3065,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:27:11Z",
+      "cli_version": "2.1.317",
+      "fixture": "verifier-that-cannot-fail",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0807862,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0751697,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0447804,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.05690640000000001,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261103T022711Z/report.md"
+     },
      {
       "at": "2026-11-03T01:16:38Z",
       "cli_version": "2.1.316",
@@ -2576,7 +3242,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
@@ -2586,6 +3252,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:26:17Z",
+      "cli_version": "2.1.317",
+      "fixture": "merge-method-and-closing-keyword",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0669729,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0646384,
+        "judge_mean": 8.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.037403900000000004,
+        "judge_mean": 9.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0370585,
+        "judge_mean": 9.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261103T022617Z/report.md"
+     },
      {
       "at": "2026-11-03T01:16:22Z",
       "cli_version": "2.1.316",
@@ -2776,7 +3479,7 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 4,
+    "current_text_runs": 6,
     "heading": "Python",
     "id": "section-python",
     "next_test": {
@@ -2786,6 +3489,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T02:32:30Z",
+      "cli_version": "2.1.317",
+      "fixture": "load-config",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.1007777,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.10434020000000002,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 4,
+        "cost_usd": 0.0393684,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.047061099999999995,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261103T023230Z/report.md"
+     },
      {
       "at": "2026-11-03T01:23:04Z",
       "cli_version": "2.1.316",
@@ -2921,7 +3661,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T02:22:46Z",
+ "newest_run": "2026-11-03T02:41:08Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -7322,7 +8062,7 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 1,
+   "current_text_runs": 2,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -7333,6 +8073,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T02:41:08Z",
+     "cli_version": "2.1.317",
+     "fixture": "stamps-skip-quotes",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T023928Z-32cb19/vendor-release-impact-issues/20261103T024108Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 5,
+      "cost_usd": 0.17525490000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 5,
+      "cost_usd": 0.1307698,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T02:21:16Z",
      "cli_version": "2.1.317",
@@ -9391,8 +10152,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "bc644f04b5d1f058bbd31a266a3f0ae8e5596978",
-  "results_commit": "012b103a4226516e5ca74963d297f62229c52f6c"
+  "repository_commit": "e6e9496b878f4d7b07f0bea08ef6920250de1e21",
+  "results_commit": "9cab34ad61fa1c11e90b8c69aafeb7178d438396"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
