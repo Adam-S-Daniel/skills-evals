@@ -171,6 +171,77 @@ class UnmeasuredItemTests(unittest.TestCase):
                          items)
         self.assertIn("paused-unmeasured 2", "\n".join(plan_week.summary_lines(plan)))
 
+    def test_a_guidance_section_carries_the_flag_into_the_planner(self):
+        """Round 5's M1: `guidance_verdict` copied only `removal` from the
+        in-situ verdict, so no section ever got a `paused-unmeasured` item.
+        Every fixture scope-paused, no runs: the end-to-end path."""
+        expected = {"fx": {"fixture_digest": "d", "tested_digest": "t",
+                           "rest_digest": "r", "scope_paused": "ceiling"}}
+        v = gates.guidance_verdict({"runs": []}, MODELS, "sec", POLICY, expected)
+        self.assertEqual(v["in_situ_verdict"], "insufficient")
+        self.assertIs(v["unmeasured"], True)
+        self.assertEqual(plan_week.unmeasured_items({"skills": {}, "guidance": {"sec": v}}),
+                         [{"kind": "paused-unmeasured", "change_type": "fixture",
+                           "skill": "", "route": plan_week.SUMMARY_ROUTE,
+                           "fixtures": ["fx"], "section": "sec"}])
+
+    def test_gather_hands_the_items_to_the_plan(self):
+        """Round 5's m2: `gather` must call `unmeasured_items`; replacing
+        its call with `[]` drops every item."""
+        import contextlib
+        import io
+        import json
+        import os
+        item = {"kind": "paused-unmeasured", "change_type": "fixture", "skill": "demo",
+                "route": plan_week.SUMMARY_ROUTE, "fixtures": ["a"]}
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "tree").mkdir()
+            (base / "evidence.json").write_text(json.dumps({
+                "fire_runs": [], "improve_branches": [], "registry_prs": [],
+                "on_hold": []}))
+            argv = ["plan", "--results-tree", str(base / "tree"), "--as-of",
+                    "2026-10-26T12:00:00+00:00", "--evidence", str(base / "evidence.json"),
+                    "--out", str(base / "plan.json")]
+            with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(base / "output"),
+                                              "GITHUB_STEP_SUMMARY": str(base / "summary")}), \
+                 mock.patch.object(plan_week, "unmeasured_items", return_value=[item]), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(plan_week.main(argv), 0)
+            plan = json.loads((base / "plan.json").read_text())
+            self.assertEqual([w for w in plan["work"] if w["kind"] == "paused-unmeasured"],
+                             [item])
+
+    def test_a_crossed_harm_test_is_not_a_ceiling_once_paused(self):
+        """Round 5's m1: 18 clean pairs (the no-harm test crosses), then 8
+        harm pairs, one CLI version. Unpaused it is `insufficient` (harm
+        crossed, undecided); a ceiling pause must not turn it `ceiling`."""
+        rr = []
+        for i, m in enumerate(MODELS):
+            rr += pairs("a", 18, 100, 100, start=1000 * i, model=m, cli=lambda r: "2.1.0")
+            rr += pairs("a", 8, 100, 0, start=1000 * i + 18, model=m, cli=lambda r: "2.1.0")
+        unpaused = verdict(rr, expect("a"))
+        paused = verdict(rr, expect("a", paused="a"))
+        self.assertEqual(unpaused["verdict"], "insufficient")
+        self.assertEqual(paused["verdict"], "insufficient")
+        cell = paused["cells"][0]
+        self.assertEqual(cell["class"], "paused")
+        self.assertIsNotNone(cell["harm_at"])
+        self.assertIsNotNone(cell["noharm_at"])
+        self.assertFalse(gates._shows_ceiling(cell))
+
+    def test_a_ceiling_class_before_the_pause_shows_the_ceiling_by_itself(self):
+        """Round 5's m3: the `class_before_pause` branch is kept, and named
+        here. No real cell was found that only it admits, so the pin is on
+        the function's contract (a paused-for-ceiling cell whose class before
+        the pause was a ceiling class, whatever else the cell records)."""
+        base = {"class": "paused", "scope_paused": "ceiling"}
+        for before in gates.CEILING_CLASSES:
+            self.assertTrue(gates._shows_ceiling({**base, "class_before_pause": before}))
+        self.assertFalse(gates._shows_ceiling({**base, "class_before_pause": "insufficient"}))
+        self.assertFalse(gates._shows_ceiling({**base, "class_before_pause": "ceiling",
+                                               "scope_paused": "floor"}))
+
 
 class ComputeScopePauseTests(unittest.TestCase):
     """M2: `compute` over a temporary evals/ tree. Fixture a helps (without

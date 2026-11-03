@@ -1321,6 +1321,8 @@ def _shows_ceiling(cell: dict) -> bool:
         return False
     if cell.get("class_before_pause") in CEILING_CLASSES:
         return True
+    if cell.get("harm_at") is not None:
+        return False
     without = cell.get("without_mean")
     return cell.get("noharm_at") is not None and without is not None \
         and without >= HIGH_STOP_MIN_WITHOUT
@@ -1482,7 +1484,8 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
            for pair in GUIDANCE_PAIRS}
     in_situ, alone = out["in_situ"], out["alone"]
     verdict, reason = in_situ["verdict"], in_situ["reason"]
-    extra = {k: in_situ[k] for k in ("removal", "removal_reason") if k in in_situ}
+    extra = {k: in_situ[k] for k in ("removal", "removal_reason", "unmeasured")
+             if k in in_situ}
     if verdict == "retire" and any(c["class"] == "benefit" for c in alone["cells"]):
         verdict, reason = ("shorten-or-merge", "no marginal benefit inside the whole "
                            "guidance, but a cell shows benefit alone (section vs "

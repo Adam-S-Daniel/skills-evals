@@ -542,3 +542,23 @@ Known limits it left:
   thread's to change.
 - *A paused fixture's decided `no-benefit` is final:* no new pair can reach
   it to let a later keep compete, as for any cell whose window is frozen.
+
+### Adversarial round 5 (2026-11-03)
+
+The fifth round found no path to a wrong automatic removal and three gaps
+in round 4's fixes, fixed here.
+
+- *M1:* `gates.guidance_verdict` copied `removal` and `removal_reason` from
+  the in-situ verdict but not `unmeasured`, so no guidance section, the
+  kind that motivated round 4, ever got a `paused-unmeasured` item. It
+  copies `unmeasured` too; a test runs a fully paused section through
+  `guidance_verdict` into `plan_week.unmeasured_items`.
+- *m1:* `_shows_ceiling` ignored a harm test that had crossed (`harm_at`
+  set), so a cell with 18 clean pairs then 8 harm pairs on one CLI version
+  read `ceiling` once paused, though unpaused it is `insufficient`. It now
+  returns False for such a cell, as `_classify` orders harm before ceiling.
+- *m2:* a test fails when `plan_week.gather` stops handing
+  `unmeasured_items` to the plan.
+- *m3:* the `class_before_pause` branch of `_shows_ceiling` is kept. Deleting
+  it leaves the 8-module set green (601 passed), but the report called it
+  only near-equivalent, so a unit test names its contract instead.
