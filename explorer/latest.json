@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T16:36:04Z",
+ "generated_at": "2026-11-03T16:38:07Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:31:59Z",
+ "newest_run": "2026-11-03T16:35:07Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -16645,11 +16645,11 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL: scheduled-task registration, service changes, LSA rights grants such as SeBatchLogonRight, HKLM writes or any other Windows state change from WSL. Use it before attempting such a write from WSL and the moment one is denied.",
    "name": "windows-elevation-from-wsl",
    "next_test": {
@@ -16660,6 +16660,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:35:07Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T163254Z-5b8846/windows-elevation-from-wsl/20261103T163507Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1261711,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.087954,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T14:48:50Z",
      "cli_version": "2.1.317",
@@ -18772,8 +18793,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "c1c93bbcdae254b4077d82d15a68ee2d1151ae28",
-  "results_commit": "bbf079e9ceac0d5fc51ef01659457cc2d56f39ea"
+  "repository_commit": "1ff3be09f87d632a552942f532f63666c99b3d0d",
+  "results_commit": "19fe2de2200a23960b18851c87f22991e5ac7abb"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
