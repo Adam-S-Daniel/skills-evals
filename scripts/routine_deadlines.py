@@ -1,7 +1,7 @@
 """When a routine fire that has delivered nothing is lost, per mode.
 
 The eval runner routine stops itself at a per-mode limit (its prompt's
-"Limits:" sentence; the text Adam pastes is docs/routine/eval-runner-prompt.md).
+"Limits:" sentence; the routine reads docs/routine/eval-runner-instructions.md).
 A fire still without results at that limit plus DEADLINE_MARGIN can no
 longer deliver: the planner calls it empty and plans the cell again, so a
 lost fire is re-fired within the hour, not after a fixed two hours (Adam,
