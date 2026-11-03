@@ -90,7 +90,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T00:00:17Z",
+ "generated_at": "2026-11-03T00:01:48Z",
  "guidance": {
   "removed": [
    {
@@ -2181,7 +2181,7 @@
    }
   ]
  },
- "newest_run": "2026-11-02T23:58:00Z",
+ "newest_run": "2026-11-02T23:59:31Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -2291,7 +2291,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2400,7 +2400,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -2598,7 +2598,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2649,7 +2649,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -2700,7 +2700,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -4128,17 +4128,39 @@
     "no_help": null
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Diagnose and fix Decap's persistent \"Decap CMS is adding labels to N of your Editorial Workflow entries\" dialog, which appears (and never clears) on /admin \u2014 on prod AND every preview deploy. Use when an editor reports that dialog, when the Workflow tab churns, or when setting up the daily audit that catches the condition. Covers the cause (an open cms/* PR missing its decap-cms/<status> label), the audit script + reusable workflow \u2014 which SELF-HEALS by applying the missing label since v0.1.48 \u2014 the e2e guard, and the manual escalation path for when self-heal fails. Trigger on \"adding labels dialog\", \"editorial workflow dialog stuck\", \"label migration\", \"decap-cms/draft label\", \"editorial-label-audit\", or \"audit-editorial-labels\".",
    "name": "editorial-label-audit",
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 2,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
-   "runs": [],
+   "runs": [
+    {
+     "at": "2026-11-02T23:59:31Z",
+     "cli_version": "2.1.316",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261102T235755Z-927cf5/editorial-label-audit/20261102T235931Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 8,
+      "cost_usd": 0.13875469999999998,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 8,
+      "cost_usd": 0.1461254,
+      "judge_mean": null,
+      "trials": 1
+     }
+    }
+   ],
    "skip_reason": null,
    "stakes": {
     "level": "normal"
@@ -4147,8 +4169,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": null,
-   "verdict_reason": null
+   "verdict": "insufficient",
+   "verdict_reason": "a cell is insufficient or missing"
   },
   {
    "bundle": null,
@@ -5594,7 +5616,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -5623,7 +5645,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -5753,7 +5775,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6077,7 +6099,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -6438,7 +6460,7 @@
    "next_test": {
     "band": "missing",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -8481,7 +8503,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "f166dc930e5cff36de5100099f4ed24afb21184b",
-  "results_commit": "d2ab94a7153665e37e017d7dc1fc3e18165d47d2"
+  "results_commit": "00e5945c8fe6e5c0f4c0ddc902db2eb9021fbd63"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
