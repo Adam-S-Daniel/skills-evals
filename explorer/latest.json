@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T05:56:41Z",
+ "generated_at": "2026-11-03T06:01:59Z",
  "guidance": {
   "removed": [
    {
@@ -59,7 +59,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 26,
+     "position": 25,
      "scheduled": true
     },
     "runs": [
@@ -1289,16 +1289,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Finding your unknowns",
     "id": "finding-your-unknowns",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 9,
+     "position": 10,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:55:10Z",
+      "cli_version": "2.1.317",
+      "fixture": "changelog-check",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 1,
+        "checks_total": 1,
+        "cost_usd": 0.22036181999999999,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 1,
+        "cost_usd": 0.3124102800000001,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 1,
+        "cost_usd": 0.1223632,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 1,
+        "checks_total": 1,
+        "cost_usd": 0.12831120000000001,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261103T055510Z/report.md"
+     },
      {
       "at": "2026-11-03T05:35:31Z",
       "cli_version": "2.1.317",
@@ -1500,16 +1537,53 @@
      "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Workstation layout",
     "id": "workstation-layout",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 17,
+     "position": 26,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:49:36Z",
+      "cli_version": "2.1.317",
+      "fixture": "clone-all",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.38437089999999996,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.4239931,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.1400256,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1342448,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/workstation-layout/20261103T054936Z/report.md"
+     },
      {
       "at": "2026-11-03T05:29:03Z",
       "cli_version": "2.1.317",
@@ -2655,16 +2729,53 @@
      "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Read before you start",
     "id": "read-before-you-start",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 10,
+     "position": 14,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:56:18Z",
+      "cli_version": "2.1.317",
+      "fixture": "new-config-key",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1906778,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.17942512000000005,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0828976,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0919824,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/read-before-you-start/20261103T055618Z/report.md"
+     },
      {
       "at": "2026-11-03T05:36:53Z",
       "cli_version": "2.1.317",
@@ -2872,7 +2983,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 8,
+     "position": 7,
      "scheduled": true
     },
     "runs": [
@@ -3077,16 +3188,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Two GitHub connectors, and which one you are holding",
     "id": "two-github-connectors",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 15,
+     "position": 22,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:51:58Z",
+      "cli_version": "2.1.317",
+      "fixture": "org-connector-ci",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.10740419999999999,
+        "judge_mean": 8.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1228342,
+        "judge_mean": 4.7,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0903698,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.061374200000000004,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-github-connectors/20261103T055158Z/report.md"
+     },
      {
       "at": "2026-11-03T05:32:20Z",
       "cli_version": "2.1.317",
@@ -3643,7 +3791,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 21,
+     "position": 13,
      "scheduled": true
     },
     "runs": [
@@ -3891,7 +4039,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 19,
+     "position": 11,
      "scheduled": true
     },
     "runs": [
@@ -4139,7 +4287,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 25,
+     "position": 24,
      "scheduled": true
     },
     "runs": [
@@ -4635,7 +4783,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 18,
+     "position": 9,
      "scheduled": true
     },
     "runs": [
@@ -5818,7 +5966,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 24,
+     "position": 21,
      "scheduled": true
     },
     "runs": [
@@ -6060,16 +6208,53 @@
      "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Skills ecosystem",
     "id": "skills-ecosystem",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 14,
+     "position": 20,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:53:55Z",
+      "cli_version": "2.1.317",
+      "fixture": "push-fails-everywhere",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.15002500000000002,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.16795899999999997,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.0963092,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.09354679999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/skills-ecosystem/20261103T055355Z/report.md"
+     },
      {
       "at": "2026-11-03T05:34:56Z",
       "cli_version": "2.1.317",
@@ -6271,16 +6456,53 @@
      "helps": 0.04031528220564973,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Two setup gaps you may close, and must not nag about",
     "id": "two-setup-gaps",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 16,
+     "position": 23,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:53:21Z",
+      "cli_version": "2.1.317",
+      "fixture": "multi-repo-cloud-session",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1684732,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.2094978,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.130936,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.0911554,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-setup-gaps/20261103T055321Z/report.md"
+     },
      {
       "at": "2026-11-03T05:34:05Z",
       "cli_version": "2.1.317",
@@ -6488,7 +6710,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 20,
+     "position": 12,
      "scheduled": true
     },
     "runs": [
@@ -6736,7 +6958,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 22,
+     "position": 15,
      "scheduled": true
     },
     "runs": [
@@ -6978,16 +7200,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 8,
+    "current_text_runs": 10,
     "heading": ".NET / C#",
     "id": "section-dotnet",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 7,
+     "position": 8,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:48:03Z",
+      "cli_version": "2.1.317",
+      "fixture": "load-settings",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.3846197,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.3442162,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 2,
+        "checks_total": 3,
+        "cost_usd": 0.1377554,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.112868,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-dotnet/20261103T054803Z/report.md"
+     },
      {
       "at": "2026-11-03T05:07:26Z",
       "cli_version": "2.1.317",
@@ -7149,10 +7408,10 @@
     "alone_verdict": "keep",
     "bytes": 313,
     "confidence": {
-     "helps": 0.04031528220564973,
+     "helps": 0.5201576411028248,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Go",
     "id": "section-go",
     "next_test": {
@@ -7162,6 +7421,43 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:43:51Z",
+      "cli_version": "2.1.317",
+      "fixture": "fetch-user",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.20418985500000006,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.26049972,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.10554060000000001,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.12209759999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-go/20261103T054351Z/report.md"
+     },
      {
       "at": "2026-11-03T05:24:11Z",
       "cli_version": "2.1.317",
@@ -7363,16 +7659,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "JavaScript",
     "id": "section-javascript",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 11,
+     "position": 16,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:44:16Z",
+      "cli_version": "2.1.317",
+      "fixture": "fetch-retry",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.212691125,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.20119912999999998,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.08927800000000001,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.09459680000000001,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-javascript/20261103T054416Z/report.md"
+     },
      {
       "at": "2026-11-03T05:24:29Z",
       "cli_version": "2.1.317",
@@ -7580,7 +7913,7 @@
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 23,
+     "position": 17,
      "scheduled": true
     },
     "runs": [
@@ -7822,16 +8155,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "Rust",
     "id": "section-rust",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 12,
+     "position": 18,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:47:26Z",
+      "cli_version": "2.1.317",
+      "fixture": "parse-port",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.3694332,
+        "judge_mean": 9.6,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.3424544,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.143876,
+        "judge_mean": 9.7,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.12131439999999999,
+        "judge_mean": 9.6,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-rust/20261103T054726Z/report.md"
+     },
      {
       "at": "2026-11-03T05:28:22Z",
       "cli_version": "2.1.317",
@@ -8033,16 +8403,53 @@
      "helps": 0.0,
      "no_help": 0.0
     },
-    "current_text_runs": 10,
+    "current_text_runs": 12,
     "heading": "TypeScript",
     "id": "section-typescript",
     "next_test": {
      "band": "guidance-rest",
      "due": null,
-     "position": 13,
+     "position": 19,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-03T05:43:51Z",
+      "cli_version": "2.1.317",
+      "fixture": "parse-event",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.22313804,
+        "judge_mean": 10.0,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.206160795,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "none": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.11329200000000002,
+        "judge_mean": 9.3,
+        "trials": 1
+       },
+       "section": {
+        "checks_passed": 3,
+        "checks_total": 3,
+        "cost_usd": 0.10827339999999999,
+        "judge_mean": 10.0,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-typescript/20261103T054351Z/report.md"
+     },
      {
       "at": "2026-11-03T05:24:28Z",
       "cli_version": "2.1.317",
@@ -8239,7 +8646,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T05:55:06Z",
+ "newest_run": "2026-11-03T06:00:09Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -8349,7 +8756,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -8479,7 +8886,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 21,
+    "position": 20,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -8719,7 +9126,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 23,
+    "position": 22,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -8812,7 +9219,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 22,
+    "position": 21,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -8954,21 +9361,42 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": 0.0,
+    "helps": 0.9999999994078288,
     "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 2,
+   "current_text_runs": 3,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 12,
+    "band": null,
+    "due": "2026-12-01T03:46:34Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T06:00:09Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T055842Z-ba802b/consumer-repo-provisioning/20261103T060009Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.1585899,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 19,
+      "cost_usd": 0.1558607,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T03:46:34Z",
      "cli_version": "2.1.317",
@@ -9295,8 +9723,8 @@
    "usage": {
     "invocations": 0
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": "adam-coding-anywhere",
@@ -10013,7 +10441,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -10474,7 +10902,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -10962,7 +11390,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11244,7 +11672,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 20,
+    "position": 19,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -11547,7 +11975,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -13475,7 +13903,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 18,
+    "position": 17,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14228,7 +14656,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 19,
+    "position": 18,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15215,7 +15643,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "1c3ba2e3d8c552f2139e3f4d3c2820d6f47660a0",
-  "results_commit": "26768272b9906deebb10a88dc7182649ac583d5e"
+  "results_commit": "90b91c32194a22cadce2740e8cfed9694b32554b"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
