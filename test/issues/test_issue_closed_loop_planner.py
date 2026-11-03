@@ -931,6 +931,61 @@ class DispatchLegTests(unittest.TestCase):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**gleg, **change})
 
+    GOOD_LEG = {"MODE": "eval", "ARMS": "both", "FIXTURE": "evals/writing-adrs/bootstrap",
+                "EVAL_KEY": "writing-adrs/bootstrap", "MODEL": "claude-opus-5-5",
+                "SKILL": "", "HOLDOUT": ""}
+    # Committed under evals/ but listed in evals/unscheduled.yml.
+    UNSCHEDULED_LEG = {"FIXTURE": "evals/browser-testing", "EVAL_KEY": "browser-testing"}
+
+    def run_validate_fire(self, leg):
+        """main(["validate-fire"]) under `leg`'s env: (exit code, GITHUB_OUTPUT, stdout)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "out"
+            output.write_text("")
+            stdout = io.StringIO()
+            with mock.patch.dict(os.environ, {**leg, "GITHUB_OUTPUT": str(output)}), \
+                    contextlib.redirect_stdout(stdout):
+                code = plan_week.main(["validate-fire"])
+            return code, output.read_text(), stdout.getvalue()
+
+    def test_a_fixture_unscheduled_after_the_plan_is_stale_not_an_error(self):
+        leg = {**self.GOOD_LEG, **self.UNSCHEDULED_LEG}
+        with self.assertRaises(plan_week.PlanStale):
+            plan_week.validate_fire(leg)
+        code, output, stdout = self.run_validate_fire(leg)
+        self.assertEqual(code, 0)
+        self.assertEqual(output, "fire=false\n")
+        self.assertIn("::notice::", stdout)
+        self.assertNotIn("::error::", stdout)
+
+    def test_a_valid_leg_writes_fire_true(self):
+        code, output, _ = self.run_validate_fire(self.GOOD_LEG)
+        self.assertEqual((code, output), (0, "fire=true\n"))
+
+    def test_an_unknown_fixture_is_still_a_plain_plan_error(self):
+        leg = {**self.GOOD_LEG, "FIXTURE": "evals/no-such-skill/x", "EVAL_KEY": "no-such-skill/x"}
+        with self.assertRaises(plan_week.PlanError) as caught:
+            plan_week.validate_fire(leg)
+        self.assertNotIsInstance(caught.exception, plan_week.PlanStale)
+        code, output, stdout = self.run_validate_fire(leg)
+        self.assertEqual(code, 1)
+        self.assertEqual(output, "")
+        self.assertIn("::error::", stdout)
+
+    def test_the_dispatch_steps_follow_the_revalidation_output(self):
+        doc = yaml.safe_load(
+            (ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+        steps = {s["name"]: s for s in doc["jobs"]["dispatch"]["steps"]}
+        self.assertEqual(steps["Revalidate the planned fire"].get("id"), "valid")
+        gate = "steps.valid.outputs.fire == 'true'"
+        self.assertIn(gate, steps["Wait until a fire slot is free"]["if"])
+        self.assertIn(gate, steps["Dispatch the validated fire"]["if"])
+        self.assertIn("steps.slot.outputs.open == 'true'",
+                      steps["Dispatch the validated fire"]["if"])
+        # The spacing step needs the slot step's output, which a skipped slot
+        # step never sets.
+        self.assertEqual(steps["Space the next fire"]["if"], "steps.slot.outputs.open == 'true'")
+
 
 class PlanCommandTests(unittest.TestCase):
     """The step's own command on the real evals directory, an empty results

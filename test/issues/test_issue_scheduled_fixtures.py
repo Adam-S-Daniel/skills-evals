@@ -692,8 +692,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertEqual(wait["id"], "slot")
         self.assertIn('--sweep-started "$SWEEP_STARTED"', wait["run"])
         self.assertEqual(wait["env"]["SWEEP_STARTED"], "${{ needs.plan.outputs.sweep_started }}")
-        for skipped in (fire, steps[order[3]]):
-            self.assertEqual(skipped["if"], "steps.slot.outputs.open == 'true'")
+        # The slot step never runs for a stale leg, so its output stays unset
+        # and the spacing step skips with it.
+        self.assertEqual(fire["if"],
+                         "steps.valid.outputs.fire == 'true' && steps.slot.outputs.open == 'true'")
+        self.assertEqual(steps[order[3]]["if"], "steps.slot.outputs.open == 'true'")
         # The watchdog arm (routine-eval-watchdog.yml) dispatches with the job
         # token and nothing else.
         arm = jobs["watchdog"]["steps"][0]
