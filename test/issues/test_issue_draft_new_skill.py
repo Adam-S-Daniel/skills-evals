@@ -1307,10 +1307,20 @@ class FixturesApply(Staged):
     def test_fixtures_land_with_their_readme_layout_entry(self):
         tree = self.tmp / "skills-evals"
         self.write(tree / "README.md", (REPO_ROOT / "README.md").read_text())
+        before = (REPO_ROOT / "evals/unscheduled.yml").read_text()
+        self.write(tree / "evals/unscheduled.yml", before)
         code, out, err = run_main("fixtures-apply", "--staged", str(self.stage()),
                                   "--tree", str(tree))
         self.assertEqual(code, 0, err)
         self.assertEqual(outputs(out)["subject"], SUBJECT)
+        # Adam's 2026-11-02 rule (test_issue_371_scheduled_fixtures.py): each
+        # drafted fixture is listed as unscheduled, with a reason, and the
+        # rows already there are kept byte for byte.
+        after = (tree / "evals/unscheduled.yml").read_text()
+        self.assertTrue(after.startswith(before))
+        rows = {r["path"]: r["reason"] for r in yaml.safe_load(after)["fixtures"]}
+        for name in FIXTURE_NAMES:
+            self.assertEqual(rows[f"evals/{SUBJECT}/{name}"], dns.ISOLATION_REASON)
         for name in FIXTURE_NAMES:
             self.assertTrue((tree / f"evals/{SUBJECT}/{name}/fixture.yaml").is_file())
         # The suite's own rule (test_every_eval_directory_is_named_in_the_readmes_layout).
@@ -1321,6 +1331,25 @@ class FixturesApply(Staged):
         code, _, _ = run_main("fixtures-apply", "--staged", str(self.tmp / "staged"),
                               "--tree", str(tree))
         self.assertEqual(code, 1, "a second apply must refuse the existing directory")
+
+    def test_a_fixture_with_a_context_gets_the_context_reason(self):
+        doc = {"skill": SUBJECT, "context": {"repo": "example"}}
+        rows = dns.unscheduled_entries(
+            {"b": {"fixture.yaml": yaml.safe_dump(doc).encode()},
+             "a": {"fixture.yaml": yaml.safe_dump({"skill": SUBJECT}).encode()}}, SUBJECT)
+        parsed = yaml.safe_load("fixtures:\n" + rows)["fixtures"]
+        self.assertEqual([r["path"] for r in parsed],
+                         [f"evals/{SUBJECT}/a", f"evals/{SUBJECT}/b"])
+        self.assertEqual([r["reason"] for r in parsed],
+                         [dns.ISOLATION_REASON, dns.CONTEXT_REASON])
+
+    def test_fixtures_apply_refuses_a_missing_unscheduled_file(self):
+        tree = self.tmp / "skills-evals"
+        self.write(tree / "README.md", (REPO_ROOT / "README.md").read_text())
+        code, _, _ = run_main("fixtures-apply", "--staged", str(self.stage()),
+                              "--tree", str(tree))
+        self.assertEqual(code, 1)
+        self.assertFalse((tree / "evals" / SUBJECT).exists())
 
 
 class Bodies(Staged):

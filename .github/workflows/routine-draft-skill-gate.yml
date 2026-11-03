@@ -15,7 +15,8 @@ name: Gate routine skill draft
 #               evals/<subject>/: the drafted skill beat no skill on its own
 #               fixtures. This gate opens a DRAFT pull request in
 #               adam-agentskills with the skill, then a DRAFT pull request
-#               here with only evals/<subject>/ and its README layout line;
+#               here with only evals/<subject>/, its README layout line
+#               and its evals/unscheduled.yml rows;
 #               both bodies say to merge the skill first. In auto merge
 #               mode (below) both are ready instead; the skill's has
 #               auto-merge on, the fixtures' is armed later by
@@ -57,7 +58,8 @@ name: Gate routine skill draft
 #                  roster App installation token (skills-evals only, contents
 #                  and pull-requests write; as routine-fixture-supply.yml
 #                  does), and one step uses it: it commits evals/<subject>/
-#                  and its README layout line (fixtures-apply) to a fresh
+#                  its README layout line and its evals/unscheduled.yml
+#                  rows (fixtures-apply) to a fresh
 #                  branch `draft-skill-fixtures/<subject>` from the default
 #                  branch and opens the pull request, ready in auto merge
 #                  mode, a draft otherwise. It runs only after skill-pr
@@ -589,15 +591,18 @@ jobs:
             --staged "$RUNNER_TEMP/staged" --tree .
           git add -A
           # The commit adds files under evals/<subject>/, edits README.md's
-          # layout, and changes nothing else.
+          # layout and lists the fixtures in evals/unscheduled.yml, and
+          # changes nothing else.
           outside="$(git diff --cached --name-only -- . \
-            ":(exclude)evals/${SUBJECT}/" ":(exclude)README.md")"
+            ":(exclude)evals/${SUBJECT}/" ":(exclude)README.md" \
+            ":(exclude)evals/unscheduled.yml")"
           changed="$(git diff --cached --name-only --diff-filter=a -- "evals/${SUBJECT}/")"
           added="$(git diff --cached --name-only --diff-filter=A -- "evals/${SUBJECT}/")"
           readme="$(git diff --cached --name-only --diff-filter=M -- README.md)"
+          unscheduled="$(git diff --cached --name-only --diff-filter=M -- evals/unscheduled.yml)"
           if [ -n "$outside" ] || [ -n "$changed" ] || [ -z "$added" ] \
-             || [ "$readme" != README.md ]; then
-            echo "::error::the fixtures commit would not be evals/${SUBJECT}/ additions plus the README layout line"
+             || [ "$readme" != README.md ] || [ "$unscheduled" != evals/unscheduled.yml ]; then
+            echo "::error::the fixtures commit would not be evals/${SUBJECT}/ additions plus the README layout line and the unscheduled.yml rows"
             exit 1
           fi
           git -c user.name="skills-evals draft-gate bot" \
