@@ -126,7 +126,9 @@ shards cloud sessions' Stop hook writes to the same branch,
 field checked, a malformed line skipped), and become `skill-digest` rows with
 `surface: "cloud"` by the same chain (`cloud_digest_plan`). An id also in
 this run's records or a machine file counts once, as local. No cloud `skill`
-rows are written, and cloud coverage is records seen, never complete.
+rows are written, and cloud coverage is records seen, never complete. Readers
+add the cloud `skill-digest` rows' invocations to the skill rows
+(`harness/skill_usage.weight`, `zero_use`).
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \
