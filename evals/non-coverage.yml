@@ -38,12 +38,6 @@ skips:
       internal canary; carries no guidance; no probe asserts its delivery (not
       built, untracked; closed issue #17 built other propagation arms)
   - registry: adam-agentskills
-    skill: launch-top-level-claude-session
-    decision: defer
-    reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
-  - registry: adam-agentskills
     skill: sync-cc-settings-between-wsl-and-windows
     decision: defer
     reason: >-
