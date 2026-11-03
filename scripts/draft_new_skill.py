@@ -1691,11 +1691,11 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, repo: str,
             "coverage census reports an `orphan_fixture`."]
         if mode == "auto":
             head += [
-                "", "Auto-merge (merge commit) is enabled, with no human "
-                "review. This pull request was opened with the job token, "
-                "which starts no workflow, so its required checks start only "
-                "when someone pushes to it or runs them, after the skill's "
-                "pull request has merged."]
+                "", "Auto-merge (merge commit) is not on yet, and no human "
+                "reviews this. Once the skill's pull request has merged, the "
+                "`Follow drafted-skill fixtures` workflow turns auto-merge "
+                "on (and restarts any checks GitHub held), so this merges "
+                "itself after its required checks pass."]
     return "\n".join([*head, "", "---", "", report, "", MARKER, ""])
 
 

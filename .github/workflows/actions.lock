@@ -13,6 +13,8 @@ workflows:
     '.github/workflows/dependabot-auto-merge.yml':
         - 'actions/checkout@v7.0.1'
         - 'dependabot/fetch-metadata@v3.1.0'
+    '.github/workflows/draft-fixtures-follow.yml':
+        - 'actions/create-github-app-token@v3.3.0'
     '.github/workflows/eval.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
