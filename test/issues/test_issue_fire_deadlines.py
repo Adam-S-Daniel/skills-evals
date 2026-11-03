@@ -21,7 +21,7 @@ import plan_week  # noqa: E402
 import routine_deadlines  # noqa: E402
 from test_issue_559_empty_fires import MODEL, NOW, SKILL_FIXTURE, fire, one, stamp  # noqa: E402
 
-PROMPT = ROOT / "docs" / "routine" / "eval-runner-prompt.md"
+PROMPT = ROOT / "docs" / "routine" / "eval-runner-instructions.md"
 
 
 class DeadlineTests(unittest.TestCase):
