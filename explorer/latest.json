@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:03:12Z",
+  "generated_at": "2026-11-03T23:05:34Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T23:02:10Z",
+ "generated_at": "2026-11-03T23:04:27Z",
  "guidance": {
   "removed": [
    {
@@ -10094,7 +10094,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T22:59:42Z",
+ "newest_run": "2026-11-03T23:02:10Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -19387,7 +19387,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 11,
+   "current_text_runs": 12,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -19398,6 +19398,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T23:02:10Z",
+     "cli_version": "2.1.317",
+     "fixture": "closing-keywords",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T230026Z-3bff44/vendor-release-impact-issues/20261103T230210Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.200112,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 6,
+      "cost_usd": 0.1346028,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:21:02Z",
      "cli_version": "2.1.317",
@@ -22279,7 +22300,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "55f1b6253c20f014fc961a65f8c5f4335f1697ef",
-  "results_commit": "2295d04620469d7b5221c4b11a072d8524b1b686"
+  "results_commit": "efb2d2ebfd57ea647f6e1d2f1a9555d95f51189c"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
