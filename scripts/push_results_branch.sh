@@ -2,8 +2,9 @@
 # Push HEAD to <remote> <branch>, rebasing onto the remote tip when the push is
 # rejected.
 #
-# Why: the eval.yml `publish` matrix jobs run in parallel, and other workflows
-# also push persistent/eval-results, so a plain push loses the race with
+# Why: eval.yml's `publish` job and other workflows (the routine ingest,
+# explorer-data, skill-coverage) all push persistent/eval-results, so a plain
+# push can lose the race with
 # "! [rejected] ... (fetch first)" and that eval's paid result is never
 # published (run 41542886876). A fetch plus rebase is the wait between
 # attempts, so there is no sleep.

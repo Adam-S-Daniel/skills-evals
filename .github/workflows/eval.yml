@@ -2153,10 +2153,11 @@ jobs:
           esac
           git commit -m "eval: $key run + badge + roster [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          # The publish matrix jobs run in parallel and other workflows push this
-          # branch too, so a bare push is rejected ("fetch first") and the paid
-          # result is lost (run 41542886876). The helper rebases and retries;
-          # auth reaches only this one command, through git config env vars.
+          # Other workflows (the routine ingest, explorer-data, skill-coverage)
+          # push this branch too, so a bare push can be rejected ("fetch
+          # first") and the paid result is lost (run 41542886876). The helper
+          # rebases and retries; auth reaches only this one command, through
+          # GIT_CONFIG_* environment settings.
           # https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41542886876
           GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader GIT_CONFIG_VALUE_0="$auth" bash "$RUNNER_TEMP/push_results_branch.sh" origin persistent/eval-results 3
 
