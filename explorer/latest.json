@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T19:24:59Z",
+  "generated_at": "2026-11-03T19:33:41Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T19:20:32Z",
+ "generated_at": "2026-11-03T19:29:21Z",
  "guidance": {
   "removed": [
    {
@@ -9780,7 +9780,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T19:16:36Z",
+ "newest_run": "2026-11-03T19:26:49Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -11125,7 +11125,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 19,
+   "current_text_runs": 20,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -11136,6 +11136,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T19:26:49Z",
+     "cli_version": "2.1.317",
+     "fixture": "wrong-branch",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T190950Z-b6b415/debug-github-workflows/20261103T192649Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.1161828,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.08382990000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T19:16:36Z",
      "cli_version": "2.1.317",
@@ -20510,7 +20531,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "6a2cde4192fce25be0e7d053691d9ee5a32f80ce"
+  "results_commit": "2587026a6d06d72ebf0de32ff63a958366d32d15"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
