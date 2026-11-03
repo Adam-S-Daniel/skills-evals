@@ -36,7 +36,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T16:38:07Z",
+ "generated_at": "2026-11-03T16:40:11Z",
  "guidance": {
   "removed": [
    {
@@ -9280,7 +9280,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T16:35:07Z",
+ "newest_run": "2026-11-03T16:37:20Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -15829,11 +15829,11 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
    "name": "tool-powershell",
    "next_test": {
@@ -15844,6 +15844,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T16:37:20Z",
+     "cli_version": "2.1.317",
+     "fixture": "protected-path-cleanup",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T162918Z-7f61e7/tool-powershell/20261103T163720Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.11048980000000001,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 3,
+      "checks_total": 4,
+      "cost_usd": 0.0737024,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T14:32:44Z",
      "cli_version": "2.1.317",
@@ -18794,7 +18815,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "1ff3be09f87d632a552942f532f63666c99b3d0d",
-  "results_commit": "19fe2de2200a23960b18851c87f22991e5ac7abb"
+  "results_commit": "0e5cee219932b19e5ae10975d49138eb7298e9b9"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
