@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S9eVqmNri27BP3DYMk3ZHL",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && wc -c vendor/*",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S9eVqmNri27BP3DYMk3ZHL",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015xCMhKC7EghGcnhEQqEw77",
+      "name": "Bash",
+      "input": "cat vendor/*; cat README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/auth-status.txt",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015xCMhKC7EghGcnhEQqEw77",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.7KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2238,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XUvSddVfBr7KGMwMGkCTgZ",
+      "name": "Bash",
+      "input": "cat .gh/replay/issue-list.json | head -c 3000; echo; cat .gh/replay/issue-view-57.json | head -c 3000; cat .gh/replay/auth-status.txt; wc -c .gh/replay/*.json; git log --oneline | head",
+      "input_chars": 184,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XUvSddVfBr7KGMwMGkCTgZ",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/example-re...",
+      "output_chars": 2833,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F7h9GKLAagZpVK7zgkehbc",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: update README invocation docs\n\nFound in the ExampleCLI 4.2.0 review.\n\n## ...",
+      "input_chars": 2689,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F7h9GKLAagZpVK7zgkehbc",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
