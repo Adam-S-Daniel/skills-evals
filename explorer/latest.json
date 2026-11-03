@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T22:20:26Z",
+  "generated_at": "2026-11-03T22:23:56Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T22:18:55Z",
+ "generated_at": "2026-11-03T22:23:00Z",
  "guidance": {
   "removed": [
    {
@@ -9974,7 +9974,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T22:15:27Z",
+ "newest_run": "2026-11-03T22:21:02Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -16677,7 +16677,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 17,
+   "current_text_runs": 18,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -16688,6 +16688,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:20:21Z",
+     "cli_version": "2.1.317",
+     "fixture": "test-runner-assertions",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T220907Z-18b2a2/review-bash-ci-reliability/20261103T222021Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.15134419999999998,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.11052219999999999,
+      "judge_mean": 9.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T18:40:52Z",
      "cli_version": "2.1.317",
@@ -18896,7 +18917,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 10,
+   "current_text_runs": 11,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -18907,6 +18928,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T22:21:02Z",
+     "cli_version": "2.1.317",
+     "fixture": "issue-hygiene",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T221302Z-ec31fe/vendor-release-impact-issues/20261103T222102Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1830854,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.1380692,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T16:08:59Z",
      "cli_version": "2.1.317",
@@ -21713,7 +21755,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "c6b38e18c441888d8458979f75d020bce2253655",
-  "results_commit": "96c6eb95a496fe9c3bc6709e224afa8a5ca7fe27"
+  "results_commit": "6effe92888245891079739dc0febdc86331b3284"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
