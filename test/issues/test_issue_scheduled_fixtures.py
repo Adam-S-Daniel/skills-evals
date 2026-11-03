@@ -97,18 +97,31 @@ def bare_trials():
     return value
 
 
+def scheduled_rows():
+    return yaml.safe_load((ROOT / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+
+
+def scope_paused():
+    """Fixtures the eval scope pass (scripts/eval_scope.py) took off the
+    schedule; evals/scope-auto.yml records each with what brings it back."""
+    doc = yaml.safe_load((ROOT / "evals/scope-auto.yml").read_text(encoding="utf-8")) or {}
+    return {row["path"] for row in doc.get("rows") or []}
+
+
 def promoted_entries():
-    """Entries `scaffold_real_work.py promote` appended after the reviewed
-    ones: each carries its readiness note and names a `draft: false`
-    fixture. Anything else after the reviewed list is not one."""
-    rows = yaml.safe_load((ROOT / "evals/scheduled.yml").read_text(encoding="utf-8"))["fixtures"]
+    """Scheduled entries outside the reviewed list: each must be one
+    `scaffold_real_work.py promote` appended, carrying its readiness note and
+    naming a `draft: false` fixture. Anything else is not one."""
+    reviewed = set(REVIEWED)
     paths = []
-    for row in rows[len(REVIEWED):]:
+    for row in scheduled_rows():
+        if row["path"] in reviewed:
+            continue
         fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
         # A drafted skill's fixture (scripts/contextualize_fixtures.py) has no
         # `draft:` key; absent reads as not a draft.
         if not row["readiness"].startswith(PROMOTED_NOTE) or fixture.get("draft", False) is not False:
-            raise AssertionError(f"{row['path']}: scheduled after the reviewed fixtures, "
+            raise AssertionError(f"{row['path']}: scheduled outside the reviewed fixtures, "
                                  "but not promoted by scaffold_real_work.py promote")
         paths.append(row["path"])
     return paths
@@ -130,9 +143,12 @@ def promoted_context_problem(fixture):
     return None
 
 
-#: The schedule: the reviewed fixtures, then any promoted ones (Adam,
-#: 2026-10-26: fixtures are promoted with no human in the loop).
-EXPECTED = REVIEWED + promoted_entries()
+#: The schedule: the reviewed fixtures, less any the eval scope pass paused,
+#: plus any promoted ones (Adam, 2026-10-26: fixtures are promoted with no
+#: human in the loop; 2026-11-03: the scope pass pauses and resumes by rule,
+#: and a resume re-appends at the end, so order is the file's own).
+EXPECTED_SET = (set(REVIEWED) - scope_paused()) | set(promoted_entries())
+EXPECTED = [row["path"] for row in scheduled_rows()]
 #: The manual-dispatch default. It left the schedule on 2026-11-03 (listed in
 #: unscheduled.yml) but stays a committed fixture, which is all a dispatch needs.
 DISPATCH_DEFAULT = "evals/workflow-path-audit/required-check-routing"
@@ -219,6 +235,9 @@ class TestScheduledFixtures(unittest.TestCase):
         committed = planner.committed_fixtures(ROOT)
         paths = planner.scheduled_fixtures(ROOT / "evals/scheduled.yml", committed)
         self.assertEqual(paths, EXPECTED)
+        self.assertEqual(len(paths), len(set(paths)), "a fixture is scheduled twice")
+        self.assertEqual(set(paths), EXPECTED_SET)
+        self.assertFalse(set(paths) & scope_paused(), "a paused fixture is still scheduled")
         actual = planner.plan(ROOT, "schedule", {"inputs": {"fixture": "evals/nope"}})
         self.assertEqual(actual, {"include": [
             {"fixture": p, "eval_key": p[len("evals/"):], "slot": i}

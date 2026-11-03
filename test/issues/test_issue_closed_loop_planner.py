@@ -1570,8 +1570,13 @@ class BareBaselineTests(unittest.TestCase):
 
     def test_the_scheduled_in_place_fixtures(self):
         in_place = self.scheduled_in_place()
+        # The eval scope pass (evals/scope-auto.yml) may pause one; it is
+        # then off the schedule by rule, not missing.
+        auto = yaml.safe_load((ROOT / "evals/scope-auto.yml").read_text(encoding="utf-8")) or {}
+        paused = {row["path"] for row in auto.get("rows") or []}
         for fixture in BARE_FIXTURES:
-            self.assertIn(fixture, in_place)
+            if fixture not in paused:
+                self.assertIn(fixture, in_place)
         # Guidance fixtures declare no context: their arms are their own.
         self.assertFalse([f for f in in_place if f.startswith("evals/guidance/")])
 
