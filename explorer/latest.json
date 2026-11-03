@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T20:39:19Z",
+  "generated_at": "2026-11-03T20:44:13Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T20:36:37Z",
+ "generated_at": "2026-11-03T20:41:38Z",
  "guidance": {
   "removed": [
    {
@@ -9854,7 +9854,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T20:29:44Z",
+ "newest_run": "2026-11-03T20:38:14Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -11241,7 +11241,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 23,
+   "current_text_runs": 24,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -11252,6 +11252,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T20:37:11Z",
+     "cli_version": "2.1.317",
+     "fixture": "wrong-branch",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T201648Z-ce45ac/debug-github-workflows/20261103T203711Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 7,
+      "cost_usd": 0.1183656,
+      "judge_mean": 4.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.0886396,
+      "judge_mean": 8.8,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T20:26:09Z",
      "cli_version": "2.1.317",
@@ -17549,6 +17570,27 @@
    "registry": "adam-agentskills",
    "runs": [
     {
+     "at": "2026-11-03T20:38:14Z",
+     "cli_version": "2.1.317",
+     "fixture": "preview-before-delete",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T202536Z-bf6261/tool-powershell/20261103T203814Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.0698104,
+      "judge_mean": 8.7,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.0601554,
+      "judge_mean": 8.3,
+      "trials": 1
+     }
+    },
+    {
      "at": "2026-11-03T20:21:04Z",
      "cli_version": "2.1.317",
      "fixture": "silent-exit-one",
@@ -20962,7 +21004,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "341f4bd5717e171a21cfe362d510536dc6d37709",
-  "results_commit": "a8ce4e24b4a19028c4824b14e91fe07ab4da1efe"
+  "results_commit": "8b3e46494a489acc2c9456a5118208d4ed0e3505"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
