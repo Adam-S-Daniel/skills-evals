@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:55:33Z",
+  "generated_at": "2026-11-03T23:58:51Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T23:54:16Z",
+ "generated_at": "2026-11-03T23:57:59Z",
  "guidance": {
   "removed": [
    {
@@ -11191,7 +11191,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:52:38Z",
+ "newest_run": "2026-11-03T23:56:26Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -14144,20 +14144,20 @@
       "votes": true
      },
      {
-      "gain": 22.2,
-      "high": 49.3,
-      "low": -19.9,
+      "gain": 23.8,
+      "high": 47.3,
+      "low": -13.9,
       "model": "claude-sonnet-5-5",
-      "pairs": 6,
+      "pairs": 7,
       "status": "open",
       "task": null,
       "votes": true
      }
     ],
-    "helps": 0.3160538908497246,
+    "helps": 0.4738876083459419,
     "keep_family": 2,
-    "keep_pairs": 6,
-    "max_pairs": 6,
+    "keep_pairs": 7,
+    "max_pairs": 7,
     "no_help": 0.0,
     "no_help_pairs": 2
    },
@@ -14173,7 +14173,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 8,
+   "current_text_runs": 9,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
@@ -14184,6 +14184,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T23:56:26Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T235429Z-79881e/disarm-inherited-reach/20261103T235626Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 9,
+      "cost_usd": 0.1657186,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.0876982,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T22:57:03Z",
      "cli_version": "2.1.317",
@@ -24427,7 +24448,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "e0fa3dfccbd4926ab687182cd7d0d914d453d2b5",
-  "results_commit": "3132e3fc38aadad9045b1f3e60b41aec8c760bf3"
+  "results_commit": "2e2e651adb2b2d50c69a935f744c9ef003d189f5"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
