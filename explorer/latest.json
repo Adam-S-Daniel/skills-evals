@@ -72,7 +72,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T03:30:08Z",
+ "generated_at": "2026-11-03T03:32:34Z",
  "guidance": {
   "removed": [
    {
@@ -4765,7 +4765,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T03:28:15Z",
+ "newest_run": "2026-11-03T03:29:31Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -5448,7 +5448,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -6455,7 +6455,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -7873,21 +7873,42 @@
   {
    "bundle": null,
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 13,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T03:29:31Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T032753Z-cd8dcb/github-actions-sha-pinning/20261103T032931Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 10,
+      "cost_usd": 0.1393267,
+      "judge_mean": 8.9,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.1046416,
+      "judge_mean": 8.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-10-26T15:06:24Z",
      "cli_version": "2.1.310",
@@ -11446,7 +11467,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "54801c6a380b2f09fb5d71504fd6fcfd9b8fe380",
-  "results_commit": "e6e86a9175511993c946dbc1ec52c39bba9bb53d"
+  "results_commit": "c0bc23a240350d6e7748e69c8e3025761e4b3696"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
