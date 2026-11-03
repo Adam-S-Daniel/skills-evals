@@ -612,18 +612,29 @@ def load_trigger_eval_set(path: Path) -> list[dict]:
     with a non-empty string query and a JSON boolean label. The label is
     never coerced: `"false"` would otherwise read as a should-trigger query."""
     try:
-        items = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        data = path.read_bytes()
+    except OSError as exc:
         raise Refusal(f"--trigger-eval-set {path.name}: unreadable: "
                       f"{type(exc).__name__}") from exc
+    return parse_trigger_eval_set(data, path.name)
+
+
+def parse_trigger_eval_set(data: bytes, name: str) -> list[dict]:
+    """`load_trigger_eval_set`'s check on bytes already read, so a caller
+    holding a git blob (scripts/fixture_pr_gate.py) needs no temp file."""
+    try:
+        items = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Refusal(f"--trigger-eval-set {name}: unreadable: "
+                      f"{type(exc).__name__}") from exc
     if not isinstance(items, list):
-        raise Refusal(f"--trigger-eval-set {path.name}: must be a JSON list")
+        raise Refusal(f"--trigger-eval-set {name}: must be a JSON list")
     for index, item in enumerate(items):
         if (not isinstance(item, dict)
                 or set(item) != {"query", "should_trigger"}
                 or not isinstance(item["query"], str) or not item["query"].strip()
                 or not isinstance(item["should_trigger"], bool)):
-            raise Refusal(f"--trigger-eval-set {path.name}: item {index} must be "
+            raise Refusal(f"--trigger-eval-set {name}: item {index} must be "
                           "exactly {query: non-empty string, should_trigger: boolean}")
     return items
 

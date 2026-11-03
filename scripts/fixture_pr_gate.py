@@ -162,14 +162,11 @@ def trigger_set_ok(data: bytes) -> bool:
     propose_skill_edit.load_trigger_eval_set's shape, then, deduplicated by
     whitespace-collapsed query as the loop does, at least
     TRIGGER_ONLY_MIN_CLASS queries of each class and no split problem."""
-    import tempfile  # noqa: PLC0415 - only a trigger set needs a file
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / propose_skill_edit.TRIGGER_SET_FILE
-        path.write_bytes(data)
-        try:
-            items = propose_skill_edit.load_trigger_eval_set(path)
-        except propose_skill_edit.Refusal:
-            return False
+    try:
+        items = propose_skill_edit.parse_trigger_eval_set(
+            data, propose_skill_edit.TRIGGER_SET_FILE)
+    except propose_skill_edit.Refusal:
+        return False
     clean, seen = [], set()
     for item in items:
         query = " ".join(item["query"].split())
