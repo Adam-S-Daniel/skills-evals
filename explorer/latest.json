@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T05:12:53Z",
+ "generated_at": "2026-11-03T05:17:05Z",
  "guidance": {
   "removed": [
    {
@@ -7462,7 +7462,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T04:50:26Z",
+ "newest_run": "2026-11-03T05:15:20Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -11448,11 +11448,11 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -11463,6 +11463,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T05:15:20Z",
+     "cli_version": "2.1.317",
+     "fixture": "empty-repo-discovery",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T051307Z-9a6eba/review-bash-ci-reliability/20261103T051520Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1387319,
+      "judge_mean": 8.6,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.09515570000000001,
+      "judge_mean": 8.6,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T01:16:41Z",
      "cli_version": "2.1.316",
@@ -14375,7 +14396,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "1c3ba2e3d8c552f2139e3f4d3c2820d6f47660a0",
-  "results_commit": "dbd7a08af5bc1e6c7c1f964435b4442ccdd3d4d3"
+  "results_commit": "0ba4c19f53e444bba9aec7f9fcdbb9c0a339d431"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
