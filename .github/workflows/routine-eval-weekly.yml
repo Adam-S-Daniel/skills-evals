@@ -380,6 +380,7 @@ jobs:
       - name: Install PyYAML
         run: python3 -m pip install pyyaml==6.0.3
       - name: Revalidate the planned fire
+        id: valid
         env:
           MODE: ${{ matrix.mode }}
           ARMS: ${{ matrix.arms }}
@@ -390,16 +391,19 @@ jobs:
           SECTION: ${{ matrix.section }}
           HOLDOUT: ${{ matrix.holdout }}
         run: python3 scripts/plan_week.py validate-fire
-      # A cap still full when the sweep's wait budget is spent skips this
-      # leg's fire (exit 0, open=false); the next re-plan plans it again.
+      # A leg whose fixture was unscheduled after the plan exits 0 with
+      # fire=false and skips the rest. A cap still full when the sweep's
+      # wait budget is spent skips this leg's fire (exit 0, open=false);
+      # the next re-plan plans it again.
       - name: Wait until a fire slot is free
         id: slot
+        if: steps.valid.outputs.fire == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           SWEEP_STARTED: ${{ needs.plan.outputs.sweep_started }}
         run: python3 scripts/plan_week.py wait-slot --max-wait 1500 --sweep-started "$SWEEP_STARTED"
       - name: Dispatch the validated fire
-        if: steps.slot.outputs.open == 'true'
+        if: steps.valid.outputs.fire == 'true' && steps.slot.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
