@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:14:59Z",
+  "generated_at": "2026-11-03T23:16:53Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 32
   }
  },
- "generated_at": "2026-11-03T23:13:58Z",
+ "generated_at": "2026-11-03T23:15:53Z",
  "guidance": {
   "removed": [
    {
@@ -379,6 +379,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1422,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "on-hold-pull-request",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "on-hold-pull-request",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -668,6 +690,88 @@
     "alone_verdict": "keep",
     "bytes": 886,
     "confidence": {
+     "cells": [
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "done-summary",
+       "votes": true
+      },
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 5,
+       "status": "open",
+       "task": "handoff",
+       "votes": true
+      },
+      {
+       "gain": 66.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "no-url",
+       "votes": true
+      },
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "waiting-on-review",
+       "votes": true
+      },
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "done-summary",
+       "votes": true
+      },
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "handoff",
+       "votes": true
+      },
+      {
+       "gain": 66.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 2,
+       "status": "open",
+       "task": "no-url",
+       "votes": true
+      },
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "waiting-on-review",
+       "votes": true
+      }
+     ],
      "helps": 0.3482157405898648,
      "keep_family": 8,
      "keep_pairs": 5,
@@ -1808,6 +1912,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1015,
     "confidence": {
+     "cells": [
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "changelog-check",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "changelog-check",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -2060,6 +2186,28 @@
     "alone_verdict": "insufficient",
     "bytes": 149,
     "confidence": {
+     "cells": [
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "clone-all",
+       "votes": true
+      },
+      {
+       "gain": 66.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "clone-all",
+       "votes": true
+      }
+     ],
      "helps": 0.27404718693284946,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -2312,6 +2460,28 @@
     "alone_verdict": "insufficient",
     "bytes": 431,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "search-query",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "search-query",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -2603,6 +2773,48 @@
     "alone_verdict": "insufficient",
     "bytes": 1197,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "backup-config-secrets",
+       "votes": true
+      },
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "dispatch-email-input",
+       "votes": true
+      },
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "http-error-body",
+       "votes": true
+      },
+      {
+       "gain": 22.2,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "realistic-contact-fixtures",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 8,
      "keep_pairs": 4,
@@ -3264,6 +3476,28 @@
     "alone_verdict": "insufficient",
     "bytes": 295,
     "confidence": {
+     "cells": [
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "new-config-key",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "new-config-key",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -3516,6 +3750,28 @@
     "alone_verdict": "insufficient",
     "bytes": 2201,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "required-check-concurrency",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "required-check-concurrency",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -3768,6 +4024,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1283,
     "confidence": {
+     "cells": [
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "org-connector-ci",
+       "votes": true
+      },
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "org-connector-ci",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -4020,6 +4298,28 @@
     "alone_verdict": "keep",
     "bytes": 622,
     "confidence": {
+     "cells": [
+      {
+       "gain": 69.4,
+       "high": 89.0,
+       "low": 22.9,
+       "model": "claude-opus-5-5",
+       "pairs": 9,
+       "status": "keeps",
+       "task": "open-pull-request",
+       "votes": true
+      },
+      {
+       "gain": 56.2,
+       "high": 81.4,
+       "low": 9.4,
+       "model": "claude-sonnet-5-5",
+       "pairs": 8,
+       "status": "keeps",
+       "task": "open-pull-request",
+       "votes": true
+      }
+     ],
      "helps": 0.9569269998137909,
      "keep_family": 2,
      "keep_pairs": 9,
@@ -4755,6 +5055,7 @@
     "alone_verdict": null,
     "bytes": 324,
     "confidence": {
+     "cells": [],
      "helps": null,
      "keep_family": null,
      "keep_pairs": null,
@@ -4784,6 +5085,28 @@
     "alone_verdict": "insufficient",
     "bytes": 875,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "private-repo-404",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "private-repo-404",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -5036,6 +5359,28 @@
     "alone_verdict": "insufficient",
     "bytes": 963,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "skills-lock-census",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "skills-lock-census",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -5325,6 +5670,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1364,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "legacy-status-failure",
+       "votes": true
+      },
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "legacy-status-failure",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -5614,6 +5981,7 @@
     "alone_verdict": "cannot-discriminate",
     "bytes": 1102,
     "confidence": {
+     "cells": [],
      "helps": null,
      "keep_family": null,
      "keep_pairs": null,
@@ -5903,6 +6271,28 @@
     "alone_verdict": "insufficient",
     "bytes": 534,
     "confidence": {
+     "cells": [
+      {
+       "gain": 25.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "dependabot-cooldown",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "dependabot-cooldown",
+       "votes": true
+      }
+     ],
      "helps": 0.3439665422936571,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -6229,6 +6619,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1003,
     "confidence": {
+     "cells": [
+      {
+       "gain": 8.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "bundle-lock-name",
+       "votes": true
+      },
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "bundle-lock-name",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -6594,6 +7006,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1153,
     "confidence": {
+     "cells": [
+      {
+       "gain": 25.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "new-workflow",
+       "votes": true
+      },
+      {
+       "gain": 8.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "new-workflow",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -6959,6 +7393,28 @@
     "alone_verdict": "insufficient",
     "bytes": 918,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "stop-worker",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "stop-worker",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -7250,6 +7706,28 @@
     "alone_verdict": "insufficient",
     "bytes": 2515,
     "confidence": {
+     "cells": [
+      {
+       "gain": 12.5,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "verifier-that-cannot-fail",
+       "votes": true
+      },
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "verifier-that-cannot-fail",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -7539,6 +8017,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1228,
     "confidence": {
+     "cells": [
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "push-fails-everywhere",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "push-fails-everywhere",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -7791,6 +8291,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1970,
     "confidence": {
+     "cells": [
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "multi-repo-cloud-session",
+       "votes": true
+      },
+      {
+       "gain": 50.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "multi-repo-cloud-session",
+       "votes": true
+      }
+     ],
      "helps": 0.04875148632580273,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -8043,6 +8565,28 @@
     "alone_verdict": "insufficient",
     "bytes": 1396,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 4,
+       "status": "open",
+       "task": "merge-method-and-closing-keyword",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "merge-method-and-closing-keyword",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 4,
@@ -8332,6 +8876,28 @@
     "alone_verdict": "insufficient",
     "bytes": 447,
     "confidence": {
+     "cells": [
+      {
+       "gain": -8.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "node-service",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "node-service",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -8584,6 +9150,28 @@
     "alone_verdict": "insufficient",
     "bytes": 278,
     "confidence": {
+     "cells": [
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "load-settings",
+       "votes": true
+      },
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "load-settings",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -8836,6 +9424,28 @@
     "alone_verdict": "insufficient",
     "bytes": 313,
     "confidence": {
+     "cells": [
+      {
+       "gain": 100.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "fetch-user",
+       "votes": true
+      },
+      {
+       "gain": 83.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "fetch-user",
+       "votes": true
+      }
+     ],
      "helps": 0.4117647058823529,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -9088,6 +9698,28 @@
     "alone_verdict": "insufficient",
     "bytes": 249,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "fetch-retry",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "fetch-retry",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -9340,6 +9972,28 @@
     "alone_verdict": "insufficient",
     "bytes": 786,
     "confidence": {
+     "cells": [
+      {
+       "gain": 16.7,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "load-config",
+       "votes": true
+      },
+      {
+       "gain": 33.3,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "load-config",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -9592,6 +10246,28 @@
     "alone_verdict": "insufficient",
     "bytes": 305,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "parse-port",
+       "votes": true
+      },
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "parse-port",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -9844,6 +10520,28 @@
     "alone_verdict": "insufficient",
     "bytes": 526,
     "confidence": {
+     "cells": [
+      {
+       "gain": 0.0,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-opus-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "parse-event",
+       "votes": true
+      },
+      {
+       "gain": 11.1,
+       "high": 100.0,
+       "low": -100.0,
+       "model": "claude-sonnet-5-5",
+       "pairs": 3,
+       "status": "open",
+       "task": "parse-event",
+       "votes": true
+      }
+     ],
      "helps": 0.0,
      "keep_family": 2,
      "keep_pairs": 3,
@@ -10456,7 +11154,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:11:45Z",
+ "newest_run": "2026-11-03T23:13:18Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10499,6 +11197,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -10543,6 +11242,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -10587,6 +11287,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -10695,6 +11396,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -10739,6 +11441,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -10783,6 +11486,28 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 14.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "browser-cache",
+      "votes": true
+     },
+     {
+      "gain": 14.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "browser-cache",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 2,
@@ -11059,6 +11784,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -11167,6 +11893,28 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": 28.6,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": -3.6,
+      "high": 44.5,
+      "low": -55.7,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 3,
@@ -11359,6 +12107,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -11467,6 +12216,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -11511,6 +12261,28 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": 7.9,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 8.4,
+      "high": 44.7,
+      "low": -34.4,
+      "model": "claude-sonnet-5-5",
+      "pairs": 5,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 5,
@@ -11978,6 +12750,88 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": -9.5,
+      "high": 54.8,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "git-identity",
+      "votes": true
+     },
+     {
+      "gain": 8.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "secret-name",
+      "votes": true
+     },
+     {
+      "gain": -9.5,
+      "high": 52.3,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "swallowed-failure",
+      "votes": true
+     },
+     {
+      "gain": 14.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "wrong-branch",
+      "votes": true
+     },
+     {
+      "gain": -3.6,
+      "high": 44.5,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "git-identity",
+      "votes": true
+     },
+     {
+      "gain": 9.4,
+      "high": 51.7,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "secret-name",
+      "votes": true
+     },
+     {
+      "gain": 3.6,
+      "high": 48.6,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "swallowed-failure",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 46.9,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "wrong-branch",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 8,
     "keep_pairs": 3,
@@ -13220,6 +14074,28 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 27.8,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 22.2,
+      "high": 49.3,
+      "low": -19.9,
+      "model": "claude-sonnet-5-5",
+      "pairs": 6,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.3160538908497246,
     "keep_family": 2,
     "keep_pairs": 6,
@@ -13750,6 +14626,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -13837,10 +14714,32 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": 57.1,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 14.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 1,
-    "max_pairs": 2,
+    "max_pairs": 3,
     "no_help": 0.0,
     "no_help_pairs": 1
    },
@@ -13856,7 +14755,7 @@
      "to": "2026-11-03"
     }
    },
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
    "name": "embeddable-tool-pages",
    "next_test": {
@@ -13867,6 +14766,27 @@
    },
    "registry": "adamdaniel.ai",
    "runs": [
+    {
+     "at": "2026-11-03T23:13:18Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T231112Z-ce8e4b/embeddable-tool-pages/20261103T231318Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.15531709999999999,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.1072092,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:27:30Z",
      "cli_version": "2.1.317",
@@ -14260,6 +15180,48 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 85.7,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "keyword-lookalikes",
+      "votes": true
+     },
+     {
+      "gain": 80.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "shifted-draft",
+      "votes": true
+     },
+     {
+      "gain": 75.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "single-file",
+      "votes": true
+     },
+     {
+      "gain": 78.6,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "three-files",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 8,
     "keep_pairs": 2,
@@ -14473,6 +15435,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -14517,6 +15480,7 @@
   {
    "bundle": "adam-anything-anywhere",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -14835,6 +15799,28 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": -8.3,
+      "high": 42.0,
+      "low": -76.0,
+      "model": "claude-opus-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "drift-diagnosis",
+      "votes": true
+     },
+     {
+      "gain": -4.4,
+      "high": 37.5,
+      "low": -42.9,
+      "model": "claude-sonnet-5-5",
+      "pairs": 5,
+      "status": "open",
+      "task": "drift-diagnosis",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 5,
@@ -15321,6 +16307,28 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": 15.3,
+      "high": 29.5,
+      "low": -3.3,
+      "model": "claude-opus-5-5",
+      "pairs": 15,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 1.3,
+      "high": 17.0,
+      "low": -14.7,
+      "model": "claude-sonnet-5-5",
+      "pairs": 15,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.6819305618928069,
     "keep_family": 2,
     "keep_pairs": 15,
@@ -16271,6 +17279,7 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -16315,6 +17324,7 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -16359,6 +17369,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -16403,6 +17414,7 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -16490,6 +17502,28 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 25.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 2,
@@ -16598,6 +17632,28 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [
+     {
+      "gain": -13.9,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 46.4,
+      "low": -46.7,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 3,
@@ -16811,6 +17867,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -16855,6 +17912,48 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 8.3,
+      "high": 51.5,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "paths-required",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "timeout-wall",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 46.4,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "paths-required",
+      "votes": true
+     },
+     {
+      "gain": 16.7,
+      "high": 56.4,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "timeout-wall",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 4,
@@ -17299,6 +18398,28 @@
   {
    "bundle": "adam-non-coding-local",
    "confidence": {
+    "cells": [
+     {
+      "gain": 50.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": null,
+      "votes": true
+     },
+     {
+      "gain": 41.7,
+      "high": 100.0,
+      "low": -38.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": null,
+      "votes": true
+     }
+    ],
     "helps": 0.22896443297261326,
     "keep_family": 2,
     "keep_pairs": 3,
@@ -17470,6 +18591,88 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 42.9,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "drift-report-capture",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "nightly-snapshot",
+      "votes": true
+     },
+     {
+      "gain": 22.7,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "release-pipeline",
+      "votes": true
+     },
+     {
+      "gain": 35.7,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "test-runner-assertions",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "drift-report-capture",
+      "votes": true
+     },
+     {
+      "gain": 25.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "nightly-snapshot",
+      "votes": true
+     },
+     {
+      "gain": 30.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "release-pipeline",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "test-runner-assertions",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 8,
     "keep_pairs": 3,
@@ -18250,6 +19453,48 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 13.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "bucketed-account-store",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 46.7,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "personal-copy-outranks-repo",
+      "votes": true
+     },
+     {
+      "gain": 5.0,
+      "high": 49.3,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "bucketed-account-store",
+      "votes": true
+     },
+     {
+      "gain": 4.2,
+      "high": 48.8,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "open",
+      "task": "personal-copy-outranks-repo",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 3,
@@ -18946,6 +20191,7 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -18990,6 +20236,7 @@
   {
    "bundle": null,
    "confidence": {
+    "cells": [],
     "helps": null,
     "keep_family": null,
     "keep_pairs": null,
@@ -19034,6 +20281,68 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
+    "cells": [
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "paused",
+      "task": "preview-before-delete",
+      "votes": false
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "paused",
+      "task": "protected-path-cleanup",
+      "votes": false
+     },
+     {
+      "gain": 13.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 3,
+      "status": "paused",
+      "task": "silent-exit-one",
+      "votes": false
+     },
+     {
+      "gain": -16.7,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "paused",
+      "task": "preview-before-delete",
+      "votes": false
+     },
+     {
+      "gain": 6.2,
+      "high": 50.1,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "paused",
+      "task": "protected-path-cleanup",
+      "votes": false
+     },
+     {
+      "gain": 5.0,
+      "high": 49.3,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 4,
+      "status": "paused",
+      "task": "silent-exit-one",
+      "votes": false
+     }
+    ],
     "helps": 0.0,
     "keep_family": 6,
     "keep_pairs": 3,
@@ -19730,6 +21039,88 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "closed-duplicate",
+      "votes": true
+     },
+     {
+      "gain": 33.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "closing-keywords",
+      "votes": true
+     },
+     {
+      "gain": 42.9,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "issue-hygiene",
+      "votes": true
+     },
+     {
+      "gain": 20.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "stamps-skip-quotes",
+      "votes": true
+     },
+     {
+      "gain": -8.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "closed-duplicate",
+      "votes": true
+     },
+     {
+      "gain": 25.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "closing-keywords",
+      "votes": true
+     },
+     {
+      "gain": 28.6,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 3,
+      "status": "open",
+      "task": "issue-hygiene",
+      "votes": true
+     },
+     {
+      "gain": 20.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "stamps-skip-quotes",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 8,
     "keep_pairs": 3,
@@ -20384,6 +21775,28 @@
   {
    "bundle": "adam-coding-local",
    "confidence": {
+    "cells": [
+     {
+      "gain": 7.1,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "paused",
+      "task": null,
+      "votes": false
+     },
+     {
+      "gain": 14.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "paused",
+      "task": null,
+      "votes": false
+     }
+    ],
     "helps": 0.0,
     "keep_family": 2,
     "keep_pairs": 2,
@@ -20849,6 +22262,48 @@
   {
    "bundle": "adam-coding-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "companion-skip-pair",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "workflow-doc-in-step",
+      "votes": true
+     },
+     {
+      "gain": 37.5,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "companion-skip-pair",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "workflow-doc-in-step",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 2,
@@ -21524,6 +22979,48 @@
   {
    "bundle": "adam-anything-anywhere",
    "confidence": {
+    "cells": [
+     {
+      "gain": 44.4,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "bootstrap",
+      "votes": true
+     },
+     {
+      "gain": 0.0,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "existing-convention",
+      "votes": true
+     },
+     {
+      "gain": 55.6,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "bootstrap",
+      "votes": true
+     },
+     {
+      "gain": 7.1,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 2,
+      "status": "open",
+      "task": "existing-convention",
+      "votes": true
+     }
+    ],
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 2,
@@ -22682,8 +24179,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "0b0572c57d9907e632f8050fc22ff67912b05dd8",
-  "results_commit": "6728beba32451d9adcff1573d0c3fd51dedce438"
+  "repository_commit": "80ef626f73478df6df5efd10c1d8ddb5ee7a7ec7",
+  "results_commit": "f609000b26ad065a24eb4ab41b32f149293d04c0"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
