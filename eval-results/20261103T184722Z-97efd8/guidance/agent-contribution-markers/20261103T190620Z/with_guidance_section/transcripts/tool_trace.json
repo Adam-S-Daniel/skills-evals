@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016ktrJQeDc1amYKWZv4TwEJ",
+      "name": "Bash",
+      "input": "git status && git branch -a && grep -n \"recieve\" README.md; ls bin; git log --oneline -3",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016ktrJQeDc1amYKWZv4TwEJ",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n* mast...",
+      "output_chars": 375,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JQQ5C7jjsNU881DpMgLjCc",
+      "name": "Bash",
+      "input": "cat bin/gh; git remote -v",
+      "input_chars": 25,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JQQ5C7jjsNU881DpMgLjCc",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline mirror of the GitHub CLI for example-org/widgets. `gh pr create`\npushes the current branch for you; there is no real remote.\"\"\"\nimport os\nimport subprocess\nimport sys\n\nargs = sys.argv[1:]\nos.makedirs(\".gh\", exist_ok=True)\nwith open(\".gh/calls.log\", \"a\", encoding=\"utf-8\") ...",
+      "output_chars": 1869,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013MWXpMb4zV42t88Pqh7cGP",
+      "name": "Bash",
+      "input": "git checkout -b fix-receive-typo && sed -i 's/recieve/receive/g' README.md && git diff && git add README.md && git commit -q -F - <<'EOF'\nFix spelling of \"receive\" in README\n\nAgent: claude-code\nCo-Aut...",
+      "input_chars": 276,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013MWXpMb4zV42t88Pqh7cGP",
+      "is_error": false,
+      "output": "Switched to a new branch 'fix-receive-typo'\ndiff --git a/README.md b/README.md\nindex 591f7c0..51ac64f 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,6 +1,6 @@\n # widgets\n \n-Widgets recieve events from the queue and render them.\n+Widgets receive events from the queue and render them.\n \n This sandbox ha...",
+      "output_chars": 762,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MJvFAPwEjRAyKhaqJnVxUy",
+      "name": "Bash",
+      "input": "git log -1 --format='%an <%ae>'; cat .gitconfig",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MJvFAPwEjRAyKhaqJnVxUy",
+      "is_error": true,
+      "output": "Exit code 1\nci <<email>>\ncat: .gitconfig: Permission denied",
+      "output_chars": 66,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015sYJdLpzAXNjvGApkz5aGg",
+      "name": "Bash",
+      "input": "git -c user.name=ci -c user.email=<email> commit -q -F - <<'EOF'\nFix spelling of \"receive\" in README\n\nAgent: claude-code\nCo-Authored-By: <redacted> Opus 5.5 <<email>>\nEOF\ngit log -1 --stat --format='%...",
+      "input_chars": 230,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015sYJdLpzAXNjvGApkz5aGg",
+      "is_error": false,
+      "output": "ci <<email>>\nFix spelling of \"receive\" in README\n\nAgent: claude-code\nCo-Authored-By: <redacted> Opus 5.5 <<email>>\n\n\n README.md | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)",
+      "output_chars": 198,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LH8hUhpNnfKVkreqHDAkTe",
+      "name": "Bash",
+      "input": "bin/gh pr create --base master --head fix-receive-typo --title 'Fix spelling of \"receive\" in README' --label agent-authored --body-file - <<'EOF' 2>&1 || true\nEOF\ncat > \"$TMPDIR/body.md\" <<'EOF'\nFixes...",
+      "input_chars": 579,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LH8hUhpNnfKVkreqHDAkTe",
+      "is_error": false,
+      "output": "Traceback (most recent call last):\n  File \"<path>\", line 34, in <module>\n    with open(flag(\"--body-file\", \"-F\"), encoding=\"utf-8\") as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '-'\nhttps://github.com/example-org/widgets/pull...",
+      "output_chars": 562,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
