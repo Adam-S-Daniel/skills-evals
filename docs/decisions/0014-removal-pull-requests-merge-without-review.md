@@ -126,7 +126,8 @@ slot check still looks only at `retire-skill/*`.
 Adam decided on 2026-10-26 that skill and section removal pull requests
 auto-merge with no human. `evals/gate-policy.yml` now commits
 `retirement_mode: auto` for skills (the one switch; set it to `proposal` to
-stop removal pull requests), and `skill-coverage.yml`'s `retirement` job
+stop removal pull requests, and, since the 2026-11-03 withdrawal addendum,
+to disarm the ones already open), and `skill-coverage.yml`'s `retirement` job
 wires it. The guidance block stays `proposal`: the App below is installed on
 adam-agentskills alone, and _agent-guidance has no write path yet.
 
@@ -667,26 +668,79 @@ minor findings.
   `retire-pending` or a removal PR is open, and an owned subject gets no
   `needs-fixtures` or `needs-harder-fixtures` item.
 
-### Round 8's known limit resolved: stale removals are withdrawn (2026-11-03)
+### Round 8's known limit: stale removals are withdrawn (2026-11-03)
 
 The limit round 8 recorded, an open automatic removal pull request never
-withdrawn once its verdict leaves `retire`, is closed by the coverage job
-(the second fix that addendum named). Before each pass, `skill-coverage.yml`'s
-`retirement` job runs `scripts/retire_skill.py --withdraw-stale` for skills,
-then with `--target guidance` for sections. For every open pull request whose
-head is `retire-skill/` or `retire-guidance/` and that carries
-`agent-authored` (one labeled `on-hold` is left alone), it re-reads the
-subject's current verdict; anything but `retire` with an automatic removal
-(the field `auto` and `proposal_only` agreeing, so a removal lowered to a
-proposal counts, and so does a subject the verdicts no longer list) turns
-auto-merge off and reads it back, comments the new verdict and why, and closes
-the pull request, keeping its branch. Unknown data never withdraws: a missing
-or unreadable gates document, no guidance block, a verdict that raised in
-`compute_gates.py` (`VERDICT_RAISED`) or a `retire` that fails the re-check
-leaves the pull request open. A closed removal pull request decides its
+withdrawn once its verdict leaves `retire`, is addressed by the second fix
+that round named: the coverage job, and now every ingest, disarm and close
+the pull request. `scripts/retire_skill.py --withdraw-stale` runs for skills,
+then with `--target guidance` for sections, in two places:
+
+- before each pass of `skill-coverage.yml`'s daily `retirement` job;
+- after every ingest, in `loop-pr-refresh.yml`'s `withdraw` job (the
+  `workflow_run` trigger that refresh already used), which recomputes the
+  verdicts as the retirement job does.
+
+Each pass is its own step and runs unless the run was cancelled, so a failure
+in one (no token, a failed call) never skips the other pass or an act step;
+the failed step still fails the job.
+
+**What it touches.** An open pull request whose head is `retire-skill/` or
+`retire-guidance/`, that carries `agent-authored`, and whose author is the
+eval-improve App's bot (`LOOP_AUTHOR`, `skills-evals-improve[bot]`). One
+labeled `on-hold` is left alone. Every agent-authored pull request in the
+fleet carries the label, so the author is what tells a loop removal from one
+a person or an agent opened by hand.
+
+**When it withdraws.** It re-reads the subject's current verdict
+(`removal_support`). It withdraws when that verdict no longer supports an
+automatic removal: not `retire`, or a `retire` lowered to a proposal (the
+`removal` field and `proposal_only` must agree on `auto`). A `retire-pending`
+whose `raw_verdict` is a supported `retire` keeps its pull request:
+`compute_gates.finalize` demotes every confirmed subject but one per
+evaluation, which ranks it and says nothing against it. Withdrawing it would
+have closed a confirmed removal and decided the subject for good.
+
+A withdrawal turns auto-merge off and reads it back, comments the new
+verdict, why, and the override, and closes the pull request with its branch
+kept. It then files or updates the subject's retirement issue (the proposal
+path's marker and issue), so the subject is never decided in silence.
+
+**Unknown data never withdraws.** That covers a missing or unreadable gates
+document, no guidance block, a subject the document does not list (so an
+empty or partial block withdraws nothing), a verdict that raised in
+`compute_gates.py` (`VERDICT_RAISED`), and a `retire` that fails the
+re-check.
+
+**The one switch.** While a target's mode is `proposal`, a loop removal
+that is not withdrawn is disarmed instead: auto-merge is turned off and read
+back, the pull request stays open, and it gets one comment. Setting
+`retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
+stops removal pull requests from merging on their own, including those
+already open and armed.
+
+**The refresh.** `loop-pr-refresh.yml` merges the base into a `retire-skill/`
+or `retire-guidance/` pull request only when `refresh_loop_prs.py
+removal-check` finds its verdict still supported and the mode `auto`. With
+the verdicts unknown, it refreshes none. A refresh therefore never re-runs
+the checks of a removal that should not merge.
+
+**What remains.** A removal is armed with `--match-head-commit`
+(`execute` and `guidance_execute`), which the code passes only when it turns
+auto-merge on. This round did not verify whether GitHub also enforces that
+commit at merge time, so the design assumes it does not: a removal that is
+still armed can merge at any check run until a pass reaches it. That window
+now runs from one ingest to the end of that ingest's `withdraw` job, not to
+the next daily run. A re-run of a red check on a stale pull request inside
+that window is not covered.
+
+**The override and the decision.** A closed removal pull request decides its
 subject, as before for skills and now for sections too
-(`guidance_closed_removal_prs`), so a withdrawal is not reopened by the loop;
-a person may reopen it. The decision is `withdrawal_decision`, a pure
-function; tests in `test/issues/test_issue_removal_withdrawal.py`.
-`retirement_mode` stays `proposal`; this removes the blocker on switching it,
-not the decision.
+(`guidance_closed_removal_prs`), so the loop opens no removal for it again.
+To remove a subject anyway, a person removes `agent-authored` (the pull
+request is then not the loop's and no pass touches it), reopens it, and
+merges it by hand.
+
+The decision is `withdrawal_decision`, a pure function; the tests are in
+`test/issues/test_issue_removal_withdrawal.py`. `retirement_mode` stays
+`proposal`, and switching it remains Adam's decision.
