@@ -338,7 +338,8 @@ class CellTests(unittest.TestCase):
         runs = flat_cell(cli=CLIS[0])
         result = cell(runs[:FLAT_DECIDES], runs[FLAT_DECIDES:])
         self.assertEqual(result["class"], "insufficient")
-        self.assertIn("1 CLI version(s), under the 2", result["reason"])
+        self.assertIn("1 CLI version(s) in the pairs it decided on, under the 2",
+                      result["reason"])
         self.assertEqual(cell(runs[:FLAT_DECIDES], runs[FLAT_DECIDES:],
                               policy={**TEST_POLICY, "min_cli_versions": 1})["class"],
                          "no-benefit")
@@ -461,18 +462,29 @@ class CellTests(unittest.TestCase):
 
     def test_a_without_arm_above_one_minus_the_margin_is_ceiling(self):
         # The review's C2: a without arm above 0.85 cannot show a 0.15 gain,
-        # so the cell parks as `ceiling` once CEILING_MIN_RUNS pairs say so.
-        n = gates.CEILING_MIN_RUNS
-        same = [(90, 90, 90)] * 30
-        result = cell(series("with", same[:n - 1]), series("without", same[:n - 1]))
+        # so the cell parks as `ceiling`, but only once the ceiling test (a
+        # betting bound on the without arm's mean, at the retire level) says
+        # so; round 1's C1: a sample mean over three pairs parked helpful
+        # cells for good. A perfect without arm takes 18 pairs.
+        same = [(100, 100, 100)] * 30
+        result = cell(series("with", same[:17]), series("without", same[:17]))
         self.assertEqual(result["class"], "insufficient")
         self.assertIn("decide whether the cell has headroom", result["reason"])
         result = cell(series("with", same), series("without", same))
-        self.assertEqual(result["class"], "ceiling")
+        self.assertEqual((result["class"], result["ceiling_at"]), ("ceiling", 18))
         self.assertIs(result["headroom"], False)
-        self.assertAlmostEqual(result["without_mean"], 0.9, places=12)
+        self.assertAlmostEqual(result["without_mean"], 1.0, places=12)
         # The removal test rejected by then; the ceiling still parks it.
         self.assertIsNotNone(result["objective"]["remove_at"])
+        # A without arm at 0.90 is above the floor but too near it for the
+        # bound within the cap: it never votes, and at the cap it has no
+        # clear effect, which can only propose.
+        near = [(90, 90, 90)] * 40
+        result = cell(series("with", near[:30]), series("without", near[:30]))
+        self.assertEqual(result["class"], "insufficient")
+        self.assertIsNotNone(result["objective"]["remove_at"])
+        self.assertEqual(cell(series("with", near), series("without", near))["class"],
+                         "no-clear-effect")
         # Exactly 1 - margin has headroom.
         edge = [(85, 85, 85)] * 30
         self.assertEqual(cell(series("with", edge), series("without", edge))["class"],
@@ -675,7 +687,7 @@ class VerdictTests(unittest.TestCase):
             "without", LOSS * 2, model=model, **kw)
 
     def ceiling(self, model, **kw):
-        same = [(90, 90, 90)] * 5
+        same = [(100, 100, 100)] * 18
         return series("with", same, model=model, **kw) + series(
             "without", same, model=model, **kw)
 
@@ -705,12 +717,14 @@ class VerdictTests(unittest.TestCase):
 
     def test_ceiling_cells_do_not_vote_and_all_ceiling_is_ceiling(self):
         # The review's C2 (2026-11-03): a ceiling cell is parked, never a
-        # vote for removal; the other cells decide.
+        # vote for removal; the other cells decide. Round 1's C1: evidence
+        # that did not vote makes the removal a proposal, never automatic.
         runs = [r for m in self.MODELS[1:] for r in self.flat(m)] + self.ceiling("model-a")
         result = self.verdict(runs)
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["ceiling", "no-benefit", "no-benefit"])
-        self.assertEqual((result["verdict"], result["removal"]), ("retire", "auto"))
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+        self.assertIn("at the ceiling did not vote", result["removal_reason"])
         # Every cell at the ceiling: the subject needs a fixture, and is never
         # removed for it.
         fixtures = ("one", "two")

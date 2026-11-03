@@ -281,15 +281,19 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    high-stakes subject).
 
 Two rules from the 2026-11-03 gate change apply across the bands. A cell
-whose verdict class is `ceiling` (its without arm already passes more than
-1 minus the margin, so it cannot show the gain) plans no fire in any band
-but safety, re-checks included, and becomes a "fixture ceiling" work item:
-it needs a harder fixture, not more runs. And the cheaper model goes first:
-in the missing, near, focus and guidance-rest bands a cell waits while its
-subject's cell of the same fixture on a model with a lower known cost is
-still open (`cheaper_first`). A keep on the cheaper model keeps the subject,
-and a removal needs both cells, so the dearer model is fired only once the
-cheaper cell has decided without a keep.
+whose verdict class is `ceiling` (a bound on its without arm shows a mean
+above 1 minus the margin, so it cannot show the gain) plans no fire in any
+band but safety, re-checks included, and becomes a "fixture ceiling" work
+item: it needs a harder fixture, not more runs. It does not block its
+subject: the subject's other cells keep being measured. And the cheaper
+model goes first: in the missing, near, focus and guidance-rest bands a
+cell waits while its subject's cell of the same fixture on a model with a
+lower known cost is still open (`cheaper_first`). A keep on the cheaper
+model keeps the subject, and a removal needs both cells, so the dearer
+model is fired only once the cheaper cell has decided without a keep. A
+cheaper cell that more runs cannot move (blocking, below), or that already
+has 10 pairs without a decision (`CHEAPER_FIRST_MAX_PAIRS`), holds nothing,
+so a stuck cheaper cell never starves the dearer one.
 7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
@@ -325,18 +329,22 @@ the two sections nearest one until those decide.
 - **Eligibility.** The section's verdict is still `insufficient` (or it has
   none): keep, every retire verdict, `shorten-or-merge` and
   cannot-discriminate and `ceiling` are not focused. (A `ceiling` cell is
-  one whose without arm averages above 1 minus the margin over three pairs:
-  it is parked and does not vote on removal, and a section whose every cell
-  is parked is `ceiling`. A `cannot-discriminate` cell is one whose arms
+  one whose ceiling test, a betting bound on the without arm's run means at
+  90%, shows a mean above 1 minus the margin: at least 18 pairs, more as
+  the arm drops below 1.0. It is parked and does not vote on removal, and a
+  section whose every cell is parked is `ceiling`. A `cannot-discriminate`
+  cell is one whose arms
   both pass almost nothing over three pairs, left out of the verdict as a
   broken fixture.) At least one of its cells must be
   able to plan a fire (schedulable, stakes not `none`, not a "fixture
   broken" missing cell), no `retire-guidance/<section>` pull request may be
   open in _agent-guidance, and no cell may be BLOCKING: one whose no-benefit
-  was overruled by an agent-errored trial or a run skipped as anomalous, or
-  a ceiling or cannot-discriminate cell with at least three counted runs on
-  each arm. More runs on the current content cannot move a blocking cell
-  toward removal; under three runs one more can still change its class.
+  or no-clear-effect was overruled by an agent-errored trial or a run
+  skipped as anomalous, or a cannot-discriminate cell with at least three
+  counted runs on each arm. More runs on the current content cannot move a
+  blocking cell toward removal; under three runs one more can still change
+  its class. A `ceiling` cell does not block: it is parked, and the
+  section's other cells are still measured.
 - **Order.** The higher-scored section's fires go first; within a section the
   binding cell first (the lowest retire progress, or the highest keep
   progress when the score came from the keep side), then the cheaper model,
@@ -587,17 +595,26 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   Bonferroni). *No benefit* in a cell when its test shows D below 0.15
   (`objective_margin`) at 90% (`retire_confidence`). Whichever test rejects
   first decides the cell; a tie keeps.
-- *Ceiling.* A cell whose without arm averages above 1 minus the margin
-  cannot show the margin. It is `ceiling`: it does not vote on removal, the
-  planner stops firing it, and a subject whose every cell is at the ceiling
-  is `ceiling`.
+- *Ceiling.* A cell whose without arm is shown, by a betting bound at 90%
+  on its run means, to average above 1 minus the margin cannot show the
+  margin (a sample mean is not enough: three perfect pairs once parked a
+  cell for good). It is `ceiling`: it does not vote on removal, the planner
+  stops firing it without blocking the subject's other cells, and a subject
+  whose every cell is at the ceiling is `ceiling`. A retire verdict beside
+  a ceiling cell is only a proposal.
+- *Harm.* A cell whose without arm is high is also tested for harm (D below
+  0 at 90%). A harmful cell is `no-benefit`, never hidden as a ceiling: it
+  needs no headroom to show harm.
 - *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`) is
   `no-clear-effect`.
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
   no-clear-effect, none undecided. It may be automatic only with two or
   more such cells, every one no-benefit; one headroom cell, or any
-  no-clear-effect cell, makes it a proposal (`removal: proposal` in the
-  verdict). Removals also need runs on two Claude Code versions.
+  no-clear-effect or ceiling cell, makes it a proposal (`removal: proposal`
+  in the verdict), and `scripts/retire_skill.py` re-derives that from the
+  cells rather than trusting the field. Removals also need runs on two
+  Claude Code versions among the pairs the removal decided on, and a skill
+  cell with an agent-errored trial supports no removal at all.
 - *The judge* is reported beside each cell and does not vote; single
   checks no longer keep on their own.
 - *Current content only.* A cell decides on runs of the skill and fixture

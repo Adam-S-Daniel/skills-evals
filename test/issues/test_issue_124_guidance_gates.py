@@ -1477,6 +1477,26 @@ class GuidanceRemovalTests(unittest.TestCase):
                                               allow=("proposal",), fallback=True, dry=True)
         self.assertEqual(json.loads(out)["mode_reason"], rs.GUIDANCE_NO_CREDENTIAL)
 
+    def test_a_proposal_only_guidance_verdict_files_the_issue_in_auto_mode(self):
+        # The review's surviving mutation (round 1): guidance's `removal !=
+        # "auto"` lowering was untested. A verdict that says proposal, or
+        # says auto over cells that do not allow it (round 1's m3), files
+        # the issue and pushes nothing, with auto allowed.
+        for doc in (guidance_gates(mode="auto", removal="proposal"),
+                    guidance_gates(mode="auto", classes={"model-b": "no-clear-effect"}),
+                    guidance_gates(mode="auto", classes={"model-b": "ceiling"})):
+            with self.subTest(removal=doc["guidance"]["bravo"].get("removal"),
+                              classes=[c["class"] for c in doc["guidance"]["bravo"]["cells"]]):
+                root = guidance_repo(self)
+                rc, gh, pushed, out = self.run_main(doc, root, allow=("auto", "proposal"))
+                self.assertEqual(rc, 0, out)
+                self.assertEqual(pushed, [])
+                self.assertEqual(gh.calls[-1][0][:4], ["issue", "create", "-R", rs.EVALS_REPO])
+                self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(),
+                                 ["*", "main"])
+        # Both cells no-benefit and `removal: auto`: the auto path stands.
+        self.assertIsNone(rs.proposal_only(guidance_gates(mode="auto")["guidance"]["bravo"]))
+
     def test_without_fallback_auto_not_allowed_still_exits_2(self):
         root = guidance_repo(self)
         rc, gh, pushed, _out = self.run_main(guidance_gates(mode="auto"), root,

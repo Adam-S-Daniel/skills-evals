@@ -184,13 +184,23 @@ class EligibilityTests(unittest.TestCase):
         cells = [near("s", 0.9), gcell("s", "b", reason=reason)]
         self.assertEqual(focus_of(cells=cells), [])
 
-    def test_ceiling_and_cannot_discriminate_block_only_at_three_counted_runs(self):
+    def test_cannot_discriminate_blocks_only_at_three_counted_runs(self):
+        # A ceiling cell never blocks (round 1's M2), whatever its counts.
         for cls in ("ceiling", "cannot-discriminate"):
             for counted, blocked in (((3, 3), True), ((2, 3), False), ((3, 2), False),
                                      ((9, 4), True)):
                 with self.subTest(cls=cls, counted=counted):
                     cells = [near("s", 0.5), gcell("s", "b", cls=cls, counted=counted)]
-                    self.assertEqual(focus_of(cells=cells), [] if blocked else ["s"])
+                    self.assertEqual(focus_of(cells=cells),
+                                     [] if blocked and cls == "cannot-discriminate"
+                                     else ["s"])
+
+    def test_an_errored_no_clear_effect_blocks_too(self):
+        # Round 1's m4: gates keeps such a cell insufficient, and more runs
+        # past the cap cannot move it.
+        reason = ("no-clear-effect on the numbers, but the cell has 1 agent-errored "
+                  "trial(s) or a run skipped as anomalous, so it cannot retire")
+        self.assertEqual(focus_of(cells=[near("s", 0.9), gcell("s", "b", reason=reason)]), [])
 
     def test_a_held_cell_produces_no_item_but_still_blocks(self):
         held = {"schedulable": False, "hold_reason": "no context"}
@@ -198,8 +208,9 @@ class EligibilityTests(unittest.TestCase):
         self.assertEqual(focus_of(cells=[near("s", 0.9, **held),
                                          gcell("s", "b", cls="no-benefit")]), [])
         # A held blocking cell still blocks a section with a fireable cell.
-        self.assertEqual(focus_of(cells=[near("s", 0.9), gcell("s", "b", cls="ceiling",
-                                                               counted=(3, 3), **held)]), [])
+        self.assertEqual(focus_of(cells=[near("s", 0.9),
+                                         gcell("s", "b", cls="cannot-discriminate",
+                                               counted=(3, 3), **held)]), [])
         # A stakes `none` section plans nothing at all.
         self.assertEqual(focus_of(cells=[near("s", 0.9, stakes="none")]), [])
 
@@ -239,7 +250,7 @@ class EligibilityTests(unittest.TestCase):
 
     def test_nothing_eligible_leaves_the_focus_empty(self):
         cells = [near("s", 0.9, verdict="keep"), near("t", 0.9, verdict="shorten-or-merge"),
-                 near("u", 0.9), gcell("u", "b", cls="ceiling", counted=(3, 3))]
+                 near("u", 0.9), gcell("u", "b", cls="cannot-discriminate", counted=(3, 3))]
         plan = plan_week.build_plan(ctx(cells=cells), NOW)
         self.assertEqual(plan["guidance_focus"], [])
         self.assertEqual({f["band"] for f in plan["fires"]}, {"guidance-rest"})
@@ -247,6 +258,18 @@ class EligibilityTests(unittest.TestCase):
         # rest; a kept one plans none until its re-check.
         self.assertEqual([f["fixture"] for f in plan["fires"]],
                          ["evals/guidance/t/a", "evals/guidance/u/a"])
+
+
+class CeilingDoesNotBlockTests(unittest.TestCase):
+
+    def test_a_ceiling_cell_leaves_its_section_focused(self):
+        # Round 1's M2: a parked cell does not vote and is not fired, and the
+        # section's other cells must stay measured.
+        cells = [near("u", 0.9), gcell("u", "b", cls="ceiling", counted=(18, 18))]
+        self.assertEqual(focus_of(cells=cells), ["u"])
+        plan = plan_week.build_plan(ctx(cells=cells), NOW)
+        self.assertEqual([f["fixture"] for f in plan["fires"]], ["evals/guidance/u/a"])
+        self.assertFalse(plan_week._blocking(cells[1]))
 
 
 class BandTests(unittest.TestCase):

@@ -566,6 +566,34 @@ class BandTests(unittest.TestCase):
                    "empty_fires": plan_week.BROKEN_AFTER_FIRES}]
         self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)), set())
 
+    def test_a_stuck_cheaper_cell_does_not_starve_the_dearer_one(self):
+        # Round 1's M3 starvation repro: the cheaper cell is open but more
+        # runs cannot move it (an errored-trial block, a cannot-discriminate
+        # cell), or it already has CHEAPER_FIRST_MAX_PAIRS pairs without a
+        # decision. The dearer cell fires; it is not held behind it.
+        errored = ("no-benefit on the numbers, but the cell has 1 agent-errored "
+                   "trial(s) or a run skipped as anomalous, so it cannot retire")
+        stuck = [{"class": "insufficient", "reason": errored},
+                 {"class": "insufficient", "reason": "neither test has rejected yet",
+                  "pairs": plan_week.CHEAPER_FIRST_MAX_PAIRS},
+                 {"class": "cannot-discriminate"}]
+        for blocker in stuck:
+            with self.subTest(blocker=blocker):
+                priced = [{**cell("evals/a", "heavy", "insufficient", runs=1),
+                           "usd_per_arm_trial": 1.0,
+                           "reason": "neither test has rejected yet"},
+                          {**cell("evals/a", "light", "missing", runs=3),
+                           **blocker, "usd_per_arm_trial": 0.1}]
+                self.assertEqual(
+                    plan_week.cheaper_first(priced, plan_week.model_costs(priced)), set())
+        # One pair under the bound, an open cheaper cell still holds it.
+        priced = [{**cell("evals/a", "heavy", "insufficient", runs=1), "usd_per_arm_trial": 1.0},
+                  {**cell("evals/a", "light", "insufficient", runs=3), "usd_per_arm_trial": 0.1,
+                   "reason": "neither test has rejected yet",
+                   "pairs": plan_week.CHEAPER_FIRST_MAX_PAIRS - 1}]
+        self.assertEqual(plan_week.cheaper_first(priced, plan_week.model_costs(priced)),
+                         {id(priced[0])})
+
     def test_historical_cost_is_clamped_and_breaks_ties(self):
         c = ctx(points_per_usd=0.01)
         self.assertAlmostEqual(plan_week.fire_cost({"usd_per_fire": 2.0}, c), 0.02)

@@ -831,9 +831,33 @@ def _pr_body(gates, skill, location, versions, run_url, repin=False) -> str:
             f"workflow.\n\n{AGENT_MARKER}\n")
 
 
-def proposal_only(verdict: dict) -> str:
-    """Why a `retire` verdict's `removal` keeps it a proposal (the verdict's
-    `removal_reason`, when it is text)."""
+#: Headroom cells, every one `no-benefit`, an automatic removal needs
+#: (harness/gates.py AUTO_MIN_HEADROOM_CELLS).
+AUTO_MIN_HEADROOM_CELLS = 2
+
+
+def cells_allow_auto(verdict: dict) -> bool:
+    """Whether a `retire` verdict's cells allow an automatic removal, derived
+    here rather than trusted from its `removal` field (the review's m3): at
+    least AUTO_MIN_HEADROOM_CELLS headroom cells, every one `no-benefit`,
+    and no `ceiling` cell beside them."""
+    cells = [c for c in verdict.get("cells") or [] if isinstance(c, dict)]
+    headroom = [c for c in cells if c.get("class") in HEADROOM_CLASSES]
+    return (len(headroom) >= AUTO_MIN_HEADROOM_CELLS
+            and all(c["class"] == "no-benefit" for c in headroom)
+            and not any(c.get("class") == "ceiling" for c in cells))
+
+
+def proposal_only(verdict: dict) -> str | None:
+    """Why a `retire` verdict can only be a proposal, or None when it may be
+    removed automatically: its `removal` must be `auto` AND its cells must
+    allow it (`cells_allow_auto`); on any disagreement it is a proposal."""
+    if verdict.get("removal") == "auto":
+        if cells_allow_auto(verdict):
+            return None
+        return ("the verdict says auto, but its cells allow only a proposal: fewer "
+                f"than {AUTO_MIN_HEADROOM_CELLS} headroom cells, one that is not "
+                "no-benefit, or a ceiling cell")
     why = verdict.get("removal_reason")
     return ("the verdict allows only a proposal"
             + (f" ({why})" if isinstance(why, str) and why else ""))
@@ -857,7 +881,7 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     if skill is None:
         return {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
     mode_reason = None
-    if mode == "auto" and gates["skills"][skill].get("removal") != "auto":
+    if mode == "auto" and proposal_only(gates["skills"][skill]):
         mode_reason = proposal_only(gates["skills"][skill])
         mode = _lowered(mode_reason, allowed)
     if mode == "auto" and "auto" not in allowed and fallback:
@@ -1349,7 +1373,7 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         section, kind = shortening[0], "shorten"
     else:
         kind = "retire"
-        if mode == "auto" and guidance_block(gates)[section].get("removal") != "auto":
+        if mode == "auto" and proposal_only(guidance_block(gates)[section]):
             mode_reason = proposal_only(guidance_block(gates)[section])
             mode = _lowered(mode_reason, allowed)
         if mode == "auto" and "auto" not in allowed and fallback:

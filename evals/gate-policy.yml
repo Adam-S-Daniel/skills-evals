@@ -21,9 +21,11 @@
 #     benefit when its test shows D < `objective_margin` (0.15) at
 #     `retire_confidence` (0.90). Removal is the silent, unchecked error, so
 #     it takes the stricter level.
-#   * A cell whose without arm averages above 1 - `objective_margin` cannot
-#     show the margin: it parks as `ceiling`, does not vote on removal and is
-#     not fired again; it needs a harder fixture.
+#   * A cell whose without arm a betting bound at `retire_confidence` shows
+#     above 1 - `objective_margin` cannot show the margin: it parks as
+#     `ceiling`, does not vote on removal and is not fired again; it needs a
+#     harder fixture. A retire verdict beside one is only a proposal. A
+#     harm test (D < 0) runs at such cells, so a harmful one is no-benefit.
 #   * A cell that reaches `max_runs_per_cell` (40) pairs with neither test
 #     decided has `no-clear-effect`, which can only PROPOSE a removal. An
 #     automatic removal needs two or more cells with headroom, every one

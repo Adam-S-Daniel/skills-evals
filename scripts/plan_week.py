@@ -73,11 +73,12 @@ THE BANDS (rule D), in order:
          retire verdict, shorten-or-merge, ceiling and cannot-discriminate
          are not), some cell would plan a fire (schedulable, stakes not
          `none`, not fixture-broken), no removal pull request is open in
-         _agent-guidance, and no cell is BLOCKING: its no-benefit was
-         overruled by an errored trial or an anomalous skip, or it is
-         ceiling or cannot-discriminate with BLOCKING_MIN_RUNS (3) counted
-         runs on each arm. More runs on the current content cannot move a
-         blocking cell toward removal.
+         _agent-guidance, and no cell is BLOCKING: its no-benefit or
+         no-clear-effect was overruled by an errored trial or an anomalous
+         skip, or it is cannot-discriminate with BLOCKING_MIN_RUNS (3)
+         counted runs on each arm. More runs on the current content cannot
+         move a blocking cell toward removal. A ceiling cell does not block:
+         it is not fired, and the section's other cells still are.
      Within it the higher-scored section goes first, then its binding
      cell: the lowest retire progress, or, when the section's score came
      from the keep side, the highest keep progress; then the cheaper
@@ -467,12 +468,15 @@ DEFAULT_BENEFIT_CONFIDENCE = 0.80
 #: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
 FOCUS_VERDICTS = (None, "insufficient")
 #: A cell more runs on the current content cannot move toward removal: one
-#: whose no-benefit was overruled by an agent-errored trial or a run skipped
-#: as anomalous (gates.classify_cell's reason), or a ceiling or
+#: whose no-benefit or no-clear-effect was overruled by an agent-errored
+#: trial or a run skipped as anomalous (gates.classify_cell's reason), or a
 #: cannot-discriminate cell with at least this many counted runs on each
-#: arm (under it one more run can still change the class).
+#: arm (under it one more run can still change the class). A `ceiling` cell
+#: is not blocking (the review's M2): it only does not vote, and the
+#: subject's other cells must stay measured.
 BLOCKING_REASON = "no-benefit on the numbers, but the cell has"
-BLOCKING_CLASSES = ("ceiling", "cannot-discriminate")
+BLOCKING_REASONS = (BLOCKING_REASON, "no-clear-effect on the numbers, but the cell has")
+BLOCKING_CLASSES = ("cannot-discriminate",)
 BLOCKING_MIN_RUNS = 3
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
@@ -787,7 +791,7 @@ def _produces_item(cell: dict) -> bool:
 
 def _blocking(cell: dict) -> bool:
     """A cell more runs on the current content cannot move (BLOCKING_REASON)."""
-    return str(cell.get("reason") or "").startswith(BLOCKING_REASON) \
+    return str(cell.get("reason") or "").startswith(BLOCKING_REASONS) \
         or (cell["class"] in BLOCKING_CLASSES
             and (cell.get("with_counted") or 0) >= BLOCKING_MIN_RUNS
             and (cell.get("without_counted") or 0) >= BLOCKING_MIN_RUNS)
@@ -1149,6 +1153,10 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
 
 #: The bands where a cell waits for its cheaper model's cell (`eval_items`).
 CHEAPER_FIRST_BANDS = ("missing", "near", "focus", "guidance-rest")
+#: Pairs after which an undecided cheaper cell no longer holds its dearer
+#: sibling (the review's M3): it may never decide, and the dearer model may
+#: still show a keep.
+CHEAPER_FIRST_MAX_PAIRS = 10
 
 
 def cheaper_first(cells: list, costs: dict) -> set:
@@ -1156,8 +1164,12 @@ def cheaper_first(cells: list, costs: dict) -> set:
     FIRST): an open cell (missing or insufficient) whose subject has a cell
     of the same fixture on a model with a lower known cost (`costs`) that
     would still be fired (`_produces_item`: open, schedulable, not stakes
-    `none`, its fires not coming back empty). With no cost known for either
-    model, neither waits."""
+    `none`, its fires not coming back empty), is not BLOCKING (`_blocking`:
+    more runs cannot move it) and has fewer than CHEAPER_FIRST_MAX_PAIRS
+    pairs (gates' `pairs`). A cheaper cell that is decided in any other way
+    (ceiling, no-clear-effect, cannot-discriminate, no-benefit) is not open,
+    so it holds nothing either. With no cost known for either model,
+    neither waits."""
     def subject(cell):
         return ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
     open_classes = ("missing", "insufficient")
@@ -1169,7 +1181,9 @@ def cheaper_first(cells: list, costs: dict) -> set:
         for cell in group:
             price = costs.get(cell["model"], math.inf)
             if cell["class"] in open_classes and any(
-                    _produces_item(other) and costs.get(other["model"], math.inf) < price
+                    _produces_item(other) and not _blocking(other)
+                    and (other.get("pairs") or 0) < CHEAPER_FIRST_MAX_PAIRS
+                    and costs.get(other["model"], math.inf) < price
                     for other in group if other is not cell):
                 held.add(id(cell))
     return held
@@ -2007,6 +2021,8 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
+                # Gates' pair count and reason (`cheaper_first`, `_blocking`).
+                "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),

@@ -38,8 +38,8 @@ sys.path.insert(0, str(ISSUES))
 
 import gates  # noqa: E402
 import plan_week  # noqa: E402
-from test_issue_70_retirement import (EXPECT, FLAT, FLAT_DECIDES, GAIN, LOSS,  # noqa: E402
-                                      POLICY, cell, series)
+from test_issue_70_retirement import (CLIS, EXPECT, FLAT, FLAT_DECIDES, GAIN,  # noqa: E402
+                                      LOSS, POLICY, cell, series, trial)
 
 MARGIN = POLICY["objective_margin"]
 KEEP_ALPHA = 1 - POLICY["benefit_confidence"]
@@ -48,9 +48,9 @@ CAP = POLICY["max_runs_per_cell"]
 #: Learned priors at the clamps, each as wrong as the clamps allow for the
 #: null it is tested under.
 EAGER_KEEP = {"mean": gates.PRIOR_MEAN_RANGE[1], "variance": gates.PRIOR_MIN_VARIANCE,
-              "n": gates.PRIOR_MAX_PSEUDO_RUNS}
+              "n": gates.PRIOR_PSEUDO_RUNS}
 EAGER_REMOVE = {"mean": gates.PRIOR_MEAN_RANGE[0], "variance": gates.PRIOR_MIN_VARIANCE,
-                "n": gates.PRIOR_MAX_PSEUDO_RUNS}
+                "n": gates.PRIOR_PSEUDO_RUNS}
 
 
 def binary_pairs(rng, n, base, delta):
@@ -150,7 +150,7 @@ class IdenticalRunsTests(unittest.TestCase):
     def test_four_identical_runs_never_give_no_benefit(self):
         priors = (None, EAGER_KEEP, EAGER_REMOVE,
                   {"mean": 0.0, "variance": gates.PRIOR_MIN_VARIANCE,
-                   "n": gates.PRIOR_MAX_PSEUDO_RUNS})
+                   "n": gates.PRIOR_PSEUDO_RUNS})
         for passed in (0, 50, 80):
             for prior in priors:
                 for n in range(1, 5):
@@ -180,15 +180,66 @@ class VerdictTests(unittest.TestCase):
                 + series("without", without_patterns, model=model))
 
     def test_a_ceiling_cell_is_parked_and_an_all_ceiling_subject_is_ceiling(self):
-        top = [(96, 96, 96), (96, 96, 95)] * 10
+        top = [(96, 96, 96), (96, 96, 95)] * 12
         result = self.verdict(self.arms(top, top, "model-a") + self.arms(top, top, "model-b"))
         self.assertEqual([c["class"] for c in result["cells"]], ["ceiling", "ceiling"])
         self.assertEqual(result["verdict"], "ceiling")
         self.assertNotIn("removal", result)
         self.assertFalse(result["cells"][0]["headroom"])
-        # Under three pairs a high without arm is not yet called a ceiling.
-        early = self.verdict(self.arms(top[:2], top[:2], "model-a"), ["model-a"])
+        # Until the ceiling test rejects, a high without arm is not parked.
+        early = self.verdict(self.arms(top[:20], top[:20], "model-a"), ["model-a"])
         self.assertEqual(early["cells"][0]["class"], "insufficient")
+
+    def test_a_three_pair_ceiling_never_parks_a_cell_or_frees_an_auto_removal(self):
+        # Round 1's C1, the reviewer's direct repro: three perfect pairs on
+        # fixture a, eighteen flat pairs on b and c. A sample mean once
+        # parked a for good and let b and c remove the subject automatically.
+        def pairs(fixture, n, without, with_, start):
+            return (series("with", [(with_,)] * n, start=start, fixture=fixture)
+                    + series("without", [(without,)] * n, start=start, fixture=fixture))
+        expect = {k: dict(EXPECT[""]) for k in "abc"}
+        runs = pairs("a", 3, 100, 100, 0) + pairs("b", 18, 50, 50, 10) \
+            + pairs("c", 18, 50, 50, 40)
+        result = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, expect)
+        self.assertEqual([c["class"] for c in result["cells"]],
+                         ["insufficient", "no-benefit", "no-benefit"])
+        self.assertEqual(result["verdict"], "insufficient")
+        self.assertNotEqual(result.get("removal"), "auto")
+        # Even once a's ceiling is confirmed, the removal is only proposed.
+        runs = pairs("a", 18, 100, 100, 70) + pairs("b", 18, 50, 50, 10) \
+            + pairs("c", 18, 50, 50, 40)
+        result = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, expect)
+        self.assertEqual([c["class"] for c in result["cells"]],
+                         ["ceiling", "no-benefit", "no-benefit"])
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+
+    def test_harm_at_the_ceiling_is_not_hidden(self):
+        # Round 1's M1, the reviewer's repro: without 95/100, with 40/100 on
+        # two cells, 40 pairs. The harm test needs no headroom.
+        def pairs(fixture, n):
+            return (series("with", [(40,)] * n, fixture=fixture)
+                    + series("without", [(95,)] * n, fixture=fixture))
+        expect = {k: dict(EXPECT[""]) for k in "ab"}
+        result = gates.retirement({"runs": pairs("a", 40) + pairs("b", 40)}, ["model-a"],
+                                  "demo", POLICY, expect)
+        self.assertEqual([c["class"] for c in result["cells"]], ["no-benefit", "no-benefit"])
+        self.assertIn("harm test rejected", result["cells"][0]["reason"])
+        self.assertEqual(result["verdict"], "retire")
+        self.assertIn(result["removal"], ("auto", "proposal"))
+        # It is found long before the ceiling test could park the cell.
+        self.assertLess(result["cells"][0]["harm_at"], 10)
+
+    def test_a_keep_and_remove_tie_keeps(self):
+        # Both tests rejecting at the same pair: the keep wins (the review's
+        # surviving mutation). With margin 0.6, a constant D = 0.4 is a gain
+        # above 0 and under the margin, and both tests reach 1/alpha at pair 9.
+        policy = {**POLICY, "objective_margin": 0.6, "benefit_confidence": 0.9}
+        block = gates.sequence_block([0.4] * 12, 0.6, 0.1, 0.1)
+        self.assertEqual((block["keep_at"], block["remove_at"]), (9, 9))
+        result = cell(series("with", [(60,)] * 12), series("without", [(20,)] * 12),
+                      policy=policy)
+        self.assertEqual(result["objective"]["keep_at"], result["objective"]["remove_at"])
+        self.assertEqual(result["class"], "benefit", result["reason"])
 
     def test_the_cap_gives_no_clear_effect_which_only_proposes(self):
         # A swing of D = +0.3, -0.2 (a gain of 0.05): neither test decides
@@ -206,11 +257,39 @@ class VerdictTests(unittest.TestCase):
                              ["model-a"])
         self.assertEqual(short["cells"][0]["class"], "insufficient")
 
+    def test_an_errored_capped_cell_cannot_propose_a_removal(self):
+        # Round 1's m4: at the cap, a cell with an agent-errored trial is
+        # insufficient, as an errored no-benefit cell already was.
+        swing = [(50, 50, 50), (0, 0, 0)] * 20
+        mid = [(20, 20, 20), (20, 20, 20)] * 20
+        with_runs = series("with", swing)
+        with_runs[1]["trials"][0] = gates.trial_record(trial(error="timeout"))
+        result = cell(with_runs, series("without", mid), policy=POLICY)
+        self.assertEqual(result["class"], "insufficient", result["reason"])
+        self.assertTrue(result["reason"].startswith(
+            "no-clear-effect on the numbers, but the cell has"), result["reason"])
+        # The planner sees it as blocking: more runs cannot move it.
+        self.assertTrue(plan_week._blocking({**result, "class": "insufficient"}))
+
+    def test_cli_versions_count_only_the_pairs_that_decided(self):
+        # Round 1's m1: a no-benefit decided on one CLI version is not
+        # rescued by a later pair on a second version.
+        flat = [(80, 80, 80)] * (FLAT_DECIDES + 1)
+        clis = [CLIS[0]] * FLAT_DECIDES + [CLIS[1]]
+        with_runs = [series("with", [p], start=i, cli=c)[0]
+                     for i, (p, c) in enumerate(zip(flat, clis))]
+        without_runs = [series("without", [p], start=i, cli=c)[0]
+                        for i, (p, c) in enumerate(zip(flat, clis))]
+        result = cell(with_runs, without_runs, policy=POLICY)
+        self.assertEqual(result["objective"]["remove_at"], FLAT_DECIDES)
+        self.assertEqual(result["class"], "insufficient", result["reason"])
+        self.assertIn("1 CLI version(s) in the pairs it decided on", result["reason"])
+
     def test_one_headroom_cell_proposes_and_two_may_remove(self):
         one = self.verdict(self.arms(FLAT, FLAT, "model-a"), ["model-a"])
         self.assertEqual((one["verdict"], one["removal"]), ("retire", "proposal"))
         self.assertIn("only 1 cell with headroom", one["removal_reason"])
-        top = [(96, 96, 96), (96, 96, 95)] * 10
+        top = [(100, 100, 100)] * 18
         beside_a_ceiling = self.verdict(self.arms(FLAT, FLAT, "model-a")
                                         + self.arms(top, top, "model-b"))
         self.assertEqual((beside_a_ceiling["verdict"], beside_a_ceiling["removal"]),
@@ -261,7 +340,7 @@ class BetPriorTests(unittest.TestCase):
                           gates.PRIOR_PSEUDO_RUNS, "2026-11-02"))
         low = [self.history_cell([-0.9, -0.5]) for _ in range(3)]
         self.assertEqual(gates.fit_bet_prior(low, MARGIN)["mean"], gates.PRIOR_MEAN_RANGE[0])
-        self.assertLessEqual(gates.PRIOR_PSEUDO_RUNS, gates.PRIOR_MAX_PSEUDO_RUNS)
+        self.assertEqual(gates.PRIOR_PSEUDO_RUNS, 3.0)  # fixed, so within the n <= 5 clamp
 
     def test_too_few_cells_or_ceiling_cells_give_no_prior(self):
         two = [self.history_cell([0.1, 0.2]) for _ in range(2)]

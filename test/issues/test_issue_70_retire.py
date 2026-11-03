@@ -699,6 +699,26 @@ class VerdictTests(Base):
                 self.assertIn("only 1 cell with headroom", action["mode_reason"])
                 self.assertIn("only 1 cell with headroom", action["body"])
 
+    def test_removal_auto_is_rederived_from_the_cells(self):
+        # Round 1's m3: a gates file that says `removal: auto` over cells
+        # that do not allow it (a no-clear-effect cell, a ceiling cell, or
+        # one headroom cell) is lowered to the issue, never trusted.
+        registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
+        for swap in ("no-clear-effect", "ceiling", "one"):
+            with self.subTest(swap=swap):
+                doc = gates_doc("auto")
+                cells = doc["skills"][SKILL]["cells"]
+                if swap == "one":
+                    for c in cells[1:]:
+                        c["class"] = "ceiling"
+                else:
+                    cells[0]["class"] = swap
+                action = retire_skill.plan(doc, registries, FakeGitHub().gh,
+                                           allowed=("auto", "proposal"))
+                self.assertEqual((action["action"], action["mode"]),
+                                 ("create-issue", "proposal"))
+                self.assertIn("its cells allow only a proposal", action["mode_reason"])
+
     def test_two_retire_verdicts_are_refused(self):
         cells = [cell("basic", m) for m in MODELS]
         doc = gates_doc("auto", verdicts={SKILL: {"verdict": "retire", "cells": cells},

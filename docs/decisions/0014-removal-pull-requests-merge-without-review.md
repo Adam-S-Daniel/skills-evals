@@ -238,9 +238,12 @@ day simulated replacements on the real outcome shapes. What
   over its cells (Bonferroni). A cell shows no benefit when its test shows
   D below 0.15 at 90%. Removal is the silent, unchecked error, so it keeps
   the stricter level.
-- A cell whose without arm averages above 1 minus the margin is `ceiling`:
-  it does not vote, the planner stops firing it and asks for a harder
-  fixture, and a subject whose every cell is at the ceiling is `ceiling`.
+- A cell whose without arm a betting bound at 90% shows above 1 minus
+  the margin is `ceiling`: it does not vote, the planner stops firing it
+  and asks for a harder fixture (without blocking the subject's other
+  cells), and a subject whose every cell is at the ceiling is `ceiling`. A
+  harm test (D below 0 at 90%) runs wherever the without arm is high, so a
+  cell the skill makes worse is `no-benefit`, never hidden as a ceiling.
 - A cell undecided after 40 pairs is `no-clear-effect`.
 - The judge is reported and does not vote, and single checks no longer
   keep on their own.
@@ -251,12 +254,51 @@ day simulated replacements on the real outcome shapes. What
 
 What this addendum changes about removal: **an automatic removal needs at
 least two cells with headroom, every one no-benefit.** A `retire` verdict
-with one headroom cell, or with any `no-clear-effect` cell, carries
-`removal: proposal`, and `scripts/retire_skill.py` files the issue for it
-even in `auto` mode. A ceiling or broken-fixture cell may stand beside a
-removal, but at least one cell must have headroom. The 2026-11-02
+with one headroom cell, with any `no-clear-effect` cell, or with any
+`ceiling` cell, carries `removal: proposal`, and `scripts/retire_skill.py`
+files the issue for it even in `auto` mode; it re-derives the mode from the
+cells and lowers a gates file whose `removal: auto` the cells do not
+support. A broken-fixture cell may stand beside a removal, but at least
+one cell must have headroom. The 2026-11-02
 addendum's per-route keep and its 85% level are superseded, as is its
 note that both blocks commit `auto`. Whether removals go back to `auto`
 under this rule, or stay proposals only, is Adam's decision, still
 pending; `retirement_mode` stays a policy knob at `proposal` until he
 makes it.
+
+### Adversarial round 1 (2026-11-03)
+
+An adversarial review of the change before merge found that a ceiling was
+judged on a sample mean over three pairs, so three perfect pairs parked a
+cell for good and let two flat cells remove the subject automatically. A
+cell is now `ceiling` only when a betting bound on the without arm's run
+means, at the remove level, shows the mean above 1 minus the margin (at
+least 18 pairs at 1.0, 25 at 0.95; 0.90 does not reject inside the cap),
+and any retire verdict that includes a ceiling cell is a proposal. A harm
+test at high cells keeps a harmful cell from hiding as a ceiling. The
+planner no longer lets a parked cell block its subject, and the cheaper
+model no longer holds the dearer one when the cheaper cell is stuck.
+Known limits it left:
+
+- *Late arrivals and prior refits re-sort a cell* (m2). A cell is
+  re-classified over every run each evaluation, so a run ingested late, or
+  a bet prior refit on newer results, can move the pair at which a test
+  rejects and so its class. Each evaluation is still a valid test at its
+  level, and the seeded simulations' rejection rates stay under alpha, but
+  the sequence of verdicts a cell shows over time is not itself one
+  sequential test.
+- *In-situ guidance errored trials do not block* (m5). A guidance cell's
+  agent-errored trial scores 0 and does not keep the cell from removal, as
+  a skill's does: the section is measured beside the whole guidance, where
+  an agent failure is part of the outcome. It is a deliberate asymmetry, not
+  a guarantee that errors only help keep.
+- *Each guidance edit resets the evidence* (m6). A cell decides only on runs
+  beside the current rest of the guidance, so an edit to any other section
+  starts every in-situ cell over. A frequently edited guidance file may
+  never let a section accumulate the 18 or more pairs a decision needs.
+- *The current keeps restart as insufficient* (m7). The 8 subjects kept
+  under the old bound (4 skills and 4 guidance sections) had 1 to 3 pairs
+  per cell. A valid bound needs 4 to 17 pairs to keep, depending on the
+  effect size, and 18 to remove identical arms, so each returns to
+  `insufficient` and is measured again rather than carrying a keep the new
+  bound cannot support.

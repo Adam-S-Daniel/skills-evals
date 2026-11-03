@@ -35,7 +35,7 @@ from test_issue_70_retirement import (FLAT, FLAT_DECIDES, FLAT_JUDGE, GAIN, LOSS
 
 MAIN, OLD = "rest-main", "rest-old"
 EXPECT = {"fx": {"fixture_digest": "f1", "tested_digest": "t1", "rest_digest": MAIN}}
-CEILING = [(96, 96, 96), (96, 96, 95)] * 10
+CEILING = [(100, 100, 100)] * 20
 
 
 def stratum(rest, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JUDGE),
