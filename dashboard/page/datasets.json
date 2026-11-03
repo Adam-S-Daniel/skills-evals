@@ -156,6 +156,28 @@
   "staleAfterHours": 72,
   "title": "Build gate"
  },
+ "fixture_requests": {
+  "description": "Each request the loop made for new or harder fixtures, followed to its pull requests and the fixtures that ran: subject, kind, state, age, latest PR, fixtures (and how many came from real work), runs and cost. Built from the explorer data's fixture_queue.",
+  "schedule": "Refreshed by Claude every 2 hours from the explorer data on the results branch",
+  "source": {
+   "kind": "file",
+   "name": "fixture_requests.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 6,
+  "title": "Fixture requests"
+ },
+ "fixture_queue_summary": {
+  "description": "One row of totals for the Fixture requests panel: requests open and closed, PRs merged, fixtures from real work and invented, runs, cost and findings. Built with the request rows.",
+  "schedule": "Refreshed by Claude every 2 hours from the explorer data on the results branch",
+  "source": {
+   "kind": "file",
+   "name": "fixture_queue_summary.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 6,
+  "title": "Fixture requests, summary"
+ },
  "half_built_issues": {
   "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
   "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",

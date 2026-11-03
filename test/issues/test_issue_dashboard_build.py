@@ -544,6 +544,81 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertLess(page.index("card-halfbuilt"), page.index("tile-routines"))
         self.assertIn("half_built_issues: 'key'", page)
 
+    FQ_NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+
+    def fq_queue(self, **kw):
+        queue = {
+            "schema": 1, "generated_at": "2026-11-03T10:00:00Z",
+            "requests": [
+                {"issue": 11, "kind": "needs-fixtures", "subject": "demo-new", "state": "open",
+                 "opened_at": "2026-11-02T12:00:00Z", "closed_at": None, "prs": []},
+                {"issue": 12, "kind": "needs-harder-fixtures", "subject": "demo-old", "state": "open",
+                 "opened_at": "2026-10-30T00:00:00Z", "closed_at": None,
+                 "prs": [{"number": 40, "state": "closed", "merged_at": None, "auto_merge": False},
+                         {"number": 44, "state": "merged", "merged_at": "2026-11-01T00:00:00Z", "auto_merge": True}]},
+                {"issue": 13, "kind": "needs-trigger-set", "subject": "demo-done", "state": "closed",
+                 "opened_at": "2026-10-01T00:00:00Z", "closed_at": "2026-10-05T00:00:00Z", "prs": []},
+            ],
+            "fixtures": [
+                {"path": "evals/demo-old/a", "subject": "demo-old", "origin_kind": "real-work", "request": 12,
+                 "runs": 4, "cost_usd": 1.25},
+                {"path": "evals/demo-old/b", "subject": "demo-old", "origin_kind": "invented", "request": 12,
+                 "runs": 2, "cost_usd": 0.5},
+                {"path": "evals/other/c", "subject": "other", "origin_kind": "invented", "request": 99,
+                 "runs": 7, "cost_usd": 9.0},
+            ],
+            "totals": {"requests_open": 2, "requests_closed": 1, "prs_merged": 1, "fixtures_real_work": 1,
+                       "fixtures_invented": 2, "fixture_runs": 13, "cost_points": 3, "cost_usd": 10.75},
+            "findings": [],
+        }
+        queue.update(kw)
+        return {"fixture_queue": queue}
+
+    def test_fixture_queue_null_or_absent_is_not_reported(self):
+        for explorer in ({}, {"fixture_queue": None}, {"schema": 1}):
+            rows, summary = build.fixture_queue(explorer, self.FQ_NOW)
+            self.assertEqual([r["key"] for r in rows], ["none"])
+            self.assertEqual((summary[0]["key"], summary[0]["status"], summary[0]["findings"]), ("all", "not-reported", 0))
+            self.assertIsNone(summary[0]["requests_open"])
+
+    def test_fixture_queue_rows_fold_in_prs_and_fixtures_and_sort_open_oldest_first(self):
+        rows, summary = build.fixture_queue(self.fq_queue(), self.FQ_NOW)
+        self.assertEqual([r["key"] for r in rows], ["12", "11", "13"])
+        old = rows[0]
+        self.assertEqual((old["kind"], old["subject"], old["state"], old["opened"]), ("harder fixtures", "demo-old", "open", "2026-10-30"))
+        self.assertEqual(old["age_days"], 4.5)  # full precision; the page rounds
+        self.assertEqual((old["prs"], old["pr_url"], old["merged"]), (2, "https://github.com/Adam-S-Daniel/skills-evals/pull/44", True))
+        self.assertEqual((old["fixtures"], old["real_work"], old["runs"], old["cost_usd"]), (2, 1, 6, 1.75))
+        self.assertEqual(old["issue_url"], "https://github.com/Adam-S-Daniel/skills-evals/issues/12")
+        new = rows[1]
+        self.assertEqual((new["kind"], new["prs"], new["pr_url"], new["merged"], new["fixtures"]), ("new fixtures", 0, "", False, 0))
+        done = rows[2]
+        self.assertEqual((done["kind"], done["state"], done["age_days"], done["closed_at"]), ("trigger set", "closed", None, "2026-10-05T00:00:00Z"))
+        self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
+                         {"requests_open": 2, "requests_closed": 1, "prs_merged": 1, "fixtures_real_work": 1,
+                          "fixtures_invented": 2, "fixture_runs": 13, "cost_points": 3, "cost_usd": 10.75,
+                          "findings": 0, "findings_high": 0, "status": "ok", "generated_at": "2026-11-03T10:00:00Z"})
+
+    def test_fixture_queue_any_finding_needs_attention(self):
+        findings = [{"finding_id": "demo-1", "kind": "stuck-pr", "severity": "high", "subject": "demo-old", "url": "https://example.com/1"},
+                    {"finding_id": "demo-2", "kind": "stale-request", "severity": "low", "subject": "demo-new", "url": "https://example.com/2"}]
+        _, summary = build.fixture_queue(self.fq_queue(findings=findings), self.FQ_NOW)
+        self.assertEqual((summary[0]["status"], summary[0]["findings"], summary[0]["findings_high"]), ("attention", 2, 1))
+
+    def test_fixture_queue_with_no_requests_is_ok_with_a_placeholder(self):
+        rows, summary = build.fixture_queue(self.fq_queue(requests=[], fixtures=[]), self.FQ_NOW)
+        self.assertEqual([r["key"] for r in rows], ["none"])
+        self.assertEqual(summary[0]["status"], "ok")
+
+    def test_the_page_draws_the_fixture_requests_panel(self):
+        page = (DASH / "page" / "index.html").read_text()
+        for name in ("fixture_requests", "fixture_queue_summary"):
+            self.assertIn(f'data-source="{name}"', page)
+        self.assertIn("Fixture requests", page)
+        self.assertIn("fixture_requests: 'key'", page)
+        self.assertLess(page.index('id="loop"'), page.index("card-fixture-requests"))
+        self.assertLess(page.index("card-fixture-requests"), page.index('id="impact"'))
+
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
