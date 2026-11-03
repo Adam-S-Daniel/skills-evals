@@ -299,19 +299,31 @@ of kind `agent-check`, adam-agentskills-private lessons/proposals/**.json),
 which go to the fleet worker as agent-ready issues (Adam, 2026-10-26: git
 hooks are the first choice whenever possible, so they lead the work list).
 Every item carries `change_type`: `skill-edit` for an improve fire,
+`trigger` for a trigger-only improve fire (THE TRIGGER LANE),
 `guidance-edit` for a guidance-improve fire, `fixture`, `agent-check`,
-`trigger`, or None for `routine-outage` and `routine-down`.
+or None for `routine-outage` and `routine-down`.
 
 THE TRIGGER LANE (usage tracking, 2026-10-26: about 55 skill calls in 8
 weeks over about 72,000 model turns, so most skills almost never trigger).
-Every adam-agentskills skill whose usage weight is fresh (known) and at most
-`TRIGGER_MAX_WEIGHT` gets a work item: `trigger-optimize` (change type
-`trigger`) when it has a reviewed evals/<skill>/trigger-eval-set.json, or
-`needs-trigger-set` (change type `fixture`) to write one. Neither is a
-fire: improve mode's payload cannot ask for description optimization with
-that set, so a trigger item is routed "needs routine prompt change"
-(docs/how-it-works.md, "The trigger lane"). Trigger items sit just before
-the improve work items. Skills whose SKILL.md is mostly checklist or rules
+Every public adam-agentskills skill whose usage weight is fresh (known) and
+at most `TRIGGER_MAX_WEIGHT` is judged here (skills-evals#662; Adam,
+2026-11-03: "New fire mode runs only skill-creator's description loop").
+With a reviewed evals/<skill>/trigger-eval-set.json it is a `trigger-optimize`
+FIRE: an improve-mode fire with `trigger_only` true (change type `trigger`,
+no holdout, charged and capped as an improve fire), which runs only the
+description loop on that set and is accepted on a held-out gain of 0.15 with
+no drop on the should-not-trigger queries. It goes in the improve band after
+the value-ranked improve fires, least used first, and only when nothing
+pauses the skill (rule C over the same improve records and
+`eval-improve/<skill>` pull requests, with a merged edit waiting COOLDOWN for
+usage to show, since a skill with no fixtures is never re-measured) and the
+skill has no ordinary improve fire in the plan (both would write
+`eval-improve/<skill>`). Without a set it is a `needs-trigger-set` work item
+(change type `fixture`, routed to an agent-ready issue) to write one. A skill
+owned by retirement gets neither, and a private skill is never judged. The
+plan's `triggers` maps every judged skill to {eligible, reasons, weight};
+the weekly workflow closes a needs-trigger-set issue only for a judged skill.
+Skills whose SKILL.md is mostly checklist or rules
 sections (`hook_candidate`) are listed as `hook_candidates` and in the
 summary, since a git hook may serve them better.
 
@@ -326,7 +338,8 @@ section ids), which the weekly workflow uploads as the `improve-ranking`
 artifact. $GITHUB_OUTPUT gets `matrix=`
 (the fires, improve and guidance-improve fires last so a long improve run
 never holds up the evals behind it; every leg carries `section`, empty but
-for a guidance-improve leg) and `count=`. The log and job summary carry numbers and
+for a guidance-improve leg, and `trigger_only`, the string "true" for a
+trigger-only improve leg and "false" otherwise) and `count=`. The log and job summary carry numbers and
 public skill names only: agent-check items are counted, never quoted.
 
 FIRE CHECK. `guidance-headroom SECTION` is routine-eval-fire.yml's check
@@ -524,9 +537,6 @@ LESSON_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: skill_usage.weight's four weeks) is at most this rarely triggers at all.
 TRIGGER_MAX_WEIGHT = 1
 TRIGGER_SET = "trigger-eval-set.json"
-#: What the routine would need before a trigger item can be fired (see
-#: docs/how-it-works.md, "The trigger lane").
-TRIGGER_ROUTE = "needs routine prompt change"
 #: A hook candidate: at least this share of its SKILL.md body's non-blank
 #: lines sits under a heading naming a checklist, rules or checks.
 HOOK_RULE_SHARE = 0.5
@@ -1359,33 +1369,61 @@ def hook_candidate(text: str) -> bool:
     return bool(total) and under / total >= HOOK_RULE_SHARE
 
 
-def trigger_items(ctx: dict) -> tuple:
-    """(work items, hook candidates) for the trigger lane. A skill of
-    ctx["triggers"] (every adam-agentskills skill) whose usage weight is
-    known, so fresh, and at most TRIGGER_MAX_WEIGHT gets a `trigger` item
-    when evals/<skill>/trigger-eval-set.json exists, routed TRIGGER_ROUTE
-    because no fire can ask for description optimization yet, or else a
-    `fixture` item to write that set. An unknown weight is neutral: no
-    item. A skill owned by retirement gets none. Least used first."""
+def trigger_items(ctx: dict, improve_skills=frozenset()) -> tuple:
+    """(trigger fires, work items, hook candidates, per-skill status) for
+    the trigger lane (module docstring, THE TRIGGER LANE; skills-evals#662).
+
+    A skill of ctx["triggers"] (every adam-agentskills skill) is judged when
+    its usage weight is known, so fresh, and it is not private (a private
+    skill's name stays out of every public output, and its weight is never
+    known anyway). A judged skill at most TRIGGER_MAX_WEIGHT and not owned
+    by retirement gets an improve-band fire with `trigger_only` when
+    evals/<skill>/trigger-eval-set.json exists, its own rule C pause
+    (ctx["triggers"][skill]["pause"], absent read as None) is None and it is
+    not in `improve_skills`, the skills with an ordinary improve fire in
+    this plan (both would write `eval-improve/<skill>`); with no set it gets
+    a `needs-trigger-set` work item instead. Any other judged skill gets
+    neither, and its reasons are in the status. An unknown weight is neutral:
+    nothing, and no status, so the weekly workflow never closes that
+    skill's needs-trigger-set issue on a plan that could not see it.
+
+    Fires sort after every value-ranked improve fire (`order` starts as an
+    unknown-value improve fire's does, then infinity outranks any `-value`),
+    least used first, then by name."""
     weights = ctx.get("skill_weights") or {}
-    work = []
+    private = set(ctx.get("private_skills") or ())
+    fires, work, status = [], [], {}
     for name, info in sorted(ctx.get("triggers", {}).items()):
         weight = weights.get(name)
-        if weight is None or weight > TRIGGER_MAX_WEIGHT \
-                or ctx["skills"].get(name, {}).get("verdict") in ("retire", "retire-pending"):
+        if weight is None or name in private:
             continue
+        reasons = []
+        if weight > TRIGGER_MAX_WEIGHT:
+            reasons.append(f"used more than {TRIGGER_MAX_WEIGHT} time(s) in four weeks")
+        verdict = ctx["skills"].get(name, {}).get("verdict")
+        if verdict in ("retire", "retire-pending"):
+            reasons.append(f"owned by retirement ({verdict})")
         path = f"evals/{name}/{TRIGGER_SET}"
-        if info["trigger_set"]:
-            item = {"kind": "trigger-optimize", "change_type": "trigger",
-                    "route": TRIGGER_ROUTE}
-        else:
-            item = {"kind": "needs-trigger-set", "change_type": "fixture", "route": "issue"}
-        work.append({**item, "skill": name, "weight": weight, "trigger_set": path,
-                     "hook_candidate": info["hook_candidate"]})
+        if not reasons and not info["trigger_set"]:
+            work.append({"kind": "needs-trigger-set", "change_type": "fixture",
+                         "route": "issue", "skill": name, "weight": weight,
+                         "trigger_set": path, "hook_candidate": info["hook_candidate"]})
+            reasons.append("no reviewed trigger set yet")
+        if not reasons and info.get("pause"):
+            reasons.append(info["pause"])
+        if not reasons and name in improve_skills:
+            reasons.append("an ordinary improve fire is planned for it")
+        status[name] = {"eligible": not reasons, "reasons": reasons, "weight": weight}
+        if not reasons:
+            fires.append({"mode": "improve", "trigger_only": True, "arms": "", "fixture": "",
+                          "model": "", "skill": name, "holdout": "",
+                          "cost": ctx["improve_charge"], "change_type": "trigger",
+                          "band": "improve", "value": None,
+                          "order": (True, math.inf, weight, name)})
     work.sort(key=lambda w: (w["weight"], w["skill"]))
     hooks = sorted(name for name, info in ctx.get("triggers", {}).items()
-                   if info["hook_candidate"])
-    return work, hooks
+                   if info["hook_candidate"] and name not in private)
+    return fires, work, hooks, status
 
 
 def lesson_items(lessons: list) -> list:
@@ -1522,9 +1560,12 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
         # Cells a sweep without the batch would have queued in its bands.
         outside = sum(len(unbatched[b]) - len(bands[b]) for b in BATCH_BANDS)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
-    triggers, hooks = trigger_items(ctx)
+    # Trigger-only fires join the improve band before the cap, so they count
+    # against it exactly as the guard counts them (improve mode).
+    trigger_fires, triggers, hooks, trigger_status = trigger_items(
+        ctx, {i["skill"] for i in improve if i["mode"] == "improve"})
     improve_state = ctx.get("improve_state")
-    improve, capped = improve_capped(improve, improve_state)
+    improve, capped = improve_capped(improve + trigger_fires, improve_state)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
     down = bool(ctx.get("routine_down"))
@@ -1569,6 +1610,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
               "eval_key": i["fixture"][len("evals/"):] if i["fixture"] else "",
               "model": i["model"], "skill": i["skill"], "section": i.get("section") or "",
               "holdout": i["holdout"],
+              # A string, as the matrix carries it into the leg's env.
+              "trigger_only": "true" if i.get("trigger_only") else "false",
               "change_type": i["change_type"] or "measure", "cost": i["cost"],
               "value": i.get("value")}
              for slot, i in enumerate(chosen)]
@@ -1591,13 +1634,16 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             # Hook items first, trigger items just before improve's.
             "work": lesson_items(ctx.get("lessons", [])) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
+            # THE TRIGGER LANE: every judged skill, the only ones whose
+            # needs-trigger-set issue the weekly workflow may close.
+            "triggers": trigger_status,
             "hook_candidates": hooks, "real_work": ctx.get("real_work", []),
             # An eval leg sends no skill and no section, and only a
             # guidance-improve leg a section: the fire workflow refuses them
             # in any other mode.
             "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "arms",
                                                          "fixture", "eval_key", "model",
-                                                         "holdout")},
+                                                         "holdout", "trigger_only")},
                                     "skill": f["skill"] if f["mode"] == "improve" else "",
                                     "section": f["section"] if f["mode"] == "guidance-improve"
                                     else ""}
@@ -2443,6 +2489,29 @@ def trigger_contexts(evals_dir: Path, registries: dict) -> dict:
     return out
 
 
+def trigger_pauses(triggers: dict, evals_dir: Path, registries: dict, records: list,
+                   prs: list, on_hold: list, now: datetime) -> None:
+    """Set each trigger-lane skill's rule C `pause` in `triggers` (from
+    `trigger_contexts`), in place: a trigger-only fire is an improve attempt
+    of its skill (improve_outcomes), so the same records, `eval-improve/`
+    pull requests and on-hold titles pause it, and its content changes as
+    `skill_contexts` reads them (the registry, evals/<skill>, the roster).
+    A merged edit is "re-measured" once COOLDOWN has passed: a skill with no
+    fixtures gets no with-arm run, so usage, not a run, is what shows the
+    new description worked. A skill with no trigger set fires nothing, so
+    it is not read (None)."""
+    roster_changed = _git_time(evals_dir.parent, "evals/roster.yml")
+    for name, info in triggers.items():
+        if not info["trigger_set"]:
+            info["pause"] = None
+            continue
+        changes = [t for t in (roster_changed, _git_time(evals_dir.parent, f"evals/{name}"),
+                               _registry_time(registries, name)) if t]
+        info["pause"] = pause(name, records, prs, on_hold, now,
+                              max(changes) if changes else None,
+                              lambda at: now - at >= COOLDOWN)
+
+
 def gather(args, now: datetime) -> dict:
     import compute_gates
     evals_dir = args.evals_dir
@@ -2477,6 +2546,7 @@ def gather(args, now: datetime) -> dict:
                             compute_gates.parse_as_of(args.as_of), registries,
                             gates_doc, records, prs, evidence["on_hold"], now)
     triggers = trigger_contexts(evals_dir, registries)
+    trigger_pauses(triggers, evals_dir, registries, records, prs, evidence["on_hold"], now)
     cells, outages, down = eval_cells_and_outages(evals_dir, gates_doc, evidence["fire_runs"],
                                                   now)
     held = sum(1 for c in cells if c["hold_reason"] == HOLD_PRIVATE)
@@ -2537,6 +2607,8 @@ def summary_lines(plan: dict) -> list:
     for fire in plan["fires"]:
         target = fire["fixture"] or (f"{fire['skill'] or fire.get('section', '')} "
                                      f"(holdout {fire['holdout']})")
+        if fire.get("trigger_only") == "true":
+            target = f"{fire['skill']} (trigger only)"
         mode = fire["mode"] + (" bare" if fire.get("arms") == "bare" else "")
         lines.append(f"- {fire['band']}: {mode} {target} {fire['model']}".rstrip()
                      + f", {fire['cost'] * 100:.2f} points")
@@ -2557,6 +2629,9 @@ def summary_lines(plan: dict) -> list:
         lines.append("Routine down: no schedulable eval cell to probe, planned normally")
     eligible = sorted(s for s, v in plan["skills"].items() if v["eligible"])
     lines.append("Improve-eligible skills: " + (", ".join(eligible) or "none"))
+    # THE TRIGGER LANE: public skill names only (a private skill is never judged).
+    trigger_ok = sorted(s for s, v in (plan.get("triggers") or {}).items() if v["eligible"])
+    lines.append("Trigger-only eligible skills: " + (", ".join(trigger_ok) or "none"))
     batch = plan.get("batch")
     if batch:
         record = batch["record"]
@@ -2589,10 +2664,13 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     """Refuse a matrix leg that is not a fire this repository would plan:
     eval mode on a scheduled, committed fixture and a roster arm, its arms
     both, or bare on a fixture that runs in place; improve mode on a skill
-    improve_gate.py fire-check accepts, with a holdout and no arms;
+    improve_gate.py fire-check accepts, with a holdout and no arms, or, with
+    TRIGGER_ONLY "true" (THE TRIGGER LANE), with no holdout and the check's
+    trigger-only rules (a committed trigger set of enough queries);
     guidance-improve mode on a section guidance_improve_gate.py fire-check
     accepts, with its holdout fixture key and no arms. Only a
-    guidance-improve leg carries a section."""
+    guidance-improve leg carries a section, and only an improve leg
+    TRIGGER_ONLY "true"; absent or empty reads as "false"."""
     import guidance_improve_gate
     import improve_gate
     import roster_arm
@@ -2601,8 +2679,14 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     skill, holdout = env.get("SKILL", ""), env.get("HOLDOUT", "")
     section = env.get("SECTION", "")
     arms = env.get("ARMS", "")
+    trigger_only = env.get("TRIGGER_ONLY", "")
+    if trigger_only not in ("true", "false", ""):
+        raise PlanError("the leg's trigger_only is not true or false")
+    trigger_only = trigger_only == "true"
     if section and mode != "guidance-improve":
         raise PlanError("only a guidance-improve leg carries a section")
+    if trigger_only and mode != "improve":
+        raise PlanError("only an improve leg may be trigger-only")
     if mode == "eval":
         committed = schedule.committed_fixtures(root)
         scheduled = schedule.scheduled_fixtures(root / "evals" / "scheduled.yml", committed)
@@ -2617,6 +2701,14 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
             raise PlanError("the bare leg's fixture does not run in place")
         if arms == "both" and fixture_hold_reason(root / fixture) is not None:
             raise PlanStale("the eval leg's fixture is held, not schedulable")
+    elif mode == "improve" and trigger_only:
+        if fixture or key or model or arms or holdout \
+                or not outcomes_mod.SKILL_RE.fullmatch(skill):
+            raise PlanError("the trigger-only improve leg is malformed")
+        try:
+            improve_gate.fire_check(skill, "", trigger_only=True)
+        except improve_gate.Rejected:
+            raise PlanError("the trigger-only improve leg is refused by the fire check") from None
     elif mode == "improve":
         if fixture or key or model or arms or not outcomes_mod.SKILL_RE.fullmatch(skill) \
                 or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", holdout):

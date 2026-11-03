@@ -167,7 +167,7 @@ class WorkItemIssueTests(unittest.TestCase):
     def test_other_authors_and_other_work_items_are_ignored(self):
         body = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\n"
         code, calls, _ = self.run_main(
-            {"routine_down": False, "work": [{"kind": "needs-trigger-set"}]},
+            {"routine_down": False, "work": [{"kind": "agent-check"}]},
             [{"number": 9, "state": "open", "body": body, "author": "someone"}])
         self.assertEqual((code, self.writes(calls)), (0, []))
 
@@ -245,6 +245,7 @@ class WorkItemIssueTests(unittest.TestCase):
         plan = {"routine_down": False,
                 "skills": {"writing-adrs": {"headroom": 0.04}, "unmeasured": {"headroom": None}},
                 "guidance": {"example-section": {"headroom": 0.3}},
+                "triggers": {"quiet": {"eligible": True}, "busy": {"eligible": False}},
                 "work": [{"kind": k} for k in ("fixture-broken", "routine-outage",
                                                 "needs-fixtures", "needs-harder-fixtures",
                                                 "needs-trigger-set", "agent-check")]}
@@ -252,9 +253,55 @@ class WorkItemIssueTests(unittest.TestCase):
                                         capture_output=True, check=True).stdout)
         self.assertEqual([w["kind"] for w in out["work"]],
                          ["fixture-broken", "routine-outage", "needs-fixtures",
-                          "needs-harder-fixtures"])
+                          "needs-harder-fixtures", "needs-trigger-set"])
         self.assertEqual(out["subjects"], {"skills": ["writing-adrs"],
-                                           "guidance": ["example-section"]})
+                                           "guidance": ["example-section"],
+                                           "triggers": ["busy", "quiet"]})
+        # A plan from before the trigger lane's status map judged no trigger.
+        del plan["triggers"]
+        out = json.loads(subprocess.run([jq, program], input=json.dumps(plan), text=True,
+                                        capture_output=True, check=True).stdout)
+        self.assertEqual(out["subjects"]["triggers"], [])
+
+    def test_a_trigger_set_need_opens_an_agent_ready_issue(self):
+        # skills-evals#662: the fleet worker writes the set; the gate merges it.
+        need = {"kind": "needs-trigger-set", "change_type": "fixture", "route": "issue",
+                "skill": "writing-adrs", "weight": 0,
+                "trigger_set": "evals/writing-adrs/trigger-eval-set.json",
+                "hook_candidate": False}
+        code, calls, _ = self.run_main({"routine_down": False, "work": [need]}, [])
+        self.assertEqual(code, 0)
+        [(args, body)] = [(a, b) for a, b in calls if a[:2] == ["issue", "create"]]
+        self.assertEqual(args[args.index("--label") + 1], "agent-ready")
+        self.assertEqual(args[args.index("--title") + 1],
+                         "Needs a trigger eval set: skill writing-adrs")
+        self.assertEqual(body.splitlines()[0],
+                         "<!-- skills-evals:needs-trigger-set:writing-adrs -->")
+        for text in ("`evals/writing-adrs/trigger-eval-set.json`", "`query`",
+                     "`should_trigger`", "at least 8 should-trigger and 8 should-not-trigger",
+                     "near misses", "SKILL.md", "`Refs`", "trigger-only improve run"):
+            self.assertIn(text, body)
+        for bad in ({**need, "skill": "../x"}, {**need, "skill": ""}, {**need, "skill": 3}):
+            with self.subTest(bad=bad):
+                code, calls, _ = self.run_main({"routine_down": False, "work": [bad]}, [])
+                self.assertEqual((code, self.writes(calls)), (2, []))
+
+    def test_a_trigger_set_need_closes_only_when_its_skill_was_judged(self):
+        body = "<!-- skills-evals:needs-trigger-set:writing-adrs -->\n"
+        issue = [{"number": 13, "state": "open", "body": body}]
+        # Measured headroom is not a trigger-lane judgment.
+        for subjects in (None, {"skills": ["writing-adrs"]}, {"triggers": ["other"]}):
+            items = {"routine_down": False, "work": []}
+            if subjects is not None:
+                items["subjects"] = subjects
+            with self.subTest(subjects=subjects):
+                self.assertEqual(self.writes(self.run_main(items, issue)[1]), [])
+        judged = {"routine_down": False, "work": [], "subjects": {"triggers": ["writing-adrs"]}}
+        self.assertEqual(self.writes(self.run_main(judged, issue)[1]),
+                         [["issue", "comment"], ["issue", "close"]])
+        code, _, _ = self.run_main({"routine_down": False, "work": [],
+                                    "subjects": {"triggers": "x"}}, [])
+        self.assertEqual(code, 2)
 
     def test_a_dry_run_writes_nothing(self):
         code, calls, out = self.run_main({"routine_down": False, "work": [BROKEN]}, [],

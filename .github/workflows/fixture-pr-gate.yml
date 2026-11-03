@@ -7,7 +7,9 @@ name: Fixture PR gate
 # pull request and never merges. This gate turns auto-merge on (merge commit,
 # `--match-head-commit`) for such a pull request when
 # scripts/fixture_pr_gate.py finds it only adds fixtures for that issue's
-# subject, and off again when a later push makes it anything else. `test`,
+# subject (or, for a `needs-trigger-set` issue, skills-evals#662, only adds
+# that skill's evals/<skill>/trigger-eval-set.json), and off again when a
+# later push makes it anything else. `test`,
 # the required check, still decides the merge; nothing here approves.
 #
 # * Runs only the default branch's copy (`workflow_run`); the pull request's

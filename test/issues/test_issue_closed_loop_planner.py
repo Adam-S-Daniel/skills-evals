@@ -58,13 +58,18 @@ def stamp(moment):
 #: routine-eval-fire.yml's one conditional in `run-name`: ` bare` after an
 #: eval mode whose `arms` is bare (ADR 0012, bare baseline addendum).
 BARE_EXPRESSION = "${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}"
+#: The trigger-only conditional (skills-evals#662).
+TRIGGER_EXPRESSION = ("${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' "
+                      "&& ' trigger' || '' }}")
 
 
 def render_title(template, **inputs):
     """The fire workflow's `run-name` as GitHub renders it for `inputs`:
-    the bare conditional, then each `${{ inputs.<name> }}`."""
+    the bare and trigger conditionals, then each `${{ inputs.<name> }}`."""
     bare = " bare" if inputs.get("mode") == "eval" and inputs.get("arms") == "bare" else ""
-    text = template.replace(BARE_EXPRESSION, bare)
+    trigger = (" trigger" if inputs.get("mode") == "improve"
+               and inputs.get("trigger_only") == "true" else "")
+    text = template.replace(BARE_EXPRESSION, bare).replace(TRIGGER_EXPRESSION, trigger)
     return re.sub(r"\$\{\{ inputs\.(\w+) \}\}", lambda m: inputs.get(m.group(1), ""), text)
 
 
@@ -73,15 +78,15 @@ class TitleAndOutcomeTests(unittest.TestCase):
     def test_titles_parse_strictly(self):
         self.assertEqual(io_mod.parse_title("Fire eval routine: improve writing-adrs "),
                          {"mode": "improve", "target": "writing-adrs", "model": None,
-                          "bare": False})
+                          "bare": False, "trigger": False})
         self.assertEqual(io_mod.parse_title(
             "Fire eval routine: eval evals/writing-adrs/bootstrap claude-opus-5-5"),
             {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
-             "model": "claude-opus-5-5", "bare": False})
+             "model": "claude-opus-5-5", "bare": False, "trigger": False})
         self.assertEqual(io_mod.parse_title(
             "Fire eval routine: eval bare evals/writing-adrs/bootstrap claude-opus-5-5"),
             {"mode": "eval", "target": "evals/writing-adrs/bootstrap",
-             "model": "claude-opus-5-5", "bare": True})
+             "model": "claude-opus-5-5", "bare": True, "trigger": False})
         # A skill named `bare` is still a skill, not a marker.
         self.assertEqual(io_mod.parse_title("Fire eval routine: improve bare ")["target"],
                          "bare")
@@ -105,7 +110,7 @@ class TitleAndOutcomeTests(unittest.TestCase):
         self.assertNotIn("${{", render(mode="eval"))
         self.assertEqual(io_mod.parse_title(render(mode="improve", skill="writing-adrs")),
                          {"mode": "improve", "target": "writing-adrs", "model": None,
-                          "bare": False})
+                          "bare": False, "trigger": False})
         self.assertEqual(io_mod.parse_title(render(mode="eval", fixture="evals/x",
                                                    model="claude-opus-5-5"))["model"],
                          "claude-opus-5-5")
@@ -114,7 +119,7 @@ class TitleAndOutcomeTests(unittest.TestCase):
         self.assertEqual(io_mod.parse_title(render(mode="eval", arms="bare", fixture="evals/x",
                                                    model="claude-opus-5-5")),
                          {"mode": "eval", "target": "evals/x", "model": "claude-opus-5-5",
-                          "bare": True})
+                          "bare": True, "trigger": False})
         for arms in ("with", "without"):
             self.assertFalse(io_mod.parse_title(render(mode="eval", arms=arms,
                                                        fixture="evals/x"))["bare"])
@@ -708,39 +713,103 @@ Close with the next step.
 
 class TriggerLaneTests(unittest.TestCase):
     """Skills that almost never trigger (usage tracking, 2026-10-26): a
-    trigger item when a reviewed trigger set exists, a fixture item to write
-    one when not, and hook candidates in the summary."""
+    trigger-only improve fire when a reviewed trigger set exists
+    (skills-evals#662), a fixture item to write one when not, and hook
+    candidates in the summary."""
 
     @staticmethod
     def triggers(**sets):
         return {name: {"trigger_set": has, "hook_candidate": name == "rules"}
                 for name, has in sets.items()}
 
-    def test_fresh_near_zero_usage_gets_a_trigger_item_unknown_gets_none(self):
+    def test_fresh_near_zero_usage_gets_a_trigger_fire_or_item_unknown_gets_none(self):
         triggers = self.triggers(quiet=True, silent=False, rules=False, unknown=True,
                                  busy=True, retiring=True)
         weights = {"quiet": 1, "silent": 0, "rules": 0, "unknown": None, "busy": 2,
                    "retiring": 0}
         skills = {"few": skill(fixtures=2), "retiring": skill(verdict="retire")}
         plan = plan_week.build_plan(ctx(skills=skills, triggers=triggers,
-                                        skill_weights=weights,
+                                        skill_weights=weights, room=1.0,
                                         cells=[cell("evals/b", "heavy", "missing", empty=2)]),
                                     NOW)
         got = [(w["kind"], w["skill"], w["change_type"], w.get("route")) for w in plan["work"]]
         self.assertEqual(got, [
             ("needs-trigger-set", "rules", "fixture", "issue"),
             ("needs-trigger-set", "silent", "fixture", "issue"),
-            ("trigger-optimize", "quiet", "trigger", plan_week.TRIGGER_ROUTE),
             ("needs-fixtures", "few", "fixture", "issue"),
             ("fixture-broken", "b", "fixture", "issue")])
         self.assertEqual(plan["work"][1]["trigger_set"], "evals/silent/trigger-eval-set.json")
         self.assertTrue(plan["work"][0]["hook_candidate"])
-        self.assertFalse(any(f["mode"] == "improve" and f["skill"] == "quiet"
-                             for f in plan["fires"]))
+        [trigger] = [f for f in plan["fires"] if f["mode"] == "improve"]
+        self.assertEqual({k: trigger[k] for k in ("band", "skill", "holdout", "trigger_only",
+                                                  "change_type", "cost", "value")},
+                         {"band": "improve", "skill": "quiet", "holdout": "",
+                          "trigger_only": "true", "change_type": "trigger", "cost": 0.10,
+                          "value": None})
+        leg = next(r for r in plan["matrix"]["include"] if r["mode"] == "improve")
+        self.assertEqual((leg["skill"], leg["holdout"], leg["trigger_only"]),
+                         ("quiet", "", "true"))
+        self.assertTrue(all(r["trigger_only"] == "false" for r in plan["matrix"]["include"]
+                            if r["mode"] != "improve"))
+        # Every skill with a known weight is judged; an unknown one is not.
+        self.assertEqual(sorted(plan["triggers"]),
+                         ["busy", "quiet", "retiring", "rules", "silent"])
+        self.assertEqual(plan["triggers"]["quiet"], {"eligible": True, "reasons": [],
+                                                     "weight": 1})
+        self.assertFalse(plan["triggers"]["busy"]["eligible"])
+        self.assertEqual(plan["triggers"]["retiring"]["reasons"],
+                         ["owned by retirement (retire)"])
+        self.assertEqual(plan["triggers"]["silent"]["reasons"], ["no reviewed trigger set yet"])
         self.assertEqual(plan["hook_candidates"], ["rules"])
         lines = "\n".join(plan_week.summary_lines(plan))
         self.assertIn("Hook candidates (mostly checklist or rules sections): rules", lines)
-        self.assertIn("trigger-optimize 1", lines)
+        self.assertIn("improve quiet (trigger only)", lines)
+        self.assertIn("Trigger-only eligible skills: quiet", lines)
+        self.assertIn("needs-trigger-set 2", lines)
+
+    def test_no_trigger_fire_when_paused_private_or_already_improving(self):
+        weights = {"t": 0}
+        cases = {
+            "paused": (dict(triggers={"t": {"trigger_set": True, "hook_candidate": False,
+                                            "pause": "cooling down after a rejection"}}),
+                       ["cooling down after a rejection"]),
+            # An ordinary improve fire of the same skill would share its branch.
+            "improving": (dict(triggers=self.triggers(t=True), skills={"t": skill()}),
+                          ["an ordinary improve fire is planned for it"]),
+        }
+        for name, (over, reasons) in cases.items():
+            with self.subTest(name=name):
+                plan = plan_week.build_plan(ctx(skill_weights=weights, room=1.0, **over), NOW)
+                self.assertFalse([f for f in plan["fires"] if f["trigger_only"] == "true"])
+                self.assertEqual(plan["triggers"]["t"]["reasons"], reasons)
+                self.assertFalse([w for w in plan["work"] if w["kind"] == "needs-trigger-set"])
+        # A private skill is never judged, so never named.
+        plan = plan_week.build_plan(ctx(skill_weights=weights, room=1.0,
+                                        triggers=self.triggers(t=True, u=False),
+                                        private_skills=frozenset({"t", "u"})), NOW)
+        self.assertEqual((plan["fires"], plan["work"], plan["triggers"]), ([], [], {}))
+
+    def test_trigger_fires_follow_improve_fires_least_used_first_under_the_cap(self):
+        plan = plan_week.build_plan(ctx(
+            skills={"a": skill()}, triggers=self.triggers(x=True, y=True),
+            skill_weights={"a": 0.5, "x": 1, "y": 0}, improve_charge=0.06, room=1.0), NOW)
+        self.assertEqual([(f["skill"], f["trigger_only"]) for f in plan["fires"]],
+                         [("a", "false"), ("y", "true"), ("x", "true")])
+        # The improve cap counts trigger fires as improve fires: one left.
+        capped = plan_week.build_plan(ctx(
+            triggers=self.triggers(x=True, y=True), skill_weights={"x": 1, "y": 0},
+            improve_charge=0.06, room=1.0,
+            improve_state=ImproveCapPlanTests.cap_state()), NOW)
+        self.assertEqual([f["skill"] for f in capped["fires"]], ["y"])
+        self.assertEqual(capped["unplanned"]["improve"], 1)
+
+    def test_the_routine_outage_holds_trigger_fires(self):
+        plan = plan_week.build_plan(ctx(
+            triggers=self.triggers(x=True), skill_weights={"x": 0}, room=1.0,
+            routine_down=NOW - timedelta(hours=1),
+            cells=[cell("evals/m", "heavy", "missing")]), NOW)
+        self.assertEqual([f["mode"] for f in plan["fires"]], ["eval"])
+        self.assertEqual(plan["unplanned"]["improve"], 1)
 
     def test_trigger_skills_do_not_move_the_improve_neutral_weight(self):
         skills = {"a": skill(headroom=0.5), "b": skill(headroom=0.3)}
@@ -782,11 +851,27 @@ class TriggerLaneTests(unittest.TestCase):
                 "example-prose": {"trigger_set": True, "hook_candidate": False}})
             self.assertEqual(plan_week.trigger_contexts(evals, {}), {})
 
-    def test_the_trigger_route_is_documented(self):
+    def test_the_trigger_lane_is_documented(self):
         text = (ROOT / "docs" / "how-it-works.md").read_text()
         self.assertIn("### The trigger lane", text)
-        self.assertIn(plan_week.TRIGGER_ROUTE, text)
+        self.assertIn("`trigger_only=true`", text)
+        self.assertNotIn("needs routine prompt change", text)
         self.assertIn("--trigger-eval-set evals/<skill>/trigger-eval-set.json", text)
+
+    def test_trigger_pauses_use_rule_c_with_a_usage_cooldown(self):
+        merged = NOW - timedelta(days=3)
+        records = [{"skill": "t", "outcome": "accepted", "at": iso(merged - timedelta(hours=1))}]
+        prs = [{"skill": "t", "state": "closed", "created_at": iso(merged - timedelta(minutes=30)),
+                "closed_at": iso(merged), "merged_at": iso(merged)}]
+        with tempfile.TemporaryDirectory() as tmp:
+            triggers = self.triggers(t=True, n=False)
+            plan_week.trigger_pauses(triggers, Path(tmp) / "evals", {}, records, prs, [], NOW)
+            self.assertEqual(triggers["t"]["pause"],
+                             "an improvement merged; waiting for the with arm to be re-measured")
+            self.assertIsNone(triggers["n"]["pause"])
+            later = NOW + plan_week.COOLDOWN
+            plan_week.trigger_pauses(triggers, Path(tmp) / "evals", {}, records, prs, [], later)
+            self.assertIsNone(triggers["t"]["pause"])
 
 
 # These tests fill a cap of three; MAX_IN_FLIGHT itself is a spending lever.
@@ -930,6 +1015,49 @@ class DispatchLegTests(unittest.TestCase):
                        {"ARMS": "both"}, {"FIXTURE": GUIDANCE_FIXTURE}):
             with self.assertRaises(plan_week.PlanError, msg=change):
                 plan_week.validate_fire({**gleg, **change})
+
+    def test_validate_fire_takes_a_trigger_only_improve_leg(self):
+        # skills-evals#662: no holdout, and improve_gate's trigger-only check.
+        import improve_gate
+        leg = {"MODE": "improve", "ARMS": "", "FIXTURE": "", "EVAL_KEY": "", "MODEL": "",
+               "SKILL": "writing-adrs", "HOLDOUT": "", "TRIGGER_ONLY": "true"}
+        with mock.patch.object(improve_gate, "fire_check") as check:
+            plan_week.validate_fire(leg)
+            check.assert_called_once_with("writing-adrs", "", trigger_only=True)
+            for change in ({"HOLDOUT": "bootstrap"}, {"SKILL": "a;b"}, {"ARMS": "both"},
+                           {"MODEL": "claude-opus-5-5"}, {"TRIGGER_ONLY": "yes"},
+                           {"TRIGGER_ONLY": "True"}):
+                with self.assertRaises(plan_week.PlanError, msg=change):
+                    plan_week.validate_fire({**leg, **change})
+            # Only an improve leg may be trigger-only.
+            for other in ({**self.GOOD_LEG, "TRIGGER_ONLY": "true"},
+                          {"MODE": "guidance-improve", "SECTION": GUIDANCE_SECTION,
+                           "HOLDOUT": GUIDANCE_FIXTURE[len("evals/"):],
+                           "TRIGGER_ONLY": "true"}):
+                with self.assertRaises(plan_week.PlanError):
+                    plan_week.validate_fire(other)
+            self.assertEqual(check.call_count, 1)
+            check.side_effect = improve_gate.Rejected("x")
+            with self.assertRaises(plan_week.PlanError):
+                plan_week.validate_fire(leg)
+        # Unmocked: writing-adrs commits a trigger set; skills-doctor has none.
+        plan_week.validate_fire(leg)
+        with self.assertRaises(plan_week.PlanError):
+            plan_week.validate_fire({**leg, "SKILL": "skills-doctor"})
+        # "false" and absent are the ordinary improve leg, holdout required.
+        improve = {**leg, "HOLDOUT": "bootstrap", "TRIGGER_ONLY": "false"}
+        plan_week.validate_fire(improve)
+        plan_week.validate_fire({k: v for k, v in improve.items() if k != "TRIGGER_ONLY"})
+        with self.assertRaises(plan_week.PlanError):
+            plan_week.validate_fire({**improve, "HOLDOUT": ""})
+
+    def test_the_dispatch_legs_carry_trigger_only(self):
+        doc = yaml.safe_load(
+            (ROOT / ".github/workflows/routine-eval-weekly.yml").read_text())
+        steps = {s["name"]: s for s in doc["jobs"]["dispatch"]["steps"]}
+        for name in ("Revalidate the planned fire", "Dispatch the validated fire"):
+            self.assertEqual(steps[name]["env"]["TRIGGER_ONLY"], "${{ matrix.trigger_only }}")
+        # The dispatch script itself is run in test_issue_scheduled_fixtures.py.
 
     GOOD_LEG = {"MODE": "eval", "ARMS": "both", "FIXTURE": "evals/writing-adrs/bootstrap",
                 "EVAL_KEY": "writing-adrs/bootstrap", "MODEL": "claude-opus-5-5",
@@ -1255,10 +1383,12 @@ class ImproveValueTests(unittest.TestCase):
         self.assertEqual(fire, {
             "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "",
             "fixture": "", "eval_key": "", "model": "", "skill": "", "section": "sec",
-            "holdout": "guidance/sec/zzz", "change_type": "guidance-edit", "cost": 0.1})
+            "holdout": "guidance/sec/zzz", "trigger_only": "false",
+            "change_type": "guidance-edit", "cost": 0.1})
         self.assertEqual(plan["matrix"]["include"], [{
             "slot": 0, "band": "improve", "mode": "guidance-improve", "arms": "", "fixture": "", "eval_key": "",
-            "model": "", "skill": "", "section": "sec", "holdout": "guidance/sec/zzz"}])
+            "model": "", "skill": "", "section": "sec", "holdout": "guidance/sec/zzz",
+            "trigger_only": "false"}])
         self.assertEqual(plan["guidance"], {"sec": {
             "eligible": True, "reasons": [], "headroom": 0.4, "fixtures": 4}})
         self.assertEqual(plan["skills"], {})

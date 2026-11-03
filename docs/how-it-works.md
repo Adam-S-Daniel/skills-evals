@@ -467,27 +467,33 @@ and spaces fires a minute apart; improve fires go last.
 
 Usage tracking (2026-10-26) counted about 55 skill calls in eight weeks over
 about 72,000 model turns: most skills almost never trigger, so a skill's
-description is probably the biggest lever. Every adam-agentskills skill whose
-usage weight is fresh and at most one call in four weeks (an unknown weight
-is neutral and gets nothing) becomes a work item, placed just before the
-improve work items:
+description is probably the biggest lever. Every public adam-agentskills
+skill whose usage weight is fresh and at most one call in four weeks (an
+unknown weight is neutral and gets nothing) is judged by the trigger lane
+(skills-evals#662; Adam, 2026-11-03: "New fire mode runs only
+skill-creator's description loop; accept when held-out trigger accuracy
+rises 0.15+ with no drop on should-not-trigger queries; PR auto-merges like
+other loop PRs"):
 
 - **`trigger-optimize`** (change type `trigger`) when
-  `evals/<skill>/trigger-eval-set.json` exists. It is routed
-  **needs routine prompt change**, not fired: improve mode's payload is
-  exactly `run_id`, `mode`, `skill`, `trials` and `holdout`, and the
-  routine's saved prompt (not in this repository) decides the loop's flags.
-  To fire it, Adam would add to the prompt's IMPROVE MODE: "When
-  `evals/<skill>/trigger-eval-set.json` exists in the skills-evals checkout,
-  pass `--trigger-eval-set evals/<skill>/trigger-eval-set.json` to
-  `scripts/propose_skill_edit.py`." That alone makes every improve fire of
-  such a skill use the reviewed set. A trigger-only fire for a skill that is
-  not improve-eligible would also need a payload field from
-  `routine-eval-fire.yml` and a description-only option in
-  `propose_skill_edit.py`; neither exists. Once fired, a trigger fire would
-  be charged and ordered as an improve fire.
-- **`needs-trigger-set`** (change type `fixture`) when there is no set: write
-  one, a JSON list of `{query, should_trigger}` objects.
+  `evals/<skill>/trigger-eval-set.json` exists: an improve-band **fire**,
+  sent to `routine-eval-fire.yml` as improve mode with `trigger_only=true`
+  and no holdout. It runs only the description loop on that set
+  (`--trigger-eval-set evals/<skill>/trigger-eval-set.json`), is charged
+  and capped as an improve fire, and sorts after the value-ranked improve
+  fires, least used first. It waits while rule C pauses the skill (the
+  same improve records and `eval-improve/<skill>` pull requests; a merged
+  edit waits 14 days for usage to show, since a skill with no fixtures is
+  never re-measured), and is skipped when the skill has an ordinary improve
+  fire in the same plan (both write `eval-improve/<skill>`).
+- **`needs-trigger-set`** (change type `fixture`) when there is no set: an
+  `agent-ready` issue asking for one, a JSON list of `{query,
+  should_trigger}` objects with at least 8 of each class. A pull request
+  that adds only that file merges itself (`scripts/fixture_pr_gate.py`).
+
+A skill owned by retirement gets neither, and a private skill is never
+judged. The plan's `triggers` map lists every judged skill with its reasons;
+the weekly sweep closes a `needs-trigger-set` issue only for a judged skill.
 
 The plan also lists **hook candidates** (Adam: hooks first): skills whose
 SKILL.md has at least half its non-blank body lines under a heading naming a

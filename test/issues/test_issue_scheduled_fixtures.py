@@ -762,10 +762,19 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sent[-8:], ["--raw-field", "skill=writing-adrs",
-                                     "--raw-field", "holdout=bootstrap",
-                                     "--raw-field", "arms=both", "--raw-field", "trials=3"])
+        self.assertEqual(sent[-10:], ["--raw-field", "skill=writing-adrs",
+                                      "--raw-field", "holdout=bootstrap",
+                                      "--raw-field", "arms=both", "--raw-field", "trials=3",
+                                      "--raw-field", "trigger_only=false"])
         self.assertIn("mode=improve", sent)
+        # A trigger-only leg (skills-evals#662) sends an empty holdout.
+        result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
+                                      "HOLDOUT": "", "TRIGGER_ONLY": "true"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-10:], ["--raw-field", "skill=writing-adrs",
+                                      "--raw-field", "holdout=",
+                                      "--raw-field", "arms=both", "--raw-field", "trials=3",
+                                      "--raw-field", "trigger_only=true"])
         result, sent = self.dispatch({"MODE": "scaffold"})
         self.assertEqual(result.returncode, 1)
         self.assertIsNone(sent)
