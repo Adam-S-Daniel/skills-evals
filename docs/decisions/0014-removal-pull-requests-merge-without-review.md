@@ -353,3 +353,100 @@ Known limits it left:
   level is twice alpha; the simulations found no measurable excess at
   D at or above the margin, and a harm rejection also shows D below the
   margin.
+
+### Adversarial round 3 (2026-11-03)
+
+The third round found the stopping-time rule sound and named four gaps,
+fixed here.
+
+**A paused fixture no longer leaves the verdict (C1).** The eval scope pass
+(`scripts/eval_scope.py`) pauses a fixture whose pooled without arm averages
+0.85 or more over four runs, a sample mean the gate had stopped trusting in
+round 1. For a skill, the pause's `evals/unscheduled.yml` row made
+`scripts/compute_gates.py` drop the fixture, so a subject that clearly
+helped on it could be removed automatically through its other cells (the
+reviewer's repro: `keep` became `retire` with `removal: auto`). For
+guidance, a paused fixture's cells stayed `insufficient` with nothing to
+fire them. Now `compute_gates` reads `evals/scope-auto.yml` and the
+`Auto scope (` rows, and keeps a paused fixture's cells:
+
+- a cell that already showed `benefit` keeps it. A keep earned before the
+  pause still counts: the keep test holds its level at whatever pair it
+  stops, and the fixture was in the keep family from the start;
+- any other cell is `paused`, a parked class beside `ceiling` and
+  `ceiling-unconfirmed`. It does not vote, a retire verdict beside it is
+  only a proposal, and `scripts/retire_skill.py`'s re-derivation
+  (`cells_allow_auto`, from `gates.PARKED_CLASSES`) agrees;
+- a subject whose every cell is parked is `ceiling` when each is at the
+  ceiling or paused for the ceiling, and `insufficient` when a floor or
+  zero-use pause leaves nothing measuring it.
+
+The scope pass's own rule, which still pauses on a pooled sample mean, is
+another thread's (round 3's M1); this makes the gate safe whatever it
+pauses. On the results of 2026-11-03 the two guidance sections it had
+paused (watch-finished-is-not-ci-passed, subagent-delegation) are now
+`ceiling` rather than stuck `insufficient`, and 10 skill cells of
+zero-use pauses are `paused`.
+
+**The 20-pair stop needs the no-harm test and some slack (M2).** Round 2's
+`ceiling-unconfirmed` stop read the without arm's sample mean on every
+pair from 20 on. A high cell now stops at `max_runs_high_cell` pairs only
+when the no-harm test (D above minus the margin, at 90%) has rejected AND
+its without arm averages at least 0.90 (`HIGH_STOP_MIN_WITHOUT`). Any other
+high cell is fired on to the cap, where the harm test catches a harm beyond
+the margin and the rest ends on the cap rule (`no-clear-effect`, a
+proposal at most); the remove test still does not decide a high cell. The
+reviewer's `sim_seq3.py` (4 checks per run, 1,000 runs each, versions
+alternating; "parked" is `ceiling` plus `ceiling-unconfirmed`):
+
+| with / without (D) | Before | No-harm gate only | Both (shipped) |
+|---|---|---|---|
+| 0.80 / 0.95 (-0.15): harm parked | 66.4% | 1.1% | 1.1% (94.9% `no-benefit`) |
+| 0.85 / 0.95 (-0.10): harm parked | 92.2% | 15.8% | 16.0% (64.4% `no-benefit`) |
+| 1.0 / 0.82 (+0.18), m = 4: helpful parked | 32.5% | 32.5% | 4.4% |
+| 1.0 / 0.80 (+0.20), m = 4: helpful parked | 17.9% | 17.9% | 1.8% |
+| 1.0 / 0.85 (+0.15), m = 4: parked | 65.2% | 65.2% | 19.2% |
+| 1.0 / 0.88 (+0.12), m = 4: parked | 91.3% | 91.3% | 52.0% |
+| 0.95 / 0.95 (0): parked, mean stop | 100%, 20.0 pairs | 99.7%, 22.0 | 99.5%, 22.1 |
+| 1.0 / 1.0 (0): `ceiling`, mean stop | 100%, 18.0 | 100%, 18.0 | 100%, 18.0 |
+| 0.65 / 0.50 (+0.15): `no-benefit` (the level) | 2.4% | 2.4% | 2.4% |
+
+So the no-harm gate closes the hidden harm and the slack the parked helpful
+cells; the clean case costs about two more pairs. A harm milder than the
+margin can still end parked (16% at D = -0.10): the no-harm test's null is
+D at or below minus the margin, so rejecting there is not an error, and
+that is the trade-off this rule keeps.
+
+**The order rule compares with the removal's stopping time (M3).** A keep
+used to lose to the remove test's first crossing even when that crossing
+never decided (one CLI version), so a cell that went on to show a clear
+gain sat `insufficient` at the cap for good (the reviewer's
+`repro_order_stuck.py`). The keep now loses only to a removal that decided
+first; the keep's own crossing bounds its error either way. In the
+reviewer's `sim_shift.py` (25 flat pairs on one version, then with 0.8
+against 0.5 on a second; 500 runs), cells stuck at the cap after their keep
+test had crossed fell from 3.0% to 0%, and `benefit` rose from 29.4% to
+32.6%.
+
+**An undecided cell at the cap is a work item (M3).** A cell whose 40 pairs
+span one CLI version, or whose test crossed but has not decided, stays
+`insufficient` and unfired. The planner now lists it as a `cell-at-cap`
+work item with the gate's reason (none for a kept subject), where it had
+been a silent dead end, and no longer re-checks a decided cell at the cap,
+whose window a new pair cannot enter (round 3's m5).
+
+**Tests** (`test/issues/test_issue_gate_round3.py`): the scope-drop repro
+for skills and guidance, the pause files, the 20-pair stop's two
+conditions, the order repro, `at_cap` at exactly the cap and through the
+planner (M4), and the surviving mutations [14] and [29]. `plan_week`'s
+literal `PARKED_CLASSES` is pinned to the gate's, since `plan_week`
+imports `gates` only lazily.
+
+Known limits it left:
+
+- *The scope pass still pauses on a pooled sample mean* (M1, m4): the gate
+  now parks what it pauses, so a wrong pause costs a measurement, not a
+  wrong removal, but a ceiling-paused guidance fixture has no planner cell
+  and so no `fixture-ceiling` item.
+- *A cell held at the cap only by `min_cli_versions`* still needs new
+  content or a person; letting it take pairs past the cap was not done.

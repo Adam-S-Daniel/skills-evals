@@ -565,14 +565,64 @@ def unscheduled_paths(evals_dir: Path) -> set:
     return {row["path"] for row in rows}
 
 
-def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
+#: How scripts/eval_scope.py marks the `evals/unscheduled.yml` rows it
+#: writes (its AUTO_PREFIX; a test pins the two), and the file where it
+#: records every pause, skill and guidance alike (its SCOPE_AUTO).
+SCOPE_PAUSE_PREFIX = "Auto scope ("
+SCOPE_AUTO_FILE = "scope-auto.yml"
+
+
+def scope_paused(evals_dir: Path) -> dict:
+    """{fixture path: rule} for every fixture the eval scope pass paused:
+    each `evals/scope-auto.yml` row, and each `evals/unscheduled.yml` row
+    whose reason starts SCOPE_PAUSE_PREFIX (its rule is the text up to the
+    closing parenthesis). Round 3's C1: harness/gates.py keeps such a
+    fixture's cells, parked, rather than letting them vanish. Missing files
+    pause nothing; a malformed one raises ValueError, never an empty map,
+    so a broken file cannot quietly drop the parked cells' veto."""
+    out = {}
+    path = evals_dir / SCOPE_AUTO_FILE
+    if path.is_file():
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"{path.name} is unreadable") from exc
+        rows = doc.get("rows") if isinstance(doc, dict) else None
+        rows = [] if rows is None else rows
+        if not isinstance(rows, list) or not all(
+                isinstance(row, dict) and isinstance(row.get("path"), str)
+                and isinstance(row.get("rule"), str) for row in rows):
+            raise ValueError(f"{path.name} must hold a `rows` list of {{path, rule}}")
+        out.update({row["path"]: row["rule"] for row in rows})
+    path = evals_dir / "unscheduled.yml"
+    if path.is_file():
+        try:
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise ValueError(f"{path.name} is unreadable") from exc
+        for row in (doc.get("fixtures") if isinstance(doc, dict) else None) or []:
+            reason = row.get("reason") if isinstance(row, dict) else None
+            if isinstance(reason, str) and reason.startswith(SCOPE_PAUSE_PREFIX) \
+                    and isinstance(row.get("path"), str):
+                rule = reason[len(SCOPE_PAUSE_PREFIX):].partition(")")[0]
+                out.setdefault(row["path"], rule or "unknown")
+    return out
+
+
+def expected_content(evals_dir: Path, skill: str, registries: dict,
+                     keep_paused: bool = False) -> dict:
     """{fixture name, "" for a flat one: {"fixture_digest", "tested_digest"}}
     for every fixture of `skill` on main, except a fixture listed in
     `evals/unscheduled.yml` (it has a written reason to stay off the schedule)
     and a `draft: true` fixture (unready by definition; `promote` schedules it
-    later, and it joins this set then); {} when it has none. A malformed
-    unscheduled.yml raises ValueError."""
+    later, and it joins this set then); {} when it has none. With
+    `keep_paused` (the verdict's caller, `compute`), a fixture the eval scope
+    pass paused (`scope_paused`) is kept despite its unscheduled row, with
+    `scope_paused` set to the pause's rule (round 3's C1: harness/gates.py
+    parks its cells; the improve loop's callers leave it out, as before). A
+    malformed unscheduled.yml or scope-auto.yml raises ValueError."""
     unscheduled = unscheduled_paths(evals_dir)
+    paused = scope_paused(evals_dir) if keep_paused else {}
     eval_dir = evals_dir / skill
     try:
         directories = run_eval.resolve_fixture_dirs(eval_dir, None) if eval_dir.is_dir() else []
@@ -586,11 +636,14 @@ def expected_content(evals_dir: Path, skill: str, registries: dict) -> dict:
             doc = None
         doc = doc if isinstance(doc, dict) else {}
         listed = "evals/" + directory.relative_to(evals_dir).as_posix()
-        if doc.get("draft") is True or listed in unscheduled:
+        if doc.get("draft") is True or (listed in unscheduled and listed not in paused):
             continue
-        out["" if directory == eval_dir else directory.name] = {
-            "fixture_digest": run_eval.fixture_digest(directory),
-            "tested_digest": tested_digest(registries, doc.get("skill"), doc.get("registry"))}
+        entry = {"fixture_digest": run_eval.fixture_digest(directory),
+                 "tested_digest": tested_digest(registries, doc.get("skill"),
+                                                doc.get("registry"))}
+        if listed in paused:
+            entry["scope_paused"] = paused[listed]
+        out["" if directory == eval_dir else directory.name] = entry
     return out
 
 
@@ -599,7 +652,11 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
     for every fixture of guidance `section` on main
     (`evals/guidance/<section>/<name>/`); the tested digest is the section's
     extent in `guidance_dir`, the rest digest its corpus without the extent
-    (both None without one, or when the manifest has no such row)."""
+    (both None without one, or when the manifest has no such row). A
+    fixture the eval scope pass paused also has `scope_paused`, the pause's
+    rule (round 3's C1 and M1: harness/gates.py parks its cells, where they
+    sat `insufficient` with nothing to fire them)."""
+    paused = scope_paused(evals_dir)
     root = evals_dir / "guidance" / section
     if section.startswith("_") or not root.is_dir() or root.is_symlink():
         return {}
@@ -622,6 +679,9 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
                 and doc.get("section") == section:
             out[directory.name] = {"fixture_digest": run_eval.fixture_digest(directory),
                                    "tested_digest": tested, "rest_digest": rest}
+            listed = "evals/" + directory.relative_to(evals_dir).as_posix()
+            if listed in paused:
+                out[directory.name]["scope_paused"] = paused[listed]
     return out
 
 
@@ -663,7 +723,7 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
         try:
             skills[skill] = gates.retirement(
                 index, models, skill, policy,
-                expected_content(evals_dir, skill, registries or {}),
+                expected_content(evals_dir, skill, registries or {}, keep_paused=True),
                 gates.prior_from_history(history, skill, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one skill's failure is its own
             skills[skill] = {"verdict": "insufficient", "cells": [], "runs_used": [],

@@ -2661,12 +2661,19 @@ cell's keep test shows D above 0 at 80% (`benefit_confidence`), split over a
 family of fixed size m = fixtures on main x roster models (Bonferroni,
 #578's per-subject keep). A cell whose without arm a betting bound at 90%
 shows above 1 minus the margin, with a no-harm test agreeing, is `ceiling`
-and does not vote (a harm test runs there too, so a harmful cell is
-no-benefit); a high cell undecided after 20 pairs (`max_runs_high_cell`)
-stops as `ceiling-unconfirmed`, which does not vote either; one undecided
+and does not vote (a harm test runs there too and makes a cell no-benefit
+once it decides, so a harm beyond the margin parks only at the no-harm
+test's error rate); a high cell undecided after 20 pairs
+(`max_runs_high_cell`), whose no-harm test has rejected and whose without
+arm averages at least 0.90, stops as `ceiling-unconfirmed`, which does not
+vote either, and any other high cell is fired on to the cap; one undecided
 after 40 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
-propose a removal; a removal decides once its test is at its level on pairs
-spanning two CLI versions; an automatic removal needs two or more headroom
+propose a removal, when no test crossed and its pairs span two CLI
+versions, and otherwise stays `insufficient`, unfired, as a `cell-at-cap`
+work item; a fixture the eval scope pass paused keeps its cells, parked as
+`paused` unless they showed benefit; a removal decides once its test is at
+its level on pairs spanning two CLI versions (a keep crossing wins unless
+the removal decided first); an automatic removal needs two or more headroom
 cells, all no-benefit, and no parked cell. The judge is reported and does not vote (`judge_margin` 1.5
 on its 0-to-10 scale sets only its reported figure). The alone pair keeps
 its per-cell keep for the twist above. An agent-errored trial counts 0 and

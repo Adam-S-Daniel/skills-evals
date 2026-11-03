@@ -730,7 +730,7 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["ceiling", "no-benefit", "no-benefit"])
         self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
-        self.assertIn("at the ceiling did not vote", result["removal_reason"])
+        self.assertIn("parked cell(s) (at the ceiling", result["removal_reason"])
         # Every cell at the ceiling: the subject needs a fixture, and is never
         # removed for it.
         fixtures = ("one", "two")
@@ -745,8 +745,8 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["cannot-discriminate", "no-benefit", "no-benefit"])
         self.assertEqual((result["verdict"], result["reason"], result["removal"]),
-                         ("retire", "every cell with headroom shows no benefit (cells at "
-                                    "the ceiling or with a broken fixture do not vote)",
+                         ("retire", "every cell with headroom shows no benefit (cells "
+                                    "parked or with a broken fixture do not vote)",
                           "auto"))
 
     def test_every_cell_broken_is_cannot_discriminate(self):

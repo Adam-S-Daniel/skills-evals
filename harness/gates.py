@@ -143,7 +143,9 @@ machinery (`log_wealth`):
           40-pair cap.
   harm    H0: E[D] >= 0 (`harm_wealth`, the remove test with margin 0):
           rejecting shows the skill makes the cell worse. It needs no
-          headroom, so a harmful cell is never hidden as a ceiling.
+          headroom, so a high cell stays fired while it may still show
+          one (rule 6); a harm milder than the margin can still end a
+          cell `ceiling-unconfirmed` or, at the cap, `no-clear-effect`.
   no-harm H0: E[D] <= -margin (`keep_wealth` at -margin): rejecting shows
           the subject costs less than the margin here. A ceiling parks a
           cell only with it (the round 2 review's M1: at a perfect without
@@ -159,10 +161,13 @@ holds. The wealth must be at its level at n itself, so a late pair that
 knocks it down (a D = +1 on the new version) does not decide; but a
 crossing reached inside one Claude Code release is no longer stuck there
 for good, as it was when versions were read only up to the first crossing.
-`remove_at` and `harm_at` stay each test's first crossing, and the order
-rule below compares those.
+`remove_at` and `harm_at` stay each test's first crossing, reported.
 
-When both tests reject, the one that rejected first decides (a tie keeps).
+When both tests reject, the one that decided first wins (a tie keeps): the
+keep test's first crossing against the remove test's stopping time
+(round 3's M3). Against the remove test's first crossing, a crossing that
+never decided (one CLI version) outranked a keep reached afterwards for
+good, and the cell sat undecided at the cap.
 `helps_confidence` and `no_help_confidence` are 1 - 1 / (the largest wealth
 so far) of the two tests, the levels they reached; `benefit_lower` and
 `retire_upper` are the sequence's ends at the keep and remove levels, found
@@ -189,10 +194,15 @@ A CELL'S CLASS (`_classify`), over its paired runs, first match wins:
      removal; the planner stops firing it but keeps measuring the
      subject's other cells.
   6. A without arm above 1 - margin on the sample or the bound, not yet
-     parked: `insufficient` while it has fewer than `max_runs_high_cell`
-     pairs, then `ceiling-unconfirmed` (round 2's M2, a budget rule): the
-     planner stops firing it, it does not vote, and a retire verdict
-     beside it is a proposal. The remove test does not decide such a cell.
+     parked: `ceiling-unconfirmed` (round 2's M2, a budget rule) from
+     `max_runs_high_cell` pairs on, once the no-harm test has rejected and
+     the without arm averages at least HIGH_STOP_MIN_WITHOUT (0.90; round
+     3's M2: without either, a stop on the sample mean hid a harm of 0.15
+     two times in three and parked a third of the helpful cells whose true
+     without arm was 0.82). The planner stops firing it, it does not vote,
+     and a retire verdict beside it is a proposal. Otherwise `insufficient`
+     until the cap, where rule 8 decides it. The remove test does not
+     decide such a cell.
   7. NO BENEFIT, where the remove test crossed first: `no-benefit` once it
      decides (above), `insufficient` until then.
   8. `no-clear-effect`: `max_runs_per_cell` pairs, neither test crossed,
@@ -201,8 +211,11 @@ A CELL'S CLASS (`_classify`), over its paired runs, first match wins:
   9. `insufficient`: neither test has rejected yet.
 
 Every cell records `at_cap` (its pairs reached `max_runs_per_cell`): its
-window is then frozen, so the planner fires an `insufficient` one no more
-and counts it as blocking.
+window is then frozen, so the planner fires an `insufficient` one no more,
+counts it as blocking and lists it as a `cell-at-cap` work item (round 3's
+M3). A cell ends there undecided when its pairs span one CLI version, or
+when a test crossed but has not decided on two; only new content (or a
+person) moves it.
 
 `classify_cell` classifies a cell over all its counted runs, ordered by
 (timestamp, path). Nothing is carried from an earlier evaluation, and since
@@ -213,8 +226,20 @@ evaluation can be repeated as of a time. A run is named by `run_key`,
 
 THE VERDICT (`retirement`), over every fixture on main x every current roster
 arm model. A `cannot-discriminate` cell is left out (a broken fixture says
-nothing about the subject), and a `ceiling` or `ceiling-unconfirmed` cell
-(PARKED_CLASSES) does not vote on removal.
+nothing about the subject), and a `ceiling`, `ceiling-unconfirmed` or
+`paused` cell (PARKED_CLASSES) does not vote on removal.
+
+A fixture the eval scope pass paused (scripts/eval_scope.py; `expected`
+marks it `scope_paused` with the pause's rule, from compute_gates) stays in
+the verdict (round 3's C1: dropping its cells let the subject's other cells
+remove a subject it helped, automatically). Each of its cells keeps its
+class when that is `benefit` (a keep it earned before the pause still
+keeps: the keep test held its level at whatever pair it stopped) and is
+otherwise `paused`, recording `class_before_pause`: parked, so it neither
+votes nor lets a removal beside it be automatic. A subject whose every
+counted cell is parked is `ceiling` when each is a ceiling class or a
+ceiling pause, and `insufficient` otherwise (a floor or zero-use pause
+measures nothing).
 HEADROOM cells are the `no-benefit` and `no-clear-effect` ones. First match:
 
   * no fixture on main -> `insufficient`;
@@ -228,10 +253,10 @@ HEADROOM cells are the `no-benefit` and `no-clear-effect` ones. First match:
       - `auto` when there are at least AUTO_MIN_HEADROOM_CELLS (2) headroom
         cells and every one is `no-benefit`: two cells with independent run
         noise make the per-cell 10% about 1% realized;
-        No `ceiling` cell may stand beside them (the review's C1): a cell
+        No parked cell may stand beside them (the review's C1): a cell
         that did not vote leaves the subject's case incomplete;
       - `proposal` otherwise (one headroom cell only, a cell that hit the
-        cap with no clear effect, or a `ceiling` cell): a human decides,
+        cap with no clear effect, or a parked cell): a human decides,
         whatever
         `retirement_mode` says (scripts/retire_skill.py lowers auto to a
         proposal, and re-derives auto from the cells rather than trusting
@@ -780,6 +805,9 @@ def prime(runs: list) -> None:
 #: Headroom cells, every one `no-benefit`, a subject needs before its
 #: removal may be automatic (module docstring, THE VERDICT).
 AUTO_MIN_HEADROOM_CELLS = 2
+#: The least without-arm mean at which a high cell may stop at
+#: `max_runs_high_cell` pairs as `ceiling-unconfirmed` (round 3's M2).
+HIGH_STOP_MIN_WITHOUT = 0.90
 
 
 def _arm_summary(runs: list) -> dict:
@@ -923,6 +951,16 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                     f"{crossed}), but it has not been at its level on pairs spanning "
                     f"{policy['min_cli_versions']} CLI versions ({len(found)} so far)")
 
+    def capped_class():
+        """Rule 8: the cap reached with no test deciding."""
+        found = versions(len(usable))
+        if len(found) < policy["min_cli_versions"]:
+            return done("insufficient", f"no clear effect on the numbers, but {len(found)} "
+                        f"CLI version(s) in the pairs, under the "
+                        f"{policy['min_cli_versions']} a removal needs")
+        return done("no-clear-effect", f"{cap} pairs and neither test rejected: no clear "
+                    "effect, which can only propose a removal")
+
     keep_at, remove_at = objective["keep_at"], objective["remove_at"]
     harm_decided = decided_at(harm_wealth(ds, bet_prior))
     remove_decided = decided_at(remove_wealth(ds, margin, bet_prior))
@@ -932,7 +970,11 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     out.update(harm_decided_at=harm_decided, remove_decided_at=remove_decided,
                noharm_at=noharm_at)
     capped = len(window) >= cap
-    if keep_at is not None and (remove_at is None or keep_at <= remove_at):
+    # Round 3's M3: the keep is compared with the removal's STOPPING TIME,
+    # not its first crossing. A remove crossing that never decided (one CLI
+    # version) must not outrank a keep reached later; the keep's own
+    # crossing bounds its error either way.
+    if keep_at is not None and (remove_decided is None or keep_at <= remove_decided):
         return done("benefit", f"the keep test rejected at pair {keep_at}: confident at "
                     f"{policy['benefit_confidence']:.0%} across the subject's {family} "
                     "cell(s) that the gain is above 0")
@@ -955,16 +997,24 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     if high or ceiling_at is not None:
         # High on the sample, or on the bound without the no-harm test:
         # neither park the cell nor let it vote. Round 2's M2: after
-        # `max_runs_high_cell` pairs it stops being fired.
-        if len(window) >= policy["max_runs_high_cell"]:
+        # `max_runs_high_cell` pairs it stops being fired, but only once the
+        # no-harm test has rejected (round 3's M2: a sample-mean stop hid a
+        # harm of 0.15 two times in three) and the without arm is at least
+        # HIGH_STOP_MIN_WITHOUT (round 3's M2: a stop at 0.85 parked a third
+        # of the cells whose true without arm was 0.82).
+        if len(window) >= policy["max_runs_high_cell"] and noharm_at is not None \
+                and without_mean >= HIGH_STOP_MIN_WITHOUT:
             return done("ceiling-unconfirmed", f"{len(window)} pairs, the without arm "
-                        f"averaging {without_mean:.3f}, above 1 - {margin}, and neither "
-                        "the ceiling and no-harm tests nor the harm test has decided: "
-                        "the cell stops being fired, does not vote on removal and needs "
-                        "a harder fixture")
-        return done("insufficient", f"the without arm averages {without_mean:.3f}, above "
-                    f"1 - {margin}, but the ceiling and no-harm tests have not both "
-                    "rejected: more pairs decide whether the cell has headroom")
+                        f"averaging {without_mean:.3f}, and the no-harm test rejected at "
+                        f"pair {noharm_at}, but the ceiling test has not: the cell stops "
+                        "being fired, does not vote on removal and needs a harder fixture")
+        if not capped:
+            return done("insufficient", f"the without arm averages {without_mean:.3f}, "
+                        f"above 1 - {margin}, but the ceiling and no-harm tests have not "
+                        "both rejected: more pairs decide whether the cell has headroom")
+        # At the cap, a high cell the stop did not take ends on the cap
+        # rule: the remove test does not decide it (it cannot show the margin).
+        return capped_class()
     if remove_at is not None:
         if remove_decided is None:
             return awaiting(remove_at, "no benefit")
@@ -973,13 +1023,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             f"{remove_at}): confident at {policy['retire_confidence']:.0%} that the gain "
             f"is under {margin}")
     if capped:
-        found = versions(len(usable))
-        if len(found) < policy["min_cli_versions"]:
-            return done("insufficient", f"no clear effect on the numbers, but {len(found)} "
-                        f"CLI version(s) in the pairs, under the "
-                        f"{policy['min_cli_versions']} a removal needs")
-        return done("no-clear-effect", f"{cap} pairs and neither test rejected: no clear "
-                    "effect, which can only propose a removal")
+        return capped_class()
     return done("insufficient", "neither test has rejected yet")
 
 
@@ -1211,6 +1255,19 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             carried = any(r["judge_carried"] for r in runs)
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata)
+        paused = (expected.get(fixture) or {}).get("scope_paused")
+        if paused and cell["class"] != "benefit":
+            # Round 3's C1: the eval scope pass stopped firing this fixture.
+            # Dropping its cells let the others remove a subject it helped,
+            # so they stay, parked: a keep they earned before the pause
+            # still keeps, and anything else neither votes nor frees an
+            # automatic removal.
+            cell = {**cell, "class": "paused", "class_before_pause": cell["class"],
+                    "reason": f"paused by the eval scope pass ({paused}) and no longer "
+                              f"fired; before the pause it was {cell['class']}: "
+                              f"{cell['reason']}"}
+        if paused:
+            cell = {**cell, "scope_paused": paused}
         cells.append({"fixture": fixture or None, "model": model, "key": pool["key"],
                       "newest_on_model": pool["newest_on_model"],
                       "run_stamps_on_model": pool["run_stamps_on_model"], **cell,
@@ -1226,11 +1283,15 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     return out
 
 
-#: Cells that do not vote on removal because their without arm leaves no
-#: room: `ceiling` (shown by the bounds) and `ceiling-unconfirmed` (high on
-#: the sample at `max_runs_high_cell` pairs, round 2's M2). A retire verdict
-#: beside either is a proposal.
-PARKED_CLASSES = frozenset({"ceiling", "ceiling-unconfirmed"})
+#: Cells that do not vote on removal: `ceiling` (shown by the bounds) and
+#: `ceiling-unconfirmed` (high at `max_runs_high_cell` pairs, round 2's M2),
+#: whose without arm leaves no room, and `paused` (a fixture the eval scope
+#: pass stopped firing, round 3's C1), which will get no more runs. A
+#: retire verdict beside any of them is a proposal. scripts/plan_week.py
+#: keeps a literal copy (it imports gates lazily); a test pins the two.
+PARKED_CLASSES = frozenset({"ceiling", "ceiling-unconfirmed", "paused"})
+#: The parked classes that say the without arm leaves no room.
+CEILING_CLASSES = frozenset({"ceiling", "ceiling-unconfirmed"})
 
 
 def _verdict(cells: list, any_fixture: bool) -> dict:
@@ -1249,14 +1310,19 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
         return {"verdict": "cannot-discriminate", "reason": "every cell's fixture looks "
                 "broken: both arms pass almost nothing"}
     if classes <= PARKED_CLASSES and classes:
-        return {"verdict": "ceiling", "reason": "every cell's without arm is at the "
-                "ceiling: the subject needs a fixture with headroom, not more runs"}
+        if all(c["class"] in CEILING_CLASSES or c.get("scope_paused") == "ceiling"
+               for c in counted):
+            return {"verdict": "ceiling", "reason": "every cell's without arm is at the "
+                    "ceiling: the subject needs a fixture with headroom, not more runs"}
+        return {"verdict": "insufficient", "reason": "every cell is parked, and the eval "
+                "scope pass paused a fixture for a reason other than the ceiling: no "
+                "fixture is measuring the subject"}
     if not headroom or not classes <= PARKED_CLASSES | {"no-benefit", "no-clear-effect"}:
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.
         return {"verdict": "insufficient", "reason": "no cell shows no benefit"}
     clear = all(c["class"] == "no-benefit" for c in headroom)
-    parked = " (cells at the ceiling or with a broken fixture do not vote)" \
+    parked = " (cells parked or with a broken fixture do not vote)" \
         if len(headroom) < len(cells) else ""
     ceilings = sum(c["class"] in PARKED_CLASSES for c in counted)
     if clear and ceilings:
@@ -1264,7 +1330,8 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
         # removal beside one is for a person to make.
         return {"verdict": "retire", "removal": "proposal",
                 "reason": f"every cell with headroom shows no benefit{parked}",
-                "removal_reason": f"{ceilings} cell(s) at the ceiling did not vote"}
+                "removal_reason": f"{ceilings} parked cell(s) (at the ceiling, or paused "
+                                  "by the eval scope pass) did not vote"}
     if clear and len(headroom) >= AUTO_MIN_HEADROOM_CELLS:
         return {"verdict": "retire", "removal": "auto",
                 "reason": f"every cell with headroom shows no benefit{parked}",

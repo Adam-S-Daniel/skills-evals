@@ -871,7 +871,7 @@ def subject_confidence(verdict: dict) -> dict:
     x the smallest objective keep-test p over its cells (m its keep family,
     `keep_family`; 1 without one), and `no_help`, the lowest no-help level
     over its cells with headroom (the cells that vote on removal: neither
-    `ceiling` nor `cannot-discriminate`; a cell with no objective figure
+    parked, `gates.PARKED_CLASSES`, nor `cannot-discriminate`; a cell with no objective figure
     gives 0). The judge does not vote, so it is not read. Both None while no
     cell has an objective figure. The keep and remove rules compare these
     with the policy levels; the page shows them as percentages."""
@@ -884,8 +884,8 @@ def subject_confidence(verdict: dict) -> dict:
     ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
           if isinstance(t, dict) and t.get("route") == "objective"
           and isinstance(t.get("p"), (int, float))]
-    voting = [c for c in cells if c.get("class") not in ("ceiling", "ceiling-unconfirmed",
-                                                         "cannot-discriminate")]
+    voting = [c for c in cells if c.get("class") not in gates.PARKED_CLASSES
+              and c.get("class") != "cannot-discriminate"]
     no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in voting]
     return {"helps": max(0.0, 1 - family * min(ps)) if ps else 0.0,
             "no_help": min(no_help) if no_help else None}

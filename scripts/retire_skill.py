@@ -10,8 +10,10 @@ an auto-merging removal pull request in adam-agentskills.
 verdict there is `retire`, and this script re-checks what that verdict
 means before acting: every (fixture, roster model) cell of the cells'
 fixtures crossed with the gates file's roster models present exactly once,
-every one `no-benefit`, `no-clear-effect`, `ceiling`, `ceiling-unconfirmed` or
-`cannot-discriminate`, and at least one `no-benefit` or `no-clear-effect`
+every one `no-benefit`, `no-clear-effect`, `cannot-discriminate` or parked
+(`gates.PARKED_CLASSES`: `ceiling`, `ceiling-unconfirmed`, or `paused` for
+a fixture the eval scope pass paused), and at least one `no-benefit` or
+`no-clear-effect`
 (a cell with headroom; harness/gates.py, THE VERDICT). Any field of the
 wrong type is a refusal, never a crash or a pass.
 compute_gates lets one skill retire per evaluation; two `retire` verdicts
@@ -225,8 +227,8 @@ GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance reached this 
                          "(the GitHub App token was not minted)")
 #: The cell classes a `retire` verdict may hold, and those with headroom,
 #: of which it needs one (harness/gates.py, THE VERDICT).
-RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "ceiling", "ceiling-unconfirmed",
-                       "cannot-discriminate")
+RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "cannot-discriminate",
+                       *sorted(gates.PARKED_CLASSES))
 HEADROOM_CLASSES = ("no-benefit", "no-clear-effect")
 NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
                  "GitHub App token was not minted)")
@@ -369,9 +371,7 @@ def retiring(gates: dict) -> str | None:
     for c in cells:
         if not isinstance(c, dict) or c.get("class") not in RETIRE_CELL_CLASSES:
             raise RetireError(f"{skill}: a retire verdict with a cell that is not "
-                              "no-benefit, no-clear-effect, ceiling, "
-                              "ceiling-unconfirmed or "
-                              "cannot-discriminate")
+                              f"{', '.join(RETIRE_CELL_CLASSES)}")
         fixture = c.get("fixture")
         if not (fixture is None or isinstance(fixture, str) and NAME_RE.fullmatch(fixture)) \
                 or not isinstance(c.get("model"), str):
@@ -860,7 +860,8 @@ def proposal_only(verdict: dict) -> str | None:
             return None
         return ("the verdict says auto, but its cells allow only a proposal: fewer "
                 f"than {AUTO_MIN_HEADROOM_CELLS} headroom cells, one that is not "
-                "no-benefit, or a ceiling cell")
+                "no-benefit, or a parked cell (at the ceiling, or paused by the eval "
+                "scope pass)")
     why = verdict.get("removal_reason")
     return ("the verdict allows only a proposal"
             + (f" ({why})" if isinstance(why, str) and why else ""))

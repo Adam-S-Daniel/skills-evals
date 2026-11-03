@@ -288,8 +288,10 @@ retried at most twice, then the skill waits 14 days. After a merged
 improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
-WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures` and
-`fixture-broken` (change type `fixture`), `routine-outage` and
+WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures`,
+`fixture-ceiling` and `fixture-broken` (change type `fixture`), `cell-at-cap`
+(change type None: an undecided cell whose pairs reached the cap, with its
+gates reason; none for a kept subject), `routine-outage` and
 `routine-down` (change type None: the routine failed, not a subject; see
 EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
@@ -481,8 +483,11 @@ BLOCKING_REASON = "no-benefit on the numbers, but the cell has"
 BLOCKING_REASONS = (BLOCKING_REASON, "no-clear-effect on the numbers, but the cell has")
 BLOCKING_CLASSES = ("cannot-discriminate",)
 BLOCKING_MIN_RUNS = 3
-#: The cell classes that are parked, not fired (harness/gates.py).
-PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed")
+#: The cell classes that are parked, not fired: harness/gates.py's
+#: PARKED_CLASSES, copied because this module imports gates only lazily (its
+#: lighter subcommands run where pyyaml is not installed);
+#: test_issue_gate_round3.py pins the two equal.
+PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed", "paused")
 IMPROVE_TRIALS = 3
 #: Where an eligible guidance section's improvement runs when the fire
 #: workflow's `section` pattern refuses its id.
@@ -1060,7 +1065,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     `fixture-ceiling` work item (none when its subject is kept), since only a
     harder fixture can let it vote. An `insufficient` cell whose pairs
     reached `max_runs_per_cell` (`at_cap`) plans no fire either: its window
-    is frozen.
+    is frozen. It is a `cell-at-cap` work item carrying its gates reason
+    (round 3's M3: it was a silent dead end), and a decided cell at the cap
+    is not re-checked (round 3's m5).
 
     CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
     allocation): in the missing, near, focus and guidance-rest bands a cell
@@ -1119,7 +1126,21 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             band, order = None, None
         elif cell.get("at_cap") is True and cell["class"] == "insufficient":
             # Round 2's C1: `max_runs_per_cell` pairs freeze the window, so
-            # another fire cannot change the class. It is blocking instead.
+            # another fire cannot change the class. It is blocking instead,
+            # and round 3's M3: a work item says so, since only new content
+            # (or a person) can move it.
+            if not kept:
+                capped = {"kind": "cell-at-cap", "change_type": None,
+                          "skill": cell["skill"], "fixture": cell["fixture"],
+                          "model": cell["model"], "route": "issue",
+                          "reason": cell.get("reason")}
+                if cell.get("section"):
+                    capped["section"] = cell["section"]
+                work.append(capped)
+            band, order = None, None
+        elif cell.get("at_cap") is True and cell["class"] != "missing":
+            # Round 3's m5: a decided cell at the cap is not re-checked; a
+            # new pair cannot enter its frozen window.
             band, order = None, None
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes

@@ -25,17 +25,29 @@
 #     above 1 - `objective_margin` cannot show the margin: it parks as
 #     `ceiling`, does not vote on removal and is not fired again; it needs a
 #     harder fixture. A retire verdict beside one is only a proposal. A
-#     harm test (D < 0) runs at such cells, so a harmful one is no-benefit,
-#     and the cell parks only when a no-harm test (D > -margin) agrees.
+#     harm test (D < 0) runs at such cells and makes a harmful one
+#     no-benefit once it decides, and the cell parks only when a no-harm
+#     test (D > -margin) agrees, so a harm beyond the margin parks only at
+#     that test's error rate. A milder harm can still end parked or with no
+#     clear effect.
 #   * `max_runs_high_cell` (20): a cell whose without arm is above
-#     1 - `objective_margin` and still undecided after this many pairs stops
-#     being fired as `ceiling-unconfirmed`. It does not vote either, so a
-#     retire verdict beside it is a proposal. A budget rule: a bound at 0.95
-#     needs about 28 pairs, at 0.90 more than the cap.
+#     1 - `objective_margin`, still undecided after this many pairs, whose
+#     no-harm test has rejected and whose without arm averages at least
+#     0.90 (harness/gates.py HIGH_STOP_MIN_WITHOUT) stops being fired as
+#     `ceiling-unconfirmed`. It does not vote either, so a retire verdict
+#     beside it is a proposal. A budget rule: a bound at 0.95 needs about 28
+#     pairs, at 0.90 more than the cap. A high cell that does not meet it is
+#     fired on to the cap.
 #   * A cell that reaches `max_runs_per_cell` (40) pairs with neither test
-#     decided has `no-clear-effect`, which can only PROPOSE a removal. An
+#     crossed, on pairs spanning `min_cli_versions`, has `no-clear-effect`,
+#     which can only PROPOSE a removal. With one version, or with a test that
+#     crossed but has not decided, it stays `insufficient`: it is no longer
+#     fired, and the planner lists it as a `cell-at-cap` work item. An
 #     automatic removal needs two or more cells with headroom, every one
-#     no-benefit; with one, the removal is a proposal too.
+#     no-benefit, and no parked cell; with one, the removal is a proposal too.
+#   * A fixture the eval scope pass paused keeps its cells: a `benefit` cell
+#     still keeps, and any other is `paused`, parked like a ceiling cell, so
+#     it never lets the other cells remove the subject automatically.
 #   * The judge is reported but no longer votes on keep or removal (its
 #     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
 #     figure the explorer shows). Single checks no longer keep on their own.

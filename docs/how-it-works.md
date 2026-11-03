@@ -283,13 +283,16 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
 Two rules from the 2026-11-03 gate change apply across the bands. A cell
 whose verdict class is `ceiling` (a bound on its without arm shows a mean
 above 1 minus the margin, so it cannot show the gain) or
-`ceiling-unconfirmed` (its without arm is high but undecided after 20
-pairs) plans no fire in any band but safety, re-checks included, and
+`ceiling-unconfirmed` (its without arm averages 0.90 or more and its
+no-harm test has rejected, but it is undecided after 20 pairs) plans no
+fire in any band but safety, re-checks included, and
 becomes a "fixture ceiling" work item, unless its subject is already kept:
 it needs a harder fixture, not more runs. It does not block its subject:
 the subject's other cells keep being measured. An undecided cell that has
-reached the 40-pair cap is not fired either (its window is frozen) and
-blocks its subject. And the cheaper
+reached the 40-pair cap is not fired either (its window is frozen), blocks
+its subject and becomes a "cell at cap" work item (`cell-at-cap`, with the
+gate's reason), unless its subject is already kept; a decided cell at the
+cap is not re-checked, since a new pair cannot enter its window. And the cheaper
 model goes first: in the missing, near, focus and guidance-rest bands a
 cell waits while its subject's cell of the same fixture on a model with a
 lower known cost is still open (`cheaper_first`). A keep on the cheaper
@@ -336,9 +339,11 @@ the two sections nearest one until those decide.
   one whose ceiling test, a betting bound on the without arm's run means at
   90%, shows a mean above 1 minus the margin, and whose no-harm test shows
   the section costs less than the margin there: at least 18 pairs, more as
-  the arm drops below 1.0. A high cell undecided after 20 pairs is
-  `ceiling-unconfirmed`. Both are parked and do not vote on removal, and a
-  section whose every cell is parked is `ceiling`. A `cannot-discriminate`
+  the arm drops below 1.0. A high cell undecided after 20 pairs, whose
+  without arm averages 0.90 or more and whose no-harm test has rejected, is
+  `ceiling-unconfirmed`. Both are parked and do not vote on removal, as is
+  a `paused` cell of a fixture the eval scope pass paused, and a
+  section whose every cell is at the ceiling is `ceiling`. A `cannot-discriminate`
   cell is one whose arms
   both pass almost nothing over three pairs, left out of the verdict as a
   broken fixture.) At least one of its cells must be
@@ -609,19 +614,32 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   stops firing it without blocking the subject's other cells, and a subject
   whose every cell is at the ceiling is `ceiling`. It parks only when a
   no-harm test (D above minus the margin, at 90%) agrees, so the margin
-  cannot hide a harm. A cell whose without arm is high but undecided after
-  20 pairs (`max_runs_high_cell`) stops being fired as
-  `ceiling-unconfirmed`, which does not vote either. A retire verdict
-  beside either is only a proposal.
+  cannot hide a harm beyond the margin. A cell whose without arm is high
+  but undecided after 20 pairs (`max_runs_high_cell`) stops being fired as
+  `ceiling-unconfirmed`, which does not vote either, but only once the
+  no-harm test has rejected and the without arm averages at least 0.90
+  (`HIGH_STOP_MIN_WITHOUT`); otherwise it is fired on to the cap. A retire
+  verdict beside either is only a proposal.
 - *Harm.* A cell whose without arm is high is also tested for harm (D below
-  0 at 90%). A harmful cell is `no-benefit`, never hidden as a ceiling: it
-  needs no headroom to show harm.
-- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`) is
-  `no-clear-effect`.
+  0 at 90%), and is `no-benefit` once that test decides: it needs no
+  headroom to show harm. A harm beyond the margin is parked only at the
+  no-harm test's error rate; a milder one can still end parked or, at the
+  cap, `no-clear-effect` (a proposal at most).
+- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
+  is `no-clear-effect` when no test crossed and its pairs span two Claude
+  Code versions. Otherwise (one version, or a test that crossed but has
+  not decided) it stays `insufficient`: it is no longer fired, blocks its
+  subject and becomes a `cell-at-cap` work item.
+- *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
+  cells in the verdict: a `benefit` cell still keeps, and any other is
+  `paused`, parked, so it does not vote and a removal beside it is only a
+  proposal. A subject whose every cell is parked is `ceiling` only when each
+  is at the ceiling or paused for the ceiling; a floor or zero-use pause
+  leaves it `insufficient`.
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
   no-clear-effect, none undecided. It may be automatic only with two or
   more such cells, every one no-benefit; one headroom cell, or any
-  no-clear-effect or ceiling cell, makes it a proposal (`removal: proposal`
+  no-clear-effect or parked cell, makes it a proposal (`removal: proposal`
   in the verdict), and `scripts/retire_skill.py` re-derives that from the
   cells rather than trusting the field. A removal decides at the first pair
   where its test is at its level and the pairs so far span two Claude Code
@@ -869,6 +887,13 @@ reason starts `Auto scope (<rule>), <date>:`. A resume reverses all three.
 Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures,
 and any `unscheduled.yml` row the pass did not write. The unscheduled rule
 (`test_issue_371_scheduled_fixtures.py`) therefore keeps holding.
+
+The gate does not drop a paused fixture (PR 649's third adversarial round,
+C1): `scripts/compute_gates.py` reads `evals/scope-auto.yml` and the
+`Auto scope (` rows and keeps such a fixture's cells, parked as `paused`
+unless they had already shown `benefit`. Dropping them let the subject's
+other cells remove a subject the paused fixture showed helped,
+automatically.
 
 ## 4. Where to look for current results
 
