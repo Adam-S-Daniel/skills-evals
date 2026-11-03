@@ -480,6 +480,109 @@ test('?data accepts only localhost, 127.0.0.1 and this repo on raw.githubusercon
   eq(P.dataUrlFromSearch('?data=http://localhost:8000/test/fixture.json').url, 'http://localhost:8000/test/fixture.json');
 });
 
+// --- lessons (Adam, 2026-11-03) ---------------------------------------------------
+const lessonRows = (page) => P.findAll(page, (n) => n.tag === 'tr' && n.children.some((c) => c.tag === 'td'))
+  .map((tr) => tr.children.filter((c) => c.tag === 'td').map((td) => P.textOf(td).replace(/\s+/g, ' ').trim()));
+const lessonsSection = (doc, mode) => P.lessonsView(doc, mode);
+
+test('lesson titles mirror the miner\'s card titles', () => {
+  eq(P.lessonTitle('tool-edit'), 'Edit tool calls kept failing');
+  eq(P.lessonTitle('tool-bash-make'), 'Bash make commands kept failing');
+  eq(P.lessonTitle('red-ci-example-site'), 'Red CI after pushes in example-site');
+  eq(P.lessonTitle('skill:example-skill-alpha'), 'example-skill-alpha');
+  eq(P.lessonTitle('guidance:security', { security: 'Security' }), 'Security');
+  eq(P.lessonTitle('guidance:example-unknown-section', {}), 'example-unknown-section');
+  eq(P.lessonTitle('tool-bash-someone@example.com'), 'Bash ' + P.STRINGS.hidden + ' commands kept failing');
+});
+
+test('the skills view lists new-skill and skill items with kind, source, seen, dates and status', () => {
+  const sec = lessonsSection(fixture, 'skills');
+  const t = P.textOf(sec);
+  ok(t.includes(P.STRINGS.lessonsHeading), 'heading');
+  ok(t.includes(P.STRINGS.lessonsLead('Oct 30')), 'the lead names the transcripts and the day: ' + t);
+  ok(P.STRINGS.lessonsLead('X').includes('transcripts'), 'the lead says the proposals come from session transcripts');
+  const rows = lessonRows(sec);
+  eq(rows.length, 6, 'three miner rows, then three issue rows');
+  eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
+  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | Not drafted yet');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule I stated ×3 | 3 times | Oct 10 | Oct 20 | Waiting for review');
+  const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
+  ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 1, 'the table scrolls inside .tablewrap');
+});
+
+test('the guidance view lists guidance items by their heading', () => {
+  const rows = lessonRows(lessonsSection(fixture, 'guidance'));
+  eq(rows.length, 2);
+  eq(rows[0][0], 'Security');
+  eq(rows[0][1], 'Change to the guidance');
+  eq(rows[1][0], 'example-unknown-section');
+  eq(rows[1][1], 'Idea for a test');
+  eq(rows[1][2], 'Session transcripts (another computer) a correction I made ×1');
+});
+
+test('the left-out note counts memory notes, git checks and private subjects, omitting zero parts', () => {
+  const t = P.textOf(lessonsSection(fixture, 'skills'));
+  ok(t.includes('Left out on purpose: 2 personal memory notes, 1 proposed git check and 4 about private skills or repos. No session text is published.'), t);
+  const one = P.textOf(lessonsSection({ lessons: { date: '2026-10-30', items: [], left_out: { memory_note: 0, agent_check: 0, private: 1, other: 3 } } }, 'skills'));
+  ok(one.includes('Left out on purpose: 1 about private skills or repos. No session text is published.'), one);
+  ok(one.includes(P.STRINGS.lessonsEmptySkills), one);
+  const none = P.textOf(lessonsSection({ lessons: { date: '2026-10-30', items: [], left_out: {} } }, 'guidance'));
+  ok(!none.includes('Left out') && none.includes(P.STRINGS.lessonNoText), none);
+});
+
+test('null or malformed lessons say none were available, and bad items are skipped', () => {
+  for (const L of [null, undefined, 'x', { date: 'soon', items: [] }, { date: '2026-10-30' }]) {
+    const t = P.textOf(lessonsSection({ lessons: L }, 'skills'));
+    ok(t.includes(P.STRINGS.lessonsNone), JSON.stringify(L));
+  }
+  const good = { kind: 'skill-edit', subject: 'skill:example-skill-beta', evidence_count: 2, first_seen: '2026-10-01', last_seen: '2026-10-02' };
+  const bad = [null, { ...good, kind: 'memory-note' }, { ...good, evidence_count: 1.5 }, { ...good, first_seen: 'x' },
+    { ...good, subject: 7 }];
+  const rows = lessonRows(lessonsSection({ lessons: { date: '2026-10-30', items: bad.concat([good]), left_out: {} } }, 'skills'));
+  eq(rows.length, 1);
+  eq(rows[0][2], 'Session transcripts', 'no sources or signals: the bare label');
+  const odd = P.lessonItem({ ...good, kind: 'new-skill', sources: ['moon', 'wsl'], signals: { 'skill-invoked': 4, rule: 'x', abandoned: 2 },
+    draft: { number: 3, state: 'open', url: 'https://example.com/pull/3' } });
+  eq(JSON.stringify(odd.sources), '["wsl"]');
+  eq(JSON.stringify(odd.signals), '[{"signal":"abandoned","n":2}]');
+  eq(odd.draft, null, 'a draft not on github.com is dropped');
+});
+
+test('issue lessons show in the skills view after the miner rows, with their source and a link', () => {
+  const sec = lessonsSection(fixture, 'skills');
+  const rows = lessonRows(sec);
+  eq(rows.length, 6);
+  eq(rows[3].join(' | '), '3 facts for docs/EXAMPLE.md in Adam-S-Daniel/example-repo | Fact to move into a repo | Claude\'s auto-memory | — | Oct 29 | — | #17 (open)');
+  eq(rows[4].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
+  eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | My own proposal | — | Oct 27 | — | #88 (open)');
+  const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  eq(hrefs.filter((u) => u === 'https://github.com/Adam-S-Daniel/example-repo/issues/17').length, 1, 'the issue link: ' + hrefs.join(' '));
+  eq(lessonRows(lessonsSection(fixture, 'guidance')).length, 2, 'the guidance view shows no issue rows');
+});
+
+test('issue lessons alone still render, and bad issues are skipped', () => {
+  const good = fixture.lessons.issues[0];
+  const bad = [null, { ...good, source: 'rumor' }, { ...good, url: 'https://example.com/x' }, { ...good, repo: 'no-slash' },
+    { ...good, state: 'merged' }, { ...good, opened: '2026-10' }, { ...fixture.lessons.issues[2], target: null }];
+  const sec = lessonsSection({ lessons: { date: null, items: null, left_out: null, issues: bad.concat([good]) } }, 'skills');
+  const t = P.textOf(sec);
+  ok(t.includes(P.STRINGS.lessonMinerNone) && !t.includes('Left out'), t);
+  eq(lessonRows(sec).length, 1);
+  const bare = P.textOf(lessonsSection({ lessons: { date: null, items: null, left_out: null,
+    issues: [{ ...good, count: null, target: null }] } }, 'skills'));
+  ok(bare.includes('Facts in Adam-S-Daniel/example-repo'), 'no count or target: ' + bare);
+  ok(P.textOf(lessonsSection({ lessons: { date: null, items: null, left_out: null, issues: [] } }, 'skills')).includes(P.STRINGS.lessonsNone));
+});
+
+test('both views render the lessons section after the cards', () => {
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(fixture, m, {}));
+    ok(t.indexOf(P.STRINGS.lessonsHeading) > t.indexOf(m === 'skills' ? P.STRINGS.skillsHeading : P.STRINGS.sectionsHeading), m);
+    ok(t.indexOf(P.STRINGS.lessonsHeading) < t.indexOf(P.STRINGS.rosterHeading), m);
+  }
+});
+
 // --- privacy ----------------------------------------------------------------------
 test('no @, /home/ or cse_ string from the data reaches rendered text', () => {
   for (const m of ['skills', 'guidance']) {
