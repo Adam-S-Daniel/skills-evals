@@ -1,17 +1,15 @@
 {
+  "fixture_readiness": {
+    "context_declared": 61,
+    "context_missing": 46,
+    "draft": 11,
+    "guidance_unproven": 0,
+    "paired_context_delivery_verified": false,
+    "total": 107
+  },
+  "generated_at": "2026-11-03T12:59:00Z",
   "include_private_names": false,
   "problems": [],
-  "publication": {
-    "as_of": "2026-11-03T08:54:33Z",
-    "guidance_revision": "908913675f78b789b3b53c55d97836b99b94beab",
-    "public_registry_revisions": {
-      "adam-agentskills": "6dd9b1efb1b6b96b8842e21145136a6105359ded",
-      "adamdaniel.ai": "24ab320e620f3e84f0a9c9e5519dc00376031c69",
-      "cms-platform": "77510f78ac0fc3231bb5a77f69a6535629b435cc"
-    },
-    "repository_revision": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-    "run_id": "41606700600"
-  },
   "registries": [
     {
       "counts": {
@@ -217,8 +215,7 @@
           "skill": "rename-pdfs",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adam-agentskills"
+      ]
     },
     {
       "counts": {
@@ -336,8 +333,7 @@
           "skill": "test-canary",
           "status": "skipped"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/cms-platform"
+      ]
     },
     {
       "counts": {
@@ -359,8 +355,7 @@
           "skill": "embeddable-tool-pages",
           "status": "covered"
         }
-      ],
-      "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai"
+      ]
     },
     {
       "counts": {
@@ -376,11 +371,13 @@
       "skills": []
     }
   ],
-  "schema": 1,
+  "schema": 2,
+  "status": "complete",
   "totals": {
     "covered": 28,
     "gap": 2,
     "skipped": 11,
     "total": 41
-  }
+  },
+  "unresolved": []
 }
