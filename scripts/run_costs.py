@@ -287,6 +287,9 @@ def report(summary: dict) -> list[str]:
         # Adam, 2026-11-01: the overrun is the p95 of this, now and in future.
         lines.append("per_run_overrun for evals/budget.yml (p95 of the largest call): "
                      f"{summary['largest_call_points'][0.95] / 100:.4f}")
+        # The rate per_run_cap charges a run's own call dollars at (2026-11-03).
+        lines.append("points_per_usd for evals/budget.yml (allowance per dollar): "
+                     f"{summary['points_per_usd'] / 100:.5f}")
     if summary.get("runs_with_judge_cost"):
         judge = summary["judge_usd_per_run"]
         lines.append(f"judge dollars per run ({summary['runs_with_judge_cost']} runs): "
