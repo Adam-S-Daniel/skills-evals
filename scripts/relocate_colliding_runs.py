@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Move a downloaded eval run off a run directory the results branch already holds.
 
-    relocate_colliding_runs.py SNAPSHOT_RESULTS BRANCH_RESULTS
+    relocate_colliding_runs.py [SNAPSHOT_RESULTS BRANCH_RESULTS]
+
+With no arguments (how eval.yml runs it, like make_badge.py reading results/
+by default, so no publish command names a path into the downloaded artifact):
+the snapshot is $RUNNER_TEMP/eval-outputs/results and the branch tree is
+./results.
 
 eval.yml's `publish` job copies one leg's downloaded `results/` onto
 `persistent/eval-results`. A run directory is named by its UTC start second
@@ -24,6 +29,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -92,10 +98,15 @@ def relocate(snapshot: Path, branch: Path) -> list[tuple[str, str]]:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(__doc__.splitlines()[2].strip(), file=sys.stderr)
+    if len(argv) == 2:
+        snapshot, branch = Path(argv[0]), Path(argv[1])
+    elif not argv and os.environ.get("RUNNER_TEMP"):
+        snapshot = Path(os.environ["RUNNER_TEMP"]) / "eval-outputs" / "results"
+        branch = Path("results")
+    else:
+        print("usage: relocate_colliding_runs.py [SNAPSHOT_RESULTS BRANCH_RESULTS]",
+              file=sys.stderr)
         return 2
-    snapshot, branch = Path(argv[0]), Path(argv[1])
     if not snapshot.is_dir():
         return 0
     for old, new in relocate(snapshot, branch):

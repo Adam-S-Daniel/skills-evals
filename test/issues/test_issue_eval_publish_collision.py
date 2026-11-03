@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 import yaml
 
@@ -140,7 +141,14 @@ class TwoLegsOfOneSectionTests(unittest.TestCase):
         git(self.leg, "checkout", "--", ".")
         git(self.leg, "fetch", "origin", BRANCH)
         git(self.leg, "checkout", "-B", BRANCH, f"origin/{BRANCH}")
-        relocate.main([str(snap / "results"), str(self.leg / "results")])
+        # As the step runs it: no arguments, the snapshot under $RUNNER_TEMP.
+        cwd = os.getcwd()
+        os.chdir(self.leg)
+        try:
+            with unittest.mock.patch.dict(os.environ, {"RUNNER_TEMP": str(self.root)}):
+                self.assertEqual(relocate.main([]), 0)
+        finally:
+            os.chdir(cwd)
         shutil.copytree(snap / "results", self.leg / "results", dirs_exist_ok=True)
         self.assertEqual(fixture_of(self.leg / SECTION / TS), {"handoff"})
         self.assertEqual(fixture_of(self.leg / SECTION / "20261103T060704Z"), {"done-summary"})
@@ -163,7 +171,7 @@ class PublishStepOrderTests(unittest.TestCase):
                  'cp scripts/relocate_colliding_runs.py "$RUNNER_TEMP/"',
                  "rm -rf results",
                  "git checkout -B persistent/eval-results origin/persistent/eval-results",
-                 'python3 "$RUNNER_TEMP/relocate_colliding_runs.py" "$snap/results" results',
+                 'python3 -I "$RUNNER_TEMP/relocate_colliding_runs.py"\n',
                  'cp -r "$snap/results/." results/']
         positions = [run.index(mark) for mark in marks]
         self.assertEqual(positions, sorted(positions))

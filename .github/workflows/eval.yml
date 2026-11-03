@@ -2125,8 +2125,10 @@ jobs:
           fi
           # A downloaded run directory the branch already holds with other
           # content moves to the next free second before the copy, so the
-          # copy never replaces another fixture's published run.
-          python3 "$RUNNER_TEMP/relocate_colliding_runs.py" "$snap/results" results
+          # copy never replaces another fixture's published run. It reads
+          # the snapshot from $RUNNER_TEMP and the branch's results/ by
+          # default: no command here hands it a path into the artifact.
+          python3 -I "$RUNNER_TEMP/relocate_colliding_runs.py"
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
           # The `roster` job's own computed roster (B1, round 3 on #209):
           # threaded through `needs.roster.outputs.roster_latest_json`
