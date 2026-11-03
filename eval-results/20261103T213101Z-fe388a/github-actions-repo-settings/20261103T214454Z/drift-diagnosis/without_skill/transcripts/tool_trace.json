@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017eQ8jkBW5utVNwg6AMtPNC",
+      "name": "Bash",
+      "input": "git status --short | head; ls -la; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017eQ8jkBW5utVNwg6AMtPNC",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ntotal 32\ndrwxr-xr-x 6 root root 4096 Nov  3 21:45 .\ndrwx------ 6 root root 4096 Nov  3 21:45 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  3 21:31 .bash_profile\ncrw-rw-rw- 1 root ro...",
+      "output_chars": 2032,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MDUfrHhBvpLgqeTHN6arrn",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; echo ----; cat bin/gh; ls -R .claude; for f in $(find .gh -type f); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 136,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MDUfrHhBvpLgqeTHN6arrn",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2197,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WkP44xncPg2zsHCmn8aXiY",
+      "name": "Bash",
+      "input": "ls -R .claude; which gh; echo $GH_REPLAY_DIR; for f in $(find .gh -type f); do echo \"== $f\"; cat $f; echo; done",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WkP44xncPg2zsHCmn8aXiY",
+      "is_error": false,
+      "output": ".claude:\n<path>\n<path>\n== .gh/replay/api/repos/example-org/service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n== .gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json\n{\n  \"bypass_actors\": [],\n  \"conditions\": {\n    \"ref_name\"...",
+      "output_chars": 4185,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LdvcD7nA15z5bqc9eKVbBx",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH; for r in service-alpha service-beta; do for p in \"\" <path> <path> /rulesets; do echo \"== $r$p\"; gh api repos/example-org/$r$p; echo \" rc=$?\"; done; done; gh api repos/examp...",
+      "input_chars": 431,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LdvcD7nA15z5bqc9eKVbBx",
+      "is_error": false,
+      "output": "== service-alpha\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n rc=0\n== service-alpha/actions/permissions\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n rc=0\n== service-alpha/actions/permissions/fork-pr-contributor...",
+      "output_chars": 3618,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
