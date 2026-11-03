@@ -153,6 +153,16 @@ carried forward`, and the script exits 1 at the end. A carried source whose
 census older than 14 days as missing, and an old count must not look current),
 and the summary says `cloud: not read`.
 
+Records can also arrive through the private S3 bucket (`_agent-guidance` ADR
+0037), from a cloud session that cannot push to the private repository.
+adam-agentskills-private's `usage-sink-ingest.yml` ingests them with
+`scripts/ingest_usage_sink.py` into the same files, `cloud-guidance.jsonl` and
+the `cloud-skills/<16 hex>.jsonl` shards below, after checking every record
+against the shapes this census reads and against the object's S3
+`LastModified` (a record stamped more than 48 hours before it, or 10 minutes
+after, is dropped), so the census reads them with no change. An object with a
+bad envelope is rejected whole; otherwise only its bad records are dropped.
+
 ## Loaded skill copies (`skill-digest` rows)
 
 #562 (2026-11-02). Which copy of a skill each local use loaded, counted per

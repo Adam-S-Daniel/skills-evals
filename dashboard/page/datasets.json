@@ -156,6 +156,28 @@
   "staleAfterHours": 72,
   "title": "Build gate"
  },
+ "half_built_issues": {
+  "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
+  "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",
+  "source": {
+   "kind": "file",
+   "name": "half_built_issues.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 6,
+  "title": "Half-built and broken features, findings"
+ },
+ "half_built_summary": {
+  "description": "One row of counts for the Overview banner: findings open, how many are high severity or broken, and when the weekly check last ran. Built by Claude with the findings rows.",
+  "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",
+  "source": {
+   "kind": "file",
+   "name": "half_built_summary.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 6,
+  "title": "Half-built and broken features, summary"
+ },
  "loop_gaps": {
   "description": "Gaps G1 to G13 and the bare baseline with status and owner, copied from /mnt/project-files/loop/status.json, which the loop thread updates on every merge.",
   "schedule": "Updated by Claude on every refresh",

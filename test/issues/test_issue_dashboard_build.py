@@ -474,6 +474,76 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual([w["week"] for w in weeks], ["none"])
         self.assertTrue(summary_rows)
 
+    def hb_item(self, n, state="open", created="2026-10-20T12:00:00Z", closed=None, **kw):
+        row = {"repo": "Adam-S-Daniel/example-repo", "number": n, "url": f"https://example.com/{n}", "title": f"T{n}",
+               "state": state, "created_at": created, "closed_at": closed, "kind": "partial", "severity": "low",
+               "finding_id": f"demo-{n}"}
+        row.update(kw)
+        return row
+
+    HB_NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
+
+    def test_half_built_missing_dump_is_not_checked(self):
+        issues, summary = build.half_built({}, self.HB_NOW)
+        self.assertEqual([r["key"] for r in issues], ["none"])
+        self.assertEqual((summary[0]["status"], summary[0]["open"], summary[0]["checked_at"]), ("not-checked", 0, None))
+        _, via_build = build.half_built(build.load(str(self.tmp / "absent.json"), {}), self.HB_NOW)
+        self.assertEqual(via_build[0]["status"], "not-checked")
+
+    def test_half_built_empty_dump_is_clear(self):
+        dump = {"checked_at": "2026-11-03T10:00:00Z", "total_count": 0, "incomplete": False, "items": []}
+        issues, summary = build.half_built(dump, self.HB_NOW)
+        self.assertEqual([r["key"] for r in issues], ["none"])
+        self.assertEqual((summary[0]["status"], summary[0]["checked_at"]), ("clear", "2026-11-03T10:00:00Z"))
+        self.assertIs(summary[0]["incomplete"], False)
+
+    def test_half_built_counts_sorts_and_drops_old_closed_items(self):
+        items = [
+            self.hb_item(1, severity="low", created="2026-10-01T12:00:00Z"),
+            self.hb_item(2, severity="high", kind="broken", created="2026-10-30T12:00:00Z"),
+            self.hb_item(3, severity="high", kind="idle", created="2026-10-25T12:00:00Z"),
+            self.hb_item(4, severity="medium", kind="implied-only"),
+            self.hb_item(5, state="closed", severity="high", closed="2026-10-30T12:00:00Z"),
+            self.hb_item(6, state="closed", closed="2026-10-26T11:59:00Z"),
+            self.hb_item(7, state="closed", closed=None)]
+        dump = {"checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "items": items}
+        issues, summary = build.half_built(dump, self.HB_NOW)
+        self.assertEqual([r["number"] for r in issues], [3, 2, 4, 1, 5])
+        self.assertEqual(issues[0]["key"], "Adam-S-Daniel/example-repo#3")
+        self.assertEqual((issues[0]["opened"], issues[0]["age_days"], issues[0]["closed_at"]), ("2026-10-25", 9, None))
+        self.assertEqual(issues[-1]["closed_at"], "2026-10-30T12:00:00Z")
+        self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
+                         {"open": 4, "high": 2, "broken": 1, "partial": 1, "implied_only": 1, "idle": 1,
+                          "needs_owner": 0, "fixed_7d": 1,
+                          "checked_at": "2026-11-03T10:00:00Z", "incomplete": True, "status": "attention"})
+
+    def test_half_built_puts_high_first_then_what_needs_the_owner(self):
+        dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
+            self.hb_item(1, severity="medium", created="2026-10-01T12:00:00Z"),
+            self.hb_item(2, severity="low", labels=["half-built-or-broken", "needs-owner"]),
+            self.hb_item(3, severity="high"),
+            self.hb_item(4, severity="medium", labels=["needs-owner"], created="2026-10-30T12:00:00Z")]}
+        issues, summary = build.half_built(dump, self.HB_NOW)
+        self.assertEqual([r["number"] for r in issues], [3, 4, 2, 1])
+        self.assertEqual([r["needs_owner"] for r in issues], ["", "needs you", "needs you", ""])
+        self.assertEqual(summary[0]["needs_owner"], 2)
+
+    def test_half_built_unknown_kind_and_severity(self):
+        dump = {"checked_at": "2026-11-03T10:00:00Z", "items": [
+            self.hb_item(1, kind=None, severity=None), self.hb_item(2, severity="low")]}
+        issues, summary = build.half_built(dump, self.HB_NOW)
+        self.assertEqual([(r["number"], r["kind"], r["severity"]) for r in issues],
+                         [(2, "partial", "low"), (1, "unknown", "unknown")])
+        self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
+
+    def test_the_page_draws_the_half_built_banner_from_both_datasets(self):
+        page = (DASH / "page" / "index.html").read_text()
+        for name in ("half_built_issues", "half_built_summary"):
+            self.assertIn(f'data-source="{name}"', page)
+        self.assertIn("Half-built and broken features", page)
+        self.assertLess(page.index("card-halfbuilt"), page.index("tile-routines"))
+        self.assertIn("half_built_issues: 'key'", page)
+
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())

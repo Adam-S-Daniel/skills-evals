@@ -1,0 +1,53 @@
+{
+  "checked_at": "2026-11-02T17:37:00Z",
+  "total_count": 3,
+  "incomplete": false,
+  "items": [
+    {
+      "repo": "Adam-S-Daniel/example-repo",
+      "number": 12,
+      "url": "https://github.com/Adam-S-Daniel/example-repo/issues/12",
+      "title": "Export command is documented but never wired up",
+      "state": "open",
+      "created_at": "2026-10-26T13:40:00Z",
+      "closed_at": null,
+      "kind": "implied-only",
+      "severity": "medium",
+      "finding_id": "demo-1",
+      "labels": [
+        "half-built-or-broken"
+      ]
+    },
+    {
+      "repo": "Adam-S-Daniel/example-repo",
+      "number": 15,
+      "url": "https://github.com/Adam-S-Daniel/example-repo/issues/15",
+      "title": "Nightly sync job fails on every run",
+      "state": "open",
+      "created_at": "2026-10-19T13:40:00Z",
+      "closed_at": null,
+      "kind": "broken",
+      "severity": "high",
+      "finding_id": "demo-2",
+      "labels": [
+        "half-built-or-broken",
+        "needs-owner"
+      ]
+    },
+    {
+      "repo": "Adam-S-Daniel/example-tool",
+      "number": 3,
+      "url": "https://github.com/Adam-S-Daniel/example-tool/issues/3",
+      "title": "Settings page saves nothing",
+      "state": "closed",
+      "created_at": "2026-10-12T13:40:00Z",
+      "closed_at": "2026-10-30T09:00:00Z",
+      "kind": "partial",
+      "severity": "low",
+      "finding_id": "demo-3",
+      "labels": [
+        "half-built-or-broken"
+      ]
+    }
+  ]
+}

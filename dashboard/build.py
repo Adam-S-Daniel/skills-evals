@@ -30,6 +30,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 PLACEHOLDER_ID = "none"
+HB_FIXED_WINDOW = timedelta(days=7)
 
 
 def iso(dt):
@@ -826,6 +827,40 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
     return weeks, summary
 
 
+def half_built(dump, now):
+    """(issue rows, summary rows) for the Overview banner: open half-built or broken findings, plus those fixed in 7 days."""
+    dump = dump if isinstance(dump, dict) else {}
+    checked = parse(dump.get("checked_at"))
+    order = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
+    rows = []
+    for it in dump.get("items") or []:
+        closed = parse(it.get("closed_at"))
+        is_open = it.get("state") == "open"
+        if not is_open and (closed is None or now - closed > HB_FIXED_WINDOW):
+            continue
+        opened = parse(it.get("created_at"))
+        rows.append({
+            "key": f"{it.get('repo')}#{it.get('number')}", "repo": it.get("repo"), "number": it.get("number"),
+            "url": it.get("url"), "title": it.get("title"), "state": "open" if is_open else "closed",
+            "kind": it.get("kind") or "unknown", "severity": it.get("severity") or "unknown",
+            "finding_id": it.get("finding_id"),
+            "needs_owner": "needs you" if "needs-owner" in (it.get("labels") or []) else "", "opened": opened.date().isoformat() if opened else None,
+            "age_days": max((now - opened).days, 0) if opened else None, "closed_at": None if is_open else iso(closed)})
+    # High severity first, then what needs Adam, then the rest by severity; oldest first within each.
+    rows.sort(key=lambda r: (r["state"] != "open", r["severity"] != "high", not r["needs_owner"],
+                             order.get(r["severity"], 3), -(r["age_days"] or 0)))
+    opened_ = [r for r in rows if r["state"] == "open"]
+    count = lambda field, v: sum(1 for r in opened_ if r[field] == v)
+    status = "not-checked" if checked is None else "attention" if opened_ else "clear"
+    summary = [{"key": "all", "open": len(opened_), "high": count("severity", "high"), "broken": count("kind", "broken"),
+                "partial": count("kind", "partial"), "implied_only": count("kind", "implied-only"),
+                "idle": count("kind", "idle"), "needs_owner": count("needs_owner", "needs you"), "fixed_7d": len(rows) - len(opened_),
+                "checked_at": iso(checked) if checked else None, "incomplete": bool(dump.get("incomplete")), "status": status}]
+    return rows or [{"key": PLACEHOLDER_ID, "repo": None, "number": None, "url": None, "title": None, "state": None,
+                     "kind": None, "severity": None, "finding_id": None, "needs_owner": "", "opened": None, "age_days": None,
+                     "closed_at": None}], summary
+
+
 # --- main ----------------------------------------------------------------------
 
 def build(results, inputs, config, now):
@@ -856,6 +891,7 @@ def build(results, inputs, config, now):
         results, out["eval_runs"], out["usage_rows"], snap["decisions"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now)
+    out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
     if os.path.exists(loop_cfg):
         (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
          out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
