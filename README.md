@@ -1119,10 +1119,14 @@ context was delivered. The report also counts draft fixtures, declarations of
 is not yet verified by the harness.
 
 Scheduled runs publish a complete census to `persistent/eval-results` as
-[latest JSON](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json),
-[timestamped JSON](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/eval-results/coverage),
-and the [markdown summary](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.md),
-with the [Shields endpoint](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/badges/coverage.json).
+[latest JSON](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/fixture-census/latest.json),
+[timestamped JSON](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/eval-results/fixture-census),
+and the [markdown summary](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/fixture-census/latest.md),
+with the [Shields endpoint](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/badges/fixture-census.json).
+These live under `fixture-census/`, not `coverage/`: `coverage/latest.json` and
+`badges/coverage.json` belong to the [skill coverage](#skill-coverage) workflow,
+whose shape the explorer reads, and a test keeps every results-branch path to
+one writer (#660).
 A GAP remains visible in
 those files and does not block publication. If any registry is missing or
 empty, the job uploads an unresolved report and fails the scheduled run;
@@ -1132,7 +1136,7 @@ registry is checked out only on schedule with the optional
 read-only GitHub App (repository variable `REGISTRY_READ_APP_CLIENT_ID`, secret `REGISTRY_READ_APP_PEM`); its skill names, bundle names,
 skip reasons, and paths never appear in the public report.
 
-[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Fcoverage.json)](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/coverage/latest.json)
+[![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fpersistent%2Feval-results%2Fbadges%2Ffixture-census.json)](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/fixture-census/latest.json)
 
 ## Quality badge (real weekly run)
 
