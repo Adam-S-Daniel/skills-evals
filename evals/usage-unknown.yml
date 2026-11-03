@@ -30,3 +30,18 @@ skills:
   - skill: workflow-path-audit
     reason: "listed without a description in desktop sessions (#668)"
     since: "2026-11-03"
+  - skill: github-actions-repo-settings
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: review-bash-ci-reliability
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: vendor-release-impact-issues
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: migrate-claude-memory
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
+  - skill: sync-cc-settings-between-wsl-and-windows
+    reason: "listed without a description in desktop sessions (#668)"
+    since: "2026-11-03"
