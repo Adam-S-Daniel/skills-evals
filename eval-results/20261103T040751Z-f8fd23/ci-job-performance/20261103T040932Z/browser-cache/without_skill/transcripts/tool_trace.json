@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YDedqXzqBNEGVUuvBfzcdy",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 20",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YDedqXzqBNEGVUuvBfzcdy",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KRfyW7CwpqzFiXwoAYcPCP",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r --repo example-org/example-repo --json jobs --jq '.jobs[] | .name as $j | .steps[] | select(.name|test(\"browse...",
+      "input_chars": 309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KRfyW7CwpqzFiXwoAYcPCP",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (73.4KB). Full output saved to: <path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"headBranch\": \"ma...",
+      "output_chars": 2258,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YDhQQnMWj5G6THaaFgKy4E",
+      "name": "Bash",
+      "input": "cd $TMPDIR; for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r --repo example-org/example-repo --json jobs > r$r.json; done\npython3 -I - <<'E'\nimport json,datetime as d\np=lamb...",
+      "input_chars": 744,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YDhQQnMWj5G6THaaFgKy4E",
+      "is_error": false,
+      "output": "== 71001\ne2e (chromium) 93 s | Install browser OS dependenc:success:24s ; Install browser:success:11s ; Run Playwright tests:success:42s\ne2e (firefox) 97 s | Install browser OS dependenc:success:20s ; Install browser:success:5s ; Run Playwright tests:success:51s\ne2e (webkit) 94 s | Install browser O...",
+      "output_chars": 4063,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xrh8Upr5P1jYs4QMGYcJYS",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011xqwTfPLKkWsGLquyfvk8z",
+      "name": "Bash",
+      "input": "git diff --stat; python3 -c \"import yaml;yaml.safe_load(open('.github/workflows/e2e.yml'))\" && echo yaml ok",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xrh8Upr5P1jYs4QMGYcJYS",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 99,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011xqwTfPLKkWsGLquyfvk8z",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 6 ++++++\n 1 file changed, 6 insertions(+)\nyaml ok",
+      "output_chars": 78,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
