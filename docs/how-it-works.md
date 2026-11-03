@@ -748,6 +748,26 @@ a human acts on; once that issue is closed, the skill is not proposed
 again. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
+**Withdrawal.** An open removal pull request is armed on the verdict it was
+opened on, so before each pass the job runs
+`scripts/retire_skill.py --withdraw-stale` (ADR 0014, round 8's known limit,
+resolved). It reads every open pull request in the target repository whose
+head is `retire-skill/` (or `retire-guidance/` in the guidance pass) and
+that carries `agent-authored`, skipping any labeled `on-hold`, and re-reads
+its subject's current verdict. Unless that verdict is still `retire` with an
+automatic removal (the `removal` field `auto` and the cells agreeing), the
+pull request is withdrawn: auto-merge is turned off and read back, a comment
+gives the new verdict and why, and it is closed with its branch kept. That
+covers `keep`, `insufficient`, `retire-pending`, a `retire` lowered to a
+proposal, and a subject the verdicts no longer list. A withdrawn pull
+request counts as closed, so the loop does not reopen it; a person may
+reopen it and merge it by hand. Unknown data withdraws nothing: a missing or
+unreadable verdicts document exits 0 with a status naming no subject, and a
+subject whose verdict raised in `compute_gates.py` or whose `retire` fails
+the re-check is left open. The writes use the same App token as the
+removal; with something to withdraw and no token, the step fails. Preview
+with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.
+
 A fixture moved into a named subdirectory with its content unchanged keeps
 its evidence: `FIXTURE_ALIASES` in `harness/gates.py` maps the old name (""
 for a flat fixture) to the new one, and an old run pools with it only while
@@ -966,6 +986,10 @@ request in `_agent-guidance` that passes that repository's own checks; in
 `proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`
 verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
+An open `retire-guidance/<section>` removal pull request is withdrawn the
+same way as a skill's (Withdrawal, above), from the guidance verdicts, and a
+closed one, withdrawn or closed by a person, decides the section: no removal
+is opened for it again.
 
 ### The eval scope pass
 

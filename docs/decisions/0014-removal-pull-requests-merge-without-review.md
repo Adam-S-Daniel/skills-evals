@@ -666,3 +666,27 @@ minor findings.
   code does: retirement owns a subject when its verdict is `retire` or
   `retire-pending` or a removal PR is open, and an owned subject gets no
   `needs-fixtures` or `needs-harder-fixtures` item.
+
+### Round 8's known limit resolved: stale removals are withdrawn (2026-11-03)
+
+The limit round 8 recorded, an open automatic removal pull request never
+withdrawn once its verdict leaves `retire`, is closed by the coverage job
+(the second fix that addendum named). Before each pass, `skill-coverage.yml`'s
+`retirement` job runs `scripts/retire_skill.py --withdraw-stale` for skills,
+then with `--target guidance` for sections. For every open pull request whose
+head is `retire-skill/` or `retire-guidance/` and that carries
+`agent-authored` (one labeled `on-hold` is left alone), it re-reads the
+subject's current verdict; anything but `retire` with an automatic removal
+(the field `auto` and `proposal_only` agreeing, so a removal lowered to a
+proposal counts, and so does a subject the verdicts no longer list) turns
+auto-merge off and reads it back, comments the new verdict and why, and closes
+the pull request, keeping its branch. Unknown data never withdraws: a missing
+or unreadable gates document, no guidance block, a verdict that raised in
+`compute_gates.py` (`VERDICT_RAISED`) or a `retire` that fails the re-check
+leaves the pull request open. A closed removal pull request decides its
+subject, as before for skills and now for sections too
+(`guidance_closed_removal_prs`), so a withdrawal is not reopened by the loop;
+a person may reopen it. The decision is `withdrawal_decision`, a pure
+function; tests in `test/issues/test_issue_removal_withdrawal.py`.
+`retirement_mode` stays `proposal`; this removes the blocker on switching it,
+not the decision.

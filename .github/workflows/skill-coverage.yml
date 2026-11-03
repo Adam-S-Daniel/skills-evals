@@ -194,6 +194,12 @@ jobs:
   # instead, as it does for a skill plugin-runtime-review would hold. It opens nothing
   # while any loop pull request (an improvement, a new skill or a removal)
   # is open there; scripts/retire_skill.py's LOOP_PREFIXES names the heads.
+  #
+  # Before each pass, `retire_skill.py --withdraw-stale` disarms, comments on
+  # and closes (branch kept) every open loop removal pull request
+  # (`retire-skill/` or `retire-guidance/` head plus `agent-authored`, not
+  # `on-hold`) whose subject's current verdict is no longer `retire` with an
+  # automatic removal. Unknown verdicts withdraw nothing (ADR 0014).
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
@@ -324,6 +330,11 @@ jobs:
             echo "::notice::no adam-agentskills write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
+          # First withdraw any open retire-skill/ pull request whose verdict
+          # no longer supports it (ADR 0014); it needs the App token only
+          # when there is one to withdraw.
+          python3 scripts/retire_skill.py --withdraw-stale \
+            --gates "$RUNNER_TEMP/gates/latest.json"
           python3 scripts/retire_skill.py \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
@@ -368,6 +379,10 @@ jobs:
             echo "::notice::no _agent-guidance write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
+          # First withdraw any open retire-guidance/ pull request whose
+          # verdict no longer supports it (ADR 0014).
+          python3 scripts/retire_skill.py --withdraw-stale --target guidance \
+            --gates "$RUNNER_TEMP/gates/latest.json"
           python3 scripts/retire_skill.py --target guidance \
             --gates "$RUNNER_TEMP/gates/latest.json" \
             --guidance "$GITHUB_WORKSPACE/agent-guidance" \

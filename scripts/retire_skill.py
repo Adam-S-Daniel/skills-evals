@@ -174,7 +174,28 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     skills-evals (`SHORTEN_ISSUE_MARKER`) in either mode, never a removal.
 
 One action per evaluation: a `retire` first, else the first
-`shorten-or-merge` section by name.
+`shorten-or-merge` section by name. As a closed `retire-skill/<skill>` pull
+request decides a skill, a closed `retire-guidance/<section>` one decides a
+section: no removal is opened for it again.
+
+WITHDRAWAL (`--withdraw-stale`, with or without `--target guidance`; ADR
+0014, the known limit round 8 recorded). The scheduled job runs it before
+each pass. It lists the target repository's open pull requests and, for
+each the loop opened (head `retire-skill/` or `retire-guidance/` AND the
+`agent-authored` label) that is not labeled `on-hold`, re-reads its
+subject's verdict. Anything but `retire` with an automatic removal (the
+`removal` field `auto` and `proposal_only` agreeing; a subject the gates
+document no longer lists counts) withdraws it: auto-merge is turned off and
+read back, a comment gives the new verdict and why, and the pull request is
+closed with its branch kept. A closed removal pull request decides its
+subject, so the loop never reopens it; a person may. Unknown data never
+withdraws: a missing or unreadable gates document (or no guidance block)
+withdraws nothing and exits 0 with a status naming no subject, and a
+subject whose verdict raised in compute_gates.py (`VERDICT_RAISED`) or
+whose `retire` fails the re-check is kept. `withdrawal_decision` is the
+pure decision; the writes go through `registry_gh` (the App token in
+`REGISTRY_TOKEN`), in GitHub Actions on main only, and a missing token with
+something to withdraw exits 2.
 """
 
 from __future__ import annotations
@@ -1172,6 +1193,20 @@ def guidance_open_prs(gh) -> list:
             if isinstance(p.get("head"), str) and p["head"].startswith(GUIDANCE_BRANCH_PREFIX)]
 
 
+def guidance_closed_removal_prs(gh, section: str) -> list:
+    """Closed _agent-guidance pull requests from `retire-guidance/<section>`:
+    closed by a person or withdrawn (`--withdraw-stale`), the section is
+    decided, as `closed_removal_prs` decides a skill. The kept branch would
+    also refuse a fresh removal's push."""
+    owner = GUIDANCE_REPO.split("/")[0]
+    text = gh(["api", "--paginate",
+               f"repos/{GUIDANCE_REPO}/pulls?state=closed&per_page=100"
+               f"&head={owner}:{GUIDANCE_BRANCH_PREFIX}{section}",
+               "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url}"])
+    return [p for p in _json_lines(text)
+            if p.get("head") == f"{GUIDANCE_BRANCH_PREFIX}{section}"]
+
+
 def guidance_issues(gh, marker: str) -> dict:
     """As `existing_issues`, for any marker."""
     text = gh(["api", "--paginate",
@@ -1403,6 +1438,11 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     if prs:
         raise RetireError("a guidance removal pull request is already open: "
                           + ", ".join(str(p.get("url")) for p in prs))
+    closed = guidance_closed_removal_prs(gh, section)
+    if closed:
+        return {"action": "none", "mode": mode, "section": section,
+                "reason": f"{section} is already decided: removal pull request "
+                          f"{closed[0].get('url')} is closed, so none is opened again"}
     if checkout is None:
         raise RetireError("no _agent-guidance checkout was given (--guidance PATH)")
     row = guidance_row(checkout, section)
@@ -1568,6 +1608,197 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
     return f"opened {url} with auto-merge, and filed the removal notice"
 
 
+# ---------------------------------------------------------------------------
+# Withdrawal (ADR 0014, round 8's known limit): `--withdraw-stale`. An open
+# removal pull request the loop made is armed to auto-merge on the verdict it
+# was opened on. When a later verdict no longer supports it (more runs moved
+# the subject to keep or insufficient, its removal fell to a proposal, or it
+# has no verdict at all), the pull request is disarmed, told why, and closed.
+# `withdrawal_decision` decides, with no I/O; `withdraw_stale` does the calls.
+
+#: The label the owner puts on work he has paused; a held pull request is
+#: never touched (the fleet's on-hold rule).
+ON_HOLD_LABEL = "on-hold"
+WITHDRAWN_MARKER = "<!-- skills-evals:withdrawn-removal:{subject} -->"
+#: Per target: the repository, the loop's head prefix, and the gates
+#: document's verdict block.
+WITHDRAW_TARGETS = {
+    "skill": {"repo": REGISTRY_REPO, "prefix": BRANCH_PREFIX, "block": "skills",
+              "url_re": PR_URL_RE},
+    "guidance": {"repo": GUIDANCE_REPO, "prefix": GUIDANCE_BRANCH_PREFIX,
+                 "block": "guidance", "url_re": GUIDANCE_PR_URL_RE},
+}
+
+
+def _one_line(value) -> str:
+    return " ".join(value.split()) if isinstance(value, str) else ""
+
+
+def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> dict:
+    """What to do with one open pull request, from the gates document alone.
+
+    `{"action": "ignore" | "keep" | "withdraw", "why": text, ...}`:
+    `ignore` for a pull request the loop did not make (head prefix and the
+    `agent-authored` label both required) or one held `on-hold`; `keep` while
+    its subject's verdict is still `retire` with an automatic removal, or
+    whenever that verdict is unknown (`gates` None, no verdict block, a
+    malformed entry, or a verdict that raised), since unknown data never
+    withdraws; `withdraw` otherwise, including a subject the document no
+    longer lists, with the verdict fields the comment quotes."""
+    spec = WITHDRAW_TARGETS[target]
+    head, labels = pr.get("head"), pr.get("labels")
+    if not isinstance(head, str) or not head.startswith(spec["prefix"]) \
+            or not isinstance(labels, list) or AGENT_LABEL not in labels:
+        return {"action": "ignore", "why": "not a removal pull request the loop opened"}
+    if ON_HOLD_LABEL in labels:
+        return {"action": "ignore", "why": f"labeled {ON_HOLD_LABEL}"}
+    subject = head[len(spec["prefix"]):]
+    if not SKILL_RE.fullmatch(subject):
+        return {"action": "keep", "why": "its head names no subject"}
+    unknown = {"action": "keep", "subject": subject}
+    if not isinstance(gates, dict) or not isinstance(gates.get(spec["block"]), dict):
+        return {**unknown, "why": "the verdicts are unknown"}
+    block = gates[spec["block"]]
+    if subject not in block:
+        return {"action": "withdraw", "subject": subject, "verdict": None,
+                "why": "the subject has no verdict"}
+    entry = block[subject]
+    if not isinstance(entry, dict) or not isinstance(entry.get("verdict"), str) \
+            or not isinstance(entry.get("reason"), str) \
+            or entry["reason"].startswith(compute_gates.VERDICT_RAISED):
+        return {**unknown, "why": "the subject's verdict could not be computed"}
+    found = {"subject": subject, "verdict": entry["verdict"],
+             "removal": entry.get("removal") if isinstance(entry.get("removal"), str) else None,
+             "reason": _one_line(entry["reason"]),
+             "removal_reason": _one_line(entry.get("removal_reason"))}
+    if entry["verdict"] == "retire":
+        try:
+            retiring({**gates, "skills": {subject: entry}})
+        except RetireError:
+            return {**unknown, "why": "the subject's retire verdict is malformed"}
+        lowered = proposal_only(entry)
+        if lowered is None:
+            return {"action": "keep", "subject": subject,
+                    "why": "the verdict is still retire with an automatic removal"}
+        return {"action": "withdraw", **found, "why": lowered}
+    return {"action": "withdraw", **found,
+            "why": f"the verdict is {entry['verdict']}, not retire"}
+
+
+def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
+    """The comment a withdrawn pull request gets: the new verdict and why."""
+    subject = decision["subject"]
+    if decision["verdict"] is None:
+        now = (f"`{subject}` has no verdict in the gates document as of {gates['as_of']}, "
+               "so nothing supports removing it now.")
+    else:
+        removal = f", removal `{decision['removal']}`" if decision.get("removal") else ""
+        now = (f"The current verdict for `{subject}` as of {gates['as_of']} is "
+               f"**{decision['verdict']}**{removal}: {decision['reason']}"
+               + (f" ({decision['removal_reason']})" if decision.get("removal_reason") else "")
+               + f". Why this withdraws the removal: {decision['why']}.")
+    return (f"{WITHDRAWN_MARKER.format(subject=subject)}\n"
+            "**Withdrawn automatically.** This removal pull request was opened on a "
+            "`retire` verdict with an automatic removal, and the subject no longer has "
+            f"one.\n\n{now}\n\n"
+            "Auto-merge is turned off and the pull request is closed; its branch is "
+            "kept. A closed removal pull request counts as decided, so the loop does not "
+            "open it again: to remove the subject anyway, reopen this pull request and "
+            f"merge it by hand. Rule: [ADR 0014]({ADR})."
+            + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+            + "\n\n" + AGENT_MARKER + "\n")
+
+
+def removal_prs(gh, target: str) -> list:
+    """The target repository's open pull requests, with their labels and
+    whether auto-merge is armed, read through the job's token."""
+    repo = WITHDRAW_TARGETS[target]["repo"]
+    text = gh(["api", "--paginate", f"repos/{repo}/pulls?state=open&per_page=100",
+               "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url, "
+                       "labels: [.labels[].name]}"])
+    return _json_lines(text)
+
+
+def withdraw_commands(target: str, url: str) -> list:
+    """The writes one withdrawal makes, in order: (a) auto-merge off, read
+    back; (b) the comment; (c) the close, which keeps the branch."""
+    repo = WITHDRAW_TARGETS[target]["repo"]
+    return [["pr", "merge", url, "-R", repo, "--disable-auto"],
+            ["pr", "view", url, "-R", repo, "--json", "autoMergeRequest", "--jq",
+             '.autoMergeRequest.mergeMethod // ""'],
+            ["pr", "comment", url, "-R", repo, "--body-file", "-"],
+            ["pr", "close", url, "-R", repo]]
+
+
+def withdraw_plan(gates: dict | None, prs: list, target: str) -> list:
+    """Each listed pull request's decision, with its number and URL; a
+    `withdraw` whose URL is not the target repository's pull request is
+    refused rather than acted on."""
+    spec = WITHDRAW_TARGETS[target]
+    out = []
+    for pr in prs:
+        decision = withdrawal_decision(pr, gates, target)
+        if decision["action"] == "ignore":
+            continue
+        url, number = pr.get("url"), pr.get("number")
+        match = spec["url_re"].fullmatch(url) if isinstance(url, str) else None
+        if decision["action"] == "withdraw" and (
+                not match or type(number) is not int or match.group(1) != str(number)):
+            raise RetireError("an open pull request record from the API is malformed")
+        out.append({**decision, "number": number, "url": url})
+    return out
+
+
+def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
+                   run_url: str | None = None) -> list:
+    """Withdraw every stale loop removal pull request among `prs` (the
+    listing `removal_prs` read); the status lines. Writes through
+    `registry_gh` only."""
+    lines = []
+    for item in withdraw_plan(gates, prs, target):
+        if item["action"] == "keep":
+            lines.append(f"kept #{item['number']}: {item['why']}")
+            continue
+        merge, view, comment, close = withdraw_commands(target, item["url"])
+        if registry_gh(view).strip():
+            registry_gh(merge)
+            if registry_gh(view).strip():
+                raise RetireError(f"auto-merge is still enabled on #{item['number']}")
+        registry_gh(comment, withdrawal_comment(item, gates, run_url))
+        registry_gh(close)
+        lines.append(f"withdrew #{item['number']}: {item['why']}")
+    return lines or ["no open removal pull request to withdraw"]
+
+
+def withdraw_main(args, env, gh, registry_gh, run_url, out) -> int:
+    """`--withdraw-stale`: unknown verdicts withdraw nothing and exit 0 with a
+    status that names no subject; a refusal or a failed call exits 2."""
+    try:
+        gates = load_gates(args.gates)
+    except RetireError:
+        gates = None
+    if gates is not None and args.target == "guidance" \
+            and not isinstance(gates.get("guidance"), dict):
+        gates = None
+    if gates is None:
+        out.write("retire_skill: withdrew nothing: the verdicts document is missing "
+                  "or unreadable\n")
+        return 0
+    prs = removal_prs(gh, args.target)
+    if args.dry_run:
+        items = withdraw_plan(gates, prs, args.target)
+        out.write(json.dumps({"dry_run": True, "withdraw": items, "would_run": [
+            ["gh", *c] for i in items if i["action"] == "withdraw"
+            for c in withdraw_commands(args.target, i["url"])]},
+            indent=2, sort_keys=True) + "\n")
+        return 0
+    if any(i["action"] == "withdraw" for i in withdraw_plan(gates, prs, args.target)):
+        check_auto_env(env)
+    for line in withdraw_stale(gates, prs, args.target, registry_gh, run_url):
+        out.write(f"retire_skill: {line}\n")
+    return 0
+
+
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
          registry_gh=None, out=sys.stdout) -> int:
     env = os.environ if env is None else env
@@ -1600,6 +1831,9 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
                         help="the _agent-guidance checkout a guidance removal edits")
     parser.add_argument("--usage", type=Path, default=None,
                         help="usage/weekly-local.json, for the issue's recent-use line")
+    parser.add_argument("--withdraw-stale", action="store_true",
+                        help="only withdraw the target's open removal pull requests whose "
+                             "subject's verdict no longer supports them (ADR 0014)")
     args = parser.parse_args(argv)
     run_url = None
     if env.get("GITHUB_RUN_ID") and env.get("GITHUB_REPOSITORY") == EVALS_REPO \
@@ -1608,6 +1842,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
     try:
         if not args.dry_run:
             check_event(env)
+        if args.withdraw_stale:
+            return withdraw_main(args, env, gh, registry_gh, run_url, out)
         if args.date is not None and not DATE_RE.fullmatch(args.date):
             raise RetireError("--date is not YYYY-MM-DD")
         gates = load_gates(args.gates)
