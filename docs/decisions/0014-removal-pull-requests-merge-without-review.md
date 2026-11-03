@@ -615,3 +615,32 @@ removal side.
   summary-only. No issue is filed, so the fixture queue and the fleet
   worker's fixture pass never see them; the step summary count and the plan
   JSON are the only record.
+
+### Adversarial round 8 (2026-11-03)
+
+The eighth round again found no path to a wrong automatic removal (round 7's
+fuzz rerun over 7,800 subjects, plus a new cross-lane fuzz of 300) and one
+Major finding off the removal side.
+
+- *M1:* `improve_items` appended a `needs-fixtures` agent-ready issue before it
+  checked "owned by retirement", so a `retire` skill with fewer than
+  `MIN_IMPROVE_FIXTURES` fixtures (more often after a scope pause drops one)
+  fed the fleet worker's fixture queue, and `fixture-pr-gate.yml` could
+  auto-merge fixtures for a skill the gate was retiring. It could not change
+  the verdict. One helper, `retirement_owner`, now decides ownership for the
+  improve, trim and trigger lanes: the gates document's verdict when `gather`
+  supplied it, `retire` and `retire-pending` own the skill, and so does an open
+  removal PR. The `needs-fixtures` and `needs-harder-fixtures` items consult it
+  too. A test runs the reviewer's rows through `compute_gates.compute`.
+- *m1:* the improve and description-trim lanes now skip a skill with an open
+  `retire-skill/<skill>` PR, as the trigger lane does; a test each.
+- *m2:* a test sends `retire-pending` through `gate_verdicts` to the trigger
+  lane, killing the surviving mutation that narrowed the guard to `retire`.
+- *Known limit, to be solved before `retirement_mode: auto`:* an open automatic
+  removal PR is never withdrawn if the verdict later leaves `retire`.
+  `retire_skill.py` has no close path, so an armed `retire-skill/<skill>` PR
+  whose required checks fail stays armed, and a roster or fixture change that
+  makes the subject `insufficient` would not stop it merging on a re-run of
+  its checks. Unreachable today (`retirement_mode: proposal`); the fix is to
+  re-read the verdict in the PR's checks or have the coverage job disarm and
+  close the PR.

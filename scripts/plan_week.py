@@ -1405,6 +1405,23 @@ def cost_estimate(ctx: dict, subject: str, name: str) -> float | None:
     return IMPROVE_TRIALS * sum(sum(v) / len(v) for v in per_fixture.values())
 
 
+def retirement_owner(ctx: dict, name: str, skill: dict | None = None) -> str | None:
+    """Why retirement owns skill `name`, or None. One rule for every lane that
+    edits a skill or asks for work on it: the gates document's verdict
+    (ctx["gate_verdicts"], which keeps a skill whose fixtures are all
+    scope-paused) when gather supplied it, else `skill["verdict"]`; `retire`
+    and `retire-pending` own it, and so does an open `retire-skill/<skill>`
+    pull request (ctx["removal_prs"]), whatever the verdict now reads."""
+    verdicts = ctx.get("gate_verdicts")
+    verdict = (verdicts.get(name) if verdicts is not None
+               else (skill or ctx["skills"].get(name, {})).get("verdict"))
+    if verdict in ("retire", "retire-pending"):
+        return f"owned by retirement ({verdict})"
+    if name in (ctx.get("removal_prs") or ()):
+        return "owned by retirement (open removal PR)"
+    return None
+
+
 def improve_items(ctx: dict, now: datetime) -> tuple:
     """(improve fires, work items, per-skill status, per-section guidance
     status, improve ranking). Candidates, skills and guidance sections, are
@@ -1425,25 +1442,25 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
         evidence = skill["evidence"]
         headroom = evidence["headroom"]
         reasons = []
+        owner = retirement_owner(ctx, name, skill)
         if not skill["registry_ok"]:
             reasons.append("its fixtures do not all name adam-agentskills")
         if headroom is None or headroom < MIN_GAIN:
             reasons.append("no train headroom")
-            if (headroom is not None and skill["registry_ok"]
-                    and skill["verdict"] not in ("retire", "retire-pending")):
+            if headroom is not None and skill["registry_ok"] and owner is None:
                 work.append({"kind": "needs-harder-fixtures", "change_type": "fixture",
                              "skill": name, "fixtures": skill["fixtures"],
                              "headroom": headroom, "route": "issue"})
         if skill["fixtures"] < MIN_IMPROVE_FIXTURES:
-            if not reasons:
+            if not reasons and owner is None:
                 work.append({"kind": "needs-fixtures", "change_type": "fixture",
                              "skill": name, "fixtures": skill["fixtures"],
                              "headroom": headroom, "route": "issue"})
             reasons.append(f"{skill['fixtures']} fixture(s), under {MIN_IMPROVE_FIXTURES}")
         if not evidence["targets"]:
             reasons.append("no failing check to target")
-        if skill["verdict"] in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({skill['verdict']})")
+        if owner:
+            reasons.append(owner)
         if not reasons and skill["pause"]:
             reasons.append(skill["pause"])
         status[name] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
@@ -1618,13 +1635,9 @@ def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()
             reasons.append(f"used more than {TRIGGER_MAX_WEIGHT} time(s) in four weeks")
         # The gates document's verdict, not skill_contexts': that drops a
         # skill whose fixtures are all scope-paused, which the gate keeps.
-        verdicts = ctx.get("gate_verdicts")
-        verdict = (verdicts.get(name) if verdicts is not None
-                   else ctx["skills"].get(name, {}).get("verdict"))
-        if verdict in ("retire", "retire-pending"):
-            reasons.append(f"owned by retirement ({verdict})")
-        elif name in (ctx.get("removal_prs") or ()):
-            reasons.append("owned by retirement (open removal PR)")
+        owner = retirement_owner(ctx, name)
+        if owner:
+            reasons.append(owner)
         path = f"evals/{name}/{TRIGGER_SET}"
         if not reasons and not info["trigger_set"]:
             work.append({"kind": "needs-trigger-set", "change_type": "fixture",
@@ -1690,8 +1703,9 @@ def trim_items(ctx: dict) -> tuple:
                 reasons.append("its fixtures do not all name adam-agentskills")
             if skill["fixtures"] < TRIM_MIN_FIXTURES:
                 reasons.append(f"{skill['fixtures']} fixture(s), under {TRIM_MIN_FIXTURES}")
-            if skill["verdict"] in ("retire", "retire-pending"):
-                reasons.append(f"owned by retirement ({skill['verdict']})")
+            owner = retirement_owner(ctx, name, skill)
+            if owner:
+                reasons.append(owner)
         if isinstance(chars, int) and chars <= TRIM_MAX_CHARS:
             reasons.append("already within the cap")
         if not reasons and skill["pause"]:
