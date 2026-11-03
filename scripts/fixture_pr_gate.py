@@ -36,7 +36,38 @@ merge base to the head (git plumbing only; nothing from the branch runs):
   with draft_new_skill.ISOLATION_REASON, so scripts/contextualize_fixtures.py
   gives it a context and schedules it) or evals/scheduled.yml (a guidance
   fixture), and that change only appends entries for the new directories;
-* at most MAX_FILE_BYTES per file and MAX_TOTAL_BYTES in all.
+* at most MAX_FILE_BYTES per file and MAX_TOTAL_BYTES in all;
+* each new fixture.yaml carries a valid top-level `origin:` mapping
+  (`origin_problem`, below).
+
+ORIGIN (Adam, 2026-11-03, skills-evals#656: fixture requests built from
+real fleet work replace the scaffold lane, and how many are real work, what
+they cost and whether they run is tracked, scripts/fixture_queue.py). Every
+fixture a fix PR adds says where it came from, as exactly these three keys:
+
+  origin:
+    kind: real-work | invented
+    source: https://github.com/<owner>/<repo>/pull/<N>   (null when invented)
+    request: https://github.com/Adam-S-Daniel/skills-evals/issues/<issue>
+
+`real-work` needs a pull request URL whose owner is one of the fleet's two
+(stakes.FLEET_OWNERS; GitHub owner names compare case-insensitively);
+`invented` needs `source: null`; `request` must be the issue the pull
+request answers, exactly. The gate never fetches the source: the URL is a
+pointer for the dashboard and the record, and the fixture itself is
+invented data either way. The harness ignores the key (it reads no
+whitelist of top-level fixture keys). A trigger set carries no origin.
+
+A TRIGGER SET (skills-evals#662) answers a `needs-trigger-set` issue
+instead. ELIGIBLE then means the whole diff is exactly ONE added regular,
+non-executable file (mode 100644), `evals/<skill>/trigger-eval-set.json`
+for the issue's skill, absent on the base and the merge base, at most
+MAX_FILE_BYTES, that propose_skill_edit.load_trigger_eval_set accepts and
+that, after the loop's own normalization (whitespace collapsed, a repeated
+query dropped), holds at least propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
+queries of each class and leaves both of skill-creator's splits with both
+classes (`trigger_set_problems`). The blob is read with `git cat-file` as
+data and parsed as JSON; nothing from the branch runs.
 
 Output, for $GITHUB_OUTPUT: `lane=`, `eligible=`, `issue=`, `reason=` (fixed
 text, never file content). Exit 0 on any decision; exit 2 on bad input.
@@ -56,6 +87,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import yaml  # noqa: E402
 
 import draft_new_skill  # noqa: E402
+import propose_skill_edit  # noqa: E402
+import stakes  # noqa: E402
 
 AUTHOR = "Adam-S-Daniel"
 LABEL = "agent-authored"
@@ -66,8 +99,20 @@ MAX_TOTAL_BYTES = 5_000_000
 _REF = re.compile(r"\b(?:refs|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+"
                   r"(?:(?:https://github\.com/)?Adam-S-Daniel/skills-evals(?:/issues/|#)|#)"
                   r"([1-9][0-9]{0,6})\b", re.I)
-_NEED = re.compile(r"<!-- skills-evals:(needs-fixtures|needs-harder-fixtures):(\S+) -->")
+_NEED = re.compile(r"<!-- skills-evals:(needs-fixtures|needs-harder-fixtures|needs-trigger-set)"
+                   r":(\S+) -->")
+TRIGGER_NEED = "needs-trigger-set"
+_SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+#: `origin.kind` values (module docstring, ORIGIN).
+ORIGIN_KINDS = ("real-work", "invented")
+#: `origin.request` is this prefix plus the answered issue's number.
+REQUEST_PREFIX = "https://github.com/Adam-S-Daniel/skills-evals/issues/"
+_REQUEST = re.compile(re.escape(REQUEST_PREFIX) + r"([1-9][0-9]{0,6})")
+#: `origin.source` for real work: a pull request URL; the owner is checked
+#: against stakes.FLEET_OWNERS separately.
+_SOURCE = re.compile(r"https://github\.com/([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))/"
+                     r"([A-Za-z0-9._-]{1,100})/pull/([1-9][0-9]{0,6})")
 
 
 class GateError(Exception):
@@ -79,6 +124,30 @@ def _git(repo: Path, *args: str) -> bytes:
     if done.returncode != 0:
         raise GateError(f"git {args[0]} failed")
     return done.stdout
+
+
+def origin_problem(origin, issue: int | None = None) -> str | None:
+    """Why `origin` (a fixture.yaml's `origin:` value) is not valid, as fixed
+    text, or None (module docstring, ORIGIN). With `issue`, `request` must
+    name that issue; without it, any skills-evals issue URL passes
+    (scripts/fixture_queue.py reads committed fixtures this way)."""
+    if not isinstance(origin, dict) or set(origin) != {"kind", "source", "request"}:
+        return "a new fixture.yaml has no origin mapping of exactly kind, source and request"
+    if origin["kind"] not in ORIGIN_KINDS:
+        return "a new fixture's origin kind is not real-work or invented"
+    request = origin["request"]
+    if not isinstance(request, str) or not _REQUEST.fullmatch(request) \
+            or (issue is not None and request != f"{REQUEST_PREFIX}{issue}"):
+        return "a new fixture's origin request is not the issue this pull request answers"
+    source = origin["source"]
+    if origin["kind"] == "invented":
+        return None if source is None else "an invented fixture's origin source is not null"
+    match = _SOURCE.fullmatch(source) if isinstance(source, str) else None
+    if match is None:
+        return "a real-work fixture's origin source is not a pull request URL"
+    if match.group(1).casefold() not in {o.casefold() for o in stakes.FLEET_OWNERS}:
+        return "a real-work fixture's origin source is not in a fleet owner's repository"
+    return None
 
 
 def need_of(pr: dict, issues: list) -> tuple:
@@ -129,11 +198,76 @@ def _appended(before: str, after: str, allowed: set, check) -> set:
     return paths
 
 
+def _changes(repo: Path, merge_base: str, source: str) -> list:
+    """(new mode, new blob sha, status, path) per change from `merge_base`
+    to `source`, from `git diff --raw`."""
+    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-abbrev", merge_base, source)
+    fields = raw.split(b"\0")
+    changes = []
+    for i in range(0, len(fields) - 1, 2):
+        meta, path = fields[i].decode(), fields[i + 1].decode("utf-8", "replace")
+        parts = meta.lstrip(":").split()
+        changes.append((parts[1], parts[3], parts[4], path))
+    return changes
+
+
+def trigger_set_ok(data: bytes) -> bool:
+    """Whether `data` is a trigger set the trigger-only loop would take:
+    propose_skill_edit.load_trigger_eval_set's shape, then, deduplicated by
+    whitespace-collapsed query as the loop does, at least
+    TRIGGER_ONLY_MIN_CLASS queries of each class and no split problem."""
+    try:
+        items = propose_skill_edit.parse_trigger_eval_set(
+            data, propose_skill_edit.TRIGGER_SET_FILE)
+    except propose_skill_edit.Refusal:
+        return False
+    clean, seen = [], set()
+    for item in items:
+        query = " ".join(item["query"].split())
+        if query not in seen:
+            seen.add(query)
+            clean.append({"query": query, "should_trigger": item["should_trigger"]})
+    least = propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
+    if sum(i["should_trigger"] for i in clean) < least \
+            or sum(not i["should_trigger"] for i in clean) < least:
+        return False
+    return not propose_skill_edit.trigger_set_problems(
+        propose_skill_edit.trigger_split_counts(clean))
+
+
+def classify_trigger_set(repo: Path, base: str, source: str, skill: str, out: dict) -> dict:
+    """The needs-trigger-set half of `classify` (module docstring, A
+    TRIGGER SET): fixed-text reasons, never file content."""
+    def refuse(why: str) -> dict:
+        return {**out, "reason": why}
+
+    if not _SKILL.fullmatch(skill):
+        return refuse("the issue names no valid skill")
+    path = f"evals/{skill}/{propose_skill_edit.TRIGGER_SET_FILE}"
+    merge_base = _git(repo, "merge-base", base, source).decode().strip()
+    changes = _changes(repo, merge_base, source)
+    if len(changes) != 1:
+        return refuse("a trigger-set pull request must change exactly one file")
+    mode, sha, status, changed = changes[0]
+    if status != "A" or mode != "100644" or changed != path:
+        return refuse("the change is not the skill's new trigger set as a regular file")
+    if _git(repo, "ls-tree", merge_base, "--", path).strip() \
+            or _git(repo, "ls-tree", base, "--", path).strip():
+        return refuse("the trigger set already exists on the base")
+    if int(_git(repo, "cat-file", "-s", sha).decode().strip()) > MAX_FILE_BYTES:
+        return refuse("a file is over the size cap")
+    if not trigger_set_ok(_git(repo, "cat-file", "blob", sha)):
+        return refuse("the trigger set is not a valid set with enough queries of each class")
+    return {**out, "eligible": True, "reason": f"adds the trigger set for {skill}"}
+
+
 def classify(repo: Path, base: str, source: str, pr: dict, issues: list) -> dict:
     lane, number, kind, key, reason = need_of(pr, issues)
     out = {"lane": lane, "eligible": False, "issue": number or "", "reason": reason}
     if not lane:
         return out
+    if kind == TRIGGER_NEED:
+        return classify_trigger_set(repo, base, source, key, out)
 
     def refuse(why: str) -> dict:
         return {**out, "reason": why}
@@ -142,13 +276,7 @@ def classify(repo: Path, base: str, source: str, pr: dict, issues: list) -> dict
     subject = key.split("/", 1)[1] if section else key
     prefix = f"evals/guidance/{subject}/" if section else f"evals/{subject}/"
     merge_base = _git(repo, "merge-base", base, source).decode().strip()
-    raw = _git(repo, "diff", "--raw", "-z", "--no-renames", "--no-abbrev", merge_base, source)
-    fields = raw.split(b"\0")
-    changes = []
-    for i in range(0, len(fields) - 1, 2):
-        meta, path = fields[i].decode(), fields[i + 1].decode("utf-8", "replace")
-        parts = meta.lstrip(":").split()
-        changes.append((parts[1], parts[3], parts[4], path))  # new mode, new sha, status, path
+    changes = _changes(repo, merge_base, source)
     new_dirs, others, total = set(), {}, 0
     for mode, sha, status, path in changes:
         if path in ("evals/scheduled.yml", "evals/unscheduled.yml") and status == "M":
@@ -184,6 +312,9 @@ def classify(repo: Path, base: str, source: str, pr: dict, issues: list) -> dict
         if not section and (doc.get("skill") != subject or doc.get("registry") != REGISTRY
                             or "subject" in doc):
             return refuse("a new skill fixture does not name its skill and adam-agentskills")
+        problem = origin_problem(doc.get("origin"), number)
+        if problem:
+            return refuse(problem)
     allowed_list = "evals/scheduled.yml" if section else "evals/unscheduled.yml"
     if set(others) - {allowed_list}:
         return refuse("it edits the wrong fixture list for this subject")

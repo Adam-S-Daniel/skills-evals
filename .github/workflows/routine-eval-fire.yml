@@ -25,7 +25,14 @@ name: Fire eval routine
 #   the loop's own fixture resolution (`scripts/improve_gate.py
 #   fire-check`): nested evals/<skill>/<name> fixtures that all name it and
 #   adam-agentskills, at least the loop's minimum of them, and `holdout`
-#   empty or one of their names.
+#   empty or one of their names. A third choice input, `trigger_only`
+#   (false by default; skills-evals#662), is improve mode only: true runs
+#   only skill-creator's description loop on the skill's reviewed
+#   evals/<skill>/trigger-eval-set.json, `holdout` must be empty, the check
+#   is `fire-check --trigger-only` (the committed set the loop accepts, any
+#   number of fixtures, all naming adam-agentskills), and the payload gains
+#   `trigger_only: true` as its last key only then. It is still improve
+#   mode: the same branch, gate, outcomes and allowance charge.
 #   `guidance-improve` (ADR 0005, "Routine guidance improve mode addendum")
 #   sends exactly five: run_id, mode, section, trials and holdout (null when
 #   empty), and the routine runs scripts/propose_guidance_edit.py on that
@@ -142,7 +149,8 @@ name: Fire eval routine
 #
 # * The run's title (`run-name`) names the mode, ` bare` after it for an
 #   eval fire with `arms: bare` (so the weekly planner can tell which
-#   (fixture, model) bare runs were fired), the one target input of that
+#   (fixture, model) bare runs were fired), ` trigger` after it for a
+#   trigger-only improve fire, the one target input of that
 #   mode (fixture, candidate, skill or section) and the model when one is
 #   given. It is the only place the runs API exposes a dispatch's inputs, so
 #   scripts/improve_outcomes.py reads improve and guidance-improve attempts
@@ -154,7 +162,7 @@ name: Fire eval routine
 # API: https://platform.claude.com/docs/en/api/claude-code/routines-fire
 
 run-name: >-
-  Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}
+  Fire eval routine: ${{ inputs.mode }}${{ inputs.mode == 'eval' && inputs.arms == 'bare' && ' bare' || '' }}${{ inputs.mode == 'improve' && inputs.trigger_only == 'true' && ' trigger' || '' }}
   ${{ inputs.fixture }}${{ inputs.candidate }}${{ inputs.skill }}${{ inputs.section }}
   ${{ inputs.model }}
 
@@ -220,6 +228,15 @@ on:
         description: >-
           Draft mode only: true when the agent-checks lane declined this
           subject's hook proposal, so the routine skips its triage.
+        required: false
+        type: choice
+        options: ["false", "true"]
+        default: "false"
+      trigger_only:
+        description: >-
+          Improve mode only: true runs only skill-creator's description loop
+          on the skill's reviewed evals/<skill>/trigger-eval-set.json
+          (skills-evals#662).
         required: false
         type: choice
         options: ["false", "true"]
@@ -298,7 +315,8 @@ jobs:
                      (.inputs.skill // ""), (.inputs.holdout // ""),
                      (.inputs.section // ""),
                      (.inputs.model // ""), (.inputs.proposal // ""),
-                     (.inputs.hook_declined // "false")]
+                     (.inputs.hook_declined // "false"),
+                     (.inputs.trigger_only // "false")]
                     | any(type != "string" or test("\u0000"))' \
                "$event" >/dev/null; then
             echo "::error::a dispatch input is missing, not a string, or contains a NUL byte"
@@ -324,6 +342,7 @@ jobs:
           model="$(jq -r '.inputs.model // ""' "$event")"
           proposal="$(jq -r '.inputs.proposal // ""' "$event")"
           hook_declined="$(jq -r '.inputs.hook_declined // "false"' "$event")"
+          trigger_only="$(jq -r '.inputs.trigger_only // "false"' "$event")"
           arms="$(jq -r '.inputs.arms' "$event")"
           trials="$(jq -r '.inputs.trials' "$event")"
 
@@ -345,6 +364,20 @@ jobs:
               echo "::error::input 'hook_declined' must be false or true"
               exit 1 ;;
           esac
+          case "$trigger_only" in
+            false|true) ;;
+            *)
+              echo "::error::input 'trigger_only' must be false or true"
+              exit 1 ;;
+          esac
+          if [ "$trigger_only" = true ] && [ "$mode" != improve ]; then
+            echo "::error::input 'trigger_only' may be true in improve mode only"
+            exit 1
+          fi
+          if [ "$trigger_only" = true ] && [ -n "$holdout" ]; then
+            echo "::error::input 'holdout' must be empty when 'trigger_only' is true"
+            exit 1
+          fi
 
           case "$mode" in
             eval|scaffold|draft)
@@ -504,7 +537,16 @@ jobs:
             # Its refusals are fixed text and never echo the input.
             # `--holdout=VALUE` is one word: a holdout with a leading `-`
             # (its pattern allows one) is read as a name, never as a flag.
-            if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout="$holdout"; then
+            # A trigger-only fire (skills-evals#662) is checked by the
+            # trigger-only loop's rules instead: no holdout, a committed
+            # reviewed evals/<skill>/trigger-eval-set.json the loop accepts,
+            # any number of fixtures, every one naming adam-agentskills.
+            if [ "$trigger_only" = true ]; then
+              if ! python3 scripts/improve_gate.py fire-check "$skill" --holdout= --trigger-only; then
+                echo "::error::input 'skill' is refused by the trigger-only loop's check"
+                exit 1
+              fi
+            elif ! python3 scripts/improve_gate.py fire-check "$skill" --holdout="$holdout"; then
               echo "::error::input 'skill' or 'holdout' is refused by the improvement loop's fixture check"
               exit 1
             fi
@@ -537,6 +579,7 @@ jobs:
             echo "model=${model}"
             echo "proposal=${proposal}"
             echo "hook_declined=${hook_declined}"
+            echo "trigger_only=${trigger_only}"
             echo "arms=${arms}"
             echo "trials=${trials}"
             echo "run_id=${run_id}"
@@ -545,7 +588,7 @@ jobs:
           if [ "$mode" = scaffold ]; then
             echo "mode: scaffold, candidate: ${candidate} (arms and trials are not sent)"
           elif [ "$mode" = improve ]; then
-            echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
+            echo "mode: improve, skill: ${skill}, trials: ${trials}, holdout: ${holdout:-none}, trigger_only: ${trigger_only} (arms is not sent)"
           elif [ "$mode" = guidance-improve ]; then
             echo "mode: guidance-improve, section: ${section}, trials: ${trials}, holdout: ${holdout:-none} (arms is not sent)"
           elif [ "$mode" = draft ]; then
@@ -812,6 +855,7 @@ jobs:
           MODEL: ${{ steps.validate.outputs.model }}
           PROPOSAL: ${{ steps.validate.outputs.proposal }}
           HOOK_DECLINED: ${{ steps.validate.outputs.hook_declined }}
+          TRIGGER_ONLY: ${{ steps.validate.outputs.trigger_only }}
           ISSUE_SNAPSHOT_FILE: ${{ steps.snapshot.outputs.file }}
           DRAFT_PAYLOAD_FILE: ${{ steps.draft-payload.outputs.file }}
         run: |
@@ -846,12 +890,18 @@ jobs:
                 '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials}
                          + (if $model == "" then {} else {model: $model} end) | tojson)}')" ;;
             improve)
-              # Exactly five keys; an empty holdout is null, never "".
+              # Exactly five keys; an empty holdout is null, never "". A
+              # trigger-only fire adds `trigger_only: true` as a sixth, last
+              # key, only then, so every other improve payload is byte for
+              # byte what it was.
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg skill "$SKILL" \
                 --argjson trials "$TRIALS" --arg holdout "$HOLDOUT" \
+                --arg trigger_only "${TRIGGER_ONLY:-false}" \
                 '{text: ({run_id: $run_id, mode: "improve", skill: $skill, trials: $trials,
-                          holdout: (if $holdout == "" then null else $holdout end)} | tojson)}')" ;;
+                          holdout: (if $holdout == "" then null else $holdout end)}
+                         + (if $trigger_only == "true" then {trigger_only: true} else {} end)
+                         | tojson)}')" ;;
             guidance-improve)
               # Exactly five keys; an empty holdout is null, never "".
               body="$(jq -n -c \
@@ -997,7 +1047,7 @@ jobs:
               echo "### Eval routine fired (improve mode)"
               echo
               echo "- Run id: \`${RUN_ID}\`"
-              echo "- Skill: \`${SKILL}\`, trials: \`${TRIALS}\`"
+              echo "- Skill: \`${SKILL}\`, trials: \`${TRIALS}\`, trigger-only: \`${TRIGGER_ONLY:-false}\`"
               if [ -n "$HOLDOUT" ]; then
                 echo "- Holdout: \`${HOLDOUT}\`"
               else

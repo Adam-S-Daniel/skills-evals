@@ -294,22 +294,16 @@ class WorkflowTests(unittest.TestCase):
             if "upload-artifact" in str(step.get("uses", "")):
                 self.assertNotIn("lessons", str(step["with"]["path"]))
 
-    def test_fixture_supply_pick_reads_fixture_candidate_lessons_as_data(self):
-        plan = steps("routine-fixture-supply.yml", "plan")
-        lookup = named(plan, "Look for the lessons branch")
-        self.assertEqual(lookup["env"], {"LESSONS_TOKEN":
-                                         "${{ steps.fleet-token.outputs.token }}"})
-        self.assertIn("persistent/lessons", lookup["run"])
-        checkout = named(plan, "Check out the lessons (adam-agentskills-private)")
-        self.assertEqual(checkout["if"], "steps.lessons-branch.outputs.present == 'true'")
-        self.assertEqual(checkout["with"]["repository"], PRIVATE_REPO)
-        self.assertEqual(checkout["with"]["sparse-checkout"], "lessons/proposals")
-        self.assertIs(checkout["with"]["persist-credentials"], False)
-        self.assertEqual(checkout["with"]["token"], "${{ steps.fleet-token.outputs.token }}")
-        pick = next(s for s in plan if s.get("id") == "pick")
-        self.assertIn("lessons=(--lessons private-lessons/lessons/proposals)", pick["run"])
-        self.assertIn('"${lessons[@]}"', pick["run"])
-        self.assertEqual(pick["env"], {"GH_TOKEN": "${{ github.token }}"})
+    def test_fixture_supply_no_longer_picks_scaffold_candidates(self):
+        # The scaffold lane, the one place pick read fixture-candidate
+        # lessons, is paused and its jobs removed (skills-evals#656), so no
+        # job of the workflow reads the private lessons branch any more.
+        doc = yaml.safe_load((WORKFLOWS / "routine-fixture-supply.yml")
+                             .read_text(encoding="utf-8"))
+        self.assertNotIn("plan", doc["jobs"])
+        self.assertNotIn("dispatch", doc["jobs"])
+        text = (WORKFLOWS / "routine-fixture-supply.yml").read_text(encoding="utf-8")
+        self.assertNotIn("--lessons", text)
 
     def test_no_workflow_passes_lessons_to_a_reader_of_other_kinds(self):
         # draft_new_skill.py keeps new-skill; plan_week and pick read counts.

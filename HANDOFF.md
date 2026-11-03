@@ -78,7 +78,8 @@ September pause, and is not updated any more.
   - *Weekly planner:* `routine-eval-weekly.yml` (Tuesday 07:00 UTC, topped up after each ingest and daily) runs
     `scripts/plan_week.py`, which plans eval, improve and trigger items by
     band within the allowance and fires them one at a time, at most three
-    in flight. `trigger-optimize` items wait on a routine prompt change.
+    in flight. A `trigger-optimize` skill is a trigger-only improve fire
+    (skills-evals#662); a `needs-trigger-set` one an `agent-ready` issue.
   - *Session miner:* `scripts/run_session_miner.sh` runs only on Adam's
     computer ([ADR 0015](docs/decisions/0015-mine-real-sessions-only-on-adams-own-computer.md))
     and writes lessons to adam-agentskills-private's `persistent/lessons`;

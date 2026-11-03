@@ -494,27 +494,33 @@ and spaces fires a minute apart; improve fires go last.
 
 Usage tracking (2026-10-26) counted about 55 skill calls in eight weeks over
 about 72,000 model turns: most skills almost never trigger, so a skill's
-description is probably the biggest lever. Every adam-agentskills skill whose
-usage weight is fresh and at most one call in four weeks (an unknown weight
-is neutral and gets nothing) becomes a work item, placed just before the
-improve work items:
+description is probably the biggest lever. Every public adam-agentskills
+skill whose usage weight is fresh and at most one call in four weeks (an
+unknown weight is neutral and gets nothing) is judged by the trigger lane
+(skills-evals#662; Adam, 2026-11-03: "New fire mode runs only
+skill-creator's description loop; accept when held-out trigger accuracy
+rises 0.15+ with no drop on should-not-trigger queries; PR auto-merges like
+other loop PRs"):
 
 - **`trigger-optimize`** (change type `trigger`) when
-  `evals/<skill>/trigger-eval-set.json` exists. It is routed
-  **needs routine prompt change**, not fired: improve mode's payload is
-  exactly `run_id`, `mode`, `skill`, `trials` and `holdout`, and the
-  routine's saved prompt (not in this repository) decides the loop's flags.
-  To fire it, Adam would add to the prompt's IMPROVE MODE: "When
-  `evals/<skill>/trigger-eval-set.json` exists in the skills-evals checkout,
-  pass `--trigger-eval-set evals/<skill>/trigger-eval-set.json` to
-  `scripts/propose_skill_edit.py`." That alone makes every improve fire of
-  such a skill use the reviewed set. A trigger-only fire for a skill that is
-  not improve-eligible would also need a payload field from
-  `routine-eval-fire.yml` and a description-only option in
-  `propose_skill_edit.py`; neither exists. Once fired, a trigger fire would
-  be charged and ordered as an improve fire.
-- **`needs-trigger-set`** (change type `fixture`) when there is no set: write
-  one, a JSON list of `{query, should_trigger}` objects.
+  `evals/<skill>/trigger-eval-set.json` exists: an improve-band **fire**,
+  sent to `routine-eval-fire.yml` as improve mode with `trigger_only=true`
+  and no holdout. It runs only the description loop on that set
+  (`--trigger-eval-set evals/<skill>/trigger-eval-set.json`), is charged
+  and capped as an improve fire, and sorts after the value-ranked improve
+  fires, least used first. It waits while rule C pauses the skill (the
+  same improve records and `eval-improve/<skill>` pull requests; a merged
+  edit waits 14 days for usage to show, since a skill with no fixtures is
+  never re-measured), and is skipped when the skill has an ordinary improve
+  fire in the same plan (both write `eval-improve/<skill>`).
+- **`needs-trigger-set`** (change type `fixture`) when there is no set: an
+  `agent-ready` issue asking for one, a JSON list of `{query,
+  should_trigger}` objects with at least 8 of each class. A pull request
+  that adds only that file merges itself (`scripts/fixture_pr_gate.py`).
+
+A skill owned by retirement gets neither, and a private skill is never
+judged. The plan's `triggers` map lists every judged skill with its reasons;
+the weekly sweep closes a `needs-trigger-set` issue only for a judged skill.
 
 The plan also lists **hook candidates** (Adam: hooks first): skills whose
 SKILL.md has at least half its non-blank body lines under a heading naming a
@@ -788,16 +794,61 @@ skips triage and drafts a skill. The routine's saved prompt for this mode
 is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
 approves changes to it.
 
+### Fixture requests (2026-11-03)
+
+The weekly sweep files each `needs-fixtures`, `needs-harder-fixtures` and
+`needs-trigger-set` work item as an `agent-ready` issue
+(`scripts/work_item_issues.py`) with one kind label, the kind itself, and
+three lines after its marker: `Kind:`, `Subject:` (the skill, or
+`guidance/<section>`) and `Reason:` (fixed text from the plan's numbers,
+such as `train headroom 0.03, 5 fixture(s)` or `usage weight 0, no trigger
+set`). Missing labels are created, never edited, and an open issue missing
+its kind label gets it on the next run.
+
+A fixture request asks the fleet worker to build from **real fleet work**
+first (Adam, 2026-11-03, skills-evals#656): a merged pull request in a fleet
+repository, under either owner, where the subject's advice applied or an
+agent got it wrong, rebuilt as an ordinary per-skill fixture with invented
+names, data and hosts (`example.com`), never private content copied; an
+invented task when no real case fits. This replaces the scaffold lane below.
+Every fixture the pull request adds carries a top-level `origin:` mapping:
+`kind: real-work` with `source:` the pull request's URL (owner
+`Adam-S-Daniel` or `jodidaniel`), or `kind: invented` with `source: null`,
+and `request:` the issue's URL. `scripts/fixture_pr_gate.py` refuses to arm
+auto-merge for a fixture without a valid one; the harness ignores the key.
+A trigger set carries none.
+
+`scripts/fixture_queue.py report` follows the queue end to end and
+explorer-data.yml puts it in `explorer/latest.json` as `fixture_queue`: each
+request with the pull requests naming it, each fixture with an origin (real
+work or invented, when it landed, its ingested runs, its pass rate per arm,
+and its cost in dollars and allowance points from the runs'
+`cost_estimate.json`, null when unknown), totals, and findings. A finding
+becomes a `half-built-or-broken` issue (`fixture_queue.py alerts`, the
+fleet health audit's format, closed once it clears):
+
+- `skills-evals/fixture-queue-stale-request-<issue>` (idle, medium): an
+  open request 7 days old that no open or merged pull request names;
+- `skills-evals/fixture-queue-stuck-pr-<pr>` (broken, high): a fleet worker
+  pull request open 2 days with auto-merge off;
+- `skills-evals/fixture-queue-unused-fixture-<path>` (broken, high): a
+  fixture with an origin committed 3 days ago with no ingested run.
+
 ### Fixture supply (#65)
 
 Fixtures are the improvement queue, so they are made and promoted with no
 person in the loop (Adam, 2026-10-26; ADR
 [0003](decisions/0003-roster-merges-automatically.md)'s 2026-10-26 addendum).
-`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC:
+`.github/workflows/routine-fixture-supply.yml` runs daily at 13:17 UTC.
+**Its scaffold step is paused** (Adam, 2026-11-03, skills-evals#656): the
+`plan` and `dispatch` jobs are removed, so step 1 no longer runs and
+nothing fires scaffold mode; fixture requests built from real fleet work
+(above) replace it. Steps 2 and 3 are kept for what is already in flight,
+and the same job still contextualizes drafted fixtures.
 
-1. **Scaffold.** It mines the fleet's newest merged pull requests
+1. **Scaffold (paused).** It mined the fleet's newest merged pull requests
    (`scripts/mine_real_work.py`, REST only), and
-   `scripts/scaffold_real_work.py pick` drops every candidate the routine
+   `scripts/scaffold_real_work.py pick` dropped every candidate the routine
    would refuse or already has: a body that quotes the diff, several closing
    issues, an existing `evals/real-work/<id>/` or `claude/scaffold-<id>`
    branch, or a successful scaffold fire in the last 30 days (read from the

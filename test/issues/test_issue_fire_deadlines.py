@@ -109,25 +109,38 @@ OUTAGE = {"kind": "routine-outage", "change_type": None, "route": "issue",
 
 
 class FakeGh:
-    def __init__(self, issues):
+    """`gh` over a fixed issue list and label set; `label create` adds to
+    the set unless `fail_create` (then, with `race`, another run made it)."""
+
+    def __init__(self, issues, labels=None, fail_create=False, race=False):
         self.issues, self.calls = issues, []
+        self.labels = set(work_item_issues.LABELS if labels is None else labels)
+        self.fail_create, self.race = fail_create, race
 
     def __call__(self, args, stdin=None, token=None):
         self.calls.append((args, stdin))
+        if args[0] == "api" and "/labels" in args[2]:
+            return "\n".join(sorted(self.labels))
         if args[0] == "api":
             return "\n".join(json.dumps({**i, "author": i.get("author", retire_skill.ISSUE_AUTHOR)})
                              for i in self.issues)
+        if args[:2] == ["label", "create"]:
+            if self.fail_create:
+                if self.race:
+                    self.labels.add(args[2])
+                raise retire_skill.RetireError("gh label exited 1")
+            self.labels.add(args[2])
         return ""
 
 
 class WorkItemIssueTests(unittest.TestCase):
     """The second loss files the issue; nobody has to read a step summary."""
 
-    def run_main(self, items, issues, *extra):
+    def run_main(self, items, issues, *extra, gh=None):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "items.json"
             path.write_text(json.dumps(items), encoding="utf-8")
-            gh, out = FakeGh(issues), io.StringIO()
+            gh, out = gh or FakeGh(issues), io.StringIO()
             code = work_item_issues.main(["--items", str(path), *extra], gh=gh, out=out)
         return code, gh.calls, out.getvalue()
 
@@ -167,7 +180,7 @@ class WorkItemIssueTests(unittest.TestCase):
     def test_other_authors_and_other_work_items_are_ignored(self):
         body = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\n"
         code, calls, _ = self.run_main(
-            {"routine_down": False, "work": [{"kind": "needs-trigger-set"}]},
+            {"routine_down": False, "work": [{"kind": "agent-check"}]},
             [{"number": 9, "state": "open", "body": body, "author": "someone"}])
         self.assertEqual((code, self.writes(calls)), (0, []))
 
@@ -245,6 +258,7 @@ class WorkItemIssueTests(unittest.TestCase):
         plan = {"routine_down": False,
                 "skills": {"writing-adrs": {"headroom": 0.04}, "unmeasured": {"headroom": None}},
                 "guidance": {"example-section": {"headroom": 0.3}},
+                "triggers": {"quiet": {"eligible": True}, "busy": {"eligible": False}},
                 "work": [{"kind": k} for k in ("fixture-broken", "routine-outage",
                                                 "needs-fixtures", "needs-harder-fixtures",
                                                 "needs-trigger-set", "agent-check")]}
@@ -252,9 +266,163 @@ class WorkItemIssueTests(unittest.TestCase):
                                         capture_output=True, check=True).stdout)
         self.assertEqual([w["kind"] for w in out["work"]],
                          ["fixture-broken", "routine-outage", "needs-fixtures",
-                          "needs-harder-fixtures"])
+                          "needs-harder-fixtures", "needs-trigger-set"])
         self.assertEqual(out["subjects"], {"skills": ["writing-adrs"],
-                                           "guidance": ["example-section"]})
+                                           "guidance": ["example-section"],
+                                           "triggers": ["busy", "quiet"]})
+        # A plan from before the trigger lane's status map judged no trigger.
+        del plan["triggers"]
+        out = json.loads(subprocess.run([jq, program], input=json.dumps(plan), text=True,
+                                        capture_output=True, check=True).stdout)
+        self.assertEqual(out["subjects"]["triggers"], [])
+
+    def test_a_trigger_set_need_opens_an_agent_ready_issue(self):
+        # skills-evals#662: the fleet worker writes the set; the gate merges it.
+        need = {"kind": "needs-trigger-set", "change_type": "fixture", "route": "issue",
+                "skill": "writing-adrs", "weight": 0,
+                "trigger_set": "evals/writing-adrs/trigger-eval-set.json",
+                "hook_candidate": False}
+        code, calls, _ = self.run_main({"routine_down": False, "work": [need]}, [])
+        self.assertEqual(code, 0)
+        [(args, body)] = [(a, b) for a, b in calls if a[:2] == ["issue", "create"]]
+        self.assertEqual(args[args.index("--label") + 1], "agent-ready")
+        self.assertEqual(args[args.index("--title") + 1],
+                         "Needs a trigger eval set: skill writing-adrs")
+        self.assertEqual(body.splitlines()[0],
+                         "<!-- skills-evals:needs-trigger-set:writing-adrs -->")
+        for text in ("`evals/writing-adrs/trigger-eval-set.json`", "`query`",
+                     "`should_trigger`", "at least 8 should-trigger and 8 should-not-trigger",
+                     "near misses", "SKILL.md", "`Refs`", "trigger-only improve run"):
+            self.assertIn(text, body)
+        for bad in ({**need, "skill": "../x"}, {**need, "skill": ""}, {**need, "skill": 3}):
+            with self.subTest(bad=bad):
+                code, calls, _ = self.run_main({"routine_down": False, "work": [bad]}, [])
+                self.assertEqual((code, self.writes(calls)), (2, []))
+
+    def test_a_trigger_set_need_closes_only_when_its_skill_was_judged(self):
+        body = "<!-- skills-evals:needs-trigger-set:writing-adrs -->\n"
+        issue = [{"number": 13, "state": "open", "body": body}]
+        # Measured headroom is not a trigger-lane judgment.
+        for subjects in (None, {"skills": ["writing-adrs"]}, {"triggers": ["other"]}):
+            items = {"routine_down": False, "work": []}
+            if subjects is not None:
+                items["subjects"] = subjects
+            with self.subTest(subjects=subjects):
+                self.assertEqual(self.writes(self.run_main(items, issue)[1]), [])
+        judged = {"routine_down": False, "work": [], "subjects": {"triggers": ["writing-adrs"]}}
+        self.assertEqual(self.writes(self.run_main(judged, issue)[1]),
+                         [["issue", "comment"], ["issue", "close"]])
+        code, _, _ = self.run_main({"routine_down": False, "work": [],
+                                    "subjects": {"triggers": "x"}}, [])
+        self.assertEqual(code, 2)
+
+    HARDER = {"kind": "needs-harder-fixtures", "change_type": "fixture",
+              "skill": "writing-adrs", "fixtures": 5, "headroom": 0.03, "route": "issue"}
+    TRIGGER = {"kind": "needs-trigger-set", "change_type": "fixture", "route": "issue",
+               "skill": "quiet-skill", "weight": 0}
+
+    def test_a_request_carries_its_kind_label_and_header_lines(self):
+        # Adam, 2026-11-03: the dashboard reads kind, subject and reason
+        # without parsing prose.
+        more = {"kind": "needs-fixtures", "skill": "", "section": "example-section",
+                "fixtures": 2, "headroom": 0.3}
+        code, calls, _ = self.run_main(
+            {"routine_down": False, "work": [self.HARDER, more, self.TRIGGER]}, [])
+        self.assertEqual(code, 0)
+        creates = {stdin.splitlines()[0]: (args, stdin) for args, stdin in calls
+                   if args[:2] == ["issue", "create"]}
+        expected = {
+            "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->": (
+                "needs-harder-fixtures", "writing-adrs", "train headroom 0.03, 5 fixture(s)"),
+            "<!-- skills-evals:needs-fixtures:guidance/example-section -->": (
+                "needs-fixtures", "guidance/example-section", "train headroom 0.30, 2 fixture(s)"),
+            "<!-- skills-evals:needs-trigger-set:quiet-skill -->": (
+                "needs-trigger-set", "quiet-skill", "usage weight 0, no trigger set"),
+        }
+        self.assertEqual(set(creates), set(expected))
+        for line, (kind, subject, reason) in expected.items():
+            args, body = creates[line]
+            with self.subTest(kind=kind):
+                labels = [args[i + 1] for i, a in enumerate(args) if a == "--label"]
+                self.assertEqual(labels, ["agent-ready", kind])
+                self.assertEqual(body.splitlines()[1:4],
+                                 [f"Kind: {kind}", f"Subject: {subject}", f"Reason: {reason}"])
+        self.assertIn("Reason: usage weight unknown, no trigger set", self.run_main(
+            {"routine_down": False, "work": [{**self.TRIGGER, "weight": None}]}, [])[1][-1][1])
+
+    def test_a_fixture_request_asks_for_real_fleet_work_and_an_origin(self):
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.HARDER]}, [])
+        body = next(stdin for args, stdin in calls if args[:2] == ["issue", "create"])
+        for text in ("real fleet work", "merged pull requests", "both owners",
+                     "Adam-S-Daniel and jodidaniel", "invented names, data and hosts",
+                     "`example.com`", "Never copy private content verbatim",
+                     "When no real case fits, write an invented task",
+                     "top-level `origin:` mapping (required",
+                     "kind: real-work", "source: https://github.com/<owner>/<repo>/pull/<N>",
+                     "request: https://github.com/Adam-S-Daniel/skills-evals/issues/"):
+            self.assertIn(text, body)
+        # A trigger set is queries, not a rebuilt task: no origin asked.
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.TRIGGER]}, [])
+        body = next(stdin for args, stdin in calls if args[:2] == ["issue", "create"])
+        self.assertNotIn("origin", body)
+
+    def test_missing_labels_are_created_and_existing_ones_never_edited(self):
+        gh = FakeGh([], labels={"agent-ready", "needs-fixtures"})
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.HARDER]}, [],
+                                       gh=gh)
+        self.assertEqual(code, 0)
+        created = [args[2] for args, _ in calls if args[:2] == ["label", "create"]]
+        self.assertEqual(created, ["needs-harder-fixtures"])
+        self.assertFalse([args for args, _ in calls if args[:2] == ["label", "edit"]
+                          or "--force" in args])
+        order = [args[:2] for args, _ in calls if args[0] in ("label", "issue")]
+        self.assertEqual(order, [["label", "create"], ["issue", "create"]])
+        # Present already: nothing is created.
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.HARDER]}, [])
+        self.assertFalse([a for a, _ in calls if a[:2] == ["label", "create"]])
+        # Lost-fire items use no label, so no label is listed or created.
+        code, calls, _ = self.run_main({"routine_down": False, "work": [BROKEN]}, [],
+                                       gh=FakeGh([], labels=set()))
+        self.assertFalse([a for a, _ in calls if a[0] == "label" or "/labels" in a[-3]])
+
+    def test_a_label_another_run_created_is_fine_and_a_missing_one_stops_the_run(self):
+        gh = FakeGh([], labels={"agent-ready"}, fail_create=True, race=True)
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.HARDER]}, [],
+                                       gh=gh)
+        self.assertEqual((code, self.writes(calls)), (0, [["issue", "create"]]))
+        gh = FakeGh([], labels={"agent-ready"}, fail_create=True)
+        code, calls, _ = self.run_main({"routine_down": False, "work": [self.HARDER]}, [],
+                                       gh=gh)
+        self.assertEqual((code, self.writes(calls)), (1, []))
+
+    def test_an_open_request_without_its_kind_label_gets_it_once(self):
+        body = "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->\n"
+        items = {"routine_down": False, "work": [self.HARDER]}
+        unlabeled = [{"number": 21, "state": "open", "body": body, "labels": ["agent-ready"]}]
+        code, calls, _ = self.run_main(items, unlabeled)
+        self.assertEqual(code, 0)
+        self.assertEqual([a for a, _ in calls if a[0] == "issue"],
+                         [["issue", "edit", "21", "-R", work_item_issues.EVALS_REPO,
+                           "--add-label", "needs-harder-fixtures"]])
+        labeled = [{**unlabeled[0], "labels": ["agent-ready", "needs-harder-fixtures"]}]
+        self.assertEqual(self.writes(self.run_main(items, labeled)[1]), [])
+        # Unknown labels (no list in the record) and lost-fire issues: no edit.
+        self.assertEqual(self.writes(self.run_main(items, [{**unlabeled[0], "labels": None}])[1]),
+                         [])
+        bbody = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\n"
+        self.assertEqual(self.writes(self.run_main(
+            {"routine_down": False, "work": [BROKEN]},
+            [{"number": 22, "state": "open", "body": bbody, "labels": []}])[1]), [])
+        # An issue being closed is not relabeled first.
+        judged = {"routine_down": False, "work": [], "subjects": {"skills": ["writing-adrs"]}}
+        self.assertEqual(self.writes(self.run_main(judged, unlabeled)[1]),
+                         [["issue", "comment"], ["issue", "close"]])
+
+    def test_the_issue_listing_asks_for_labels(self):
+        gh = FakeGh([{"number": 3, "state": "open", "body": "x", "labels": ["a"]}])
+        found = work_item_issues.fetch_issues(gh)
+        self.assertEqual(found, [{"number": 3, "body": "x", "state": "open", "labels": ["a"]}])
+        self.assertIn("labels: [.labels[]?.name]", gh.calls[0][0][-1])
 
     def test_a_dry_run_writes_nothing(self):
         code, calls, out = self.run_main({"routine_down": False, "work": [BROKEN]}, [],

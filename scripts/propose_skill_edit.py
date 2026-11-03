@@ -10,6 +10,10 @@ decision record is docs/decisions/0005-improvement-loop-reuses-skill-creator.md.
         [--rotation K] [--min-gain .10] [--holdout FIXTURE] \\
         [--trigger-eval-set FILE] [--skill-creator DIR] [--num-workers 1] \\
         [--results-dir DIR] [--no-judge] [--dry-run]
+    python3 scripts/propose_skill_edit.py <skill> --trigger-only \\
+        --trigger-eval-set evals/<skill>/trigger-eval-set.json \\
+        --registry adam-agentskills=PATH [--ref REF] [--skill-creator DIR] \\
+        [--results-dir DIR] [--dry-run]
 
 WHAT IT DOES, in order:
 
@@ -84,6 +88,24 @@ WHAT IT DOES, in order:
 
 `--dry-run` prints the plan and makes no model call and no write.
 
+TRIGGER-ONLY MODE (`--trigger-only`; skills-evals#662, Adam 2026-11-03:
+"New fire mode runs only skill-creator's description loop"). For a rarely
+used skill whose task fixtures leave no headroom, or that has few or none:
+steps 1-4b and 6-8 are skipped and only step 5 runs, on the reviewed
+`--trigger-eval-set` (required; `--holdout`, `--rotation`, `--no-judge`,
+`--trials` and `--min-gain` are refused, since nothing would read them).
+The set must hold at least `TRIGGER_ONLY_MIN_CLASS` distinct queries of each
+class with both classes in both splits, or the run is refused. The registry
+is the fixtures' (all must agree) or, with none, adam-agentskills; the loop's
+model is the first fixture's arm model or the roster's default. ACCEPT only
+when skill-creator's best description differs from the original (its
+`history[0]`), the held-out pass rate rose by at least
+`TRIGGER_ONLY_MIN_GAIN` on the same held-out queries, and no fewer
+should-not-trigger queries (train and held-out) passed. The record
+(`mode: trigger-only`, a `trigger_only` block of both entries' counts) and the
+files are written where step 9 writes them; scripts/improve_gate.py checks
+the counts again before any pull request.
+
 EVERY MODEL CALL GOES THROUGH A `Runner` (the three methods below), so the
 tests drive the whole pipeline offline with a fake. This is a LOCAL exhibit
 under ADR 0002 decision 4: it runs under the operator's own login, its numbers
@@ -155,6 +177,15 @@ TRANSCRIPT_EXCERPT_CHARS = 4000
 ARM = "with_skill"
 #: skill-creator's held-out fraction, passed as run_loop's --holdout.
 TRIGGER_HOLDOUT = 0.4
+#: Trigger-only mode (skills-evals#662; Adam, 2026-11-03, "Build a
+#: trigger-only improve fire"): the reviewed query set's file name under
+#: evals/<skill>/, the held-out pass-rate gain the best description must
+#: show over the original, and the fewest queries of each class the set may
+#: hold (8 per class leaves skill-creator's 0.4 split at least 3 of each class
+#: held out, 6 in all, so one query is never the whole margin).
+TRIGGER_SET_FILE = "trigger-eval-set.json"
+TRIGGER_ONLY_MIN_GAIN = 0.15
+TRIGGER_ONLY_MIN_CLASS = 8
 #: Parallel `claude -p` calls in skill-creator's trigger eval: exactly one.
 #: run_eval.py plants every worker's command file (`<skill>-skill-<uuid>`) in
 #: the ONE project directory run_loop.py finds from its cwd, and counts a hit
@@ -581,20 +612,73 @@ def load_trigger_eval_set(path: Path) -> list[dict]:
     with a non-empty string query and a JSON boolean label. The label is
     never coerced: `"false"` would otherwise read as a should-trigger query."""
     try:
-        items = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        data = path.read_bytes()
+    except OSError as exc:
         raise Refusal(f"--trigger-eval-set {path.name}: unreadable: "
                       f"{type(exc).__name__}") from exc
+    return parse_trigger_eval_set(data, path.name)
+
+
+def parse_trigger_eval_set(data: bytes, name: str) -> list[dict]:
+    """`load_trigger_eval_set`'s check on bytes already read, so a caller
+    holding a git blob (scripts/fixture_pr_gate.py) needs no temp file."""
+    try:
+        items = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Refusal(f"--trigger-eval-set {name}: unreadable: "
+                      f"{type(exc).__name__}") from exc
     if not isinstance(items, list):
-        raise Refusal(f"--trigger-eval-set {path.name}: must be a JSON list")
+        raise Refusal(f"--trigger-eval-set {name}: must be a JSON list")
     for index, item in enumerate(items):
         if (not isinstance(item, dict)
                 or set(item) != {"query", "should_trigger"}
                 or not isinstance(item["query"], str) or not item["query"].strip()
                 or not isinstance(item["should_trigger"], bool)):
-            raise Refusal(f"--trigger-eval-set {path.name}: item {index} must be "
+            raise Refusal(f"--trigger-eval-set {name}: item {index} must be "
                           "exactly {query: non-empty string, should_trigger: boolean}")
     return items
+
+
+def normalize_trigger_items(items: list[dict],
+                            held_out: frozenset | set = frozenset()) -> list[dict]:
+    """skill-creator's `[{query, should_trigger}]` as the loop runs it: each
+    query's whitespace collapsed, a query in `held_out` dropped, and a query
+    kept once (the first label wins). skill-creator separates train from
+    held-out results by query text, so a duplicate would put one query on
+    both sides. `trigger_eval_set` and the trigger-only mode (and
+    improve_gate's fire-check) share it, so all three count the same set."""
+    clean, seen = [], set()
+    for item in items:
+        query = " ".join(str(item.get("query", "")).split())
+        if query and query not in held_out and query not in seen:
+            seen.add(query)
+            clean.append({"query": query, "should_trigger": bool(item.get("should_trigger"))})
+    return clean
+
+
+#: Trigger-only mode's refusal of a reviewed set too small or lopsided to
+#: measure a description by. Fixed text: it never quotes the file.
+TRIGGER_ONLY_SET_REFUSAL = (
+    f"trigger-only mode needs a reviewed trigger eval set with at least "
+    f"{TRIGGER_ONLY_MIN_CLASS} distinct should-trigger and "
+    f"{TRIGGER_ONLY_MIN_CLASS} distinct should-not-trigger queries, and both "
+    "classes in both of skill-creator's splits")
+
+
+def trigger_only_set(path: Path) -> tuple[list[dict], dict]:
+    """(the normalized set, its split counts) of a reviewed set for
+    trigger-only mode (skills-evals#662), or Refusal. No fixture prompt is
+    held out: there is no validation fixture, and the description loop's own
+    held-out split decides. Each class needs TRIGGER_ONLY_MIN_CLASS distinct
+    queries, so the 0.4 split holds out at least three of each and one query
+    is never the whole TRIGGER_ONLY_MIN_GAIN margin."""
+    items = normalize_trigger_items(load_trigger_eval_set(path))
+    counts = trigger_split_counts(items)
+    positives = sum(1 for item in items if item["should_trigger"])
+    if min(positives, len(items) - positives) < TRIGGER_ONLY_MIN_CLASS \
+            or trigger_set_problems(counts):
+        raise Refusal(TRIGGER_ONLY_SET_REFUSAL)
+    return items, counts
 
 
 def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
@@ -624,12 +708,7 @@ def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
                     and isinstance(other.get("prompt"), str)):
                 items.append({"query": other["prompt"], "should_trigger": False})
         source = "fixtures"
-    clean, seen = [], set()
-    for item in items:
-        query = " ".join(str(item.get("query", "")).split())
-        if query and query not in held_out and query not in seen:
-            seen.add(query)
-            clean.append({"query": query, "should_trigger": bool(item.get("should_trigger"))})
+    clean = normalize_trigger_items(items, held_out)
     if override and (not any(i["should_trigger"] for i in clean)
                      or all(i["should_trigger"] for i in clean)):
         raise Refusal("the trigger eval set needs at least one should-trigger "
@@ -1244,10 +1323,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         help="registry checkout, NAME=PATH (as run_eval.py)")
     parser.add_argument("--ref", default="HEAD",
                         help="registry commit to archive (default HEAD)")
-    parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
+    parser.add_argument("--trials", type=int, default=None,
+                        help=f"trials per fixture (default {DEFAULT_TRIALS})")
     parser.add_argument("--rotation", type=int, default=None,
                         help="validation fixture index (default: records so far)")
-    parser.add_argument("--min-gain", type=float, default=DEFAULT_MIN_GAIN,
+    parser.add_argument("--min-gain", type=float, default=None,
                         help="minimum train gain on 0..1 scale (default .10; "
                              "objective rate or judge mean / 10 when objective is flat)")
     parser.add_argument("--holdout", default=None,
@@ -1263,7 +1343,24 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the plan; no model call, no write")
+    parser.add_argument("--trigger-only", action="store_true",
+                        help="run only skill-creator's description loop on "
+                             "--trigger-eval-set (skills-evals#662)")
     args = parser.parse_args(argv)
+    if args.trigger_only:
+        # Each of these would be silently ignored: no fixture is split,
+        # measured, judged or trained on, and the gain is fixed.
+        if args.trigger_eval_set is None:
+            parser.error("--trigger-only needs --trigger-eval-set")
+        for name, value in (("--holdout", args.holdout), ("--rotation", args.rotation),
+                            ("--no-judge", args.no_judge or None),
+                            ("--trials", args.trials), ("--min-gain", args.min_gain)):
+            if value is not None:
+                parser.error(f"--trigger-only does not take {name}")
+    if args.trials is None:
+        args.trials = DEFAULT_TRIALS
+    if args.min_gain is None:
+        args.min_gain = DEFAULT_MIN_GAIN
     if not 1 <= args.trials <= run_eval.MAX_TRIALS:
         parser.error(f"--trials must be 1..{run_eval.MAX_TRIALS}")
     if args.rotation is not None and args.rotation < 0:
@@ -1508,39 +1605,14 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
-        trigger_dir.mkdir(parents=True, exist_ok=True)
-        eval_set_path = trigger_dir / "eval-set.json"
-        eval_set_path.write_text(json.dumps(p["eval_set"], indent=2), encoding="utf-8")
-        project = scratch / "trigger-project"
-        (project / ".claude").mkdir(parents=True)
-        (project / ".claude" / "settings.json").write_text(json.dumps({
-            "enabledPlugins": {name: False for name in disabled_plugins}}, indent=2),
-            encoding="utf-8")
         try:
-            loop = runner.run_description_loop(
-                description_loop_argv(eval_set_path, base_skill, p["arm_model"],
-                                      trigger_dir, args.num_workers),
-                cwd=project, skill_creator=p["skill_creator"])
+            loop = run_trigger_loop(runner, p, scratch, trigger_dir, base_skill,
+                                    disabled_plugins, args.num_workers)
         except Refusal as exc:
             return record_refusal(stem, record, "trigger", exc)
-        (trigger_dir / "loop.json").write_text(json.dumps(loop, indent=2), encoding="utf-8")
-        original_description = frontmatter_data(original).get("description", "")
         raw_best = str(loop.get("best_description") or "")
-        best = " ".join(raw_best.split())
-        record["description_half"] = {
-            "from": "skill-creator scripts/run_loop.py",
-            "skill_creator": {"path": str(p["skill_creator"]),
-                              "commit": p["skill_creator_sha"]},
-            "eval_set_source": p["eval_set_source"], "eval_set_size": len(p["eval_set"]),
-            "disabled_plugins": disabled_plugins,
-            "original": original_description, "best": best,
-            "best_test_score": loop.get("best_test_score"),
-            "best_train_score": loop.get("best_train_score"),
-            "iterations": loop.get("iterations_run"),
-            "num_workers": args.num_workers,
-            "usage": trigger_loop_usage(loop, trigger_dir),
-            "changed": bool(best) and best != " ".join(str(original_description).split()),
-            "loop_output": str(trigger_dir / "loop.json")}
+        record["description_half"] = description_half(
+            p, loop, trigger_dir, original, disabled_plugins, args.num_workers)
 
         # Body half: one proposal call, validated before anything is measured.
         evidence = {n: failure_evidence(baseline_dir(results, skill, ts, n),
@@ -1637,6 +1709,322 @@ def trigger_set_unusable(p: dict) -> str | None:
             "least two distinct should-trigger and two should-not-trigger queries")
 
 
+def run_trigger_loop(runner, p: dict, scratch: Path, trigger_dir: Path,
+                     skill_dir: Path, disabled_plugins: list[str],
+                     num_workers: int) -> dict:
+    """skill-creator's description loop on `p["eval_set"]`, run from a
+    scratch project whose settings disable `disabled_plugins`, and its
+    output saved as `<trigger_dir>/loop.json`. Shared by `improve` and
+    `improve_trigger_only`; a Refusal is the caller's to record."""
+    trigger_dir.mkdir(parents=True, exist_ok=True)
+    eval_set_path = trigger_dir / "eval-set.json"
+    eval_set_path.write_text(json.dumps(p["eval_set"], indent=2), encoding="utf-8")
+    project = scratch / "trigger-project"
+    (project / ".claude").mkdir(parents=True)
+    (project / ".claude" / "settings.json").write_text(json.dumps({
+        "enabledPlugins": {name: False for name in disabled_plugins}}, indent=2),
+        encoding="utf-8")
+    loop = runner.run_description_loop(
+        description_loop_argv(eval_set_path, skill_dir, p["arm_model"],
+                              trigger_dir, num_workers),
+        cwd=project, skill_creator=p["skill_creator"])
+    (trigger_dir / "loop.json").write_text(json.dumps(loop, indent=2), encoding="utf-8")
+    return loop
+
+
+def description_half(p: dict, loop: dict, trigger_dir: Path, original: str,
+                     disabled_plugins: list[str], num_workers: int) -> dict:
+    """The record's `description_half`: what the loop ran on and found."""
+    original_description = frontmatter_data(original).get("description", "")
+    best = " ".join(str(loop.get("best_description") or "").split())
+    return {
+        "from": "skill-creator scripts/run_loop.py",
+        "skill_creator": {"path": str(p["skill_creator"]),
+                          "commit": p["skill_creator_sha"]},
+        "eval_set_source": p["eval_set_source"], "eval_set_size": len(p["eval_set"]),
+        "disabled_plugins": disabled_plugins,
+        "original": original_description, "best": best,
+        "best_test_score": loop.get("best_test_score"),
+        "best_train_score": loop.get("best_train_score"),
+        "iterations": loop.get("iterations_run"),
+        "num_workers": num_workers,
+        "usage": trigger_loop_usage(loop, trigger_dir),
+        "changed": bool(best) and best != " ".join(str(original_description).split()),
+        "loop_output": str(trigger_dir / "loop.json")}
+
+
+# ---------------------------------------------------------------------------
+# Trigger-only mode (skills-evals#662)
+# ---------------------------------------------------------------------------
+
+#: Where a skill with no fixture is looked up: the one registry the routine
+#: checks out (improve_gate.REGISTRY_URL).
+TRIGGER_ONLY_DEFAULT_REGISTRY = "https://github.com/Adam-S-Daniel/adam-agentskills"
+#: Fixed text for a loop output trigger-only mode cannot read.
+TRIGGER_LOOP_MALFORMED = ("skill-creator's loop output is malformed: it needs a "
+                          "history whose first entry is the original "
+                          "description, an entry for best_description, and "
+                          "held-out counts and per-query results of the shape "
+                          "run_loop.py writes")
+#: The numbers trigger-only mode keeps of one history entry.
+TRIGGER_COUNT_KEYS = ("test_passed", "test_total", "should_not_passed",
+                      "should_not_total")
+
+
+def _count(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def trigger_entry_numbers(entry) -> dict:
+    """{test_passed, test_total, should_not_passed, should_not_total} of one
+    skill-creator history entry, or Refusal. Held-out is `test_*`; the
+    should-not-trigger counts span train and held-out results together, so
+    a description that "wins" by triggering on everything shows the drop."""
+    if not isinstance(entry, dict):
+        raise Refusal(TRIGGER_LOOP_MALFORMED)
+    passed, total = entry.get("test_passed"), entry.get("test_total")
+    train, test = entry.get("train_results"), entry.get("test_results")
+    if not (_count(passed) and _count(total) and passed <= total
+            and isinstance(train, list) and isinstance(test, list)):
+        raise Refusal(TRIGGER_LOOP_MALFORMED)
+    should_not = []
+    for result in train + test:
+        if not (isinstance(result, dict) and isinstance(result.get("should_trigger"), bool)
+                and isinstance(result.get("pass"), bool)):
+            raise Refusal(TRIGGER_LOOP_MALFORMED)
+        if result["should_trigger"] is False:
+            should_not.append(result["pass"])
+    return {"test_passed": passed, "test_total": total,
+            "should_not_passed": sum(should_not), "should_not_total": len(should_not)}
+
+
+def meets_trigger_gain(gain: float) -> bool:
+    """The held-out pass-rate gain reaches TRIGGER_ONLY_MIN_GAIN. Compared
+    at full precision with a tolerance far below one query, so 3/20 - 0/20
+    counts as 0.15 although the float is not exact."""
+    return gain >= TRIGGER_ONLY_MIN_GAIN or math.isclose(
+        gain, TRIGGER_ONLY_MIN_GAIN, rel_tol=0, abs_tol=1e-12)
+
+
+def decide_trigger_only(loop) -> tuple[bool, list[str], dict, str]:
+    """(accepted, reasons, the record's `trigger_only` block, raw best
+    description) from skill-creator's loop output, or Refusal on a shape it
+    cannot read. Pure.
+
+    history[0] is the ORIGINAL description (run_loop.py measures it first);
+    the best is the first history entry whose `description` equals
+    `best_description`. Accepted only when the best differs from the
+    original, both were measured on the same held-out queries, the held-out
+    pass rate rose by at least TRIGGER_ONLY_MIN_GAIN, and no
+    should-not-trigger query that passed before fails now (Adam,
+    2026-11-03, the #662 decision card)."""
+    history = loop.get("history") if isinstance(loop, dict) else None
+    raw_best = loop.get("best_description") if isinstance(loop, dict) else None
+    if not isinstance(history, list) or not history \
+            or not isinstance(raw_best, str) or not raw_best.strip():
+        raise Refusal(TRIGGER_LOOP_MALFORMED)
+    first = history[0]
+    best_entry = next((entry for entry in history if isinstance(entry, dict)
+                       and entry.get("description") == raw_best), None)
+    if best_entry is None or not isinstance(first, dict) \
+            or not isinstance(first.get("description"), str):
+        raise Refusal(TRIGGER_LOOP_MALFORMED)
+    original, best = trigger_entry_numbers(first), trigger_entry_numbers(best_entry)
+    if original["test_total"] < 1 or original["test_total"] != best["test_total"] \
+            or original["should_not_total"] != best["should_not_total"]:
+        raise Refusal(TRIGGER_LOOP_MALFORMED)
+    total = original["test_total"]
+    gain = (best["test_passed"] - original["test_passed"]) / total
+    block = {"min_gain": TRIGGER_ONLY_MIN_GAIN, "original": original,
+             "best": best, "gain": gain}
+    reasons = [
+        f"held-out trigger queries passed {original['test_passed']}/{total} -> "
+        f"{best['test_passed']}/{total} (gain {gain:.3f}, minimum "
+        f"{TRIGGER_ONLY_MIN_GAIN:g})",
+        f"should-not-trigger queries passed {original['should_not_passed']}/"
+        f"{original['should_not_total']} -> {best['should_not_passed']}/"
+        f"{best['should_not_total']}"]
+    accepted = True
+    if " ".join(raw_best.split()) == " ".join(first["description"].split()):
+        accepted = False
+        reasons.append("the best description is the original")
+    if not meets_trigger_gain(gain):
+        accepted = False
+        reasons.append("held-out trigger accuracy did not rise by the minimum gain")
+    if best["should_not_passed"] < original["should_not_passed"]:
+        accepted = False
+        reasons.append("fewer should-not-trigger queries passed")
+    if accepted:
+        reasons.append("held-out trigger accuracy rose by at least the minimum "
+                       "with no should-not-trigger drop")
+    return accepted, reasons, block, raw_best
+
+
+def trigger_only_plan(args: argparse.Namespace) -> dict:
+    """Everything trigger-only mode decides before any model call. Reads,
+    never writes. The skill may have no fixture at all: its registry is then
+    adam-agentskills, and its arm model the roster's default for a fixture
+    with no pin."""
+    skill = args.skill
+    try:
+        names = skill_fixtures(skill)
+    except ValueError as exc:
+        raise Refusal(str(exc)) from exc
+    eval_set, split_counts = trigger_only_set(args.trigger_eval_set)
+    fixtures = load_fixtures(skill, names) if names else {}
+    url = (next(iter(fixtures.values())).get("registry") if fixtures
+           else TRIGGER_ONLY_DEFAULT_REGISTRY)
+    try:
+        registry = resolve_registry(url, args.registry)
+    except ValueError as exc:
+        raise Refusal(str(exc)) from exc
+    sha = resolve_ref(registry["path"], args.ref)
+    skill_creator, sc_sha = find_skill_creator(args.skill_creator)
+    results = (args.results_dir or default_results_dir()).expanduser().resolve()
+    # The model the normal path would run its arms and trigger loop on: the
+    # first fixture's (by name), or the roster's default with no fixture.
+    model = arm_model(fixtures[names[0]] if fixtures else {}, True)
+    return {"skill": skill, "results": results,
+            "records_dir": results / "improvements" / skill,
+            "registry": registry, "sha": sha, "skill_creator": skill_creator,
+            "skill_creator_sha": sc_sha, "arm_model": model,
+            "eval_set": eval_set, "trigger_split": split_counts,
+            "trigger_problems": trigger_set_problems(split_counts),
+            "eval_set_source": f"file:{args.trigger_eval_set.name}",
+            "fixture_count": len(names)}
+
+
+def trigger_only_pr_body(record: dict) -> str:
+    """The pull-request body of an accepted trigger-only run. It opens with
+    the loop's own title (improve_gate.REPORT_TITLE) and holds no closing
+    keyword and no mention: it becomes a body in adam-agentskills."""
+    d, t = record["description_half"], record["trigger_only"]
+    o, b = t["original"], t["best"]
+    return "\n".join([
+        f"## Proposed `{record['skill']}` SKILL.md edit (validation-gated)", "",
+        "Produced by skills-evals `scripts/propose_skill_edit.py --trigger-only` "
+        "([#662](https://github.com/Adam-S-Daniel/skills-evals/issues/662)): a "
+        "trigger-only run. Only skill-creator's description loop "
+        "(`scripts/run_loop.py`) ran, on the skill's reviewed trigger eval "
+        "set; the SKILL.md body is unchanged and no task fixture was measured. "
+        "A local exhibit (skills-evals ADR 0002, decision 4), not badge input.", "",
+        f"- Registry: `{record['registry']['name']}` at `{record['registry']['sha']}`",
+        f"- Query set: {record['trigger_set']['source']}, "
+        f"{record['trigger_set']['size']} queries; trigger model "
+        f"`{record['models']['arm']}`", "",
+        "### Description", "",
+        f"Before: {d['original']}", "", f"After: {d['best']}", "",
+        "### Trigger accuracy", "",
+        f"- Held-out queries passed: {o['test_passed']}/{o['test_total']} -> "
+        f"{b['test_passed']}/{b['test_total']} (gain {t['gain']:.3f})",
+        f"- Should-not-trigger queries passed (train and held-out): "
+        f"{o['should_not_passed']}/{o['should_not_total']} -> "
+        f"{b['should_not_passed']}/{b['should_not_total']}", "",
+        f"Acceptance rule: the held-out pass rate must rise by at least "
+        f"{t['min_gain']:g} and no fewer should-not-trigger queries may pass. "
+        f"Decision: {'; '.join(record['reasons'])}.", "",
+        "The patch is `" + record["files"]["patch"] + "`; apply it with "
+        "`git apply` at the registry root."]) + "\n"
+
+
+def improve_trigger_only(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
+    """Trigger-only mode: only skill-creator's description loop, accepted
+    by `decide_trigger_only`. See the module docstring."""
+    p = trigger_only_plan(args)
+    if args.dry_run:
+        print(json.dumps({
+            "skill": p["skill"], "mode": "trigger-only",
+            "fixtures": p["fixture_count"],
+            "registry": {"name": p["registry"]["name"], "sha": p["sha"]},
+            "skill_creator": str(p["skill_creator"]),
+            "trigger_eval_set": {"source": p["eval_set_source"],
+                                 "size": len(p["eval_set"]),
+                                 "split": p["trigger_split"],
+                                 "problems": p["trigger_problems"]},
+            "min_gain": TRIGGER_ONLY_MIN_GAIN,
+            "num_workers": args.num_workers,
+            "models": {"arm": p["arm_model"]},
+            "results_dir": str(p["results"]),
+            "model_calls": {"skill_creator_loop_at_most":
+                            5 * 3 * len(p["eval_set"]) + 2 * 4},
+        }, indent=2))
+        return EXIT_ACCEPTED
+    skill, results, registry = p["skill"], p["results"], p["registry"]
+    ts = now.astimezone(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
+    try:
+        for path in (results, p["records_dir"], results / "trigger" / skill):
+            local_eval.check_results_dir(path, require_empty=False)
+        local_eval.check_results_dir(results / "trigger" / skill / ts)
+    except local_eval.Refused as exc:
+        raise Refusal(str(exc)) from exc
+    p["records_dir"].mkdir(parents=True, exist_ok=True)
+    stem = p["records_dir"] / ts
+    if stem.with_suffix(".json").exists():
+        raise Refusal(f"a record for {ts} already exists")
+
+    scratch = Path(tempfile.mkdtemp(prefix="propose-skill-edit-"))
+    try:
+        base_root = archive_registry(registry["path"], p["sha"], scratch / "baseline")
+        base_skill = find_skill_dir(base_root, registry["layout"], skill)
+        rel_path = base_skill.relative_to(base_root).as_posix() + "/SKILL.md"
+        original = (base_skill / "SKILL.md").read_text(encoding="utf-8")
+        disabled_plugins = skill_provider_plugins(base_root, skill)
+        record = {
+            "schema": 1, "skill": skill, "timestamp": ts, "mode": "trigger-only",
+            "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+            "registry": {"name": registry["name"], "url": registry["url"],
+                         "sha": p["sha"], "skill_md": rel_path},
+            "models": {"arm": p["arm_model"]},
+            "trigger_set": {"source": p["eval_set_source"], "size": len(p["eval_set"]),
+                            "split": p["trigger_split"],
+                            "problems": p["trigger_problems"]},
+            "files": {},
+        }
+        try:
+            check_launch_environment()
+        except Refusal as exc:
+            return record_refusal(stem, record, "preflight", exc)
+        trigger_dir = results / "trigger" / skill / ts
+        try:
+            loop = run_trigger_loop(runner, p, scratch, trigger_dir, base_skill,
+                                    disabled_plugins, args.num_workers)
+            if not isinstance(loop, dict):
+                raise Refusal(TRIGGER_LOOP_MALFORMED)
+        except Refusal as exc:
+            return record_refusal(stem, record, "trigger", exc)
+        record["description_half"] = description_half(
+            p, loop, trigger_dir, original, disabled_plugins, args.num_workers)
+        try:
+            accepted, reasons, block, raw_best = decide_trigger_only(loop)
+        except Refusal as exc:
+            return record_refusal(stem, record, "decision", exc)
+        record["trigger_only"] = block
+        try:
+            candidate = set_description(original, raw_best)
+        except InvalidProposal as exc:
+            accepted = False
+            reasons = reasons + [f"the best description cannot be written: {exc}"]
+            candidate = original
+        if candidate != original:
+            stem.with_suffix(".patch").write_text(
+                registry_patch(original, candidate, rel_path), encoding="utf-8")
+            record["files"]["patch"] = str(stem.with_suffix(".patch"))
+        elif accepted:
+            accepted = False
+            reasons = reasons + ["the best description leaves SKILL.md unchanged"]
+        record.update(status="accepted" if accepted else "rejected", reasons=reasons)
+        if accepted:
+            body_path = stem.with_name(stem.name + ".pr-body.md")
+            record["files"]["pr_body"] = str(body_path)
+            body_path.write_text(trigger_only_pr_body(record), encoding="utf-8")
+        write_record(stem, record)
+        print(f"{record['status']}: {'; '.join(reasons)}")
+        print(f"record: {stem.with_suffix('.json')}")
+        return EXIT_ACCEPTED if accepted else EXIT_REJECTED
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
     record.update(status="refused", phase=phase, exit_code=EXIT_REFUSED,
                   reasons=[str(exc)])
@@ -1659,7 +2047,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None,
          now: datetime | None = None) -> int:
     args = parse_args(argv)
     try:
-        return improve(args, runner or Runner(), now or datetime.now(timezone.utc))
+        pipeline = improve_trigger_only if args.trigger_only else improve
+        return pipeline(args, runner or Runner(), now or datetime.now(timezone.utc))
     except Refusal as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return EXIT_REFUSED

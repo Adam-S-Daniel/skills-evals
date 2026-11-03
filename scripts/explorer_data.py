@@ -7,7 +7,7 @@
                    [--evals-dir DIR] [--guidance-manifest eval-coverage.yml]
                    [--guidance DIR] [--registry NAME=PATH ...]
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
-                   [--fire-runs FILE]
+                   [--fire-runs FILE] [--fixture-queue FILE]
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -90,6 +90,16 @@ scheduled skill fixtures and manifest guidance sections), so a private fire
 moves nothing; no name, title or run id is published. None is unknown (no
 readable fire file, or a `fetched_at` out of bounds), never 0. The per-cell
 alert waits for #570.
+
+`fixture_queue` (Adam, 2026-11-03) is scripts/fixture_queue.py's report,
+`--fixture-queue`, carried as is: the fixture requests the weekly sweep
+filed, the pull requests answering them, the fixtures they added (real fleet
+work or invented, from each fixture's `origin:`) with their runs, pass rates
+and cost, and the queue's findings. That script decides what it holds (issue
+numbers, validated names, URLs, counts and dollars; never a title or body),
+and `finish` checks it with the rest. None is unknown: no readable report,
+or one that is not schema 1. Its own `generated_at` moves with every build,
+so explorer-data.yml's publish step ignores it beside the document's.
 
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
@@ -653,6 +663,22 @@ FETCH_SKEW = timedelta(minutes=5)
 FETCH_MAX_LAG = timedelta(days=1)
 
 
+def load_fixture_queue(path: Path | None) -> dict | None:
+    """scripts/fixture_queue.py's report, or None (unknown): no path, an
+    unreadable file, or not a schema 1 report with its list and totals."""
+    if path is None:
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or doc.get("schema") != 1 or not all(
+            isinstance(doc.get(k), list) for k in ("requests", "fixtures", "findings")) \
+            or not isinstance(doc.get("totals"), dict):
+        return None
+    return doc
+
+
 def load_fire_runs(path: Path | None):
     """{"fetched_at": the wrapper's string, "runs": [run rows]} from
     `--fire-runs` (`{"fetched_at", "pages"}`, the pages of a slurped
@@ -1092,10 +1118,12 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
           issues: dict | None = None, context_repos: dict | None = None,
-          fire_runs: dict | None = None, wall_clock: datetime | None = None) -> dict:
+          fire_runs: dict | None = None, wall_clock: datetime | None = None,
+          fixture_queue: dict | None = None) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
-    used only to bound the fire file's `fetched_at` (#555)."""
+    used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
+    is `load_fixture_queue`'s result, carried as `fixture_queue`."""
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
@@ -1211,7 +1239,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
-        "usage": usage_window}
+        "fixture_queue": fixture_queue, "usage": usage_window}
 
 
 def finish(doc: dict) -> str:
@@ -1294,6 +1322,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fire-runs", type=Path, metavar="FILE",
                         help="{fetched_at, pages}: the slurped runs-API pages of "
                              "routine-eval-fire.yml (#555); absent or unreadable is unknown")
+    parser.add_argument("--fixture-queue", type=Path, metavar="FILE",
+                        help="scripts/fixture_queue.py's report; absent or unreadable "
+                             "is unknown")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -1313,7 +1344,8 @@ def main(argv: list[str] | None = None) -> int:
                     compute_gates.flag_registries(args.registry), args.guidance,
                     load_manifest(args.guidance_manifest), issues,
                     context_mod.parse_context_repos(args.context_repo),
-                    load_fire_runs(args.fire_runs), datetime.now(timezone.utc))
+                    load_fire_runs(args.fire_runs), datetime.now(timezone.utc),
+                    load_fixture_queue(args.fixture_queue))
         text = finish(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)

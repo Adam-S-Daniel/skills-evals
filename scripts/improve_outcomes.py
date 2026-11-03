@@ -8,7 +8,9 @@ may only change with Adam's OK, so this module derives each outcome from
 what GitHub already holds:
 
   * THE ATTEMPT: a run of routine-eval-fire.yml whose title is
-    `Fire eval routine: improve <skill>` (the workflow's `run-name`, which is
+    `Fire eval routine: improve <skill>`, or `Fire eval routine: improve
+    trigger <skill>` for a trigger-only fire (skills-evals#662), which counts
+    as an improve attempt of that skill (the workflow's `run-name`, which is
     what makes a dispatch's mode and skill readable from the runs API). A
     fire run that concluded `success` started a routine session; any other
     conclusion is `fire-failed`: refused before any spend (the allowance
@@ -52,11 +54,12 @@ import urllib.request
 FIRE_WORKFLOW = "routine-eval-fire.yml"
 #: routine-eval-fire.yml's `run-name`, as GitHub renders it in
 #: `display_title`: the mode, ` bare` after it for an eval fire with
-#: `arms: bare` (ADR 0012, bare baseline addendum), then the one target input
-#: of that mode (fixture, candidate, skill or section), then the model when
-#: one was given.
+#: `arms: bare` (ADR 0012, bare baseline addendum), ` trigger` after it for
+#: an improve fire with `trigger_only: true` (skills-evals#662), then the one
+#: target input of that mode (fixture, candidate, skill or section), then the
+#: model when one was given.
 TITLE_RE = re.compile(r"Fire eval routine: (?P<mode>eval|scaffold|improve|guidance-improve)"
-                      r"(?P<bare> bare)? "
+                      r"(?P<bare> bare)?(?P<trigger> trigger)? "
                       r"(?P<target>[A-Za-z0-9][A-Za-z0-9/_.-]{0,255})"
                       r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}))? ?")
 SKILL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -102,19 +105,24 @@ def parse_time(value) -> datetime | None:
 
 
 def parse_title(title) -> dict | None:
-    """{mode, target, model, bare} of a fire run's title, or None for any
-    other title (a run from before the `run-name`, one that does not match,
-    or ` bare` after a mode other than eval, which the workflow never
-    renders). `bare` is True for an eval fire with `arms: bare`: one
-    isolation arm, never a pair (ADR 0012, bare baseline addendum)."""
+    """{mode, target, model, bare, trigger} of a fire run's title, or None
+    for any other title (a run from before the `run-name`, one that does not
+    match, ` bare` after a mode other than eval or ` trigger` after a mode
+    other than improve, which the workflow never renders). `bare` is True
+    for an eval fire with `arms: bare`: one isolation arm, never a pair (ADR
+    0012, bare baseline addendum). `trigger` is True for an improve fire with
+    `trigger_only: true`: only skill-creator's description loop
+    (skills-evals#662). A skill named `bare` or `trigger` is still a
+    target: the regex tries the flag only when a target follows it."""
     match = TITLE_RE.fullmatch(title) if isinstance(title, str) else None
     if match is None:
         return None
     bare = match["bare"] is not None
-    if bare and match["mode"] != "eval":
+    trigger = match["trigger"] is not None
+    if (bare and match["mode"] != "eval") or (trigger and match["mode"] != "improve"):
         return None
     return {"mode": match["mode"], "target": match["target"], "model": match["model"],
-            "bare": bare}
+            "bare": bare, "trigger": trigger}
 
 
 def run_id_time(run_id) -> datetime | None:
@@ -126,10 +134,14 @@ def run_id_time(run_id) -> datetime | None:
 
 def improve_fires(runs: list, mode: str = "improve") -> list:
     """The `mode` fire runs among `runs` (the runs API's rows), each as
-    {id, <key>, started, updated, conclusion, status}, oldest first, where
-    <key> is KINDS[mode]["key"] (`skill`, or `section` for guidance-improve).
-    A row with an unreadable time or a target that is not a name of that
-    kind is left out."""
+    {id, <key>, started, updated, conclusion, status, trigger}, oldest
+    first, where <key> is KINDS[mode]["key"] (`skill`, or `section` for
+    guidance-improve). A trigger-only improve fire (`trigger` True,
+    skills-evals#662) is an improve attempt of its skill like any other: it
+    pushes the same `claude/eval-improve-<run id>` branch on accept, so the
+    cooldown and stop rules, the improve cap and the allowance guard's
+    improve charge all count it. A row with an unreadable time or a target
+    that is not a name of that kind is left out."""
     kind = KINDS[mode]
     fires = []
     for run in runs:
@@ -145,7 +157,7 @@ def improve_fires(runs: list, mode: str = "improve") -> list:
             continue
         fires.append({"id": run["id"], kind["key"]: title["target"], "started": started,
                       "updated": max(updated, started), "status": run.get("status"),
-                      "conclusion": run.get("conclusion")})
+                      "conclusion": run.get("conclusion"), "trigger": title["trigger"]})
     return sorted(fires, key=lambda f: (f["started"], f["id"]))
 
 
