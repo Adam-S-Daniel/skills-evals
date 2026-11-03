@@ -1575,6 +1575,15 @@ def hook_candidate(text: str) -> bool:
     return bool(total) and under / total >= HOOK_RULE_SHARE
 
 
+def gate_verdicts(gates_doc: dict) -> dict:
+    """{skill: gate verdict} read from the gates document itself. Round 7's
+    M1: `skill_contexts` drops a skill whose fixtures are all scope-paused,
+    but the gate keeps those cells (`keep_paused`), so only the document
+    knows such a skill is `retire`."""
+    return {name: v.get("verdict") for name, v in (gates_doc.get("skills") or {}).items()
+            if isinstance(v, dict)}
+
+
 def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()) -> tuple:
     """(trigger fires, work items, hook candidates, per-skill status) for
     the trigger lane (module docstring, THE TRIGGER LANE; skills-evals#662).
@@ -1607,9 +1616,15 @@ def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()
         reasons = []
         if weight > TRIGGER_MAX_WEIGHT:
             reasons.append(f"used more than {TRIGGER_MAX_WEIGHT} time(s) in four weeks")
-        verdict = ctx["skills"].get(name, {}).get("verdict")
+        # The gates document's verdict, not skill_contexts': that drops a
+        # skill whose fixtures are all scope-paused, which the gate keeps.
+        verdicts = ctx.get("gate_verdicts")
+        verdict = (verdicts.get(name) if verdicts is not None
+                   else ctx["skills"].get(name, {}).get("verdict"))
         if verdict in ("retire", "retire-pending"):
             reasons.append(f"owned by retirement ({verdict})")
+        elif name in (ctx.get("removal_prs") or ()):
+            reasons.append("owned by retirement (open removal PR)")
         path = f"evals/{name}/{TRIGGER_SET}"
         if not reasons and not info["trigger_set"]:
             work.append({"kind": "needs-trigger-set", "change_type": "fixture",
@@ -2911,6 +2926,7 @@ def gather(args, now: datetime) -> dict:
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
             "removal_prs": removal,
+            "gate_verdicts": gate_verdicts(gates_doc),
             # The guidance focus's inputs (`guidance_focus`): its decision
             # levels, a separate top-level key of the verdict document, and
             # the sections whose removal pull request is open.

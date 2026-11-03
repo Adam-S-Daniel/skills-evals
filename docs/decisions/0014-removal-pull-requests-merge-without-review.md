@@ -590,3 +590,28 @@ fuzz of pauses found none) and two Major gaps, both off the removal side.
 - *m3:* "undecided harm leaves the subject `insufficient`" held only when
   every cell is parked; beside decided `no-benefit` cells it is a `retire`
   proposal. how-it-works and `gate-policy.yml` say both.
+
+### Adversarial round 7 (2026-11-03)
+
+The seventh round again found no path to a wrong automatic removal (7,800
+fuzzed subjects, six new invariants held) and two Major findings off the
+removal side.
+
+- *M1:* main's trigger lane judged "owned by retirement" from
+  `skill_contexts`, which drops scope-paused fixtures that the gate keeps. A
+  zero-use skill with every fixture paused and decided `no-benefit` cells was
+  `retire` (even `auto`) in the gate yet got a trigger-only improve fire or a
+  `needs-trigger-set` issue. `trigger_items` now reads the verdict from the
+  gates document (`gate_verdicts`, handed over by `gather`) and also skips a
+  skill with an open `retire-skill/<skill>` PR. A test runs the reviewer's
+  input through `compute_gates.compute`.
+- *M2:* how-it-works listed the issue-filed kinds without
+  `needs-trigger-set`; a test holds the list equal to
+  `work_item_issues.KINDS`.
+- *m1, m3:* `gather`'s hand-over of `paused_ceiling_items` is pinned by
+  running `plan_week.main("plan", ...)` with the function patched, and the
+  item's fixtures filter (paused cells only) by a unit test.
+- *m2 (known limit, routing unchanged):* `paused-ceiling` items are
+  summary-only. No issue is filed, so the fixture queue and the fleet
+  worker's fixture pass never see them; the step summary count and the plan
+  JSON are the only record.

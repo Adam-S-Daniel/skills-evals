@@ -163,15 +163,13 @@ class PausedCeilingItemTests(unittest.TestCase):
                                   "skill": "", "route": plan_week.SUMMARY_ROUTE,
                                   "fixtures": ["fx"], "section": "sec"}])
 
-    def test_private_skills_get_none_and_gather_hands_them_over(self):
+    def test_private_skills_get_none(self):
         v = {"verdict": "ceiling", "paused_ceiling": True,
              "cells": [{"class": "paused", "fixture": "a"}]}
         doc = {"skills": {"pub": v, "secret": v}, "guidance": {}}
         self.assertEqual([i["skill"] for i in
                           plan_week.paused_ceiling_items(doc, frozenset({"secret"}))],
                          ["pub"])
-        src = (ROOT / "scripts" / "plan_week.py").read_text()
-        self.assertIn("paused_ceiling_items(gates_doc", src)
 
     def test_the_new_kind_is_summary_routed_and_files_no_issue(self):
         import work_item_issues

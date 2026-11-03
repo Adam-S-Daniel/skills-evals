@@ -692,7 +692,8 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   `paused-unmeasured` and `paused-ceiling` items are counted in the weekly sweep's step summary
   and listed in its plan JSON; no issue is filed for them
   (`scripts/work_item_issues.py` files only `fixture-broken`,
-  `routine-outage`, `needs-fixtures` and `needs-harder-fixtures`).
+  `routine-outage`, `needs-fixtures`, `needs-harder-fixtures` and
+  `needs-trigger-set`).
 - *Removal.* `retire` needs every cell with headroom to be no-benefit or
   no-clear-effect, none undecided. It may be automatic only with two or
   more such cells, every one no-benefit; one headroom cell, or any
