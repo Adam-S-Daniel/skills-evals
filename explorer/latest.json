@@ -31,7 +31,7 @@
   "window_days": 14,
   "without_results": 10
  },
- "generated_at": "2026-11-03T06:58:38Z",
+ "generated_at": "2026-11-03T07:04:18Z",
  "guidance": {
   "removed": [
    {
@@ -9164,7 +9164,7 @@
    }
   ]
  },
- "newest_run": "2026-11-03T06:56:53Z",
+ "newest_run": "2026-11-03T07:02:21Z",
  "policy": {
   "benefit_confidence": 0.85,
   "min_cli_versions": 2,
@@ -9274,7 +9274,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 16,
+    "position": 15,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11525,7 +11525,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 17,
+    "position": 16,
     "scheduled": true
    },
    "registry": "adamdaniel.ai",
@@ -12024,21 +12024,42 @@
   {
    "bundle": "adam-anything-anywhere",
    "confidence": {
-    "helps": null,
-    "no_help": null
+    "helps": 0.0,
+    "no_help": 0.0
    },
    "copies": null,
-   "current_text_runs": 0,
+   "current_text_runs": 1,
    "description": "Surface and resolve the ambiguities in a task before, during, and after implementation \u2014 the blind-spot pass, the self-interview, reference-driven specs, implementation notes, and a post-hoc explainer or quiz. Use at the start of any non-trivial build, when working in an unfamiliar codebase or a new domain, when acceptance criteria are subjective (\"make it feel polished\", \"clean this up\"), when a plan keeps needing rework mid-implementation, or when the user says \"help me find my unknowns\", \"what am I missing\", \"poke holes in this\", \"what haven't I thought about\". Also use after a change lands, to produce the explainer or comprehension check that proves the work is understood.",
    "name": "finding-unknowns",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 17,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-03T07:02:21Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T070038Z-755ab4/finding-unknowns/20261103T070221Z/report.md",
+     "with": {
+      "checks_passed": 3,
+      "checks_total": 4,
+      "cost_usd": 0.1496397,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 4,
+      "cost_usd": 0.092319,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-02T23:24:42Z",
      "cli_version": "2.1.316",
@@ -14568,7 +14589,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15321,7 +15342,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 15,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16308,7 +16329,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a3e78b85ed0d43aeb3ff0997854063c03ca460c8",
-  "results_commit": "d714a389baa07903c9a859931543c127f86b7d84"
+  "results_commit": "524c489bae2383ba13c1c36015b52827fd1d89ea"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
