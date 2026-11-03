@@ -36,8 +36,9 @@
 # `proposal`. It is `auto` by Adam's 2026-10-26 decision (removal pull
 # requests auto-merge with no human; ADR 0014 and adam-agentskills ADR 0021);
 # set it to `proposal` to turn removal pull requests off. Even in `auto`,
-# scripts/retire_skill.py files the issue instead when the skill's plugin
-# runs code or the scheduled workflow has no adam-agentskills write token,
+# scripts/retire_skill.py files the issue instead when plugin-runtime-review
+# would hold the removal or the scheduled workflow has no adam-agentskills
+# write token,
 # opens nothing while another loop pull request is open there, and acts only
 # from the scheduled workflow, never a dispatched or pull-request run.
 skills:

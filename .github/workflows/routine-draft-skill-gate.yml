@@ -80,7 +80,8 @@ name: Gate routine skill draft
 #   force-pushes or deletes anything.
 # * The merge mode is the improvement gate's one switch,
 #   evals/improve-policy.yml `improve_merge_mode`, read by
-#   `improve_gate.py merge-mode` (draft when the skill's plugin runs code).
+#   `improve_gate.py merge-mode` (draft when plugin-runtime-review would
+#   hold the skill's change).
 #   In `auto` (Adam, 2026-10-26; adam-agentskills ADR 0021) the skill's pull
 #   request is ready, labeled and auto-merges (merge commit) after its
 #   required checks, unless another loop pull request (`eval-improve/*`,
@@ -288,17 +289,18 @@ jobs:
           cat "$RUNNER_TEMP/revalidate.out"
 
       # The loop's one merge switch (evals/improve-policy.yml), lowered to
-      # draft when the skill's plugin runs code, exactly as the improvement
-      # gate decides it. No credential is held yet.
+      # draft when plugin-runtime-review would hold the skill's change,
+      # exactly as the improvement gate decides it. No credential is held yet.
       - name: Decide the merge mode
         id: mode
         working-directory: skills-evals
         env:
           PLUGIN: ${{ needs.validate.outputs.plugin }}
+          SUBJECT: ${{ needs.validate.outputs.subject }}
         run: |
           set -euo pipefail
           python3 scripts/improve_gate.py merge-mode \
-            --tree ../adam-agentskills --plugin "$PLUGIN" > "$RUNNER_TEMP/mode.out"
+            --tree ../adam-agentskills --plugin "$PLUGIN" --skill "$SUBJECT" > "$RUNNER_TEMP/mode.out"
           cat "$RUNNER_TEMP/mode.out"
           cat "$RUNNER_TEMP/mode.out" >> "$GITHUB_OUTPUT"
 

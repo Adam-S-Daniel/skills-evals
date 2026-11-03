@@ -60,7 +60,8 @@ name: Gate routine improvement candidate
 #   request from it: ready, labeled `agent-authored` and `eval-improve`, with
 #   auto-merge (merge commit) enabled when the mode is `auto`; a draft
 #   otherwise. The mode is evals/improve-policy.yml's, lowered to `draft`
-#   when the skill's plugin runs code (hooks, bin/, settings), so an
+#   when plugin-runtime-review would hold the change (the skill has its own
+#   hooks/ or bin/, or a hook of its plugin names a path in it), so an
 #   auto-merged pull request never needs plugin-runtime-review. If that
 #   branch already exists, or any loop pull request (`eval-improve/*`,
 #   `draft-skill/*` or `retire-skill/*`) is open, it does nothing: they

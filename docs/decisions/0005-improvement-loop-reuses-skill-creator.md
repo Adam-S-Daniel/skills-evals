@@ -762,3 +762,21 @@ else.
   next run. Of the accepted records on `claude/eval-improve-*` and
   `claude/eval-guidance-improve-*` branches on 2026-10-30, only #87's had a
   saturated held-out fixture.
+
+
+## Text-only skill changes addendum (2026-11-03)
+
+Adam, 2026-11-03, on a decision card: "Should text-only loop skill PRs in
+plugins with hooks auto-merge?" "Yes, auto-merge them." This replaces
+"Draft when the plugin runs code" above. A whole plugin was lowered to a
+draft for having a `hooks/` or `bin/` directory, a settings or package file
+or a manifest `hooks` or `settings` key, so every skill in
+`adam-coding-local` became a draft, even a new SKILL.md that nothing runs
+([adam-agentskills#111](https://github.com/Adam-S-Daniel/adam-agentskills/pull/111),
+whose plugin-runtime-approval check passed without asking anyone).
+`improve_gate.py` `auto_refusal` now lowers to a draft only when
+adam-agentskills' `scripts/plugin_runtime_gate.py` would hold the change:
+the skill has its own `hooks/` or `bin/`, or a hook file, manifest or
+settings file of its plugin names a path under `skills/<skill>/`. The
+required `plugin-runtime-approval` check still gates every pull request, so
+anything the gate does hold waits for the owner whatever this decides.

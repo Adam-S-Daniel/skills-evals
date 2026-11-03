@@ -201,3 +201,12 @@ explorer lists every removed skill and section with its date and that link
 that helps only beside today's guidance but not beside older versions can
 be removed (43-97% of the time in the simulation of #565); the notice and
 revert are its backstop.
+
+
+## Text-only removals addendum (2026-11-03)
+
+The "Never through plugin-runtime-review" rule now uses ADR 0005's
+text-only skill changes addendum: a removal falls back to the issue only
+when plugin-runtime-review would hold it (the skill has its own `hooks/`
+or `bin/`, or a hook of its plugin names a path in it), not for every skill
+of a plugin that has hooks. Adam, 2026-11-03: "Yes, auto-merge them."

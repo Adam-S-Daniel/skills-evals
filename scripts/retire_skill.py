@@ -20,11 +20,10 @@ anything but `auto` is `proposal`), lowered to `proposal` in two cases (the
 removal path's `effective_mode`, as scripts/improve_gate.py lowers an
 improvement to a draft):
 
-  * the skill's plugin runs code (improve_gate.py's `auto_refusal`: a
-    `hooks/` or `bin/` directory, a settings or package file, or a manifest
-    `hooks` or `settings` key). Removing one of its skills would wait on
-    adam-agentskills' plugin-runtime-review, which auto-merge cannot approve
-    (adam-agentskills ADR 0021, decision 4);
+  * removing the skill would wait on adam-agentskills' plugin-runtime-review,
+    which auto-merge cannot approve (adam-agentskills ADR 0021, decision 4):
+    improve_gate.py's `auto_refusal`, a skill with its own `hooks/` or `bin/`
+    or one a hook of its plugin names a path in;
   * the caller has no write credential for adam-agentskills this run
     (`--fallback-to-proposal` without `--allow-mode auto`): the scheduled
     workflow passes it when the GitHub App token was not minted.
@@ -442,10 +441,11 @@ def closed_removal_prs(gh, skill: str) -> list:
     return [p for p in _json_lines(text) if p.get("head") == f"{BRANCH_PREFIX}{skill}"]
 
 
-def runtime_refusal(checkout: Path, plugin: str) -> str | None:
-    """improve_gate.py's `auto_refusal`: why `plugin` runs code, or None."""
+def runtime_refusal(checkout: Path, plugin: str, skill: str) -> str | None:
+    """improve_gate.py's `auto_refusal`: why removing `skill` would wait on
+    plugin-runtime-review, or None."""
     try:
-        return improve_gate.auto_refusal(checkout, plugin)
+        return improve_gate.auto_refusal(checkout, plugin, skill)
     except improve_gate.Rejected as exc:
         raise RetireError(str(exc)) from None
 
@@ -846,7 +846,7 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     if mode == "auto":
         location = locate(registries, skill)
         checkout = Path(registries[TARGET]["path"])
-        mode_reason = runtime_refusal(checkout, location["plugin"])
+        mode_reason = runtime_refusal(checkout, location["plugin"], skill)
         if mode_reason:
             mode = _lowered(mode_reason, allowed)
     if mode == "proposal":

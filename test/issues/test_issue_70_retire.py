@@ -418,17 +418,20 @@ class AutoTests(Base):
         self.assertEqual(code, 0, err)
         self.assertEqual(len(fake.pushes), 1)
 
-    def test_a_plugin_that_runs_code_falls_back_to_the_issue(self):
-        cases = {"hooks dir": lambda r: (r / "plugins" / PLUGIN / "hooks").mkdir(),
-                 "bin dir": lambda r: (r / "plugins" / PLUGIN / "bin").mkdir(),
-                 "package file": lambda r: (r / "plugins" / PLUGIN / "package.json")
-                 .write_text("{}\n"),
-                 "manifest hooks key": lambda r: (r / "plugins" / PLUGIN / "plugin.json")
+    def test_a_removal_the_runtime_gate_would_hold_falls_back_to_the_issue(self):
+        # Adam, 2026-11-03: only a removal adam-agentskills'
+        # plugin-runtime-review would hold falls back, not every skill of a
+        # plugin with hooks (ADR 0014's text-only removals addendum).
+        cases = {"a hook names the skill": lambda r: ((r / "plugins" / PLUGIN / "hooks").mkdir(), (r / "plugins" / PLUGIN / "hooks" / "hooks.json").write_text(json.dumps({"hooks": {"Stop": [{"command": f"${{CLAUDE_PLUGIN_ROOT}}/skills/{SKILL}/check.sh"}]}}) + "\n")),
+                 "a manifest hook names the skill": lambda r: (r / "plugins" / PLUGIN / "plugin.json")
                  .write_text(json.dumps({"name": PLUGIN, "version": "1.2.7",
-                                         "hooks": "./hooks/hooks.json"}, indent=2) + "\n")}
+                                         "hooks": {"Stop": [{"command": f"x/skills/{SKILL}/a.sh"}]}},
+                                        indent=2) + "\n"),
+                 "the skill's own bin": lambda r: ((r / "plugins" / PLUGIN / "skills" / SKILL / "bin").mkdir(),
+                                                  (r / "plugins" / PLUGIN / "skills" / SKILL / "bin" / "t").write_text("x\n"))}
         for name, mutate in cases.items():
             with self.subTest(name):
-                registry = make_registry(self.tmp / name.replace(" ", "-"))
+                registry = make_registry(self.tmp / name.replace(" ", "-").replace("'", ""))
                 mutate(registry)
                 git(registry, "add", "-A")
                 git(registry, "commit", "-q", "--allow-empty", "-m", "runtime")
@@ -440,9 +443,28 @@ class AutoTests(Base):
                 self.assertEqual(len(writes), 1)
                 self.assertEqual(writes[0][:2], ["issue", "create"])
                 body = fake.calls[-1][1]
-                self.assertIn("`retirement_mode: auto`, but the skill's plugin runs code", body)
+                self.assertIn("`retirement_mode: auto`, but", body)
+                self.assertIn("plugin-runtime-review holds", body)
                 self.assertEqual(fake.pushes, [])
                 self.assertEqual(git(registry, "branch", "--show-current").strip(), "main")
+
+    def test_a_plugin_that_runs_code_still_gets_a_removal_pull_request(self):
+        cases = {"hooks dir": lambda r: (r / "plugins" / PLUGIN / "hooks").mkdir(),
+                 "bin dir": lambda r: ((r / "plugins" / PLUGIN / "bin").mkdir(),
+                                       (r / "plugins" / PLUGIN / "bin" / "tool").write_text("x\n")),
+                 "package file": lambda r: (r / "plugins" / PLUGIN / "package.json")
+                 .write_text("{}\n")}
+        for name, mutate in cases.items():
+            with self.subTest(name):
+                registry = make_registry(self.tmp / ("plain-" + name.replace(" ", "-")))
+                mutate(registry)
+                git(registry, "add", "-A")
+                git(registry, "commit", "-q", "--allow-empty", "-m", "runtime")
+                registries = compute_gates.flag_registries([f"adam-agentskills={registry}"])
+                action = retire_skill.plan(gates_doc("auto"), registries, FakeGitHub().gh,
+                                           allowed=("auto", "proposal"))
+                self.assertEqual(action["action"], "removal")
+                self.assertNotIn("mode_reason", action)
 
     def test_a_plugin_without_runtime_paths_is_not_lowered(self):
         registries = compute_gates.flag_registries([f"adam-agentskills={self.registry}"])
@@ -452,10 +474,12 @@ class AutoTests(Base):
         self.assertNotIn("mode_reason", action)
 
     def test_a_runtime_plugin_with_only_auto_allowed_is_refused(self):
-        (self.registry / "plugins" / PLUGIN / "bin").mkdir()
-        (self.registry / "plugins" / PLUGIN / "bin" / "tool").write_text("x\n")
+        hooks = self.registry / "plugins" / PLUGIN / "hooks"
+        hooks.mkdir()
+        (hooks / "hooks.json").write_text(json.dumps(
+            {"hooks": {"Stop": [{"command": f"${{CLAUDE_PLUGIN_ROOT}}/skills/{SKILL}/a.sh"}]}}))
         git(self.registry, "add", "-A")
-        git(self.registry, "commit", "-qm", "bin")
+        git(self.registry, "commit", "-qm", "hook")
         code, _, err, fake = self.run_main(gates_doc("auto"))
         self.assertEqual(code, 2)
         self.assertIn("falls back to proposal", err)
