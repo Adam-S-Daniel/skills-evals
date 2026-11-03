@@ -4984,6 +4984,32 @@ def _harness_line(harness_version: str | None, arm_summaries: list[dict]) -> str
     return f"- Harness: Claude Code {version}; models used: {models}"
 
 
+# The ingest validator's cap on an objective check's or an error's `detail`
+# (scripts/ingest_routine_results.py MAX_STRING). A longer one rejected the
+# whole run on ingest, so the summary carries it cut to the cap with a marker
+# saying how much was dropped; the in-memory result keeps it whole.
+SUMMARY_DETAIL_MAX = 4096
+
+
+def _capped_detail(detail):
+    """`detail` cut to SUMMARY_DETAIL_MAX characters, marker included."""
+    if not isinstance(detail, str) or len(detail) <= SUMMARY_DETAIL_MAX:
+        return detail
+    marker = f" [truncated: {len(detail)} chars]"
+    return detail[:SUMMARY_DETAIL_MAX - len(marker)] + marker
+
+
+def _capped_details(entries):
+    """A copy of a list of check results (or one error object) whose
+    `detail` strings fit the ingest cap; anything else is returned as is."""
+    if isinstance(entries, dict) and "detail" in entries:
+        return {**entries, "detail": _capped_detail(entries["detail"])}
+    if isinstance(entries, list):
+        return [_capped_details(entry) if isinstance(entry, dict) else entry
+                for entry in entries]
+    return entries
+
+
 def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    timestamp: str, error: dict | None, agent: dict | None,
                    objective_checks: list | None, judge_result: dict | None,
@@ -5041,9 +5067,9 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
     summary.update({
         "arm": arm_name,
         "timestamp": timestamp,
-        "error": error,
+        "error": _capped_details(error),
         "agent": agent,
-        "objective_checks": objective_checks,
+        "objective_checks": _capped_details(objective_checks),
         "judge": judge_result,
         "harness": {"name": HARNESS_NAME, "version": harness_version,
                     "permission_mode": permission_mode, "effort": effort,
