@@ -14,6 +14,9 @@ decision record is docs/decisions/0005-improvement-loop-reuses-skill-creator.md.
         --trigger-eval-set evals/<skill>/trigger-eval-set.json \\
         --registry adam-agentskills=PATH [--ref REF] [--skill-creator DIR] \\
         [--results-dir DIR] [--dry-run]
+    python3 scripts/propose_skill_edit.py <skill> --trim-description \\
+        --registry adam-agentskills=PATH [--ref REF] [--trials 3] \\
+        [--results-dir DIR] [--dry-run]
 
 WHAT IT DOES, in order:
 
@@ -106,6 +109,40 @@ should-not-trigger queries (train and held-out) passed. The record
 files are written where step 9 writes them; scripts/improve_gate.py checks
 the counts again before any pull request.
 
+DESCRIPTION TRIM MODE (`--trim-description`; skills-evals#687). A fixed
+chore, not an improvement: adam-agentskills caps a skill's description at
+TRIM_MAX_CHARS (400) characters for the session's skill listing, and an
+eval-protected skill over the cap carries a `length-limit` waiver until this
+mode shortens it. Steps 2, 4b, 5 and 6 are replaced: `--holdout`,
+`--rotation`, `--min-gain`, `--no-judge`, `--trigger-eval-set`,
+`--skill-creator` and `--trigger-only` are refused, since nothing would read them (the judge never
+runs: the rule reads objective checks only). The skill needs at least
+MIN_FIXTURES nested fixtures, as step 1. A description already within the
+cap is rejected with no model call ("already within the cap"). Otherwise ONE
+proposal call (the roster's judge model, no tools, `Runner.propose`) asks for
+a replacement of at most TRIM_MAX_CHARS characters that keeps every trigger
+phrase and situation and every "not for" or "use X instead" boundary, as the
+reply `{"description": "..."}` and nothing else (`parse_trim_reply`). A reply
+of any other shape, with a line break, empty or over the cap after
+whitespace is collapsed, or equal to the current description is an
+`invalid-proposal` record (exit 1), never measured. The candidate changes
+only the description (`set_description`); baseline and candidate are then
+measured on EVERY fixture of the skill with the same `local_eval` call as
+step 7 (`with_skill`, `--trials`, no judge). ACCEPT (`decide_trim`) only
+when no fixture errored, every fixture ran the same checks on both sides,
+the candidate's objective passes summed over all fixtures and trials are at
+least the baseline's (TRIM_TOLERANCE_CHECKS, 0), and no single fixture lost
+more than TRIM_FIXTURE_DROP_CHECKS (1) of its passes. Aggregate
+non-inferiority rather than per-fixture strictness: with three trials a
+fixture's summed checks move by one on noise alone, and strict per-fixture
+equality on all of a skill's fixtures would reject most faithful trims for a
+flake; the per-fixture bound still refuses a trim that loses a fixture's
+behavior and buys it back elsewhere. The record (`mode: trim`, a `trim` block
+of both sides' per-fixture counts) and the files are written where step 9
+writes them; scripts/improve_gate.py re-derives the decision from the counts
+before any pull request, and removes the skill's `length-limit` waiver in
+the same registry change.
+
 EVERY MODEL CALL GOES THROUGH A `Runner` (the three methods below), so the
 tests drive the whole pipeline offline with a fake. This is a LOCAL exhibit
 under ADR 0002 decision 4: it runs under the operator's own login, its numbers
@@ -186,6 +223,19 @@ TRIGGER_HOLDOUT = 0.4
 TRIGGER_SET_FILE = "trigger-eval-set.json"
 TRIGGER_ONLY_MIN_GAIN = 0.15
 TRIGGER_ONLY_MIN_CLASS = 8
+#: Description trim mode (skills-evals#687): adam-agentskills' description
+#: cap (its scripts/skills_registries.yml `max_lengths`, which
+#: scripts/check_skills.py measures as `len()` of the parsed value), the
+#: summed objective passes the candidate may lose over all fixtures and
+#: trials (0: no worse in aggregate), and the most one fixture may lose (1:
+#: one check's noise across three trials). scripts/improve_gate.py mirrors
+#: all three, and a test holds them equal.
+TRIM_MAX_CHARS = 400
+TRIM_TOLERANCE_CHECKS = 0
+TRIM_FIXTURE_DROP_CHECKS = 1
+#: The acceptance rule a trim record names (`trim.rule`), so a gate built for
+#: another rule refuses the record rather than misread it.
+TRIM_RULE = "aggregate-noninferior-per-fixture-drop-1"
 #: Parallel `claude -p` calls in skill-creator's trigger eval: exactly one.
 #: run_eval.py plants every worker's command file (`<skill>-skill-<uuid>`) in
 #: the ONE project directory run_loop.py finds from its cwd, and counts a hit
@@ -1346,7 +1396,22 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--trigger-only", action="store_true",
                         help="run only skill-creator's description loop on "
                              "--trigger-eval-set (skills-evals#662)")
+    parser.add_argument("--trim-description", action="store_true",
+                        help=f"shorten the description to at most {TRIM_MAX_CHARS} "
+                             "characters, accepted on fixture non-inferiority "
+                             "(skills-evals#687)")
     args = parser.parse_args(argv)
+    if args.trim_description:
+        # Each of these would be silently ignored: no fixture is held out,
+        # rotated or judged, the gain is not read, and no description loop runs.
+        for name, value in (("--holdout", args.holdout), ("--rotation", args.rotation),
+                            ("--min-gain", args.min_gain),
+                            ("--no-judge", args.no_judge or None),
+                            ("--trigger-eval-set", args.trigger_eval_set),
+                            ("--skill-creator", args.skill_creator),
+                            ("--trigger-only", args.trigger_only or None)):
+            if value is not None:
+                parser.error(f"--trim-description does not take {name}")
     if args.trigger_only:
         # Each of these would be silently ignored: no fixture is split,
         # measured, judged or trained on, and the gain is fixed.
@@ -2025,6 +2090,318 @@ def improve_trigger_only(args: argparse.Namespace, runner: Runner, now: datetime
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# Description trim mode (skills-evals#687)
+# ---------------------------------------------------------------------------
+
+#: The trim reply's one key: `{"description": "..."}` and nothing else.
+TRIM_REPLY_KEYS = ("description",)
+#: Fixed texts for a reply the trim refuses to measure. None quotes the
+#: reply: the record keeps the model's text only as the candidate, and only
+#: once it passed every check.
+TRIM_REPLY_MALFORMED = ('the trim reply is not exactly one JSON object '
+                        '{"description": "<text>"}')
+TRIM_REPLY_NEWLINE = "the trimmed description contains a line break"
+TRIM_REPLY_LENGTH = (f"the trimmed description must be 1..{TRIM_MAX_CHARS} "
+                     "characters after whitespace is collapsed")
+TRIM_REPLY_UNCHANGED = "the trimmed description is the current description"
+TRIM_ALREADY_SHORT = "already within the cap"
+
+TRIM_CONSTRAINTS = f"""\
+Constraints (skills-evals#687):
+- Return ONE replacement for the description in the frontmatter below, at
+  most {TRIM_MAX_CHARS} characters, on one line, plain text: no Markdown, no
+  quotes around it, no line breaks.
+- Keep every trigger phrase and every situation in which the skill should
+  be used, so it is chosen as often as before.
+- Keep every boundary: each "not for ...", "use X instead" or "skip when"
+  statement, so it is not chosen where it was not before.
+- Remove repetition, examples that restate a trigger, and filler first.
+- Do not invent a trigger, a boundary or a capability the skill does not
+  have. Change nothing but the description."""
+
+
+def trim_prompt(skill: str, skill_md: str, description: str) -> str:
+    """The one proposal call of trim mode. The whole SKILL.md goes in so the
+    model can tell which phrases name real situations; the reply shape is
+    fixed and parsed by `parse_trim_reply`."""
+    flat = " ".join(str(description).split())
+    return "\n".join([
+        f"You are shortening the description of the agent skill `{skill}`. A "
+        f"session lists every skill's description, and this one is "
+        f"{len(flat)} characters, over the {TRIM_MAX_CHARS}-character cap, so "
+        "the listing truncates or drops it.", "",
+        TRIM_CONSTRAINTS, "",
+        "<current_description>", flat, "</current_description>", "",
+        "<skill_md>", skill_md, "</skill_md>", "",
+        'Answer with ONE JSON object and nothing else: {"description": '
+        f'"<the replacement, at most {TRIM_MAX_CHARS} characters>"}}'])
+
+
+def parse_trim_reply(reply: str, original: str) -> str:
+    """The replacement description out of `reply`, whitespace collapsed, or
+    InvalidProposal with fixed text. Strict: the reply, stripped and with at
+    most one surrounding code fence removed, must parse as exactly one JSON
+    object whose only key is `description`, a string with no line break,
+    1..TRIM_MAX_CHARS characters after whitespace is collapsed, and not equal
+    to `original` (collapsed the same way). Pure."""
+    text = reply.strip() if isinstance(reply, str) else ""
+    if text.startswith("```") and text.endswith("```") and len(text) >= 6:
+        inner = text[3:-3]
+        first, _, rest = inner.partition("\n")
+        text = (rest if first.strip() in ("", "json") else inner).strip()
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        raise InvalidProposal(TRIM_REPLY_MALFORMED) from None
+    if not isinstance(value, dict) or tuple(value) != TRIM_REPLY_KEYS \
+            or not isinstance(value["description"], str):
+        raise InvalidProposal(TRIM_REPLY_MALFORMED)
+    raw = value["description"]
+    if "\n" in raw or "\r" in raw:
+        raise InvalidProposal(TRIM_REPLY_NEWLINE)
+    flat = " ".join(raw.split())
+    if not 1 <= len(flat) <= TRIM_MAX_CHARS:
+        raise InvalidProposal(TRIM_REPLY_LENGTH)
+    if flat == " ".join(str(original).split()):
+        raise InvalidProposal(TRIM_REPLY_UNCHANGED)
+    return flat
+
+
+def trim_counts(metrics: dict) -> dict:
+    """{passed, total} of one fixture's `fixture_metrics`, as the record's
+    `trim` block keeps them (None where the run produced no number)."""
+    return {"passed": metrics.get("passed"), "total": metrics.get("total")}
+
+
+def decide_trim(baseline: dict, candidate: dict, names: list[str]) -> tuple[bool, list[str]]:
+    """(accepted, reasons) for a trimmed description, from each side's
+    `fixture_metrics` per fixture in `names`. Pure. The rule (module
+    docstring, DESCRIPTION TRIM MODE; TRIM_RULE): no fixture errored on
+    either side, each fixture ran the same number of checks (at least one)
+    on both, the candidate's passes summed over every fixture are at least
+    the baseline's minus TRIM_TOLERANCE_CHECKS, and no fixture lost more than
+    TRIM_FIXTURE_DROP_CHECKS passes. scripts/improve_gate.check_trim applies
+    the same rule to the record's counts."""
+    reasons = []
+    for name in names:
+        for side, metrics in (("baseline", baseline.get(name)), ("candidate", candidate.get(name))):
+            if not isinstance(metrics, dict) or metrics.get("error"):
+                kind = metrics.get("error") if isinstance(metrics, dict) else "missing"
+                reasons.append(f"inconclusive: fixture {name!r} errored on the {side} ({kind})")
+    if reasons:
+        return False, reasons
+    for name in names:
+        b, c = baseline[name], candidate[name]
+        if not all(isinstance(v, int) and not isinstance(v, bool)
+                   for v in (b["passed"], b["total"], c["passed"], c["total"])) \
+                or b["total"] < 1 or b["total"] != c["total"]:
+            reasons.append(f"inconclusive: fixture {name!r} did not run the same "
+                           "checks on both sides")
+    if reasons:
+        return False, reasons
+    before = sum(baseline[n]["passed"] for n in names)
+    after = sum(candidate[n]["passed"] for n in names)
+    total = sum(baseline[n]["total"] for n in names)
+    reasons.append(f"objective checks passed over all fixtures {before}/{total} -> "
+                   f"{after}/{total}")
+    accepted = True
+    if after < before - TRIM_TOLERANCE_CHECKS:
+        accepted = False
+        reasons.append("the trimmed description passed fewer checks in aggregate")
+    for name in names:
+        drop = baseline[name]["passed"] - candidate[name]["passed"]
+        if drop > TRIM_FIXTURE_DROP_CHECKS:
+            accepted = False
+            reasons.append(f"fixture {name!r} lost {drop} checks, more than "
+                           f"{TRIM_FIXTURE_DROP_CHECKS}")
+    if accepted:
+        reasons.append("no worse in aggregate, and no fixture lost more than "
+                       f"{TRIM_FIXTURE_DROP_CHECKS} check(s)")
+    return accepted, reasons
+
+
+def trim_plan(args: argparse.Namespace) -> dict:
+    """Everything trim mode decides before any model call. Reads, never
+    writes. The fixtures, their one registry and the arm model are resolved
+    as `plan` resolves them; at least MIN_FIXTURES are required."""
+    skill = args.skill
+    try:
+        names = skill_fixtures(skill)
+    except ValueError as exc:
+        raise Refusal(str(exc)) from exc
+    if len(names) < MIN_FIXTURES:
+        raise Refusal(f"needs more fixtures: {len(names)} found, {MIN_FIXTURES} "
+                      "required for a trim to be measured on")
+    fixtures = load_fixtures(skill, names)
+    url = next(iter(fixtures.values())).get("registry")
+    try:
+        registry = resolve_registry(url, args.registry)
+    except ValueError as exc:
+        raise Refusal(str(exc)) from exc
+    sha = resolve_ref(registry["path"], args.ref)
+    results = (args.results_dir or default_results_dir()).expanduser().resolve()
+    return {"skill": skill, "results": results,
+            "records_dir": results / "improvements" / skill,
+            "names": names, "fixtures": fixtures, "registry": registry, "sha": sha,
+            "arm_model": arm_model(fixtures[names[0]], True),
+            "proposal_model": proposal_model()}
+
+
+def trim_pr_body(record: dict) -> str:
+    """The pull-request body of an accepted trim. It opens with the loop's
+    own title (improve_gate.REPORT_TITLE) and holds no closing keyword and no
+    mention: it becomes a body in adam-agentskills."""
+    t, d = record["trim"], record["description"]
+    rows = ["| Fixture | Baseline | Candidate |", "|---|---|---|"]
+    for name in sorted(t["baseline"]):
+        b, c = t["baseline"][name], t["candidate"][name]
+        rows.append(f"| `{name}` | {b['passed']}/{b['total']} | {c['passed']}/{c['total']} |")
+    return "\n".join([
+        f"## Proposed `{record['skill']}` SKILL.md edit (validation-gated)", "",
+        "Produced by skills-evals `scripts/propose_skill_edit.py --trim-description` "
+        "([#687](https://github.com/Adam-S-Daniel/skills-evals/issues/687)): the "
+        f"description was over adam-agentskills' {t['max_chars']}-character listing "
+        "cap, so its `length-limit` waiver is removed here too. Only the "
+        "description changed; the body is unchanged. A local exhibit "
+        "(skills-evals ADR 0002, decision 4), not badge input.", "",
+        f"- Registry: `{record['registry']['name']}` at `{record['registry']['sha']}`",
+        f"- Length: {t['original_chars']} -> {t['candidate_chars']} characters",
+        f"- Measured: every fixture, {record['trials']} trial(s) each, `with_skill` "
+        f"arm on `{record['models']['arm']}`, no judge; proposal model "
+        f"`{record['models']['proposal']}`", "",
+        "### Description", "",
+        f"Before: {d['original']}", "", f"After: {d['candidate']}", "",
+        "### Objective checks passed", "", *rows, "",
+        "Acceptance rule: the candidate passes at least as many checks as the "
+        "baseline summed over every fixture, and no fixture loses more than "
+        f"{TRIM_FIXTURE_DROP_CHECKS}. Decision: {'; '.join(record['reasons'])}.", "",
+        "The patch is `" + record["files"]["patch"] + "`; apply it with "
+        "`git apply` at the registry root."]) + "\n"
+
+
+def improve_trim(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
+    """Description trim mode: one proposal call for a shorter description,
+    accepted by `decide_trim` on every fixture. See the module docstring."""
+    p = trim_plan(args)
+    if args.dry_run:
+        n = len(p["names"])
+        print(json.dumps({
+            "skill": p["skill"], "mode": "trim", "fixtures": p["names"],
+            "registry": {"name": p["registry"]["name"], "sha": p["sha"]},
+            "max_chars": TRIM_MAX_CHARS, "rule": TRIM_RULE, "trials": args.trials,
+            "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
+            "results_dir": str(p["results"]),
+            "model_calls": {"proposal": 1, "run_eval_baseline": n * args.trials,
+                            "run_eval_candidate": n * args.trials},
+        }, indent=2))
+        return EXIT_ACCEPTED
+    skill, results, registry, names = p["skill"], p["results"], p["registry"], p["names"]
+    ts = now.astimezone(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
+    try:
+        for path in (results, p["records_dir"]):
+            local_eval.check_results_dir(path, require_empty=False)
+    except local_eval.Refused as exc:
+        raise Refusal(str(exc)) from exc
+    p["records_dir"].mkdir(parents=True, exist_ok=True)
+    stem = p["records_dir"] / ts
+    if stem.with_suffix(".json").exists():
+        raise Refusal(f"a record for {ts} already exists")
+
+    scratch = Path(tempfile.mkdtemp(prefix="propose-skill-edit-"))
+    try:
+        base_root = archive_registry(registry["path"], p["sha"], scratch / "baseline")
+        cand_root = archive_registry(registry["path"], p["sha"], scratch / "candidate")
+        base_skill = find_skill_dir(base_root, registry["layout"], skill)
+        cand_skill = find_skill_dir(cand_root, registry["layout"], skill)
+        rel_path = base_skill.relative_to(base_root).as_posix() + "/SKILL.md"
+        original = (base_skill / "SKILL.md").read_text(encoding="utf-8")
+        try:
+            current = frontmatter_data(original).get("description")
+        except InvalidProposal as exc:
+            raise Refusal(f"the registry's SKILL.md cannot be read: {exc}") from exc
+        if not isinstance(current, str) or not current.strip():
+            raise Refusal("the registry's SKILL.md has no description to trim")
+        record = {
+            "schema": 1, "skill": skill, "timestamp": ts, "mode": "trim",
+            "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+            "registry": {"name": registry["name"], "url": registry["url"],
+                         "sha": p["sha"], "skill_md": rel_path},
+            "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
+            "trials": args.trials, "no_judge": True,
+            "description": {"original": current, "candidate": None},
+            "trim": {"max_chars": TRIM_MAX_CHARS, "original_chars": len(current),
+                     "candidate_chars": None, "rule": TRIM_RULE,
+                     "tolerance_checks": TRIM_TOLERANCE_CHECKS,
+                     "fixture_drop_checks": TRIM_FIXTURE_DROP_CHECKS,
+                     "baseline": {}, "candidate": {}},
+            "files": {},
+        }
+        if len(current) <= TRIM_MAX_CHARS:
+            record.update(status="rejected", phase="trim", reasons=[TRIM_ALREADY_SHORT])
+            write_record(stem, record)
+            print(f"rejected: {TRIM_ALREADY_SHORT}")
+            return EXIT_REJECTED
+        try:
+            check_launch_environment()
+        except Refusal as exc:
+            return record_refusal(stem, record, "preflight", exc)
+
+        try:
+            try:
+                reply = runner.propose(trim_prompt(skill, original, current),
+                                       p["proposal_model"])
+            finally:
+                write_proposal_usage(results, ts, runner)
+            trimmed = parse_trim_reply(reply, current)
+            candidate_text = set_description(original, trimmed)
+        except InvalidProposal as exc:
+            record.update(status="invalid-proposal", reasons=[str(exc)])
+            write_record(stem, record)
+            print(f"rejected before measurement: {exc}")
+            return EXIT_REJECTED
+        except Refusal as exc:
+            return record_refusal(stem, record, "proposal", exc)
+        record["description"]["candidate"] = trimmed
+        record["trim"]["candidate_chars"] = len(trimmed)
+        stem.with_suffix(".patch").write_text(
+            registry_patch(original, candidate_text, rel_path), encoding="utf-8")
+        record["files"]["patch"] = str(stem.with_suffix(".patch"))
+        (cand_skill / "SKILL.md").write_text(candidate_text, encoding="utf-8")
+
+        # Both sides on every fixture, through the call `improve` measures its
+        # candidate with; the judge never runs (the rule reads objective checks).
+        record["runs"] = {}
+        sides = {}
+        for side, root in (("baseline", base_root), ("candidate", cand_root)):
+            out = run_paths(results, side, skill, ts)
+            record["runs"][side] = str(out)
+            rc = runner.run_eval(run_eval_argv(skill, registry["name"], root, out, ts,
+                                               args.trials, True, read_deny=results))
+            if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+                record.update(status="refused", phase=side, exit_code=rc,
+                              reasons=[f"local_eval exited {rc} during {side}"])
+                write_record(stem, record)
+                print(f"refused: local_eval {side} exited {rc}; record: "
+                      f"{stem.with_suffix('.json')}", file=sys.stderr)
+                return EXIT_REFUSED
+            sides[side] = {n: fixture_metrics(out, skill, ts, n, args.trials) for n in names}
+            record["trim"][side] = {n: trim_counts(m) for n, m in sides[side].items()}
+
+        accepted, reasons = decide_trim(sides["baseline"], sides["candidate"], names)
+        record.update(status="accepted" if accepted else "rejected", reasons=reasons)
+        if accepted:
+            body_path = stem.with_name(stem.name + ".pr-body.md")
+            record["files"]["pr_body"] = str(body_path)
+            body_path.write_text(trim_pr_body(record), encoding="utf-8")
+        write_record(stem, record)
+        print(f"{record['status']}: {'; '.join(reasons)}")
+        print(f"record: {stem.with_suffix('.json')}")
+        return EXIT_ACCEPTED if accepted else EXIT_REJECTED
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
     record.update(status="refused", phase=phase, exit_code=EXIT_REFUSED,
                   reasons=[str(exc)])
@@ -2047,7 +2424,8 @@ def main(argv: list[str] | None = None, runner: Runner | None = None,
          now: datetime | None = None) -> int:
     args = parse_args(argv)
     try:
-        pipeline = improve_trigger_only if args.trigger_only else improve
+        pipeline = (improve_trim if args.trim_description
+                    else improve_trigger_only if args.trigger_only else improve)
         return pipeline(args, runner or Runner(), now or datetime.now(timezone.utc))
     except Refusal as exc:
         print(f"refused: {exc}", file=sys.stderr)

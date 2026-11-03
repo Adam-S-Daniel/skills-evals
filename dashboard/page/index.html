@@ -197,6 +197,27 @@
       </div>
     </div>
 
+    <div class="pd-card" id="card-fixture-requests" role="region" aria-labelledby="fq-title">
+      <h2 id="fq-title">Fixture requests</h2>
+      <p class="pd-note">When an eval finds a skill too easy to measure, the loop asks for harder fixtures, ideally rebuilt from real fleet work. This tracks each ask through to fixtures that ran.</p>
+      <p class="pd-alert-line">
+        <span><b data-source="fixture_queue_summary" data-field="requests_open">—</b> open</span>
+        <span><b data-source="fixture_queue_summary" data-field="requests_closed">—</b> closed</span>
+        <span><b data-source="fixture_queue_summary" data-field="prs_merged">—</b> PRs merged</span>
+        <span><b data-source="fixture_queue_summary" data-field="fixtures_real_work">—</b> fixtures from real work</span>
+        <span><b data-source="fixture_queue_summary" data-field="fixtures_invented">—</b> invented</span>
+        <span><b data-source="fixture_queue_summary" data-field="fixture_runs">—</b> runs</span>
+        <span><b id="fq-cost">—</b> cost</span>
+      </p>
+      <p class="pd-note" id="fq-status" hidden></p>
+      <div class="pd-scroll" id="fq-wrap" style="max-height: 20rem" hidden>
+        <table class="pd-table" id="tbl-fixture-requests" data-source="fixture_requests" data-row-key="key">
+          <thead><tr><th data-field="subject">Subject</th><th data-field="kind">Kind</th><th data-field="state">State</th><th class="num" data-field="age_days">Age</th><th data-field="prs">PR</th><th class="num" data-field="fixtures">Fixtures (real work)</th><th class="num" data-field="runs">Runs</th><th class="num" data-field="cost_usd">Cost</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="pd-card" id="card-loop-grid">
       <h2>What works for skills, guidance and memories</h2>
       <p class="pd-note">The loop has to work for three kinds of thing. Memories have no test step: the weekly memory audit makes the call.</p>
@@ -321,6 +342,10 @@
         <div class="pd-tile"><span class="pd-tile-label">Real-work reach</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="real_work_reach">—</span><span class="pd-tile-note">uses of changed skills and guidance, latest complete week</span></div>
         <div class="pd-tile"><span class="pd-tile-label">Project-thread points</span><span class="pd-tile-num" data-source="costbenefit_tiles" data-field="build_points">—</span><span class="pd-tile-note">latest complete week</span></div>
       </div>
+    </div>
+
+    <div class="pd-card" id="card-costbenefit-fixtures">
+      <p class="pd-note" id="cb-fixtures">Fixture requests: —</p>
     </div>
 
     <div class="pd-card" id="card-costbenefit-bar">
@@ -571,7 +596,7 @@
 // dashboard/build.py writes one placeholder row (key field "none") instead of an empty
 // list, because an empty dataset reads as "failed to load". Calcs and tables never see them.
 (() => {
-  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', half_built_issues: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
+  const PH = { eval_runs: 'run_id', bare_runs: 'run_id', usage_rows: 'kind', usage_sources: 'key', half_built_issues: 'key', fixture_requests: 'key', cost_benefit_weeks: 'week', cost_benefit_summary: 'key' };
   const real = (id, rows) => (PH[id] && Array.isArray(rows) ? rows.filter((r) => r[PH[id]] !== 'none') : rows);
   try {
     const calc = dash.calc.bind(dash);
@@ -1266,6 +1291,26 @@ dash.calc('new_runs', {
       { field: 'changes', num: true }, { field: 'real_work_reach', num: true }, { field: 'owner_messages', num: true }, { field: 'decisions', num: true },
     ], (r) => r.week, { sort: { field: 'week', dir: 'desc' } });
   };
+  const drawFixtureRequests = () => {
+    const money = (v) => (v == null ? '—' : d3.format('$,.2f')(v));
+    const note = document.getElementById('fq-status'), wrap = document.getElementById('fq-wrap');
+    const line = document.getElementById('cb-fixtures');
+    if (status('fixture_queue_summary') !== 'ok') return;
+    const sm = one_('fixture_queue_summary');
+    document.getElementById('fq-cost').textContent = money(sm.cost_usd);
+    const msg = sm.status === 'not-reported' ? 'The latest explorer data does not report the fixture queue yet.'
+      : sm.status === 'attention' ? sm.findings + ' finding' + (sm.findings === 1 ? '' : 's') + ' (' + sm.findings_high + ' high severity) need a look.' : '';
+    note.textContent = msg; note.hidden = !msg;
+    wrap.hidden = !rowsOf('fixture_requests').length;
+    line.textContent = sm.status === 'not-reported' ? 'Fixture requests: not reported yet.'
+      : 'Fixture requests: ' + d3.format(',')(sm.fixture_runs || 0) + ' runs, ' + money(sm.cost_usd) + ' so far.';
+    renderTable('tbl-fixture-requests', 'fixture_requests', [
+      { field: 'subject', link: 'issue_url' }, { field: 'kind' }, { field: 'state', pill: true },
+      { field: 'age_days', num: true, fmt: (v) => (v == null ? '' : Math.round(v) + ' d') },
+      { field: 'prs', fmt: (v, r) => (v ? (r.merged ? 'merged' : 'open') + (v > 1 ? ' (' + v + ')' : '') : ''), link: 'pr_url' },
+      { field: 'fixtures', num: true, fmt: (v, r) => v + ' (' + r.real_work + ')' }, { field: 'runs', num: true }, { field: 'cost_usd', num: true, fmt: money },
+    ], (r) => r.key);
+  };
   const drawHalfBuilt = () => {
     const card = document.getElementById('card-halfbuilt');
     const empty = document.getElementById('hb-empty'), wrap = document.getElementById('hb-wrap');
@@ -1341,6 +1386,7 @@ dash.calc('new_runs', {
     drawImpact();
     fillMarks();
     drawHalfBuilt();
+    drawFixtureRequests();
     drawCostBenefit();
     drawMeters();
     drawDumbbell();

@@ -303,9 +303,10 @@ cell, which has no planner cell to ask for the harder fixture;
 not a subject; see EMPTY FIRES),
 `guidance-improve` (change type `guidance-edit`; only for a section id the
 fire workflow refuses, see above). Every item carries `change_type`:
-`skill-edit` for an improve fire, `guidance-edit` for a guidance-improve
-fire, `fixture`, `trigger` for a trigger-only improve fire (THE
-TRIGGER LANE), or None for `routine-outage` and
+`skill-edit` for an improve fire or a description trim (`description-trim`,
+DESCRIPTION TRIMS), `guidance-edit` for a guidance-improve fire, `fixture`,
+`trigger` for a trigger-only improve fire (THE TRIGGER LANE), or None for
+`routine-outage` and
 `routine-down`. `fixture-ceiling`, `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` are
 routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
 them, but scripts/work_item_issues.py files no issue for them (round 4's
@@ -348,6 +349,26 @@ Skills whose SKILL.md is mostly checklist or rules
 sections (`hook_candidate`) are listed as `hook_candidates` and in the
 summary, since a git hook may serve them better.
 
+DESCRIPTION TRIMS (skills-evals#687). adam-agentskills caps a description at
+TRIM_MAX_CHARS (400) characters, and an eval-protected skill over the cap
+carries a `length-limit` waiver in that checkout's `scripts/skills_waivers.yml`
+until the improve lane trims it. Every waived skill that is not private is
+tracked in the plan's `trims` map ({eligible, reasons, chars, planned}) and as
+a `description-trim` work item (change type `skill-edit`) whose `route` is
+"fire" when this plan fires it, else why not; the weekly workflow files no
+issue for it. One is eligible when it has at least TRIM_MIN_FIXTURES fixtures,
+all naming adam-agentskills (the trim is measured on them), is not owned by
+retirement, its description is still over the cap, and its rule C pause (the
+same as an ordinary improve fire's, including a merged edit waiting for a
+with-arm run of the new text) is None. It is then an improve-band fire with
+`trim_description` true (change type `skill-edit`, no holdout, charged and
+capped as an improve fire), placed BEFORE the value-ranked improve fires: a
+fixed chore, not a value bet. It is still subject to the improve cap and the
+outage hold, and a skill with a trim fire gets no ordinary or trigger-only
+improve fire in the same plan (all write `eval-improve/<skill>`). A missing or
+unreadable waiver file plans no trim, and `trims_unread` says why. Once a trim
+merges, its pull request has removed the waiver, so the skill drops off.
+
 OUTPUT. `--out` gets the whole plan as JSON, including `improve_ranking`
 (every candidate, skill or guidance section, by value, highest first and
 unknown last, with its use, headroom, cost, whether use and cost were known,
@@ -359,8 +380,9 @@ section ids), which the weekly workflow uploads as the `improve-ranking`
 artifact. $GITHUB_OUTPUT gets `matrix=`
 (the fires, improve and guidance-improve fires last so a long improve run
 never holds up the evals behind it; every leg carries `section`, empty but
-for a guidance-improve leg, and `trigger_only`, the string "true" for a
-trigger-only improve leg and "false" otherwise) and `count=`. The log and job summary carry numbers and
+for a guidance-improve leg, `trigger_only`, the string "true" for a
+trigger-only improve leg and "false" otherwise, and `trim_description`, the
+same for a description trim) and `count=`. The log and job summary carry numbers and
 public skill names only.
 
 FIRE CHECK. `guidance-headroom SECTION` is routine-eval-fire.yml's check
@@ -575,6 +597,17 @@ SKILL_EDIT_BOOST_CAP = 3
 #: skill_usage.weight's four weeks) is at most this rarely triggers at all.
 TRIGGER_MAX_WEIGHT = 1
 TRIGGER_SET = "trigger-eval-set.json"
+#: DESCRIPTION TRIMS (skills-evals#687): the cap a trim meets
+#: (propose_skill_edit.TRIM_MAX_CHARS), the fixtures it is measured on at
+#: least (propose_skill_edit.MIN_FIXTURES; a test holds both equal), and the
+#: registry's waiver file and class that mark a skill still to trim.
+TRIM_MAX_CHARS = 400
+TRIM_MIN_FIXTURES = 3
+WAIVERS_FILE = "scripts/skills_waivers.yml"
+LENGTH_WAIVER_CLASS = "length-limit"
+#: Why no trim is planned when the waiver file cannot be read. Fixed text.
+TRIMS_UNREAD = ("the adam-agentskills checkout's scripts/skills_waivers.yml is "
+                "missing or unreadable, so no description trim is planned")
 #: A hook candidate: at least this share of its SKILL.md body's non-blank
 #: lines sits under a heading naming a checklist, rules or checks.
 HOOK_RULE_SHARE = 0.5
@@ -1542,7 +1575,7 @@ def hook_candidate(text: str) -> bool:
     return bool(total) and under / total >= HOOK_RULE_SHARE
 
 
-def trigger_items(ctx: dict, improve_skills=frozenset()) -> tuple:
+def trigger_items(ctx: dict, improve_skills=frozenset(), trim_skills=frozenset()) -> tuple:
     """(trigger fires, work items, hook candidates, per-skill status) for
     the trigger lane (module docstring, THE TRIGGER LANE; skills-evals#662).
 
@@ -1554,7 +1587,8 @@ def trigger_items(ctx: dict, improve_skills=frozenset()) -> tuple:
     evals/<skill>/trigger-eval-set.json exists, its own rule C pause
     (ctx["triggers"][skill]["pause"], absent read as None) is None and it is
     not in `improve_skills`, the skills with an ordinary improve fire in
-    this plan (both would write `eval-improve/<skill>`); with no set it gets
+    this plan, nor in `trim_skills`, those with a description trim (each
+    would write `eval-improve/<skill>`); with no set it gets
     a `needs-trigger-set` work item instead. Any other judged skill gets
     neither, and its reasons are in the status. An unknown weight is neutral:
     nothing, and no status, so the weekly workflow never closes that
@@ -1586,6 +1620,8 @@ def trigger_items(ctx: dict, improve_skills=frozenset()) -> tuple:
             reasons.append(info["pause"])
         if not reasons and name in improve_skills:
             reasons.append("an ordinary improve fire is planned for it")
+        if not reasons and name in trim_skills:
+            reasons.append("a description trim is planned for it")
         status[name] = {"eligible": not reasons, "reasons": reasons, "weight": weight}
         if not reasons:
             fires.append({"mode": "improve", "trigger_only": True, "arms": "", "fixture": "",
@@ -1597,6 +1633,92 @@ def trigger_items(ctx: dict, improve_skills=frozenset()) -> tuple:
     hooks = sorted(name for name, info in ctx.get("triggers", {}).items()
                    if info["hook_candidate"] and name not in private)
     return fires, work, hooks, status
+
+
+def trim_items(ctx: dict) -> tuple:
+    """(trim fires, per-skill status, why none could be read or None) for
+    DESCRIPTION TRIMS (module docstring; skills-evals#687).
+
+    ctx["trims"] is {skill: {"chars"}} for every length-limit waiver of the
+    adam-agentskills checkout (`trim_contexts`), or None (or absent) when
+    the waiver file could not be read: no trim, and the plan says so. A
+    private skill is skipped, so its name reaches no output. Every other
+    waived skill gets a status; it is eligible when ctx["skills"] has it
+    (public, with fixtures) with at least TRIM_MIN_FIXTURES fixtures all
+    naming adam-agentskills, it is not owned by retirement, its description
+    is not already within TRIM_MAX_CHARS (an unknown length does not block:
+    the loop rejects a short one with no model call), its rule C pause
+    (ctx["skills"][skill]["pause"], the ordinary improve fire's) is None,
+    and no other waived skill of its plugin is `busy` (`trim_busy`) or has
+    a trim planned earlier in this walk: one trim per plugin at a time.
+
+    Fires sort before every value-ranked improve fire (`order` starts as a
+    known-value fire's does, then minus infinity outranks any `-value`), by
+    name."""
+    trims = ctx.get("trims")
+    if trims is None:
+        return [], {}, TRIMS_UNREAD
+    private = set(ctx.get("private_skills") or ())
+    busy = {info.get("plugin") for info in trims.values() if info.get("busy")}
+    busy.discard(None)
+    fires, status = [], {}
+    for name, info in sorted(trims.items()):
+        if name in private:
+            continue
+        chars = info.get("chars")
+        skill = ctx["skills"].get(name)
+        reasons = []
+        if skill is None:
+            reasons.append("no public fixtures under evals/ to measure a trim on")
+        else:
+            if not skill["registry_ok"]:
+                reasons.append("its fixtures do not all name adam-agentskills")
+            if skill["fixtures"] < TRIM_MIN_FIXTURES:
+                reasons.append(f"{skill['fixtures']} fixture(s), under {TRIM_MIN_FIXTURES}")
+            if skill["verdict"] in ("retire", "retire-pending"):
+                reasons.append(f"owned by retirement ({skill['verdict']})")
+        if isinstance(chars, int) and chars <= TRIM_MAX_CHARS:
+            reasons.append("already within the cap")
+        if not reasons and skill["pause"]:
+            reasons.append(skill["pause"])
+        plugin = info.get("plugin")
+        if not reasons and plugin in busy:
+            reasons.append(f"another trim or improve attempt in plugin {plugin} is open or planned")
+        status[name] = {"eligible": not reasons, "reasons": reasons, "chars": chars,
+                        "planned": False}
+        if not reasons:
+            if plugin is not None:
+                busy.add(plugin)
+            fires.append({"mode": "improve", "trim_description": True, "arms": "",
+                          "fixture": "", "model": "", "skill": name, "holdout": "",
+                          "cost": ctx["improve_charge"], "change_type": "skill-edit",
+                          "band": "improve", "value": None,
+                          "order": (False, -math.inf, name)})
+    return fires, status, None
+
+
+def trim_work(status: dict, chosen: list, capped: list) -> list:
+    """One `description-trim` work item per skill of `status` (trim_items),
+    in name order, routed "fire" when `chosen` (this plan's fires) holds its
+    trim and otherwise why not, and `status[skill]["planned"]` set in place.
+    Not issue-routed: the plan's `trims` map is the record until every
+    waived skill is trimmed or rejected."""
+    fired = {i["skill"] for i in chosen if i.get("trim_description")}
+    cut = {i["skill"] for i in capped if i.get("trim_description")}
+    work = []
+    for name, info in sorted(status.items()):
+        if name in fired:
+            route = "fire"
+        elif info["reasons"]:
+            route = info["reasons"][0]
+        elif name in cut:
+            route = "the improve cap is reached"
+        else:
+            route = "not planned this sweep (no room, or the routine is down)"
+        info["planned"] = name in fired
+        work.append({"kind": "description-trim", "change_type": "skill-edit",
+                     "skill": name, "chars": info["chars"], "route": route})
+    return work
 
 
 def allocate(bands: dict, room: float, max_fires: int) -> list:
@@ -1715,12 +1837,19 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
         # Cells a sweep without the batch would have queued in its bands.
         outside = sum(len(unbatched[b]) - len(bands[b]) for b in BATCH_BANDS)
     improve, needs, status, guidance_status, ranking = improve_items(ctx, now)
-    # Trigger-only fires join the improve band before the cap, so they count
-    # against it exactly as the guard counts them (improve mode).
+    # DESCRIPTION TRIMS: a skill with a trim fire gets no ordinary or
+    # trigger-only improve fire (each writes `eval-improve/<skill>`).
+    trim_fires, trim_status, trims_unread = trim_items(ctx)
+    trim_skills = {i["skill"] for i in trim_fires}
+    for name in trim_skills & {i["skill"] for i in improve if i["mode"] == "improve"}:
+        status[name]["deferred"] = "a description trim is planned for it"
+    improve = [i for i in improve if not (i["mode"] == "improve" and i["skill"] in trim_skills)]
+    # Trigger-only and trim fires join the improve band before the cap, so
+    # they count against it exactly as the guard counts them (improve mode).
     trigger_fires, triggers, hooks, trigger_status = trigger_items(
-        ctx, {i["skill"] for i in improve if i["mode"] == "improve"})
+        ctx, {i["skill"] for i in improve if i["mode"] == "improve"}, trim_skills)
     improve_state = ctx.get("improve_state")
-    improve, capped = improve_capped(improve + trigger_fires, improve_state)
+    improve, capped = improve_capped(trim_fires + improve + trigger_fires, improve_state)
     bands["improve"].extend(improve)
     bands["bare"].extend(bare_items(ctx))
     down = bool(ctx.get("routine_down"))
@@ -1767,6 +1896,7 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
               "holdout": i["holdout"],
               # A string, as the matrix carries it into the leg's env.
               "trigger_only": "true" if i.get("trigger_only") else "false",
+              "trim_description": "true" if i.get("trim_description") else "false",
               "change_type": i["change_type"] or "measure", "cost": i["cost"],
               "value": i.get("value")}
              for slot, i in enumerate(chosen)]
@@ -1786,19 +1916,24 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             # THE BATCH: None before the policy's start; `started` tells the
             # weekly workflow to publish `record` to BATCH_RECORD.
             "batch": None if batch is None else {**batch, "outside": outside},
-            # Trigger items just before improve's.
-            "work": triggers + needs + work,
+            # Trims first (a fixed chore), then trigger items just before
+            # improve's.
+            "work": trim_work(trim_status, chosen, capped) + triggers + needs + work,
             "skills": status, "guidance": guidance_status, "improve_ranking": ranking,
             # THE TRIGGER LANE: every judged skill, the only ones whose
             # needs-trigger-set issue the weekly workflow may close.
             "triggers": trigger_status,
+            # DESCRIPTION TRIMS: every waived public skill, until each is
+            # trimmed (its waiver removed) or rejected.
+            "trims": trim_status, "trims_unread": trims_unread,
             "hook_candidates": hooks, "real_work": ctx.get("real_work", []),
             # An eval leg sends no skill and no section, and only a
             # guidance-improve leg a section: the fire workflow refuses them
             # in any other mode.
             "matrix": {"include": [{**{k: f[k] for k in ("slot", "band", "mode", "arms",
                                                          "fixture", "eval_key", "model",
-                                                         "holdout", "trigger_only")},
+                                                         "holdout", "trigger_only",
+                                                         "trim_description")},
                                     "skill": f["skill"] if f["mode"] == "improve" else "",
                                     "section": f["section"] if f["mode"] == "guidance-improve"
                                     else ""}
@@ -2664,6 +2799,67 @@ def trigger_pauses(triggers: dict, evals_dir: Path, registries: dict, records: l
                               lambda at: now - at >= COOLDOWN)
 
 
+def trim_contexts(registries: dict) -> dict | None:
+    """{skill: {"chars"}} for every `length-limit` waiver of the
+    adam-agentskills checkout's WAIVERS_FILE that names adam-agentskills and
+    one `plugins/<plugin>/skills/<skill>/SKILL.md`, `chars` being that
+    SKILL.md's parsed description length (None when unreadable), or None
+    without a checkout or a readable file (DESCRIPTION TRIMS)."""
+    import improve_gate  # noqa: PLC0415 - its registry path pattern
+    import yaml  # noqa: PLC0415
+    entry = registries.get("adam-agentskills")
+    if not entry:
+        return None
+    root = Path(entry["path"])
+    path = root / WAIVERS_FILE
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return None
+    waivers = doc.get("waivers") if isinstance(doc, dict) else None
+    if not isinstance(waivers, list):
+        return None
+    out = {}
+    for waiver in waivers:
+        if not isinstance(waiver, dict) or waiver.get("klass") != LENGTH_WAIVER_CLASS \
+                or waiver.get("registry") != "adam-agentskills" \
+                or not isinstance(waiver.get("path"), str):
+            continue
+        match = improve_gate.SKILL_MD_RE.fullmatch(waiver["path"])
+        if not match or ".." in waiver["path"].split("/"):
+            continue
+        chars = None
+        skill_md = root / waiver["path"]
+        try:
+            if not skill_md.is_symlink():
+                text = skill_md.read_text(encoding="utf-8")
+                front = yaml.safe_load(text[4:text.index("\n---\n", 3)]) \
+                    if text.startswith("---\n") else None
+                if isinstance(front, dict) and isinstance(front.get("description"), str):
+                    chars = len(front["description"])
+        except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError):
+            chars = None
+        out[match.group("skill")] = {"chars": chars, "plugin": match.group("plugin")}
+    return out
+
+
+def trim_busy(trims: dict | None, records: list, prs: list) -> dict | None:
+    """Mark each waived skill of `trims` (from `trim_contexts`) `busy`, in
+    place, when an improve attempt of it is in flight (a `pending`
+    improve_outcomes record) or its `eval-improve/<skill>` pull request is
+    open. `trim_items` plans no trim in a plugin with a busy waived skill:
+    two trims of one plugin edit neighboring waiver lines and bump the same
+    plugin manifest, so their pull requests would conflict."""
+    if trims is None:
+        return None
+    for name, info in trims.items():
+        info["busy"] = any(r["skill"] == name and r["outcome"] == "pending" for r in records) \
+            or any(p["skill"] == name and p["state"] == "open" for p in prs)
+    return trims
+
+
 def gather(args, now: datetime) -> dict:
     import compute_gates
     evals_dir = args.evals_dir
@@ -2732,6 +2928,7 @@ def gather(args, now: datetime) -> dict:
                                           evidence.get("guidance_on_hold", []), now),
             "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
+            "trims": trim_busy(trim_contexts(registries), records, prs),
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),
                                            now, private_skills(evals_dir)),
             "skill_edit_lessons": lesson_evidence.skill_evidence(args.lessons, "skill-edit"),
@@ -2763,6 +2960,8 @@ def summary_lines(plan: dict) -> list:
                                      f"(holdout {fire['holdout']})")
         if fire.get("trigger_only") == "true":
             target = f"{fire['skill']} (trigger only)"
+        if fire.get("trim_description") == "true":
+            target = f"{fire['skill']} (description trim)"
         mode = fire["mode"] + (" bare" if fire.get("arms") == "bare" else "")
         lines.append(f"- {fire['band']}: {mode} {target} {fire['model']}".rstrip()
                      + f", {fire['cost'] * 100:.2f} points")
@@ -2786,6 +2985,14 @@ def summary_lines(plan: dict) -> list:
     # THE TRIGGER LANE: public skill names only (a private skill is never judged).
     trigger_ok = sorted(s for s, v in (plan.get("triggers") or {}).items() if v["eligible"])
     lines.append("Trigger-only eligible skills: " + (", ".join(trigger_ok) or "none"))
+    # DESCRIPTION TRIMS: public adam-agentskills skill names only.
+    if plan.get("trims_unread"):
+        lines.append("Description trims: " + plan["trims_unread"])
+    else:
+        trims = plan.get("trims") or {}
+        lines.append("Description trims: " + (", ".join(
+            f"{s} ({'planned' if v['planned'] else 'eligible' if v['eligible'] else v['reasons'][0]})"
+            for s, v in sorted(trims.items())) or "none waived"))
     batch = plan.get("batch")
     if batch:
         record = batch["record"]
@@ -2824,7 +3031,9 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     guidance-improve mode on a section guidance_improve_gate.py fire-check
     accepts, with its holdout fixture key and no arms. Only a
     guidance-improve leg carries a section, and only an improve leg
-    TRIGGER_ONLY "true"; absent or empty reads as "false"."""
+    TRIGGER_ONLY "true" or TRIM_DESCRIPTION "true" (DESCRIPTION TRIMS: no
+    holdout, and the check's `trim` rules), never both; absent or empty
+    reads as "false"."""
     import guidance_improve_gate
     import improve_gate
     import roster_arm
@@ -2837,6 +3046,14 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     if trigger_only not in ("true", "false", ""):
         raise PlanError("the leg's trigger_only is not true or false")
     trigger_only = trigger_only == "true"
+    trim = env.get("TRIM_DESCRIPTION", "")
+    if trim not in ("true", "false", ""):
+        raise PlanError("the leg's trim_description is not true or false")
+    trim = trim == "true"
+    if trim and mode != "improve":
+        raise PlanError("only an improve leg may be a description trim")
+    if trim and trigger_only:
+        raise PlanError("a leg is a description trim or trigger-only, never both")
     if section and mode != "guidance-improve":
         raise PlanError("only a guidance-improve leg carries a section")
     if trigger_only and mode != "improve":
@@ -2855,6 +3072,14 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
             raise PlanError("the bare leg's fixture does not run in place")
         if arms == "both" and fixture_hold_reason(root / fixture) is not None:
             raise PlanStale("the eval leg's fixture is held, not schedulable")
+    elif mode == "improve" and trim:
+        if fixture or key or model or arms or holdout \
+                or not outcomes_mod.SKILL_RE.fullmatch(skill):
+            raise PlanError("the description trim leg is malformed")
+        try:
+            improve_gate.fire_check(skill, "", trim=True)
+        except improve_gate.Rejected:
+            raise PlanError("the description trim leg is refused by the fire check") from None
     elif mode == "improve" and trigger_only:
         if fixture or key or model or arms or holdout \
                 or not outcomes_mod.SKILL_RE.fullmatch(skill):

@@ -90,6 +90,11 @@ and uploads `run_stream.json`.
 - `cost_benefit_summary`: cost per verdict, decision yield, real-work reach, the Dec 15 bar
   (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the points-per-dollar rate.
 
+`build.py` also writes two datasets for the Fixture requests panel on the Self-improvement loop tab, from `fixture_queue` in `results/explorer/latest.json` (all issue and PR numbers are in skills-evals):
+
+- `fixture_requests`: one row per request (key is the issue number): kind in plain words, state, age in days (open requests only), PR count and latest PR link, and the count, real-work count, runs and cost of the fixtures whose `request` names it. Open first, then oldest.
+- `fixture_queue_summary`: one row of the queue's totals, finding counts and a `status` of `not-reported` (no `fixture_queue` in the file, or null), `attention` (any finding) or `ok`.
+
 Project-thread spend is attributed from `session_costs.jsonl`: the rise in a session's
 cumulative cost between two samples is spread evenly over the time between them, and cost
 before its first sample is spread from the session's creation, which marks the week
