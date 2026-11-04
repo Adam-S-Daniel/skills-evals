@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:15:45Z",
+  "generated_at": "2026-11-04T00:19:39Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:14:24Z",
+ "generated_at": "2026-11-04T00:18:16Z",
  "guidance": {
   "removed": [
    {
@@ -376,7 +376,7 @@
   ],
   "sections": [
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1422,
     "confidence": {
      "cells": [
@@ -408,7 +408,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
@@ -444,13 +444,6 @@
         "cost_usd": 0.0909278,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.088052,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261103T061439Z/report.md"
@@ -480,13 +473,6 @@
         "checks_total": 2,
         "cost_usd": 0.088147,
         "judge_mean": 9.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0878916,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -518,13 +504,6 @@
         "cost_usd": 0.0864006,
         "judge_mean": 8.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0790208,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261103T041328Z/report.md"
@@ -555,13 +534,6 @@
         "cost_usd": 0.09088900000000003,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.084162,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261103T034759Z/report.md"
@@ -590,13 +562,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0322938,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.036120099999999995,
         "judge_mean": null,
         "trials": 1
        }
@@ -629,13 +594,6 @@
         "cost_usd": 0.0330703,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0367242,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261103T011855Z/report.md"
@@ -666,13 +624,6 @@
         "cost_usd": 0.0317732,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0353279,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/working-in-these-repos/20261102T231702Z/report.md"
@@ -687,7 +638,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "keep",
+    "alone_verdict": null,
     "bytes": 886,
     "confidence": {
      "cells": [
@@ -779,7 +730,7 @@
      "no_help": 0.0,
      "no_help_pairs": 4
     },
-    "current_text_runs": 56,
+    "current_text_runs": 28,
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -815,13 +766,6 @@
         "cost_usd": 0.0724172,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0883266,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T064648Z/report.md"
@@ -850,13 +794,6 @@
         "checks_passed": 1,
         "checks_total": 3,
         "cost_usd": 0.0911136,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0789678,
         "judge_mean": null,
         "trials": 1
        }
@@ -889,13 +826,6 @@
         "cost_usd": 0.054719000000000004,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0628698,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T060735Z/report.md"
@@ -924,13 +854,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.0863874,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1034054,
         "judge_mean": null,
         "trials": 1
        }
@@ -963,13 +886,6 @@
         "cost_usd": 0.09570379999999999,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0798462,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T043430Z/report.md"
@@ -998,13 +914,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.0543746,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.06480820000000001,
         "judge_mean": null,
         "trials": 1
        }
@@ -1037,13 +946,6 @@
         "cost_usd": 0.08572640000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.09619680000000001,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T043249Z/report.md"
@@ -1072,13 +974,6 @@
         "checks_passed": 0,
         "checks_total": 3,
         "cost_usd": 0.075105,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0868772,
         "judge_mean": null,
         "trials": 1
        }
@@ -1111,13 +1006,6 @@
         "cost_usd": 0.08224240000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.081046,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T040708Z/report.md"
@@ -1146,13 +1034,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.090426,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.09616580000000002,
         "judge_mean": null,
         "trials": 1
        }
@@ -1185,13 +1066,6 @@
         "cost_usd": 0.0562338,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0613166,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T040552Z/report.md"
@@ -1220,13 +1094,6 @@
         "checks_passed": 0,
         "checks_total": 3,
         "cost_usd": 0.0714256,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0887068,
         "judge_mean": null,
         "trials": 1
        }
@@ -1259,13 +1126,6 @@
         "cost_usd": 0.09285439999999999,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.08028959999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T034218Z/report.md"
@@ -1294,13 +1154,6 @@
         "checks_passed": 0,
         "checks_total": 3,
         "cost_usd": 0.07383240000000002,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.10101959999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -1333,13 +1186,6 @@
         "cost_usd": 0.0552586,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0670394,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T034052Z/report.md"
@@ -1368,13 +1214,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.0904896,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.09776199999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -1407,13 +1246,6 @@
         "cost_usd": 0.03994110000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0373343,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022314Z/report.md"
@@ -1442,13 +1274,6 @@
         "checks_passed": 0,
         "checks_total": 3,
         "cost_usd": 0.0336959,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.039261000000000004,
         "judge_mean": null,
         "trials": 1
        }
@@ -1481,13 +1306,6 @@
         "cost_usd": 0.0265131,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.030007900000000004,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T022201Z/report.md"
@@ -1516,13 +1334,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.0424217,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0483237,
         "judge_mean": null,
         "trials": 1
        }
@@ -1555,13 +1366,6 @@
         "cost_usd": 0.04400960000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0387884,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T011337Z/report.md"
@@ -1590,13 +1394,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.0444451,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.047443299999999994,
         "judge_mean": null,
         "trials": 1
        }
@@ -1629,13 +1426,6 @@
         "cost_usd": 0.033754400000000004,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0403091,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261103T011207Z/report.md"
@@ -1664,13 +1454,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.027000700000000002,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0313435,
         "judge_mean": null,
         "trials": 1
        }
@@ -1703,13 +1486,6 @@
         "cost_usd": 0.0425233,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.046479999999999994,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261102T230953Z/report.md"
@@ -1738,13 +1514,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.027440799999999998,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.029921299999999998,
         "judge_mean": null,
         "trials": 1
        }
@@ -1777,13 +1546,6 @@
         "cost_usd": 0.0332357,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0414949,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/anything-you-name-gets-its-link/20261102T230926Z/report.md"
@@ -1812,13 +1574,6 @@
         "checks_passed": 0,
         "checks_total": 4,
         "cost_usd": 0.089237,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.15884360000000003,
         "judge_mean": null,
         "trials": 1
        }
@@ -1851,13 +1606,6 @@
         "cost_usd": 0.04695510000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0549927,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261031T052140Z-cf03ac/guidance/anything-you-name-gets-its-link/20261031T052231Z/report.md"
@@ -1888,13 +1636,6 @@
         "cost_usd": 0.1047238,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.1192592,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261031T050317Z-4dd2f4/guidance/anything-you-name-gets-its-link/20261031T050412Z/report.md"
@@ -1909,7 +1650,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1015,
     "confidence": {
      "cells": [
@@ -1941,7 +1682,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Finding your unknowns",
     "id": "finding-your-unknowns",
     "next_test": {
@@ -1977,13 +1718,6 @@
         "cost_usd": 0.1223632,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.12831120000000001,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261103T055510Z/report.md"
@@ -2012,13 +1746,6 @@
         "checks_passed": 1,
         "checks_total": 1,
         "cost_usd": 0.1356484,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.1418066,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -2051,13 +1778,6 @@
         "cost_usd": 0.1155972,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.130432,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261103T051319Z/report.md"
@@ -2088,13 +1808,6 @@
         "cost_usd": 0.051778000000000005,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.04997670000000001,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261103T032846Z/report.md"
@@ -2123,13 +1836,6 @@
         "checks_passed": 1,
         "checks_total": 1,
         "cost_usd": 0.0481606,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.0505806,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -2162,13 +1868,6 @@
         "cost_usd": 0.0548134,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 1,
-        "cost_usd": 0.058226,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/finding-your-unknowns/20261103T025028Z/report.md"
@@ -2183,7 +1882,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 149,
     "confidence": {
      "cells": [
@@ -2215,7 +1914,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Workstation layout",
     "id": "workstation-layout",
     "next_test": {
@@ -2251,13 +1950,6 @@
         "cost_usd": 0.1400256,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1342448,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/workstation-layout/20261103T054936Z/report.md"
@@ -2286,13 +1978,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.1442222,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 2,
-        "cost_usd": 0.1292064,
         "judge_mean": null,
         "trials": 1
        }
@@ -2325,13 +2010,6 @@
         "cost_usd": 0.14911760000000002,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1376024,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/workstation-layout/20261103T050900Z/report.md"
@@ -2360,13 +2038,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.0538734,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0469605,
         "judge_mean": null,
         "trials": 1
        }
@@ -2399,13 +2070,6 @@
         "cost_usd": 0.0540883,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.049068799999999996,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/workstation-layout/20261103T030701Z/report.md"
@@ -2436,13 +2100,6 @@
         "cost_usd": 0.0568294,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.049038700000000005,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/workstation-layout/20261103T024724Z/report.md"
@@ -2457,7 +2114,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 431,
     "confidence": {
      "cells": [
@@ -2489,7 +2146,7 @@
      "no_help": 0.19852941176470584,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Security",
     "id": "security",
     "next_test": {
@@ -2525,13 +2182,6 @@
         "cost_usd": 0.0789814,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08492900000000002,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T044905Z/report.md"
@@ -2561,13 +2211,6 @@
         "checks_total": 2,
         "cost_usd": 0.0806244,
         "judge_mean": 9.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08659620000000001,
-        "judge_mean": 9.3,
         "trials": 1
        }
       },
@@ -2599,13 +2242,6 @@
         "cost_usd": 0.0802368,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0846982,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T035631Z/report.md"
@@ -2634,13 +2270,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.035933599999999996,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0381267,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -2673,13 +2302,6 @@
         "cost_usd": 0.0372649,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0403689,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/security/20261103T010420Z/report.md"
@@ -2709,13 +2331,6 @@
         "checks_total": 2,
         "cost_usd": 0.036728000000000004,
         "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0377156,
-        "judge_mean": 9.0,
         "trials": 1
        }
       },
@@ -2747,13 +2362,6 @@
         "cost_usd": 0.050976799999999996,
         "judge_mean": 8.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.10812609999999999,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T183939Z-1dd465/guidance/security/20261101T184035Z/report.md"
@@ -2770,7 +2378,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1197,
     "confidence": {
      "cells": [
@@ -2822,7 +2430,7 @@
      "no_help": 0.0,
      "no_help_pairs": null
     },
-    "current_text_runs": 31,
+    "current_text_runs": 15,
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
@@ -2858,13 +2466,6 @@
         "cost_usd": 0.0703531,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0689407,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T033146Z/report.md"
@@ -2893,13 +2494,6 @@
         "checks_passed": 3,
         "checks_total": 5,
         "cost_usd": 0.0418534,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 5,
-        "cost_usd": 0.0479992,
         "judge_mean": null,
         "trials": 1
        }
@@ -2932,13 +2526,6 @@
         "cost_usd": 0.0501501,
         "judge_mean": 4.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.04630820000000001,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T033022Z/report.md"
@@ -2969,13 +2556,6 @@
         "cost_usd": 0.07883930000000001,
         "judge_mean": 5.5,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.0703058,
-        "judge_mean": 9.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T031225Z/report.md"
@@ -3004,13 +2584,6 @@
         "checks_passed": 3,
         "checks_total": 5,
         "cost_usd": 0.0445655,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 5,
-        "cost_usd": 0.047605100000000004,
         "judge_mean": null,
         "trials": 1
        }
@@ -3043,13 +2616,6 @@
         "cost_usd": 0.05335,
         "judge_mean": 4.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0449908,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T031108Z/report.md"
@@ -3078,13 +2644,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.080728,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0733837,
         "judge_mean": null,
         "trials": 1
        }
@@ -3117,13 +2676,6 @@
         "cost_usd": 0.040741200000000005,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 5,
-        "cost_usd": 0.046995499999999996,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T025250Z/report.md"
@@ -3154,13 +2706,6 @@
         "cost_usd": 0.05113240000000001,
         "judge_mean": 4.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0502754,
-        "judge_mean": 8.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T025133Z/report.md"
@@ -3189,13 +2734,6 @@
         "checks_passed": 4,
         "checks_total": 6,
         "cost_usd": 0.038984099999999994,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 6,
-        "cost_usd": 0.047578,
         "judge_mean": null,
         "trials": 1
        }
@@ -3228,13 +2766,6 @@
         "cost_usd": 0.0391931,
         "judge_mean": 4.5,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 6,
-        "cost_usd": 0.047932699999999995,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261103T011849Z/report.md"
@@ -3263,13 +2794,6 @@
         "checks_passed": 3,
         "checks_total": 5,
         "cost_usd": 0.041665799999999996,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 5,
-        "cost_usd": 0.048580200000000004,
         "judge_mean": null,
         "trials": 1
        }
@@ -3302,13 +2826,6 @@
         "cost_usd": 0.051167699999999997,
         "judge_mean": 3.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.048928,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261102T233233Z/report.md"
@@ -3337,13 +2854,6 @@
         "checks_passed": 4,
         "checks_total": 6,
         "cost_usd": 0.0394524,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 6,
-        "cost_usd": 0.044648099999999996,
         "judge_mean": null,
         "trials": 1
        }
@@ -3376,13 +2886,6 @@
         "cost_usd": 0.039111400000000004,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 6,
-        "cost_usd": 0.04683539999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/data-exposure-in-ci/20261102T220748Z/report.md"
@@ -3411,13 +2914,6 @@
         "checks_passed": 4,
         "checks_total": 6,
         "cost_usd": 0.1215666,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 6,
-        "cost_usd": 0.299289,
         "judge_mean": null,
         "trials": 1
        }
@@ -3450,13 +2946,6 @@
         "cost_usd": 0.0538669,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 5,
-        "checks_total": 6,
-        "cost_usd": 0.11852489999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T130209Z-5f3399/guidance/data-exposure-in-ci/20261101T130309Z/report.md"
@@ -3473,7 +2962,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 295,
     "confidence": {
      "cells": [
@@ -3505,7 +2994,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Read before you start",
     "id": "read-before-you-start",
     "next_test": {
@@ -3541,13 +3030,6 @@
         "cost_usd": 0.0828976,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0919824,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/read-before-you-start/20261103T055618Z/report.md"
@@ -3576,13 +3058,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.09474740000000001,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0932552,
         "judge_mean": null,
         "trials": 1
        }
@@ -3615,13 +3090,6 @@
         "cost_usd": 0.0839988,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1003686,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/read-before-you-start/20261103T051539Z/report.md"
@@ -3650,13 +3118,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.034891,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.04421509999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -3689,13 +3150,6 @@
         "cost_usd": 0.0353135,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0420987,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/read-before-you-start/20261103T030957Z/report.md"
@@ -3726,13 +3180,6 @@
         "cost_usd": 0.0355389,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0470815,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/read-before-you-start/20261103T025054Z/report.md"
@@ -3747,7 +3194,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 2201,
     "confidence": {
      "cells": [
@@ -3779,7 +3226,7 @@
      "no_help": 0.19852941176470584,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
@@ -3815,13 +3262,6 @@
         "cost_usd": 0.1081728,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.223827,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261103T064635Z/report.md"
@@ -3851,13 +3291,6 @@
         "checks_total": 4,
         "cost_usd": 0.11082800000000001,
         "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.23829800000000004,
-        "judge_mean": 8.0,
         "trials": 1
        }
       },
@@ -3889,13 +3322,6 @@
         "cost_usd": 0.1071948,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.24379080000000003,
-        "judge_mean": 8.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261103T034722Z/report.md"
@@ -3926,13 +3352,6 @@
         "cost_usd": 0.0369262,
         "judge_mean": 6.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.0435725,
-        "judge_mean": 7.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261103T022748Z/report.md"
@@ -3961,13 +3380,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.037418,
-        "judge_mean": 7.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.0447242,
         "judge_mean": 7.0,
         "trials": 1
        }
@@ -4000,13 +3412,6 @@
         "cost_usd": 0.037391999999999995,
         "judge_mean": 7.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.042540800000000004,
-        "judge_mean": 7.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/automation-vs-branch-protection/20261102T231621Z/report.md"
@@ -4021,7 +3426,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1283,
     "confidence": {
      "cells": [
@@ -4053,7 +3458,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Two GitHub connectors, and which one you are holding",
     "id": "two-github-connectors",
     "next_test": {
@@ -4089,13 +3494,6 @@
         "cost_usd": 0.0903698,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.061374200000000004,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-github-connectors/20261103T055158Z/report.md"
@@ -4126,13 +3524,6 @@
         "cost_usd": 0.09363439999999999,
         "judge_mean": 2.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0603392,
-        "judge_mean": 7.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-github-connectors/20261103T053220Z/report.md"
@@ -4161,13 +3552,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0612442,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0592492,
         "judge_mean": null,
         "trials": 1
        }
@@ -4200,13 +3584,6 @@
         "cost_usd": 0.046927899999999995,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0314561,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-github-connectors/20261103T032653Z/report.md"
@@ -4235,13 +3612,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0477216,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0314886,
         "judge_mean": null,
         "trials": 1
        }
@@ -4274,13 +3644,6 @@
         "cost_usd": 0.0306386,
         "judge_mean": 3.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.030021100000000002,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-github-connectors/20261103T024745Z/report.md"
@@ -4295,7 +3658,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "keep",
+    "alone_verdict": null,
     "bytes": 622,
     "confidence": {
      "cells": [
@@ -4327,7 +3690,7 @@
      "no_help": 0.0,
      "no_help_pairs": 9
     },
-    "current_text_runs": 36,
+    "current_text_runs": 18,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -4363,13 +3726,6 @@
         "cost_usd": 0.054906,
         "judge_mean": 1.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 4,
-        "cost_usd": 0.057775700000000006,
-        "judge_mean": 1.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T231418Z-41fbe5/guidance/agent-contribution-markers/20261103T231530Z/report.md"
@@ -4398,13 +3754,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.0574809,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0699115,
         "judge_mean": null,
         "trials": 1
        }
@@ -4437,13 +3786,6 @@
         "cost_usd": 0.0479782,
         "judge_mean": 1.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 4,
-        "cost_usd": 0.0573568,
-        "judge_mean": 3.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T212658Z-440e1c/guidance/agent-contribution-markers/20261103T213819Z/report.md"
@@ -4472,13 +3814,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.11668819999999999,
-        "judge_mean": 1.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 4,
-        "cost_usd": 0.1414746,
         "judge_mean": 1.0,
         "trials": 1
        }
@@ -4511,13 +3846,6 @@
         "cost_usd": 0.11684719999999998,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.17214440000000003,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T201051Z-54df90/guidance/agent-contribution-markers/20261103T202309Z/report.md"
@@ -4546,13 +3874,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.048402400000000005,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.07013749999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -4585,13 +3906,6 @@
         "cost_usd": 0.1426322,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.17234799999999997,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T184722Z-97efd8/guidance/agent-contribution-markers/20261103T190620Z/report.md"
@@ -4620,13 +3934,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.1257174,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.1452018,
         "judge_mean": null,
         "trials": 1
        }
@@ -4659,13 +3966,6 @@
         "cost_usd": 0.0485056,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0714895,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T165451Z-b209ec/guidance/agent-contribution-markers/20261103T165858Z/report.md"
@@ -4694,13 +3994,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.1277908,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.15308660000000002,
         "judge_mean": null,
         "trials": 1
        }
@@ -4733,13 +4026,6 @@
         "cost_usd": 0.053695099999999996,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.07050840000000001,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T134829Z-16e828/guidance/agent-contribution-markers/20261103T134949Z/report.md"
@@ -4768,13 +4054,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.11810319999999999,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.1491066,
         "judge_mean": null,
         "trials": 1
        }
@@ -4807,13 +4086,6 @@
         "cost_usd": 0.0862744,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1226218,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261103T044909Z/report.md"
@@ -4842,13 +4114,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.085495,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1180318,
         "judge_mean": null,
         "trials": 1
        }
@@ -4881,13 +4146,6 @@
         "cost_usd": 0.0961322,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1248204,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261103T035614Z/report.md"
@@ -4918,13 +4176,6 @@
         "cost_usd": 0.0348532,
         "judge_mean": 2.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 4,
-        "cost_usd": 0.0413574,
-        "judge_mean": 1.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261103T023404Z/report.md"
@@ -4953,13 +4204,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.0340194,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.047784700000000006,
         "judge_mean": null,
         "trials": 1
        }
@@ -4992,13 +4236,6 @@
         "cost_usd": 0.03582369999999999,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0496201,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/agent-contribution-markers/20261102T232303Z/report.md"
@@ -5027,13 +4264,6 @@
         "checks_passed": 1,
         "checks_total": 4,
         "cost_usd": 0.053571,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0672849,
         "judge_mean": null,
         "trials": 1
        }
@@ -5065,13 +4295,6 @@
         "checks_total": 4,
         "cost_usd": 0.10713740000000001,
         "judge_mean": 1.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 4,
-        "cost_usd": 0.24947439999999999,
-        "judge_mean": 1.7,
         "trials": 1
        }
       },
@@ -5119,7 +4342,7 @@
     "verdict_reason": null
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 875,
     "confidence": {
      "cells": [
@@ -5151,7 +4374,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
     "id": "github-404-means-not-authorized",
     "next_test": {
@@ -5187,13 +4410,6 @@
         "cost_usd": 0.1106188,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.11122119999999999,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261103T044419Z/report.md"
@@ -5222,13 +4438,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.09926859999999998,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.111863,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -5261,13 +4470,6 @@
         "cost_usd": 0.10316360000000001,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1122536,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261103T035136Z/report.md"
@@ -5296,13 +4498,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0431916,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.043812399999999994,
         "judge_mean": null,
         "trials": 1
        }
@@ -5335,13 +4530,6 @@
         "cost_usd": 0.042754499999999994,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.043726,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261103T012116Z/report.md"
@@ -5372,13 +4560,6 @@
         "cost_usd": 0.042734699999999994,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.049975900000000004,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/github-404-means-not-authorized/20261102T231929Z/report.md"
@@ -5393,7 +4574,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 963,
     "confidence": {
      "cells": [
@@ -5425,7 +4606,7 @@
      "no_help": 0.05065965780251491,
      "no_help_pairs": 4
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
     "id": "fleet-spans-two-owners",
     "next_test": {
@@ -5461,13 +4642,6 @@
         "cost_usd": 0.1100338,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.1201678,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261103T061706Z/report.md"
@@ -5496,13 +4670,6 @@
         "checks_passed": 3,
         "checks_total": 3,
         "cost_usd": 0.10828979999999999,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.11765379999999998,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -5535,13 +4702,6 @@
         "cost_usd": 0.1074114,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.12159060000000002,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261103T041543Z/report.md"
@@ -5570,13 +4730,6 @@
         "checks_passed": 3,
         "checks_total": 3,
         "cost_usd": 0.11215320000000001,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.11668960000000002,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -5609,13 +4762,6 @@
         "cost_usd": 0.0504529,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.0489986,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261103T023025Z/report.md"
@@ -5645,13 +4791,6 @@
         "checks_total": 3,
         "cost_usd": 0.050727900000000006,
         "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.0490295,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -5683,13 +4822,6 @@
         "cost_usd": 0.0502369,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 3,
-        "cost_usd": 0.0550774,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/fleet-spans-two-owners/20261102T231858Z/report.md"
@@ -5704,7 +4836,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1364,
     "confidence": {
      "cells": [
@@ -5736,7 +4868,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "\"The watch finished\" is not \"CI passed\"",
     "id": "watch-finished-is-not-ci-passed",
     "next_test": {
@@ -5772,13 +4904,6 @@
         "cost_usd": 0.08885380000000001,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.09711360000000001,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/watch-finished-is-not-ci-passed/20261103T061129Z/report.md"
@@ -5807,13 +4932,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.09083440000000001,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1009308,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -5846,13 +4964,6 @@
         "cost_usd": 0.090415,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.09252859999999999,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/watch-finished-is-not-ci-passed/20261103T040734Z/report.md"
@@ -5881,13 +4992,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.0872316,
-        "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.10427239999999999,
         "judge_mean": 9.7,
         "trials": 1
        }
@@ -5920,13 +5024,6 @@
         "cost_usd": 0.031732800000000005,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.044187800000000006,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/watch-finished-is-not-ci-passed/20261103T022411Z/report.md"
@@ -5955,13 +5052,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.0319606,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0443157,
         "judge_mean": null,
         "trials": 1
        }
@@ -5994,13 +5084,6 @@
         "cost_usd": 0.0315932,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.047353000000000006,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/watch-finished-is-not-ci-passed/20261102T231100Z/report.md"
@@ -6015,7 +5098,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "cannot-discriminate",
+    "alone_verdict": null,
     "bytes": 1102,
     "confidence": {
      "cells": [],
@@ -6026,7 +5109,7 @@
      "no_help": null,
      "no_help_pairs": null
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "A successful `git push` does not mean your commit exists",
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
@@ -6062,13 +5145,6 @@
         "cost_usd": 0.118403,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.1238846,
-        "judge_mean": 6.5,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-push-does-not-mean-commit-exists/20261103T060914Z/report.md"
@@ -6097,13 +5173,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.1286988,
-        "judge_mean": 9.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.1372698,
         "judge_mean": 9.0,
         "trials": 1
        }
@@ -6136,13 +5205,6 @@
         "cost_usd": 0.1203204,
         "judge_mean": 8.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.1415106,
-        "judge_mean": 8.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-push-does-not-mean-commit-exists/20261103T040817Z/report.md"
@@ -6172,13 +5234,6 @@
         "checks_total": 2,
         "cost_usd": 0.1258192,
         "judge_mean": 8.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.1361756,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -6210,13 +5265,6 @@
         "cost_usd": 0.0437915,
         "judge_mean": 5.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.044466,
-        "judge_mean": 6.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-push-does-not-mean-commit-exists/20261103T022426Z/report.md"
@@ -6246,13 +5294,6 @@
         "checks_total": 2,
         "cost_usd": 0.044566299999999996,
         "judge_mean": 7.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.0464309,
-        "judge_mean": 7.3,
         "trials": 1
        }
       },
@@ -6284,13 +5325,6 @@
         "cost_usd": 0.0437993,
         "judge_mean": 6.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 0,
-        "checks_total": 2,
-        "cost_usd": 0.04454380000000001,
-        "judge_mean": 7.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-push-does-not-mean-commit-exists/20261102T231247Z/report.md"
@@ -6305,7 +5339,7 @@
     "verdict_reason": "every cell's fixture looks broken: both arms pass almost nothing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 534,
     "confidence": {
      "cells": [
@@ -6337,7 +5371,7 @@
      "no_help": 0.0,
      "no_help_pairs": 4
     },
-    "current_text_runs": 16,
+    "current_text_runs": 8,
     "heading": "Dependency updates",
     "id": "dependency-updates",
     "next_test": {
@@ -6373,13 +5407,6 @@
         "cost_usd": 0.04582030000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0547037,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T184857Z-307da1/guidance/dependency-updates/20261103T190131Z/report.md"
@@ -6408,13 +5435,6 @@
         "checks_passed": 2,
         "checks_total": 4,
         "cost_usd": 0.1164354,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1271254,
         "judge_mean": null,
         "trials": 1
        }
@@ -6447,13 +5467,6 @@
         "cost_usd": 0.07868979999999999,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0827472,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261103T044702Z/report.md"
@@ -6482,13 +5495,6 @@
         "checks_passed": 2,
         "checks_total": 4,
         "cost_usd": 0.0825028,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.07717500000000001,
         "judge_mean": null,
         "trials": 1
        }
@@ -6521,13 +5527,6 @@
         "cost_usd": 0.08213839999999999,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0770354,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261103T035433Z/report.md"
@@ -6556,13 +5555,6 @@
         "checks_passed": 2,
         "checks_total": 4,
         "cost_usd": 0.0326379,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0363415,
         "judge_mean": null,
         "trials": 1
        }
@@ -6595,13 +5587,6 @@
         "cost_usd": 0.0332614,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0398565,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261103T012322Z/report.md"
@@ -6632,13 +5617,6 @@
         "cost_usd": 0.0330914,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.043616199999999994,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/dependency-updates/20261102T232128Z/report.md"
@@ -6653,7 +5631,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1003,
     "confidence": {
      "cells": [
@@ -6685,7 +5663,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 15,
+    "current_text_runs": 7,
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
@@ -6721,13 +5699,6 @@
         "cost_usd": 0.10190919999999999,
         "judge_mean": 8.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0869482,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/name-becomes-scanner-data/20261103T061629Z/report.md"
@@ -6756,13 +5727,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.08084179999999999,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0846434,
         "judge_mean": null,
         "trials": 1
        }
@@ -6795,13 +5759,6 @@
         "cost_usd": 0.0887438,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.09427959999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/name-becomes-scanner-data/20261103T041443Z/report.md"
@@ -6830,13 +5787,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.0890638,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.08355220000000001,
         "judge_mean": null,
         "trials": 1
        }
@@ -6869,13 +5819,6 @@
         "cost_usd": 0.03672360000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0378327,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/name-becomes-scanner-data/20261103T023017Z/report.md"
@@ -6904,13 +5847,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.0371346,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0366895,
         "judge_mean": null,
         "trials": 1
        }
@@ -6943,13 +5879,6 @@
         "cost_usd": 0.03828930000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.037497699999999995,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/name-becomes-scanner-data/20261102T231839Z/report.md"
@@ -6978,13 +5907,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.1204414,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.11193639999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -7017,13 +5939,6 @@
         "cost_usd": 0.0468075,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.1078268,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T153103Z-01255d/guidance/name-becomes-scanner-data/20261101T153214Z/report.md"
@@ -7040,7 +5955,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1153,
     "confidence": {
      "cells": [
@@ -7072,7 +5987,7 @@
      "no_help": 0.0,
      "no_help_pairs": 4
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
@@ -7108,13 +6023,6 @@
         "cost_usd": 0.113145,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.111384,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261103T061059Z/report.md"
@@ -7143,13 +6051,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.11199079999999999,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.109301,
         "judge_mean": null,
         "trials": 1
        }
@@ -7182,13 +6083,6 @@
         "cost_usd": 0.10091279999999998,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1254534,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261103T040901Z/report.md"
@@ -7217,13 +6111,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.1154548,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.11675360000000001,
         "judge_mean": null,
         "trials": 1
        }
@@ -7256,13 +6143,6 @@
         "cost_usd": 0.0440932,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.046615,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261103T022515Z/report.md"
@@ -7291,13 +6171,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.0467499,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.047975399999999994,
         "judge_mean": null,
         "trials": 1
        }
@@ -7330,13 +6203,6 @@
         "cost_usd": 0.0458907,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.046925299999999996,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/pinning-github-actions/20261102T231409Z/report.md"
@@ -7365,13 +6231,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.150389,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1537868,
         "judge_mean": null,
         "trials": 1
        }
@@ -7404,13 +6263,6 @@
         "cost_usd": 0.0587327,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0624661,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T155105Z-e2ce40/guidance/pinning-github-actions/20261101T155200Z/report.md"
@@ -7427,7 +6279,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 918,
     "confidence": {
      "cells": [
@@ -7459,7 +6311,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
@@ -7495,13 +6347,6 @@
         "cost_usd": 0.1047602,
         "judge_mean": 3.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 2,
-        "cost_usd": 0.16102719999999998,
-        "judge_mean": 9.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261103T044533Z/report.md"
@@ -7531,13 +6376,6 @@
         "checks_total": 2,
         "cost_usd": 0.1252868,
         "judge_mean": 3.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 2,
-        "cost_usd": 0.1882406,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -7569,13 +6407,6 @@
         "cost_usd": 0.1016016,
         "judge_mean": 3.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 2,
-        "cost_usd": 0.1734984,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261103T035140Z/report.md"
@@ -7606,13 +6437,6 @@
         "cost_usd": 0.0404934,
         "judge_mean": 4.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 1,
-        "checks_total": 2,
-        "cost_usd": 0.050267400000000004,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261103T023155Z/report.md"
@@ -7641,13 +6465,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.042531400000000004,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.060224200000000006,
         "judge_mean": null,
         "trials": 1
        }
@@ -7680,13 +6497,6 @@
         "cost_usd": 0.0416808,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.05821559999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/test-that-can-signal-kills-every-session/20261102T232020Z/report.md"
@@ -7717,13 +6527,6 @@
         "cost_usd": 0.0561748,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1290826,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261101T213353Z-79b342/guidance/test-that-can-signal-kills-every-session/20261101T213449Z/report.md"
@@ -7740,7 +6543,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 2515,
     "confidence": {
      "cells": [
@@ -7772,7 +6575,7 @@
      "no_help": 0.0,
      "no_help_pairs": 4
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
@@ -7808,13 +6611,6 @@
         "cost_usd": 0.103868,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.11392440000000001,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261103T061358Z/report.md"
@@ -7843,13 +6639,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.10373,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.105421,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -7882,13 +6671,6 @@
         "cost_usd": 0.10113520000000001,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1073172,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261103T041207Z/report.md"
@@ -7917,13 +6699,6 @@
         "checks_passed": 2,
         "checks_total": 2,
         "cost_usd": 0.1079538,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1292536,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -7956,13 +6731,6 @@
         "cost_usd": 0.0447804,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.05690640000000001,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261103T022711Z/report.md"
@@ -7992,13 +6760,6 @@
         "checks_total": 2,
         "cost_usd": 0.04659290000000001,
         "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.054908099999999994,
-        "judge_mean": 10.0,
         "trials": 1
        }
       },
@@ -8030,13 +6791,6 @@
         "cost_usd": 0.048654699999999995,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0602942,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/subagent-delegation/20261102T231523Z/report.md"
@@ -8051,7 +6805,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1228,
     "confidence": {
      "cells": [
@@ -8083,7 +6837,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Skills ecosystem",
     "id": "skills-ecosystem",
     "next_test": {
@@ -8119,13 +6873,6 @@
         "cost_usd": 0.0963092,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.09354679999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/skills-ecosystem/20261103T055355Z/report.md"
@@ -8154,13 +6901,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0938834,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08761379999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -8193,13 +6933,6 @@
         "cost_usd": 0.09557840000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08784639999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/skills-ecosystem/20261103T051318Z/report.md"
@@ -8228,13 +6961,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.0441618,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0448715,
         "judge_mean": null,
         "trials": 1
        }
@@ -8267,13 +6993,6 @@
         "cost_usd": 0.04327,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0422062,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/skills-ecosystem/20261103T030904Z/report.md"
@@ -8304,13 +7023,6 @@
         "cost_usd": 0.0421045,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.04583039999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/skills-ecosystem/20261103T024942Z/report.md"
@@ -8325,7 +7037,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1970,
     "confidence": {
      "cells": [
@@ -8357,7 +7069,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Two setup gaps you may close, and must not nag about",
     "id": "two-setup-gaps",
     "next_test": {
@@ -8393,13 +7105,6 @@
         "cost_usd": 0.130936,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0911554,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-setup-gaps/20261103T055321Z/report.md"
@@ -8428,13 +7133,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.12445039999999999,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.103489,
         "judge_mean": null,
         "trials": 1
        }
@@ -8467,13 +7165,6 @@
         "cost_usd": 0.1079976,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1120438,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-setup-gaps/20261103T051237Z/report.md"
@@ -8502,13 +7193,6 @@
         "checks_passed": 1,
         "checks_total": 2,
         "cost_usd": 0.050508700000000004,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0472443,
         "judge_mean": null,
         "trials": 1
        }
@@ -8541,13 +7225,6 @@
         "cost_usd": 0.049849199999999996,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.046901899999999996,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-setup-gaps/20261103T030725Z/report.md"
@@ -8578,13 +7255,6 @@
         "cost_usd": 0.048472400000000006,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.044362599999999995,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/two-setup-gaps/20261103T024816Z/report.md"
@@ -8599,7 +7269,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 1396,
     "confidence": {
      "cells": [
@@ -8631,7 +7301,7 @@
      "no_help": 0.19852941176470584,
      "no_help_pairs": 3
     },
-    "current_text_runs": 14,
+    "current_text_runs": 7,
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
@@ -8667,13 +7337,6 @@
         "cost_usd": 0.0750806,
         "judge_mean": 8.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08033420000000001,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261103T061228Z/report.md"
@@ -8703,13 +7366,6 @@
         "checks_total": 2,
         "cost_usd": 0.0719046,
         "judge_mean": 8.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.078944,
-        "judge_mean": 9.3,
         "trials": 1
        }
       },
@@ -8741,13 +7397,6 @@
         "cost_usd": 0.07269160000000001,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.08761760000000002,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261103T041006Z/report.md"
@@ -8777,13 +7426,6 @@
         "checks_total": 2,
         "cost_usd": 0.0750684,
         "judge_mean": 9.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0837296,
-        "judge_mean": 10.0,
         "trials": 1
        }
       },
@@ -8815,13 +7457,6 @@
         "cost_usd": 0.037403900000000004,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0370585,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261103T022617Z/report.md"
@@ -8851,13 +7486,6 @@
         "checks_total": 2,
         "cost_usd": 0.0304162,
         "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0406762,
-        "judge_mean": 9.3,
         "trials": 1
        }
       },
@@ -8889,13 +7517,6 @@
         "cost_usd": 0.0368675,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.037003,
-        "judge_mean": 8.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/git-practices/20261102T231421Z/report.md"
@@ -8910,7 +7531,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 447,
     "confidence": {
      "cells": [
@@ -8942,7 +7563,7 @@
      "no_help": 0.13813813813813813,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Docker",
     "id": "section-docker",
     "next_test": {
@@ -8978,13 +7599,6 @@
         "cost_usd": 0.12602619999999998,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 4,
-        "cost_usd": 0.12241439999999999,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-docker/20261103T045026Z/report.md"
@@ -9015,13 +7629,6 @@
         "cost_usd": 0.12626700000000002,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.10908600000000002,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-docker/20261103T042300Z/report.md"
@@ -9050,13 +7657,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.13682420000000003,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1272044,
         "judge_mean": null,
         "trials": 1
        }
@@ -9089,13 +7689,6 @@
         "cost_usd": 0.0457246,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.05048029999999999,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-docker/20261103T032127Z/report.md"
@@ -9125,13 +7718,6 @@
         "checks_total": 4,
         "cost_usd": 0.042612699999999996,
         "judge_mean": 9.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0476924,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -9163,13 +7749,6 @@
         "cost_usd": 0.0437349,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0526577,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-docker/20261103T024238Z/report.md"
@@ -9184,7 +7763,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 278,
     "confidence": {
      "cells": [
@@ -9216,7 +7795,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": ".NET / C#",
     "id": "section-dotnet",
     "next_test": {
@@ -9252,13 +7831,6 @@
         "cost_usd": 0.1269916,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.1159192,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-dotnet/20261103T062450Z/report.md"
@@ -9287,13 +7859,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.1377554,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.112868,
         "judge_mean": null,
         "trials": 1
        }
@@ -9326,13 +7891,6 @@
         "cost_usd": 0.1228464,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.1367518,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-dotnet/20261103T050726Z/report.md"
@@ -9361,13 +7919,6 @@
         "checks_passed": 2,
         "checks_total": 3,
         "cost_usd": 0.0432224,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0582695,
         "judge_mean": null,
         "trials": 1
        }
@@ -9400,13 +7951,6 @@
         "cost_usd": 0.0429007,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0517656,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-dotnet/20261103T030407Z/report.md"
@@ -9437,13 +7981,6 @@
         "cost_usd": 0.057660899999999994,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.057295200000000004,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-dotnet/20261103T024505Z/report.md"
@@ -9458,7 +7995,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 313,
     "confidence": {
      "cells": [
@@ -9490,7 +8027,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Go",
     "id": "section-go",
     "next_test": {
@@ -9526,13 +8063,6 @@
         "cost_usd": 0.10554060000000001,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.12209759999999999,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-go/20261103T054351Z/report.md"
@@ -9561,13 +8091,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.10320560000000001,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.11901120000000001,
         "judge_mean": null,
         "trials": 1
        }
@@ -9600,13 +8123,6 @@
         "cost_usd": 0.1121336,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.1214154,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-go/20261103T050349Z/report.md"
@@ -9635,13 +8151,6 @@
         "checks_passed": 0,
         "checks_total": 2,
         "cost_usd": 0.0450462,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.05379,
         "judge_mean": null,
         "trials": 1
        }
@@ -9674,13 +8183,6 @@
         "cost_usd": 0.0428889,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0510699,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-go/20261103T030342Z/report.md"
@@ -9711,13 +8213,6 @@
         "cost_usd": 0.0437025,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 2,
-        "checks_total": 2,
-        "cost_usd": 0.0521282,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-go/20261103T024509Z/report.md"
@@ -9732,7 +8227,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 249,
     "confidence": {
      "cells": [
@@ -9764,7 +8259,7 @@
      "no_help": 0.19852941176470584,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "JavaScript",
     "id": "section-javascript",
     "next_test": {
@@ -9800,13 +8295,6 @@
         "cost_usd": 0.08927800000000001,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.09459680000000001,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-javascript/20261103T054416Z/report.md"
@@ -9835,13 +8323,6 @@
         "checks_passed": 3,
         "checks_total": 3,
         "cost_usd": 0.08774579999999998,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.10783979999999999,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -9874,13 +8355,6 @@
         "cost_usd": 0.09003159999999999,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.108618,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-javascript/20261103T050326Z/report.md"
@@ -9911,13 +8385,6 @@
         "cost_usd": 0.0370098,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.044021,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-javascript/20261103T032124Z/report.md"
@@ -9946,13 +8413,6 @@
         "checks_passed": 3,
         "checks_total": 3,
         "cost_usd": 0.0363751,
-        "judge_mean": 10.0,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0505531,
         "judge_mean": 10.0,
         "trials": 1
        }
@@ -9985,13 +8445,6 @@
         "cost_usd": 0.0366982,
         "judge_mean": 10.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0490888,
-        "judge_mean": 8.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-javascript/20261103T024237Z/report.md"
@@ -10006,7 +8459,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 786,
     "confidence": {
      "cells": [
@@ -10038,7 +8491,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Python",
     "id": "section-python",
     "next_test": {
@@ -10074,13 +8527,6 @@
         "cost_usd": 0.0900466,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.11236020000000001,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261103T044601Z/report.md"
@@ -10109,13 +8555,6 @@
         "checks_passed": 3,
         "checks_total": 4,
         "cost_usd": 0.1003106,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.12320519999999999,
         "judge_mean": null,
         "trials": 1
        }
@@ -10148,13 +8587,6 @@
         "cost_usd": 0.098694,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.1111174,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261103T035332Z/report.md"
@@ -10183,13 +8615,6 @@
         "checks_passed": 2,
         "checks_total": 4,
         "cost_usd": 0.0393684,
-        "judge_mean": null,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.047061099999999995,
         "judge_mean": null,
         "trials": 1
        }
@@ -10222,13 +8647,6 @@
         "cost_usd": 0.039889600000000004,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0435248,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261103T012304Z/report.md"
@@ -10259,13 +8677,6 @@
         "cost_usd": 0.040169800000000006,
         "judge_mean": null,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 4,
-        "checks_total": 4,
-        "cost_usd": 0.0462489,
-        "judge_mean": null,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-python/20261102T232123Z/report.md"
@@ -10280,7 +8691,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 305,
     "confidence": {
      "cells": [
@@ -10312,7 +8723,7 @@
      "no_help": 0.19852941176470584,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "Rust",
     "id": "section-rust",
     "next_test": {
@@ -10348,13 +8759,6 @@
         "cost_usd": 0.143876,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.12131439999999999,
-        "judge_mean": 9.6,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-rust/20261103T054726Z/report.md"
@@ -10384,13 +8788,6 @@
         "checks_total": 3,
         "cost_usd": 0.11592660000000002,
         "judge_mean": 9.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.1218348,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -10422,13 +8819,6 @@
         "cost_usd": 0.12359300000000001,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.12004619999999999,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-rust/20261103T050716Z/report.md"
@@ -10458,13 +8848,6 @@
         "checks_total": 3,
         "cost_usd": 0.0546903,
         "judge_mean": 9.7,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0552468,
-        "judge_mean": 9.3,
         "trials": 1
        }
       },
@@ -10496,13 +8879,6 @@
         "cost_usd": 0.0497116,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.05640680000000001,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-rust/20261103T030408Z/report.md"
@@ -10533,13 +8909,6 @@
         "cost_usd": 0.05300080000000001,
         "judge_mean": 9.7,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.053135,
-        "judge_mean": 9.3,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-rust/20261103T024457Z/report.md"
@@ -10554,7 +8923,7 @@
     "verdict_reason": "a cell is insufficient or missing"
    },
    {
-    "alone_verdict": "insufficient",
+    "alone_verdict": null,
     "bytes": 526,
     "confidence": {
      "cells": [
@@ -10586,7 +8955,7 @@
      "no_help": 0.0,
      "no_help_pairs": 3
     },
-    "current_text_runs": 12,
+    "current_text_runs": 6,
     "heading": "TypeScript",
     "id": "section-typescript",
     "next_test": {
@@ -10622,13 +8991,6 @@
         "cost_usd": 0.11329200000000002,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.10827339999999999,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-typescript/20261103T054351Z/report.md"
@@ -10659,13 +9021,6 @@
         "cost_usd": 0.1174764,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.10966339999999998,
-        "judge_mean": 9.7,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-typescript/20261103T052428Z/report.md"
@@ -10694,13 +9049,6 @@
         "checks_passed": 3,
         "checks_total": 3,
         "cost_usd": 0.11147080000000001,
-        "judge_mean": 9.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.09663759999999999,
         "judge_mean": 9.3,
         "trials": 1
        }
@@ -10733,13 +9081,6 @@
         "cost_usd": 0.0370917,
         "judge_mean": 9.3,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.0388735,
-        "judge_mean": 10.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-typescript/20261103T032153Z/report.md"
@@ -10769,13 +9110,6 @@
         "checks_total": 3,
         "cost_usd": 0.035788600000000004,
         "judge_mean": 9.3,
-        "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.039309300000000005,
-        "judge_mean": 9.7,
         "trials": 1
        }
       },
@@ -10807,13 +9141,6 @@
         "cost_usd": 0.036725100000000004,
         "judge_mean": 9.0,
         "trials": 1
-       },
-       "section": {
-        "checks_passed": 3,
-        "checks_total": 3,
-        "cost_usd": 0.039082,
-        "judge_mean": 9.0,
-        "trials": 1
        }
       },
       "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/guidance/section-typescript/20261103T024239Z/report.md"
@@ -10830,7 +9157,7 @@
   ]
  },
  "lessons": {
-  "date": "2026-11-03",
+  "date": null,
   "issues": [
    {
     "count": 1,
@@ -10883,315 +9210,10 @@
     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/19"
    }
   ],
-  "items": [
-   {
-    "draft": {
-     "number": 109,
-     "state": "merged",
-     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/109"
-    },
-    "evidence_count": 54,
-    "first_seen": "2026-04-18",
-    "kind": "new-skill",
-    "last_seen": "2026-10-05",
-    "signals": {
-     "red-ci-after-push": 54
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "red-ci-adamdaniel-ai"
-   },
-   {
-    "draft": null,
-    "evidence_count": 19,
-    "first_seen": "2026-04-19",
-    "kind": "new-skill",
-    "last_seen": "2026-10-23",
-    "signals": {
-     "repeated-tool-failure": 19
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "tool-edit"
-   },
-   {
-    "draft": null,
-    "evidence_count": 17,
-    "first_seen": "2026-05-07",
-    "kind": "new-skill",
-    "last_seen": "2026-10-09",
-    "signals": {
-     "repeated-tool-failure": 17
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "tool-bash-cd"
-   },
-   {
-    "draft": null,
-    "evidence_count": 10,
-    "first_seen": "2026-04-19",
-    "kind": "new-skill",
-    "last_seen": "2026-10-04",
-    "signals": {
-     "repeated-tool-failure": 10
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "tool-bash-gh"
-   },
-   {
-    "draft": null,
-    "evidence_count": 10,
-    "first_seen": "2026-04-25",
-    "kind": "new-skill",
-    "last_seen": "2026-10-05",
-    "signals": {
-     "repeated-tool-failure": 10
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "tool-bash-git"
-   },
-   {
-    "draft": {
-     "number": 111,
-     "state": "merged",
-     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/111"
-    },
-    "evidence_count": 4,
-    "first_seen": "2026-09-25",
-    "kind": "new-skill",
-    "last_seen": "2026-10-20",
-    "signals": {
-     "repeated-tool-failure": 4
-    },
-    "sources": [
-     "windows"
-    ],
-    "subject": "tool-powershell"
-   },
-   {
-    "draft": null,
-    "evidence_count": 3,
-    "first_seen": "2026-04-20",
-    "kind": "new-skill",
-    "last_seen": "2026-06-25",
-    "signals": {
-     "repeated-tool-failure": 3
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "tool-bash-sleep"
-   },
-   {
-    "evidence_count": 16,
-    "first_seen": "2026-11-02",
-    "kind": "skill-edit",
-    "last_seen": "2026-11-02",
-    "signals": {
-     "rule": 16
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:github-actions-repo-settings"
-   },
-   {
-    "evidence_count": 6,
-    "first_seen": "2026-11-02",
-    "kind": "skill-edit",
-    "last_seen": "2026-11-02",
-    "signals": {
-     "rule": 6
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:vendor-release-impact-issues"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-09-22",
-    "kind": "skill-edit",
-    "last_seen": "2026-09-28",
-    "signals": {
-     "rule": 2
-    },
-    "sources": [
-     "windows"
-    ],
-    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-09-08",
-    "kind": "skill-edit",
-    "last_seen": "2026-09-22",
-    "signals": {
-     "rule": 2
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "skill:workflow-path-audit"
-   },
-   {
-    "evidence_count": 1,
-    "first_seen": "2026-09-22",
-    "kind": "skill-edit",
-    "last_seen": "2026-09-22",
-    "signals": {
-     "rule": 1
-    },
-    "sources": [
-     "windows"
-    ],
-    "subject": "skill:windows-elevation-from-wsl"
-   },
-   {
-    "evidence_count": 5,
-    "first_seen": "2026-06-05",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-10-09",
-    "signals": {
-     "red-ci-after-push": 3,
-     "redirection": 2
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:writing-adrs"
-   },
-   {
-    "evidence_count": 4,
-    "first_seen": "2026-09-08",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-09-22",
-    "signals": {
-     "interrupted": 1,
-     "redirection": 3
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "skill:windows-elevation-from-wsl"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-07-12",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-09-23",
-    "signals": {
-     "redirection": 1,
-     "repeated-tool-failure": 1
-    },
-    "sources": [
-     "windows",
-     "wsl"
-    ],
-    "subject": "skill:fastmail"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-07-17",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-07-17",
-    "signals": {
-     "redirection": 2
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:github-actions-repo-settings"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-07-06",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-09-25",
-    "signals": {
-     "redirection": 2
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:migrate-claude-memory"
-   },
-   {
-    "evidence_count": 2,
-    "first_seen": "2026-07-16",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-07-17",
-    "signals": {
-     "redirection": 2
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
-   },
-   {
-    "evidence_count": 1,
-    "first_seen": "2026-08-18",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-08-18",
-    "signals": {
-     "red-ci-after-push": 1
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "guidance:pinning-github-actions"
-   },
-   {
-    "evidence_count": 1,
-    "first_seen": "2026-10-04",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-10-04",
-    "signals": {
-     "repeated-tool-failure": 1
-    },
-    "sources": [
-     "wsl"
-    ],
-    "subject": "skill:launch-top-level-claude-session"
-   },
-   {
-    "evidence_count": 1,
-    "first_seen": "2026-09-24",
-    "kind": "fixture-candidate",
-    "last_seen": "2026-09-24",
-    "signals": {
-     "redirection": 1
-    },
-    "sources": [
-     "windows"
-    ],
-    "subject": "skill:skills-doctor"
-   }
-  ],
-  "left_out": {
-   "agent_check": 1,
-   "memory_note": 2,
-   "other": 0,
-   "private": 7
-  }
+  "items": null,
+  "left_out": null
  },
- "newest_run": "2026-11-04T00:13:00Z",
+ "newest_run": "2026-11-04T00:16:41Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -15352,6 +13374,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T00:16:41Z",
+     "cli_version": "2.1.318",
+     "fixture": "three-files",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T001530Z-bd970f/fan-out-triage/20261104T001641Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.2316495,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 7,
+      "cost_usd": 0.0827665,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:15:10Z",
      "cli_version": "2.1.317",
@@ -24552,8 +22595,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "e0fa3dfccbd4926ab687182cd7d0d914d453d2b5",
-  "results_commit": "f4fa93a56e4151842ca719719c7c2c965d4e2460"
+  "repository_commit": "31cc927f63e2b8b8f73a08dec2c20a204bc5e58b",
+  "results_commit": "686952b85c62cc35552470bcd64c4c45c2b7d6ec"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
