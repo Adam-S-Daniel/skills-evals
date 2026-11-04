@@ -2434,6 +2434,35 @@ class RoundSevenDocTests(unittest.TestCase):
     def test_agents_md_fits_codex(self):
         self.assertLessEqual(len((ROOT / "AGENTS.md").read_bytes()), 32768)
 
+    def test_local_agent_check_refuses_an_agents_md_codex_would_truncate(self):
+        # ci.yml's suite skips a docs-only change, so the size limit is held
+        # by .agent-checks/local.sh, which runs on every pull request.
+        script = ROOT / ".agent-checks" / "local.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
+                   "GIT_CONFIG_NOSYSTEM": "1"}
+
+            def git(*args):
+                subprocess.run(["git", "-C", tmp, *args], check=True, env=env,
+                               capture_output=True)
+
+            git("init", "-q")
+            results = {}
+            for size in (32768, 32769):
+                Path(tmp, "AGENTS.md").write_bytes(b"x" * (size - 1) + b"\n")
+                git("add", "AGENTS.md")
+                git("-c", "user.name=t", "-c", "user.email=t@example.com",
+                    "-c", "commit.gpgsign=false", "commit", "-q", "-m", str(size))
+                for paths in (b"AGENTS.md\0", b"README.md\0"):
+                    proc = subprocess.run(
+                        ["bash", str(script), "pull_request"], cwd=tmp,
+                        input=paths, capture_output=True, check=False,
+                        env={**env, "AGENT_CHECKS_REV": "HEAD"})
+                    results[(size, paths)] = proc.returncode
+        self.assertEqual(results[(32768, b"AGENTS.md\0")], 0)
+        self.assertEqual(results[(32769, b"AGENTS.md\0")], 1)
+        self.assertEqual(results[(32769, b"README.md\0")], 0)
+
     def test_how_it_works_no_longer_overclaims(self):
         text = " ".join((ROOT / "docs" / "how-it-works.md").read_text().split())
         self.assertNotIn("is still arming is never caught", text)
