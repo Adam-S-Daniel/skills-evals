@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T04:01:12Z",
+  "generated_at": "2026-11-04T04:04:39Z",
   "requests": [
    {
     "closed_at": null,
@@ -333,7 +333,7 @@
    "requests_open": 28
   }
  },
- "generated_at": "2026-11-04T04:00:06Z",
+ "generated_at": "2026-11-04T04:03:40Z",
  "guidance": {
   "removed": [
    {
@@ -9567,7 +9567,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T03:55:59Z",
+ "newest_run": "2026-11-04T04:02:00Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -20879,11 +20879,11 @@
       "votes": true
      },
      {
-      "gain": 28.6,
-      "high": 100.0,
+      "gain": 32.1,
+      "high": 94.1,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "issue-hygiene",
       "votes": true
@@ -20901,7 +20901,7 @@
     ],
     "helps": 0.0,
     "keep_family": 8,
-    "keep_pairs": 3,
+    "keep_pairs": 4,
     "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": 1
@@ -20918,7 +20918,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 17,
+   "current_text_runs": 18,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -20929,6 +20929,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T04:02:00Z",
+     "cli_version": "2.1.318",
+     "fixture": "issue-hygiene",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T040014Z-1d23f2/vendor-release-impact-issues/20261104T040200Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1930905,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 7,
+      "cost_usd": 0.1393459,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T03:41:50Z",
      "cli_version": "2.1.318",
@@ -24231,7 +24252,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "f9a5f6f66a8fcfc0b18dc1c0d6525b5f63fa9153",
-  "results_commit": "6961c168d0e4775f5819720f957adb6899c25ff5"
+  "results_commit": "a2cec7398d1641444f6ff33ee52ed36fdc43b513"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
