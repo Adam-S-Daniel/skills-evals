@@ -28,8 +28,8 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    `SECRET` or `BEARER` (the one tool toggle in that family,
    `CLAUDE_CODE_USE_POWERSHELL_TOOL`, is not a provider and passes). Empty
    counts. The one exemption is `CLAUDE_CODE_OAUTH_TOKEN` under
-   `--container-token` (see "Container mode" below); every other name
-   still refuses. The message names the variable, never
+   `--container-token` (see "Container mode" below), which also exempts an
+   `ANTHROPIC_BASE_URL` of one exact shape; every other name still refuses. The message names the variable, never
    its value; `env -u NAME` clears it. A run under `/login` needs none of them,
    and each one either bills a dollar or cloud account, re-routes the CLI to
    another provider, or puts a credential in reach of an arm.
@@ -42,7 +42,10 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    that. The allow-list, in full: PATH, HOME, LANG, LANGUAGE, LC_*, TERM,
    TMPDIR, TZ, USER, LOGNAME, SHELL, HTTP_PROXY, HTTPS_PROXY, NO_PROXY (and
    their lowercase forms), NODE_EXTRA_CA_CERTS, SSL_CERT_FILE, SSL_CERT_DIR,
-   CLAUDE_BIN, SKILLS_EVALS_REGISTRIES, AGENTSKILLS_DIR. No XDG_* variable
+   CLAUDE_BIN, SKILLS_EVALS_REGISTRIES, AGENTSKILLS_DIR,
+   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC (a toggle that cuts the CLI's
+   side traffic, measured at about 14 API connections per arm without it
+   against 3 with it; not a credential or a provider). No XDG_* variable
    passes: `$XDG_CONFIG_HOME/claude/settings.json` could carry a credential
    source this wrapper does not read, so children use the defaults under HOME.
    One variable is SET rather than allow-listed:
@@ -219,6 +222,21 @@ skipped) has the exact token replaced with `[REDACTED:CLAUDE_CODE_OAUTH_TOKEN]`;
 manifest.json records `token_redactions` (a count of files changed, never the
 value) and `auth` (`container-oauth-token` or `login`). Results remain a
 local exhibit.
+
+With the credential-proxy topology (`container_eval.sh --mode credproxy`, the
+default) the real token never enters this container: a sidecar on the run's
+internal network holds it and adds the Authorization header, and this
+container holds only a dummy `CLAUDE_CODE_OAUTH_TOKEN` and the sidecar's
+address in `ANTHROPIC_BASE_URL`. So under `--container-token` ONLY,
+`ANTHROPIC_BASE_URL` is also exempt from rule 1 and joins the child allow-list
+(the arms get it through run_eval's `ANTHROPIC_` prefix, the judge inherits the
+process environment), when its value fully matches
+`http://<single-label container name>:<port>` (`CONTAINER_BASE_URL_RE`: a
+lowercase DNS label of 63 characters or fewer, an explicit port, and never a
+dotted public host, userinfo or a path). Any other value is refused (exit 2),
+naming the variable and never echoing the value. Without `--container-token`
+it is refused exactly as before. manifest.json records `api_base_url` (the
+accepted value, or null) beside `auth`.
 """
 
 from __future__ import annotations
@@ -226,6 +244,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -256,12 +275,19 @@ CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
                    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
                    "http_proxy", "https_proxy", "no_proxy",
                    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
-                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR")
+                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR",
+                   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
 CHILD_ENV_PREFIXES = ("LC_",)
 
 #: The one credential `--container-token` lets through rule 1 and the
 #: child allow-list.
 CONTAINER_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN"
+#: Under `--container-token` only, exempt from rule 1 and the child allow-list
+#: when its value matches CONTAINER_BASE_URL_RE: the run's credential-proxy
+#: sidecar, a single-label container name with an explicit port.
+CONTAINER_BASE_URL_NAME = "ANTHROPIC_BASE_URL"
+CONTAINER_BASE_URL_RE = re.compile(
+    r"http://[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:[0-9]{1,5}")
 CONTAINER_ENV_FLAG = "SKILLS_EVALS_IN_CONTAINER"
 REDACTION_MAX_BYTES = 50 * 1024 * 1024
 
@@ -897,6 +923,7 @@ def main(argv=None) -> int:
 
 def _run(args: argparse.Namespace, guard_dir: Path) -> int:
     allow = ()
+    api_base_url = None
     try:
         if args.container_token:
             if not in_container():
@@ -910,6 +937,17 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
                     "non-empty in the environment (pass it with "
                     "`docker run --env-file`).")
             allow = (CONTAINER_TOKEN_NAME,)
+            if CONTAINER_BASE_URL_NAME in os.environ:
+                api_base_url = os.environ[CONTAINER_BASE_URL_NAME]
+                if not CONTAINER_BASE_URL_RE.fullmatch(api_base_url):
+                    raise Refused(
+                        f"refusing to run with {CONTAINER_BASE_URL_NAME} set "
+                        "to anything but http://<container name>:<port> (one "
+                        "lowercase DNS label, an explicit port, no userinfo "
+                        "or path): under --container-token it may name only "
+                        "the run's credential-proxy sidecar. Unset it or fix "
+                        "it.")
+                allow += (CONTAINER_BASE_URL_NAME,)
         refused = refused_env_names(os.environ, allow)
         if refused:
             raise Refused(
@@ -964,6 +1002,7 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
                     if REPO_ROOT in eval_dir.parents else str(eval_dir)),
         "skill": skill,
         "auth": "container-oauth-token" if args.container_token else "login",
+        "api_base_url": api_base_url,
         "token_redactions": 0,
         "invocation": {"trials": args.trials, "arm": args.arm,
                        "timestamp": args.timestamp,

@@ -1775,6 +1775,109 @@ class TestLocalEval(unittest.TestCase):
         for summary in self._summaries("with_skill", 1):
             self.assertIs(summary.get("local_exhibit"), True)
 
+    BASE_URL = "http://skills-evals-1-ab12-credproxy:8080"
+
+    def test_the_nonessential_traffic_toggle_reaches_every_child(self):
+        registry = self._registry()
+        name = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={name: "1"})
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            self.assertIn(name, call["env_names"], call["role"])
+
+    def test_container_mode_accepts_a_credproxy_base_url_and_records_it(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         "--container-token",
+                         env_extra={"CLAUDE_CODE_OAUTH_TOKEN": self.TOKEN,
+                                    "SKILLS_EVALS_IN_CONTAINER": "1",
+                                    "ANTHROPIC_BASE_URL": self.BASE_URL})
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        calls = self._calls()
+        # The judge is included: it inherits the process environment.
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            if call["role"] == "probe":
+                # The probe black-holes the endpoint itself (init_probe).
+                self.assertNotEqual(call["env"].get("ANTHROPIC_BASE_URL"),
+                                    self.BASE_URL)
+            else:
+                self.assertIn("ANTHROPIC_BASE_URL", call["secret_env"],
+                              call["role"])
+        manifest_text = (self.out / "manifest.json").read_text(encoding="utf-8")
+        manifest = json.loads(manifest_text)
+        self.assertEqual(manifest["api_base_url"], self.BASE_URL)
+        self.assertEqual(manifest["auth"], "container-oauth-token")
+        self.assertNotIn(self.TOKEN, manifest_text)
+
+    def test_container_mode_without_a_base_url_records_none(self):
+        registry = self._registry()
+        proc = self._container_run(registry)
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        self.assertIsNone(self._json("manifest.json")["api_base_url"])
+        for call in self._calls():
+            if call["role"] != "probe":  # the probe sets its own endpoint
+                self.assertNotIn("ANTHROPIC_BASE_URL", call["env_names"],
+                                 call["role"])
+
+    def test_container_mode_refuses_a_base_url_that_is_not_a_sidecar(self):
+        registry = self._registry()
+        secret_looking = "http://user:pw-example-0123@proxy:8080"
+        for value in ("https://api.example.com:443",
+                      "http://api.example.com:8080",
+                      secret_looking,
+                      "http://proxy:8080/path",
+                      "http://proxy:8080/",
+                      "http://proxy",
+                      "http://Proxy:8080",
+                      "http://proxy:8080\n",
+                      "http://proxy:80a",
+                      "http://-proxy:8080",
+                      "http://" + "a" * 64 + ":8080",
+                      "http://proxy:123456",
+                      "proxy:8080",
+                      ""):
+            with self.subTest(value=value):
+                self.log.unlink(missing_ok=True)
+                proc = self._container_run(
+                    registry, env_extra={"ANTHROPIC_BASE_URL": value})
+                self._assert_nothing_ran(proc)
+                self.assertIn("ANTHROPIC_BASE_URL", proc.stderr)
+                everything = proc.stdout + proc.stderr
+                for needle in (value, "api.example.com", "pw-example-0123",
+                               self.TOKEN):
+                    if needle:
+                        self.assertNotIn(needle, everything)
+                self.assertFalse(self.out.exists())
+
+    def test_a_base_url_is_still_refused_without_the_container_flag(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"ANTHROPIC_BASE_URL": self.BASE_URL,
+                                    "SKILLS_EVALS_IN_CONTAINER": "1"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("ANTHROPIC_BASE_URL", proc.stderr)
+        self.assertNotIn(self.BASE_URL, proc.stdout + proc.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_the_base_url_exemption_is_one_exact_name(self):
+        registry = self._registry()
+        proc = self._container_run(
+            registry, env_extra={"ANTHROPIC_BASE_URL": self.BASE_URL,
+                                 "ANTHROPIC_AUTH_TOKEN": "example-auth"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN", proc.stderr)
+        self.assertNotIn("ANTHROPIC_BASE_URL", proc.stderr)
+        self.assertNotIn("example-auth", proc.stdout + proc.stderr)
+
     def test_manifest_records_login_auth_without_the_flag(self):
         registry = self._registry()
         proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
@@ -1841,11 +1944,45 @@ class TestContainerHelpers(unittest.TestCase):
 
 
 CONTAINER_EVAL = REPO_ROOT / "scripts" / "container_eval.sh"
+SECCOMP_PROFILE = REPO_ROOT / "docker" / "eval-runner" / "seccomp-bwrap.json"
+
+# A fake `docker`: appends every call's argv to $DOCKER_CALLS (a "--- call"
+# line starts each one), records an --env-file's mode and content in
+# $DOCKER_ENVFILES (a separate file, so argv checks never see a token), and
+# answers `inspect` with $DOCKER_INSPECT. Only the runner (`run --rm`) exits
+# with $DOCKER_EXIT; `rm` and `network rm` exit with $DOCKER_CLEANUP_EXIT.
+FAKE_DOCKER = r'''#!/bin/bash
+{ printf '%s\n' '--- call'; printf '%s\n' "$@"; } >> "$DOCKER_CALLS"
+runner="" prev=""
+for a in "$@"; do
+  if [ "$prev" = --env-file ]; then
+    { printf '%s\n' "--- envfile $a mode=$(stat -c %a "$a")"; cat "$a"; } \
+      >> "$DOCKER_ENVFILES"
+  fi
+  if [ "$a" = --rm ]; then runner=1; fi
+  prev=$a
+done
+case "$1" in
+  inspect) printf '%s\n' "${DOCKER_INSPECT:-true}"; exit 0 ;;
+  logs) echo "fake sidecar log line"; exit 0 ;;
+  rm) exit "${DOCKER_CLEANUP_EXIT:-0}" ;;
+  network) if [ "$2" = rm ]; then exit "${DOCKER_CLEANUP_EXIT:-0}"; fi ;;
+esac
+if [ -n "$runner" ]; then exit "${DOCKER_EXIT:-0}"; fi
+exit 0
+'''
+
+
+def _flag_values(argv, flag):
+    """Every value that follows `flag` in `argv`."""
+    return [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == flag]
 
 
 @unittest.skipUnless(shutil.which("bash"), "bash is required")
 class TestContainerEvalScript(unittest.TestCase):
     """scripts/container_eval.sh, with a fake `docker` on PATH."""
+
+    TOKEN_VALUE = "example-token-value"
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(
@@ -1853,44 +1990,301 @@ class TestContainerEvalScript(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.bin = self.root / "bin"
         self.bin.mkdir()
+        self.tmp = self.root / "tmp"
+        self.tmp.mkdir()
         self.calls = self.root / "docker-calls.txt"
+        self.envfiles = self.root / "docker-envfiles.txt"
         fake = self.bin / "docker"
-        fake.write_text('#!/bin/bash\nprintf \'%s\\n\' "$@" > "$DOCKER_CALLS"\n'
-                        'exit "${DOCKER_EXIT:-0}"\n', encoding="utf-8")
+        fake.write_text(FAKE_DOCKER, encoding="utf-8")
         fake.chmod(0o755)
         self.token = self.root / "token.env"
-        self.token.write_text("CLAUDE_CODE_OAUTH_TOKEN=example-token-value\n",
-                              encoding="utf-8")
-        self.token.chmod(0o600)
+        self._write_token(f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n")
         self.results = self.root / "results"
 
-    def _run(self, token=None, results=None, extra_env=None, args=("evals/x",)):
+    def _write_token(self, text, path=None):
+        path = path or self.token
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o600)
+        return path
+
+    def _run(self, token=None, results=None, extra_env=None, args=("evals/x",),
+             pre=(), script=CONTAINER_EVAL, cwd=None):
         env = {"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.root),
-               "DOCKER_CALLS": str(self.calls), **(extra_env or {})}
+               "TMPDIR": str(self.tmp), "DOCKER_CALLS": str(self.calls),
+               "DOCKER_ENVFILES": str(self.envfiles), **(extra_env or {})}
         return subprocess.run(
-            ["bash", str(CONTAINER_EVAL),
+            ["bash", str(script),
              "--token-file", str(token or self.token), "--image", "img:test",
-             "--results-dir", str(results or self.results), "--", *args],
-            capture_output=True, text=True, env=env, timeout=60)
+             "--results-dir", str(results or self.results), *pre, "--", *args],
+            capture_output=True, text=True, env=env, timeout=60,
+            cwd=str(cwd or self.root))
+
+    def _docker_calls(self):
+        """Every fake-docker call, as an argv list, in order."""
+        if not self.calls.exists():
+            return []
+        calls = []
+        for line in self.calls.read_text(encoding="utf-8").splitlines():
+            if line == "--- call":
+                calls.append([])
+            else:
+                calls[-1].append(line)
+        return calls
+
+    def _find(self, *prefix):
+        return [c for c in self._docker_calls() if c[:len(prefix)] == list(prefix)]
+
+    def _only(self, *prefix):
+        found = self._find(*prefix)
+        self.assertEqual(len(found), 1, f"{prefix}: {found}")
+        return found[0]
+
+    def _runner(self):
+        return self._only("run", "--rm")
+
+    def _sidecar(self):
+        return self._only("run", "-d")
+
+    def _net(self):
+        """The network name this run created."""
+        create = self._only("network", "create")
+        net = create[-1]
+        self.assertRegex(net, r"^skills-evals-[0-9]+-[0-9a-f]{8}$")
+        return net
+
+    def _assert_no_token(self, proc):
+        self.assertNotIn(self.TOKEN_VALUE, proc.stdout + proc.stderr)
+        if self.calls.exists():
+            self.assertNotIn(self.TOKEN_VALUE,
+                             self.calls.read_text(encoding="utf-8"))
+
+    def _refused(self, proc):
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertFalse(self.calls.exists(), "a refusal must precede any docker call")
+        self._assert_no_token(proc)
+
+    def _bind_mounts(self, argv):
+        """The `--mount` values of `argv`, parsed to {dst: (src, options)}."""
+        mounts = {}
+        for value in _flag_values(argv, "--mount"):
+            fields = value.split(",")
+            parsed = dict(f.split("=", 1) for f in fields[1:] if "=" in f)
+            mounts[parsed["dst"]] = (parsed["src"], fields[0], "readonly" in fields)
+        return mounts
+
+    def _harness_common_dir(self):
+        """The git common dir this checkout's runner must also mount: set only
+        when the checkout under test is itself a linked worktree."""
+        if not (REPO_ROOT / ".git").is_file():
+            return None
+        return _git(REPO_ROOT, "rev-parse", "--path-format=absolute",
+                    "--git-common-dir").stdout.strip()
+
+    def _worktree_of_a_repo(self, name):
+        """A repo with one commit and a linked worktree; returns (main, wt)."""
+        main = self.root / f"{name}-main"
+        wt = self.root / f"{name}-wt" / name
+        main.mkdir()
+        _git(main, "init", "-q")
+        _git(main, "commit", "-q", "--allow-empty", "-m", "base")
+        _git(main, "worktree", "add", "-q", str(wt))
+        return main, wt
 
     def test_syntax(self):
         proc = subprocess.run(["bash", "-n", str(CONTAINER_EVAL)],
                               capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
-    def test_runs_docker_with_env_file_and_returns_its_exit_code(self):
+    # -- credproxy mode (the default) ------------------------------------
+
+    def test_credproxy_mode_is_the_default_and_keeps_the_token_off_the_runner(self):
+        proc = self._run()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self._assert_no_token(proc)
+        net = self._net()
+        sidecar_name, runner_name = f"{net}-credproxy", f"{net}-runner"
+        self.assertEqual(
+            self._only("network", "create"),
+            ["network", "create", "--internal",
+             "-o", "com.docker.network.bridge.gateway_mode_ipv4=isolated", net])
+
+        sidecar = self._sidecar()
+        self.assertEqual(sidecar[-1], "skills-evals-credproxy")
+        self.assertEqual(_flag_values(sidecar, "--name"), [sidecar_name])
+        self.assertEqual(_flag_values(sidecar, "--network"), ["bridge"])
+        self.assertEqual(_flag_values(sidecar, "--cap-drop"), ["ALL"])
+        self.assertIn("--read-only", sidecar)
+        self.assertEqual(_flag_values(sidecar, "--security-opt"), ["no-new-privileges"])
+        uid, gid = os.getuid(), os.getgid()
+        self.assertEqual(_flag_values(sidecar, "-u"), [f"{uid}:{gid}"])
+        self.assertEqual(
+            _flag_values(sidecar, "--tmpfs"),
+            [f"/tmp:rw,size=64m,uid={uid},gid={gid},mode=0700"])
+        self.assertEqual(
+            _flag_values(sidecar, "--mount"),
+            [f"type=bind,src={self.token},dst=/run/secrets/oauth.env,readonly"])
+
+        self.assertEqual(self._only("network", "connect"),
+                         ["network", "connect", net, sidecar_name])
+        self.assertEqual(self._only("inspect"),
+                         ["inspect", "-f", "{{.State.Running}}", sidecar_name])
+
+        runner = self._runner()
+        self.assertEqual(_flag_values(runner, "--name"), [runner_name])
+        self.assertEqual(_flag_values(runner, "--network"), [net])
+        self.assertEqual(
+            _flag_values(runner, "-e"),
+            [f"ANTHROPIC_BASE_URL=http://{sidecar_name}:8080",
+             "SKILLS_EVALS_IN_CONTAINER=1",
+             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1"])
+        # The real token reaches the sidecar alone.
+        self.assertNotIn(str(self.token), "\n".join(runner))
+        self.assertFalse(any(a.startswith("CLAUDE_CODE_OAUTH_TOKEN") for a in runner))
+        self.assertEqual(runner[-2:], ["_", "evals/x"])
+
+        # The runner's env file is a throwaway placeholder, mode 600, and its
+        # directory is gone once the script ends.
+        env_file = _flag_values(runner, "--env-file")
+        self.assertEqual(len(env_file), 1)
+        self.assertNotEqual(env_file[0], str(self.token))
+        recorded = self.envfiles.read_text(encoding="utf-8")
+        self.assertEqual(
+            recorded,
+            f"--- envfile {env_file[0]} mode=600\n"
+            "CLAUDE_CODE_OAUTH_TOKEN=dummy-not-a-token\n")
+        self.assertFalse(Path(env_file[0]).parent.exists())
+        self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_the_runner_is_sealed(self):
+        self.assertEqual(self._run().returncode, 0)
+        runner = self._runner()
+        net = self._net()
+        uid, gid = os.getuid(), os.getgid()
+        self.assertEqual(runner[:6], ["run", "--rm", "--name", f"{net}-runner",
+                                      "--network", net])
+        self.assertEqual(_flag_values(runner, "-u"), [f"{uid}:{gid}"])
+        self.assertEqual(_flag_values(runner, "--cap-drop"), ["ALL"])
+        self.assertIn("--read-only", runner)
+        self.assertEqual(_flag_values(runner, "--security-opt"),
+                         [f"seccomp={SECCOMP_PROFILE}", "no-new-privileges"])
+        self.assertEqual(
+            _flag_values(runner, "--tmpfs"),
+            ["/tmp:rw,exec,nosuid,nodev,size=1g",
+             f"/home/eval:rw,exec,nosuid,nodev,size=512m,uid={uid},gid={gid},mode=0700",
+             f"/work:rw,exec,nosuid,nodev,size=4g,uid={uid},gid={gid}"])
+        self.assertEqual(_flag_values(runner, "-w"), ["/work"])
+        self.assertIn("img:test", runner)
+        script = runner[runner.index("bash") + 2]
+        self.assertIn("cp -a /src /work/skills-evals", script)
+        self.assertTrue(script.endswith("--container-token --results-dir /results"))
+        mounts = self._bind_mounts(runner)
+        self.assertEqual(mounts["/src"], (str(REPO_ROOT), "type=bind", True))
+        self.assertEqual(mounts["/results"], (str(self.results), "type=bind", False))
+        self.assertTrue(self.results.is_dir())
+
+    def test_the_seccomp_profile_is_resolved_to_an_absolute_path(self):
+        profile = self.root / "elsewhere.json"
+        profile.write_text("{}", encoding="utf-8")
+        proc = self._run(pre=("--seccomp", "elsewhere.json"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(f"seccomp={profile}",
+                      _flag_values(self._runner(), "--security-opt"))
+
+    def test_refuses_a_seccomp_profile_that_is_not_a_file(self):
+        proc = self._run(pre=("--seccomp", str(self.root)))
+        self._refused(proc)
+        proc = self._run(pre=("--seccomp", str(self.root / "absent.json")))
+        self._refused(proc)
+
+    def test_the_images_can_be_chosen(self):
+        proc = self._run(pre=("--credproxy-image", "my-credproxy"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self._sidecar()[-1], "my-credproxy")
+
+    def test_refuses_an_unknown_mode(self):
+        self._refused(self._run(pre=("--mode", "open")))
+
+    # -- allowlist mode ----------------------------------------------------
+
+    def test_allowlist_mode_gives_the_runner_the_token_file_and_a_proxy(self):
+        proc = self._run(pre=("--mode", "allowlist", "--egress-image", "my-egress"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self._assert_no_token(proc)
+        net = self._net()
+        sidecar = self._sidecar()
+        self.assertEqual(sidecar[-1], "my-egress")
+        self.assertEqual(_flag_values(sidecar, "--name"), [f"{net}-egress"])
+        self.assertEqual(_flag_values(sidecar, "--network"), ["bridge"])
+        self.assertEqual(_flag_values(sidecar, "--cap-drop"), ["ALL"])
+        self.assertIn("--read-only", sidecar)
+        self.assertEqual(_flag_values(sidecar, "--security-opt"), ["no-new-privileges"])
+        self.assertNotIn("--mount", sidecar)
+        self.assertNotIn(str(self.token), "\n".join(sidecar))
+        self.assertEqual(self._only("network", "connect"),
+                         ["network", "connect", net, f"{net}-egress"])
+
+        runner = self._runner()
+        self.assertEqual(_flag_values(runner, "--env-file"), [str(self.token)])
+        env = _flag_values(runner, "-e")
+        self.assertIn(f"HTTPS_PROXY=http://{net}-egress:3128", env)
+        self.assertIn(f"HTTP_PROXY=http://{net}-egress:3128", env)
+        self.assertIn("SKILLS_EVALS_IN_CONTAINER=1", env)
+        self.assertIn("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", env)
+        self.assertFalse(any(e.startswith("ANTHROPIC_BASE_URL") for e in env))
+        self.assertFalse(any(a.startswith("CLAUDE_CODE_OAUTH_TOKEN") for a in runner))
+        self.assertEqual(_flag_values(runner, "--cap-drop"), ["ALL"])
+
+    # -- exit code and cleanup ---------------------------------------------
+
+    def test_returns_the_runners_exit_code_and_cleans_up(self):
+        for mode in ("credproxy", "allowlist"):
+            for cleanup_exit in ("0", "1"):
+                with self.subTest(mode=mode, cleanup_exit=cleanup_exit):
+                    self.calls.unlink(missing_ok=True)
+                    shutil.rmtree(self.results, ignore_errors=True)
+                    proc = self._run(
+                        pre=("--mode", mode),
+                        extra_env={"DOCKER_EXIT": "7",
+                                   "DOCKER_CLEANUP_EXIT": cleanup_exit})
+                    self.assertEqual(proc.returncode, 7, proc.stderr)
+                    self._assert_no_token(proc)
+                    net = self._net()
+                    sidecar = f"{net}-{'credproxy' if mode == 'credproxy' else 'egress'}"
+                    calls = self._docker_calls()
+                    self.assertEqual(calls[-3:], [
+                        ["rm", "-f", f"{net}-runner"],
+                        ["rm", "-f", sidecar],
+                        ["network", "rm", net]])
+                    self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_a_sidecar_that_is_not_running_stops_the_run_before_the_runner(self):
+        for mode in ("credproxy", "allowlist"):
+            with self.subTest(mode=mode):
+                self.calls.unlink(missing_ok=True)
+                shutil.rmtree(self.results, ignore_errors=True)
+                proc = self._run(pre=("--mode", mode),
+                                 extra_env={"DOCKER_INSPECT": "false",
+                                            "DOCKER_EXIT": "7"})
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("not running", proc.stderr)
+                self.assertIn("fake sidecar log line", proc.stderr)
+                self._assert_no_token(proc)
+                self.assertEqual(self._find("run", "--rm"), [])
+                net = self._net()
+                self.assertEqual(self._only("logs"),
+                                 ["logs", _flag_values(self._sidecar(), "--name")[0]])
+                self.assertEqual(self._docker_calls()[-1], ["network", "rm", net])
+                self.assertEqual(list(self.tmp.iterdir()), [])
+
+    # -- the token file ------------------------------------------------------
+
+    def test_runs_docker_without_the_token_on_any_command_line(self):
         proc = self._run(extra_env={"DOCKER_EXIT": "7"})
         self.assertEqual(proc.returncode, 7, proc.stderr)
-        argv = self.calls.read_text(encoding="utf-8").splitlines()
-        self.assertEqual(argv[0], "run")
-        self.assertIn("--env-file", argv)
-        self.assertEqual(argv[argv.index("--env-file") + 1], str(self.token))
-        self.assertIn("SKILLS_EVALS_IN_CONTAINER=1", argv)
-        self.assertIn("evals/x", argv)
-        self.assertNotIn("example-token-value", "".join(argv))
-        self.assertNotIn("example-token-value", proc.stdout + proc.stderr)
-        self.assertFalse(any(a.startswith("CLAUDE_CODE_OAUTH_TOKEN") for a in argv))
-        self.assertTrue(self.results.is_dir())
+        for argv in self._docker_calls():
+            self.assertNotIn(self.TOKEN_VALUE, "".join(argv))
+            self.assertFalse(any(a.startswith("CLAUDE_CODE_OAUTH_TOKEN") for a in argv))
+        self._assert_no_token(proc)
 
     def test_refuses_a_token_file_with_group_or_other_bits(self):
         for mode in (0o640, 0o604, 0o644, 0o666):
@@ -1899,10 +2293,14 @@ class TestContainerEvalScript(unittest.TestCase):
                 proc = self._run()
                 self.assertNotEqual(proc.returncode, 0)
                 self.assertFalse(self.calls.exists())
-                self.assertNotIn("example-token-value", proc.stdout + proc.stderr)
+                self.assertNotIn(self.TOKEN_VALUE, proc.stdout + proc.stderr)
 
     def test_accepts_mode_400(self):
         self.token.chmod(0o400)
+        self.assertEqual(self._run().returncode, 0)
+
+    def test_accepts_a_token_file_without_a_final_newline(self):
+        self._write_token(f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}")
         self.assertEqual(self._run().returncode, 0)
 
     def test_refuses_a_missing_or_non_regular_token_file(self):
@@ -1916,13 +2314,31 @@ class TestContainerEvalScript(unittest.TestCase):
         repo = self.root / "repo"
         repo.mkdir()
         _git(repo, "init", "-q")
-        inside = repo / "token.env"
-        inside.write_text("CLAUDE_CODE_OAUTH_TOKEN=example-token-value\n",
-                          encoding="utf-8")
-        inside.chmod(0o600)
+        inside = self._write_token(f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n",
+                                   repo / "token.env")
         proc = self._run(token=inside)
         self.assertNotEqual(proc.returncode, 0)
         self.assertFalse(self.calls.exists())
+
+    def test_refuses_a_token_file_of_the_wrong_shape_without_printing_it(self):
+        bad = {
+            "two lines": (f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n"
+                          f"OTHER={self.TOKEN_VALUE}\n"),
+            "a blank second line": f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n\n",
+            "a space in the value": f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE} x\n",
+            "a dot in the value": f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}.x\n",
+            "a quote": f"CLAUDE_CODE_OAUTH_TOKEN='{self.TOKEN_VALUE}'\n",
+            "a carriage return": f"CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\r\n",
+            "an empty value": "CLAUDE_CODE_OAUTH_TOKEN=\n",
+            "another name": f"CLAUDE_TOKEN={self.TOKEN_VALUE}\n",
+            "a leading space": f" CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n",
+            "an export prefix": f"export CLAUDE_CODE_OAUTH_TOKEN={self.TOKEN_VALUE}\n",
+            "an empty file": "",
+        }
+        for label, text in bad.items():
+            with self.subTest(label):
+                self._write_token(text)
+                self._refused(self._run())
 
     def test_refuses_a_non_empty_results_dir(self):
         self.results.mkdir()
@@ -1930,6 +2346,145 @@ class TestContainerEvalScript(unittest.TestCase):
         proc = self._run()
         self.assertNotEqual(proc.returncode, 0)
         self.assertFalse(self.calls.exists())
+
+    # -- context repos and linked worktrees ------------------------------------
+
+    def test_a_context_repo_is_mounted_read_only_beside_the_harness_copy(self):
+        one, two = self.root / "adam-agentskills", self.root / "ctx" / "_agent-guidance"
+        one.mkdir()
+        two.mkdir(parents=True)
+        proc = self._run(pre=("--context-repo", str(one),
+                              "--context-repo", f"{two}/"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        mounts = self._bind_mounts(self._runner())
+        self.assertEqual(mounts["/work/adam-agentskills"], (str(one), "type=bind", True))
+        self.assertEqual(mounts["/work/_agent-guidance"], (str(two), "type=bind", True))
+        # No `.git` file in either, so nothing is mounted at its own path.
+        extra = {dst for dst, (src, _t, _ro) in mounts.items() if dst == src}
+        self.assertEqual(extra, {self._harness_common_dir()} - {None})
+
+    def test_refuses_a_bad_context_repo(self):
+        plain = self.root / "plain-file"
+        plain.write_text("x", encoding="utf-8")
+        comma = self.root / "a,b"
+        comma.mkdir()
+        (self.root / "one").mkdir()
+        (self.root / "other" / "one").mkdir(parents=True)
+        (self.root / "skills-evals").mkdir()
+        cases = {
+            "absent": (str(self.root / "absent"),),
+            "not a directory": (str(plain),),
+            "a comma in the path": (str(comma),),
+            "the harness copy's name": (str(self.root / "skills-evals"),),
+            "a duplicate name": (str(self.root / "one"),
+                                 str(self.root / "other" / "one")),
+        }
+        for label, paths in cases.items():
+            with self.subTest(label):
+                pre = []
+                for path in paths:
+                    pre += ["--context-repo", path]
+                self._refused(self._run(pre=pre))
+                self.assertFalse(self.results.exists(),
+                                 "refuse before the results dir is made")
+
+    def test_a_linked_worktree_context_repo_gets_its_common_git_dir(self):
+        main, wt = self._worktree_of_a_repo("ctx")
+        other_main, other_wt = self._worktree_of_a_repo("ctx2")
+        # A second worktree of the same repository must not repeat the mount.
+        sibling = self.root / "ctx-wt2" / "ctx3"
+        _git(main, "worktree", "add", "-q", str(sibling))
+        plain = self.root / "plain" / "registry"
+        plain.mkdir(parents=True)
+        _git(plain, "init", "-q")
+        proc = self._run(pre=("--context-repo", str(wt),
+                              "--context-repo", str(sibling),
+                              "--context-repo", str(other_wt),
+                              "--context-repo", str(plain)))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        runner = self._runner()
+        commons = [f"type=bind,src={main}/.git,dst={main}/.git,readonly",
+                   f"type=bind,src={other_main}/.git,dst={other_main}/.git,readonly"]
+        mounts = _flag_values(runner, "--mount")
+        for common in commons:
+            self.assertEqual(mounts.count(common), 1, mounts)
+        same_path = [m for m in mounts
+                     if m.split(",")[1][4:] == m.split(",")[2][4:]]
+        harness = self._harness_common_dir()
+        self.assertEqual(
+            len(same_path), len(commons) + (1 if harness else 0), same_path)
+        if harness:
+            self.assertIn(f"type=bind,src={harness},dst={harness},readonly", mounts)
+        self.assertIn(f"type=bind,src={wt},dst=/work/ctx,readonly", mounts)
+        self.assertIn(f"type=bind,src={plain},dst=/work/registry,readonly", mounts)
+
+    def test_a_harness_checkout_that_is_a_linked_worktree_gets_its_common_dir(self):
+        main = self.root / "harness-main"
+        (main / "scripts").mkdir(parents=True)
+        (main / "docker" / "eval-runner").mkdir(parents=True)
+        shutil.copy(CONTAINER_EVAL, main / "scripts" / "container_eval.sh")
+        shutil.copy(SECCOMP_PROFILE, main / "docker" / "eval-runner")
+        _git(main, "init", "-q")
+        _git(main, "add", "-A")
+        _git(main, "commit", "-q", "-m", "harness")
+        wt = self.root / "harness-wt"
+        _git(main, "worktree", "add", "-q", str(wt))
+        proc = self._run(script=wt / "scripts" / "container_eval.sh")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        mounts = self._bind_mounts(self._runner())
+        self.assertEqual(mounts["/src"], (str(wt), "type=bind", True))
+        self.assertEqual(mounts[f"{main}/.git"],
+                         (f"{main}/.git", "type=bind", True))
+        self.assertIn(
+            f"seccomp={wt}/docker/eval-runner/seccomp-bwrap.json",
+            _flag_values(self._runner(), "--security-opt"))
+
+
+
+RUNNER_DOCKERFILE = REPO_ROOT / "docker" / "eval-runner" / "Dockerfile"
+#: The syscalls bubblewrap needs to build its namespaces as an unprivileged
+#: uid with every capability dropped; Docker's default profile refuses them.
+BWRAP_SYSCALLS = {"clone", "clone3", "mount", "pivot_root", "sethostname",
+                  "setns", "umount2", "unshare"}
+
+
+class TestRunnerImageFiles(unittest.TestCase):
+    """docker/eval-runner/: the seccomp profile container_eval.sh passes, and
+    the Dockerfile header that says where it came from."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.profile = json.loads(SECCOMP_PROFILE.read_text(encoding="utf-8"))
+
+    def test_the_default_action_denies(self):
+        self.assertEqual(self.profile["defaultAction"], "SCMP_ACT_ERRNO")
+
+    def test_one_unconditional_rule_allows_exactly_the_namespace_syscalls(self):
+        rules = [rule for rule in self.profile["syscalls"]
+                 if set(rule["names"]) == BWRAP_SYSCALLS]
+        self.assertEqual(len(rules), 1, rules)
+        rule = rules[0]
+        self.assertEqual(len(rule["names"]), len(BWRAP_SYSCALLS), "no repeats")
+        self.assertEqual(rule["action"], "SCMP_ACT_ALLOW")
+        for key in ("args", "includes", "excludes"):
+            self.assertNotIn(key, rule)
+
+    def test_no_other_rule_names_one_of_them(self):
+        for rule in self.profile["syscalls"]:
+            if set(rule["names"]) == BWRAP_SYSCALLS:
+                continue
+            self.assertEqual(set(rule["names"]) & BWRAP_SYSCALLS, set(),
+                             rule["names"])
+
+    def test_the_dockerfile_header_names_the_profile_and_its_source(self):
+        header = []
+        for line in RUNNER_DOCKERFILE.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("#"):
+                break
+            header.append(line)
+        text = "\n".join(header)
+        self.assertIn("docker-v29.8.0", text)
+        self.assertIn("seccomp-bwrap.json", text)
 
 
 if __name__ == "__main__":
