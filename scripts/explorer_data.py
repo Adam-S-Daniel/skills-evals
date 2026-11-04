@@ -11,7 +11,9 @@
                    [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
                    [--lesson-issues FILE] [--public-repos FILE] [--activity FILE]
                    [--agent-checks DIR] [--hook-policy FILE] [--export-policy FILE]
-                   [--lesson-funnel FILE]
+                   [--lesson-funnel FILE] [--source-repository OWNER/REPO]
+  explorer_data.py --subjects private --registry PRIVATE_NAME=PATH
+                   --results-tree DIR --roster ... --out FILE (not latest.json)
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -167,6 +169,29 @@ refuses any session, thread, message or trigger id anywhere, a repository in
 `activity` or `hooks` that is not on the visibility list, and any row of a
 new section with a field outside its key set.
 
+PRIVATE MODE (`--subjects private`, 2026-11-04) builds the same schema for a
+private registry's own dashboard, run inside that private repository on its
+own results branch (adam-agentskills-private's explorer-private.yml writes
+`explorer/private.json` there); its output must never be published. The
+default, `--subjects public`, is the public document above, unchanged. In
+private mode:
+
+  * Every `--registry` must name a registry harness/registries.yml marks
+    `private: true`, and at least one is required; `--out` may not be named
+    `latest.json`. Either refusal exits 2 and writes nothing.
+  * The subjects are those registries' skills, read from their checkouts
+    (scripts/eval_coverage.py `enumerate_skills`, `count_fixtures` and
+    `build_census`, `private_census`); no `coverage/latest.json` is read, and
+    `plan_week.private_skills` is not subtracted, so `evals` covers them.
+  * The public-only inputs (`--context-repo`, `--fire-runs`, `--fixture-queue`,
+    `--lessons`, `--lesson-records`, `--lesson-issues`, `--draft-prs`,
+    `--public-repos`, `--activity`, `--agent-checks`, `--lesson-funnel`) are
+    refused, and `hooks`, `activity`, `lessons`, `lesson_funnel`,
+    `fixture_queue`, `fires_without_results` and `spend` are null.
+  * `source.repository` comes from `--source-repository` (the default,
+    Adam-S-Daniel/skills-evals, is the public document's).
+  * `finish` and `validate` still run.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran, except that a section's section-alone results (the `section` mode,
@@ -200,6 +225,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import compute_gates  # noqa: E402
 import draft_new_skill  # noqa: E402
+import eval_coverage  # noqa: E402
 import eval_facts  # noqa: E402
 import explorer_public  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
@@ -209,12 +235,19 @@ import lesson_evidence  # noqa: E402
 import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
+import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 import timeweeks  # noqa: E402  (harness/)
 
 SCHEMA_VERSION = 1
+#: `source.repository` unless `--source-repository` names another.
+DEFAULT_SOURCE_REPOSITORY = "Adam-S-Daniel/skills-evals"
+#: Inputs only the public document reads; private mode refuses each.
+PUBLIC_ONLY_FLAGS = ("context_repo", "fire_runs", "fixture_queue", "lessons", "lesson_records",
+                     "lesson_issues", "draft_prs", "public_repos", "activity", "agent_checks",
+                     "lesson_funnel")
 SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
@@ -422,6 +455,44 @@ def public_census(census: dict) -> tuple[dict, dict]:
     publication = census.get("publication")
     as_of = publication.get("as_of") if isinstance(publication, dict) else None
     return rows, {"as_of": as_of, **totals}
+
+
+def private_registry_names() -> frozenset:
+    """The registries harness/registries.yml marks `private: true`."""
+    return frozenset(e["name"] for e in run_eval._load_registries_config()
+                     if e.get("private") is True)
+
+
+def private_census(registry_flags: list[str], evals_dir: Path) -> tuple[dict, dict]:
+    """Private mode's subjects, in `public_census`' shape: ({skill: census
+    row} over the `--registry` checkouts, which must all be private
+    registries, the totals over them). Read from the checkouts with
+    scripts/eval_coverage.py's own enumeration and fixture count, so no
+    `coverage/latest.json` is needed; a skill with no fixture is a `gap` (the
+    operator-held private skip file is not read here). ValueError when a
+    registry is not private or none is given."""
+    flagged = compute_gates.flag_registries(registry_flags)
+    if not registry_flags or not flagged:
+        raise ValueError("--subjects private needs a --registry NAME=PATH naming a private "
+                         "registry checkout")
+    if set(flagged) - private_registry_names():
+        raise ValueError("--subjects private takes private registries only")
+    if len(flagged) != len(registry_flags):
+        raise ValueError("a --registry checkout given with --subjects private is not a directory")
+    every = run_eval.resolve_registries(registry_flags, None, REPO_ROOT, None)
+    try:
+        fixtures = eval_coverage.count_fixtures(evals_dir, every)
+        census = eval_coverage.build_census(flagged, fixtures, {})
+    except eval_coverage.CensusRefusal as exc:
+        raise ValueError(f"the private census refused: {exc}") from exc
+    rows: dict = {}
+    totals = {"covered": 0, "skipped": 0, "gap": 0, "total": 0}
+    for registry in census["registries"]:
+        for key in totals:
+            totals[key] += registry["counts"][key]
+        for row in registry["skills"]:
+            rows.setdefault(row["skill"], {**row, "registry": registry["name"]})
+    return rows, {"as_of": None, **totals}
 
 
 def load_manifest(path: Path | None) -> list:
@@ -1621,7 +1692,9 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           lesson_issues: list | None = None, visible_repos: frozenset | None = None,
           activity: Path | None = None, agent_checks_dir: Path | None = None,
           hook_policy: dict | None = None, spend: bool = False,
-          lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None) -> dict:
+          lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None,
+          private_subjects: tuple | None = None,
+          source_repository: str = DEFAULT_SOURCE_REPOSITORY) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
@@ -1637,12 +1710,19 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     `agent_checks_dir` _agent-guidance's templates/agent-checks/;
     `hook_policy` evals/hook-policy.yml; `spend` evals/public-export.yml's
     `include_spend`; `lesson_funnel` the `--lesson-funnel` file and
-    `lesson_issues_path` the raw `--lesson-issues` file it shares."""
+    `lesson_issues_path` the raw `--lesson-issues` file it shares.
+
+    `private_subjects` is `private_census`' result, for PRIVATE MODE: the
+    subjects come from it instead of the results tree's census, no private
+    skill is subtracted, and the public-only sections are None.
+    `source_repository` is `source.repository`."""
+    private = private_subjects is not None
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
     index = compute_gates.build_index(tree, evals_dir, compact)
-    census_rows, coverage = public_census(load_census(tree))
+    census_rows, coverage = (private_subjects if private
+                             else public_census(load_census(tree)))
     roster = yaml.safe_load(roster_path.read_text(encoding="utf-8"))
     by_skill, by_section = skill_runs(index), guidance_runs(index)
     now = plan_week._stamp_time(compact)
@@ -1744,27 +1824,33 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         public = public_registries.get(name)
         if public is not None:
             public_slugs |= repo_slugs(name) | repo_slugs(public["repo"])
-    lesson_doc = build_lessons(
-        lessons, {s["name"] for s in skills} - plan_week.private_skills(evals_dir),
-        public_slugs, {r["id"] for r in (manifest or [])}, draft_prs,
-        lesson_origins(lesson_records), lesson_issues)
-    listed_skills = {s["name"] for s in skills} - plan_week.private_skills(evals_dir)
+    listed_skills = {s["name"] for s in skills}
+    if not private:
+        listed_skills -= plan_week.private_skills(evals_dir)
     evals_doc = explorer_public.build_evals(tree, gates.RESULTS_BLOB, listed_skills,
-                                            {s["id"] for s in sections}, spend)
-    hooks = explorer_public.build_hooks(
-        tree, now, agent_checks_dir, context_repos, visible_repos,
-        hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
-    funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path, draft_prs,
-                                                 memory_issue, proposal_issue)
-    activity_doc = explorer_public.build_activity(activity, visible_repos, now,
-                                                  wall_clock or datetime.now(timezone.utc))
+                                            {s["id"] for s in sections}, spend and not private)
+    if private:
+        # The public-only sections: unknown here, never read.
+        lesson_doc = hooks = funnel = activity_doc = fixture_queue = fires = None
+        spend = False
+    else:
+        lesson_doc = build_lessons(
+            lessons, listed_skills, public_slugs, {r["id"] for r in (manifest or [])},
+            draft_prs, lesson_origins(lesson_records), lesson_issues)
+        hooks = explorer_public.build_hooks(
+            tree, now, agent_checks_dir, context_repos, visible_repos,
+            hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
+        funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path,
+                                                     draft_prs, memory_issue, proposal_issue)
+        activity_doc = explorer_public.build_activity(activity, visible_repos, now,
+                                                      wall_clock or datetime.now(timezone.utc))
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": iso(compact),
         "newest_run": max(stamps, default=None),
-        "source": {"repository": "Adam-S-Daniel/skills-evals",
+        "source": {"repository": source_repository,
                    "repository_commit": repository_commit, "results_commit": results_commit},
         "roster": {"arms": [{"model": a["id"], "reason": a.get("reason")}
                             for a in roster["arms"]],
@@ -2029,6 +2115,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lesson-funnel", type=Path, metavar="FILE",
                         help="{hook_proposals: [issue rows], lesson_check_prs: [{head, number, "
                              "state, merged}]}; absent is unknown")
+    parser.add_argument("--subjects", choices=("public", "private"), default="public",
+                        help="private: PRIVATE MODE, the --registry private registries' skills "
+                             "(never published)")
+    parser.add_argument("--source-repository", default=DEFAULT_SOURCE_REPOSITORY,
+                        metavar="OWNER/REPO", help="the document's source.repository")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -2037,6 +2128,16 @@ def main(argv: list[str] | None = None) -> int:
         for sha in (args.repository_commit, args.results_commit):
             if not SHA_RE.fullmatch(sha):
                 raise ValueError("a commit is not a 40-character lowercase hex sha")
+        private_subjects = None
+        if args.subjects == "private":
+            if args.out.name == "latest.json":
+                raise ValueError("--subjects private may not write latest.json, the public "
+                                 "document's name")
+            given = [f"--{f.replace('_', '-')}" for f in PUBLIC_ONLY_FLAGS
+                     if getattr(args, f) is not None]
+            if given:
+                raise ValueError(f"--subjects private does not read {', '.join(given)}")
+            private_subjects = private_census(args.registry or [], args.evals_dir)
         public_repos = explorer_public.load_public_repos(args.public_repos)
         issues = (json.loads(args.regression_issues.read_text(encoding="utf-8"))
                   if args.regression_issues else {})
@@ -2057,7 +2158,8 @@ def main(argv: list[str] | None = None) -> int:
                     explorer_public.load_policy(args.hook_policy,
                                                 explorer_public.HOOK_POLICY_DEFAULTS),
                     explorer_public.include_spend(args.export_policy),
-                    args.lesson_funnel, args.lesson_issues)
+                    args.lesson_funnel, args.lesson_issues, private_subjects,
+                    args.source_repository)
         text = finish(doc, public_repos)
         validate(doc)
     except Refused as exc:
