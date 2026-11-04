@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:31:51Z",
+  "generated_at": "2026-11-04T02:34:20Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:31:02Z",
+ "generated_at": "2026-11-04T02:33:15Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:29:07Z",
+ "newest_run": "2026-11-04T02:29:53Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -22473,11 +22473,11 @@
       "votes": true
      },
      {
-      "gain": 51.9,
+      "gain": 50.0,
       "high": 100.0,
-      "low": -100.0,
+      "low": -33.1,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "bootstrap",
       "votes": true
@@ -22493,9 +22493,9 @@
       "votes": true
      }
     ],
-    "helps": 0.0,
+    "helps": 0.08892128279883382,
     "keep_family": 4,
-    "keep_pairs": 3,
+    "keep_pairs": 4,
     "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": 1
@@ -22512,7 +22512,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 10,
+   "current_text_runs": 11,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
@@ -22523,6 +22523,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T02:29:53Z",
+     "cli_version": "2.1.318",
+     "fixture": "bootstrap",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T022815Z-a4fcd5/writing-adrs/20261104T022953Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 9,
+      "cost_usd": 0.15424229999999997,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 9,
+      "cost_usd": 0.1173486,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T02:27:28Z",
      "cli_version": "2.1.318",
@@ -23715,7 +23736,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "66bb6e4522dca94024d07b77b7f5d54c40bf6237"
+  "results_commit": "218759e84e3017015f5b49f15908238bca686572"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
