@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:26:26Z",
+  "generated_at": "2026-11-04T01:28:43Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 30
   }
  },
- "generated_at": "2026-11-04T01:25:33Z",
+ "generated_at": "2026-11-04T01:27:45Z",
  "guidance": {
   "removed": [
    {
@@ -9562,7 +9562,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:23:43Z",
+ "newest_run": "2026-11-04T01:25:21Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -9941,7 +9941,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -13844,7 +13844,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16419,7 +16419,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17357,7 +17357,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20056,11 +20056,11 @@
       "votes": true
      },
      {
-      "gain": -8.3,
-      "high": 100.0,
+      "gain": -11.1,
+      "high": 51.4,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": "closed-duplicate",
       "votes": true
@@ -20115,17 +20115,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T01:25:21Z",
+     "cli_version": "2.1.318",
+     "fixture": "closed-duplicate",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T012331Z-78ef02/vendor-release-impact-issues/20261104T012521Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1801731,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1455134,
+      "judge_mean": 10.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T01:23:43Z",
      "cli_version": "2.1.318",
@@ -23323,7 +23344,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "278a26d141164387dfa6dce1e1b5154371037633"
+  "results_commit": "653a04932f73b39e2f0e56d5b389342d35e8d347"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
