@@ -1002,7 +1002,8 @@ fails without it:
 - *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
   takes the subject's pause count, and at `MAX_LOOP_PAUSES` any closed
   retirement issue decides on the lowered path too. At the cap, a subject a
-  closed issue decides gets `none`, so no cap comment asks the owner again.
+  closed issue decides gets `none` once its cap comment is out or no issue
+  is open (narrowed in round 11's R11-1, below).
 - *A refresh could merge a failed decline (R10-4).* `refresh_allowed` now
   reads the subject's retirement issues and refuses a removal a closed
   proposal declines, and refuses when the list cannot be read. The refresh
@@ -1014,6 +1015,42 @@ fails without it:
   unreadable item, the Actions check on a decline-only pass, the guidance
   removal's note on its open proposal issue, and an unreadable issue list
   in that note being named, not raised.
+
+**Round 11 (2026-11-04, skills-evals#758).** Four minor findings, none able
+to remove a subject against a person's decision; each fixed with a test
+that fails without it:
+
+- *A subject at the cap was decided with no notice (R11-1).* A person who
+  closed a withdrawal-filed issue before the cap, when its text said closing
+  it declined nothing until the cap, made every later `auto` pass at the cap
+  return `none`, with no cap comment on the open issue the next withdrawal
+  filed. So the owner was never told the loop stopped, and round 10's "no
+  cap comment asks the owner again" was false: none had asked. The cap
+  comment is now owed (`cap_owed`) while an issue is open and none of the
+  subject's issues records `CAP_MARKER`; the open issue then gets it, once,
+  even beside a closed issue. After that, or with no issue open, a closed
+  issue decides with no comment, as round 10 intended. The lowered path
+  is unchanged and posts no cap comment.
+- *A person's re-arm protected more than the close (R11-2).* `person_rearm`
+  returned "left for a person" before the item's own decision ran, so a
+  declined removal a person re-armed survived a stale verdict and the
+  `proposal` switch, though the same re-arm with no closed issue did not.
+  The rule is now: the re-arm overrides the decline and nothing else. The
+  decline carries the item's own decision (`otherwise`), and `_act` applies
+  it exactly as it would with no closed issue (keep, withdraw or disarm).
+- *In `proposal` mode a hand re-arm did not last (R11-3, predating PR
+  #751).* The documented "turn auto-merge on again by hand" was undone by
+  the next pass. The switch now disarms only the loop's arm: an armed
+  removal whose latest `auto_merge_enabled` event is someone's other than
+  `LOOP_AUTHOR`, later than the loop's last `auto_merge_disabled`
+  (`switch_rearm`), is left armed. One the loop armed and never turned off,
+  an unreadable timeline or a missing time is disarmed. A stale verdict
+  still withdraws it, since the withdrawal precedes the switch. This keeps
+  the switch's rule that no removal merges without a person: a person armed
+  this one.
+- *Test gaps (R11-4).* Tests now kill round 11's mutants 15 (the re-arm read
+  on an unarmed removal: a person's re-arm and then their hold is declined)
+  and 25 (the decline's dry-run listing names the unlabel and its read-back).
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

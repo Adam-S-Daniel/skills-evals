@@ -90,8 +90,11 @@ declined the removal; any close does, whatever its reason
 lowered to a proposal short of the cap, such an issue does not count as
 already decided either, and a fresh proposal issue is filed for a person to
 decline (R9-5; in `proposal` mode, or at the cap, any closed issue decides:
-the lowered path counts the subject's loop pauses too, and at the cap a
-closed issue beside an open one gets no cap comment, R10-3).
+the lowered path counts the subject's loop pauses too, R10-3). At the cap
+the cap comment is posted once per subject (R11-1): on the open retirement
+issue, when none of the subject's issues carries `CAP_MARKER` yet, even
+beside a closed issue; from then on a closed issue decides with no comment,
+and so does one with no issue open, which gets none.
 A proposal issue that is open when a removal opens gets a comment linking it
 (`open_proposal_note`): closing the issue still declines that removal, since
 the withdrawal pass closes it (R9-1, below); a removal that has merged is
@@ -254,9 +257,12 @@ stays closed, and any open removal notice is closed as in step 7. An
 unreadable issue list fails that pull request's item (exit 2) and writes
 nothing to it. One exception (R10-2, `person_rearm`): an armed removal
 whose latest `auto_merge_enabled` event is someone's other than
-`LOOP_AUTHOR`, created after the declining issue's `closed_at`, is left for
-a person, untouched: turning auto-merge on again overrides the close. An
-unreadable timeline, or a time missing on either side, does not.
+`LOOP_AUTHOR`, created after the declining issue's `closed_at`, is not
+declined: turning auto-merge on again overrides the close. It overrides
+only the close (R11-2): the pull request then gets its own decision, as it
+would with no closed issue, so a stale verdict still withdraws it and the
+`proposal` switch still applies (below). An unreadable timeline, or a time
+missing on either side, does not override the close.
 
 A failure at steps 1 to 5 leaves the pull request open for the next pass.
 In `auto` mode an open removal whose verdict still supports it but which
@@ -286,7 +292,11 @@ is a person's: remove `agent-authored`, restore the branch from the pull
 request page, then reopen and merge by hand; a pull request without the
 label is not the loop's. While the target's mode is
 `proposal` (the one switch), a removal still supported is only disarmed,
-left open and commented once. Unknown data never withdraws: a missing or
+left open and commented once. One a person armed again is left armed
+(R11-3, `switch_rearm`): its latest `auto_merge_enabled` event is someone's
+other than `LOOP_AUTHOR`, later than the loop's last `auto_merge_disabled`.
+A removal the loop armed and never turned off, an unreadable timeline or a
+missing time is disarmed. Unknown data never withdraws: a missing or
 unreadable gates document (or no guidance block) withdraws nothing and
 exits 0 with a status naming no subject, and a subject the document does
 not list, whose verdict raised in compute_gates.py (`VERDICT_RAISED`) or
@@ -757,7 +767,7 @@ def issue_origin(body: str) -> str:
 
 
 def existing_issues(gh, skill: str) -> dict:
-    """{"open": [...], "closed": [...], "proposals": [...]}: the numbers,
+    """{"open": [...], "closed": [...], "proposals": [...], "capped": [...]}: the numbers,
     ascending, of every issue, in any state, that github-actions[bot] opened
     with this skill's marker, and of those the ones the withdrawal path did
     not file (`issue_origin`). An issue anyone else opened is ignored,
@@ -1183,6 +1193,9 @@ def paused_reason(count: int) -> str:
 #: In the body of a retirement issue the pause cap has reached, so the
 #: comment that tells a person is posted once (R7-4).
 CAP_MARKER = "<!-- skills-evals:pause-cap:{subject} -->"
+#: What every CAP_MARKER starts with. A retirement issue carries only its own
+#: subject's, so `guidance_issues` reads this prefix in the issues it lists.
+CAP_PREFIX = CAP_MARKER.split("{", 1)[0]
 
 
 def cap_note(subject: str, count: int) -> str:
@@ -1211,15 +1224,25 @@ def cap_notice(action: dict, gh, subject: str, count: int) -> dict:
     if action["action"] == "update-issue":
         old = gh(["api", f"repos/{EVALS_REPO}/issues/{action['issue']}", "--jq",
                   '.body // ""'])
-        if CAP_MARKER.format(subject=subject) not in old:
+        if CAP_MARKER.format(subject=subject) not in old:  # posted once (R7-4)
             action["cap_comment"] = f"{note}\n{AGENT_MARKER}\n"
     return action
 
 
+def cap_owed(found: dict) -> bool:
+    """Whether the pause cap's one comment is still owed (R11-1): an open
+    retirement issue exists and none of the subject's issues, open or
+    closed, records the comment (`capped`). Then the open issue gets it,
+    even beside a closed issue, so the owner learns the loop stopped."""
+    return bool(found["open"]) and not found["capped"]
+
+
 def capped_decided(found: dict, mode: str, key: str, subject: str, count: int) -> dict:
     """At the pause cap, the `none` action for a subject a closed retirement
-    issue decides (R10-3): at the cap any closed issue decides, so no cap
-    comment asks the person again, even beside an open issue."""
+    issue decides (R10-3), once no cap comment is owed (`cap_owed`, R11-1):
+    the comment is already on one of its issues, or no issue is open. So the
+    comment is posted at most once per subject, and a subject with no open
+    issue is decided with none."""
     number = found["closed"][0]
     return {"action": "none", "mode": mode, key: subject, "issue": number,
             "reason": f"{subject} is already decided: the loop has withdrawn {count} "
@@ -1264,8 +1287,9 @@ def deciding_issues(found: dict, withdrawn_decides: bool, paused: int = 0) -> li
     the cap (`paused` < MAX_LOOP_PAUSES, R10-3), when one the withdrawal path
     filed (`WITHDRAWAL_STAMP`) does not: a person closed it after being told
     that closing it declines nothing, so a fresh proposal issue is filed for
-    them to decide on. At the cap any closed issue decides, since the cap
-    comment told the person that closing the issue declines."""
+    them to decide on. At the cap any closed issue decides (R10-3): the loop
+    has stopped opening removals, so a close is read as a decline whatever
+    its stamp. On this lowered path no cap comment is posted."""
     if withdrawn_decides or paused >= MAX_LOOP_PAUSES:
         return found["closed"]
     return [n for n in found["closed"] if n in found["proposals"]]
@@ -1341,9 +1365,11 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     decline = declined(issues, skill, mode, "skill")
     if decline:
         return decline
-    if len(paused) >= MAX_LOOP_PAUSES:
+    capped = len(paused) >= MAX_LOOP_PAUSES
+    if capped and not cap_owed(issues):  # R11-1: else the open issue gets it first
         if issues["closed"]:
             return capped_decided(issues, mode, "skill", skill, len(paused))
+    if capped:
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
         return cap_notice(_skill_issue(gates, registries, gh, skill, mode_reason, run_url,
@@ -1678,15 +1704,16 @@ def guidance_closed_removal_prs(gh, section: str) -> list:
 def guidance_issues(gh, marker: str) -> dict:
     """As `existing_issues`, for any marker, plus `closed_at`: each closed
     issue's close time as the API gives it ("" when it gives none), which
-    the decline compares a person's re-arm with (R10-2). The close reason
-    (`state_reason`) is not read: any close declines."""
+    the decline compares a person's re-arm with (R10-2), and `capped`: the
+    issues whose body records the pause cap's comment (`CAP_MARKER`, R11-1).
+    The close reason (`state_reason`) is not read: any close declines."""
     text = gh(["api", "--paginate",
                f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
                "--jq", ".[] | select(.pull_request == null) | "
                        "{number: .number, body: (.body // \"\"), "
                        "author: .user.login, state: .state, "
                        "closed_at: (.closed_at // \"\")}"])
-    found = {"open": [], "closed": [], "proposals": []}
+    found = {"open": [], "closed": [], "proposals": [], "capped": []}
     closed_at = {}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
@@ -1700,6 +1727,8 @@ def guidance_issues(gh, marker: str) -> dict:
             closed_at[number] = item.get("closed_at")
         if issue_origin(item["body"]) != "withdrawal":
             found["proposals"].append(number)
+        if CAP_PREFIX in item["body"]:
+            found["capped"].append(number)
     return {**{state: sorted(numbers) for state, numbers in found.items()},
             "closed_at": closed_at}
 
@@ -1944,9 +1973,11 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     decline = declined(issues, section, mode, "section")
     if decline:
         return decline
-    if len(paused) >= MAX_LOOP_PAUSES:
+    capped = len(paused) >= MAX_LOOP_PAUSES
+    if capped and not cap_owed(issues):  # R11-1: else the open issue gets it first
         if issues["closed"]:
             return capped_decided(issues, mode, "section", section, len(paused))
+    if capped:
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
         return cap_notice(_guidance_issue(gates, section, kind, "proposal", mode_reason, gh,
@@ -2455,14 +2486,16 @@ ARMS_JQ = ('.[] | select(.event == "auto_merge_enabled") '
 
 
 def person_rearm(registry_gh, c: dict, closed_at) -> str | None:
-    """Why an armed removal a closed proposal issue declines is left for a
-    person (R10-2), or None when it is declined: the latest
-    `auto_merge_enabled` event on its timeline is someone's other than
-    LOOP_AUTHOR, created after `closed_at`, the declining issue's close.
-    A person who turned auto-merge on again after closing the issue
-    overrides that close. Anything not known to be such a re-arm (an
-    unreadable timeline, no event, the loop's own arm, or a time missing or
-    unparseable on either side) leaves the decline to stand."""
+    """Why an armed removal a closed proposal issue declines is not
+    declined (R10-2), or None when it is: the latest `auto_merge_enabled`
+    event on its timeline is someone's other than LOOP_AUTHOR, created
+    after `closed_at`, the declining issue's close. A person who turned
+    auto-merge on again after closing the issue overrides that close, and
+    only that close (R11-2): `_act` then applies the item's own decision,
+    as it would with no closed issue. Anything not known to be such a
+    re-arm (an unreadable timeline, no event, the loop's own arm, or a time
+    missing or unparseable on either side) leaves the decline to stand.
+    `switch_rearm` asks the same question of the loop's last disable."""
     closed = _moment(closed_at)
     if closed is None:
         return None
@@ -2476,7 +2509,29 @@ def person_rearm(registry_gh, c: dict, closed_at) -> str | None:
     if made is None or made <= closed:
         return None
     return ("someone other than the loop turned its auto-merge on after its proposal issue "
-            "was closed, which overrides that close, so it is left for a person")
+            "was closed, which overrides that close")
+
+
+def switch_rearm(registry_gh, c: dict) -> str | None:
+    """Why an armed removal the `proposal` switch would disarm is left
+    armed (R11-3), or None when it is disarmed: the latest
+    `auto_merge_enabled` event is someone's other than LOOP_AUTHOR, created
+    after the loop's last `auto_merge_disabled` event (`person_rearm` with
+    that event's time). A person who turned auto-merge on again after the
+    loop turned it off made the merge their own, and the switch disarms only
+    the loop's arm. With no disable of the loop's (the arm is still the
+    one the loop made when it opened the removal), an unreadable timeline,
+    or a time missing, it is disarmed."""
+    try:
+        events = _json_lines(registry_gh(c["timeline"]))
+    except Exception:  # noqa: BLE001 - not known to be a person's re-arm
+        return None
+    off = [e for e in events
+           if e.get("event") == "auto_merge_disabled" and e.get("actor") == LOOP_AUTHOR]
+    if not off or not person_rearm(registry_gh, c, off[-1].get("created_at")):
+        return None
+    return ("someone other than the loop turned its auto-merge on again after the loop "
+            "turned it off, so the proposal switch leaves it armed")
 
 
 def loop_disarm_hold(registry_gh, c: dict, subject: str) -> str | None:
@@ -2548,8 +2603,11 @@ def would_run(target: str, item: dict) -> list:
                 ["issue", "comment", "<the subject's open removal notice>", "-R", EVALS_REPO,
                  "--body-file", "-"]]
     if item["action"] == "disarm":
-        # The timeline is read only when auto-merge is already off (R8-3).
-        return [c["state"], c["view"], c["merge"], c["view"], c["timeline"], c["comment"]]
+        # The timeline is read either way: armed, for a person's re-arm since
+        # the loop's last disable (R11-3, with the arms); already off, for
+        # the switch's comment (R8-3).
+        return [c["state"], c["view"], c["timeline"], c["arms"], c["merge"], c["view"],
+                c["comment"]]
     return []
 
 
@@ -2563,7 +2621,9 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
     loop closes the removal as a decision rather than keeping it to merge
     or filing a withdrawal issue that would say closing it declines
     nothing. An unreadable issue list makes the item `unreadable`, which
-    `_act` fails (the pull request is left as it is and the pass exits 2)."""
+    `_act` fails (the pull request is left as it is and the pass exits 2).
+    The decline keeps the item's own decision as `otherwise`, which `_act`
+    applies instead when a person's re-arm overrides the close (R11-2)."""
     subject = decision.get("subject")
     if not isinstance(subject, str) or not isinstance(gates, dict):
         return decision
@@ -2583,6 +2643,7 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
         return {"action": "unreadable", "subject": subject, "why": decline["unreadable"]}
     return {"action": "decline", "subject": subject, "declined": decline["issue"],
             "closed_at": decline.get("closed_at"),
+            "otherwise": decision,
             "why": f"its proposal issue #{decline['issue']} in skills-evals is closed, "
                    "which declines the removal"}
 
@@ -2754,7 +2815,9 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
     before it comments and closes, so any failure before the close leaves
     the pull request open for the next pass; then it deletes the branch,
     best effort. A `disarmed` partial withdrawal (R6-2) found armed is
-    kept."""
+    kept, as is an armed `disarm` a person re-armed (`switch_rearm`, R11-3).
+    A `decline` a person re-armed after the close (`person_rearm`) is acted
+    on as its own decision instead (R11-2)."""
     n = item["number"]
     if item["action"] == "keep":
         return f"kept #{n}: {item['why']}"
@@ -2773,7 +2836,16 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
     if item["action"] == "decline" and armed:
         rearmed = person_rearm(registry_gh, c, item.get("closed_at"))
         if rearmed:
-            return f"left #{n} for a person: {rearmed}"
+            # R11-2: the re-arm overrides the decline only; the item's own
+            # decision (keep, withdraw or disarm) then applies, as it would
+            # with no closed issue.
+            own = {**item["otherwise"], "number": n, "url": item["url"]}
+            return (f"not declining #{n}: {rearmed}; "
+                    + _act(own, gates, target, registry_gh, gh, run_url, delete))
+    if item["action"] == "disarm" and armed:
+        kept = switch_rearm(registry_gh, c)
+        if kept:
+            return f"kept #{n} armed: {kept}"
     if armed:
         registry_gh(c["merge"])
         if registry_gh(c["view"]).strip():

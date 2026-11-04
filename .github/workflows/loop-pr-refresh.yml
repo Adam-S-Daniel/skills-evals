@@ -82,8 +82,9 @@ name: Refresh loop pull requests
 # instead (round 9's R9-1): disarmed, its `loop-withdrawn` label taken off and
 # read back (R10-1), and closed as a decision with no new issue, so the
 # closed removal decides the subject and its branch is kept. Any close of
-# the issue declines, whatever its reason; one a person re-armed after that
-# close is left for a person (R10-2).
+# the issue declines, whatever its reason; a person's re-arm after that
+# close overrides the decline only, and the removal gets the decision it
+# would get with no closed issue (R10-2, R11-2).
 
 on:
   workflow_run:

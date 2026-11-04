@@ -799,8 +799,11 @@ that firms up to `auto`, the token coming back, or the mode switched from
 own stamp and declines nothing until the pause cap (below); while `auto` is
 lowered to a proposal short of the cap, it does not count as already
 decided either, so a fresh proposal issue is filed for a person to decline.
-At the cap any closed retirement issue decides on that lowered path too, and
-no cap comment is posted on another issue of a subject one decides.
+At the cap any closed retirement issue decides on that lowered path too. In
+`auto` mode at the cap, the cap comment (below) is posted once per subject:
+an open retirement issue gets it even beside a closed one, when none of the
+subject's issues carries it yet, so the owner learns the loop stopped; after
+that, or with no issue open, a closed issue decides and nothing is posted.
 If the reason for the proposal goes away while its issue is still open, a
 removal opens and the issue gets a comment linking it. Closing that issue
 then still declines the removal: the next withdrawal pass closes the open
@@ -934,8 +937,12 @@ If the issue list cannot be read, that pull request is left as it is and
 the step fails. A person who turned auto-merge on again after closing the
 issue overrides the close: when the latest `auto_merge_enabled` event on an
 armed removal is someone's other than the loop's and later than the issue's
-close, the pass leaves that pull request alone for a person. An unreadable
-timeline, or a missing time, does not override it.
+close, the pass does not decline it. The re-arm overrides only the close:
+the pull request then gets the decision it would get with no closed issue,
+so it is kept while its verdict supports it, withdrawn when the verdict is
+stale, and disarmed by the `proposal` switch unless that re-arm also came
+after the App's last disable (below). An unreadable timeline, or a missing
+time, does not override the close.
 
 One pull request's failure does not stop the pass: the others still act,
 every status line is printed, and the step then fails.
@@ -950,7 +957,12 @@ posts it. The gap left: if the mode is switched back to `auto` before such a
 pass, the removal is finished as a pause and the next daily run opens a
 fresh, armed one. While it stays open, it blocks later removals and
 keeps the skill out of the weekly plan's improve fires. Close it, or turn
-auto-merge on again by hand (a merge commit).
+auto-merge on again by hand (a merge commit): the switch disarms only the
+App's arm, so a removal whose latest `auto_merge_enabled` event is
+someone's other than the App's, later than the App's latest
+`auto_merge_disabled`, is left armed and merges once its checks pass. One
+the App armed and never turned off, an unreadable timeline or a missing time
+is disarmed.
 
 Unknown data withdraws nothing:
 
