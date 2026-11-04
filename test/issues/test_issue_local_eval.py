@@ -2441,6 +2441,118 @@ class TestContainerEvalScript(unittest.TestCase):
 
 
 
+EGRESS_DIR = REPO_ROOT / "docker" / "eval-egress"
+EGRESS_ENTRYPOINT = EGRESS_DIR / "entrypoint.sh"
+#: What both seals let the egress sidecar reach: the package registries.
+REGISTRY_HOSTS = ["registry.npmjs.org", "rubygems.org", "index.rubygems.org"]
+
+# A fake `squid` for the entrypoint test: records its argv and the host file
+# it was started with, then exits.
+FAKE_SQUID = r'''#!/bin/sh
+{ printf '%s\n' "$@"; echo '--- hosts'; cat "$EGRESS_HOSTS_FILE"; } > "$SQUID_RECORD"
+'''
+
+
+@unittest.skipUnless(shutil.which("sh"), "sh is required")
+class TestEgressSidecarFiles(unittest.TestCase):
+    """docker/eval-egress/: the entrypoint that turns EGRESS_PROFILE into the
+    host list, and the squid.conf and Dockerfile that go with it."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(
+            prefix="egress-test-", dir=TestLocalEval._temp_base())).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        squid = self.bin / "squid"
+        squid.write_text(FAKE_SQUID, encoding="utf-8")
+        squid.chmod(0o755)
+        self.hosts = self.root / "egress-hosts.txt"
+        self.record = self.root / "squid-record.txt"
+
+    def _entrypoint(self, **env):
+        full = {"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.root),
+                "EGRESS_HOSTS_FILE": str(self.hosts),
+                "SQUID_RECORD": str(self.record), **env}
+        return subprocess.run([str(EGRESS_ENTRYPOINT)], capture_output=True,
+                              text=True, env=full, timeout=60)
+
+    def _started(self):
+        """(squid's argv, the host file squid saw), or None if squid never ran."""
+        if not self.record.exists():
+            return None
+        argv, _, hosts = self.record.read_text(encoding="utf-8").partition(
+            "--- hosts\n")
+        return argv.split(), hosts.splitlines()
+
+    def test_syntax_and_mode(self):
+        proc = subprocess.run(["sh", "-n", str(EGRESS_ENTRYPOINT)],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(os.access(EGRESS_ENTRYPOINT, os.X_OK))
+
+    def test_proxy_profile_lists_the_package_registries_only(self):
+        proc = self._entrypoint(EGRESS_PROFILE="proxy")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, hosts = self._started()
+        self.assertEqual(argv, ["-N", "-f", "/etc/squid/squid.conf"])
+        self.assertEqual(hosts, REGISTRY_HOSTS)
+        self.assertEqual(self.hosts.stat().st_mode & 0o777, 0o600)
+
+    def test_allowlist_profile_adds_the_anthropic_api(self):
+        proc = self._entrypoint(EGRESS_PROFILE="allowlist")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        argv, hosts = self._started()
+        self.assertEqual(argv, ["-N", "-f", "/etc/squid/squid.conf"])
+        self.assertEqual(hosts, [*REGISTRY_HOSTS, "api.anthropic.com"])
+
+    def test_the_host_file_is_rewritten_not_appended_to(self):
+        self.hosts.write_text("evil.example.com\n", encoding="utf-8")
+        self.assertEqual(self._entrypoint(EGRESS_PROFILE="proxy").returncode, 0)
+        self.assertEqual(self._started()[1], REGISTRY_HOSTS)
+
+    def test_any_other_profile_refuses_and_never_starts_squid(self):
+        for value in (None, "", "PROXY", "Allowlist", "open", "proxy ",
+                      "proxy,allowlist", "allowlist\nproxy", "credproxy", "*"):
+            with self.subTest(value=value):
+                env = {} if value is None else {"EGRESS_PROFILE": value}
+                proc = self._entrypoint(**env)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("EGRESS_PROFILE", proc.stderr)
+                self.assertIsNone(self._started())
+                self.assertFalse(self.hosts.exists())
+
+    def test_squid_conf_reads_the_hosts_file_the_entrypoint_writes(self):
+        conf = (EGRESS_DIR / "squid.conf").read_text(encoding="utf-8")
+        rules = [line.split() for line in conf.splitlines()
+                 if line.strip() and not line.lstrip().startswith("#")]
+        entry = EGRESS_ENTRYPOINT.read_text(encoding="utf-8")
+        default = re.search(r"EGRESS_HOSTS_FILE:-([^}]+)\}", entry).group(1)
+        self.assertIn(
+            ["acl", "egress_hosts", "dstdomain", "-n", f'"{default}"'], rules)
+        # CONNECT to 443 on that list, then deny: nothing else is allowed.
+        allows = [r for r in rules if r[:2] == ["http_access", "allow"]]
+        self.assertEqual(allows, [
+            ["http_access", "allow", "CONNECT", "egress_hosts", "tls_port"]])
+        self.assertIn(["acl", "tls_port", "port", "443"], rules)
+        self.assertIn(["acl", "eval_clients", "src", "10.0.0.0/8",
+                       "172.16.0.0/12", "192.168.0.0/16"], rules)
+        self.assertIn(["http_access", "deny", "!eval_clients"], rules)
+        self.assertEqual(rules[-1], ["http_access", "deny", "all"])
+        self.assertIn(["access_log", "stdio:/dev/stdout", "squid"], rules)
+        # The hosts live in the entrypoint, never hard-coded in the conf.
+        self.assertNotIn("anthropic", " ".join(w for r in rules for w in r))
+
+    def test_the_dockerfile_installs_the_entrypoint_and_names_both_lists(self):
+        text = (EGRESS_DIR / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY entrypoint.sh /usr/local/bin/egress-entrypoint", text)
+        self.assertIn('ENTRYPOINT ["/usr/local/bin/egress-entrypoint"]', text)
+        header = text.split("FROM ", 1)[0]
+        for host in (*REGISTRY_HOSTS, "api.anthropic.com"):
+            self.assertIn(host, header)
+        self.assertIn("EGRESS_PROFILE", header)
+
+
 RUNNER_DOCKERFILE = REPO_ROOT / "docker" / "eval-runner" / "Dockerfile"
 #: The syscalls bubblewrap needs to build its namespaces as an unprivileged
 #: uid with every capability dropped; Docker's default profile refuses them.
