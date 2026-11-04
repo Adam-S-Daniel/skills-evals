@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:30:51Z",
+  "generated_at": "2026-11-04T01:38:38Z",
   "requests": [
    {
     "closed_at": null,
@@ -337,6 +337,15 @@
     "prs": [],
     "state": "open",
     "subject": "workflow-path-audit"
+   },
+   {
+    "closed_at": null,
+    "issue": 742,
+    "kind": "needs-fixtures",
+    "opened_at": "2026-11-04T01:32:40Z",
+    "prs": [],
+    "state": "open",
+    "subject": "ci-job-performance"
    }
   ],
   "schema": 1,
@@ -348,10 +357,10 @@
    "fixtures_real_work": 0,
    "prs_merged": 0,
    "requests_closed": 3,
-   "requests_open": 30
+   "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T01:29:53Z",
+ "generated_at": "2026-11-04T01:37:47Z",
  "guidance": {
   "removed": [
    {
@@ -9562,7 +9571,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:26:46Z",
+ "newest_run": "2026-11-04T01:35:43Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10737,7 +10746,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 1,
+    "position": 2,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -12620,20 +12629,20 @@
       "votes": true
      },
      {
-      "gain": 23.5,
-      "high": 42.7,
-      "low": -7.1,
+      "gain": 22.2,
+      "high": 40.2,
+      "low": -5.4,
       "model": "claude-sonnet-5-5",
-      "pairs": 9,
+      "pairs": 10,
       "status": "open",
       "task": null,
       "votes": true
      }
     ],
-    "helps": 0.6320892366055538,
+    "helps": 0.6655356696414126,
     "keep_family": 2,
-    "keep_pairs": 9,
-    "max_pairs": 9,
+    "keep_pairs": 10,
+    "max_pairs": 10,
     "no_help": 0.0,
     "no_help_pairs": 2
    },
@@ -12649,17 +12658,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 11,
+   "current_text_runs": 12,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 2,
+    "position": 1,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T01:35:43Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T013350Z-2077f1/disarm-inherited-reach/20261104T013543Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 9,
+      "cost_usd": 0.15382690000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.1218844,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T01:01:38Z",
      "cli_version": "2.1.318",
@@ -23365,7 +23395,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "3aaa296e0cb4f54d8ed174adfd3f5c8bbc6b9af7"
+  "results_commit": "5a1f1266f1751df027bbcda74d099b5ebea81f2a"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
