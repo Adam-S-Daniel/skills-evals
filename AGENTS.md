@@ -113,12 +113,15 @@ session that lost the guidance must not also lose these.
   scorers fail closed there. Wrap any run in
   `unshare --user --map-current-user --pid --fork --mount-proc --`.
 
+- **`tool/index.html` is built from `explorer/src`**: edit there, run
+  `npm run build` in `explorer/`, commit both; CI fails on drift.
+
 - **Workflow triggers and salient paths.** `test` (ci.yml) is the one
   required check. Keep this table in step when a trigger or filter moves.
 
   | Workflow | Triggers | Salient-path handling |
   |---|---|---|
-  | `ci.yml` | `pull_request`, `push` to main, dispatch | `pull_request` unfiltered (required check); step `salient` gates the suite on `SALIENT_PATHS`, which must equal `on.push.paths` (`CiDispatchTests`) and includes `.github/workflows/actions.lock`, `.github/workflows/**` and `.github/actions/**`. The suite runs as a `suite` matrix of shards (`run_tests.py --shard K/N`, split by `test/shard.py`); the required `test` job passes only when every shard succeeded (`CiShardTests`) |
+  | `ci.yml` | `pull_request`, `push` to main, dispatch | `pull_request` unfiltered (required check); step `salient` gates the suite on `SALIENT_PATHS`, which must equal `on.push.paths` (`CiDispatchTests`) and includes `.github/workflows/actions.lock`, `.github/workflows/**`, `.github/actions/**` and `explorer/**`. Shard 1's `npm run check` step fails when `tool/index.html` drifts from `explorer/src`. The suite runs as a `suite` matrix of shards (`run_tests.py --shard K/N`, split by `test/shard.py`); the required `test` job passes only when every shard succeeded (`CiShardTests`) |
   | `agent-checks.yml` | `pull_request`, `push` to main/master, dispatch | none: the `pull_request` trigger is unfiltered and the job always runs `.githooks/agent-checks` over the change's commits (the fleet default check, _agent-guidance ADR 0021) |
   | `propagation.yml` | `pull_request` (with `paths:`), `push` to main, schedule, dispatch | `pull_request` filtered on `on.pull_request.paths` (the workflow, `actions.lock`, `.claude/hooks/**`, `skills.lock`, `harness/**`, `scripts/eval_coverage.py`, `scripts/install_claude_code.sh`, `test/test_propagation.py`, `evals/propagation/**`, every `fixture.yaml` and `evals/non-coverage.yml`; `PropagationTriggerTests`); push, schedule and dispatch stay unfiltered because the arms probe an unpinned upstream registry (its header says why). `coverage` is informational and not required: absent optional registry access makes its census unresolved without testing a PR, so PR/push/dispatch record a warning while schedule fails. Only `coverage-publish` on schedule writes `persistent/eval-results`, and only `fixture-census/` and `badges/fixture-census.json` there (`coverage/` and `badges/coverage.json` are skill-coverage.yml's; `test_issue_660_single_writer.py` keeps every results path to one writer); the optional private checkout uses a token minted from the read-only registry GitHub App (variable `REGISTRY_READ_APP_CLIENT_ID`, secret `REGISTRY_READ_APP_PEM`) in that checkout step alone. |
   | `dependabot-auto-merge.yml` | `pull_request`, schedule, dispatch | acts only on Dependabot PRs whose changes stay inside the manifest-path allowlist |
