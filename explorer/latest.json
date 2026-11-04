@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:22:54Z",
+  "generated_at": "2026-11-04T02:29:42Z",
   "requests": [
    {
     "closed_at": null,
@@ -259,24 +259,6 @@
    },
    {
     "closed_at": null,
-    "issue": 713,
-    "kind": "needs-trigger-set",
-    "opened_at": "2026-11-03T18:20:46Z",
-    "prs": [],
-    "state": "open",
-    "subject": "skills-doctor"
-   },
-   {
-    "closed_at": null,
-    "issue": 714,
-    "kind": "needs-trigger-set",
-    "opened_at": "2026-11-03T18:20:47Z",
-    "prs": [],
-    "state": "open",
-    "subject": "sync-cc-settings-between-wsl-and-windows"
-   },
-   {
-    "closed_at": null,
     "issue": 715,
     "kind": "needs-trigger-set",
     "opened_at": "2026-11-03T18:20:48Z",
@@ -357,10 +339,10 @@
    "fixtures_real_work": 0,
    "prs_merged": 0,
    "requests_closed": 3,
-   "requests_open": 31
+   "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:21:58Z",
+ "generated_at": "2026-11-04T02:28:42Z",
  "guidance": {
   "removed": [
    {
@@ -9594,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:20:25Z",
+ "newest_run": "2026-11-04T02:27:28Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10401,7 +10383,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11465,7 +11447,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16661,7 +16643,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17133,7 +17115,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18800,7 +18782,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -22459,11 +22441,11 @@
       "votes": true
      },
      {
-      "gain": 9.5,
-      "high": 100.0,
+      "gain": 10.7,
+      "high": 52.2,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "existing-convention",
       "votes": true
@@ -22472,7 +22454,7 @@
     "helps": 0.0,
     "keep_family": 4,
     "keep_pairs": 3,
-    "max_pairs": 3,
+    "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": 1
    },
@@ -22488,17 +22470,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 9,
+   "current_text_runs": 10,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
    "name": "writing-adrs",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T02:27:28Z",
+     "cli_version": "2.1.318",
+     "fixture": "existing-convention",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T022535Z-4534f3/writing-adrs/20261104T022728Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1384331,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.1173694,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:13:00Z",
      "cli_version": "2.1.318",
@@ -23670,7 +23673,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "6a5e9120f7516f1c4a7aab0427e9bce58b84d937"
+  "results_commit": "d77586bceda0f4c7956c115ef396571184494cd9"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
