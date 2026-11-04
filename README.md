@@ -790,6 +790,7 @@ a default**: a run that needs one and finds it unset fails naming it.
 |---|---|---|
 | `SITE_REPO` | the site repository as `owner/name`, or `none` to skip cleanly on a repository with no site | `site-sync.yml`, `site-preview.yml`, `site-freshness.yml` |
 | `SITE_PAGE_URL` | the live page URL | `site-freshness.yml` |
+| `SITE_PREVIEW_URL` | the preview page's https URL with `{pr}` where the site pull request's number goes; required unless `SITE_REPO` is `none` | `site-preview.yml` |
 | `SITE_ASSET_URL` | the URL of the vendored asset on the site | `site-freshness.yml` |
 | `SITE_FRESHNESS_ROUTINE_ID` | the fixer routine's id; required once the `SITE_FRESHNESS_FIRE_BEARER` secret exists | `site-freshness.yml` |
 

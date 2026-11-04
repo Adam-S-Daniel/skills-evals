@@ -133,6 +133,36 @@ class SiteWorkflowTests(unittest.TestCase):
             for step in [s for _, s in steps(doc) if s.get("id") == "site"]:
                 self.assertIn("SITE_REPO is not set", step["run"])
 
+    def test_preview_url_comes_from_a_variable_and_fails_when_missing(self):
+        self.assertEqual(self.preview["env"]["SITE_PREVIEW_URL"], "${{ vars.SITE_PREVIEW_URL }}")
+        text = (WORKFLOWS / "site-preview.yml").read_text(encoding="utf-8")
+        self.assertNotIn("preview-pr${SITE_PR}", text)
+        resolve = [s for job_id, s in steps(self.preview)
+                   if job_id == "mirror" and s.get("id") == "site"][0]
+
+        def run(**env):
+            base = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": os.devnull}
+            base.update(env)
+            return subprocess.run(["bash", "-c", resolve["run"]], env=base,
+                                  capture_output=True, text=True)
+
+        site = {"SITE_REPO": "example-owner/example-site"}
+        unset = run(**site)
+        self.assertEqual(unset.returncode, 1)
+        self.assertIn("SITE_PREVIEW_URL is not set", unset.stdout)
+        self.assertEqual(run(SITE_PREVIEW_URL="https://example.com/x/", **site).returncode, 1)
+        self.assertEqual(run(SITE_PREVIEW_URL="http://pr{pr}.example.com/", **site).returncode, 1)
+        self.assertEqual(run(SITE_PREVIEW_URL="https://pr{pr}.example.com/t/", **site).returncode, 0)
+        self.assertEqual(run(SITE_REPO="none").returncode, 0)
+        comment = [s for _, s in steps(self.preview)
+                   if s.get("name") == "Comment the preview URLs here"][0]
+        line = [l.strip() for l in comment["run"].splitlines() if l.strip().startswith("page_url=")][0]
+        out = subprocess.run(["bash", "-c", line + '; printf %s "$page_url"'],
+                             env={"PATH": os.environ["PATH"], "SITE_PR": "12",
+                                  "SITE_PREVIEW_URL": "https://pr{pr}.example.com/t/"},
+                             capture_output=True, text=True)
+        self.assertEqual(out.stdout, "https://pr12.example.com/t/")
+
     def test_permissions_are_minimal(self):
         self.assertEqual(self.sync["permissions"], {"contents": "read"})
         self.assertEqual(self.preview["permissions"],
