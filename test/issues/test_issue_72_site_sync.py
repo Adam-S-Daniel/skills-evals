@@ -69,21 +69,57 @@ class SiteWorkflowTests(unittest.TestCase):
             self.assertTrue(mints, name)
             for step in mints:
                 self.assertIs(step.get("continue-on-error"), True, name)
-                self.assertEqual(step["with"]["repositories"], "adamdaniel.ai")
-                self.assertEqual(step["with"]["owner"], "Adam-S-Daniel")
+                if name == "sync":
+                    # The target follows SITE_REPO (default Adam-S-Daniel/adamdaniel.ai).
+                    self.assertEqual(step["with"]["repositories"],
+                                     "${{ steps.site.outputs.name }}")
+                    self.assertEqual(step["with"]["owner"], "${{ steps.site.outputs.owner }}")
+                else:
+                    self.assertEqual(step["with"]["repositories"], "adamdaniel.ai")
+                    self.assertEqual(step["with"]["owner"], "Adam-S-Daniel")
                 self.assertIn("EVAL_IMPROVE_APP_CLIENT_ID", step["with"]["client-id"])
                 self.assertIn("EVAL_IMPROVE_APP_PEM", step["with"]["private-key"])
 
-    def test_missing_token_warns_and_succeeds(self):
+    def test_missing_token_fails_the_sync_but_not_the_preview(self):
+        decide = [s for _, s in steps(self.sync) if s.get("id") == "token"]
+        self.assertEqual(len(decide), 1)
+        run = decide[0]["run"]
+        self.assertIn("::error::", run)
+        self.assertNotIn("::warning::", run)
+        self.assertIn("exit 1", run)
+        self.assertIn("GITHUB_STEP_SUMMARY", run)
+        # Both causes fail: credentials missing, and a mint that failed.
+        self.assertIn("could not be minted", run)
+        self.assertIn("credentials are not set", run)
+        self.assertIn("steps.site.outputs.skip != 'true'", decide[0]["if"])
+
+    def test_missing_token_warns_and_succeeds_in_the_preview(self):
         for name, doc in (("sync", self.sync), ("preview", self.preview)):
             decide = [s for _, s in steps(doc) if s.get("id") == "token"]
             self.assertEqual(len(decide), 1, name)
             run = decide[0]["run"]
-            self.assertIn("::warning::", run, name)
-            self.assertIn("GITHUB_STEP_SUMMARY", run, name)
-            self.assertNotIn("exit 1", run, name)
+            if name == "preview":
+                self.assertIn("::warning::", run, name)
+                self.assertIn("GITHUB_STEP_SUMMARY", run, name)
+                self.assertNotIn("exit 1", run, name)
             self.assertIn("eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai",
                           doc["env"]["FIX_HINT"], name)
+
+    def test_site_repo_comes_from_a_variable_and_none_skips_cleanly(self):
+        self.assertEqual(self.sync["env"]["SITE_REPO"],
+                         "${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}")
+        resolve = [s for _, s in steps(self.sync) if s.get("id") == "site"]
+        self.assertEqual(len(resolve), 1)
+        run = resolve[0]["run"]
+        self.assertIn('[ "$SITE_REPO" = none ]', run)
+        self.assertIn("::notice::", run)
+        self.assertIn("skip=true", run)
+        # Every step that touches the site waits on the skip output.
+        gated = {s.get("id") or s.get("name") for _, s in steps(self.sync)
+                 if "steps.site.outputs.skip" in str(s.get("if", ""))}
+        self.assertTrue({"credential", "mint", "token"} <= gated, gated)
+        checkout = [s for _, s in steps(self.sync) if s.get("name") == "Checkout site repo"][0]
+        self.assertEqual(checkout["with"]["repository"], "${{ env.SITE_REPO }}")
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.sync["permissions"], {"contents": "read"})

@@ -1,7 +1,11 @@
 """Issues #72 and #123: the Evals Explorer page (tool/index.html).
 
-The page's own tests are plain Node (tool/test/run.js, no dependencies, no
-network). This module runs them inside the existing suite, so they gate the
+tool/index.html is the build output of explorer/src (`npm run build` in
+explorer/). The page's own tests are plain Node (tool/test/run.js, no
+dependencies, no network) and run against the built page; explorer/test/run.js
+tests the source tree, its adapters and the bundle, with explorer's pinned
+devDependencies (`npm ci` in explorer/, which scripts/dev_setup.sh and ci.yml
+do). This module runs both inside the existing suite, so they gate the
 required `test` check without a separate job, and cross-checks the committed
 guidance id list against _agent-guidance's manifest with a real YAML parser
 when that checkout sits beside this one.
@@ -18,6 +22,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "tool" / "test" / "run.js"
+EXPLORER = ROOT / "explorer"
+SOURCE_RUNNER = EXPLORER / "test" / "run.js"
 COMMITTED_IDS = ROOT / "tool" / "test" / "guidance-ids.json"
 
 
@@ -41,6 +47,21 @@ class ExplorerPageTests(unittest.TestCase):
         self.assertRegex(proc.stdout, r"\b[1-9]\d* passed, 0 failed\b",
                          "the runner must report a nonzero pass count")
 
+    def test_explorer_source_suite_passes(self):
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("`node` is not on PATH, so explorer/test/run.js cannot run here")
+        self.assertTrue((EXPLORER / "node_modules" / "esbuild").is_dir(),
+                        "explorer/node_modules is missing: run `bash scripts/dev_setup.sh` "
+                        "(or `npm ci` in explorer/) first, as ci.yml does")
+        proc = subprocess.run([node, str(SOURCE_RUNNER)], cwd=EXPLORER, capture_output=True,
+                              text=True, timeout=120, check=False)
+        self.assertEqual(proc.returncode, 0,
+                         f"node explorer/test/run.js exited {proc.returncode}:\n"
+                         f"{proc.stdout}\n{proc.stderr}")
+        self.assertRegex(proc.stdout, r"\b[1-9]\d* passed, 0 failed\b",
+                         "the runner must report a nonzero pass count")
+
     def test_committed_ids_match_the_manifest(self):
         path = manifest_path()
         if not path.is_file():
@@ -53,7 +74,7 @@ class ExplorerPageTests(unittest.TestCase):
         self.assertEqual(committed, manifest,
                          "tool/test/guidance-ids.json is out of step with "
                          "agents-md/eval-coverage.yml; update the list and add a "
-                         "gloss to GLOSSES in tool/index.html for any new id")
+                         "gloss to GLOSSES in explorer/src/core/glosses.js for any new id")
 
 
 if __name__ == "__main__":

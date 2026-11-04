@@ -4735,7 +4735,8 @@ class CiDispatchTests(unittest.TestCase):
                ".github/workflows/actions.lock", ".github/workflows/**",
                ".github/actions/**",
                ".github/dependabot.yml", "evals/**", "dashboard/**",
-               "harness/**", "scripts/**", "test/**", "tool/**", "README.md",
+               "harness/**", "scripts/**", "test/**", "tool/**", "explorer/**",
+               "README.md",
                "DESIGN.md",
                "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
                "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]

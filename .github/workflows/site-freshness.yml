@@ -1,0 +1,144 @@
+# Keeps adamdaniel.ai's Evals Explorer current with no human action, and says
+# so when it cannot. Hourly, after every "Site sync" run, and on dispatch,
+# scripts/site_freshness.py checks three things: the design (the site's
+# provenance commit against the newest tool/index.html commit on main, stale
+# after 2 hours), the data (explorer/latest.json's generated_at, stale after
+# 30 hours) and that the live page draws its data in headless Chromium. It
+# heals what it can (update-branch on a BEHIND sync PR with the EVAL_IMPROVE_APP
+# App token; a site-sync.yml dispatch when the design is stale and no sync PR
+# or branch exists), keeps one "Site freshness check is failing" issue while
+# anything fails, closes it on the first fresh run, and once that issue has
+# been open an hour fires the Sonnet routine described in
+# docs/routines/site-freshness-fixer.md (at most every 6 hours).
+#
+# * Not a required check: no push or pull_request trigger, so no path filter.
+# * Concurrency: one run at a time, never cancelling the running one (a cancel
+#   mid-issue-write could leave the issue half-updated). A pending run is
+#   replaced by a newer pending one, which is fine: every run re-checks
+#   everything and the hourly cron is the backstop.
+# * Tokens: GITHUB_TOKEN (contents read, issues write, actions write) reads
+#   this repo, writes the issue and dispatches site-sync.yml. The App token,
+#   minted under continue-on-error, reads the site repo and runs update-branch;
+#   without it the fix is skipped with a warning, never a red run.
+# * The routine's bearer (secret SITE_FRESHNESS_FIRE_BEARER) reaches only the
+#   fire step, via `env`, and goes to curl on stdin. The response body is
+#   never printed, only the status code. Missing variable or secret: the
+#   issue gets one comment saying so.
+# * SITE_REPO=none (a repository variable) skips the whole run, for adopters
+#   without a site.
+name: Site freshness
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_run:
+    workflows: [Site sync]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: site-freshness
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+env:
+  SITE_REPO: ${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}
+  SITE_PAGE_URL: ${{ vars.SITE_PAGE_URL }}
+  SITE_ASSET_URL: ${{ vars.SITE_ASSET_URL }}
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Decide whether there is a site to check
+        id: site
+        run: |
+          if [ "$SITE_REPO" = none ]; then
+            echo "::notice::SITE_REPO is none: no site to check."
+            echo "skip=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the credentials exist
+        id: credential
+        if: steps.site.outputs.skip != 'true'
+        env:
+          HAVE_APP: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+          HAVE_ROUTINE: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER != '' }}
+        run: |
+          echo "app=${HAVE_APP}" >>"$GITHUB_OUTPUT"
+          echo "routine=${HAVE_ROUTINE}" >>"$GITHUB_OUTPUT"
+
+      - name: Mint the GitHub App token for the site repo
+        id: mint
+        if: steps.site.outputs.skip != 'true' && steps.credential.outputs.app == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adamdaniel.ai
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Checkout skills-evals
+        if: steps.site.outputs.skip != 'true'
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        if: steps.site.outputs.skip != 'true'
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: '3.12'
+
+      # The only install cost: one pinned wheel and Chromium alone. No cache
+      # step, because actions/cache is not in actions.lock.
+      - name: Install Playwright and Chromium
+        if: steps.site.outputs.skip != 'true'
+        run: |
+          python3 -m pip install --quiet playwright==1.55.0 &&
+            python3 -m playwright install --with-deps chromium >/dev/null
+
+      - name: Load the live page
+        if: steps.site.outputs.skip != 'true'
+        run: python3 scripts/site_freshness.py browser --out "$RUNNER_TEMP/browser.json"
+
+      - name: Collect the checks
+        if: steps.site.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.mint.outputs.token }}
+        run: python3 scripts/site_freshness.py collect --browser "$RUNNER_TEMP/browser.json" --out "$RUNNER_TEMP/report.json"
+
+      - name: Apply the mechanical fixes
+        if: steps.site.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.mint.outputs.token }}
+        run: python3 scripts/site_freshness.py fix --report "$RUNNER_TEMP/report.json"
+
+      - name: Update the issue
+        id: issue
+        if: steps.site.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIRE_CONFIGURED: ${{ steps.credential.outputs.routine }}
+        run: python3 scripts/site_freshness.py issue --report "$RUNNER_TEMP/report.json" --fire-text "$RUNNER_TEMP/fire.txt"
+
+      - name: Fire the Sonnet routine
+        if: steps.site.outputs.skip != 'true' && steps.issue.outputs.fire == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID || 'trig_01Nu9F7UQ8aUWq4q2QsXHQhK' }}
+          FIRE_BEARER: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
+        run: python3 scripts/site_freshness.py fire --fire-text "$RUNNER_TEMP/fire.txt"
