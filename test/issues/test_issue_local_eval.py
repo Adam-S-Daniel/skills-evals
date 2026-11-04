@@ -2440,5 +2440,52 @@ class TestContainerEvalScript(unittest.TestCase):
             _flag_values(self._runner(), "--security-opt"))
 
 
+
+RUNNER_DOCKERFILE = REPO_ROOT / "docker" / "eval-runner" / "Dockerfile"
+#: The syscalls bubblewrap needs to build its namespaces as an unprivileged
+#: uid with every capability dropped; Docker's default profile refuses them.
+BWRAP_SYSCALLS = {"clone", "clone3", "mount", "pivot_root", "sethostname",
+                  "setns", "umount2", "unshare"}
+
+
+class TestRunnerImageFiles(unittest.TestCase):
+    """docker/eval-runner/: the seccomp profile container_eval.sh passes, and
+    the Dockerfile header that says where it came from."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.profile = json.loads(SECCOMP_PROFILE.read_text(encoding="utf-8"))
+
+    def test_the_default_action_denies(self):
+        self.assertEqual(self.profile["defaultAction"], "SCMP_ACT_ERRNO")
+
+    def test_one_unconditional_rule_allows_exactly_the_namespace_syscalls(self):
+        rules = [rule for rule in self.profile["syscalls"]
+                 if set(rule["names"]) == BWRAP_SYSCALLS]
+        self.assertEqual(len(rules), 1, rules)
+        rule = rules[0]
+        self.assertEqual(len(rule["names"]), len(BWRAP_SYSCALLS), "no repeats")
+        self.assertEqual(rule["action"], "SCMP_ACT_ALLOW")
+        for key in ("args", "includes", "excludes"):
+            self.assertNotIn(key, rule)
+
+    def test_no_other_rule_names_one_of_them(self):
+        for rule in self.profile["syscalls"]:
+            if set(rule["names"]) == BWRAP_SYSCALLS:
+                continue
+            self.assertEqual(set(rule["names"]) & BWRAP_SYSCALLS, set(),
+                             rule["names"])
+
+    def test_the_dockerfile_header_names_the_profile_and_its_source(self):
+        header = []
+        for line in RUNNER_DOCKERFILE.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("#"):
+                break
+            header.append(line)
+        text = "\n".join(header)
+        self.assertIn("docker-v29.8.0", text)
+        self.assertIn("seccomp-bwrap.json", text)
+
+
 if __name__ == "__main__":
     unittest.main()
