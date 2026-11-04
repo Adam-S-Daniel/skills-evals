@@ -2,22 +2,22 @@
   "include_private_names": false,
   "problems": [],
   "publication": {
-    "as_of": "2026-11-03T16:21:24Z",
-    "guidance_revision": "e93f0ff7a234b3e0f737b616e743e19ef753d485",
+    "as_of": "2026-11-04T18:39:31Z",
+    "guidance_revision": "6a8e7fe051c56c6d6de147ca2f94ba56c2327a4b",
     "public_registry_revisions": {
-      "adam-agentskills": "8acbc039bf6d21e21c4c3432009582ed2f4d010c",
-      "adamdaniel.ai": "7b3385abea4040c625c9a707032948d579bf9d40",
-      "cms-platform": "fab5cf4afd52c776df0c18cace9808134dca8155"
+      "adam-agentskills": "ce4625855f1e4693319f747ca869fdcdbb39566c",
+      "adamdaniel.ai": "e20c8a1df021071d6e47b673c6e4d65ce618822f",
+      "cms-platform": "7236d91efb3f0ee44527f1fa88941f765ef56802"
     },
-    "repository_revision": "3e52c5d97d51e35d0ad6171e6dd8737982da2253",
-    "run_id": "41673151659"
+    "repository_revision": "4bcff9a2d70b14035e8a6d1627b247e04fb60a3b",
+    "run_id": "41889207980"
   },
   "registries": [
     {
       "counts": {
         "covered": 16,
-        "gap": 0,
-        "skipped": 8,
+        "gap": 1,
+        "skipped": 7,
         "total": 24
       },
       "layout": "plugins/*/skills/*/SKILL.md",
@@ -124,10 +124,10 @@
         {
           "bundle": "adam-coding-local",
           "fixtures": 0,
-          "reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+          "reason": null,
           "registry": "adam-agentskills",
           "skill": "launch-top-level-claude-session",
-          "status": "skipped"
+          "status": "gap"
         },
         {
           "bundle": "adam-coding-local",
@@ -379,8 +379,8 @@
   "schema": 1,
   "totals": {
     "covered": 28,
-    "gap": 2,
-    "skipped": 11,
+    "gap": 3,
+    "skipped": 10,
     "total": 41
   }
 }
