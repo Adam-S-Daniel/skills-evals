@@ -4229,6 +4229,7 @@ class RoundThirteenTests(t70.Base):
         "github-actions[bot]": ("github-actions[bot]", "Bot"),
         "another App": ("a-helper[bot]", "Bot"),
         "the loop under a new slug": ("skills-evals-improve-v2[bot]", "Bot"),
+        "the loop's login typed as a User": (rs.LOOP_AUTHOR, "User"),
         "a deleted account": (rs.GHOST, "User"),
         "an organization": ("an-org", "Organization"),
         "no type": ("a-person", ""),
