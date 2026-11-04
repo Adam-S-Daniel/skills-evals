@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014SCSPuqRHasqmuxx9zvpkh",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014SCSPuqRHasqmuxx9zvpkh",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C4dsjQAFG28CJZbgvrD439",
+      "name": "Bash",
+      "input": "git ls-files && ls -la vendor && cat vendor/releases.json | head -50",
+      "input_chars": 68,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C4dsjQAFG28CJZbgvrD439",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  4 19:22 .\ndrwxr-xr-x 9 root root 4096 Nov  4 19:38 ..\n-rw-r--r-- 1 root root 1092 Nov  4 19:22 RELEASES.md...",
+      "output_chars": 837,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018tYdse35etm62SvANH4m6w",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat .example-cli/settings.json hooks/session-start.sh scripts/check.sh .github/workflows/ci.yml README.md",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018tYdse35etm62SvANH4m6w",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 or earlier that test fo...",
+      "output_chars": 2467,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019GtBe5dT3Qgm2PTLEbzmk9",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-hooks-fork-source.md <<'EOF'\n# ExampleCLI 4.2.0 hooks report source \"fork\": session hooks match startup|resume\nFound in a review of the vendored ExampleCLI r...",
+      "input_chars": 4629,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019GtBe5dT3Qgm2PTLEbzmk9",
+      "is_error": false,
+      "output": "issues/01-session-hooks-fork-source.md:1:# ExampleCLI 4.2.0 hooks report source \"fork\": session hooks match startup|resume\nissues/01-session-hooks-fork-source.md:12:- `.example-cli/settings.json` registers the `SessionStart` hook with matcher `startup|resume`, so the hook may not fire for forked ses...",
+      "output_chars": 2156,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A43aYbvHrioAFNefhowwDf",
+      "name": "Bash",
+      "input": "sed -i 's/`example-cli@4.1.0` (published 2026-06-02T14:03Z), so/`example-cli@4.1.0`, i.e. 4.1.0 [2026-06-02T14:03Z], so/' issues/02-check-exit-code-2.md && sed -n 13p issues/02-check-exit-code-2.md; g...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A43aYbvHrioAFNefhowwDf",
+      "is_error": false,
+      "output": "- `.github/workflows/ci.yml` installs `example-cli@4.1.0`, i.e. 4.1.0 [2026-06-02T14:03Z], so CI exercises the old exit code and would not catch this. Moving the pin to 4.3.0 or later would change what the \"Run checks\" step sees.\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? ....",
+      "output_chars": 379,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
