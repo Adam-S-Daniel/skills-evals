@@ -2483,9 +2483,9 @@ class RoundSevenDocTests(unittest.TestCase):
         header = wf.split("\non:", 1)[0]
         self.assertNotIn("never a force-push", header)
         self.assertIn("fast-forward only", header)
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        agents = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")
         row = next(line for line in agents.splitlines()
-                   if line.startswith("  | `loop-pr-refresh.yml`"))
+                   if line.startswith("| `loop-pr-refresh.yml`"))
         self.assertIn("(fast-forward only, leased)", row)
         self.assertNotIn("never a force-push", row)
         self.assertIn("contents: write", row)
@@ -2493,6 +2493,12 @@ class RoundSevenDocTests(unittest.TestCase):
 
     def test_agents_md_fits_codex(self):
         self.assertLessEqual(len((ROOT / "AGENTS.md").read_bytes()), 32768)
+
+    def test_agents_md_points_at_the_workflow_table(self):
+        # The table moved to docs/workflows.md for headroom under Codex's cut.
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("[`docs/workflows.md`](docs/workflows.md)", agents)
+        self.assertNotIn("| Workflow | Triggers |", agents)
 
     def test_local_agent_check_refuses_an_agents_md_codex_would_truncate(self):
         # ci.yml's suite skips a docs-only change, so the size limit is held

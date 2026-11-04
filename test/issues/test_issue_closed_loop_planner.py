@@ -2153,15 +2153,15 @@ class DocsTests(unittest.TestCase):
                       "self-improvement", text)
 
     def test_agents_md_table_names_the_planner(self):
-        text = (ROOT / "AGENTS.md").read_text()
+        text = (ROOT / "docs" / "workflows.md").read_text()
         row = next(line for line in text.splitlines()
-                   if line.startswith("  | `routine-eval-weekly.yml`"))
+                   if line.startswith("| `routine-eval-weekly.yml`"))
         self.assertIn("plan_week.py", row)
 
     def test_agents_md_table_names_the_watchdog(self):
-        text = (ROOT / "AGENTS.md").read_text()
+        text = (ROOT / "docs" / "workflows.md").read_text()
         row = next(line for line in text.splitlines()
-                   if line.startswith("  | `routine-eval-watchdog.yml`"))
+                   if line.startswith("| `routine-eval-watchdog.yml`"))
         self.assertIn("plan_week.py watchdog", row)
 
 class SchedulabilityTests(unittest.TestCase):
