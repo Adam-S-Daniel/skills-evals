@@ -1029,8 +1029,13 @@ so no excerpt reaches this repository:
 The same job also reads an `_agent-guidance` checkout. Five sections have
 fixtures under `evals/guidance/<section id>/<name>/`, and
 `anything-you-name-gets-its-link` has four. Each fixture runs the section
-inside the whole guidance against the guidance without it, and the section
-alone against no guidance. The in-situ runs are pooled by the rest of the
+inside the whole guidance against the guidance without it (in situ), and the
+section alone against no guidance. Since 2026-11-03 the weekly planner runs
+the alone pair only for a section leaning toward removal: its in-situ
+verdict is `retire`, or its in-situ test is at least halfway to a removal
+(`ALONE_PAIR_FROM_PROGRESS` in `scripts/plan_week.py`); every other section's
+fires run only the in-situ pair (`arms: in-situ`), which saves about a third
+of guidance spend. The in-situ runs are pooled by the rest of the
 guidance each ran beside, and only the runs beside the current rest decide
 (2026-11-03; #557's weighting across older rests favored removal, so older
 rests are ignored and an edit elsewhere in the guidance starts the evidence
@@ -1038,7 +1043,14 @@ over). A section is `retire` by the skills' rule above, with the guidance
 block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
-guidance already covers it. In `auto` mode, the committed
+guidance already covers it. A `retire` whose alone check has not finished
+(no alone cell yet, or one still undecided) is only ever proposed, never
+removed automatically, since the alone check could still turn it into
+`shorten-or-merge`. The Evals Explorer shows a section's alone results only
+when its in-situ verdict is `retire`, because only then do they count; its
+whole-guidance headline still pools every run with no guidance, and each
+section card's trend, help-per-word order and early sign use the in-situ
+gain. In `auto` mode, the committed
 `guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
 request in `_agent-guidance` that passes that repository's own checks; in
 `proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`

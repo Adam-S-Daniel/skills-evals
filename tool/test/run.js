@@ -138,7 +138,10 @@ test('chip: guidance Helps only on its own', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 7, 3, d === 0 ? 7 : null, d === 0 ? 7 : null, 8)), 'guidance'), 'helps');
 });
 test('chip: the guidance subject applies the shared rules too', () => {
-  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'early');
+  // A section's early sign is its in-situ gain (all the guidance vs all
+  // but the section), the pair every section runs.
+  eq(chipOf([secRun('a', 0, null, null, 7, 3, 8)], 'guidance'), 'early');
+  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'insufficient', 'an alone gain alone is no early sign');
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
@@ -382,11 +385,52 @@ test('each skill card says what the skill is for', () => {
 });
 test('sections sort by gain per KB, or by size', () => {
   const byValue = P.sectionItems(fixture, 'value').map((i) => i.id);
-  const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices'].includes(id));
-  eq(withGain.join(','), 'security,anything-you-name-gets-its-link,git-practices');
+  // By in-situ gain per KB: what the section adds beside the rest.
+  const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices', 'dependency-updates'].includes(id));
+  eq(withGain.join(','), 'anything-you-name-gets-its-link,dependency-updates,git-practices,security');
+  const items = Object.fromEntries(P.sectionItems(fixture, 'value').map((i) => [i.id, i]));
+  ok(items['dependency-updates'].perKb !== null, 'an in-situ-only section is ranked');
+  eq(items['dependency-updates'].perKb, items['anything-you-name-gets-its-link'].perKb, 'same in-situ runs, same bytes');
   const bySize = P.sectionItems(fixture, 'size').map((i) => i.bytes);
   ok(bySize.every((b, i) => i === 0 || bySize[i - 1] >= b), 'size order descending');
 });
+test('section-alone results show only when the data file carries them, with why', () => {
+  // Owner, 2026-11-03: explorer_data.py publishes a section's section-alone
+  // pair (section vs none) only when its in-situ verdict is retire.
+  const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
+  const card = (id) => P.sectionCard(items[id], refMs, fixture);
+  const inSitu = items['dependency-updates'];
+  eq(P.hasAlone(inSitu.pooled), false, 'no alone pair in the data');
+  const t = P.textOf(card('dependency-updates'));
+  ok(!t.includes(P.STRINGS.aloneShown), 'no reason line without alone results');
+  ok(!t.includes('With this section,'), 'no alone sentence');
+  ok(!t.includes(P.STRINGS.barSection) && !t.includes(P.STRINGS.barNone), 'no alone bars or legend');
+  ok(t.includes(P.STRINGS.barAll) && t.includes(P.STRINGS.barAblated), 'the in-situ bars stay');
+  ok(inSitu.sentence.startsWith('Example Large 2.0: With all the guidance, 21 of 24; with all of it but this section, 13 of 24.'), inSitu.sentence);
+  ok(inSitu.sentence.endsWith('18 trials in all, the last on Oct 31.'), inSitu.sentence);
+  ok(!inSitu.sentence.includes(P.STRINGS.notTried), 'its in-situ trials are counted: ' + inSitu.sentence);
+  ok(/\d+ trials in all, the last on /.test(inSitu.sentence), inSitu.sentence);
+  for (const id of ['security', 'git-practices']) {
+    eq(P.hasAlone(items[id].pooled), true, id + ' carries its alone pair');
+    const shown = P.textOf(card(id));
+    ok(shown.includes(P.STRINGS.aloneShown), id + ': reason line shown');
+    ok(shown.includes(P.STRINGS.barSection) && shown.includes(P.STRINGS.barNone), id + ': alone bars shown');
+  }
+  // The trend and the early-sign chip read the in-situ pair, so they work
+  // for a section without its alone pair.
+  ok(inSitu.trend.length > 0, 'in-situ-only section has a weekly trend');
+  // Same in-situ runs as anything-you-name-gets-its-link, so the same trend,
+  // whatever that section's alone pair shows.
+  eq(JSON.stringify(inSitu.trend), JSON.stringify(items['anything-you-name-gets-its-link'].trend), 'trend from the in-situ pair');
+  ok(inSitu.trend.length > 1 && P.findAll(card('dependency-updates'), (x) => x.tag === 'svg').length > 0, 'trend drawn');
+  const noVerdict = Object.assign({}, fixture, { guidance: { sections: [Object.assign({}, fixture.guidance.sections.find((x) => x.id === 'dependency-updates'), { verdict: null })] } });
+  eq(P.sectionItems(noVerdict)[0].chip, 'early', 'early sign from the in-situ gain');
+  // The headline keeps every section's none runs, this one's included.
+  const w = P.wholeGuidance(fixture);
+  ok(w.pooled.all.n > 0 && w.sentence.startsWith('With all the guidance, '), w.sentence);
+  eq(P.STRINGS.aloneShown, 'Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.');
+});
+
 test('whole-guidance headline pools full vs none', () => {
   const w = P.wholeGuidance(fixture);
   eq(w.chip, 'helps');

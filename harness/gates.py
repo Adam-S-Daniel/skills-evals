@@ -1466,6 +1466,23 @@ def prior_from_history(history: list, subject: str, margin: float):
 #: no guidance, and only says whether the section teaches the behavior.
 GUIDANCE_PAIRS = {"in_situ": {"full": "with", "full-minus-section": "without"},
                   "alone": {"section": "with", "none": "without"}}
+#: An alone cell of these classes has not decided whether the section helps
+#: on its own: no run, a test that has not rejected, a fixture that cannot
+#: tell, or one the eval scope pass paused.
+ALONE_UNDECIDED_CLASSES = frozenset({"missing", "insufficient", "cannot-discriminate",
+                                     "paused"})
+ALONE_UNFINISHED_REASON = ("the section-alone check has not finished: an alone cell "
+                           "(section vs none) has not decided, so it could still show "
+                           "benefit and turn this into shorten-or-merge")
+
+
+def alone_unfinished(alone_cells) -> bool:
+    """Whether the section-alone pair is unfinished: no alone cell, or one
+    whose class is in ALONE_UNDECIDED_CLASSES. Since 2026-11-03 the planner
+    fires the alone pair only for a section leaning toward removal, so it
+    may have few or no runs when the in-situ test reaches `retire`."""
+    cells = [c for c in alone_cells or [] if isinstance(c, dict)]
+    return not cells or any(c.get("class") in ALONE_UNDECIDED_CLASSES for c in cells)
 
 
 def guidance_verdict(index: dict, models: list, section: str, policy: dict,
@@ -1483,6 +1500,12 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     cell shows `benefit` teaches the behavior, but the rest of the guidance
     already covers it. Its verdict is `shorten-or-merge`, never a removal.
     Every other in-situ verdict stands as it is.
+
+    THE UNFINISHED ALONE PAIR (2026-11-03): the alone pair runs only for a
+    section leaning toward removal (scripts/plan_week.py, THE ALONE PAIR),
+    so a `retire` whose alone pair is unfinished (`alone_unfinished`) could
+    still turn into shorten-or-merge. Its `removal` is then `proposal`,
+    never `auto`, with ALONE_UNFINISHED_REASON.
 
     The in-situ cells hold only runs beside the rest on main (`retirement`
     with `strata`). The alone cells pool as before."""
@@ -1502,6 +1525,9 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
                            "guidance, but a cell shows benefit alone (section vs "
                            "none): the rest of the guidance covers it")
         extra = {}
+    elif verdict == "retire" and extra.get("removal") == "auto" \
+            and alone_unfinished(alone["cells"]):
+        extra = {**extra, "removal": "proposal", "removal_reason": ALONE_UNFINISHED_REASON}
     return {"verdict": verdict, "reason": reason, "in_situ_verdict": in_situ["verdict"],
             **extra, "cells": in_situ["cells"],
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],

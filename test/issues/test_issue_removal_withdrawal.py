@@ -778,7 +778,11 @@ class GuidanceDecidedTests(unittest.TestCase):
         return {**doc(), "guidance_retirement_mode": "auto",
                 "guidance": {SECTION: {"verdict": "retire", "removal": "auto",
                                        "reason": "every cell shows no benefit",
-                                       "cells": cells}}}
+                                       "cells": cells,
+                                       # A finished section-alone pair, so the
+                                       # retire is not held to a proposal
+                                       # (#738, gates.alone_unfinished).
+                                       "alone": {"verdict": "retire", "cells": cells}}}}
 
     def plan(self, closed_head):
         closed = {"number": 42, "head": closed_head, "url": GUIDANCE_URL}

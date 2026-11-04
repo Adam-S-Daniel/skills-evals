@@ -141,7 +141,9 @@ GUIDANCE SECTIONS (`--target guidance`, skills-evals#124; the functions
 named `guidance_*` below, kept apart from the skill path). The gates file's
 `guidance` block and `guidance_retirement_mode` decide, read the same way:
 
-  * a `retire` verdict, re-checked as a skill's is: in `proposal` mode an
+  * a `retire` verdict, re-checked as a skill's is, and its section-alone
+    pair too (`guidance_proposal_only`: an alone pair with no cell, or with
+    a cell that has not decided, allows only a proposal, 2026-11-03): in `proposal` mode an
     issue in skills-evals (`GUIDANCE_ISSUE_MARKER`); in `auto` mode (Adam:
     removal is automatic, 2026-10-10, and its pull requests auto-merge,
     2026-10-25) a branch `retire-guidance/<section>` in the
@@ -904,6 +906,24 @@ def proposal_only(verdict: dict) -> str | None:
             + (f" ({why})" if isinstance(why, str) and why else ""))
 
 
+def guidance_proposal_only(verdict: dict) -> str | None:
+    """`proposal_only` for a guidance section's `retire` verdict, with its
+    section-alone pair re-checked here too rather than trusted from its
+    `removal` field: an unfinished alone pair (harness/gates.py
+    `alone_unfinished`: no alone cell, or one that has not decided) could
+    still turn the verdict into shorten-or-merge, so it allows only a
+    proposal."""
+    why = proposal_only(verdict)
+    if why is not None:
+        return why
+    alone = verdict.get("alone")
+    if alone is not None and not isinstance(alone, dict):
+        return "the verdict's alone block is malformed"
+    if gates.alone_unfinished((alone or {}).get("cells")):
+        return gates.ALONE_UNFINISHED_REASON
+    return None
+
+
 def _lowered(mode_reason: str, allowed) -> str:
     """`proposal`, the mode auto falls back to; RetireError when the caller
     has not allowed it either."""
@@ -1428,8 +1448,8 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         section, kind = shortening[0], "shorten"
     else:
         kind = "retire"
-        if mode == "auto" and proposal_only(guidance_block(gates)[section]):
-            mode_reason = proposal_only(guidance_block(gates)[section])
+        if mode == "auto" and guidance_proposal_only(guidance_block(gates)[section]):
+            mode_reason = guidance_proposal_only(guidance_block(gates)[section])
             mode = _lowered(mode_reason, allowed)
         if mode == "auto" and "auto" not in allowed and fallback:
             mode_reason = GUIDANCE_NO_CREDENTIAL

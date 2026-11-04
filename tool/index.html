@@ -227,7 +227,7 @@ const STRINGS = {
   ],
   introGuidance: [
     'The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
-    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it four ways: with only that section, with no guidance at all, with all the guidance, and with all of it but that section. Fixed checks score each attempt.',
+    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.',
     'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.'
   ],
   glossaryHeading: 'Words used on this page',
@@ -272,7 +272,7 @@ const STRINGS = {
   purposeMissing: 'No description of what this skill is for was found.',
   skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no guidance; a dot above the 0 line means it helped that week.',
+  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.',
   sortLabel: 'Order sections by',
   sortNext: 'Next test',
   sortValue: 'Help per word',
@@ -284,6 +284,7 @@ const STRINGS = {
   sentenceSection: (m, a, b, c, d) => 'With this section, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
   sentenceAblation: (e, f, g, h) => 'With all the guidance, ' + e + ' of ' + f + '; with all of it but this section, ' + g + ' of ' + h + '.',
   sentenceWhole: (m, a, b, c, d) => 'With all the guidance, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no guidance, ' + c + ' of ' + d + '.',
+  aloneShown: 'Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.',
   tried: (n, when) => n + (n === 1 ? ' trial' : ' trials') + ' in all, the last on ' + when + '.',
   notTried: 'No trials in the last ' + WINDOW_WEEKS + ' weeks.',
   pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
@@ -672,7 +673,7 @@ function inWindow(r, refMs) {
   return isFinite(r.at) && (!isFinite(refMs) || r.at >= refMs - WINDOW_WEEKS * WEEK_MS);
 }
 
-function emptyAcc() { return { n: 0, wp: 0, wt: 0, op: 0, ot: 0, trials: 0, nAbl: 0, fp: 0, ft: 0, ap: 0, at: 0, last: NaN, wj: 0, wjn: 0, oj: 0, ojn: 0 }; }
+function emptyAcc() { return { n: 0, wp: 0, wt: 0, op: 0, ot: 0, trials: 0, nAbl: 0, fp: 0, ft: 0, ap: 0, at: 0, trialsAbl: 0, lastAbl: NaN, last: NaN, wj: 0, wjn: 0, oj: 0, ojn: 0 }; }
 
 function addRun(acc, r) {
   if (r.with && r.without) {
@@ -686,6 +687,8 @@ function addRun(acc, r) {
   }
   if (r.full && r.ablated) {
     acc.nAbl += 1; acc.fp += r.full.passed; acc.ft += r.full.total; acc.ap += r.ablated.passed; acc.at += r.ablated.total;
+    acc.trialsAbl += r.full.trials;
+    if (!(acc.lastAbl >= r.at)) acc.lastAbl = r.at;
   }
 }
 
@@ -731,10 +734,17 @@ const VERDICT_CHIPS = {
   ceiling: 'canttell', 'cannot-discriminate': 'canttell'
 };
 
-function earlyOrInsufficient(pooled) {
+/* The gain a subject's card is judged by: for a guidance section, the
+   in-situ gain (all the guidance vs all of it but the section), which is the
+   pair that decides it and the one every section runs; otherwise the paired
+   with-vs-without gain. */
+function gainOf(acc, subject) { return subject === 'guidance' ? acc.inSitu : acc.gain; }
+function runsOf(acc, subject) { return subject === 'guidance' ? acc.nAbl : acc.n; }
+
+function earlyOrInsufficient(pooled, subject) {
   // Not final, but say so when every model tried so far clearly gained.
-  const tried = pooled.models.filter((m) => m.n > 0 && m.gain !== null);
-  return tried.length && tried.every((m) => m.gain >= HELPS_MIN_GAIN - EPS) ? 'early' : 'insufficient';
+  const tried = pooled.models.filter((m) => runsOf(m, subject) > 0 && gainOf(m, subject) !== null);
+  return tried.length && tried.every((m) => gainOf(m, subject) >= HELPS_MIN_GAIN - EPS) ? 'early' : 'insufficient';
 }
 
 /* The chip rule. `pooled` comes from poolRuns. With `opts.verdict` (skills
@@ -746,10 +756,10 @@ function chipFor(pooled, opts) {
   if (o.regression) return 'worse';
   if (Object.prototype.hasOwnProperty.call(o, 'verdict')) {
     const v = typeof o.verdict === 'string' ? o.verdict : '';
-    return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled);
+    return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled, o.subject);
   }
   const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
-  if (!eligible.length) return earlyOrInsufficient(pooled);
+  if (!eligible.length) return earlyOrInsufficient(pooled, o.subject === 'guidance' ? 'guidance' : null);
   const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS)
     && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
   if (!helps) return 'none';
@@ -774,6 +784,9 @@ function sentenceFor(pooled, subject, refMs) {
     }
   }
   if (pooled.all.n > 0) out.push(STRINGS.tried(Math.round(pooled.all.trials), fmtDay(pooled.all.last, refMs)));
+  // A section whose section-alone results are not published (they count only
+  // near removal) is counted by its whole-guidance pair instead.
+  else if (subject === 'guidance' && pooled.all.nAbl > 0) out.push(STRINGS.tried(Math.round(pooled.all.trialsAbl), fmtDay(pooled.all.lastAbl, refMs)));
   else out.push(STRINGS.notTried);
   return out.join(' ');
 }
@@ -784,7 +797,9 @@ function weeklyGains(runs, subject, refMs) {
   const buckets = new Map();
   for (const raw of Array.isArray(runs) ? runs : []) {
     const r = normRun(raw, subject);
-    if (!r || !inWindow(r, refMs) || !(r.with && r.without)) continue;
+    // A guidance section's trend is its in-situ gain (gainOf).
+    const paired = subject === 'guidance' ? (r && r.full && r.ablated) : (r && r.with && r.without);
+    if (!r || !inWindow(r, refMs) || !paired) continue;
     const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
     if (w >= WINDOW_WEEKS) continue;
     if (!buckets.has(w)) buckets.set(w, emptyAcc());
@@ -792,12 +807,13 @@ function weeklyGains(runs, subject, refMs) {
   }
   return Array.from(buckets.keys()).sort((a, b) => b - a).map((w) => {
     const acc = finish(buckets.get(w));
-    return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: acc.gain };
+    return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: gainOf(acc, subject) };
   }).filter((p) => p.gain !== null);
 }
 
 function gainPerKb(pooled, bytes) {
-  const g = pooled.all.gain;
+  // Sections only: the in-situ gain, what the section adds to the rest.
+  const g = gainOf(pooled.all, 'guidance');
   const kb = (Number(bytes) || 0) / 1024;
   if (g === null || !(kb > 0)) return null;
   return g / kb;
@@ -970,9 +986,14 @@ function modelCharts(pooled, subject) {
   });
 }
 
+/* Whether a section's pooled runs carry its section-alone pair (only this
+   section vs no guidance), which the data file publishes only when it
+   factors into the section's decision. */
+function hasAlone(pooled) { return pooled.models.some((m) => m.n > 0); }
+
 function legendFor(subject, pooled) {
   if (subject === 'guidance') {
-    const items = [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }];
+    const items = hasAlone(pooled) ? [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }] : [];
     if (pooled.models.some((m) => m.nAbl > 0)) {
       items.push({ label: STRINGS.barAll, color: 'var(--axis)' });
       items.push({ label: STRINGS.barAblated, color: 'var(--s3)' });
@@ -1023,11 +1044,11 @@ function byNext(a, b) {
 }
 
 /* How well a subject is faring: its label's rank, then the pooled gain. */
-function byFaring(rank) {
+function byFaring(rank, subject) {
   return (a, b) => {
     const ra = rank.indexOf(a.chip), rb = rank.indexOf(b.chip);
     if (ra !== rb) return ra - rb;
-    const ga = a.pooled.all.gain, gb = b.pooled.all.gain;
+    const ga = gainOf(a.pooled.all, subject), gb = gainOf(b.pooled.all, subject);
     if (ga !== null && gb !== null && ga !== gb) return gb - ga;
     if ((ga === null) !== (gb === null)) return ga === null ? 1 : -1;
     return 0;
@@ -1068,7 +1089,7 @@ function sectionItems(doc, sortBy) {
       perKb: gainPerKb(pooled, s.bytes) };
   });
   if (sortBy === 'size') items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
-  else if (sortBy !== 'value') items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK)(a, b) || byName(a, b));
+  else if (sortBy !== 'value') items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
   else items.sort((a, b) => {
     if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
     if (a.perKb === null) return 1;
@@ -1279,6 +1300,7 @@ function sectionCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'section'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
+    hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null,
     hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
     confidenceView(it.raw.confidence, doc && doc.policy, 'guidance'),
     verdictLine(it.raw.verdict));
@@ -1701,7 +1723,7 @@ if (typeof module !== 'undefined') {
     STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
+    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
     skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom
   };
 }

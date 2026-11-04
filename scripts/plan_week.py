@@ -16,8 +16,9 @@ stays in scripts/propose_skill_edit.py.
 
 WHAT IS MEASURED. Eval fires are cells, (fixture, roster arm model), of the
 reviewed fixtures in evals/scheduled.yml only (ADR 0008): every fire is one
-routine-eval-fire.yml dispatch in eval mode with that `model`, both arms, one
-trial. A cell's evidence is scripts/compute_gates.py's verdict document,
+routine-eval-fire.yml dispatch in eval mode with that `model`, both arms
+(for a guidance cell not leaning toward removal, its in-situ pair alone:
+THE ALONE PAIR, at FOCUS_VERDICTS), one trial. A cell's evidence is scripts/compute_gates.py's verdict document,
 computed here over the results tree, so the cells are pooled exactly as the
 retirement verdict pools them.
 
@@ -532,6 +533,20 @@ DEFAULT_BENEFIT_CONFIDENCE = 0.80
 #: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
 #: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
 FOCUS_VERDICTS = (None, "insufficient")
+#: THE ALONE PAIR (owner, 2026-11-03): a guidance eval fire runs the
+#: section-alone pair (section vs none) beside the in-situ pair (`arms:
+#: both`) only for a section leaning toward removal (`leans_to_removal`);
+#: every other guidance fire is `arms: in-situ`. The alone pair is about 37%
+#: of guidance agent spend and is read in one place, harness/gates.py
+#: `guidance_verdict`, which turns an in-situ `retire` into
+#: `shorten-or-merge` when an alone cell shows benefit. A section leans toward
+#: removal when its in-situ verdict is `retire`, or when its retire progress
+#: (the lowest over its cells, as `guidance_focus` scores it) is at least
+#: this share of the retire level: the alone pair needs runs of its own
+#: before a retire lands (the gate makes a retire whose alone pair is
+#: unfinished a proposal, never an automatic removal), and from halfway the
+#: remaining in-situ runs leave it time to collect them.
+ALONE_PAIR_FROM_PROGRESS = 0.5
 #: A cell more runs on the current content cannot move toward removal: one
 #: whose no-benefit or no-clear-effect was overruled by an agent-errored
 #: trial or a run skipped as anomalous (gates.classify_cell's reason), or a
@@ -846,10 +861,49 @@ def recheck_after(cell: dict) -> timedelta:
     return RECHECK_AFTER_HIGH if cell.get("stakes") == "high" else RECHECK_AFTER
 
 
+def section_retire_progress(ctx: dict, section: str) -> float:
+    """A guidance section's retire progress: the lowest `retire_progress`
+    over its cells in ctx["cells"] (every cell, held ones too, as
+    `guidance_focus` scores it), at the policy's retire level; 0 when it
+    has no cell."""
+    policy = ctx.get("guidance_policy") or {}
+    level = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
+    progress = [retire_progress(c, level) for c in ctx["cells"] if c.get("section") == section]
+    return min(progress, default=0.0)
+
+
+def leans_to_removal(cell: dict, ctx: dict) -> bool:
+    """Whether `cell`'s guidance section leans toward removal (THE ALONE
+    PAIR): its in-situ verdict is `retire` (a `retire` or `shorten-or-merge`
+    section verdict), or its retire progress is at least
+    ALONE_PAIR_FROM_PROGRESS."""
+    in_situ = cell.get("in_situ_verdict")
+    if in_situ == "retire" or cell.get("verdict") in ("retire", "shorten-or-merge"):
+        return True
+    return section_retire_progress(ctx, cell["section"]) >= ALONE_PAIR_FROM_PROGRESS
+
+
+def fire_arms(cell: dict, ctx: dict) -> str:
+    """The `arms` of an eval fire on `cell`: `both` for a skill cell and for
+    a guidance section leaning toward removal, `in-situ` for any other
+    guidance cell (THE ALONE PAIR)."""
+    if not cell.get("section"):
+        return "both"
+    return "both" if leans_to_removal(cell, ctx) else "in-situ"
+
+
+#: The `arms` of a paired eval fire: both of a skill's arms, both guidance
+#: pairs, or a guidance fixture's in-situ pair alone (THE ALONE PAIR). A
+#: bare fire runs one arm and is not one.
+PAIRED_ARMS = ("both", "in-situ")
+
+
 def eval_item(cell: dict, ctx: dict) -> dict:
-    """A paired eval fire (both arms) on `cell`, without its band: what
-    `eval_items` puts in a band and `probe_items` probes with."""
-    return {"mode": "eval", "arms": "both", "fixture": cell["fixture"], "model": cell["model"],
+    """A paired eval fire on `cell`, without its band: what `eval_items`
+    puts in a band and `probe_items` probes with. Its arms are `fire_arms`:
+    both, or a guidance cell's in-situ pair alone."""
+    return {"mode": "eval", "arms": fire_arms(cell, ctx), "fixture": cell["fixture"],
+            "model": cell["model"],
             "skill": cell["skill"], "holdout": "", "cost": fire_cost(cell, ctx),
             "change_type": None, "weight": ctx["model_weights"].get(cell["model"], 0.0)}
 
@@ -1854,7 +1908,7 @@ def probe_items(bands: dict, ctx: dict) -> list | None:
     if not cells:
         return None
     placed = {(i["fixture"], i["model"]): (index, i) for index, band in enumerate(BANDS)
-              for i in bands[band] if i["mode"] == "eval" and i["arms"] == "both"}
+              for i in bands[band] if i["mode"] == "eval" and i["arms"] in PAIRED_ARMS}
     floor = datetime.min.replace(tzinfo=timezone.utc)
     ranked = []
     for cell in cells:
@@ -2409,6 +2463,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
             cells.append({
                 "skill": skill, "section": section, "fixture": fixture, "model": model,
                 "class": cls, "verdict": verdict.get("verdict"),
+                # A guidance section's in-situ verdict, before the alone
+                # pair's shorten-or-merge twist (`leans_to_removal`).
+                "in_situ_verdict": verdict.get("in_situ_verdict"),
                 # Gates' pair count and reason (`cheaper_first`, `_blocking`).
                 "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
                 "at_cap": (cell or {}).get("at_cap") is True,
@@ -3107,7 +3164,8 @@ def summary_lines(plan: dict) -> list:
 def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     """Refuse a matrix leg that is not a fire this repository would plan:
     eval mode on a scheduled, committed fixture and a roster arm, its arms
-    both, or bare on a fixture that runs in place; improve mode on a skill
+    both, in-situ on a guidance fixture (THE ALONE PAIR), or bare on a
+    fixture that runs in place; improve mode on a skill
     improve_gate.py fire-check accepts, with a holdout and no arms, or, with
     TRIGGER_ONLY "true" (THE TRIGGER LANE), with no holdout and the check's
     trigger-only rules (a committed trigger set of enough queries);
@@ -3147,15 +3205,18 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
         if fixture in committed and fixture not in scheduled:
             raise PlanStale("the eval leg's fixture was unscheduled after the plan")
         if fixture not in scheduled or schedule.validate_fixture(fixture, committed) != key \
-                or skill or holdout or arms not in ("both", "bare") \
+                or skill or holdout or arms not in (*PAIRED_ARMS, "bare") \
                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", model) \
                 or not roster_arm.is_arm(model, root / "evals" / "roster.yml"):
             raise PlanError("the eval leg is not a scheduled fixture on a roster arm")
         if arms == "bare" and not schedule.declares_context(root / fixture):
             raise PlanError("the bare leg's fixture does not run in place")
+        if arms == "in-situ" and _fixture_subject(root / "evals", fixture)[0] != "guidance":
+            raise PlanError("the in-situ leg's fixture is not a guidance fixture")
         # The fire has no results tree to read the routine's Git from; the
         # plan held the fixture on it, and the harness refuses an old Git.
-        if arms == "both" and fixture_hold_reason(root / fixture, check_git=False) is not None:
+        if arms in PAIRED_ARMS \
+                and fixture_hold_reason(root / fixture, check_git=False) is not None:
             raise PlanStale("the eval leg's fixture is held, not schedulable")
     elif mode == "improve" and trim:
         if fixture or key or model or arms or holdout \
