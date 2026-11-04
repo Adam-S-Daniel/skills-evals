@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:20:12Z",
+  "generated_at": "2026-11-04T02:22:54Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T02:19:14Z",
+ "generated_at": "2026-11-04T02:21:58Z",
  "guidance": {
   "removed": [
    {
@@ -9594,7 +9594,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:16:41Z",
+ "newest_run": "2026-11-04T02:20:25Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -17828,11 +17828,11 @@
       "votes": true
      },
      {
-      "gain": 30.3,
-      "high": 100.0,
+      "gain": 27.3,
+      "high": 69.1,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "release-pipeline",
       "votes": true
@@ -17850,7 +17850,7 @@
     ],
     "helps": 0.0,
     "keep_family": 8,
-    "keep_pairs": 3,
+    "keep_pairs": 4,
     "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": 2
@@ -17867,7 +17867,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 22,
+   "current_text_runs": 23,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -17878,6 +17878,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T02:20:25Z",
+     "cli_version": "2.1.318",
+     "fixture": "release-pipeline",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T021909Z-f40ace/review-bash-ci-reliability/20261104T022025Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 11,
+      "cost_usd": 0.15078740000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 11,
+      "cost_usd": 0.09581490000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T01:46:21Z",
      "cli_version": "2.1.318",
@@ -23649,7 +23670,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "69ab4aa1b066955ead541e2ad75cc7887934c8d6"
+  "results_commit": "6a5e9120f7516f1c4a7aab0427e9bce58b84d937"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
