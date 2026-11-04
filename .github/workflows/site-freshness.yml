@@ -24,8 +24,12 @@
 #   fire step, via `env`, and goes to curl on stdin. The response body is
 #   never printed, only the status code. Missing variable or secret: the
 #   issue gets one comment saying so.
-# * SITE_REPO=none (a repository variable) skips the whole run, for adopters
-#   without a site.
+# * Repository variables (Settings > Secrets and variables > Actions >
+#   Variables), none of which has a default: SITE_REPO (owner/name of the
+#   site repository, or none to skip the whole run for an adopter without a
+#   site), SITE_PAGE_URL, SITE_ASSET_URL and, when the fire bearer secret is
+#   set, SITE_FRESHNESS_ROUTINE_ID. A missing one fails the first step
+#   naming it.
 name: Site freshness
 
 on:
@@ -46,7 +50,7 @@ permissions:
   actions: write
 
 env:
-  SITE_REPO: ${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}
+  SITE_REPO: ${{ vars.SITE_REPO }}
   SITE_PAGE_URL: ${{ vars.SITE_PAGE_URL }}
   SITE_ASSET_URL: ${{ vars.SITE_ASSET_URL }}
 
@@ -57,13 +61,37 @@ jobs:
     steps:
       - name: Decide whether there is a site to check
         id: site
+        env:
+          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID }}
+          HAVE_BEARER: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER != '' }}
         run: |
+          where="Set it under Settings > Secrets and variables > Actions > Variables"
+          if [ -z "$SITE_REPO" ]; then
+            echo "::error::SITE_REPO is not set. ${where}: the site repository as owner/name, or none if this repository has no site."
+            exit 1
+          fi
           if [ "$SITE_REPO" = none ]; then
             echo "::notice::SITE_REPO is none: no site to check."
             echo "skip=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >>"$GITHUB_OUTPUT"
+            exit 0
           fi
+          if ! printf '%s' "$SITE_REPO" | grep -Eq '^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$'; then
+            echo "::error::SITE_REPO is not owner/name or none."
+            exit 1
+          fi
+          missing=""
+          [ -n "$SITE_PAGE_URL" ] || missing="$missing SITE_PAGE_URL (the live page URL)"
+          [ -n "$SITE_ASSET_URL" ] || missing="$missing SITE_ASSET_URL (the URL of the vendored asset)"
+          if [ "$HAVE_BEARER" = true ] && [ -z "$ROUTINE_ID" ]; then
+            missing="$missing SITE_FRESHNESS_ROUTINE_ID (the fixer routine's id, required because the SITE_FRESHNESS_FIRE_BEARER secret is set)"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository variables:${missing}. ${where}."
+            exit 1
+          fi
+          echo "skip=false" >>"$GITHUB_OUTPUT"
+          echo "owner=${SITE_REPO%%/*}" >>"$GITHUB_OUTPUT"
+          echo "name=${SITE_REPO#*/}" >>"$GITHUB_OUTPUT"
 
       - name: Check the credentials exist
         id: credential
@@ -83,8 +111,8 @@ jobs:
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
-          owner: Adam-S-Daniel
-          repositories: adamdaniel.ai
+          owner: ${{ steps.site.outputs.owner }}
+          repositories: ${{ steps.site.outputs.name }}
           permission-contents: write
           permission-pull-requests: write
 
@@ -138,7 +166,7 @@ jobs:
         if: steps.site.outputs.skip != 'true' && steps.issue.outputs.fire == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID || 'trig_01Nu9F7UQ8aUWq4q2QsXHQhK' }}
+          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID }}
           FIRE_BEARER: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
         run: python3 scripts/site_freshness.py fire --fire-text "$RUNNER_TEMP/fire.txt"
