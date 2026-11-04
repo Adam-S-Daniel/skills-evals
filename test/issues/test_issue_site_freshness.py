@@ -328,6 +328,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rest, "* * * *")
         self.assertEqual(int(minute) % 2, 1, "an odd minute, off the hour")
 
+    def test_explorer_data_dispatches_this_check(self):
+        # The hourly cron is dropped for hours at a time, so every explorer
+        # publish dispatches this workflow when it has not run for 50 minutes.
+        doc = yaml.safe_load((ROOT / ".github/workflows/explorer-data.yml").read_text())
+        run = doc["jobs"]["check-site"]["steps"][0]["run"]
+        self.assertIn("gh workflow run site-freshness.yml", run)
+        self.assertIn("-lt 3000", run)
+        self.assertIn("workflow_dispatch", self.doc.get("on", self.doc.get(True)))
+
     def test_site_sync_is_named_by_the_workflow_it_watches(self):
         name = yaml.safe_load((ROOT / ".github/workflows/site-sync.yml").read_text())["name"]
         self.assertEqual(name, "Site sync")

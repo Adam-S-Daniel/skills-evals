@@ -662,6 +662,44 @@ jobs:
           echo "::error::could not push to persistent/eval-results after 6 attempts"
           exit 1
 
+  # site-freshness.yml's hourly cron almost never fires (none of its runs came
+  # from `schedule` since it landed on 2026-11-04; this repository's schedules
+  # are dropped for hours at a time), and a `workflow_run` of this workflow
+  # would be a fourth level (results push, ingest, this, the check), which
+  # GitHub does not start. So after each publish this job dispatches the check
+  # itself when no run of it started in the last 50 minutes, which makes the
+  # check about hourly while results flow. A dispatch starts a new chain.
+  # `actions: write` is this job's only permission; it reads nothing from a
+  # branch, and a failed listing or dispatch warns and never fails the run.
+  check-site:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch the site freshness check when it is due
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          last=$(gh api "repos/$REPO/actions/workflows/site-freshness.yml/runs?per_page=1" \
+                   --jq '.workflow_runs[0].created_at // ""' 2>/dev/null) || last="unknown"
+          if [ "$last" = "unknown" ]; then
+            echo "::warning::could not list site-freshness.yml runs; not dispatching"
+            exit 0
+          fi
+          if [ -n "$last" ] && [ $(( $(date -u +%s) - $(date -u -d "$last" +%s) )) -lt 3000 ]; then
+            echo "site-freshness.yml last started at $last; not due"
+            exit 0
+          fi
+          if gh workflow run site-freshness.yml --repo "$REPO" --ref main >/dev/null 2>&1; then
+            echo "dispatched site-freshness.yml"
+          else
+            echo "::warning::could not dispatch site-freshness.yml"
+          fi
+
   queue-alerts:
     needs: build
     if: needs.build.outputs.queue == 'true'

@@ -909,7 +909,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
                                                 "issues": "read", "pull-requests": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
-        self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish", "queue-alerts"])
+        self.assertEqual(sorted(self.doc["jobs"]), ["build", "check-site", "publish", "queue-alerts"])
+        # The site freshness check's cron rarely fires, so this workflow
+        # dispatches it; that job holds `actions: write` and nothing else.
+        self.assertEqual(self.doc["jobs"]["check-site"]["permissions"], {"actions": "write"})
+        self.assertEqual(self.doc["jobs"]["check-site"]["needs"], "publish")
         self.assertEqual(self.doc["jobs"]["queue-alerts"]["permissions"],
                          {"contents": "read", "issues": "write"})
         self.assertEqual(publish["needs"], "build")
