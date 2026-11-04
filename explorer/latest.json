@@ -39,17 +39,8 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:22:12Z",
+  "generated_at": "2026-11-04T01:24:15Z",
   "requests": [
-   {
-    "closed_at": null,
-    "issue": 679,
-    "kind": "needs-fixtures",
-    "opened_at": "2026-11-03T16:21:21Z",
-    "prs": [],
-    "state": "open",
-    "subject": "github-actions-repo-settings"
-   },
    {
     "closed_at": null,
     "issue": 680,
@@ -357,10 +348,10 @@
    "fixtures_real_work": 0,
    "prs_merged": 0,
    "requests_closed": 3,
-   "requests_open": 31
+   "requests_open": 30
   }
  },
- "generated_at": "2026-11-04T01:21:10Z",
+ "generated_at": "2026-11-04T01:23:25Z",
  "guidance": {
   "removed": [
    {
@@ -3673,24 +3664,24 @@
        "votes": true
       },
       {
-       "gain": 57.5,
-       "high": 76.1,
-       "low": 19.3,
+       "gain": 56.8,
+       "high": 73.1,
+       "low": 22.0,
        "model": "claude-sonnet-5-5",
-       "pairs": 10,
+       "pairs": 11,
        "status": "keeps",
        "task": "open-pull-request",
        "votes": true
       }
      ],
-     "helps": 0.9569269998137909,
+     "helps": 0.9684201875891867,
      "keep_family": 2,
-     "keep_pairs": 9,
-     "max_pairs": 10,
+     "keep_pairs": 11,
+     "max_pairs": 11,
      "no_help": 0.0,
      "no_help_pairs": 9
     },
-    "current_text_runs": 19,
+    "current_text_runs": 20,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -3700,6 +3691,29 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-04T01:21:47Z",
+      "cli_version": "2.1.318",
+      "fixture": "open-pull-request",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 3,
+        "checks_total": 4,
+        "cost_usd": 0.1131873,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.11211030000000002,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T012043Z-8d3958/guidance/agent-contribution-markers/20261104T012147Z/report.md"
+     },
      {
       "at": "2026-11-04T00:19:21Z",
       "cli_version": "2.1.318",
@@ -9548,7 +9562,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:19:11Z",
+ "newest_run": "2026-11-04T01:21:47Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -23288,7 +23302,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "d062775a8530c8efabd0d11f323451f1bf4ae39f"
+  "results_commit": "852ea686a3adab1b67f474b96cda16ea3561fdb8"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
