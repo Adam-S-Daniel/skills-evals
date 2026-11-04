@@ -775,7 +775,16 @@ evaluation and it is simply next.
 To withdraw, auto-merge is turned off and read back, a comment gives the new
 verdict, why and the override, and the pull request is closed with its branch
 kept. Then the subject's retirement issue here (the one proposal mode files)
-is filed or updated to record the withdrawal and link the pull request.
+is filed, or the oldest open one gets a comment (its body is left as it is),
+to record the withdrawal and link the pull request. Any open removal notice
+for the subject is commented on and closed as not planned; if that fails, the
+withdrawal still stands and the status line says so.
+
+A pass withdraws only pull requests opened at or before its verdicts' `as_of`
+(the results commit's time). One opened later, or with either time unknown,
+is kept for a newer pass to judge. The `withdraw` job in
+`loop-pr-refresh.yml` runs one pass at a time (its own concurrency group,
+`cancel-in-progress: false`).
 
 A withdrawn pull request counts as closed, so the loop opens no removal for
 the subject again. To remove it anyway, remove the `agent-authored` label
@@ -785,7 +794,10 @@ only gets it withdrawn again.
 
 While `retirement_mode` is `proposal`, a removal that is not withdrawn is
 disarmed instead: auto-merge is turned off, the pull request stays open, and
-it is commented once.
+it is commented once. Disarming goes one way only: switching the mode back to
+`auto` does not re-arm it. While it stays open, it blocks later removals and
+keeps the skill out of the weekly plan's improve fires. Close it, or turn
+auto-merge on again by hand (a merge commit).
 
 Unknown data withdraws nothing:
 

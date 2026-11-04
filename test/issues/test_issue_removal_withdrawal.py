@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -73,10 +75,17 @@ def doc(block=None, guidance=None, as_of="20261101T000000Z", mode="auto"):
     return out
 
 
+#: Before every `doc()` as_of below: these verdicts may judge the pull request.
+OPENED = "2026-10-31T00:00:00Z"
+
+
 def pr(head=f"{rs.BRANCH_PREFIX}{SKILL}", labels=(rs.AGENT_LABEL,), number=41, url=SKILL_URL,
-       author=rs.LOOP_AUTHOR):
-    return {"number": number, "head": head, "url": url,
-            "labels": None if labels is None else list(labels), "author": author}
+       author=rs.LOOP_AUTHOR, created_at=OPENED):
+    out = {"number": number, "head": head, "url": url,
+           "labels": None if labels is None else list(labels), "author": author}
+    if created_at is not None:
+        out["created_at"] = created_at
+    return out
 
 
 def pending(entry, raw="retire"):
@@ -228,6 +237,57 @@ class DecisionTests(unittest.TestCase):
 
     def test_the_verdict_compute_gates_writes_on_a_raise_carries_the_prefix(self):
         self.assertEqual(compute_gates.VERDICT_RAISED, "the verdict raised ")
+
+
+class CreatedAfterTests(unittest.TestCase):
+    """PR #724 round 2's R2-1: a pass on older verdicts never withdraws a
+    removal pull request opened after them (the gates' `as_of`)."""
+
+    GATES = doc({SKILL: VERDICTS["insufficient"]}, as_of="20261101T080000Z")
+
+    def decide(self, created_at, gates=None):
+        return rs.withdrawal_decision(pr(created_at=created_at), gates or self.GATES)
+
+    def test_a_pull_request_opened_after_the_verdicts_is_kept(self):
+        d = self.decide("2026-11-01T08:19:00Z")
+        self.assertEqual(d["action"], "keep")
+        self.assertIn("opened after", d["why"])
+
+    def test_one_second_after_is_kept_and_at_or_before_is_withdrawn(self):
+        self.assertEqual(self.decide("2026-11-01T08:00:01Z")["action"], "keep")
+        self.assertEqual(self.decide("2026-11-01T08:00:00Z")["action"], "withdraw")
+        self.assertEqual(self.decide("2026-11-01T07:59:59Z")["action"], "withdraw")
+
+    def test_an_offset_is_honored(self):
+        # 09:10+01:00 is 08:10Z: after as_of. 08:50+01:00 is 07:50Z: before.
+        self.assertEqual(self.decide("2026-11-01T09:10:00+01:00")["action"], "keep")
+        self.assertEqual(self.decide("2026-11-01T08:50:00+01:00")["action"], "withdraw")
+
+    def test_a_missing_or_unparseable_time_withdraws_nothing(self):
+        for value in (None, "", "yesterday", 1730448000, "2026-11-01 07:00:00",
+                      "2026-11-01T07:00:00", "2026-13-01T07:00:00Z"):
+            with self.subTest(created_at=value):
+                d = self.decide(value)
+                self.assertEqual(d["action"], "keep")
+                self.assertIn("unknown", d["why"])
+        for as_of in (None, "", "2026-11-01", "20261301T000000Z"):
+            with self.subTest(as_of=as_of):
+                gates = {**self.GATES, "as_of": as_of}
+                self.assertEqual(self.decide("2026-10-01T00:00:00Z", gates)["action"], "keep")
+
+    def test_the_decision_is_pure(self):
+        item, gates = pr(created_at="2026-11-01T08:19:00Z"), json.loads(json.dumps(self.GATES))
+        before = (json.dumps(item, sort_keys=True), json.dumps(gates, sort_keys=True))
+        rs.withdrawal_decision(item, gates)
+        self.assertEqual(before, (json.dumps(item, sort_keys=True),
+                                  json.dumps(gates, sort_keys=True)))
+
+    def test_the_older_pass_leaves_the_newer_removal_open(self):
+        gh = FakeGh()
+        lines = rs.withdraw_stale(self.GATES, [pr(created_at="2026-11-01T08:19:00Z")],
+                                  "skill", gh)
+        self.assertEqual(gh.writes(), [])
+        self.assertTrue(lines[0].startswith("kept #41"))
 
 
 class ProposalSwitchDecisionTests(unittest.TestCase):
@@ -384,12 +444,24 @@ class WithdrawStaleTests(unittest.TestCase):
         # The proposal path finds it again by its marker and author.
         self.assertIn(rs.ISSUE_MARKER.format(skill=SKILL), body.splitlines()[0])
 
-    def test_a_withdrawal_updates_an_open_retirement_issue(self):
-        gh = FakeGh(issues=[issue(5, state="closed"), issue(7)])
+    def test_a_withdrawal_comments_on_the_oldest_open_retirement_issue(self):
+        # R2-6: a comment, never an edit, so the proposal's evidence stays;
+        # mutant N04: the oldest open issue, not the newest.
+        gh = FakeGh(issues=[issue(5, state="closed"), issue(9), issue(7)])
         lines = rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill", gh)
         self.assertEqual([a[:3] for a, _ in gh.calls if a[0] == "issue"],
-                         [["issue", "edit", "7"]])
-        self.assertTrue(lines[0].endswith("updated issue #7"))
+                         [["issue", "comment", "7"]])
+        self.assertTrue(lines[0].endswith("commented on issue #7"))
+        body = next(s for a, s in gh.calls if a[:2] == ["issue", "comment"])
+        self.assertIn(SKILL_URL, body)
+        self.assertIn("the verdict is keep, not retire", body)
+
+    def test_withdrawal_issue_picks_the_oldest_open_issue(self):
+        gh = FakeGh(issues=[issue(12), issue(4), issue(30), issue(2, state="closed")])
+        item = {"subject": SKILL, "url": SKILL_URL, "verdict": "keep", "reason": "r",
+                "why": "w"}
+        out = rs.withdrawal_issue(item, doc({}), "skill", gh, None)
+        self.assertEqual((out["action"], out["issue"]), ("update-issue", 4))
 
     def test_the_issue_goes_through_the_jobs_token_not_the_app_token(self):
         app, job = FakeGh(), FakeGh()
@@ -403,9 +475,60 @@ class WithdrawStaleTests(unittest.TestCase):
         gpr = pr(head=f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", number=42, url=GUIDANCE_URL)
         rs.withdraw_stale(doc(guidance={SECTION: VERDICTS["insufficient"]}), [gpr],
                           "guidance", gh)
-        edit = [(a, s) for a, s in gh.calls if a[:2] == ["issue", "edit"]]
-        self.assertEqual(edit[0][0][2], "3")
-        self.assertIn(rs.GUIDANCE_ISSUE_MARKER.format(section=SECTION), edit[0][1])
+        self.assertFalse(any(a[:2] == ["issue", "edit"] for a, _ in gh.calls))
+        comment = [(a, s) for a, s in gh.calls if a[:2] == ["issue", "comment"]]
+        self.assertEqual(comment[0][0][2], "3")
+        self.assertIn(GUIDANCE_URL, comment[0][1])
+
+    def test_a_new_retirement_issue_still_carries_its_marker_in_the_body(self):
+        gh = FakeGh()
+        rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill", gh)
+        body = next(s for a, s in gh.calls if a[:2] == ["issue", "create"])
+        self.assertTrue(body.startswith(rs.ISSUE_MARKER.format(skill=SKILL) + "\n"))
+
+    def test_the_open_removal_notice_is_commented_on_and_closed(self):
+        # R2-3: the #557 notice no longer says a removal is in flight.
+        notice = {"number": 6, "body": rs.SKILL_NOTICE_MARKER.format(skill=SKILL) + "\nx",
+                  "author": rs.ISSUE_AUTHOR, "state": "open"}
+        other = {**notice, "number": 8,
+                 "body": rs.SKILL_NOTICE_MARKER.format(skill="other-skill")}
+        gh = FakeGh(issues=[notice, other, {**notice, "number": 3, "state": "closed"},
+                            {**notice, "number": 11, "author": "Adam-S-Daniel"}])
+        lines = rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill", gh)
+        self.assertEqual([a for a in gh.writes() if a[0] == "issue"], [
+            ["issue", "create", "-R", rs.EVALS_REPO, "--title",
+             f"Retire skill {SKILL}: automatic removal withdrawn (#70)", "--body-file", "-"],
+            ["issue", "comment", "6", "-R", rs.EVALS_REPO, "--body-file", "-"],
+            ["issue", "close", "6", "-R", rs.EVALS_REPO, "--reason", "not planned"]])
+        body = next(s for a, s in gh.calls if a[:3] == ["issue", "comment", "6"])
+        self.assertIn("Removal withdrawn", body)
+        self.assertIn(SKILL_URL, body)
+        self.assertTrue(body.rstrip("\n").endswith(rs.AGENT_MARKER.strip()))
+        self.assertTrue(lines[0].endswith("closed its removal notice #6"))
+
+    def test_the_guidance_notice_is_closed_too(self):
+        notice = {"number": 6, "body": rs.GUIDANCE_NOTICE_MARKER.format(section=SECTION),
+                  "author": rs.ISSUE_AUTHOR, "state": "open"}
+        gh = FakeGh(issues=[notice])
+        gpr = pr(head=f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", number=42, url=GUIDANCE_URL)
+        rs.withdraw_stale(doc(guidance={SECTION: VERDICTS["insufficient"]}), [gpr],
+                          "guidance", gh)
+        self.assertIn(["issue", "close", "6", "-R", rs.EVALS_REPO, "--reason", "not planned"],
+                      gh.writes())
+
+    def test_a_failed_notice_close_does_not_stop_the_withdrawal(self):
+        notice = {"number": 6, "body": rs.SKILL_NOTICE_MARKER.format(skill=SKILL),
+                  "author": rs.ISSUE_AUTHOR, "state": "open"}
+        gh = FakeGh(issues=[notice], fail=["issue", "close"])
+        second = pr(head=f"{rs.BRANCH_PREFIX}other-skill", number=43,
+                    url=f"https://github.com/{rs.REGISTRY_REPO}/pull/43")
+        lines = rs.withdraw_stale(doc({SKILL: VERDICTS["keep"], "other-skill": VERDICTS["keep"]}),
+                                  [pr(), second], "skill", gh)
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].endswith("could not close its removal notice"))
+        self.assertTrue(lines[1].startswith("withdrew #43"))
+        closes = [a for a in gh.writes() if a[:2] == ["pr", "close"]]
+        self.assertEqual(len(closes), 2)
 
     def test_a_pull_request_no_longer_open_is_skipped(self):
         gh = FakeGh(state="CLOSED")
@@ -521,6 +644,7 @@ class MainTests(unittest.TestCase):
         _, _, _, gh = self.run_main(doc({SKILL: VERDICTS["keep"]}))
         jq = next(a for a, _ in gh.calls if a[0] == "api" and "/pulls?" in a[2])[-1]
         self.assertIn("author: .user.login", jq)
+        self.assertIn("created_at: .created_at", jq)
 
     def test_a_missing_or_unreadable_document_withdraws_nothing_and_exits_0(self):
         for gates in (None, "{not json", json.dumps({"schema_version": 2})):
@@ -756,9 +880,42 @@ class RefreshWorkflowTests(unittest.TestCase):
                                               "types": ["completed"]})
         self.assertEqual(self.jobs["refresh"]["needs"], "withdraw")
         self.assertIn("!cancelled()", self.jobs["refresh"]["if"])
+
+    def test_one_withdrawal_pass_at_a_time(self):
+        # R2-2: the withdraw job alone has a group, never cancelling a pass
+        # in progress; the workflow and the refresh have none (#623).
         self.assertNotIn("concurrency", self.doc)
-        for job in self.jobs.values():
-            self.assertNotIn("concurrency", job)
+        self.assertNotIn("concurrency", self.jobs["refresh"])
+        self.assertEqual(self.jobs["withdraw"]["concurrency"],
+                         {"group": "loop-pr-refresh-withdraw", "cancel-in-progress": False})
+        # Not shared with the scheduled retirement job (its pending pass
+        # would be cancelled) and not a group any other workflow uses.
+        groups = []
+        for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+            if path.name == "loop-pr-refresh.yml":
+                continue
+            wf = yaml.safe_load(path.read_text())
+            for node in [wf, *(wf.get("jobs") or {}).values()]:
+                c = node.get("concurrency") if isinstance(node, dict) else None
+                groups.append(c.get("group") if isinstance(c, dict) else c)
+        self.assertNotIn("loop-pr-refresh-withdraw", groups)
+
+    def test_the_workflow_has_no_duplicate_keys(self):
+        # GitHub refuses a duplicated key; PyYAML would keep the last one and
+        # hide, say, a second `concurrency` on a job.
+        class Strict(yaml.SafeLoader):
+            pass
+
+        def mapping(loader, node, deep=False):
+            keys = [loader.construct_object(k, deep=deep) for k, _ in node.value]
+            dupes = {k for k in keys if keys.count(k) > 1}
+            if dupes:
+                raise AssertionError(f"duplicate keys {sorted(map(str, dupes))} "
+                                     f"at line {node.start_mark.line + 1}")
+            return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+        Strict.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+        yaml.load((ROOT / ".github/workflows/loop-pr-refresh.yml").read_text(), Loader=Strict)
 
     def test_each_withdrawal_pass_is_its_own_step_and_runs_unless_cancelled(self):
         steps = self.jobs["withdraw"]["steps"]
@@ -803,6 +960,89 @@ class RefreshWorkflowTests(unittest.TestCase):
             "actions/download-artifact@"))
         self.assertIs(download["continue-on-error"], True)
         self.assertEqual(download["with"]["name"], "gates")
+
+
+
+FAKE_GH = """#!/bin/sh
+# The open pull request listing, then `.mergeable` (false: a conflict).
+printf 'gh %s\\n' "$*" >> "$CALLS"
+case "$2" in
+  *'/pulls?state=open'*)
+    printf '[{"number": 41, "head": {"ref": "retire-skill/example-skill", "repo": {"full_name": "Adam-S-Daniel/adam-agentskills"}}, "base": {"ref": "main"}}]\\n' ;;
+  */pulls/41) echo false ;;
+esac
+"""
+
+FAKE_PYTHON = """#!/bin/sh
+# `python3 "$SCRIPT" <subcommand> ...`: removal-check exits $CHECK_RC.
+printf 'python3 %s\\n' "$2" >> "$CALLS"
+case "$2" in
+  removal-check) echo "reason=invented"; exit "$CHECK_RC" ;;
+  merge) echo "outcome=up-to-date"; exit 0 ;;
+esac
+exit 9
+"""
+
+FAKE_GIT = """#!/bin/sh
+printf 'git %s\\n' "$*" >> "$CALLS"
+case "$*" in *rev-parse*) echo 0123456789abcdef0123456789abcdef01234567 ;; esac
+exit 0
+"""
+
+
+class RefreshGateExecutionTests(unittest.TestCase):
+    """R2-8 (mutant N12): the refresh step's shell gate on `removal-check`
+    is executed, not read. The step's `run:` block comes from the parsed
+    workflow and runs under bash with fake `gh`, `git` and `python3` on
+    PATH: no network, no clock."""
+
+    def setUp(self):
+        wf = yaml.safe_load((ROOT / ".github/workflows/loop-pr-refresh.yml").read_text())
+        self.run_block = next(s["run"] for s in wf["jobs"]["refresh"]["steps"]
+                              if "refresh_repo" in s.get("run", ""))
+        self.tmp = Path(tempfile.mkdtemp())
+        self.bin = self.tmp / "bin"
+        self.bin.mkdir()
+        for name, text in (("gh", FAKE_GH), ("python3", FAKE_PYTHON), ("git", FAKE_GIT)):
+            (self.bin / name).write_text(text)
+            (self.bin / name).chmod(0o755)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp)
+
+    def run_step(self, check_rc):
+        calls, summary = self.tmp / "calls.log", self.tmp / "summary.md"
+        for f in (calls, summary):
+            f.write_text("")
+        env = {"PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
+               "HOME": str(self.tmp), "CALLS": str(calls), "CHECK_RC": str(check_rc),
+               "GITHUB_STEP_SUMMARY": str(summary), "RUNNER_TEMP": str(self.tmp),
+               "GH_TOKEN": "job-token-invented", "REGISTRY_TOKEN": "registry-token-invented",
+               "ROSTER_TOKEN": "", "SELF_REPO": "Adam-S-Daniel/skills-evals",
+               "SCRIPT": str(self.tmp / "refresh_loop_prs.py"),
+               "GATES": str(self.tmp / "gates.json")}
+        proc = subprocess.run(["bash", "-c", self.run_block], env=env, capture_output=True,
+                              text=True, timeout=60, check=False)
+        return proc, calls.read_text().splitlines(), summary.read_text()
+
+    def test_a_removal_check_failure_skips_the_merge(self):
+        proc, calls, summary = self.run_step(4)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("python3 removal-check", calls)
+        self.assertNotIn("python3 merge", calls)
+        self.assertFalse(any(c.startswith("git ") for c in calls), calls)
+        self.assertFalse(any(c.endswith("/pulls/41 --jq .mergeable") for c in calls), calls)
+        self.assertIn("removal not refreshed", summary)
+
+    def test_a_supported_removal_is_merged(self):
+        # The positive control: the same harness reaches the merge, so the
+        # test above fails if the gate stops gating.
+        proc, calls, summary = self.run_step(0)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual([c for c in calls if c.startswith("python3 ")],
+                         ["python3 removal-check", "python3 merge"])
+        self.assertIn("already up to date", summary)
 
 
 if __name__ == "__main__":

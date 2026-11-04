@@ -703,8 +703,24 @@ have closed a confirmed removal and decided the subject for good.
 
 A withdrawal turns auto-merge off and reads it back, comments the new
 verdict, why, and the override, and closes the pull request with its branch
-kept. It then files or updates the subject's retirement issue (the proposal
-path's marker and issue), so the subject is never decided in silence.
+kept. It then files the subject's retirement issue (the proposal path's
+marker and issue), or comments on the oldest open one, leaving its body and
+evidence as they are, so the subject is never decided in silence. Any open
+removal notice (#557) for the subject is commented on and closed as not
+planned; that step is best effort and never stops the withdrawal (PR #724
+round 2's R2-3 and R2-6).
+
+**Only newer verdicts withdraw.** A pull request whose `created_at` is later
+than the gates document's `as_of` (the results commit's time) was opened on
+newer results than the pass is judging, so it is kept; so is one whose
+creation time or `as_of` is missing or unparseable (round 2's R2-1). Without
+this, an ingest pass that started on older results could close, for good, a
+removal the retirement job had just opened on newer ones. The `withdraw` job
+in `loop-pr-refresh.yml` also has its own concurrency group with
+`cancel-in-progress: false`, so two ingest passes never withdraw the same
+pull request twice (R2-2). The group is not shared with the retirement job,
+whose pending daily pass a newer run would otherwise cancel, so a daily pass
+and an ingest pass can still overlap.
 
 **Unknown data never withdraws.** That covers a missing or unreadable gates
 document, no guidance block, a subject the document does not list (so an
@@ -732,7 +748,20 @@ commit at merge time, so the design assumes it does not: a removal that is
 still armed can merge at any check run until a pass reaches it. That window
 now runs from one ingest to the end of that ingest's `withdraw` job, not to
 the next daily run. A re-run of a red check on a stale pull request inside
-that window is not covered.
+that window is not covered. Two more windows are not covered either (round
+2's R2-4):
+
+- (a) The retirement job withdraws before it acts, on the same verdicts. A
+  removal it opens on verdicts an ingest has already superseded (the ingest's
+  `withdraw` job listed pull requests before this one existed) is armed, its
+  checks run on their own, and nothing re-reads its verdict until the next
+  ingest's `withdraw` job or the next daily run.
+- (b) Verdict inputs that change on main, not on the results branch
+  (`evals/roster.yml`, `evals/gate-policy.yml`, `evals/scope-auto.yml`,
+  `evals/unscheduled.yml`; eval-scope.yml's pull requests auto-merge), trigger
+  no withdrawal. A removal they make stale is withdrawn at the next ingest or
+  daily run. Until then, the refresh still re-checks the verdict before it
+  brings a removal up to date, so it never re-runs that removal's checks.
 
 **The override and the decision.** A closed removal pull request decides its
 subject, as before for skills and now for sections too
