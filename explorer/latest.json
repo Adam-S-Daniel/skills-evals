@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T03:10:29Z",
+  "generated_at": "2026-11-04T03:13:03Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T03:09:25Z",
+ "generated_at": "2026-11-04T03:12:03Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T03:07:34Z",
+ "newest_run": "2026-11-04T03:09:39Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10383,7 +10383,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -10706,11 +10706,11 @@
    "confidence": {
     "cells": [
      {
-      "gain": 8.8,
-      "high": 100.0,
-      "low": -100.0,
+      "gain": 7.9,
+      "high": 50.7,
+      "low": -42.2,
       "model": "claude-opus-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": null,
       "votes": true
@@ -10730,8 +10730,8 @@
     "keep_family": 2,
     "keep_pairs": 12,
     "max_pairs": 12,
-    "no_help": 0.11125564241551056,
-    "no_help_pairs": 3
+    "no_help": 0.1943181939382821,
+    "no_help_pairs": 4
    },
    "copies": {
     "alert": {
@@ -10745,7 +10745,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
@@ -10773,6 +10773,27 @@
       "checks_passed": 7,
       "checks_total": 19,
       "cost_usd": 0.15709289999999998,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-04T02:41:26Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T023933Z-e22284/consumer-repo-provisioning/20261104T024126Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.3709582,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 19,
+      "cost_usd": 0.38234599999999996,
       "judge_mean": null,
       "trials": 1
      }
@@ -11468,7 +11489,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14054,11 +14075,11 @@
       "votes": true
      },
      {
-      "gain": 81.0,
+      "gain": 78.6,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "three-files",
       "votes": true
@@ -14083,17 +14104,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 15,
+   "current_text_runs": 16,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T03:09:39Z",
+     "cli_version": "2.1.318",
+     "fixture": "three-files",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T030731Z-fdf08f/fan-out-triage/20261104T030939Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.178178,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 7,
+      "cost_usd": 0.1001743,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T02:52:38Z",
      "cli_version": "2.1.318",
@@ -20639,7 +20681,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21885,7 +21927,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -23904,7 +23946,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "efc43e5a623a3f022996c1bb229830e888408b29",
-  "results_commit": "e7694097fb38a0f405077f31236069eeca11944f"
+  "results_commit": "31c032ae4f15b5ea7cfac8c41aaa89aff0d6f9b1"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
