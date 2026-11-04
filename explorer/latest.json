@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:24:04Z",
+  "generated_at": "2026-11-04T00:26:02Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:23:23Z",
+ "generated_at": "2026-11-04T00:25:09Z",
  "guidance": {
   "removed": [
    {
@@ -22972,8 +22972,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "31cc927f63e2b8b8f73a08dec2c20a204bc5e58b",
-  "results_commit": "95e97c856dae84f642cb7a56c5ac15698a2cc828"
+  "repository_commit": "2a4c9f5f4db1fe0c0c2d4612af9a3975305dcdb2",
+  "results_commit": "b7ab63aa26882ed8c199645e3166846bb2b762e5"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
