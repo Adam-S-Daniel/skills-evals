@@ -1655,7 +1655,8 @@ class GuidanceWorkflowTests(unittest.TestCase):
         checkout = next(s for s in steps if s.get("with", {}).get("repository")
                         == "Adam-S-Daniel/_agent-guidance")
         compute = next(s for s in steps if "scripts/compute_gates.py" in s.get("run", ""))
-        acts = [s for s in steps if "scripts/retire_skill.py" in s.get("run", "")]
+        acts = [s for s in steps if "scripts/retire_skill.py" in s.get("run", "")
+                and "--withdraw-stale" not in s["run"]]
         self.assertEqual(len(acts), 2)
         guidance_act = acts[1]
         self.assertIn("--guidance \"$GITHUB_WORKSPACE/agent-guidance\"", compute["run"])
@@ -1669,11 +1670,14 @@ class GuidanceWorkflowTests(unittest.TestCase):
         self.assertEqual(guidance_act["env"], {
             "GH_TOKEN": "${{ github.token }}",
             "REGISTRY_TOKEN": "${{ steps.guidance-token.outputs.token }}"})
-        mint = steps[steps.index(guidance_act) - 1]
+        withdraw = steps[steps.index(guidance_act) - 1]
+        self.assertIn("--withdraw-stale --target guidance", withdraw["run"])
+        mint = steps[steps.index(withdraw) - 1]
         self.assertEqual(mint["id"], "guidance-token")
         self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
         self.assertIs(mint["continue-on-error"], True)
-        self.assertEqual(mint["if"], "steps.credential.outputs.present == 'true'")
+        self.assertEqual(mint["if"], "${{ !cancelled() && steps.verdicts.outcome == 'success' "
+                                     "&& steps.credential.outputs.present == 'true' }}")
         self.assertEqual(mint["with"], {
             "client-id": "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}",
             "private-key": "${{ secrets.EVAL_IMPROVE_APP_PEM }}",
@@ -1681,7 +1685,7 @@ class GuidanceWorkflowTests(unittest.TestCase):
             "permission-contents": "write", "permission-pull-requests": "write"})
         # Each token reaches one step: the guidance token is not the skill step's.
         self.assertEqual([s for s in steps if "guidance-token" in json.dumps(s)],
-                         [mint, guidance_act])
+                         [mint, withdraw, guidance_act])
         self.assertNotIn("guidance-token", json.dumps(acts[0]))
         self.assertLess(steps.index(checkout), steps.index(compute))
         self.assertIs(checkout["with"]["persist-credentials"], False)

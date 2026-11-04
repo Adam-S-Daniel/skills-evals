@@ -836,7 +836,8 @@ class UsageLineTests(Base):
         doc = yaml.safe_load((ROOT / ".github" / "workflows" / "skill-coverage.yml")
                              .read_text(encoding="utf-8"))
         act = next(s for s in doc["jobs"]["retirement"]["steps"]
-                   if "scripts/retire_skill.py" in s.get("run", ""))
+                   if "scripts/retire_skill.py" in s.get("run", "")
+                   and "--withdraw-stale" not in s["run"])
         self.assertIn('--usage "$GITHUB_WORKSPACE/eval-results/usage/weekly-local.json"',
                       act["run"])
 
@@ -1787,7 +1788,10 @@ class WorkflowTests(unittest.TestCase):
 
     def test_auto_mode_is_wired_with_the_app_token_and_a_proposal_fallback(self):
         steps = self.job["steps"]
-        act = next(s for s in steps if "scripts/retire_skill.py" in s.get("run", ""))
+        act = next(s for s in steps if "scripts/retire_skill.py" in s.get("run", "")
+                   and "--withdraw-stale" not in s["run"])
+        withdraw = steps[steps.index(act) - 1]
+        self.assertIn("--withdraw-stale", withdraw["run"])
         self.assertEqual(act["env"], {"GH_TOKEN": "${{ github.token }}",
                                       "REGISTRY_TOKEN": "${{ steps.app-token.outputs.token }}"})
         self.assertIn("modes=(--allow-mode proposal)", act["run"])
@@ -1796,11 +1800,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("modes+=(--fallback-to-proposal)", act["run"])
         self.assertIn('--date "$(date -u +%F)"', act["run"])
         self.assertNotIn("--dry-run", act["run"])
-        mint = steps[steps.index(act) - 1]
+        mint = steps[steps.index(withdraw) - 1]
         self.assertEqual(mint["id"], "app-token")
         self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
         self.assertIs(mint["continue-on-error"], True)
-        self.assertEqual(mint["if"], "steps.credential.outputs.present == 'true'")
+        self.assertEqual(mint["if"], "${{ !cancelled() && steps.verdicts.outcome == 'success' "
+                                     "&& steps.credential.outputs.present == 'true' }}")
         self.assertEqual(mint["with"], {
             "client-id": "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}",
             "private-key": "${{ secrets.EVAL_IMPROVE_APP_PEM }}",
@@ -1813,7 +1818,7 @@ class WorkflowTests(unittest.TestCase):
             "secrets.EVAL_IMPROVE_APP_PEM != '' }}")})
         # The token reaches one step: no other step or the job names it.
         named = [s for s in steps if "steps.app-token" in json.dumps(s) or s.get("id") == "app-token"]
-        self.assertEqual(named, [mint, act])
+        self.assertEqual(named, [mint, withdraw, act])
         self.assertNotIn("env", self.job)
         registry = next(s for s in steps if s.get("with", {}).get("repository")
                         == "Adam-S-Daniel/adam-agentskills")

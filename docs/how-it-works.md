@@ -748,6 +748,77 @@ a human acts on; once that issue is closed, the skill is not proposed
 again. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
+**Withdrawal.** An open removal pull request is armed on the verdict it was
+opened on, so `scripts/retire_skill.py --withdraw-stale` re-reads that
+verdict (ADR 0014, round 8's known limit). It runs in two places:
+
+- before each pass of this job;
+- after every ingest, in `loop-pr-refresh.yml`'s `withdraw` job, which
+  recomputes the verdicts the same way.
+
+Each pass, skills and then guidance, is its own step that runs unless the run
+was cancelled, so one failing never skips the other; the failed step still
+fails the job.
+
+It reads every open pull request in the target repository that the loop
+opened: the head is `retire-skill/` (or `retire-guidance/` in the guidance
+pass), it carries `agent-authored`, and its author is the eval-improve App's
+bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
+
+The pull request is withdrawn when the verdict no longer supports an
+automatic removal: `keep`, `insufficient`, a `retire` lowered to a
+proposal, or a `retire-pending` that was not a supported `retire` before
+`finalize` ranked it. A `retire-pending` whose raw verdict is a supported
+`retire` keeps its pull request, since only one subject retires per
+evaluation and it is simply next.
+
+To withdraw, auto-merge is turned off and read back, a comment gives the new
+verdict, why and the override, and the pull request is closed with its branch
+kept. Then the subject's retirement issue here (the one proposal mode files)
+is filed, or the oldest open one gets a comment (its body is left as it is),
+to record the withdrawal and link the pull request. Any open removal notice
+for the subject is commented on and closed as not planned; if that fails, the
+withdrawal still stands and the status line says so.
+
+A pass withdraws only pull requests opened at or before its verdicts' `as_of`
+(the results commit's time). One opened later, or with either time unknown,
+is kept for a newer pass to judge. The `withdraw` job in
+`loop-pr-refresh.yml` runs one pass at a time (its own concurrency group,
+`cancel-in-progress: false`).
+
+A withdrawn pull request counts as closed, so the loop opens no removal for
+the subject again. To remove it anyway, remove the `agent-authored` label
+first, then reopen the pull request and merge it by hand. Without the label
+it is not the loop's, and no pass touches it; reopening it with the label
+only gets it withdrawn again.
+
+While `retirement_mode` is `proposal`, a removal that is not withdrawn is
+disarmed instead: auto-merge is turned off, the pull request stays open, and
+it is commented once. Disarming goes one way only: switching the mode back to
+`auto` does not re-arm it. While it stays open, it blocks later removals and
+keeps the skill out of the weekly plan's improve fires. Close it, or turn
+auto-merge on again by hand (a merge commit).
+
+Unknown data withdraws nothing:
+
+- a missing or unreadable verdicts document exits 0 with a status naming no
+  subject;
+- a subject the document does not list, so an empty or partial block
+  withdraws nothing;
+- a subject whose verdict raised in `compute_gates.py`;
+- a subject whose `retire` fails the re-check.
+
+The pull request writes use the same App token as the removal; with
+something to withdraw and no token, the step fails. The issue uses the job's
+token.
+
+`loop-pr-refresh.yml` brings a removal pull request up to date only while
+`scripts/refresh_loop_prs.py removal-check` finds its verdict still
+supported in `auto` mode. With the verdicts unknown, it refreshes none, so a
+refresh never re-runs a stale removal's checks.
+
+Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.
+
 A fixture moved into a named subdirectory with its content unchanged keeps
 its evidence: `FIXTURE_ALIASES` in `harness/gates.py` maps the old name (""
 for a flat fixture) to the new one, and an old run pools with it only while
@@ -985,6 +1056,11 @@ request in `_agent-guidance` that passes that repository's own checks; in
 `proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`
 verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
+An open `retire-guidance/<section>` removal pull request is withdrawn (or,
+in `guidance: retirement_mode: proposal`, disarmed) the same way as a
+skill's (Withdrawal, above), from the guidance verdicts. A closed one,
+withdrawn or closed by a person, decides the section: no removal is opened
+for it again.
 
 ### The eval scope pass
 

@@ -164,9 +164,12 @@ class Workflow(unittest.TestCase):
         self.assertNotIn("pull_request", on)
         self.assertNotIn("push", on)
         self.assertEqual(doc["permissions"], {})
+        # No workflow group, and none on the refresh: a pending run in a
+        # group is cancelled by the next. Only the withdraw job has one
+        # (PR #724 round 2's R2-2; test_issue_removal_withdrawal.py).
         self.assertNotIn("concurrency", doc)
-        for job in doc["jobs"].values():
-            self.assertNotIn("concurrency", job)
+        self.assertNotIn("concurrency", doc["jobs"]["refresh"])
+        self.assertIs(doc["jobs"]["withdraw"]["concurrency"]["cancel-in-progress"], False)
 
     def test_no_expression_reaches_a_run_block(self):
         doc = yaml.safe_load(self.PATH.read_text(encoding="utf-8"))

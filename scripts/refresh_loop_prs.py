@@ -21,6 +21,17 @@ and the resolvers parse text and JSON.
 
 Exit codes: 0 merged (or already up to date; `outcome=` says which), 3 a
 conflict this cannot resolve, 2 a usage or git error.
+
+  refresh_loop_prs.py removal-check --gates FILE --head REF
+
+A removal pull request (`retire-skill/`, `retire-guidance/`) is refreshed
+only while its subject's verdict in FILE (compute_gates.py's output) still
+supports an automatic removal and the mode is `auto`
+(retire_skill.refresh_allowed; ADR 0014, PR #724 round 1's M2): bringing a
+stale one up to date would re-run its checks and let auto-merge fire before
+the withdrawal reaches it. Exit 0 when the head may be refreshed (any other
+head always may), 4 when it may not, with `reason=` naming why. A missing
+or unreadable FILE is unknown data, so no removal is refreshed.
 """
 from __future__ import annotations
 
@@ -181,13 +192,32 @@ def merge(repo: Path, base: str) -> str:
     return "merged"
 
 
+def removal_check(gates_path: Path, head: str) -> int:
+    """`removal-check`: 0 when `head` may be refreshed, 4 when it may not.
+    retire_skill is imported here, not at the top, so `merge` keeps needing
+    nothing beyond the standard library."""
+    import retire_skill
+    try:
+        gates = retire_skill.load_gates(gates_path)
+    except retire_skill.RetireError:
+        gates = None
+    ok, why = retire_skill.refresh_allowed(gates, head)
+    print(f"outcome={'refresh' if ok else 'skip'}\nreason={why}")
+    return 0 if ok else 4
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
     m = sub.add_parser("merge")
     m.add_argument("--repo", type=Path, required=True)
     m.add_argument("--base", required=True)
+    c = sub.add_parser("removal-check")
+    c.add_argument("--gates", type=Path, required=True)
+    c.add_argument("--head", required=True)
     args = parser.parse_args(argv)
+    if args.command == "removal-check":
+        return removal_check(args.gates, args.head)
     try:
         outcome = merge(args.repo, args.base)
     except Unresolvable as exc:
