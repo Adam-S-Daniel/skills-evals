@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MVak3Nc74pQxDhtkW2irSG",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; ls .github/workflows 2><path>; grep -ril \"label\" .github . --include=* 2><path> | grep -v '^./.git/' | head -20",
+      "input_chars": 151,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MVak3Nc74pQxDhtkW2irSG",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nbin\nlabels.txt\nscripts\nsy...",
+      "output_chars": 1256,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KgQErakAcAyTZjVg3z4Giv",
+      "name": "Bash",
+      "input": "cat .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt; cat sync-labels.yml | head -30; cat .gh/replay/run-view-61003.log | head -40; ls bin",
+      "input_chars": 157,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KgQErakAcAyTZjVg3z4Giv",
+      "is_error": false,
+      "output": "name: Sync labels\n\non:\n  schedule:\n    - cron: \"0 3 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  sync:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Sync labels\n        env:\n          GH_TOKEN: <reda...",
+      "output_chars": 1304,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016tcZT7yHAKWqfb7gDZPXJk",
+      "name": "Bash",
+      "input": "od -c labels.txt | head; head -20 bin/gh; ls -la sync-labels.yml; git log --oneline | head",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016tcZT7yHAKWqfb7gDZPXJk",
+      "is_error": false,
+      "output": "0000000   t   r   i   a   g   e  \\n   n   e   e   d   s   -   r   e   v\n0000020   i   e   w  \\n\n0000024\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays ...",
+      "output_chars": 1398,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MgFKkEsWwFBfvcSPqcy1ds",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/sync-labels.sh'\ns=open(p).read()\ns=s.replace(\"\"\"mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\n\"\"\",\"\"\"# Capture first: a failure inside `mapf...",
+      "input_chars": 471,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MgFKkEsWwFBfvcSPqcy1ds",
+      "is_error": false,
+      "output": " scripts/sync-labels.sh | 5 ++++-\n 1 file changed, 4 insertions(+), 1 deletion(-)",
+      "output_chars": 81,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TegHM3PXW1QLLvxgJXrnA1",
+      "name": "Bash",
+      "input": "PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay ORG=example-org bash scripts/sync-labels.sh 2>&1 | head",
+      "input_chars": 105,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TegHM3PXW1QLLvxgJXrnA1",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)",
+      "output_chars": 24,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
