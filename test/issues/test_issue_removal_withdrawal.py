@@ -2375,11 +2375,14 @@ class CapNoticeTests(t70.Base):
         self.assertFalse(any(a[:2] == ["issue", "comment"] for a, _ in fake.calls))
 
     def test_the_dry_run_names_the_comment(self):
+        # R8-4: the comment comes before the body edit that records the marker.
         action = {"action": "update-issue", "issue": 77, "cap_comment": "c"}
-        self.assertEqual(rs.commands(action)[-1],
+        self.assertEqual([c[:3] for c in rs.commands(action)],
+                         [["gh", "issue", "comment"], ["gh", "issue", "edit"]])
+        self.assertEqual(rs.commands(action)[0],
                          ["gh", "issue", "comment", "77", "-R", rs.EVALS_REPO,
                           "--body-file", "-"])
-        self.assertEqual(rs.guidance_commands(action)[-1], rs.commands(action)[-1])
+        self.assertEqual(rs.guidance_commands(action), rs.commands(action))
         self.assertEqual(len(rs.commands({**action, "cap_comment": None})), 1)
 
     def test_a_guidance_section_gets_the_comment_too(self):
@@ -2467,6 +2470,409 @@ class RoundSevenDocTests(unittest.TestCase):
         text = " ".join((ROOT / "docs" / "how-it-works.md").read_text().split())
         self.assertNotIn("is still arming is never caught", text)
         self.assertIn("Turning auto-merge off by hand is therefore a hold", text)
+
+
+# ---------------------------------------------------------------------------
+# PR #751 round 8.
+
+
+class ClosedProposalIssueTests(t70.Base):
+    """R8-1: in `auto` mode a closed retirement issue the proposal path filed
+    declines the removal, on every path that files one while the mode is
+    `auto`; one the withdrawal path filed declines nothing until the cap."""
+
+    def run_gates(self, gates, issues=(), *extra):
+        fake = t70.FakeGitHub(issues=list(issues))
+        return t70.Base.run_main(self, gates, *extra, env=t70.AUTO_ENV, fake=fake)
+
+    def run_auto(self, issues):
+        return self.run_gates(t70.gates_doc("auto"), issues, "--allow-mode", "auto",
+                        "--allow-mode", "proposal")
+
+    def filed(self, gates, *extra):
+        """The body the proposal path files for `gates`."""
+        code, out, err, fake = self.run_gates(gates, (), *extra)
+        self.assertEqual(code, 0, err)
+        return next(s for a, s in fake.calls if a[:2] == ["issue", "create"])
+
+    def assertDeclined(self, body):
+        code, out, err, fake = self.run_auto([t70.issue(900, body, state="closed")])
+        self.assertEqual(code, 0, err)
+        self.assertIn("already decided", out)
+        self.assertIn("#900", out)
+        self.assertEqual((fake.pushes, fake.writes()), ([], []))
+
+    def test_the_proposal_path_stamps_the_issue_it_files(self):
+        body = self.filed(t70.gates_doc("proposal"))
+        self.assertIn(rs.PROPOSAL_STAMP, body)
+        self.assertNotIn(rs.WITHDRAWAL_STAMP, body)
+        self.assertEqual(rs.issue_origin(body), "proposal")
+
+    def test_a_verdict_that_allowed_only_a_proposal_then_auto(self):
+        # Path (a): a `removal: proposal` verdict in auto mode files the issue;
+        # the person closes it; the verdict firms up to `removal: auto`.
+        verdicts = t70.gates_doc("auto")["skills"]
+        verdicts[t70.SKILL] = {**verdicts[t70.SKILL], "removal": "proposal",
+                               "removal_reason": "one cell with headroom"}
+        body = self.filed(t70.gates_doc("auto", verdicts), "--allow-mode", "auto",
+                          "--allow-mode", "proposal")
+        self.assertIn("one cell with headroom", body)
+        self.assertDeclined(body)
+
+    def test_a_day_without_a_token_then_one_with_it(self):
+        # Path (b): --fallback-to-proposal files the issue; the token returns.
+        body = self.filed(t70.gates_doc("auto"), "--fallback-to-proposal")
+        self.assertIn(rs.NO_CREDENTIAL, body)
+        self.assertDeclined(body)
+
+    def test_a_proposal_period_then_the_switch_to_auto(self):
+        # Path (c): filed in proposal mode, closed, then the mode is auto.
+        self.assertDeclined(self.filed(t70.gates_doc("proposal")))
+
+    def test_an_issue_without_a_stamp_predates_them_and_declines(self):
+        self.assertDeclined(rs.ISSUE_MARKER.format(skill=t70.SKILL) + "\nold body")
+
+    def test_a_closed_issue_the_withdrawal_filed_declines_nothing(self):
+        item = {"subject": t70.SKILL, "url": SKILL_URL, "verdict": "keep", "reason": "r",
+                "why": "w"}
+        body = rs.withdrawal_issue(item, doc({}), "skill", FakeGh(), None)["body"]
+        self.assertIn(rs.WITHDRAWAL_STAMP, body)
+        self.assertNotIn(rs.PROPOSAL_STAMP, body)
+        code, out, err, fake = self.run_auto([t70.issue(900, body, state="closed")])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1, out)
+
+    def test_a_closed_proposal_declines_beside_an_open_withdrawal_issue(self):
+        item = {"subject": t70.SKILL, "url": SKILL_URL, "verdict": "keep", "reason": "r",
+                "why": "w"}
+        withdrawn = rs.withdrawal_issue(item, doc({}), "skill", FakeGh(), None)["body"]
+        proposal = self.filed(t70.gates_doc("proposal"))
+        code, out, err, fake = self.run_auto([t70.issue(900, proposal, state="closed"),
+                                              t70.issue(901, withdrawn)])
+        self.assertEqual(code, 0, err)
+        self.assertIn("#900", out)
+        self.assertEqual(fake.pushes, [])
+
+    def test_an_open_proposal_issue_does_not_decline(self):
+        code, out, err, fake = self.run_auto([t70.issue(
+            900, self.filed(t70.gates_doc("proposal")))])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1, out)
+
+    def test_another_authors_closed_issue_declines_nothing(self):
+        body = self.filed(t70.gates_doc("proposal"))
+        code, out, err, fake = self.run_auto([t70.issue(900, body, author="someone",
+                                                        state="closed")])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1, out)
+
+    def test_withdrawal_comments_keep_the_proposal_stamp(self):
+        # The proposal issue is open when a removal is withdrawn: it gets a
+        # comment (saying closing it declines), never a body edit, so it is
+        # still the proposal once a person closes it.
+        proposal = self.filed(t70.gates_doc("proposal"))
+        gh = FakeGh(issues=[{"number": 900, "body": proposal, "author": rs.ISSUE_AUTHOR,
+                             "state": "open"}])
+        rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr(head=f"{rs.BRANCH_PREFIX}"
+                                                              f"{t70.SKILL}")],
+                          "skill", gh, delete=lambda *a: None)
+        issue_writes = [(a, s) for a, s in gh.calls if a[0] == "issue"
+                        and "900" in a]
+        self.assertEqual([a[:2] for a, _ in issue_writes], [["issue", "comment"]])
+        self.assertIn("closing it declines the removal", issue_writes[0][1])
+        self.assertNotIn("declines nothing", issue_writes[0][1])
+        self.assertDeclined(proposal)
+
+    def test_a_withdrawal_issue_says_closing_it_declines_nothing(self):
+        item = {"subject": t70.SKILL, "url": SKILL_URL, "verdict": "keep", "reason": "r",
+                "why": "w"}
+        withdrawn = rs.withdrawal_issue(item, doc({}), "skill", FakeGh(), None)["body"]
+        gh = FakeGh(issues=[{"number": 900, "body": withdrawn, "author": rs.ISSUE_AUTHOR,
+                             "state": "open"}])
+        note = rs.withdrawal_issue(item, doc({}), "skill", gh, None)["comment"]
+        self.assertIn("declines nothing until the loop has paused", note)
+
+    def test_a_guidance_section_is_declined_the_same_way(self):
+        from unittest import mock
+        gates = doc(guidance={SECTION: gretire()})
+        filed = rs.guidance_plan(gates, None, FakeGh(), allowed=("proposal",),
+                                 fallback=True)
+        self.assertEqual(filed["action"], "create-issue")
+        self.assertIn(rs.PROPOSAL_STAMP, filed["body"])
+        item = {"subject": SECTION, "url": GUIDANCE_URL, "verdict": "keep", "reason": "r",
+                "why": "w"}
+        withdrawn = rs.withdrawal_issue(item, gates, "guidance", FakeGh(), None)["body"]
+        self.assertIn(rs.WITHDRAWAL_STAMP, withdrawn)
+        legacy = rs.GUIDANCE_ISSUE_MARKER.format(section=SECTION)
+        row = {"file": "agents-md/base.md", "heading": "Example heading"}
+        for body, want in ((filed["body"], "none"), (legacy, "none"),
+                           (withdrawn, "guidance-removal")):
+            with self.subTest(want=want, body=body[:60]):
+                gh = FakeGh(issues=[{"number": 900, "body": body, "state": "closed",
+                                     "author": rs.ISSUE_AUTHOR}])
+                with mock.patch.object(rs, "guidance_row", return_value=row):
+                    plan = rs.guidance_plan(gates, Path("."), gh, allowed=("auto",))
+                self.assertEqual(plan["action"], want)
+                if want == "none":
+                    self.assertIn("#900", plan["reason"])
+
+    def test_a_shorten_issue_is_not_stamped_as_a_proposal(self):
+        self.assertEqual(rs.issue_origin(rs.SHORTEN_ISSUE_MARKER.format(section=SECTION)),
+                         "legacy")
+        plan = rs.guidance_plan(doc(guidance={SECTION: {**gretire(), "verdict":
+                                                        "shorten-or-merge"}}),
+                                None, FakeGh())
+        self.assertEqual(plan["action"], "create-issue")
+        self.assertIn(rs.SHORTEN_ISSUE_MARKER.format(section=SECTION), plan["body"])
+        self.assertNotIn(rs.PROPOSAL_STAMP, plan["body"])
+
+
+class DisarmMarkerOrderTests(unittest.TestCase):
+    """R8-2: only a DISARMED_MARKER comment after the latest disable holds a
+    disarmed removal; one from an earlier, since re-armed disarm does not."""
+
+    run_pass = PartialDisarmActorTests.run_pass
+    GATES = staticmethod(lambda: doc({SKILL: VERDICTS["retire+auto"]}))
+
+    def test_a_marker_before_the_latest_disable_does_not_hold(self):
+        d, c = PartialDisarmActorTests.disable, PartialDisarmActorTests.comment
+        marker = rs.DISARMED_MARKER.format(subject=SKILL)
+        loop = d(rs.LOOP_AUTHOR)
+        for timeline, finished in (([loop, c(rs.LOOP_AUTHOR, marker), loop], True),
+                                   ([c(rs.LOOP_AUTHOR, marker), loop], True),
+                                   ([loop, c(rs.LOOP_AUTHOR, marker)], False),
+                                   ([loop, c(rs.LOOP_AUTHOR, marker), loop,
+                                     c(rs.LOOP_AUTHOR, marker)], False)):
+            with self.subTest(timeline=timeline):
+                lines, gh = self.run_pass(timeline)
+                closed = ["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO] in gh.writes()
+                self.assertEqual(closed, finished, lines)
+
+
+class MissingDisarmCommentTests(unittest.TestCase):
+    """R8-3: a `proposal` pass that finds the loop's disarm with no marker
+    after it (the switch's comment failed) posts the marker."""
+
+    GATES = staticmethod(lambda: doc({SKILL: VERDICTS["retire+auto"]}))
+
+    def run_pass(self, timeline, fail_timeline=False):
+        gh = FakeGh(armed=False)
+        gh.timeline = list(timeline)
+
+        def flaky(args, stdin=None):
+            if fail_timeline and "/timeline?" in " ".join(args):
+                raise rs.RetireError("gh api exited 1")
+            return gh(args, stdin)
+
+        lines = rs.withdraw_stale(doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal"),
+                                  [{**pr(), "armed": False}], "skill", flaky)
+        return lines, gh
+
+    def comments(self, gh):
+        return [s for a, s in gh.calls if a[:2] == ["pr", "comment"]]
+
+    def test_the_missing_marker_is_posted(self):
+        lines, gh = self.run_pass([PartialDisarmActorTests.disable(rs.LOOP_AUTHOR)])
+        self.assertEqual(len(self.comments(gh)), 1, lines)
+        self.assertIn(rs.DISARMED_MARKER.format(subject=SKILL), self.comments(gh)[0])
+        self.assertEqual([a[:2] for a in gh.writes()], [["pr", "comment"]])
+        self.assertIn("posted the comment an earlier pass could not", lines[0])
+
+    def test_no_comment_when_the_marker_is_there_or_a_person_disarmed(self):
+        d, c = PartialDisarmActorTests.disable, PartialDisarmActorTests.comment
+        marker = rs.DISARMED_MARKER.format(subject=SKILL)
+        for timeline in ([d(rs.LOOP_AUTHOR), c(rs.LOOP_AUTHOR, marker)],
+                         [d("a-person")], [], [d(rs.LOOP_AUTHOR), d("a-person")]):
+            with self.subTest(timeline=timeline):
+                lines, gh = self.run_pass(timeline)
+                self.assertEqual(gh.writes(), [], lines)
+                self.assertTrue(lines[0].startswith("left #41 open and disarmed"), lines)
+
+    def test_an_unreadable_timeline_posts_nothing(self):
+        lines, gh = self.run_pass([PartialDisarmActorTests.disable(rs.LOOP_AUTHOR)],
+                                  fail_timeline=True)
+        self.assertEqual(gh.writes(), [], lines)
+
+    def test_after_the_comment_an_auto_pass_keeps_it(self):
+        lines, gh = self.run_pass([PartialDisarmActorTests.disable(rs.LOOP_AUTHOR)])
+        posted = PartialDisarmActorTests.comment(rs.LOOP_AUTHOR, self.comments(gh)[0])
+        lines, gh = PartialDisarmActorTests.run_pass(
+            self, [PartialDisarmActorTests.disable(rs.LOOP_AUTHOR), posted])
+        self.assertEqual(gh.writes(), [])
+        self.assertEqual(lines, ["kept #41: the proposal switch turned its auto-merge off"])
+
+    def test_the_dry_run_names_the_timeline_read(self):
+        item = {"action": "disarm", "subject": SKILL, "url": SKILL_URL}
+        self.assertIn(rs.withdraw_commands("skill", SKILL_URL)["timeline"],
+                      rs.would_run("skill", item))
+
+
+class CapCommentFirstTests(t70.Base):
+    """R8-4: the cap's comment is posted before the body edit that records
+    CAP_MARKER, so a failed comment is retried on the next run."""
+
+    PAUSES = staticmethod(lambda: [closed_pr(n) for n in (7, 8, 9)])
+
+    def run_failing(self):
+        open_issue = {"number": 77, "body": rs.ISSUE_MARKER.format(skill=t70.SKILL) + "\nx",
+                      "author": rs.ISSUE_AUTHOR, "state": "open"}
+
+        class Fake(t70.FakeGitHub):
+            def gh(self, args, stdin=None):
+                if args[0] == "api" and args[1] == f"repos/{rs.EVALS_REPO}/issues/77":
+                    self.calls.append((list(args), stdin))
+                    return "old body\n"
+                if args[:2] == ["issue", "comment"]:
+                    self.calls.append((list(args), stdin))
+                    raise rs.RetireError("gh issue exited 1")
+                return super().gh(args, stdin)
+
+        fake = Fake(closed=self.PAUSES(), issues=[open_issue])
+        return t70.Base.run_main(self, t70.gates_doc("auto"), "--allow-mode", "auto",
+                                 "--allow-mode", "proposal", env=t70.AUTO_ENV, fake=fake)
+
+    def test_a_failed_comment_leaves_the_body_without_the_marker(self):
+        code, out, err, fake = self.run_failing()
+        self.assertEqual(code, 2)
+        self.assertTrue(any(a[:2] == ["issue", "comment"] for a, _ in fake.calls))
+        self.assertFalse(any(a[:2] == ["issue", "edit"] for a, _ in fake.calls))
+
+    def test_the_guidance_comment_comes_first_too(self):
+        from unittest import mock
+        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
+        gh = FakeGh(closed=[closed_pr(n, head=head) for n in range(3)],
+                    issues=[issue(78, subject=SECTION, marker=rs.GUIDANCE_ISSUE_MARKER)])
+        with mock.patch.object(rs, "guidance_row", return_value={
+                "file": "agents-md/base.md", "heading": "Example heading"}):
+            plan = rs.guidance_plan(doc(guidance={SECTION: gretire()}), Path("."), gh,
+                                    allowed=("auto", "proposal"))
+        self.assertTrue(plan.get("cap_comment"))
+
+        def failing(args, stdin=None):
+            gh.calls.append((list(args), stdin))
+            if args[:2] == ["issue", "comment"]:
+                raise rs.RetireError("gh issue exited 1")
+            return ""
+
+        gh.calls = []
+        with self.assertRaises(rs.RetireError):
+            rs.guidance_execute(plan, None, failing, None, {})
+        self.assertEqual([a[:2] for a, _ in gh.calls], [["issue", "comment"]])
+
+
+class HeldGuidanceRemovalTests(unittest.TestCase):
+    """R8-5: a guidance removal a person holds open is a no-op for the act
+    step, as for a skill, never exit 2."""
+
+    def test_an_open_guidance_removal_makes_the_pass_wait(self):
+        held = {"number": 42, "head": f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}",
+                "url": GUIDANCE_URL}
+        gh = FakeGh(prs=[held])
+        plan = rs.guidance_plan(doc(guidance={SECTION: gretire()}), Path("."), gh,
+                                allowed=("auto",))
+        self.assertEqual(plan["action"], "none")
+        self.assertIn(GUIDANCE_URL, plan["reason"])
+        self.assertEqual(rs.guidance_execute(plan, None, gh, None, {}), plan["reason"])
+        self.assertEqual(gh.writes(), [])
+
+
+class RetriedDeleteReReadTests(BranchFixture):
+    """R8-6 (mutant 8): a retried delete that "succeeds" but leaves the
+    branch still refuses the push; the tip is read again after it."""
+
+    def test_a_branch_the_delete_left_is_still_refused(self):
+        from unittest import mock
+        with mock.patch.object(rs, "default_delete_branch", lambda *a, **k: None), \
+                self.assertRaises(rs.RetireError) as ctx:
+            rs.default_push(self.work, self.BRANCH, "token", [self.old])
+        self.assertIn("already exists", str(ctx.exception))
+        self.assertEqual(self.remote_head(), self.old)
+
+
+@unittest.skipUnless(__import__("shutil").which("jq"), "jq is not installed")
+class TimelineFilterTests(unittest.TestCase):
+    """R8-6 (mutant 18): TIMELINE_JQ itself, through real jq, and a fake
+    that answers the timeline read by applying the filter the code passes."""
+
+    RAW = [{"event": "labeled", "actor": {"login": "a-person"}},
+           {"event": "auto_merge_disabled", "actor": {"login": rs.LOOP_AUTHOR}},
+           {"event": "commented", "actor": {"login": rs.LOOP_AUTHOR},
+            "body": rs.DISARMED_MARKER.format(subject=SKILL) + "\nbody"},
+           {"event": "auto_merge_enabled", "actor": {"login": "a-person"}},
+           {"event": "auto_merge_disabled", "actor": None}]
+
+    @staticmethod
+    def jq(filter_, raw):
+        return subprocess.run(["jq", "-c", filter_], input=json.dumps(raw),
+                              capture_output=True, text=True, check=True).stdout
+
+    def test_the_filter_keeps_disables_and_comments_in_order(self):
+        rows = [json.loads(x) for x in self.jq(rs.TIMELINE_JQ, self.RAW).splitlines()]
+        self.assertEqual(rows, [
+            {"event": "auto_merge_disabled", "actor": rs.LOOP_AUTHOR, "body": ""},
+            {"event": "commented", "actor": rs.LOOP_AUTHOR,
+             "body": rs.DISARMED_MARKER.format(subject=SKILL) + "\nbody"},
+            {"event": "auto_merge_disabled", "actor": "", "body": ""}])
+
+    def test_the_switchs_marker_holds_through_the_real_filter(self):
+        gh = FakeGh(armed=False)
+        raw = self.RAW[1:3]
+
+        def jq_gh(args, stdin=None):
+            if args[:2] == ["api", "--paginate"] and "/timeline?" in args[2]:
+                gh.calls.append((list(args), stdin))
+                return self.jq(args[args.index("--jq") + 1], raw)
+            return gh(args, stdin)
+
+        lines = rs.withdraw_stale(PartialDisarmActorTests.GATES(),
+                                  [{**pr(), "armed": False}], "skill", jq_gh,
+                                  delete=lambda *a: None)
+        self.assertEqual(lines, ["kept #41: the proposal switch turned its auto-merge off"])
+        self.assertEqual(gh.writes(), [])
+
+
+class GuidancePushHeadsTests(unittest.TestCase):
+    """R8-6 (mutant 21): the guidance removal hands its paused heads to the
+    push, so a withdrawal's leftover branch is retried there too."""
+
+    def test_guidance_execute_passes_the_paused_heads(self):
+        from unittest import mock
+        withdrawn = closed_pr(head=f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", sha=SHA_A)
+        with mock.patch.object(rs, "guidance_row", return_value={
+                "file": "agents-md/base.md", "heading": "Example heading"}):
+            plan = rs.guidance_plan(doc(guidance={SECTION: gretire()}), Path("."),
+                                    FakeGh(closed=[withdrawn]), allowed=("auto",))
+        pushed = []
+        with mock.patch.object(rs, "guidance_prepare_branch", lambda *a: None), \
+                mock.patch.object(rs, "_git", lambda *a: SHA_B + "\n"):
+            with self.assertRaises(rs.RetireError):  # FakeGh prints no pull request URL
+                rs.guidance_execute(plan, Path("."), FakeGh(),
+                                    lambda c, b, heads=(): pushed.append((b, list(heads))),
+                                    AUTO_ENV)
+        self.assertEqual(pushed, [(f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", [SHA_A])])
+
+
+
+class RoundEightDocTests(unittest.TestCase):
+    """R8-7: the module docstring and how-it-works say what the code does."""
+
+    def test_the_docstring_names_r7_1_r7_3_and_the_stamps(self):
+        doc_ = " ".join(rs.__doc__.split())
+        self.assertIn("who closed it is read back (R7-1)", doc_)
+        self.assertIn("only after the loop's own close, its branch is deleted", doc_)
+        self.assertIn("`loop_disarm_hold`", doc_)
+        self.assertIn("no `DISARMED_MARKER` comment of the loop's follows it (R8-2)", doc_)
+        self.assertIn("`PROPOSAL_STAMP`", doc_)
+        self.assertIn("`WITHDRAWAL_STAMP`", doc_)
+        self.assertNotIn("6. its branch is deleted, leased", doc_)
+
+    def test_how_it_works_qualifies_the_closed_issue_for_auto_mode(self):
+        text = " ".join((ROOT / "docs" / "how-it-works.md").read_text().split())
+        self.assertIn("the skill is not proposed again. In `auto` mode no removal is "
+                      "opened for it either", text)
+        self.assertIn("closing a retirement issue the withdrawal filed declines nothing", text)
+        self.assertNotIn("closing the retirement issue declines nothing until the cap", text)
+        self.assertNotIn("the App never left the `proposal` switch's disarm", text)
 
 
 import gates as gates_mod  # noqa: E402

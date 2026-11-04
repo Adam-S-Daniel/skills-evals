@@ -1352,10 +1352,14 @@ class GuidancePlanTests(unittest.TestCase):
     def test_auto_mode_must_be_wired_and_holds_one_slot(self):
         with self.assertRaises(rs.RetireError):
             rs.guidance_plan(guidance_gates(mode="auto"), None, FakeGh())
+        # PR #751 round 8's R8-5: an open removal (one a person holds included)
+        # makes the pass wait with nothing written, as the skill path does,
+        # never fail.
         open_pr = {"number": 1, "head": "retire-guidance/other", "url": "u"}
-        with self.assertRaises(rs.RetireError):
-            rs.guidance_plan(guidance_gates(mode="auto"), Path("."), FakeGh(prs=[open_pr]),
-                             allowed=("auto",))
+        plan = rs.guidance_plan(guidance_gates(mode="auto"), Path("."), FakeGh(prs=[open_pr]),
+                                allowed=("auto",))
+        self.assertEqual(plan["action"], "none")
+        self.assertIn("already open", plan["reason"])
         with self.assertRaises(rs.RetireError):
             rs.guidance_plan(guidance_gates(mode="auto"), None, FakeGh(), allowed=("auto",))
 

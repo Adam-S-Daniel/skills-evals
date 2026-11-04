@@ -743,8 +743,9 @@ below), is a withdrawal that stopped part way, and the
 pass finishes it as a pause (R6-2); otherwise it would sit open and
 disarmed, holding the one loop slot. In `proposal` mode it is only
 disarmed. The retirement issue says what closing it means: in `auto` mode
-nothing reads it until the pause cap (R7-4, below), so it tells a person to
-close the removal pull request instead (R6-7).
+nothing reads one the withdrawal filed until the pause cap (R7-4, below), so
+it tells a person to close the removal pull request instead (R6-7); a
+closed proposal issue declines at once (round 8's R8-1, below).
 When adding the label fails and the repository's labels (`gh label list
 --search`) lack it, the pass runs `gh label create loop-withdrawn --force`
 and retries once; any other failure creates nothing. GitHub lets an
@@ -809,7 +810,9 @@ that is not withdrawn is disarmed instead: auto-merge is turned off and read
 back, the pull request stays open, and it gets one comment. Nothing turns
 it back on: a person merges it by hand or closes it. That comment
 (`DISARMED_MARKER`) also keeps an `auto`-mode pass from finishing it as a
-part-way withdrawal once the mode is back to `auto` (R7-3). Setting
+part-way withdrawal once the mode is back to `auto` (R7-3), when it follows
+the latest disable (R8-2); a failed one is posted by the next `proposal`
+pass (R8-3). Setting
 `retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
 stops removal pull requests from merging on their own, including those
 already open and armed.
@@ -898,6 +901,48 @@ fails without it:
   withdraw job's branch delete and its mints' `contents: write`.
 - *A null `closed_by` (R7-6)* is pinned by a test: GitHub returns null for
   some closes, and such a close decides.
+
+**Round 8 (2026-11-04).** One major finding and six minor ones, each fixed
+with a test that fails without it:
+
+- *A declined proposal was ignored in `auto` mode (R8-1, major).* Auto mode
+  files the proposal issue too: for a `removal: proposal` verdict, a run with
+  no write token, and every run while the mode was `proposal`. A person who
+  closed that issue had declined the removal, as a closed issue decides a
+  proposal, but the auto path read only closed removal pull requests, so the
+  subject was removed once the reason for the proposal went away. The
+  proposal path now stamps the issue it files (`PROPOSAL_STAMP`) and the
+  withdrawal path stamps the one it files (`WITHDRAWAL_STAMP`). In `auto`
+  mode a closed `github-actions[bot]` issue with the proposal stamp decides
+  the subject, for skills and sections, whatever else is open; a closed
+  withdrawal issue declines nothing until the pause cap, as before. A
+  withdrawal that comments on an open proposal issue leaves its body, and so
+  its stamp, as it is, and the comment says closing it declines. An issue
+  with neither stamp predates them and counts as a proposal: until this
+  change the committed mode was `proposal`, in which closing it declined, so
+  that reading keeps a person's decline, and its only possible error is a
+  removal not opened, never one opened against a decline. No such issue
+  existed when this was written.
+- *A stale disarm marker held a removal forever (R8-2).* Only a
+  `DISARMED_MARKER` comment after the latest `auto_merge_disabled` event (in
+  timeline order) holds it. One from an earlier disarm that a person undid
+  by re-arming says nothing about the latest one.
+- *A failed disarm comment was never retried (R8-3).* A `proposal` pass that
+  finds a removal already unarmed, whose latest disable is the App's with no
+  marker after it, posts the missing comment. The gap left: if the mode goes
+  back to `auto` before such a pass, the removal is finished as a pause and
+  a fresh, armed one opens the next day.
+- *The cap comment could be lost (R8-4).* It is now posted before the body
+  edit that records `CAP_MARKER`, so a failed comment is retried on the next
+  run (at worst a failed edit repeats it).
+- *A held guidance removal failed the job daily (R8-5).* An open
+  `retire-guidance/` pull request now makes the guidance pass return `none`
+  (exit 0), as an open loop pull request does for skills.
+- *Test gaps (R8-6).* Tests now pin the re-read after a retried delete, the
+  timeline filter itself through real `jq`, and the paused heads reaching the
+  guidance push.
+- *Docs (R8-7).* The script's docstring and `docs/how-it-works.md` now
+  describe R7-1, R7-3 and the above.
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

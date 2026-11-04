@@ -39,10 +39,10 @@ The issue says why, and a human removes.
 
   * `proposal`: an issue in skills-evals, found by a marker comment in its
     body (`ISSUE_MARKER`) on an issue `github-actions[bot]` opened, is
-    created or its body updated. One issue per skill, ever: an open one is
-    updated, and a closed one means the skill is already decided, so nothing
-    is filed again. A human removes. An issue anyone else wrote is ignored,
-    whatever it quotes.
+    created or its body updated, stamped `PROPOSAL_STAMP`. One issue per
+    skill, ever: an open one is updated, and a closed one means the skill is
+    already decided, so nothing is filed again. A human removes. An issue
+    anyone else wrote is ignored, whatever it quotes.
   * `auto` (Adam, 2026-10-25; docs/decisions/0014 and adam-agentskills ADR
     0021): a branch `retire-skill/<skill>` is prepared in the
     adam-agentskills checkout; it is pushed (and the push verified with
@@ -79,7 +79,13 @@ checks): all three write the bundle version, `docs/skill-impact.md` and
 `skills.lock`, so a second would conflict once the first merged
 (adam-agentskills ADR 0021, decision 5). Nor while a closed pull request
 from `retire-skill/<skill>` decides it: one merged, or closed unmerged by a
-person, decides the skill, as a closed issue decides a proposal. One the
+person, decides the skill, as a closed issue decides a proposal. Nor
+while a closed retirement issue the proposal path filed (`PROPOSAL_STAMP`,
+or an issue with no stamp, which predates the stamps) stands, whatever
+else is open (R8-1): auto mode files that issue too, when a verdict allows
+only a proposal or no token reached the run, and a person who closed it
+declined the removal. A closed issue the withdrawal path filed
+(`WITHDRAWAL_STAMP`) decides nothing until the pause cap. One the
 loop withdrew (opened by `LOOP_AUTHOR`, labeled `loop-withdrawn` AND closed
 by `LOOP_AUTHOR`, read from the issue's `closed_by`) decides nothing: the
 withdrawal deleted its branch, so the next removal is a plain push, and a
@@ -202,20 +208,36 @@ withdraws it, in this order:
   1. auto-merge is turned off and read back;
   2. the label `loop-withdrawn` is added and read back;
   3. the subject's retirement issue here (the proposal path's marker) is
-     filed, or the oldest open one gets a comment (its body is kept);
+     filed, stamped `WITHDRAWAL_STAMP`, or the oldest open one gets a
+     comment (its body, and any `PROPOSAL_STAMP` in it, is kept);
   4. a comment gives the new verdict, why and the override;
-  5. the pull request is closed;
-  6. its branch is deleted, leased on the closed pull request's head, so a
-     commit pushed since keeps it (best effort: a failure is named by its
-     error's type and the pause stands);
+  5. the pull request is closed, and who closed it is read back (R7-1):
+     `gh pr close` exits 0 on one someone else closed first, so a closer
+     other than `LOOP_AUTHOR` (or none GitHub records) decides the subject,
+     a correction (`DECIDED_MARKER`) is posted on the pull request and the
+     retirement issue, and the branch is kept, as it is when the closer
+     cannot be read;
+  6. only after the loop's own close, its branch is deleted, leased on the
+     closed pull request's head, so a commit pushed since keeps it (best
+     effort: a failure is named by its error's type and the pause stands,
+     and the next removal's push retries the delete when the branch still
+     points at a paused removal's head, R7-2);
   7. any open removal notice (#557) for the subject is closed as not
      planned and then commented on, best effort.
 
 A failure at steps 1 to 5 leaves the pull request open for the next pass.
 In `auto` mode an open removal whose verdict still supports it but which
-carries `loop-withdrawn`, or whose auto-merge the listing shows off (one
-opened before the verdicts' results), is such a withdrawal that stopped
-part way, and is finished the same way (R6-2). A loop withdrawal is a
+carries `loop-withdrawn` is such a withdrawal that stopped part way, and is
+finished the same way (R6-2). So is one whose auto-merge the listing shows
+off (one opened before the verdicts' results), but only when its timeline
+says the loop turned it off (R7-3, `loop_disarm_hold`): the latest
+`auto_merge_disabled` event is `LOOP_AUTHOR`'s and no `DISARMED_MARKER`
+comment of the loop's follows it (R8-2). A person's disarm is a hold, and
+so is the proposal switch's, which comments that marker after it disarms;
+if that comment failed, the next `proposal` pass that finds the loop's
+disarm with no marker after it posts it (R8-3). The gap left: if the mode
+is switched to `auto` before any `proposal` pass posts it, the removal is
+finished as a pause. A loop withdrawal is a
 pause, not a decision: a closed removal the loop opened, labeled and
 closed itself decides nothing, so once the verdict supports an automatic
 removal again the retirement job opens a fresh one; a person who removes
@@ -302,6 +324,15 @@ NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the
                  "GitHub App token was not minted)")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
+#: Which path filed a retirement issue (R8-1), stamped in its body beside
+#: the subject's marker when it is created (or, for the proposal path,
+#: rewritten): the proposal path (`_issue_body`, `guidance_issue_action`)
+#: or the withdrawal path (`withdrawal_issue`). In `auto` mode a closed
+#: issue the proposal path filed declines the removal; one the withdrawal
+#: path filed declines nothing until the pause cap. An issue with neither
+#: stamp predates them and is read as a proposal (`issue_origin`).
+PROPOSAL_STAMP = "<!-- skills-evals:retirement-issue:proposal -->"
+WITHDRAWAL_STAMP = "<!-- skills-evals:retirement-issue:withdrawal -->"
 IMPACT_FILE = "docs/skill-impact.md"
 #: Who a removal notice mentions, so GitHub notifies him (#557).
 NOTICE_OWNER = "Adam-S-Daniel"
@@ -673,26 +704,28 @@ def runtime_refusal(checkout: Path, plugin: str, skill: str) -> str | None:
         raise RetireError(str(exc)) from None
 
 
+def issue_origin(body: str) -> str:
+    """Which path filed a retirement issue, from its body's stamp (R8-1):
+    "proposal", "withdrawal", or "legacy" for one with neither stamp, which
+    predates them. A legacy issue counts as a proposal: before the stamps
+    the committed mode was `proposal`, in which closing the issue declined,
+    so reading it as declined keeps that meaning, and the error it risks is
+    a removal not opened (a person can still remove by hand), never one
+    opened against a person's decline."""
+    if PROPOSAL_STAMP in body:
+        return "proposal"
+    if WITHDRAWAL_STAMP in body:
+        return "withdrawal"
+    return "legacy"
+
+
 def existing_issues(gh, skill: str) -> dict:
-    """{"open": [...], "closed": [...]}: the numbers, ascending, of every
-    issue, in any state, that github-actions[bot] opened with this skill's
-    marker. An issue anyone else opened is ignored, whatever it quotes."""
-    text = gh(["api", "--paginate",
-               f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
-               "--jq", ".[] | select(.pull_request == null) | "
-                       "{number: .number, body: (.body // \"\"), "
-                       "author: .user.login, state: .state}"])
-    marker = ISSUE_MARKER.format(skill=skill)
-    found = {"open": [], "closed": []}
-    for item in _json_lines(text):
-        if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
-                or marker not in item["body"]:
-            continue
-        number, state = item.get("number"), item.get("state")
-        if type(number) is not int or number < 1 or state not in found:
-            raise RetireError("an issue record from the API is malformed")
-        found[state].append(number)
-    return {state: sorted(numbers) for state, numbers in found.items()}
+    """{"open": [...], "closed": [...], "proposals": [...]}: the numbers,
+    ascending, of every issue, in any state, that github-actions[bot] opened
+    with this skill's marker, and of those the ones the withdrawal path did
+    not file (`issue_origin`). An issue anyone else opened is ignored,
+    whatever it quotes."""
+    return guidance_issues(gh, ISSUE_MARKER.format(skill=skill))
 
 
 def _figure(block, field):
@@ -1013,7 +1046,7 @@ def _issue_body(gates, skill, location, problem, run_url, usage=None,
            if mode_reason else
            "`evals/gate-policy.yml` sets `retirement_mode: proposal`, so a human "
            "removes it")
-    return (f"{ISSUE_MARKER.format(skill=skill)}\n"
+    return (f"{ISSUE_MARKER.format(skill=skill)}\n{PROPOSAL_STAMP}\n"
             f"The retirement verdict for `{skill}` is **retire** as of "
             f"{gates['as_of']}: {gates['skills'][skill].get('reason')}.\n\n"
             f"{usage_line(usage, skill, gates['as_of'])}\n\n"
@@ -1153,6 +1186,20 @@ def paused_heads(paused: list) -> list:
                    if isinstance(p.get("sha"), str) and SHA_RE.fullmatch(p["sha"])})
 
 
+def declined(found: dict, subject: str, mode: str, key: str) -> dict | None:
+    """In `auto` mode, the `none` action when a closed retirement issue the
+    proposal path filed (or one predating the stamps) declines the removal
+    (R8-1), whatever else is open: a person closed the proposal. A closed
+    issue the withdrawal path filed declines nothing until the pause cap.
+    `found` is `guidance_issues`'s result; None when nothing declines."""
+    closed = [n for n in found["closed"] if n in found["proposals"]]
+    if not closed:
+        return None
+    return {"action": "none", "mode": mode, key: subject, "issue": closed[0],
+            "reason": f"{subject} is already decided: its proposal issue #{closed[0]} is "
+                      "closed, which declines the removal, so none is opened"}
+
+
 def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage) -> dict:
     """The proposal path's action: create or update the skill's issue, or
     nothing when a closed one already decided it."""
@@ -1211,6 +1258,9 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         return {"action": "none", "mode": mode, "skill": skill,
                 "reason": f"{skill} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
+    decline = declined(existing_issues(gh, skill), skill, mode, "skill")
+    if decline:
+        return decline
     if len(paused) >= MAX_LOOP_PAUSES:
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
@@ -1323,8 +1373,8 @@ def commands(action: dict) -> list:
         return [["gh", "issue", "create", "-R", EVALS_REPO, "--title", action["title"],
                  "--body-file", "-"]]
     if kind == "update-issue":
-        return [["gh", "issue", "edit", str(action["issue"]), "-R", EVALS_REPO,
-                 "--body-file", "-"], *_cap_commands(action)]
+        return [*_cap_commands(action), ["gh", "issue", "edit", str(action["issue"]), "-R",
+                                         EVALS_REPO, "--body-file", "-"]]
     if kind == "removal":
         return [["git", "checkout", "-b", action["branch"]],
                 ["git", "rm", "-r", "--", action["path"]],
@@ -1355,7 +1405,9 @@ def commands(action: dict) -> list:
 
 
 def _cap_commands(action: dict) -> list:
-    """The dry run's line for the one comment the pause cap posts (R7-4)."""
+    """The dry run's line for the one comment the pause cap posts (R7-4),
+    made before the body edit that records CAP_MARKER (R8-4): if the comment
+    fails, the body still lacks the marker, so the next run posts it."""
     if not action.get("cap_comment"):
         return []
     return [["gh", "issue", "comment", str(action["issue"]), "-R", EVALS_REPO,
@@ -1393,9 +1445,9 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
         gh(commands(action)[0][1:], action["body"])
         return f"filed an issue for {action['skill']}"
     if kind == "update-issue":
-        gh(commands(action)[0][1:], action["body"])
-        return f"updated issue #{action['issue']} for {action['skill']}" + _cap_comment(
-            action, gh)
+        commented = _cap_comment(action, gh)  # R8-4: before the edit that records it
+        gh(commands(action)[-1][1:], action["body"])
+        return f"updated issue #{action['issue']} for {action['skill']}" + commented
     check_auto_env(env)
     checkout = Path(registries[TARGET]["path"])
     prepare_branch(checkout, action)
@@ -1511,15 +1563,17 @@ def guidance_issues(gh, marker: str) -> dict:
                "--jq", ".[] | select(.pull_request == null) | "
                        "{number: .number, body: (.body // \"\"), "
                        "author: .user.login, state: .state}"])
-    found = {"open": [], "closed": []}
+    found = {"open": [], "closed": [], "proposals": []}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
                 or marker not in item["body"]:
             continue
         number, state = item.get("number"), item.get("state")
-        if type(number) is not int or number < 1 or state not in found:
+        if type(number) is not int or number < 1 or state not in ("open", "closed"):
             raise RetireError("an issue record from the API is malformed")
         found[state].append(number)
+        if issue_origin(item["body"]) != "withdrawal":
+            found["proposals"].append(number)
     return {state: sorted(numbers) for state, numbers in found.items()}
 
 
@@ -1678,7 +1732,8 @@ def guidance_issue_action(gates, section, kind, run_url, mode_reason=None) -> di
                       "roster model (#124)" if kind == "retire" else
                       f"Shorten or merge guidance section {section}: it helps only alone "
                       "(#124)"),
-            "body": (f"{marker}\nThe guidance verdict for `{section}` is "
+            "body": (f"{marker}\n" + (f"{PROPOSAL_STAMP}\n" if kind == "retire" else "")
+                     + f"The guidance verdict for `{section}` is "
                      f"**{verdict.get('verdict')}** as of {gates['as_of']}: "
                      f"{verdict.get('reason')}.\n\n"
                      + ((f"`evals/gate-policy.yml` sets `guidance: retirement_mode: auto`, "
@@ -1739,13 +1794,21 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         return _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url)
     prs = guidance_open_prs(gh)
     if prs:
-        raise RetireError("a guidance removal pull request is already open: "
-                          + ", ".join(str(p.get("url")) for p in prs))
+        # R8-5: as for a skill, an open removal (one a person holds by
+        # turning its auto-merge off included) makes this pass wait, never fail.
+        return {"action": "none", "mode": mode, "section": section,
+                "reason": "a guidance removal pull request is already open in "
+                          f"{GUIDANCE_REPO}, so this removal waits for it: "
+                          + ", ".join(str(p.get("url")) for p in prs)}
     closed, paused = deciding(guidance_closed_removal_prs(gh, section))
     if closed:
         return {"action": "none", "mode": mode, "section": section,
                 "reason": f"{section} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
+    decline = declined(guidance_issues(gh, GUIDANCE_ISSUE_MARKER.format(section=section)),
+                       section, mode, "section")
+    if decline:
+        return decline
     if len(paused) >= MAX_LOOP_PAUSES:
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
@@ -1843,8 +1906,8 @@ def guidance_commands(action: dict) -> list:
         return [["gh", "issue", "create", "-R", EVALS_REPO, "--title", action["title"],
                  "--body-file", "-"]]
     if kind == "update-issue":
-        return [["gh", "issue", "edit", str(action["issue"]), "-R", EVALS_REPO,
-                 "--body-file", "-"], *_cap_commands(action)]
+        return [*_cap_commands(action), ["gh", "issue", "edit", str(action["issue"]), "-R",
+                                         EVALS_REPO, "--body-file", "-"]]
     if kind == "guidance-removal":
         return [["git", "checkout", "-b", action["branch"]],
                 ["edit", action["file"], f"remove ## {action['heading']}"],
@@ -1884,10 +1947,10 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
     if kind == "none":
         return action["reason"]
     if kind in ("create-issue", "update-issue"):
-        gh(guidance_commands(action)[0][1:], action["body"])
+        commented = _cap_comment(action, gh)  # R8-4: before the edit that records it
+        gh(guidance_commands(action)[-1][1:], action["body"])
         return (f"filed an issue for {action['section']}" if kind == "create-issue"
-                else f"updated issue #{action['issue']} for {action['section']}"
-                + _cap_comment(action, gh))
+                else f"updated issue #{action['issue']} for {action['section']}" + commented)
     check_auto_env(env)
     guidance_prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
@@ -2244,21 +2307,25 @@ def loop_disarm_hold(registry_gh, c: dict, subject: str) -> str | None:
     """Why a `disarmed` candidate (R6-2) is kept, or None when it is a
     withdrawal that stopped part way (R7-3): the latest
     `auto_merge_disabled` event on its timeline (`GET
-    repos/{r}/issues/{n}/timeline`, every page) must be LOOP_AUTHOR's, and
-    the loop must never have commented DISARMED_MARKER on it. A person's
-    disarm is a hold, and the proposal switch, which disarms with the
-    loop's App too, always leaves that comment, so neither is finished as a
-    pause. An unreadable timeline, or one with no such event, keeps it."""
+    repos/{r}/issues/{n}/timeline`, every page, oldest first) must be
+    LOOP_AUTHOR's, and the loop must not have commented DISARMED_MARKER on
+    it after that event (R8-2: a marker from an earlier disarm, which a
+    person re-armed since, says nothing about this one). A person's disarm
+    is a hold, and the proposal switch, which disarms with the loop's App
+    too, leaves that comment right after its disarm (or, if posting it
+    failed, the next `proposal` pass does, R8-3), so neither is finished as
+    a pause. An unreadable timeline, or one with no such event, keeps it."""
     try:
         events = _json_lines(registry_gh(c["timeline"]))
     except Exception:  # noqa: BLE001 - unknown: leave it alone
         return "who turned its auto-merge off cannot be read"
-    disabled = [e for e in events if e.get("event") == "auto_merge_disabled"]
-    if not disabled or disabled[-1].get("actor") != LOOP_AUTHOR:
+    disabled = [i for i, e in enumerate(events) if e.get("event") == "auto_merge_disabled"]
+    if not disabled or events[disabled[-1]].get("actor") != LOOP_AUTHOR:
         return "someone other than the loop turned its auto-merge off (a hold, not a withdrawal)"
     marker = DISARMED_MARKER.format(subject=subject)
     if any(e.get("event") == "commented" and e.get("actor") == LOOP_AUTHOR
-           and isinstance(e.get("body"), str) and marker in e["body"] for e in events):
+           and isinstance(e.get("body"), str) and marker in e["body"]
+           for e in events[disabled[-1] + 1:]):
         return "the proposal switch turned its auto-merge off"
     return None
 
@@ -2282,7 +2349,8 @@ def would_run(target: str, item: dict) -> list:
                 ["issue", "comment", "<the subject's open removal notice>", "-R", EVALS_REPO,
                  "--body-file", "-"]]
     if item["action"] == "disarm":
-        return [c["state"], c["view"], c["merge"], c["view"], c["comment"]]
+        # The timeline is read only when auto-merge is already off (R8-3).
+        return [c["state"], c["view"], c["merge"], c["view"], c["timeline"], c["comment"]]
     return []
 
 
@@ -2319,15 +2387,23 @@ def withdrawal_issue(item: dict, gates: dict, target: str, gh, run_url: str | No
     record the withdrawal (round 1's M4): the issue `--fallback-to-proposal`
     and proposal mode use (same marker, same author), so a withdrawn subject
     is never decided in silence. The oldest open one gets `comment` as a
-    comment, its body (the proposal's evidence) left as it is (R2-6);
-    otherwise one is filed with `body`."""
+    comment, its body (the proposal's evidence, and its PROPOSAL_STAMP)
+    left as it is (R2-6); otherwise one is filed with `body`, stamped
+    WITHDRAWAL_STAMP (R8-1)."""
     subject = item["subject"]
     marker, found = retirement_issues(gh, subject, target)
+    number = found["open"][0] if found["open"] else None
     if target == "skill":
         title = f"Retire skill {subject}: automatic removal withdrawn (#70)"
     else:
         title = f"Retire guidance section {subject}: automatic removal withdrawn (#124)"
-    if WITHDRAW_TARGETS[target]["mode"](gates) == "auto":
+    auto = WITHDRAW_TARGETS[target]["mode"](gates) == "auto"
+    if auto and number in found["proposals"]:
+        # R8-1: this issue is the proposal path's, so closing it declines.
+        decline = ("This issue is the subject's proposal, so closing it declines the "
+                   "removal: while it is closed the loop opens no removal for the subject. "
+                   f"{OVERRIDE}")
+    elif auto:
         # R6-7: in auto mode the retirement job reads this issue only once
         # the pause cap is reached (R7-4), so until then closing it declines
         # nothing.
@@ -2355,9 +2431,9 @@ def withdrawal_issue(item: dict, gates: dict, target: str, gh, run_url: str | No
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\nFiled by scripts/retire_skill.py --withdraw-stale (ADR 0014).\n\n"
             + AGENT_MARKER + "\n")
-    number = found["open"][0] if found["open"] else None
     return {"action": "update-issue" if number else "create-issue", "issue": number,
-            "title": title, "body": f"{marker}\n{note}", "comment": note}
+            "title": title, "body": f"{marker}\n{WITHDRAWAL_STAMP}\n{note}",
+            "comment": note}
 
 
 def close_removal_notices(item: dict, gates: dict, target: str, gh,
@@ -2457,6 +2533,13 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
         if armed:
             registry_gh(c["comment"], disarm_comment(item, run_url))
             return f"disarmed #{n}: {item['why']}"
+        # R8-3: the loop's own disarm with no marker after it is this switch's
+        # disarm whose comment failed; post it now, so an `auto` pass reads
+        # it as the switch's hold, not as a withdrawal stopped part way.
+        if loop_disarm_hold(registry_gh, c, item["subject"]) is None:
+            registry_gh(c["comment"], disarm_comment(item, run_url))
+            return (f"left #{n} open and disarmed, and posted the comment an earlier pass "
+                    f"could not: {item['why']}")
         return f"left #{n} open and disarmed: {item['why']}"
     add_withdrawn_label(c, registry_gh)
     # R6-4: read the label back; an add that exited 0 without landing would
