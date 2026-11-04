@@ -191,12 +191,23 @@ sections numbering about three times the historical weekly addition rate,
 bring them all to a verdict, then start a new batch). Only with
 `--batch-policy` (evals/batch-policy.yml; the weekly workflow passes it),
 and only from the policy's `start`. `batch_state` decides it each plan:
-  members: per kind (skill, guidance section), max(1, multiplier x the
-    policy's weekly addition rate, half rounded up). Candidates are the
-    subjects with a schedulable cell, never a private skill, whose status
-    is open (`batch_subjects`: verdict open, no removal pull request, no
-    blocking cell, some cell would plan a fire). High stakes first, then
-    the longest without a run (never run first), then name.
+  members (Adam's 2026-11-03 decision, fit the batch to the budget): a
+    target size per kind (skill, guidance section) of max(1, multiplier x
+    the weekly addition rate measured when the batch starts, half rounded
+    up; `batch_rates`, the policy's constant when a history is unreadable),
+    filled within the budget, `weekly_cap` x the period's weeks
+    (`fit_batch`). Candidates are the subjects with a schedulable cell,
+    never a private skill, whose status is open (`batch_subjects`: verdict
+    open, no removal pull request, no blocking cell, some cell would plan a
+    fire). Carried members first; then the kinds take turns, skills ranked
+    most used first, then high stakes, guidance sections (no per-section
+    use) high stakes first; then the longest without a run (never run
+    first), then name. Each cell with headroom is charged its remaining
+    observations, min(`pairs_per_cell`, the gate's `max_runs_per_cell` -
+    the observations it has), at its model's measured cost per observation
+    (`pair_costs`: points per paired run); a subject that alone would
+    overflow the room left waits, and a cheaper one after it can still join.
+    Never empty while a subject waits.
   lifetime: a batch stays until every member has left `open` (decided,
     blocked, stalled or gone) or it is due (`period_days` after its start),
     whichever is first. Then the next one starts at once: the old batch's
@@ -211,8 +222,10 @@ and only from the policy's `start`. `batch_state` decides it each plan:
     with the results tree. A plan that starts a batch writes it to
     `--batch-out` and sets `batch_started=true`; the weekly workflow's
     batch-publish job commits it there and as batches/<number>.json. The
-    record carries the previous batch's members with their final status.
-    A malformed record stops the plan (fail closed). The plan's `batch`
+    record carries the previous batch's members with their final status,
+    and for audit the rates and their basis, the target sizes, the fit
+    (budget, costs, total), each member's expected cost and the subjects
+    left waiting. A malformed record stops the plan (fail closed). The plan's `batch`
     adds each member's status now and `outside`, the cells the batch held
     back.
 
@@ -643,6 +656,15 @@ BATCH_SUBJECT_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,127}")
 # The bands a batch restricts to its members; safety, recheck, improve and
 # bare are not.
 BATCH_BANDS = ("missing", "near", "focus", "guidance-rest")
+BATCH_POLICY_KEYS = frozenset({"start", "period_days", "multiplier", "rates", "rate_window_days",
+                               "pairs_per_cell", "cost_window_days"})
+#: The files whose history is each kind's addition rate (`addition_histories`).
+BATCH_SKILL_HISTORY = "scripts/plugin_layout.json"
+BATCH_GUIDANCE_HISTORY = "agents-md/eval-coverage.yml"
+#: A history shorter than this is no rate: the policy's constant is used.
+BATCH_MIN_RATE_SPAN = timedelta(days=7)
+#: Float slack on the budget test, so a sum of costs equal to the budget fits.
+BATCH_BUDGET_SLACK = 1e-9
 
 
 #: The PlanError for a malformed evals/unscheduled.yml or evals/scope-auto.yml
@@ -1020,8 +1042,10 @@ def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
 
 def load_batch_policy(path: Path) -> dict | None:
     """evals/batch-policy.yml, validated, or None when the file is absent:
-    {start, period, multiplier, rates: {kind: per week}}. Any other shape is
-    a PlanError (fixed text)."""
+    {start, period, multiplier, rates: {kind: per week}, rate_window,
+    pairs_per_cell, cost_window}. `rates` are the fallback constants, used
+    for a kind whose addition history is unreadable (`batch_rates`). Any
+    other shape is a PlanError (fixed text)."""
     import yaml  # noqa: PLC0415
     if not path.exists():
         return None
@@ -1030,25 +1054,257 @@ def load_batch_policy(path: Path) -> dict | None:
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise PlanError("the batch policy is unreadable") from exc
     bad = PlanError("the batch policy is malformed")
-    if not isinstance(doc, dict) or set(doc) != {"start", "period_days", "multiplier", "rates"}:
+    if not isinstance(doc, dict) or set(doc) != BATCH_POLICY_KEYS:
         raise bad
     start = outcomes_mod.parse_time(doc["start"])
     period, multiplier, rates = doc["period_days"], doc["multiplier"], doc["rates"]
-    numbers = [multiplier, *(rates.values() if isinstance(rates, dict) else ())]
-    if start is None or not isinstance(period, int) or isinstance(period, bool) \
-            or not 1 <= period <= 60 or not isinstance(rates, dict) \
+    windows = (doc["rate_window_days"], doc["cost_window_days"])
+    pairs = doc["pairs_per_cell"]
+    numbers = [multiplier, pairs, *(rates.values() if isinstance(rates, dict) else ())]
+
+    def whole_days(value, low, high):
+        return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+
+    if start is None or not whole_days(period, 1, 60) \
+            or not whole_days(windows[0], BATCH_MIN_RATE_SPAN.days, 365) \
+            or not whole_days(windows[1], 1, 365) or not isinstance(rates, dict) \
             or set(rates) != set(BATCH_KINDS) \
             or any(not isinstance(n, (int, float)) or isinstance(n, bool)
-                   or not math.isfinite(n) or n < 0 for n in numbers) or multiplier <= 0:
+                   or not math.isfinite(n) or n < 0 for n in numbers) \
+            or multiplier <= 0 or pairs <= 0:
         raise bad
     return {"start": start, "period": timedelta(days=period), "multiplier": float(multiplier),
-            "rates": {kind: float(rates[kind]) for kind in BATCH_KINDS}}
+            "rates": {kind: float(rates[kind]) for kind in BATCH_KINDS},
+            "rate_window": timedelta(days=windows[0]), "pairs_per_cell": float(pairs),
+            "cost_window": timedelta(days=windows[1])}
 
 
-def batch_sizes(policy: dict) -> dict:
-    """Members per kind: max(1, multiplier x weekly rate, half rounded up)."""
-    return {kind: max(1, math.floor(policy["multiplier"] * policy["rates"][kind] + 0.5))
+def batch_sizes(policy: dict, rates: dict | None = None) -> dict:
+    """Members per kind, the batch's target size: max(1, multiplier x weekly
+    rate, half rounded up). `rates` are the measured ones (`batch_rates`);
+    without them, the policy's constants."""
+    rates = policy["rates"] if rates is None else rates
+    return {kind: max(1, math.floor(policy["multiplier"] * rates[kind] + 0.5))
             for kind in BATCH_KINDS}
+
+
+# ---------------------------------------------------------------------------
+# The batch's measured inputs (Adam's 2026-11-03 decision, "Fit the batch to
+# the budget": the rate is measured each period, and the batch takes as many
+# subjects as fit the period's budget, most-used first).
+
+def _git_out(root: Path, *args: str) -> str:
+    """`git <args>` in `root`, its stdout; OSError or CalledProcessError
+    when git cannot answer."""
+    return subprocess.run(["git", *args], cwd=root, capture_output=True, text=True,
+                          check=True).stdout
+
+
+def history_versions(root: Path, path: str, parse) -> list:
+    """[(commit time, names)] of every commit touching `path` in the checkout
+    at `root`, oldest first, `names` being `parse(text)` of the file at that
+    commit (an empty set where the commit deleted it). Raises PlanError when
+    the history cannot be read: no checkout, a shallow one (its oldest commit
+    would read as the file's first version), no commit of the file, or a
+    version `parse` refuses."""
+    unreadable = PlanError(f"the history of {path} is unreadable")
+    try:
+        if not (root / ".git").exists() \
+                or _git_out(root, "rev-parse", "--is-shallow-repository").strip() != "false":
+            raise unreadable
+        # First parent: main's own versions, at the time each one landed.
+        log = _git_out(root, "log", "--first-parent", "--format=%H %cI", "HEAD", "--", path)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise unreadable from exc
+    versions = []
+    for line in reversed(log.splitlines()):
+        sha, _, stamp = line.partition(" ")
+        when = outcomes_mod.parse_time(stamp)
+        if not re.fullmatch(r"[0-9a-f]{40}", sha) or when is None:
+            raise unreadable
+        try:
+            text = _git_out(root, "show", f"{sha}:{path}")
+        except subprocess.CalledProcessError:
+            versions.append((when, frozenset()))  # deleted at this commit
+            continue
+        except OSError as exc:
+            raise unreadable from exc
+        try:
+            versions.append((when, frozenset(parse(text))))
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            raise unreadable from exc
+    if not versions:
+        raise unreadable
+    return sorted(versions, key=lambda version: version[0])
+
+
+def layout_skills(text: str) -> set:
+    """The skills adam-agentskills' scripts/plugin_layout.json lists, across
+    its plugins (the ADR 0013 layout pin)."""
+    doc = json.loads(text)
+    out = set()
+    for body in doc["plugins"].values():
+        out.update(str(skill) for skill in body["skills"])
+    return out
+
+
+def coverage_sections(text: str) -> set:
+    """The section ids of _agent-guidance's agents-md/eval-coverage.yml: one
+    row per `##` heading of base.md and per file under agents-md/sections/,
+    keyed by an id that never changes when a heading is reworded."""
+    import yaml  # noqa: PLC0415
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError("not YAML") from exc
+    return {str(row["id"]) for row in doc}
+
+
+def addition_rate(versions: list, now: datetime, window: timedelta) -> dict | None:
+    """Subjects added per week over the trailing `window` from `versions`
+    ([(time, names)], oldest first): the names at `now` (the newest version
+    at or before it) not in the baseline, the newest version at or before
+    the window's start, over the weeks between. A file younger than the
+    window is measured from its first version, over its own age, so a bulk
+    import is that baseline, never a burst of additions. Names removed in
+    the window are not subtracted: the batch sizes for what arrives. None
+    when no version is at or before `now` or the span is under
+    BATCH_MIN_RATE_SPAN (too short to be a rate)."""
+    seen = [(t, names) for t, names in versions if t <= now]
+    if not seen:
+        return None
+    start = now - window
+    before = [(t, names) for t, names in seen if t <= start]
+    since, base = (start, before[-1][1]) if before else seen[0]
+    span = now - since
+    if span < BATCH_MIN_RATE_SPAN:
+        return None
+    added = len(seen[-1][1] - base)
+    weeks = span / timedelta(weeks=1)
+    return {"rate": added / weeks, "added": added, "weeks": weeks, "since": _iso(since)}
+
+
+def batch_rates(policy: dict, histories: dict, now: datetime) -> dict:
+    """{kind: {rate, source, ...}}: each kind's measured addition rate
+    (`addition_rate` over `histories[kind]`, the versions or a PlanError's
+    text when unreadable), or the policy's constant with `source: policy`
+    and the reason when it cannot be measured."""
+    out = {}
+    for kind in BATCH_KINDS:
+        versions = histories.get(kind)
+        measured = addition_rate(versions, now, policy["rate_window"]) \
+            if isinstance(versions, list) else None
+        if measured is not None:
+            out[kind] = {**measured, "source": "measured"}
+            continue
+        reason = versions if isinstance(versions, str) else (
+            "no history given" if versions is None
+            else "the history is shorter than the shortest rate span")
+        out[kind] = {"rate": policy["rates"][kind], "source": "policy", "reason": reason}
+    return out
+
+
+def addition_histories(registries: dict, guidance: Path | None) -> dict:
+    """{kind: versions or the reason they are unreadable} for `batch_rates`:
+    adam-agentskills' scripts/plugin_layout.json (skills) and
+    _agent-guidance's agents-md/eval-coverage.yml (guidance sections), from
+    the full-history checkouts the weekly workflow makes."""
+    sources = {"skill": ((registries.get("adam-agentskills") or {}).get("path"),
+                         BATCH_SKILL_HISTORY, layout_skills),
+               "guidance": (guidance, BATCH_GUIDANCE_HISTORY, coverage_sections)}
+    out = {}
+    for kind, (root, path, parse) in sources.items():
+        if not root:
+            out[kind] = f"no checkout holds {path}"
+            continue
+        try:
+            out[kind] = history_versions(Path(root), path, parse)
+        except PlanError as exc:
+            out[kind] = str(exc)
+    return out
+
+
+def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> dict:
+    """{roster model: mean allowance fraction per observation}: over the
+    routine runs of the last `window` whose cost_estimate.json carries
+    `points` and whose validated paired records (`records`,
+    compute_gates.build_index's `runs` and `guidance_runs`, any content
+    digest) are all on one model, their points over their observations. An
+    observation is what the gate counts toward `max_runs_per_cell`: one
+    paired run (a with run and a without run at one path), whatever its
+    trial count, so a 3-trial run costs its own measured points. A guidance
+    fire's `alone` pair is read for contrast, not counted in its cell, so
+    only its `in_situ` pair is an observation. Judge and guard calls are in a
+    run's points, so they are in the mean. A model with no such run is
+    absent."""
+    runs: dict = {}
+    for record in records:
+        parts = str(record.get("path", "")).split("/")
+        if parts[0] != guard.DEST_ROOT or len(parts) < 2:
+            continue
+        entry = runs.setdefault(parts[1], {"models": set(), "roles": {}, "newest": None})
+        entry["models"].add(record.get("model"))
+        if record.get("pair") in (None, "in_situ"):
+            entry["roles"].setdefault(record["path"], set()).add(record.get("role"))
+        at = _stamp_time(record.get("timestamp"))
+        if at is not None and (entry["newest"] is None or at > entry["newest"]):
+            entry["newest"] = at
+    points: dict = {}
+    observations: dict = {}
+    for run_id, entry in sorted(runs.items()):
+        count = sum(1 for roles in entry["roles"].values() if {"with", "without"} <= roles)
+        if len(entry["models"]) != 1 or None in entry["models"] or count <= 0 \
+                or entry["newest"] is None or not now - window <= entry["newest"] <= now:
+            continue
+        try:
+            doc = json.loads((tree / guard.DEST_ROOT / run_id / "cost_estimate.json")
+                             .read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+            continue
+        cost = doc.get("points") if isinstance(doc, dict) else None
+        if not isinstance(cost, (int, float)) or isinstance(cost, bool) \
+                or not math.isfinite(cost) or cost < 0:
+            continue
+        (model,) = entry["models"]
+        points[model] = points.get(model, 0.0) + cost
+        observations[model] = observations.get(model, 0) + count
+    return {model: points[model] / observations[model] for model in points}
+
+
+def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
+                 cap: int | None = None) -> float | None:
+    """A subject's expected cost to a verdict, in allowance fractions: over
+    its cells with headroom (`_produces_item`: undecided, schedulable, not
+    fixture-broken), each cell's model's measured mean cost per observation
+    (the dearest measured model for one with none) times the observations
+    it still needs: min(`pairs_per_cell`, `cap` - the gate's own count of
+    its observations, `pairs`), at least 0. `cap` is the gate policy's
+    `max_runs_per_cell` (None: no cap). None when no model's cost is
+    measured."""
+    if not costs:
+        return None
+    dearest = max(costs.values())
+    total = 0.0
+    for cell in cells:
+        if not _produces_item(cell):
+            continue
+        remaining = pairs_per_cell
+        if cap is not None:
+            done = cell.get("pairs")
+            done = done if isinstance(done, int) and not isinstance(done, bool) else 0
+            remaining = min(remaining, cap - done)
+        total += costs.get(cell["model"], dearest) * max(0.0, remaining)
+    return total
+
+
+def gate_cap(ctx: dict, kind: str) -> int | None:
+    """`max_runs_per_cell` from evals/gate-policy.yml, as the verdict
+    document carries it: its `guidance` block for a section (the `skills`
+    block when the document has none), its `skills` block for a skill. None
+    when absent."""
+    block = (ctx.get("guidance_policy") if kind == "guidance" else None) or ctx.get("policy")
+    cap = block.get("max_runs_per_cell") if isinstance(block, dict) else None
+    return cap if isinstance(cap, int) and not isinstance(cap, bool) else None
 
 
 def read_batch(tree: Path) -> dict | None:
@@ -1132,13 +1388,14 @@ def batch_state(ctx: dict, now: datetime) -> dict | None:
 
     The previous record stays while some member is open and it is not yet
     due. Otherwise a new batch starts: the previous batch's open members
-    first, in their order, keeping their `joined`; then, per kind, open
-    subjects not already in it up to `batch_sizes` (high stakes first, then
-    the longest without a run, never run first, then name). Decided,
-    blocked, stalled and gone members are not carried: each ended on its
-    own work item or verdict. When there is nothing to start (no carry and
-    no pick) the previous record stays, so a finished batch with no
-    candidates is not renumbered on every sweep."""
+    first, in their order, keeping their `joined`; then `fit_batch` adds open
+    subjects not already in it, up to each kind's target size
+    (`batch_sizes` of ctx["batch_rates"], the measured addition rates) and
+    within the batch budget (ctx["batch_budget"]). Decided, blocked, stalled
+    and gone members are not carried: each ended on its own work item or
+    verdict. When there is nothing to start (no carry and no pick) the
+    previous record stays, so a finished batch with no candidates is not
+    renumbered on every sweep."""
     policy = ctx.get("batch_policy")
     if not policy or now < policy["start"]:
         return None
@@ -1157,30 +1414,115 @@ def batch_state(ctx: dict, now: datetime) -> dict | None:
     carry = [m for m in old if status_of(m) == "open"]
     if previous and carry and now < outcomes_mod.parse_time(previous["due_at"]):
         return described(previous, False)
-    sizes = batch_sizes(policy)
-    floor = datetime.min.replace(tzinfo=timezone.utc)
-    taken = {(m["kind"], m["subject"]) for m in carry}
+    rates = ctx.get("batch_rates") or {
+        kind: {"rate": policy["rates"][kind], "source": "policy",
+               "reason": "no measured rate given"} for kind in BATCH_KINDS}
+    sizes = batch_sizes(policy, {kind: rates[kind]["rate"] for kind in BATCH_KINDS})
     number = previous["number"] + 1 if previous else 1
-    picks = []
-    for kind in BATCH_KINDS:
-        room = sizes[kind] - sum(1 for m in carry if m["kind"] == kind)
-        ranked = sorted((info["rank"], info["newest"] or floor, name)
-                        for (k, name), info in subjects.items()
-                        if k == kind and info["status"] == "open" and (k, name) not in taken)
-        picks += [{"kind": kind, "subject": name, "joined": number}
-                  for _rank, _newest, name in ranked[:max(0, room)]]
-    if previous and not carry and not picks:
+    fit = fit_batch(ctx, subjects, carry, sizes, number)
+    if previous and not carry and not fit["picks"]:
         return described(previous, False)
     record = {"schema_version": 1, "number": number, "started_at": _iso(now),
               "due_at": _iso(now + policy["period"]), "sizes": sizes,
-              "multiplier": policy["multiplier"], "rates": policy["rates"],
-              "members": [{"kind": m["kind"], "subject": m["subject"], "joined": m["joined"]}
-                          for m in carry] + picks,
+              "multiplier": policy["multiplier"],
+              "rates": {kind: rates[kind]["rate"] for kind in BATCH_KINDS},
+              # Audit (Adam's 2026-11-03 decision): how each rate was had,
+              # the budget and costs the fit used, and who waits.
+              "rate_basis": rates, "fit": fit["fit"],
+              "members": fit["carried"] + fit["picks"], "waiting": fit["waiting"],
               "previous": None if not previous else {
                   "number": previous["number"],
                   "members": [{"kind": m["kind"], "subject": m["subject"],
                                "status": status_of(m)} for m in old]}}
     return described(record, True)
+
+
+def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) -> dict:
+    """Fit a new batch to its budget (Adam's 2026-11-03 decision: "The batch
+    takes as many subjects as fit 50 points, most-used first. The rest
+    wait."). Pure. Returns {carried, picks, waiting, fit}.
+
+    Carried members stay whatever they cost, and their cost counts first.
+    The candidates, open subjects not carried, are ranked per kind. Skills:
+    most used first (the usage weight, `neutral_weights` of
+    ctx["skill_weights"]), then high stakes, then the longest without a run
+    (never run first), then name. Guidance has no per-section use, so its
+    sections rank high stakes first, then the longest without a run, then
+    name. The kinds take turns, so neither kind's list starves the other. A
+    candidate joins while its kind is under its target size and its expected
+    cost (`subject_cost`, the remaining observations of its cells with
+    headroom up to the gate's `max_runs_per_cell`) fits the room the budget
+    has left (equal fits); one that
+    alone would overflow the room is skipped, so a cheaper later one can
+    still join. When no cost is measured (no ctx["batch_pair_costs"]) or no
+    budget is known, the fit picks by target size alone and says so. When
+    nothing at all would join while subjects wait, the cheapest candidate
+    joins anyway (`floor`), so the batch is never empty while work waits."""
+    policy = ctx["batch_policy"]
+    budget = ctx.get("batch_budget")
+    costs = ctx.get("batch_pair_costs") or {}
+    pairs = policy.get("pairs_per_cell")
+    by_subject: dict = {}
+    for cell in ctx["cells"]:
+        key = ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+        by_subject.setdefault(key, []).append(cell)
+    priced = bool(costs) and budget is not None and pairs is not None
+
+    def cost_of(kind, name):
+        return subject_cost(by_subject.get((kind, name), []), costs, pairs,
+                            gate_cap(ctx, kind)) if priced else None
+
+    carried = [{"kind": m["kind"], "subject": m["subject"], "joined": m["joined"],
+                "cost": cost_of(m["kind"], m["subject"])} for m in carry]
+    spent = sum(m["cost"] or 0.0 for m in carried)
+    taken = {(m["kind"], m["subject"]) for m in carry}
+    open_skills = [name for (k, name), info in subjects.items()
+                   if k == "skill" and info["status"] == "open"]
+    weights = neutral_weights({**{name: None for name in open_skills},
+                               **(ctx.get("skill_weights") or {})})
+    floor_time = datetime.min.replace(tzinfo=timezone.utc)
+    ranked = {}
+    for kind in BATCH_KINDS:
+        # Skills: most used first, then stakes. Guidance has no per-section
+        # use, so stakes stay first there.
+        ranked[kind] = [name for _w, _r, _n, name in sorted(
+            (-(weights.get(name, 0.0) if kind == "skill" else 0.0), info["rank"],
+             info["newest"] or floor_time, name)
+            for (k, name), info in subjects.items()
+            if k == kind and info["status"] == "open" and (k, name) not in taken)]
+    room = {kind: sizes[kind] - sum(1 for m in carry if m["kind"] == kind)
+            for kind in BATCH_KINDS}
+    turns = [(kind, name) for i in range(max((len(v) for v in ranked.values()), default=0))
+             for kind in BATCH_KINDS if i < len(ranked[kind]) for name in [ranked[kind][i]]]
+    picks, waiting = [], []
+    for kind, name in turns:
+        cost = cost_of(kind, name)
+        if room[kind] <= 0:
+            waiting.append({"kind": kind, "subject": name, "cost": cost, "reason": "size"})
+        elif priced and spent + cost > budget + BATCH_BUDGET_SLACK:
+            waiting.append({"kind": kind, "subject": name, "cost": cost, "reason": "budget"})
+        else:
+            picks.append({"kind": kind, "subject": name, "joined": number, "cost": cost})
+            spent += cost or 0.0
+            room[kind] -= 1
+    floor = False
+    if not carried and not picks and waiting:
+        # Never empty while subjects wait: the cheapest joins, over budget.
+        cheapest = min(waiting, key=lambda w: (w["cost"] if w["cost"] is not None else 0.0))
+        waiting.remove(cheapest)
+        picks.append({"kind": cheapest["kind"], "subject": cheapest["subject"],
+                      "joined": number, "cost": cheapest["cost"]})
+        spent += cheapest["cost"] or 0.0
+        floor = True
+    # The record lists each kind's picks together, skills first, in the
+    # order they joined.
+    picks.sort(key=lambda m: BATCH_KINDS.index(m["kind"]))
+    fit = {"budget": budget, "pairs_per_cell": pairs, "pair_costs": costs,
+           "priced": priced, "total": spent if priced else None, "floor": floor}
+    if not priced:
+        fit["reason"] = ("no budget known" if budget is None
+                         else "no cost per pair measured for any roster model")
+    return {"carried": carried, "picks": picks, "waiting": waiting, "fit": fit}
 
 
 def batch_members(ctx: dict) -> set | None:
@@ -3073,11 +3415,35 @@ def gather(args, now: datetime) -> dict:
                                            now, private_skills(evals_dir)),
             "skill_edit_lessons": lesson_evidence.skill_evidence(args.lessons, "skill-edit"),
             # THE BATCH: only with --batch-policy (the weekly workflow's).
-            "batch_policy": (load_batch_policy(args.batch_policy)
-                             if args.batch_policy is not None else None),
-            "previous_batch": (read_batch(args.results_tree)
-                               if args.batch_policy is not None else None),
+            **batch_inputs(args, registries, limits, now),
             "private_skills": private_skills(evals_dir)}
+
+
+def batch_inputs(args, registries: dict, limits: dict, now: datetime) -> dict:
+    """THE BATCH's ctx keys: the policy and the previous record, and what a
+    new batch is sized and fitted with (Adam's 2026-11-03 decision): the
+    measured addition rates, the period's budget (`weekly_cap` x the
+    period's weeks) and each roster model's measured cost per pair. All None
+    without --batch-policy."""
+    policy = load_batch_policy(args.batch_policy) if args.batch_policy is not None else None
+    if policy is None:
+        return {"batch_policy": None, "previous_batch": None, "batch_rates": None,
+                "batch_budget": None, "batch_pair_costs": None}
+    import compute_gates  # noqa: PLC0415
+    rates = batch_rates(policy, addition_histories(registries, args.guidance), now)
+    # Every validated paired run, any content digest: a pair's cost does not
+    # depend on which version of the subject it measured.
+    index = compute_gates.build_index(args.results_tree, args.evals_dir,
+                                      compute_gates.parse_as_of(args.as_of))
+    for kind, basis in rates.items():
+        if basis["source"] == "policy":
+            # A fixed text and a kind only: the reason names no subject.
+            print(f"batch: the {kind} addition rate is the policy's constant")
+    return {"batch_policy": policy, "previous_batch": read_batch(args.results_tree),
+            "batch_rates": rates,
+            "batch_budget": limits["weekly_cap"] * (policy["period"] / timedelta(weeks=1)),
+            "batch_pair_costs": pair_costs(index["runs"] + index["guidance_runs"],
+                                           args.results_tree, now, policy["cost_window"])}
 
 
 def _fire_pair(runs: list, now: datetime, since: datetime | None = None) -> tuple:
@@ -3140,6 +3506,17 @@ def summary_lines(plan: dict) -> list:
         lines.append(f"Batch {record['number']}{' (started now)' if batch['started'] else ''}"
                      f", due {record['due_at']}: {members or 'no members'}; "
                      f"{batch['outside']} cell(s) outside it wait")
+        fit = record.get("fit")
+        if fit:  # a record from before the fit has none
+            rates = ", ".join(f"{kind} {record['rates'][kind]:.2f}/week "
+                              f"({record['rate_basis'][kind]['source']})"
+                              for kind in BATCH_KINDS)
+            spend = (f"{fit['total'] * 100:.1f} of {fit['budget'] * 100:.1f} points"
+                     if fit["priced"] else f"not priced: {fit['reason']}")
+            lines.append(f"Batch fit: rates {rates}; target sizes "
+                         + ", ".join(f"{k} {v}" for k, v in record["sizes"].items())
+                         + f"; {spend}; {len(record['waiting'])} subject(s) wait"
+                         + (" (floor: the cheapest joined over budget)" if fit["floor"] else ""))
     lines.append("Guidance focus: " + (", ".join(
         f"{f['section']} ({f['score']:.3f})" for f in plan.get("guidance_focus", []))
         or "none"))
