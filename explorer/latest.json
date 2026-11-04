@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T03:23:04Z",
+  "generated_at": "2026-11-04T03:25:40Z",
   "requests": [
    {
     "closed_at": null,
@@ -333,7 +333,7 @@
    "requests_open": 28
   }
  },
- "generated_at": "2026-11-04T03:22:03Z",
+ "generated_at": "2026-11-04T03:24:34Z",
  "guidance": {
   "removed": [
    {
@@ -9567,7 +9567,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T03:19:43Z",
+ "newest_run": "2026-11-04T03:22:42Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -11436,11 +11436,11 @@
       "votes": true
      },
      {
-      "gain": -3.6,
-      "high": 44.5,
+      "gain": -5.7,
+      "high": 36.1,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "git-identity",
       "votes": true
@@ -11495,7 +11495,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 29,
+   "current_text_runs": 30,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -11506,6 +11506,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T03:22:42Z",
+     "cli_version": "2.1.318",
+     "fixture": "git-identity",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T032009Z-972d6e/debug-github-workflows/20261104T032242Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.12411420000000001,
+      "judge_mean": 8.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.0780711,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:58:08Z",
      "cli_version": "2.1.318",
@@ -24000,7 +24021,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "59cb6863719adece4881fe9fac786128182ab6b4",
-  "results_commit": "6e45cbb1a64a86bc2f7102bac71977db594dbe66"
+  "results_commit": "e12ae26824e5b5ef6bd12db90036d79dd6d55f90"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
