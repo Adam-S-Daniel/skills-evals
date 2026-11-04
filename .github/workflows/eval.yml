@@ -284,7 +284,7 @@ on:
 # never touches, before, after or alongside that job, never depending on
 # its outcome or its workspace.
 #
-# `disarm` (pull-requests: write, contents: read): B1 (round 4 on #209,
+# `disarm` (pull-requests: write, contents: write, for --disable-auto): B1 (round 4 on #209,
 # blocker). `needs: roster` only — it runs BEFORE the `eval` job's agent
 # ever starts, never after. It finds whatever pull request is currently open
 # from `roster/proposal` (the SAME validated, owner-filtered lookup
@@ -1322,9 +1322,14 @@ jobs:
     if: ${{ !cancelled() && needs.roster.result != 'skipped' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # `contents: write` because GitHub refuses `--disable-auto` to a job
+    # token with `contents: read` ("Resource not accessible by integration
+    # (disablePullRequestAutoMerge)", fixture-pr-gate.yml, 2026-11-04). No
+    # checkout, no repository code, no agent in this job, and it finishes
+    # before `roster-pr` arms anything (invariant 2).
     permissions:
       pull-requests: write
-      contents: read
+      contents: write
     steps:
       # The SAME validated, owner-filtered lookup `roster-pr`'s
       # `find_roster_pr` uses (server-side `head=` filter, re-asserted

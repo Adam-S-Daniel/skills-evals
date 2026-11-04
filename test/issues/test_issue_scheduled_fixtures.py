@@ -370,7 +370,8 @@ class TestScheduledFixtures(unittest.TestCase):
                     "eval": {"contents": "read", "id-token": "write"},
                     "publish": {"contents": "write"},
                     "roster": {"contents": "read", "id-token": "write", "issues": "write"},
-                    "disarm": {"contents": "read", "pull-requests": "write"},
+                    # `contents: write`: GitHub refuses --disable-auto without it.
+                    "disarm": {"contents": "write", "pull-requests": "write"},
                     "roster-pr": {"contents": "read", "pull-requests": "write", "issues": "write"},
                     "roster-wait": {"contents": "read", "pull-requests": "write"},
                     "failure-watch": {"issues": "write"}}
