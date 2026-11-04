@@ -1,6 +1,7 @@
 # Preview a PR of this repo inside the adamdaniel.ai site: mirrors the PR's
 # tool/index.html to a draft PR in the site repo, whose existing deploy-preview
-# pipeline then publishes https://preview-pr<N>.adamdaniel.ai/tools/evals/
+# pipeline then publishes at SITE_PREVIEW_URL (for adamdaniel.ai,
+# https://preview-pr{pr}.adamdaniel.ai/tools/evals/)
 # rendering this PR's page (one page; it switches between skills and guidance
 # itself). The preview URL is
 # commented back here. Closing this PR closes the mirror (the site tears the
@@ -10,6 +11,9 @@
 #
 # SITE_REPO is a repository variable with no default (see README, Publishing to
 # adamdaniel.ai): unset fails the run naming it, `none` skips cleanly.
+# SITE_PREVIEW_URL is the preview page's URL with `{pr}` where the site PR's
+# number goes; it has no default either, and the mirror leg fails naming it when
+# a site is set and it is not.
 #
 # No paths filter, deliberately: the teardown leg must run even when the final
 # diff no longer touches tool/index.html, and the mirror leg closes a stale
@@ -38,6 +42,7 @@ permissions:
 
 env:
   SITE_REPO: ${{ vars.SITE_REPO }}
+  SITE_PREVIEW_URL: ${{ vars.SITE_PREVIEW_URL }}
   PREVIEW_BRANCH: tool-preview/skills-evals-pr-${{ github.event.pull_request.number }}
   PR_NUMBER: ${{ github.event.pull_request.number }}
   COMMENT_MARKER: "<!-- skills-evals-site-preview -->"
@@ -79,6 +84,16 @@ jobs:
           else
             echo "::error::SITE_REPO is not owner/name or none"
             exit 1
+          fi
+          if [ "$SITE_REPO" != none ]; then
+            if [ -z "$SITE_PREVIEW_URL" ]; then
+              echo "::error::SITE_PREVIEW_URL is not set. Set the repository variable SITE_PREVIEW_URL (Settings > Secrets and variables > Actions > Variables) to the preview page's https URL with {pr} where the site pull request's number goes."
+              exit 1
+            fi
+            case "$SITE_PREVIEW_URL" in
+              https://*'{pr}'*) ;;
+              *) echo "::error::SITE_PREVIEW_URL must be an https URL containing {pr}"; exit 1 ;;
+            esac
           fi
 
       - name: Check the App credentials exist
@@ -173,7 +188,7 @@ jobs:
           SITE_PR: ${{ steps.mirror.outputs.site_pr }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          page_url="https://preview-pr${SITE_PR}.adamdaniel.ai/tools/evals/"
+          page_url=${SITE_PREVIEW_URL//'{pr}'/$SITE_PR}
           comment=$(cat <<EOF
           ${COMMENT_MARKER}
           **Site preview:** ${page_url} (the Skills and Guidance switch is on the page)
