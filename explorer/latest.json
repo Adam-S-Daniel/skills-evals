@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:29:42Z",
+  "generated_at": "2026-11-04T02:31:51Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:28:42Z",
+ "generated_at": "2026-11-04T02:31:02Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:27:28Z",
+ "newest_run": "2026-11-04T02:29:07Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -13950,21 +13950,21 @@
       "votes": true
      },
      {
-      "gain": 80.0,
+      "gain": 60.0,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "shifted-draft",
       "votes": true
      },
      {
-      "gain": 77.8,
+      "gain": 79.2,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "single-file",
       "votes": true
@@ -13980,10 +13980,10 @@
       "votes": true
      }
     ],
-    "helps": 0.0,
+    "helps": 0.06705539358600587,
     "keep_family": 8,
-    "keep_pairs": 3,
-    "max_pairs": 3,
+    "keep_pairs": 4,
+    "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": null
    },
@@ -13999,7 +13999,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 12,
+   "current_text_runs": 14,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
@@ -14010,6 +14010,48 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T02:29:07Z",
+     "cli_version": "2.1.318",
+     "fixture": "single-file",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T022658Z-35b93a/fan-out-triage/20261104T022907Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1621926,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 6,
+      "cost_usd": 0.16231790000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-04T02:27:09Z",
+     "cli_version": "2.1.318",
+     "fixture": "shifted-draft",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T022424Z-3201a2/fan-out-triage/20261104T022709Z/report.md",
+     "with": {
+      "checks_passed": 1,
+      "checks_total": 5,
+      "cost_usd": 0.15448330000000002,
+      "judge_mean": 8.8,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 5,
+      "cost_usd": 0.0894803,
+      "judge_mean": 6.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:41:27Z",
      "cli_version": "2.1.318",
@@ -23673,7 +23715,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "d77586bceda0f4c7956c115ef396571184494cd9"
+  "results_commit": "66bb6e4522dca94024d07b77b7f5d54c40bf6237"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
