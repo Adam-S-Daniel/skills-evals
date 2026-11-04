@@ -29,9 +29,13 @@ only while its subject's verdict in FILE (compute_gates.py's output) still
 supports an automatic removal and the mode is `auto`
 (retire_skill.refresh_allowed; ADR 0014, PR #724 round 1's M2): bringing a
 stale one up to date would re-run its checks and let auto-merge fire before
-the withdrawal reaches it. Exit 0 when the head may be refreshed (any other
-head always may), 4 when it may not, with `reason=` naming why. A missing
-or unreadable FILE is unknown data, so no removal is refreshed.
+the withdrawal reaches it. Nor while a closed proposal issue in skills-evals
+declines it (PR #751 round 10's R10-4), read with `gh` and `GH_TOKEN`, so a
+decline the withdrawal pass could not finish is not merged by a refresh.
+Exit 0 when the head may be refreshed (any other head always may), 4 when
+it may not, with `reason=` naming why. A missing or unreadable FILE is
+unknown data, and an unreadable issue list unknown too, so then no removal
+is refreshed.
 """
 from __future__ import annotations
 
@@ -192,21 +196,22 @@ def merge(repo: Path, base: str) -> str:
     return "merged"
 
 
-def removal_check(gates_path: Path, head: str) -> int:
+def removal_check(gates_path: Path, head: str, gh=None) -> int:
     """`removal-check`: 0 when `head` may be refreshed, 4 when it may not.
     retire_skill is imported here, not at the top, so `merge` keeps needing
-    nothing beyond the standard library."""
+    nothing beyond the standard library. `gh` reads the subject's retirement
+    issues (default: the `gh` CLI with `GH_TOKEN`)."""
     import retire_skill
     try:
         gates = retire_skill.load_gates(gates_path)
     except retire_skill.RetireError:
         gates = None
-    ok, why = retire_skill.refresh_allowed(gates, head)
+    ok, why = retire_skill.refresh_allowed(gates, head, gh or retire_skill.default_gh)
     print(f"outcome={'refresh' if ok else 'skip'}\nreason={why}")
     return 0 if ok else 4
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, gh=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="command", required=True)
     m = sub.add_parser("merge")
@@ -217,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--head", required=True)
     args = parser.parse_args(argv)
     if args.command == "removal-check":
-        return removal_check(args.gates, args.head)
+        return removal_check(args.gates, args.head, gh)
     try:
         outcome = merge(args.repo, args.base)
     except Unresolvable as exc:

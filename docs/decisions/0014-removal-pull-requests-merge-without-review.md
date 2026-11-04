@@ -978,6 +978,43 @@ fails without it:
   proposal issue is filed, so a person gets a decline to make. In
   `proposal` mode, and at the cap, any closed issue still decides.
 
+**Round 10 (2026-11-04).** Six minor findings, each fixed with a test that
+fails without it:
+
+- *A decline on a labeled removal read as a pause (R10-1).* A withdrawal
+  that stopped part way leaves `loop-withdrawn` on, and a decline closed the
+  removal with it, so the closed removal read as a pause and counted toward
+  the cap. The decline now takes the label off and reads it back before it
+  closes; a label that stays on fails the item and leaves the removal open.
+  Without the label the closed removal decides the subject, so no later
+  removal pushes to its branch, which is therefore kept. We fixed the code,
+  not the docs, because the docs described the outcome the decline exists
+  for.
+- *The decline overrode a person's re-arm, and its comments overpromised
+  (R10-2).* Any close of a proposal or legacy issue still declines,
+  whatever its `state_reason`, and this is now documented. But an armed
+  removal whose latest `auto_merge_enabled` event is a person's, later than
+  the issue's `closed_at`, is left for that person: turning auto-merge on
+  again overrides the close. An unreadable timeline or a missing time does
+  not. The decline's comments now say the closed removal decides the
+  subject and reopening the issue does not resume the loop, which is what
+  happens.
+- *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
+  takes the subject's pause count, and at `MAX_LOOP_PAUSES` any closed
+  retirement issue decides on the lowered path too. At the cap, a subject a
+  closed issue decides gets `none`, so no cap comment asks the owner again.
+- *A refresh could merge a failed decline (R10-4).* `refresh_allowed` now
+  reads the subject's retirement issues and refuses a removal a closed
+  proposal declines, and refuses when the list cannot be read. The refresh
+  job reads them with `issues: read`.
+- *The branch conflicted with `main` in AGENTS.md (R10-5).* `main` was
+  merged in with a merge commit, keeping its text and re-applying this
+  branch's line changes; the file stays under 32,768 bytes.
+- *Test gaps (R10-6).* Tests now pin the URL check on a decline and an
+  unreadable item, the Actions check on a decline-only pass, the guidance
+  removal's note on its open proposal issue, and an unreadable issue list
+  in that note being named, not raised.
+
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a
 duplicate PR comment) when the next pass converges; a person who closes the

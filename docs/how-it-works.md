@@ -791,13 +791,16 @@ back to `proposal`: one skills-evals issue that is filed or updated and that
 a human acts on; once that issue is closed, the skill is not proposed
 again. In `auto` mode no removal is opened for it either: the proposal path
 stamps the issue it files, and a closed one with that stamp (or one older
-than the stamps, which has none) declines the removal for good, even once
+than the stamps, which has none) declines the removal for good, whatever the
+close reason ("completed" and "not planned" alike), even once
 the reason it was only a proposal is gone (a `removal: proposal` verdict
 that firms up to `auto`, the token coming back, or the mode switched from
 `proposal` to `auto`). A closed issue the withdrawal path filed carries its
 own stamp and declines nothing until the pause cap (below); while `auto` is
 lowered to a proposal short of the cap, it does not count as already
 decided either, so a fresh proposal issue is filed for a person to decline.
+At the cap any closed retirement issue decides on that lowered path too, and
+no cap comment is posted on another issue of a subject one decides.
 If the reason for the proposal goes away while its issue is still open, a
 removal opens and the issue gets a comment linking it. Closing that issue
 then still declines the removal: the next withdrawal pass closes the open
@@ -917,13 +920,22 @@ reopening it with the label only gets it withdrawn again.
 removal's subject's retirement issues. If a person has closed its proposal
 issue (one the proposal path stamped, or an older one with no stamp) while
 the removal was open, the removal is declined, whatever its verdict and in
-either mode. Auto-merge is turned off and read back, a comment cites the
-closed issue, and the pull request is closed as a decision: it gets no
-`loop-withdrawn` label, so the closed removal decides the subject too, and
-its branch is kept. No retirement issue is filed, since its text would say
-closing it declines nothing. The closed issue gets a comment and stays
-closed, and any open removal notice is closed. If the issue list cannot be
-read, that pull request is left as it is and the step fails.
+either mode. Any close counts, whatever its reason. Auto-merge is turned
+off and read back. A `loop-withdrawn` label left by a withdrawal that
+stopped part way is taken off and read back; if it stays on, the pull
+request is left open and the step fails. Then a comment cites the closed
+issue, and the pull request is closed as a decision with no
+`loop-withdrawn` label, so the closed removal decides the subject: the loop
+opens no removal for it again, even if the issue is reopened, and its branch
+is kept, since no later removal pushes to it. No retirement issue is filed,
+since its text would say closing it declines nothing. The closed issue gets
+a comment saying so and stays closed, and any open removal notice is closed.
+If the issue list cannot be read, that pull request is left as it is and
+the step fails. A person who turned auto-merge on again after closing the
+issue overrides the close: when the latest `auto_merge_enabled` event on an
+armed removal is someone's other than the loop's and later than the issue's
+close, the pass leaves that pull request alone for a person. An unreadable
+timeline, or a missing time, does not override it.
 
 One pull request's failure does not stop the pass: the others still act,
 every status line is printed, and the step then fails.
@@ -955,8 +967,10 @@ only keeps pull requests needs no token. The issue uses the job's token.
 
 `loop-pr-refresh.yml` brings a removal pull request up to date only while
 `scripts/refresh_loop_prs.py removal-check` finds its verdict still
-supported in `auto` mode. With the verdicts unknown, it refreshes none, so a
-refresh never re-runs a stale removal's checks. Its push is leased on the
+supported in `auto` mode and no closed proposal issue declining it. With the
+verdicts unknown, or the issue list unreadable, it refreshes none, so a
+refresh never re-runs a stale or declined removal's checks, even when the
+decline itself failed in that run's withdraw job. Its push is leased on the
 head it fetched, so it never recreates a branch a withdrawal just deleted.
 
 Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.

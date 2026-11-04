@@ -62,8 +62,11 @@ name: Refresh loop pull requests
 # closed after that same ingest, not at the next daily run. The refresh then
 # brings a `retire-skill/` (or `retire-guidance/`) pull request up to date
 # only while `refresh_loop_prs.py removal-check` says its verdict still
-# supports an automatic removal in `auto` mode; with the verdicts unknown (the
-# `withdraw` job failed) no removal is refreshed. Withdrawal writes only on
+# supports an automatic removal in `auto` mode and no closed proposal issue
+# declines it (read with the job token, `issues: read`; an unreadable issue
+# list refreshes nothing, so a decline the withdraw job could not finish is
+# never merged by a refresh, round 10's R10-4); with the verdicts unknown
+# (the `withdraw` job failed) no removal is refreshed. Withdrawal writes only on
 # `workflow_run`; a dispatch computes the verdicts for the refresh's check and
 # withdraws nothing. The withdraw job's tokens: the eval-improve App, minted
 # per repository (adam-agentskills, then _agent-guidance) with
@@ -76,8 +79,11 @@ name: Refresh loop pull requests
 # opened, labeled and closed itself decides nothing, so the retirement job
 # opens a fresh removal if the verdict supports one again. A removal whose
 # subject's proposal issue a person closed while it was open is declined
-# instead: disarmed and closed as a decision, with no label and no new issue
-# (round 9's R9-1).
+# instead (round 9's R9-1): disarmed, its `loop-withdrawn` label taken off and
+# read back (R10-1), and closed as a decision with no new issue, so the
+# closed removal decides the subject and its branch is kept. Any close of
+# the issue declines, whatever its reason; one a person re-armed after that
+# close is left for a person (R10-2).
 
 on:
   workflow_run:
@@ -233,6 +239,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      issues: read
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1

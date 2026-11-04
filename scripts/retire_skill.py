@@ -84,11 +84,14 @@ while a closed retirement issue the proposal path filed (`PROPOSAL_STAMP`,
 or an issue with no stamp, which predates the stamps) stands, whatever
 else is open (R8-1): auto mode files that issue too, when a verdict allows
 only a proposal or no token reached the run, and a person who closed it
-declined the removal. A closed issue the withdrawal path filed
+declined the removal; any close does, whatever its reason
+(`state_reason` is not read). A closed issue the withdrawal path filed
 (`WITHDRAWAL_STAMP`) decides nothing until the pause cap: while auto mode is
 lowered to a proposal short of the cap, such an issue does not count as
 already decided either, and a fresh proposal issue is filed for a person to
-decline (R9-5; in `proposal` mode, or at the cap, any closed issue decides).
+decline (R9-5; in `proposal` mode, or at the cap, any closed issue decides:
+the lowered path counts the subject's loop pauses too, and at the cap a
+closed issue beside an open one gets no cap comment, R10-3).
 A proposal issue that is open when a removal opens gets a comment linking it
 (`open_proposal_note`): closing the issue still declines that removal, since
 the withdrawal pass closes it (R9-1, below); a removal that has merged is
@@ -238,14 +241,22 @@ proposal issue (proposal-stamped, or legacy), a person declined the removal
 while it was open, which the retirement job never reads while a loop pull
 request is open. That pull request is a `decline`, whatever its verdict and
 in either mode (a `keep`, a `disarm` and a `withdraw` alike): auto-merge is
-turned off and read back, a comment (`DECLINED_MARKER`) cites the closed
-issue, and the pull request is closed as a decision, with no
-`loop-withdrawn` label (so the closed removal decides the subject too), its
-branch kept and no new retirement issue (one saying that closing it
-declines nothing would be wrong); then, best effort, the closed issue gets a
-comment and stays closed, and any open removal notice is closed as in step 7.
-An unreadable issue list fails that pull request's item (exit 2) and writes
-nothing to it.
+turned off and read back, `loop-withdrawn` is taken off if a withdrawal that
+stopped part way left it on, and read back (R10-1; a label that stays on
+fails the item and the pull request is left open), a comment
+(`DECLINED_MARKER`) cites the closed issue, and the pull request is closed
+as a decision, with no `loop-withdrawn` label, so the closed removal decides
+the subject: no removal is opened for it again, even if the issue is
+reopened, and its branch is kept, since no later removal pushes to it. No
+new retirement issue is filed (one saying that closing it declines nothing
+would be wrong); then, best effort, the closed issue gets a comment and
+stays closed, and any open removal notice is closed as in step 7. An
+unreadable issue list fails that pull request's item (exit 2) and writes
+nothing to it. One exception (R10-2, `person_rearm`): an armed removal
+whose latest `auto_merge_enabled` event is someone's other than
+`LOOP_AUTHOR`, created after the declining issue's `closed_at`, is left for
+a person, untouched: turning auto-merge on again overrides the close. An
+unreadable timeline, or a time missing on either side, does not.
 
 A failure at steps 1 to 5 leaves the pull request open for the next pass.
 In `auto` mode an open removal whose verdict still supports it but which
@@ -286,7 +297,10 @@ main only, and a missing token with something to withdraw exits 2. One
 pull request's failure does not stop the others: every status line is
 printed and the pass exits 2 at the end.
 `refresh_allowed` is the same verdict read for loop-pr-refresh.yml, which
-brings a removal up to date only while it would still be kept.
+brings a removal up to date only while it would still be kept, and only
+while no closed proposal issue declines it (R10-4: an unreadable issue list
+refreshes nothing), so a decline the withdrawal pass could not finish is
+not merged by a refresh.
 """
 
 from __future__ import annotations
@@ -1202,6 +1216,17 @@ def cap_notice(action: dict, gh, subject: str, count: int) -> dict:
     return action
 
 
+def capped_decided(found: dict, mode: str, key: str, subject: str, count: int) -> dict:
+    """At the pause cap, the `none` action for a subject a closed retirement
+    issue decides (R10-3): at the cap any closed issue decides, so no cap
+    comment asks the person again, even beside an open issue."""
+    number = found["closed"][0]
+    return {"action": "none", "mode": mode, key: subject, "issue": number,
+            "reason": f"{subject} is already decided: the loop has withdrawn {count} "
+                      f"removals for it and its retirement issue #{number} is closed, which "
+                      "at the pause cap declines it, so nothing is filed or commented"}
+
+
 def paused_heads(paused: list) -> list:
     """The head commits of the loop's paused removals, for `default_push`'s
     retried delete (R7-2)."""
@@ -1212,31 +1237,42 @@ def paused_heads(paused: list) -> list:
 def declined(found: dict, subject: str, mode: str, key: str) -> dict | None:
     """In `auto` mode, the `none` action when a closed retirement issue the
     proposal path filed (or one predating the stamps) declines the removal
-    (R8-1), whatever else is open: a person closed the proposal. A closed
-    issue the withdrawal path filed declines nothing until the pause cap.
-    `found` is `guidance_issues`'s result; None when nothing declines."""
+    (R8-1), whatever else is open: a person closed the proposal. Any close
+    declines, whatever its reason (`state_reason` is not read: "completed"
+    and "not planned" alike). A closed issue the withdrawal path filed
+    declines nothing until the pause cap. `found` is `guidance_issues`'s
+    result; None when nothing declines. `closed_at` is the latest close time
+    of the declining issues, or None when any of them is missing or
+    unparseable (then no later re-arm can override the decline, R10-2)."""
     closed = [n for n in found["closed"] if n in found["proposals"]]
     if not closed:
         return None
+    times = [found.get("closed_at", {}).get(n) for n in closed]
+    moments = [_moment(t) for t in times]
+    latest = None if any(m is None for m in moments) else \
+        times[moments.index(max(moments))]
     return {"action": "none", "mode": mode, key: subject, "issue": closed[0],
+            "closed_at": latest,
             "reason": f"{subject} is already decided: its proposal issue #{closed[0]} is "
                       "closed, which declines the removal, so none is opened"}
 
 
-def deciding_issues(found: dict, withdrawn_decides: bool) -> list:
+def deciding_issues(found: dict, withdrawn_decides: bool, paused: int = 0) -> list:
     """The closed retirement issues that decide a subject on the proposal
     path. Every closed one, unless `withdrawn_decides` is False (R9-5: `auto`
-    mode lowered to a proposal, short of the pause cap), when one the
-    withdrawal path filed (`WITHDRAWAL_STAMP`) does not: a person closed it
-    after being told that closing it declines nothing, so a fresh proposal
-    issue is filed for them to decide on."""
-    if withdrawn_decides:
+    mode lowered to a proposal) and the subject's loop pauses are short of
+    the cap (`paused` < MAX_LOOP_PAUSES, R10-3), when one the withdrawal path
+    filed (`WITHDRAWAL_STAMP`) does not: a person closed it after being told
+    that closing it declines nothing, so a fresh proposal issue is filed for
+    them to decide on. At the cap any closed issue decides, since the cap
+    comment told the person that closing the issue declines."""
+    if withdrawn_decides or paused >= MAX_LOOP_PAUSES:
         return found["closed"]
     return [n for n in found["closed"] if n in found["proposals"]]
 
 
 def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
-                 withdrawn_decides=True) -> dict:
+                 withdrawn_decides=True, paused=0) -> dict:
     """The proposal path's action: create or update the skill's issue, or
     nothing when a closed one already decided it (`deciding_issues`)."""
     try:
@@ -1245,7 +1281,7 @@ def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
         location, problem = None, str(exc)
     issues = existing_issues(gh, skill)
     lowered = {"mode_reason": mode_reason} if mode_reason else {}
-    decided = deciding_issues(issues, withdrawn_decides)
+    decided = deciding_issues(issues, withdrawn_decides, paused)
     if not issues["open"] and decided:
         return {"action": "none", "mode": "proposal", "skill": skill, **lowered,
                 "issue": decided[0],
@@ -1283,8 +1319,13 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         if mode_reason:
             mode = _lowered(mode_reason, allowed)
     if mode == "proposal":
+        # R10-3: lowered from `auto`, the pause cap still decides, so the
+        # subject's loop pauses are counted here too.
+        lowered_from_auto = mode_of(gates) == "auto"
         return _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
-                            withdrawn_decides=mode_of(gates) != "auto")
+                            withdrawn_decides=not lowered_from_auto,
+                            paused=len(deciding(closed_removal_prs(gh, skill))[1])
+                            if lowered_from_auto else 0)
     prs = open_loop_prs(gh)
     if prs:
         return {"action": "none", "mode": mode, "skill": skill,
@@ -1296,10 +1337,13 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         return {"action": "none", "mode": mode, "skill": skill,
                 "reason": f"{skill} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
-    decline = declined(existing_issues(gh, skill), skill, mode, "skill")
+    issues = existing_issues(gh, skill)
+    decline = declined(issues, skill, mode, "skill")
     if decline:
         return decline
     if len(paused) >= MAX_LOOP_PAUSES:
+        if issues["closed"]:
+            return capped_decided(issues, mode, "skill", skill, len(paused))
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
         return cap_notice(_skill_issue(gates, registries, gh, skill, mode_reason, run_url,
@@ -1632,13 +1676,18 @@ def guidance_closed_removal_prs(gh, section: str) -> list:
 
 
 def guidance_issues(gh, marker: str) -> dict:
-    """As `existing_issues`, for any marker."""
+    """As `existing_issues`, for any marker, plus `closed_at`: each closed
+    issue's close time as the API gives it ("" when it gives none), which
+    the decline compares a person's re-arm with (R10-2). The close reason
+    (`state_reason`) is not read: any close declines."""
     text = gh(["api", "--paginate",
                f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
                "--jq", ".[] | select(.pull_request == null) | "
                        "{number: .number, body: (.body // \"\"), "
-                       "author: .user.login, state: .state}"])
+                       "author: .user.login, state: .state, "
+                       "closed_at: (.closed_at // \"\")}"])
     found = {"open": [], "closed": [], "proposals": []}
+    closed_at = {}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
                 or marker not in item["body"]:
@@ -1647,9 +1696,12 @@ def guidance_issues(gh, marker: str) -> dict:
         if type(number) is not int or number < 1 or state not in ("open", "closed"):
             raise RetireError("an issue record from the API is malformed")
         found[state].append(number)
+        if state == "closed":
+            closed_at[number] = item.get("closed_at")
         if issue_origin(item["body"]) != "withdrawal":
             found["proposals"].append(number)
-    return {state: sorted(numbers) for state, numbers in found.items()}
+    return {**{state: sorted(numbers) for state, numbers in found.items()},
+            "closed_at": closed_at}
 
 
 def guidance_evidence(verdict: dict) -> str:
@@ -1826,13 +1878,13 @@ def guidance_issue_action(gates, section, kind, run_url, mode_reason=None) -> di
 
 
 def _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url,
-                    withdrawn_decides=True) -> dict:
+                    withdrawn_decides=True, paused=0) -> dict:
     """The issue path's action for a section: create or update its issue,
     or nothing when a closed one already decided it (`deciding_issues`)."""
     issue = guidance_issue_action(gates, section, kind, run_url, mode_reason)
     lowered = {"mode_reason": mode_reason} if mode_reason else {}
     found = guidance_issues(gh, issue["marker"])
-    decided = deciding_issues(found, withdrawn_decides)
+    decided = deciding_issues(found, withdrawn_decides, paused)
     if not found["open"] and decided:
         return {"action": "none", "mode": mode, "section": section, **lowered,
                 "issue": decided[0],
@@ -1868,9 +1920,13 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
             raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
                               f"not wired (allowed: {', '.join(allowed)})")
     if kind == "shorten" or mode == "proposal":
+        # R10-3: a retire lowered from `auto` still honors the pause cap.
+        lowered_from_auto = kind == "retire" and guidance_mode(gates) == "auto"
         return _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url,
                                withdrawn_decides=kind == "shorten"
-                               or guidance_mode(gates) != "auto")
+                               or guidance_mode(gates) != "auto",
+                               paused=len(deciding(guidance_closed_removal_prs(
+                                   gh, section))[1]) if lowered_from_auto else 0)
     prs = guidance_open_prs(gh)
     if prs:
         # R8-5: as for a skill, an open removal (one a person holds by
@@ -1884,11 +1940,13 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
         return {"action": "none", "mode": mode, "section": section,
                 "reason": f"{section} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
-    decline = declined(guidance_issues(gh, GUIDANCE_ISSUE_MARKER.format(section=section)),
-                       section, mode, "section")
+    issues = guidance_issues(gh, GUIDANCE_ISSUE_MARKER.format(section=section))
+    decline = declined(issues, section, mode, "section")
     if decline:
         return decline
     if len(paused) >= MAX_LOOP_PAUSES:
+        if issues["closed"]:
+            return capped_decided(issues, mode, "section", section, len(paused))
         mode_reason = paused_reason(len(paused))
         _lowered(mode_reason, allowed)
         return cap_notice(_guidance_issue(gates, section, kind, "proposal", mode_reason, gh,
@@ -2348,7 +2406,8 @@ def withdraw_commands(target: str, url: str) -> dict:
     (label) WITHDRAWN_LABEL on, after (labels) the repository's labels show
     it missing and (create_label) creates it, then (pr_labels) read back;
     (comment); (close); (head) the closed pull request's head commit, which
-    the branch delete is leased on."""
+    the branch delete is leased on. A decline also reads (arms) who turned
+    auto-merge on, and takes (unlabel) WITHDRAWN_LABEL off."""
     repo = WITHDRAW_TARGETS[target]["repo"]
     return {"state": ["pr", "view", url, "-R", repo, "--json", "state", "--jq", ".state"],
             "merge": ["pr", "merge", url, "-R", repo, "--disable-auto"],
@@ -2362,6 +2421,7 @@ def withdraw_commands(target: str, url: str) -> dict:
                              WITHDRAWN_LABEL_DESCRIPTION, "--force"],
             "pr_labels": ["pr", "view", url, "-R", repo, "--json", "labels", "--jq",
                           ".labels[].name"],
+            "unlabel": ["pr", "edit", url, "-R", repo, "--remove-label", WITHDRAWN_LABEL],
             "comment": ["pr", "comment", url, "-R", repo, "--body-file", "-"],
             "close": ["pr", "close", url, "-R", repo],
             "head": ["pr", "view", url, "-R", repo, "--json", "headRefOid", "--jq",
@@ -2369,6 +2429,9 @@ def withdraw_commands(target: str, url: str) -> dict:
             "timeline": ["api", "--paginate",
                          f"repos/{repo}/issues/{_number(url)}/timeline?per_page=100",
                          "--jq", TIMELINE_JQ],
+            "arms": ["api", "--paginate",
+                     f"repos/{repo}/issues/{_number(url)}/timeline?per_page=100",
+                     "--jq", ARMS_JQ],
             "closer": ["api", f"repos/{repo}/issues/{_number(url)}", "--jq",
                        '.closed_by.login // ""']}
 
@@ -2384,6 +2447,36 @@ def _number(url: str) -> str:
 TIMELINE_JQ = ('.[] | select(.event == "auto_merge_disabled" or .event == "commented") '
                '| {event: .event, actor: (.actor.login // ""), body: (.body // ""), '
                'created_at: (.created_at // "")}')
+
+
+#: The timeline events `person_rearm` reads: who turned auto-merge on, and when.
+ARMS_JQ = ('.[] | select(.event == "auto_merge_enabled") '
+           '| {actor: (.actor.login // ""), created_at: (.created_at // "")}')
+
+
+def person_rearm(registry_gh, c: dict, closed_at) -> str | None:
+    """Why an armed removal a closed proposal issue declines is left for a
+    person (R10-2), or None when it is declined: the latest
+    `auto_merge_enabled` event on its timeline is someone's other than
+    LOOP_AUTHOR, created after `closed_at`, the declining issue's close.
+    A person who turned auto-merge on again after closing the issue
+    overrides that close. Anything not known to be such a re-arm (an
+    unreadable timeline, no event, the loop's own arm, or a time missing or
+    unparseable on either side) leaves the decline to stand."""
+    closed = _moment(closed_at)
+    if closed is None:
+        return None
+    try:
+        events = _json_lines(registry_gh(c["arms"]))
+    except Exception:  # noqa: BLE001 - not known to be a person's re-arm
+        return None
+    if not events or events[-1].get("actor") in (LOOP_AUTHOR, "", None):
+        return None
+    made = _moment(events[-1].get("created_at"))
+    if made is None or made <= closed:
+        return None
+    return ("someone other than the loop turned its auto-merge on after its proposal issue "
+            "was closed, which overrides that close, so it is left for a person")
 
 
 def loop_disarm_hold(registry_gh, c: dict, subject: str) -> str | None:
@@ -2446,7 +2539,8 @@ def would_run(target: str, item: dict) -> list:
                 ["issue", "comment", "<the subject's open removal notice>", "-R", EVALS_REPO,
                  "--body-file", "-"]]
     if item["action"] == "decline":
-        return [c["state"], c["view"], c["merge"], c["view"], c["comment"], c["close"],
+        return [c["state"], c["view"], c["arms"], c["merge"], c["view"], c["pr_labels"],
+                c["unlabel"], c["pr_labels"], c["comment"], c["close"],
                 ["issue", "comment", str(item["declined"]), "-R", EVALS_REPO,
                  "--body-file", "-"],
                 ["issue", "close", "<the subject's open removal notice>", "-R", EVALS_REPO,
@@ -2488,6 +2582,7 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
     if "unreadable" in decline:
         return {"action": "unreadable", "subject": subject, "why": decline["unreadable"]}
     return {"action": "decline", "subject": subject, "declined": decline["issue"],
+            "closed_at": decline.get("closed_at"),
             "why": f"its proposal issue #{decline['issue']} in skills-evals is closed, "
                    "which declines the removal"}
 
@@ -2675,6 +2770,10 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
         hold = loop_disarm_hold(registry_gh, c, item["subject"])
         if hold:
             return f"kept #{n}: {hold}"
+    if item["action"] == "decline" and armed:
+        rearmed = person_rearm(registry_gh, c, item.get("closed_at"))
+        if rearmed:
+            return f"left #{n} for a person: {rearmed}"
     if armed:
         registry_gh(c["merge"])
         if registry_gh(c["view"]).strip():
@@ -2761,10 +2860,11 @@ def declined_comment(item: dict, target: str, run_url: str | None) -> str:
             f"declined.** The proposal issue for `{item['subject']}`, "
             f"https://github.com/{EVALS_REPO}/issues/{item['declined']}, was closed while "
             f"this automatic {kind} pull request was open, and a closed proposal issue "
-            "declines the removal. So auto-merge is turned off and this pull request is "
-            f"closed as a decision, not a pause: it gets no `{WITHDRAWN_LABEL}` label, its "
-            "branch is kept, and the loop opens no removal for the subject while that issue "
-            f"is closed. {OVERRIDE} Rule: [ADR 0014]({ADR})."
+            "declines the removal, whatever its close reason. So auto-merge is turned off "
+            "and this pull request is closed as a decision, not a pause: it carries no "
+            f"`{WITHDRAWN_LABEL}` label and its branch is kept. This closed pull request now "
+            "decides the subject: the loop opens no removal for it again, and reopening the "
+            f"issue does not resume it. {OVERRIDE} Rule: [ADR 0014]({ADR})."
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\n" + AGENT_MARKER + "\n")
 
@@ -2772,11 +2872,24 @@ def declined_comment(item: dict, target: str, run_url: str | None) -> str:
 def _decline(item: dict, gates: dict, target: str, registry_gh, gh, run_url,
              c: dict) -> str:
     """Close a removal whose subject a closed proposal issue declines
-    (R9-1), its auto-merge already off and read back: comment, close, then,
+    (R9-1), its auto-merge already off and read back: WITHDRAWN_LABEL off
+    and read back (R10-1: a withdrawal that stopped part way left it on, and
+    closed with it the removal would read as a pause), comment, close, then,
     best effort, a comment on the closed issue (which stays closed) and the
     subject's removal notices closed. No label and no new issue: the
-    subject is declined, not paused."""
+    subject is declined, not paused, and the closed removal decides it. A
+    label that cannot be taken off fails the item, and the pull request is
+    left open."""
     n = item["number"]
+    if WITHDRAWN_LABEL in [x.strip() for x in registry_gh(c["pr_labels"]).split("\n")]:
+        try:
+            registry_gh(c["unlabel"])
+        except Exception:  # noqa: BLE001 - its text may quote a response
+            raise RetireError(f"could not remove the {WITHDRAWN_LABEL} label from #{n}, so "
+                              "it is left open") from None
+        if WITHDRAWN_LABEL in [x.strip() for x in registry_gh(c["pr_labels"]).split("\n")]:
+            raise RetireError(f"the {WITHDRAWN_LABEL} label is still on #{n} after removing "
+                              "it, so it is left open")
     comment = declined_comment(item, target, run_url)
     registry_gh(c["comment"], comment)
     registry_gh(c["close"])
@@ -2785,10 +2898,13 @@ def _decline(item: dict, gates: dict, target: str, registry_gh, gh, run_url,
         gh(["issue", "comment", str(item["declined"]), "-R", EVALS_REPO, "--body-file", "-"],
            f"The automatic {'removal' if target == 'skill' else 'guidance removal'} pull "
            f"request {item['url']} for `{item['subject']}` was still open when this issue "
-           "was closed. A closed proposal issue declines the removal, so the loop turned its "
-           "auto-merge off and closed it as a decision (no "
-           f"`{WITHDRAWN_LABEL}` label, branch kept). This issue stays closed, and nothing "
-           f"is removed. Rule: [ADR 0014]({ADR})."
+           "was closed. A closed proposal issue declines the removal, whatever its close "
+           "reason, so the loop turned its auto-merge off and closed it as a decision (no "
+           f"`{WITHDRAWN_LABEL}` label, branch kept). That closed pull request now decides "
+           "the subject: nothing is removed, and reopening this issue does not resume the "
+           "loop. To remove the subject anyway, take that pull request over (remove its "
+           f"`{AGENT_LABEL}` label, then reopen and merge it by hand). Rule: "
+           f"[ADR 0014]({ADR})."
            + (f"\n\nWorkflow run: {run_url}" if run_url else "")
            + "\n\n" + AGENT_MARKER + "\n")
         done.append(f"commented on issue #{item['declined']}")
@@ -2910,14 +3026,17 @@ def withdraw_main(args, env, gh, registry_gh, run_url, out, delete=None) -> int:
     return 0
 
 
-def refresh_allowed(gates: dict | None, head: str) -> tuple:
+def refresh_allowed(gates: dict | None, head: str, gh) -> tuple:
     """Whether loop-pr-refresh.yml may bring a pull request from `head` up to
     date (round 1's M2): `(True, why)` for a head that is not a removal's;
     for a `retire-skill/` or `retire-guidance/` head, only while its
     subject's verdict still supports an automatic removal AND the target's
-    mode is `auto`. Anything else, unknown data included, is `(False, why)`,
-    so a refresh never re-runs the checks of a removal that should not
-    merge."""
+    mode is `auto` AND no closed proposal issue declines it (R10-4: its
+    retirement issues are read through `gh`, as the withdrawal pass reads
+    them, so a decline that pass could not finish is not undone by a
+    refresh). Anything else, unknown data or an unreadable issue list
+    included, is `(False, why)`, so a refresh never re-runs the checks of a
+    removal that should not merge."""
     for target, spec in WITHDRAW_TARGETS.items():
         if not head.startswith(spec["prefix"]):
             continue
@@ -2933,6 +3052,13 @@ def refresh_allowed(gates: dict | None, head: str) -> tuple:
             return False, why
         if spec["mode"](gates) != "auto":
             return False, f"the {spec['block']} retirement_mode is proposal"
+        try:
+            decline = declined(retirement_issues(gh, subject, target)[1], subject, "auto",
+                               "subject")
+        except Exception:  # noqa: BLE001 - its text may quote a response
+            return False, "its retirement issues could not be read"
+        if decline:
+            return False, f"its proposal issue #{decline['issue']} is closed, which declines it"
         return True, why
     return True, "not a removal pull request"
 

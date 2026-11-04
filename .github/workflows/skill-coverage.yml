@@ -212,11 +212,15 @@ jobs:
   # labeled and closed itself does not decide its subject, so a later
   # `retire` opens a fresh one with a plain push, until a subject has been
   # paused 3 times (MAX_LOOP_PAUSES), when its proposal issue is filed
-  # instead. A removal whose subject's proposal issue a person has closed
-  # is declined, in either mode: it is disarmed and closed as a decision
-  # (no label, branch kept, no new issue). Unknown verdicts withdraw nothing
-  # (ADR 0014). loop-pr-refresh.yml runs the same pass after every
-  # ingest, so a verdict an ingest changes is acted on within that run.
+  # instead (at that cap, any closed retirement issue decides). A removal
+  # whose subject's proposal issue a person has closed, for any reason, is
+  # declined, in either mode: it is disarmed, its `loop-withdrawn` label
+  # taken off and read back, and closed as a decision (branch kept, no new
+  # issue), which decides the subject even if the issue is reopened; one a
+  # person re-armed after that close is left for a person. Unknown verdicts
+  # withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass
+  # after every ingest, so a verdict an ingest changes is acted on within
+  # that run.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
