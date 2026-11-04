@@ -75,8 +75,9 @@
   --chip-bg: #322E28;
   --hover: #2E2A25;
 }
-html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink); }
+/* The page color fills the whole window, outside the column and below short pages. */
+html { -webkit-text-size-adjust: 100%; background: var(--page); min-height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh; }
 /*__CSS__*/
 </style>
 </head>

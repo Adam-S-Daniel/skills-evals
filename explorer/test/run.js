@@ -321,6 +321,16 @@ await test('dashboard/page/index.html is one self-contained Dashboard fragment',
   ok(!/\bAdam(?:'s|\s)/.test(html), 'names no person (the repository owner/name aside)');
 });
 
+await test('both pages paint the whole window in the theme color, not only their column', () => {
+  // Regression: the dark private page showed a white frame outside the column and below short pages.
+  const pub = fs.readFileSync(PAGE, 'utf8'), priv = fs.readFileSync(PRIVATE_PAGE, 'utf8');
+  ok(/html \{[^}]*background: var\(--page\)[^}]*min-height: 100%/.test(pub), 'public html background');
+  ok(/body \{[^}]*background: var\(--page\)[^}]*min-height: 100vh/.test(pub), 'public body background');
+  ok(/html, body \{ background: var\(--color-bg, #FDFBF7\); \}/.test(priv), 'private light background');
+  ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #1E1C19\); \} \}/.test(priv), 'private dark background');
+  ok(/body \{ min-height: 100vh; \}/.test(priv), 'private body fills the window');
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);
