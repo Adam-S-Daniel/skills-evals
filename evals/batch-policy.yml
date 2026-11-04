@@ -3,19 +3,32 @@
 #
 # Adam's goal (2026-11-02 18:57 UTC): at 25% of the weekly allowance, every
 # two weeks the planner picks a batch of skills and guidance sections
-# numbering about three times the historical weekly addition rate, brings
-# every one to a verdict, then starts the next batch. While a batch is open,
-# the missing, near, focus and guidance-rest bands measure its members only;
-# safety, re-checks, improvements and bare baselines are unchanged. A member
-# still open when the period ends is carried into the next batch first, and
-# a batch whose members have all finished early is replaced at once.
+# numbering about three times the weekly addition rate, brings every one to
+# a verdict, then starts the next batch. While a batch is open, the missing,
+# near, focus and guidance-rest bands measure its members only; safety,
+# re-checks, improvements and bare baselines are unchanged. A member still
+# open when the period ends is carried into the next batch first, and a
+# batch whose members have all finished early is replaced at once.
 #
-# Sizing (/mnt/project-files/loop/cohort-sizing-2026-11-02.md in the
-# project's files): the base cohort of 2 skills and 2 sections costs about
-# 40 points per two weeks with the guidance judge margin at 1.5, inside the
-# 50 points that 25% a week gives.
+# Adam's decision (2026-11-03 22:27 UTC, "How should the two-week batch
+# handle the faster skill addition rate?"): fit the batch to the budget.
+# "The rate is measured each period. The batch takes as many subjects as fit
+# 50 points, most-used first. The rest wait. No new spend." So each new
+# batch:
+#   * measures each kind's addition rate over `rate_window_days`
+#     (plan_week.batch_rates), sizing the batch at `multiplier` x that rate,
+#     at least 1 per kind; an unreadable history falls back to `rates` below,
+#     and the record says so;
+#   * prices each candidate's cells with headroom at their remaining
+#     observations (`pairs_per_cell`, capped by gate-policy.yml's
+#     max_runs_per_cell less what each cell has) x its model's measured cost
+#     per observation over `cost_window_days`, and takes the most-used
+#     first while the total stays within the budget:
+#     budget.yml's weekly_cap x period_days / 7 (0.25 x 2 = 50 points from
+#     the 2026-11-09 reset). A subject too dear for the room left is skipped
+#     and waits; a cheaper one after it can still join.
 #
-# plan_week.load_batch_policy validates it strictly: exactly these four
+# plan_week.load_batch_policy validates it strictly: exactly these seven
 # keys. A change here changes what the loop spends its allowance on: it
 # is Adam's.
 
@@ -28,13 +41,43 @@ start: "2026-11-09T17:00:00Z"
 # finished is replaced before it is due.
 period_days: 14
 
-# Batch size per kind = max(1, round(multiplier x rate)), half rounded up.
+# The target size per kind = max(1, round(multiplier x measured rate)), half
+# rounded up; the budget can hold a batch below it, never above.
 multiplier: 3
 
-# Historical additions per week, measured over the 8 weeks to 2026-11-02
-# (skills across the public registries, guidance `##` sections in
-# _agent-guidance's agents-md/base.md). Re-measure by hand: git history
-# here reads bulk moves (adam-agentskills' 2026-10-23 import) as additions.
+# The fallback addition rates per week, used only for a kind whose history
+# cannot be read (no checkout, a shallow one, or under 7 days of it); the
+# batch record's `rate_basis` names which. Measured by hand over the 8 weeks
+# to 2026-11-02 (skills across the public registries, guidance `##`
+# sections in _agent-guidance's agents-md/base.md).
 rates:
   skill: 0.75
   guidance: 0.5
+
+# The trailing window each kind's addition rate is measured over: skills
+# added to adam-agentskills' scripts/plugin_layout.json, guidance sections
+# (ids) added to _agent-guidance's agents-md/eval-coverage.yml, per week, on
+# each repository's first-parent history. A file younger than the window is
+# measured from its first version, so its creation (adam-agentskills'
+# 2026-10-26 layout pin, 20 skills) is the baseline, never a burst of
+# additions. Four weeks: recent enough to follow the new-skill drafter
+# (3 skills merged 2026-11-01 to 11-03), long enough to hold a few additions.
+rate_window_days: 28
+
+# Expected observations a cell with headroom takes to reach a verdict. An
+# observation is what the gate counts toward max_runs_per_cell (in
+# evals/gate-policy.yml): one fire, one paired run, whatever its trial
+# count. Source: /mnt/project-files/reports/gate-threshold-sweep-2026-11-03.md
+# in the project's files, "Points per new subject, including parked ones",
+# no adaptive layer: 10.5 points for a subject of 1 fixture x 2 models, each
+# observation priced at 0.45 (Opus) + 0.25 (Sonnet) = 0.70 points for one
+# observation on each model. 10.5 / 0.70 = 15 observations per cell (the
+# sweep's 3-trial price is per observation already, so it is not multiplied
+# by trials again). The planner charges a cell min(this, max_runs_per_cell
+# - the observations it has), at least 0.
+pairs_per_cell: 15
+
+# The window of routine runs whose cost_estimate.json gives each roster
+# model's mean cost per observation (the run's measured points over its
+# paired runs), judge included (plan_week.pair_costs).
+cost_window_days: 14

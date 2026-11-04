@@ -386,20 +386,60 @@ the two sections nearest one until those decide.
 **The two-week batch** (THE BATCH in `scripts/plan_week.py`; Adam's
 steady-state goal, 2026-11-02: at 25% of the weekly allowance, every two
 weeks pick a batch of skills and guidance sections numbering about three
-times the historical weekly addition rate, bring them all to a verdict, then
-start the next). `evals/batch-policy.yml` sets the start (the 2026-11-09
-17:00 UTC reset, when the cap returns to 25%), the 14-day period, the
-multiplier (3) and the weekly addition rates (skills 0.75, guidance 0.5), so
-a batch holds 2 skills and 2 sections. Only the weekly workflow passes the
-policy (`--batch-policy`).
+times the weekly addition rate, bring them all to a verdict, then start the
+next). `evals/batch-policy.yml` sets the start (the 2026-11-09 17:00 UTC
+reset, when the cap returns to 25%), the 14-day period, the multiplier (3),
+the rate and cost windows, the expected pairs per cell and fallback addition
+rates. Only the weekly workflow passes the policy (`--batch-policy`).
 
+- **Fit to the budget** (Adam, 2026-11-03: "The rate is measured each
+  period. The batch takes as many subjects as fit 50 points, most-used
+  first. The rest wait. No new spend."). Each new batch:
+  - measures each kind's addition rate over `rate_window_days` (28): skills
+    added to adam-agentskills' `scripts/plugin_layout.json`, sections (ids)
+    added to _agent-guidance's `agents-md/eval-coverage.yml`, per week, on
+    each checkout's first-parent history. A file younger than the window is
+    measured from its first version. An unreadable history (no checkout, a
+    shallow one, under 7 days) uses the policy's constant (skills 0.75,
+    guidance 0.5) and the record says so. The target size per kind is
+    max(1, 3 x rate, half rounded up).
+  - prices each subject at its cells with headroom (undecided, schedulable,
+    not fixture-broken). Each is charged its remaining observations,
+    min(`pairs_per_cell`, `max_runs_per_cell` from `gate-policy.yml` less
+    the observations the gate already counts in it), at least 0, times its
+    model's mean cost per observation. An observation is one fire, one
+    paired run whatever its trial count, as the gate counts it. The cost per
+    observation is the points in `cost_estimate.json` over the paired runs
+    of the routine runs of the last `cost_window_days` (14), judge included
+    (a guidance fire's `alone` pair is not an observation of its cell).
+    `pairs_per_cell` is 15: the 2026-11-03 gate threshold sweep's 10.5
+    points per new subject over 0.70 points per observation on both models.
+  - takes candidates while their total stays within the budget,
+    `budget.yml`'s `weekly_cap` x the period's weeks (0.25 x 2 = 50
+    points); a total equal to the budget fits. Carried members stay first
+    and count first. Then the kinds take turns. Skills go most used first
+    (the usage weight), then high stakes, then the longest without a run,
+    then name. Guidance has no per-section use signal, so sections go high
+    stakes first, then the longest without a run, then name. A subject that
+    alone would overflow the room left is skipped and waits; a cheaper one
+    after it can still join. If nothing would join while subjects wait, the
+    cheapest joins over budget, so the batch is never empty. With no
+    measured cost the fit picks by target size alone.
+  - **Today** (2026-11-03, results branch at cba7b38): skills 4 added
+    since the layout pin of 2026-10-26 (3.37 a week, target 10), sections
+    3 in 28 days (0.75 a week, target 2); 0.00152 of the allowance per Opus
+    observation and 0.00064 per Sonnet one, so a fixture with no runs yet
+    on both models is about 3.2 points. The fitted batch is 9 skills (one
+    with two fixtures) and 2 sections (one the four-fixture, high-stakes
+    `data-exposure-in-ci`), 48.6 of 50 points; 18 subjects wait: 13
+    sections past the guidance target size and 5 skills for the budget.
 - **What it changes.** While a batch is open the missing, near, focus and
   guidance-rest bands take only its members' cells, and every guidance
   member is in the focus. Safety, re-checks, improvements and bare
   baselines are unchanged.
 - **Who joins.** Open subjects only: verdict still open, no removal pull
   request, no blocking cell, and some cell that would plan a fire. Never a
-  private skill. High stakes first, then the longest without a run.
+  private skill. In the fit's order, within the budget (above).
 - **When it turns over.** When every member has left `open` (decided,
   blocked, stalled or gone), or at the due time, whichever is first. Open
   members are carried into the next batch first; new picks fill the rest.
@@ -408,8 +448,12 @@ policy (`--batch-policy`).
 - **Where it lives.** `batches/current.json` and `batches/<number>.json` on
   `persistent/eval-results`, written by the weekly workflow's
   `batch-publish` job only when a plan starts a batch. Each record lists the
-  previous batch's members with their final status. The job summary names
-  the batch, each member's status and how many cells wait outside it.
+  previous batch's members with their final status and, for audit, the
+  rates and how each was had (`rate_basis`), the target `sizes`, the fit
+  (`budget`, `pair_costs`, `pairs_per_cell`, `total`, `floor`), each
+  member's expected `cost` and the subjects left `waiting` with theirs and
+  why (`budget` or `size`). The job summary names the batch, each member's
+  status, how many cells wait outside it and the fit's line.
 - **The explorer** queues only the published batch's members in those
   bands. A finished batch stays published until the next sweep replaces it,
   so for that gap the page shows the old batch's queue.
