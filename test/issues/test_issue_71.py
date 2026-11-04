@@ -2229,6 +2229,8 @@ class GuardedRunnerTests(unittest.TestCase):
                     settings.parent.mkdir(exist_ok=True)
                     settings.write_text(json.dumps({"apiKeyHelper": "unused"}))
                 with self.child_context(), mock.patch.object(runner, method, side_effect=launch), \
+                        mock.patch.object(pse, "EVALS_DIR",
+                                          frozen_evals(self.tmp / f"frozen-evals-{phase}")), \
                         contextlib.redirect_stdout(io.StringIO()), \
                         contextlib.redirect_stderr(io.StringIO()):
                     rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
