@@ -16,8 +16,13 @@ typed by hand that a read could supply:
 
 The repo's own evals/budget.yml and evals/roster.yml are read directly.
 
+It also uploads the public evals document unchanged as the `explorer`
+dataset, which most of the page reads, and with --spend writes the weekly cost
+totals in the shape of `spend/weekly.json` (explorer/schema.json, `spend_file`)
+for the refresh to put on the results branch.
+
 Usage:
-  python3 dashboard/build.py --results <dir> --inputs <dir> --config <dir> --out <dir> [--now ISO]
+  python3 dashboard/build.py --results <dir> --inputs <dir> --config <dir> --out <dir> [--now ISO] [--spend <file>]
 """
 import argparse
 import glob
@@ -35,8 +40,6 @@ from eval_facts import (add_costs, arm_model, cli_version, cost, fired_at, iso, 
 
 PLACEHOLDER_ID = "none"
 HB_FIXED_WINDOW = timedelta(days=7)
-EVALS_URL = "https://github.com/Adam-S-Daniel/skills-evals"  # fixture_queue.py numbers every issue and PR in this repo
-FQ_KINDS = {"needs-fixtures": "new fixtures", "needs-harder-fixtures": "harder fixtures", "needs-trigger-set": "trigger set"}
 
 
 def parse(ts):
@@ -646,8 +649,10 @@ def r2(v):
     return None if v is None else round(v, 2)
 
 
-def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs, explorer, now, start=COST_START):
-    """(weeks rows, summary rows) for the Cost and benefit tab."""
+def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs, explorer, now, start=COST_START,
+                 raw=None):
+    """(weeks rows, summary rows) for the Impact group's cost panel. `raw`, a
+    dict, receives the week rows and the cost per verdict before rounding."""
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
     starts = week_starts(start, now)
@@ -712,6 +717,9 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
         summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None,
                         "value": "Met: keep the eval system" if bar_changes and bar_build
                         else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {BAR_DUE}"})
+    if raw is not None:
+        raw["weeks"] = [dict(w) for w in weeks]
+        raw["cost_per_verdict"] = summary[0]["value"]
     if not weeks:
         weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
                   "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
@@ -759,61 +767,41 @@ def half_built(dump, now):
                      "closed_at": None}], summary
 
 
-def fixture_queue(explorer, now):
-    """(request rows, summary rows) for the Self-improvement loop tab: each fixture request followed to its PRs and fixtures."""
-    queue = explorer.get("fixture_queue") if isinstance(explorer, dict) else None
-    queue = queue if isinstance(queue, dict) else None
-    q = queue or {}
-    fixtures = q.get("fixtures") or []
-    rows = []
-    for req in q.get("requests") or []:
-        mine = [f for f in fixtures if str(f.get("request")) == str(req.get("issue"))]
-        prs = req.get("prs") or []
-        latest = max(prs, key=lambda p: p.get("number") or 0) if prs else None
-        opened = parse(req.get("opened_at"))
-        is_open = req.get("state") == "open"
-        rows.append({
-            "key": str(req.get("issue")), "issue_url": f"{EVALS_URL}/issues/{req.get('issue')}",
-            "kind": FQ_KINDS.get(req.get("kind"), req.get("kind") or "unknown"), "subject": req.get("subject"),
-            "state": req.get("state"), "opened": opened.date().isoformat() if opened else None,
-            "age_days": (now - opened).total_seconds() / 86400 if opened and is_open else None,
-            "closed_at": req.get("closed_at"), "prs": len(prs),
-            "pr_url": f"{EVALS_URL}/pull/{latest['number']}" if latest else "",
-            "merged": any(p.get("state") == "merged" or p.get("merged_at") for p in prs),
-            "fixtures": len(mine), "real_work": sum(1 for f in mine if f.get("origin_kind") == "real-work"),
-            "runs": sum(f.get("runs") or 0 for f in mine), "cost_usd": sum(f.get("cost_usd") or 0 for f in mine),
-            "opened_at": req.get("opened_at")})
-    # Open requests first, oldest first within each group.
-    rows.sort(key=lambda r: (r["state"] != "open", r["opened_at"] or ""))
-    for r in rows:
-        del r["opened_at"]
-    findings = q.get("findings") or []
-    totals = q.get("totals") or {}
-    summary = [{"key": "all", **{k: totals.get(k) for k in (
-        "requests_open", "requests_closed", "prs_merged", "fixtures_real_work", "fixtures_invented",
-        "fixture_runs", "cost_points", "cost_usd")},
-        "findings": len(findings), "findings_high": sum(1 for f in findings if f.get("severity") == "high"),
-        "status": "not-reported" if queue is None else "attention" if findings else "ok",
-        "generated_at": q.get("generated_at")}]
-    return rows or [{"key": PLACEHOLDER_ID, "issue_url": None, "kind": None, "subject": None, "state": None, "opened": None,
-                     "age_days": None, "closed_at": None, "prs": None, "pr_url": "", "merged": None, "fixtures": None,
-                     "real_work": None, "runs": None, "cost_usd": None}], summary
+def spend_file(raw, now, plan=None):
+    """The weekly totals in spend/weekly.json's shape (explorer/schema.json,
+    `spend_file`), from cost_benefit's unrounded weeks: totals only, never a
+    session or thread row. Cost per verdict is on the latest week only."""
+    weeks = raw.get("weeks") or []
+    out = []
+    for i, w in enumerate(weeks):
+        out.append({"week": w["week"], "eval_runs": w["run_count"], "plan_meter_points": w["run_meter_points"],
+                    "api_usd": w["api_usd"], "thread_spend_usd": w["build_usd"],
+                    "cost_per_verdict": raw.get("cost_per_verdict") if i == len(weeks) - 1 else None})
+    doc = {"schema": 1, "generated_at": iso(now), "weeks": out}
+    if plan:
+        doc["plan"] = plan
+    return doc
 
 
 # --- main ----------------------------------------------------------------------
 
-def build(results, inputs, config, now):
+# Datasets the page reads only when they exist: build() never writes them.
+OPTIONAL_DATASETS = {"explorer_private"}
+
+def build(results, inputs, config, now, raw=None):
     site = load(os.path.join(config, "site.json"))
     snap = load(os.path.join(config, "snapshots.json"))
     inp = lambda name, default=None: load(os.path.join(inputs, name), default)
     thread_dump = inp("threads.json", [])
     trigger_dump = inp("triggers.json", {})
     out = {}
-    out["eval_runs"], out["bare_runs"] = eval_rows(results, site["report_base"])
+    # The page reads test runs from the explorer document; the rows here only
+    # feed the cost weeks.
+    plan_rows, _ = eval_rows(results, site["report_base"])
     out["eval_allowance"] = allowance(results, now)
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
-    out["usage_rows"], out["usage_sources"], out["usage_digests"] = usage(results)
+    out["usage_rows"], out["usage_sources"], _ = usage(results)
     out["ci_red_runs"] = ci_red_runs(results)
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
@@ -827,12 +815,15 @@ def build(results, inputs, config, now):
     out["decisions"] = snap["decisions"]
     loop_cfg = os.path.join(config, "loop.json")
     explorer = load(os.path.join(results, "explorer", "latest.json"), {})
+    if not isinstance(explorer, dict) or not isinstance(explorer.get("schema_version"), int):
+        sys.exit("explorer: results/explorer/latest.json is missing or not an explorer document")
+    out["explorer"] = explorer
     out["cost_benefit_weeks"], out["cost_benefit_summary"] = cost_benefit(
-        results, out["eval_runs"], out["usage_rows"], snap["decisions"],
+        results, plan_rows, out["usage_rows"], snap["decisions"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
-        load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now)
+        load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now,
+        raw=raw)
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
-    out["fixture_requests"], out["fixture_queue_summary"] = fixture_queue(explorer, now)
     if os.path.exists(loop_cfg):
         (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
          out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
@@ -844,15 +835,21 @@ def main(argv=None):
     for name in ("results", "inputs", "config", "out"):
         ap.add_argument("--" + name, required=True)
     ap.add_argument("--now", help="ISO time to build as of (default: now)")
+    ap.add_argument("--spend", help="also write the weekly cost totals here, in spend/weekly.json's shape")
     a = ap.parse_args(argv)
     now = parse(a.now) if a.now else datetime.now(timezone.utc)
-    out = build(a.results, a.inputs, a.config, now)
+    raw = {}
+    out = build(a.results, a.inputs, a.config, now, raw=raw)
     os.makedirs(a.out, exist_ok=True)
     for name, rows in out.items():
         if not rows:  # the page reads [] as "a source failed to load"
             sys.exit(f"{name}: empty dataset; give it a placeholder row")
         with open(os.path.join(a.out, name + ".json"), "w") as f:
             json.dump(rows, f, indent=1)
+    if a.spend:
+        site = load(os.path.join(a.config, "site.json"), {})
+        with open(a.spend, "w") as f:
+            json.dump(spend_file(raw, now, site.get("plan")), f, indent=1)
     print(" ".join(f"{k}={len(v)}" for k, v in out.items()))
 
 
