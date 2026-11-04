@@ -402,7 +402,7 @@ def default_delete_branch(repo: str, branch: str, sha: str, token: str | None = 
     if not SHA_RE.fullmatch(sha or ""):
         raise RetireError("the closed pull request's head is not a commit sha")
     env = _auth_env(token)
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(prefix="trusted-git-") as tmp:
         for args in (["init", "-q", tmp],
                      ["-C", tmp, "push", f"--force-with-lease=refs/heads/{branch}:{sha}",
                       url or f"https://github.com/{repo}.git", f":refs/heads/{branch}"]):
