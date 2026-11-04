@@ -41,6 +41,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 import subprocess
 import sys
 import urllib.request
@@ -379,11 +380,26 @@ def sync_state(site_repo: str, token: str | None) -> tuple:
         return prs, False if err.missing else None
 
 
+def drawn_state(frames) -> str | None:
+    """"drew" when any frame shows a `DRAWN` line, "failed" when one shows the
+    error panel instead, None while none has drawn yet."""
+    failed = False
+    for frame in frames:
+        try:
+            if frame.query_selector(DRAWN):
+                return "drew"
+            if frame.query_selector("#app .panel.failure"):
+                failed = True
+        except Exception:  # noqa: BLE001 - a frame that navigated away
+            continue
+    return "failed" if failed else None
+
+
 def browser_results(urls: list) -> dict:
     """Load each URL in headless Chromium: PAGE_OK when the data-dependent
     `DRAWN` line appears, else a fixed reason. The page's text is never
     returned."""
-    from playwright.sync_api import TimeoutError as PwTimeout, sync_playwright
+    from playwright.sync_api import sync_playwright
 
     results = {}
     with sync_playwright() as pw:
@@ -396,13 +412,17 @@ def browser_results(urls: list) -> dict:
                     if response is None or response.status >= 400:
                         results[url] = f"http {response.status if response else 'none'}"
                         continue
-                    try:
-                        page.wait_for_selector(DRAWN + ", #app .panel.failure",
-                                               timeout=45_000)
-                    except PwTimeout:
+                    # The site's tool page wraps the app in an iframe, so look
+                    # in every frame, not only the top document.
+                    state, deadline = None, time.monotonic() + 45
+                    while state is None and time.monotonic() < deadline:
+                        state = drawn_state(page.frames)
+                        if state is None:
+                            page.wait_for_timeout(500)
+                    if state is None:
                         results[url] = "nothing drew in 45 seconds"
                         continue
-                    results[url] = (PAGE_OK if page.query_selector(DRAWN)
+                    results[url] = (PAGE_OK if state == "drew"
                                     else "the page drew its error panel")
                 except Exception as err:  # noqa: BLE001
                     results[url] = f"browser error {type(err).__name__}"

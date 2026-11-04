@@ -497,3 +497,28 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DrawnStateTests(unittest.TestCase):
+    """The site's tool page wraps the app in an iframe (skills-evals#750), so
+    the check must find the drawn line in any frame, not only the top one."""
+
+    class Frame:
+        def __init__(self, hits):
+            self.hits = hits
+
+        def query_selector(self, selector):
+            return object() if selector in self.hits else None
+
+    def test_a_drawn_child_frame_counts(self):
+        top = self.Frame(set())
+        child = self.Frame({sf.DRAWN})
+        self.assertEqual(sf.drawn_state([top, child]), "drew")
+
+    def test_the_error_panel_is_failed_and_nothing_is_none(self):
+        self.assertEqual(sf.drawn_state([self.Frame({"#app .panel.failure"})]), "failed")
+        self.assertIsNone(sf.drawn_state([self.Frame(set()), self.Frame(set())]))
+
+    def test_the_browser_check_reads_every_frame(self):
+        src = Path(sf.__file__).read_text()
+        self.assertIn("drawn_state(page.frames)", src)
