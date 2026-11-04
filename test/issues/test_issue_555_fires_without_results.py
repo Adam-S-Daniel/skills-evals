@@ -420,7 +420,10 @@ class WorkflowTests(unittest.TestCase):
                                    # The public data contract (2026-11-04): public listings.
                                    "List the public repositories",
                                    "List recent activity in the public repositories",
-                                   "List the lesson outcomes"})
+                                   "List the lesson outcomes",
+                                   # check-site (2026-11-04): lists and dispatches
+                                   # site-freshness.yml runs, no data.
+                                   "Dispatch the site freshness check when it is due"})
         self.assertEqual(self.fetch["env"], {"GH_TOKEN": "${{ github.token }}"})
 
     def test_the_fetch_step_cannot_fail_the_job(self):
