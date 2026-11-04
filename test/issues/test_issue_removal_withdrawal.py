@@ -372,14 +372,18 @@ class FakeGh:
     read-back's state, turned off by `--disable-auto` unless `stuck`."""
 
     def __init__(self, prs=(), armed=True, stuck=False, fail=None, issues=(), state="OPEN",
-                 head="a" * 40, arms=True):
+                 head="a" * 40, arms=True, label_fails=0):
         self.prs, self.armed, self.stuck, self.fail = list(prs), armed, stuck, fail
         self.issues, self.state, self.head, self.arms = list(issues), state, head, arms
+        self.label_fails = label_fails  # how many `--add-label` calls fail first
         self.calls = []
 
     def __call__(self, args, stdin=None):
         self.calls.append((list(args), stdin))
         if self.fail and args[:2] == self.fail:
+            raise rs.RetireError(f"gh {args[0]} exited 1")
+        if "--add-label" in args and self.label_fails:
+            self.label_fails -= 1
             raise rs.RetireError(f"gh {args[0]} exited 1")
         if args[:2] == ["api", "--paginate"]:
             rows = self.issues if "/issues?" in args[2] else self.prs
@@ -1541,3 +1545,76 @@ class RetirementIssueCommentTests(unittest.TestCase):
         rs.withdraw_stale(doc(guidance={SECTION: VERDICTS["keep"]}), [gpr()], "guidance", gh)
         body = next(s for a, s in gh.calls if a[:3] == ["issue", "comment", "3"])
         self.assertNotIn(rs.GUIDANCE_ISSUE_MARKER.format(section=SECTION), body)
+
+
+class DisarmLabelProvisioningTests(unittest.TestCase):
+    """The coordinator's follow-up: a repository without DISARMED_LABEL gets
+    it created through the App token, and the add is retried once; a label
+    that still cannot be added leaves the disarm standing and says so."""
+
+    GATES = staticmethod(lambda: doc({SKILL: roster_added(retire())}))
+
+    def test_a_missing_label_is_created_and_the_add_retried(self):
+        gh = FakeGh(label_fails=1)
+        lines = rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+        repo = rs.REGISTRY_REPO
+        add = ["pr", "edit", SKILL_URL, "-R", repo, "--add-label", rs.DISARMED_LABEL]
+        self.assertEqual(gh.writes(), [
+            ["pr", "merge", SKILL_URL, "-R", repo, "--disable-auto"], add,
+            ["label", "create", rs.DISARMED_LABEL, "-R", repo, "--color",
+             rs.DISARMED_LABEL_COLOR, "--description", rs.DISARMED_LABEL_DESCRIPTION,
+             "--force"], add,
+            ["pr", "comment", SKILL_URL, "-R", repo, "--body-file", "-"]])
+        self.assertEqual(lines, [f"disarmed #41: {rs.removal_support(doc(), roster_added(retire()))[1]}"])
+        body = next(st for a, st in gh.calls if a[:2] == ["pr", "comment"])
+        self.assertIn("the loop turns auto-merge back on", body)
+
+    def test_the_label_text_and_color(self):
+        self.assertRegex(rs.DISARMED_LABEL_COLOR, r"^[0-9A-Fa-f]{6}$")
+        self.assertEqual(rs.DISARMED_LABEL_DESCRIPTION,
+                         "Eval loop turned off auto-merge on this removal PR; it re-arms it "
+                         "when the verdict supports removal")
+        self.assertLessEqual(len(rs.DISARMED_LABEL_DESCRIPTION), 100)  # GitHub's limit
+
+    def test_the_guidance_label_is_created_in_agent_guidance(self):
+        gh = FakeGh(label_fails=1)
+        gates = doc(guidance={SECTION: unfinished_alone()})
+        rs.withdraw_stale(gates, [gpr()], "guidance", gh)
+        create = [a for a in gh.writes() if a[:2] == ["label", "create"]]
+        self.assertEqual(len(create), 1)
+        self.assertEqual(create[0][3:5], ["-R", rs.GUIDANCE_REPO])
+
+    def test_a_label_that_still_fails_leaves_the_disarm_and_names_it(self):
+        for kw in ({"label_fails": 2}, {"label_fails": 2, "fail": ["label", "create"]}):
+            with self.subTest(**kw):
+                gh = FakeGh(**kw)
+                lines = rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+                self.assertEqual(len(lines), 1)
+                self.assertTrue(lines[0].startswith("disarmed #41"))
+                self.assertTrue(lines[0].endswith(
+                    f"could not add the {rs.DISARMED_LABEL} label, so no pass turns its "
+                    "auto-merge back on"))
+                self.assertNotIn("exited", lines[0])
+                self.assertFalse(gh.armed)
+                adds = [a for a in gh.writes() if "--add-label" in a]
+                self.assertEqual(len(adds), 2)  # the add, then one retry
+                self.assertEqual(len([a for a in gh.writes() if a[0] == "label"]), 1)
+                body = next(st for a, st in gh.calls if a[:2] == ["pr", "comment"])
+                self.assertIn("by hand", body)
+                self.assertIn("could not be added", body)
+
+    def test_a_label_already_there_creates_nothing(self):
+        gh = FakeGh()
+        rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+        self.assertFalse(any(a[0] == "label" for a in gh.writes()))
+
+    def test_main_exits_0_when_the_label_cannot_be_added(self):
+        path = Path(tempfile.mkdtemp()) / "gates.json"
+        path.write_text(json.dumps(self.GATES()))
+        out = io.StringIO()
+        gh = FakeGh([pr()], label_fails=2, fail=["label", "create"])
+        self.assertEqual(rs.main(["--withdraw-stale", "--gates", str(path)], env=AUTO_ENV,
+                                 gh=gh, out=out), 0)
+        self.assertIn("could not add the", out.getvalue())
+        path.unlink()
+        path.parent.rmdir()

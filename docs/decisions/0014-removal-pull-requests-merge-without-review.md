@@ -769,6 +769,16 @@ writes, re-arm included, use the eval-improve App token, which needs
 `contents: write` for the re-arm in `loop-pr-refresh.yml` as it does in the
 retirement job.
 
+The pass provisions the label itself. When adding it fails (the repository
+has no `loop-disarmed` label yet), it runs `gh label create loop-disarmed
+--force` with the same token and retries the add once. GitHub lets an
+installation token with `pull-requests: write` create a label (`POST
+/repos/{owner}/{repo}/labels` is listed under both the Issues and the Pull
+requests permission in "Permissions required for GitHub Apps"), so the mints
+need no `issues: write`. If the label still cannot be added, the disarm
+stands, since auto-merge is already off: the status line and the comment say
+that no pass will re-arm that pull request, and the pass goes on.
+
 **The refresh.** `loop-pr-refresh.yml` merges the base into a `retire-skill/`
 or `retire-guidance/` pull request only when `refresh_loop_prs.py
 removal-check` finds its verdict still supported and the mode `auto`. With

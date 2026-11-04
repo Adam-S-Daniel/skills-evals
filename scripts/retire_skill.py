@@ -1678,6 +1678,14 @@ REARMED_MARKER = "<!-- skills-evals:rearmed-removal:{subject} -->"
 #: round 2's R2-5). Only a pull request carrying it is ever armed again: one
 #: whose auto-merge a person turned off has no label and stays off.
 DISARMED_LABEL = "loop-disarmed"
+#: How a pass creates DISARMED_LABEL in a repository that lacks it (`gh label
+#: create --force`, through the App token: GitHub lets an installation token
+#: with pull-requests: write create a label, POST /repos/{owner}/{repo}/labels).
+DISARMED_LABEL_COLOR = "BFD4F2"
+#: GitHub caps a label description at 100 characters (REST "Create a label"),
+#: so this is the requested text shortened to 99.
+DISARMED_LABEL_DESCRIPTION = ("Eval loop turned off auto-merge on this removal PR; it re-arms "
+                              "it when the verdict supports removal")
 #: Cell classes that say a verdict's data is unfinished (harness/gates.py
 #: `retirement`): `missing` (no run on a roster model, as for every cell on a
 #: model the roster just added) and `insufficient` (a test that has not
@@ -1892,22 +1900,27 @@ def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
             + "\n\n" + AGENT_MARKER + "\n")
 
 
-def disarm_comment(decision: dict, run_url: str | None) -> str:
+def disarm_comment(decision: dict, run_url: str | None, labeled: bool = True) -> str:
     """The one comment a removal a pass disarms gets: by the `proposal`
-    switch, or (cause `incomplete`) on a verdict whose data is unfinished."""
+    switch, or (cause `incomplete`) on a verdict whose data is unfinished.
+    `labeled` False: DISARMED_LABEL could not be added, so no pass arms it
+    again, and the comment says so."""
+    rearm = (f"the loop turns auto-merge back on (the `{DISARMED_LABEL}` label on this "
+             "pull request marks it as the loop's to re-arm)" if labeled else
+             f"turn auto-merge back on by hand (a merge commit): the `{DISARMED_LABEL}` "
+             "label could not be added, so no pass does")
     if decision.get("cause") == "incomplete":
         why = ("The subject's verdict is not complete yet, so this removal neither "
                f"merges nor is withdrawn: {decision['why']}. This pull request stays "
-               "open with the `" + DISARMED_LABEL + "` label; once the verdict supports "
-               "an automatic removal again in `auto` mode, the loop turns auto-merge "
-               "back on, and if the verdict turns against the removal it is withdrawn.")
+               "open; once the verdict supports an automatic removal again in `auto` "
+               f"mode, {rearm}, and if the verdict turns against the removal it is "
+               "withdrawn.")
     else:
         why = ("The retirement mode in `evals/gate-policy.yml` is `proposal`, so no "
                f"removal merges without a person: {decision['why']}. This pull request "
-               "stays open with the `" + DISARMED_LABEL + "` label; merge it by hand to "
-               "remove the subject, or close it to decline. If the mode returns to "
-               "`auto` while the verdict still supports the removal, the loop turns "
-               "auto-merge back on.")
+               "stays open; merge it by hand to remove the subject, or close it to "
+               "decline. If the mode returns to `auto` while the verdict still supports "
+               f"the removal, {rearm}.")
     return (f"{DISARMED_MARKER.format(subject=decision['subject'])}\n"
             f"**Auto-merge turned off.** {why} Remove the `{AGENT_LABEL}` label before "
             "merging by hand, so no later pass touches it. Rule: "
@@ -1945,8 +1958,8 @@ def removal_prs(gh, target: str) -> list:
 def withdraw_commands(target: str, url: str) -> dict:
     """The calls one withdrawal, disarm or re-arm makes: (state) the pull
     request must still be open; (merge) auto-merge off, then (view) read
-    back; (label) DISARMED_LABEL on; (comment); (close), which keeps the
-    branch. A re-arm reads (head) the head commit, arms (arm) as `execute`
+    back; (label) DISARMED_LABEL on, after (create_label) when the
+    repository lacks it; (comment); (close), which keeps the branch. A re-arm reads (head) the head commit, arms (arm) as `execute`
     does, reads back (view) and takes the label off (unlabel)."""
     repo = WITHDRAW_TARGETS[target]["repo"]
     return {"state": ["pr", "view", url, "-R", repo, "--json", "state", "--jq", ".state"],
@@ -1954,6 +1967,9 @@ def withdraw_commands(target: str, url: str) -> dict:
             "view": ["pr", "view", url, "-R", repo, "--json", "autoMergeRequest", "--jq",
                      '.autoMergeRequest.mergeMethod // ""'],
             "label": ["pr", "edit", url, "-R", repo, "--add-label", DISARMED_LABEL],
+            "create_label": ["label", "create", DISARMED_LABEL, "-R", repo, "--color",
+                             DISARMED_LABEL_COLOR, "--description",
+                             DISARMED_LABEL_DESCRIPTION, "--force"],
             "unlabel": ["pr", "edit", url, "-R", repo, "--remove-label", DISARMED_LABEL],
             "head": ["pr", "view", url, "-R", repo, "--json", "headRefOid", "--jq",
                      ".headRefOid"],
@@ -2061,6 +2077,29 @@ def close_removal_notices(item: dict, gates: dict, target: str, gh,
     return closed
 
 
+def add_disarmed_label(c: dict, registry_gh) -> bool:
+    """DISARMED_LABEL on a pull request this pass disarmed; True once it is
+    on. When the add fails (the repository has no such label yet), the
+    label is created (`--force`, so an existing one is only updated) and
+    the add is tried once more. Auto-merge is already off by then, so a
+    failure only loses the later re-arm: False, never an exception, and no
+    error detail is kept."""
+    try:
+        registry_gh(c["label"])
+        return True
+    except Exception:  # noqa: BLE001 - the disarm stands either way
+        pass
+    try:
+        registry_gh(c["create_label"])
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        registry_gh(c["label"])
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def rearm(item: dict, c: dict, armed: bool, registry_gh, run_url: str | None) -> str:
     """Arm again a removal the loop disarmed (R2-5): auto-merge on with the
     command `execute` uses, at the head read now, read back, then the label
@@ -2110,9 +2149,11 @@ def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
             if armed:
                 # Labeled only when this pass turned auto-merge off: a pull
                 # request a person disarmed is never armed again (R2-5).
-                registry_gh(c["label"])
-                registry_gh(c["comment"], disarm_comment(item, run_url))
-                lines.append(f"disarmed #{item['number']}: {item['why']}")
+                labeled = add_disarmed_label(c, registry_gh)
+                registry_gh(c["comment"], disarm_comment(item, run_url, labeled))
+                lines.append(f"disarmed #{item['number']}: {item['why']}" + (
+                    "" if labeled else f"; could not add the {DISARMED_LABEL} label, "
+                                       "so no pass turns its auto-merge back on"))
             else:
                 lines.append(f"left #{item['number']} open and disarmed: {item['why']}")
             continue

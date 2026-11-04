@@ -847,7 +847,9 @@ never withdrawn: an `insufficient` verdict over a `missing` or
 section-alone pair has not finished. While `retirement_mode` is `proposal`,
 a removal that is not withdrawn is disarmed too. A disarm turns auto-merge
 off, labels the pull request `loop-disarmed`, leaves it open and comments
-once.
+once. A repository without that label gets it created (`gh label create
+--force`, same token) and the add is retried once; if it still fails, the
+disarm stands, and the status line and comment say no pass will re-arm it.
 
 In `auto` mode, a `loop-disarmed` removal whose verdict supports it again is
 armed again (`gh pr merge --auto --merge --match-head-commit`, as the

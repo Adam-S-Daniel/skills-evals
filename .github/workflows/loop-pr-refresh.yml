@@ -64,7 +64,8 @@ name: Refresh loop pull requests
 # `workflow_run`; a dispatch computes the verdicts for the refresh's check and
 # withdraws nothing. The withdraw job's tokens: the eval-improve App, minted
 # per repository (adam-agentskills, then _agent-guidance) with
-# pull-requests: write under continue-on-error, for the disarm, label,
+# pull-requests: write under continue-on-error, for the disarm, label
+# (creating `loop-disarmed` if missing, which pull-requests: write allows),
 # comment and close, and contents: write for the re-arm of a removal a pass
 # disarmed (`loop-disarmed`); this job's own token, issues: write, for the
 # retirement issue here.
