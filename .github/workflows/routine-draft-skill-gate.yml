@@ -11,6 +11,9 @@ name: Gate routine skill draft
 #               drafted. This gate opens one ISSUE here, `Hook proposal:
 #               <subject>`, labeled hook-proposal and agent-authored, for
 #               the agent-checks lane to pick up.
+#   upstream-covered  report.md, nothing else: a skill Anthropic already
+#               ships does what the lesson asks (Adam, 2026-11-03). No job
+#               below acts on it, so no pull request or issue follows.
 #   accepted    report.md, skill.patch and 4-8 fixtures under
 #               evals/<subject>/: the drafted skill beat no skill on its own
 #               fixtures. This gate opens a DRAFT pull request in

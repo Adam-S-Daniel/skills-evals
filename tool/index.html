@@ -115,7 +115,7 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
 .card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
 .card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
-.card .sent { font-size: 0.95rem; }
+.card .sent { font-size: 0.95rem; margin-top: 10px; }
 .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
 .model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
 .chip {
@@ -134,11 +134,10 @@ summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
-.sw.tick { width: 2px; height: 12px; border-radius: 0; background: var(--ink); }
 svg { display: block; width: 100%; height: auto; overflow: visible; }
 svg text { font-family: Helvetica, Arial, sans-serif; }
-.chart { max-width: 360px; }
-.spark { max-width: 260px; margin-top: 6px; }
+.chart { max-width: 396px; }
+.spark { max-width: 320px; margin-top: 10px; }
 .mark:hover, .mark:focus { opacity: 0.8; outline: none; }
 .trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
 .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
@@ -159,6 +158,9 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tip[hidden] { display: none; }
 .headline .answer { font-size: 1.1rem; font-weight: 600; }
 @media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
+.conf { margin: 12px 0 0; }
+.conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
+.chart.range { max-width: 420px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -199,8 +201,7 @@ const pts = (x) => Math.round(Math.abs(x) * 100);
 const KEEP_AT = 0.80, REMOVE_AT = 0.90;
 const ordinal = (n) => { const t = n % 100, u = n % 10;
   return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
-/* A level in [0, 1) as a whole percent, never rounded up to a certainty. */
-const pctOf = (x) => x >= 0.995 ? 'over 99%' : Math.floor(x * 100) + '%';
+const countWord = (n) => ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] || String(n);
 
 /* ------------------------------------------------------------------ */
 /* Every sentence the page shows, in one place.                       */
@@ -222,12 +223,12 @@ const STRINGS = {
   introSkills: [
     'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don\'t write most of them myself. I\'ve set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
     'So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
-    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Tried" says how many times the comparison has run — the more runs, the more the result can be trusted.'
+    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
   ],
   introGuidance: [
-    'The guidance is a page of rules Claude reads at the start of every working session on my projects. Claude writes most of the rules too: when something goes wrong, the session that hit it records the lesson as a rule so it doesn\'t happen twice. This page shows whether each one earns its place. The page is split into sections, one topic each.',
-    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and run it four ways: with only that section, with no rules at all, with every rule, and with every rule except that one. Fixed checks score each attempt.',
-    'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the other rules are present; the "all but this one" bar shows that.'
+    'The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
+    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it four ways: with only that section, with no guidance at all, with all the guidance, and with all of it but that section. Fixed checks score each attempt.',
+    'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.'
   ],
   glossaryHeading: 'Words used on this page',
   glossary: [
@@ -237,12 +238,12 @@ const STRINGS = {
     ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
     ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
     ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
-    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its rules and budget; day to day, it runs without me.'],
+    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its thresholds and budget; day to day, it runs without me.'],
     ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
   ],
   glossaryGuidance: [
     ['Section', 'One topic within the guidance, under its own heading.'],
-    ['Ablation', 'Running with every rule except one, to see whether that one rule still makes a difference when all the others are there.'],
+    ['Ablation', 'Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there.'],
     ['Cost per session', 'How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length.']
   ],
   chipGlossaryIntro: 'The colored label on each card means:',
@@ -257,21 +258,21 @@ const STRINGS = {
     insufficient: 'Not enough data'
   },
   chipRules: {
-    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps at the level shown on each card.',
-    alone: 'It helps when it\'s the only rule present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once all the other rules are there too.',
-    none: 'On every model and task with room to show a gain, the loop is confident, at the removal level shown on each card, that the gain is under the margin shown there, so it decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
+    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.',
+    alone: 'It helps when it\'s the only section present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once the rest of the guidance is there too.',
+    none: 'On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
     worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
     early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
-    insufficient: 'The loop hasn\'t decided yet. Its confidence range is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
+    insufficient: 'The loop hasn\'t decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
   },
   chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the flat line means it helped that week.',
+  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no rules; a dot above the flat line means it helped that week.',
+  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with only that section than with no guidance; a dot above the 0 line means it helped that week.',
   sortLabel: 'Order sections by',
   sortNext: 'Next test',
   sortValue: 'Help per word',
@@ -281,10 +282,10 @@ const STRINGS = {
 
   sentenceSkill: (m, a, b, c, d) => 'With this skill, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
   sentenceSection: (m, a, b, c, d) => 'With this section, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
-  sentenceAblation: (e, f, g, h) => 'With all the rules, ' + e + ' of ' + f + '; with all the other rules but not this one, ' + g + ' of ' + h + '.',
-  sentenceWhole: (m, a, b, c, d) => 'With all the rules, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no rules, ' + c + ' of ' + d + '.',
-  tried: (n, when) => 'Tried ' + n + (n === 1 ? ' time' : ' times') + ', last on ' + when + '.',
-  notTried: 'Not tried in the last ' + WINDOW_WEEKS + ' weeks.',
+  sentenceAblation: (e, f, g, h) => 'With all the guidance, ' + e + ' of ' + f + '; with all of it but this section, ' + g + ' of ' + h + '.',
+  sentenceWhole: (m, a, b, c, d) => 'With all the guidance, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no guidance, ' + c + ' of ' + d + '.',
+  tried: (n, when) => n + (n === 1 ? ' trial' : ' trials') + ' in all, the last on ' + when + '.',
+  notTried: 'No trials in the last ' + WINDOW_WEEKS + ' weeks.',
   pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
   judgeScores: (a, b) => 'judge score ' + a + ' with, ' + b + ' without (out of 10)',
   nextQueued: (n, kind) => 'Next test: ' + ordinal(n) + ' ' + kind + ' in line for the next round of tests.',
@@ -293,10 +294,25 @@ const STRINGS = {
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
   stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
-  confidence: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a skill at ' + keepAt + ' and removes one at ' + removeAt + '.',
-  confidenceSection: (helps, noHelp, margin, keepAt, removeAt) => 'How sure the loop is: ' + helps + ' that it helps, ' + noHelp + ' that any gain is under ' + margin + ' points. It keeps a section at ' + keepAt + ' and removes one at ' + removeAt + '.',
-  confidenceCap: (n) => ' A test still undecided after ' + n + ' comparison runs stops, and can only propose a removal.',
-  confidenceNoRoom: (helps, margin) => 'How sure the loop is: ' + helps + ' that it helps. No task leaves room to show a gain of ' + margin + ' points, because Claude already passes without it, so it needs a harder test.',
+  confidenceCap: (n) => 'Testing a task and model stops at ' + n + ' comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
+  confHeading: 'How close is a decision?',
+  confKeepWord: 'Keep',
+  confRemoveWord: 'Removal',
+  confReached: (which) => which + ': reached.',
+  confNoMove: (which) => which + ': no movement yet.',
+  confPastCap: (which, cap) => which + ': not before the ' + cap + '-run cap at this pace.',
+  confMore: (which, n) => which + ': at this pace, about ' + n + ' more run' + (n === 1 ? '' : 's') + '.',
+  confNoRoom: (margin) => 'Removal: no task leaves room for a ' + margin + '-point gain (Claude already passes without it), so this needs a harder test.',
+  confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. Testing stops at ' + cap + ' runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
+  confPace: 'The run estimates project how fast certainty has grown per run so far; they are rough.',
+  rangeAria: (n, margin) => 'The range the gain likely falls in, for ' + n + (n === 1 ? ' task and model' : ' tasks and models') + ', from \u2212100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +' + margin + '.',
+  rangeAxis: 'Gain, points',
+  rangeRuns: 'Runs',
+  rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ', task ' + task : '') + ': gain ' + gain + ' points so far; likely between ' + low + ' and ' + high + '. ' + runs + '.' + (counted ? '' : ' Not counted toward removal.'),
+  rangeTipRuns: (n, cap) => cap ? n + ' of ' + cap + ' runs' : n + (n === 1 ? ' run' : ' runs'),
+  rangeWhat: 'Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.',
+  rangeRule: (margin) => 'Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +' + margin + '.',
+  rangeLevels: (keepPct, removePct, subject, versions) => 'The left end is held to ' + keepPct + ' certainty shared across the ' + (subject === 'guidance' ? 'section\'s' : 'skill\'s') + ' tasks and models, the right end to ' + removePct + '; a decision also waits for runs on ' + countWord(versions) + ' Claude Code version' + (versions === 1 ? '' : 's') + '.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
   used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
     : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
@@ -308,16 +324,15 @@ const STRINGS = {
   barWith: 'With the skill',
   barWithout: 'Without it',
   barSection: 'Only this section',
-  barNone: 'No rules',
-  barAblated: 'All but this one',
-  barAll: 'All the rules',
-  barWholeFull: 'All the rules',
-  barWholeNone: 'No rules',
-  tickAll: 'Line: all the rules',
+  barNone: 'No guidance',
+  barAblated: 'All but this section',
+  barAll: 'All the guidance',
+  barWholeFull: 'All the guidance',
+  barWholeNone: 'No guidance',
   barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
-  tickTip: (a, b, rate) => 'All the rules: ' + a + ' of ' + b + ' checks (' + rate + ')',
   chartLabel: (m) => 'Checks passed by ' + m,
-  trendCaption: 'Week by week, last ' + WINDOW_WEEKS + ' weeks. Above the line: it helped that week.',
+  trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
+  trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
   trendNone: 'No weekly trend yet.',
   trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
   gainUp: (p) => p + ' points better with it',
@@ -339,11 +354,11 @@ const STRINGS = {
   verdictOther: (v) => 'Official decision: ' + v + '.',
 
   wholeHeading: 'Does the guidance help at all?',
-  wholeNote: 'All the rules compared with no rules, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler rule: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the rules, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
-  wholeRule: 'The simple rule in the note above — not a decision by the improvement loop.',
+  wholeNote: 'All the guidance compared with no guidance, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the guidance, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
+  wholeRule: 'The simple test in the note above — not a decision by the improvement loop.',
   wholeAnswer: {
-    helps: 'Yes. With the rules, Claude passed measurably more checks.',
-    alone: 'Yes. With the rules, Claude passed measurably more checks.',
+    helps: 'Yes. With the guidance, Claude passed measurably more checks.',
+    alone: 'Yes. With the guidance, Claude passed measurably more checks.',
     none: 'Not clearly. The difference so far is too small to count.',
     worse: 'Results are getting worse and need a closer look.',
     early: 'Early results say yes, but there are not enough runs yet for a final answer.',
@@ -383,12 +398,49 @@ const STRINGS = {
   // #555: past events, worded from counts; `since` is the oldest counted fire.
   firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
 
+  lessonsHeading: 'Lessons from my sessions',
+  lessonsLead: (day) => 'Every day a script reads the transcripts of my local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from ' + day + ', followed by facts Claude\'s auto-memory turned up that belong in a repo and skills I proposed myself.',
+  lessonsNone: 'No lesson proposals were available for this build.',
+  lessonsEmptySkills: 'None of that day\'s proposals are about skills.',
+  lessonsEmptyGuidance: 'None of that day\'s proposals are about the guidance.',
+  colProposal: 'Proposal', colKind: 'Kind', colSource: 'Source', colSeen: 'Seen', colFirst: 'First seen', colLast: 'Last seen', colStatus: 'Status',
+  lessonKinds: { 'new-skill': 'New skill idea', 'skill-edit': 'Change to a skill',
+    'guidance-edit': 'Change to the guidance', 'fixture-candidate': 'Idea for a test' },
+  lessonToolCalls: (tool) => tool + ' tool calls kept failing',
+  lessonToolCommand: (tool, word) => tool + ' ' + word + ' commands kept failing',
+  lessonRedCi: (repo) => 'Red CI after pushes in ' + repo,
+  lessonSeen: (n) => n + (n === 1 ? ' time' : ' times'),
+  lessonDraft: (n) => 'Draft #' + n,
+  lessonDraftStates: { open: 'open', merged: 'merged', closed: 'closed' },
+  lessonNotDrafted: 'Not drafted yet',
+  lessonWaiting: 'Waiting for review',
+  lessonTranscripts: 'Session transcripts',
+  lessonSurfaces: { wsl: 'WSL', windows: 'Windows', cloud: 'cloud', other: 'another computer' },
+  lessonSignals: { rule: 'a rule I stated', correction: 'a correction I made', redirection: 'I redirected Claude',
+    interrupted: 'I interrupted Claude', abandoned: 'an abandoned session',
+    'repeated-tool-failure': 'a tool call kept failing', 'red-ci-after-push': 'CI went red after a push' },
+  lessonSignalCount: (what, n) => what + ' \u00d7' + n,
+  lessonLeftMemory: (n) => n + (n === 1 ? ' personal memory note' : ' personal memory notes'),
+  lessonLeftChecks: (n) => n + (n === 1 ? ' proposed git check' : ' proposed git checks'),
+  lessonLeftPrivate: (n) => n + ' about private skills or repos',
+  lessonLeftOut: (parts) => 'Left out on purpose: ' + parts + '.',
+  lessonNoText: 'No session text is published.',
+  lessonMinerNone: 'No proposals from my session transcripts were available for this build.',
+  lessonIssueSources: { memory: 'Claude\'s auto-memory', proposal: 'My own proposal' },
+  lessonIssueKinds: { memory: 'Fact to move into a repo', proposal: 'New skill idea' },
+  lessonMemoryFacts: (n, target, repo) => (n === null ? 'Facts' : n + (n === 1 ? ' fact' : ' facts'))
+    + (target ? ' for ' + target : '') + ' in ' + repo,
+  lessonMemoryChecks: (n, repo) => (n === null ? 'Agent checks' : n + (n === 1 ? ' agent check' : ' agent checks')) + ' in ' + repo,
+  lessonNewSkill: (name) => 'New skill: ' + name,
+  lessonNoValue: '\u2014',
+  lessonIssueStatus: (n) => '#' + n,
+
   engineersHeading: 'For engineers',
   engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
   source: (repo, main, results) => 'Built from ' + repo + ' at ' + main + ', results at ' + results + '.',
   colName: 'Name', colFixture: 'Task', colModel: 'Model', colWhen: 'When', colCli: 'Tool version',
-  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No rules',
-  colFull: 'All rules', colAblated: 'All but this', colReport: 'Report', colVerdict: 'Decision and reason',
+  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No guidance',
+  colFull: 'All the guidance', colAblated: 'All but this section', colReport: 'Report', colVerdict: 'Decision and reason',
   report: 'report',
   dataFile: (url) => 'Data file: ' + url,
 
@@ -406,7 +458,7 @@ const STRINGS = {
 /* _agent-guidance's agents-md/eval-coverage.yml.                     */
 /* ------------------------------------------------------------------ */
 const GLOSSES = {
-  'working-in-these-repos': 'House rules for any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
+  'working-in-these-repos': 'For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
   'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
   'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
   'workstation-layout': 'Where project folders live on Adam\'s computers, so Claude looks in the right place.',
@@ -429,13 +481,13 @@ const GLOSSES = {
   'skills-ecosystem': 'Where Adam\'s skills come from, how they are installed, and how a project chooses which ones to load.',
   'two-setup-gaps': 'Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.',
   'git-practices': 'How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.',
-  'section-docker': 'Rules for building software containers: fixed versions, no administrator access, and no passwords inside.',
-  'section-dotnet': 'Rules for C# code: switch on the strictest warnings and keep to the version the project already uses.',
-  'section-go': 'Rules for Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
-  'section-javascript': 'Rules for JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
-  'section-python': 'Rules for Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
-  'section-rust': 'Rules for Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
-  'section-typescript': 'Rules for TypeScript code: no catch-all types, and respect the project\'s strict settings.'
+  'section-docker': 'For building software containers: fixed versions, no administrator access, and no passwords inside.',
+  'section-dotnet': 'For C# code: switch on the strictest warnings and keep to the version the project already uses.',
+  'section-go': 'For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
+  'section-javascript': 'For JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
+  'section-python': 'For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
+  'section-rust': 'For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
+  'section-typescript': 'For TypeScript code: no catch-all types, and respect the project\'s strict settings.'
 };
 const GLOSS_MISSING = 'A plain-language description of this section has not been written yet.';
 
@@ -817,9 +869,9 @@ function barPath(x, y, w, hgt, r) {
     + 'V' + (y + hgt - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w - rr) + ',' + (y + hgt) + 'H' + x + 'Z';
 }
 
-/* rows: [{label, p, t, color, tick?:{p,t}}] */
+/* rows: [{label, p, t, color}] */
 function barChart(rows, label) {
-  const W = 300, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
+  const W = 330, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
   const H = TOP + rows.length * (BH + GAP) + 2;
   const span = R - L;
   const kids = [];
@@ -834,32 +886,44 @@ function barChart(rows, label) {
       'data-tip': STRINGS.barTip(row.label, a, b, fmtRate(row.p, row.t)) }));
     if (w > 0) kids.push(h('path', { d: barPath(L, y, w, BH, 4), fill: row.color, 'pointer-events': 'none' }));
     kids.push(h('text', { x: L + w + 4, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink)', 'pointer-events': 'none' }, a + ' of ' + b));
-    if (row.tick && row.tick.t > 0) {
-      const tx = L + Math.max(0, Math.min(1, row.tick.p / row.tick.t)) * span;
-      kids.push(h('rect', { x: tx - 1, y: y - 3, width: 2, height: BH + 6, fill: 'var(--ink)', class: 'mark', tabindex: 0,
-        'data-tip': STRINGS.tickTip(fmtCount(row.tick.p), fmtCount(row.tick.t), fmtRate(row.tick.p, row.tick.t)) }));
-    }
   });
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
 }
 
-function sparkline(points, refMs) {
+function trendChart(points, refMs) {
   if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
-  const W = 260, H = 36, PAD = 6;
-  const maxAbs = Math.max(0.1, ...points.map((p) => Math.abs(p.gain)));
-  const x = (w) => PAD + ((WINDOW_WEEKS - 1 - w) / (WINDOW_WEEKS - 1)) * (W - 2 * PAD);
-  const y = (g) => H / 2 - (g / maxAbs) * (H / 2 - PAD);
-  const kids = [h('line', { x1: PAD, x2: W - PAD, y1: y(0), y2: y(0), stroke: 'var(--base)', 'stroke-width': 1 })];
-  if (points.length > 1) {
-    kids.push(h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
-      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  if (points.length === 1) {
+    const p = points[0];
+    return h('p', { class: 'trend-cap' }, STRINGS.trendOne(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)));
   }
+  const W = 300, H = 124, XL = 34, XR = 292, YT = 10, YB = 102;
+  const m = Math.max(...points.map((p) => Math.abs(p.gain * 100)));
+  const top = Math.max(5, Math.ceil(m / 5) * 5);
+  const oldest = points[0], newest = points[points.length - 1];
+  const wOld = oldest.week, wNew = newest.week;
+  const x = (w) => (wOld === wNew ? XR : XL + ((wOld - w) / (wOld - wNew)) * (XR - XL));
+  const y = (g) => YT + ((top - g * 100) / (2 * top)) * (YB - YT);
+  const yMid = y(0);
+  const lab = { 'font-size': 11, fill: 'var(--muted)' };
+  const kids = [
+    h('line', { x1: XL, x2: XR, y1: YT, y2: YT, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: YB, y2: YB, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
+    h('line', { x1: XL, x2: XR, y1: yMid, y2: yMid, stroke: 'var(--axis)', 'stroke-width': 1 }),
+    h('text', { ...lab, x: 28, y: YT, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '+' + top),
+    h('text', { ...lab, x: 28, y: yMid, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '0'),
+    h('text', { ...lab, x: 28, y: YB, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '\u2212' + top),
+    h('text', { ...lab, x: XL, y: 118, 'text-anchor': 'start' }, fmtDay(oldest.start + 1000, refMs)),
+    h('text', { ...lab, x: XR, y: 118, 'text-anchor': 'end' }, fmtDay(newest.start + 1000, refMs)),
+    h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
+      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
+  ];
   points.forEach((p, i) => {
     const last = i === points.length - 1;
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: last ? 4 : 2.5, fill: 'var(--s1)',
-      stroke: 'var(--surface)', 'stroke-width': 2, 'pointer-events': 'none' }));
-    kids.push(h('circle', { cx: x(p.week).toFixed(1), cy: y(p.gain).toFixed(1), r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)) }));
+    const cx = x(p.week).toFixed(1), cy = y(p.gain).toFixed(1);
+    kids.push(h('circle', { cx, cy, r: last ? 4.5 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': 1.5,
+      'pointer-events': 'none' }));
+    kids.push(h('circle', { cx, cy, r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)), 'data-tip-pos': 'below' }));
   });
   return h('div', null,
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
@@ -875,7 +939,7 @@ function chip(kind, ruleText) {
 
 function legend(items) {
   return h('div', { class: 'legend' }, items.map((it) =>
-    h('span', null, h('span', { class: it.tick ? 'sw tick' : 'sw', style: it.tick ? null : 'background:' + it.color }), it.label)));
+    h('span', null, h('span', { class: 'sw', style: 'background:' + it.color }), it.label)));
 }
 
 function modelCharts(pooled, subject) {
@@ -888,7 +952,10 @@ function modelCharts(pooled, subject) {
         rows.push({ label: STRINGS.barSection, p: m.wp, t: m.wt, color: 'var(--s1)' });
         rows.push({ label: STRINGS.barNone, p: m.op, t: m.ot, color: 'var(--s2)' });
       }
-      if (m.nAbl > 0) rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)', tick: { p: m.fp, t: m.ft } });
+      if (m.nAbl > 0) {
+        rows.push({ label: STRINGS.barAll, p: m.fp, t: m.ft, color: 'var(--axis)' });
+        rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)' });
+      }
     } else if (subject === 'whole') {
       rows = [{ label: STRINGS.barWholeFull, p: m.wp, t: m.wt, color: 'var(--s1)' },
         { label: STRINGS.barWholeNone, p: m.op, t: m.ot, color: 'var(--s2)' }];
@@ -907,8 +974,8 @@ function legendFor(subject, pooled) {
   if (subject === 'guidance') {
     const items = [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }];
     if (pooled.models.some((m) => m.nAbl > 0)) {
+      items.push({ label: STRINGS.barAll, color: 'var(--axis)' });
       items.push({ label: STRINGS.barAblated, color: 'var(--s3)' });
-      items.push({ label: STRINGS.tickAll, tick: true });
     }
     return legend(items);
   }
@@ -1053,20 +1120,121 @@ function stakesLine(st) {
   return null;
 }
 
-function confidenceLine(c, policy, subject) {
+/* Runs still needed to move a level from `conf` to `level`, assuming the
+   evidence (-ln(1 - level)) grows in step with the pair count. Returns
+   { node, projected }: `projected` is true for a line that projects a pace. */
+function estimateLine(which, conf, level, pairs, cap) {
+  const line = (text) => h('p', { class: 'meta', 'data-est': which }, text);
+  if (conf >= level) return { node: line(STRINGS.confReached(which)), projected: false };
+  if (!Number.isInteger(pairs) || pairs <= 0) return { node: null, projected: false };
+  if (conf <= 0) return { node: line(STRINGS.confNoMove(which)), projected: false };
+  const more = Math.max(1, Math.ceil(pairs * (-Math.log(1 - level)) / (-Math.log(1 - conf))) - pairs);
+  if (Number.isInteger(cap) && cap > 0 && pairs + more > cap)
+    return { node: line(STRINGS.confPastCap(which, cap)), projected: true };
+  return { node: line(STRINGS.confMore(which, more)), projected: true };
+}
+
+/* A name cut to `n` characters, the last one an ellipsis. */
+function clipName(text, n) {
+  const t = String(text);
+  return t.length > n ? t.slice(0, n - 1) + '…' : t;
+}
+
+/* Signed whole points with a real minus sign: +22, 0, −18. */
+function signedPoints(x) {
+  const n = Math.round(x);
+  return n > 0 ? '+' + n : n < 0 ? '−' + (-n) : '0';
+}
+
+/* The gain range chart's geometry: the label column, the axis from -100
+   to +100 points, and the runs meter on the right. */
+const RANGE = { W: 340, AX0: 116, AX1: 282, MX: 292, MW: 42, TOP: 16, ROW: 32, TASK_CHARS: 19 };
+const rangeX = (v) => RANGE.AX0 + ((Math.max(-100, Math.min(100, v)) + 100) / 200) * (RANGE.AX1 - RANGE.AX0);
+const RANGE_COLORS = { keeps: 'var(--good)', 'removes-ready': 'var(--s2)', 'no-room': 'var(--axis)', paused: 'var(--axis)', open: 'var(--s1)' };
+
+/* rows: confidence.cells, each {model, task, pairs, gain, low, high, votes, status}. */
+function rangeChart(rows, margin, cap) {
+  const fin = (x) => typeof x === 'number' && isFinite(x);
+  rows = rows.filter((r) => r && fin(r.gain) && fin(r.low) && fin(r.high));
+  if (!rows.length) return null;
+  const { W, AX0, AX1, MX, MW, TOP, ROW } = RANGE;
+  const H = TOP + rows.length * ROW + 18;
+  const bottom = TOP + rows.length * ROW;
+  const lab = { 'font-size': 10, fill: 'var(--muted)' };
+  const kids = [];
+  for (const v of [-100, -50, 0, 50, 100]) {
+    const x = rangeX(v);
+    if (v !== 0) kids.push(h('line', { x1: x, x2: x, y1: TOP - 2, y2: bottom, stroke: 'var(--grid)', 'stroke-width': 1 }));
+    kids.push(h('text', { ...lab, x: x, y: H - 3, 'text-anchor': 'middle', 'data-axis': v }, signedPoints(v)));
+  }
+  kids.push(h('line', { x1: rangeX(0), x2: rangeX(0), y1: TOP - 2, y2: bottom, stroke: 'var(--axis)', 'stroke-width': 1.5, 'data-line': 'zero' }));
+  const mx = rangeX(margin);
+  kids.push(h('line', { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'data-line': 'margin' }));
+  kids.push(h('text', { ...lab, x: mx, y: TOP - 5, 'text-anchor': 'middle' }, '+' + margin));
+  kids.push(h('text', { ...lab, x: 0, y: H - 3 }, STRINGS.rangeAxis));
+  kids.push(h('text', { ...lab, x: MX, y: TOP - 5 }, STRINGS.rangeRuns));
+  rows.forEach((r, i) => {
+    const y = TOP + i * ROW;
+    const model = friendlyModel(r.model);
+    const task = typeof r.task === 'string' && r.task ? clean(r.task) : null;
+    kids.push(h('text', { x: 0, y: y + 12, 'font-size': 11, fill: 'var(--ink-2)' }, model));
+    if (task) kids.push(h('text', { x: 0, y: y + 25, 'font-size': 10, fill: 'var(--muted)', 'data-tip': task }, clipName(task, RANGE.TASK_CHARS)));
+    const x0 = rangeX(Math.min(r.low, r.high)), x1 = rangeX(Math.max(r.low, r.high));
+    const width = Math.max(2, x1 - x0);
+    const color = RANGE_COLORS[r.status] || RANGE_COLORS.open;
+    kids.push(h('rect', { class: 'range-bar', x: x0.toFixed(2), y: y + 10, width: width.toFixed(2), height: 10,
+      rx: Math.min(5, width / 2).toFixed(2), fill: color, 'fill-opacity': r.status === 'open' || !RANGE_COLORS[r.status] ? 0.55 : 1,
+      'data-status': r.status, 'pointer-events': 'none' }));
+    kids.push(h('circle', { class: 'gain-dot', cx: rangeX(r.gain).toFixed(2), cy: y + 15, r: 4, fill: 'var(--ink)',
+      stroke: 'var(--surface)', 'stroke-width': 1.5, 'pointer-events': 'none' }));
+    const pairs = Number.isInteger(r.pairs) ? r.pairs : 0;
+    kids.push(h('text', { x: MX, y: y + 12, 'font-size': 11, fill: 'var(--ink)', class: 'runs' }, cap ? pairs + '/' + cap : String(pairs)));
+    if (cap) {
+      kids.push(h('rect', { x: MX, y: y + 17, width: MW, height: 4, rx: 2, fill: 'var(--base)' }));
+      const fw = MW * Math.min(1, pairs / cap);
+      if (fw > 0) kids.push(h('rect', { class: 'runs-fill', x: MX, y: y + 17, width: fw.toFixed(2), height: 4, rx: 2, fill: 'var(--ink-2)' }));
+      kids.push(h('line', { x1: MX + MW, x2: MX + MW, y1: y + 15, y2: y + 23, stroke: 'var(--ink)', 'stroke-width': 1 }));
+    }
+    kids.push(h('rect', { x: AX0 - 4, y: y + 4, width: AX1 - AX0 + 8, height: 22, fill: 'transparent', class: 'mark', tabindex: 0,
+      'data-tip-pos': 'below',
+      'data-tip': STRINGS.rangeTip(model, task, signedPoints(r.gain), signedPoints(r.low), signedPoints(r.high),
+        STRINGS.rangeTipRuns(pairs, cap), r.votes !== false) }));
+  });
+  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart range', role: 'img',
+    'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
+}
+
+function confidenceView(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
-  /* No cell with headroom (every one at the ceiling or broken): no removal
-     level to show. */
-  if (c.no_help === null) return h('p', { class: 'meta' }, STRINGS.confidenceNoRoom(pctOf(c.helps), margin));
-  if (!ok(c.no_help)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
-  const level = (key, fallback) => Math.round((policy && ok(policy[key]) ? policy[key] : fallback) * 100) + '%';
-  const f = subject === 'guidance' ? STRINGS.confidenceSection : STRINGS.confidence;
+  const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
+  const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
+  const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0
+    ? policy.min_cli_versions : 2;
   const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
-    ? STRINGS.confidenceCap(policy.max_runs_per_cell) : '';
-  return h('p', { class: 'meta' }, f(pctOf(c.helps), pctOf(c.no_help), margin,
-    level('benefit_confidence', KEEP_AT), level('retire_confidence', REMOVE_AT)) + cap);
+    ? policy.max_runs_per_cell : null;
+  const whole = (x) => Math.round(x * 100) + '%';
+  const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
+  const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
+  if (chart) {
+    kids.push(chart);
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeRule(margin)));
+    kids.push(h('p', { class: 'meta' }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
+  }
+  const keepEst = estimateLine(STRINGS.confKeepWord, c.helps, keep, c.keep_pairs, cap);
+  kids.push(keepEst.node);
+  let removeEst = { node: null, projected: false };
+  if (c.no_help === null) kids.push(h('p', { class: 'meta' }, STRINGS.confNoRoom(margin)));
+  else if (ok(c.no_help)) {
+    removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
+    kids.push(removeEst.node);
+  }
+  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
+  else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
+  if (keepEst.projected || removeEst.projected) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
+  return h('div', { class: 'conf' }, kids);
 }
 
 function usageLine(u, window, refMs) {
@@ -1097,8 +1265,8 @@ function skillCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), sparkline(it.trend, refMs)] : null,
-    confidenceLine(it.raw.confidence, doc && doc.policy, 'skills'),
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'skills'),
     verdictLine(it.raw.verdict));
 }
 
@@ -1111,8 +1279,8 @@ function sectionCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'section'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), sparkline(it.trend, refMs)] : null,
-    confidenceLine(it.raw.confidence, doc && doc.policy, 'guidance'),
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance'),
     verdictLine(it.raw.verdict));
 }
 
@@ -1237,6 +1405,148 @@ function removedSkillsView(doc) {
       link(r.reverse_url, STRINGS.removedLink)))));
 }
 
+/* --- lessons (Adam, 2026-11-03) --- */
+
+const LESSON_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const lessonDayMs = (d) => (typeof d === 'string' && LESSON_DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN);
+const listWords = (parts) => parts.length < 2 ? parts.join('')
+  : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+
+/* A readable title for a proposal subject, as scripts/mine_sessions.py
+   card_title words it; a guidance section by its heading when the page has it. */
+function lessonTitle(subject, headings) {
+  const s = String(subject);
+  let m = /^tool-([a-z]+)(?:-(.+))?$/.exec(s);
+  if (m) {
+    const tool = m[1] === 'powershell' ? 'PowerShell' : m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    return clean(m[2] ? STRINGS.lessonToolCommand(tool, m[2]) : STRINGS.lessonToolCalls(tool));
+  }
+  if (s.startsWith('red-ci-') && s.length > 7) return clean(STRINGS.lessonRedCi(s.slice(7)));
+  if (s.startsWith('skill:')) return clean(s.slice(6));
+  if (s.startsWith('guidance:')) {
+    const id = s.slice(9);
+    const h = headings && Object.prototype.hasOwnProperty.call(headings, id) ? headings[id] : null;
+    return clean(typeof h === 'string' && h ? h : id);
+  }
+  return clean(s);
+}
+
+/* One item, or null when it is off the shape explorer_data.py publishes. */
+function lessonItem(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonKinds, raw.kind) || typeof raw.subject !== 'string' || !raw.subject) return null;
+  if (!Number.isInteger(raw.evidence_count) || raw.evidence_count < 1) return null;
+  if (!isFinite(lessonDayMs(raw.first_seen)) || !isFinite(lessonDayMs(raw.last_seen))) return null;
+  let draft = null;
+  const d = raw.draft;
+  if (d && typeof d === 'object' && Number.isInteger(d.number) && d.number > 0
+      && Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, d.state) && githubLink(d.url)) {
+    draft = { number: d.number, state: d.state, url: githubLink(d.url) };
+  }
+  const sources = Array.isArray(raw.sources) ? raw.sources.filter((x) => typeof x === 'string'
+    && Object.prototype.hasOwnProperty.call(STRINGS.lessonSurfaces, x)) : null;
+  const signals = [];
+  if (raw.signals && typeof raw.signals === 'object' && !Array.isArray(raw.signals)) {
+    for (const k of Object.keys(STRINGS.lessonSignals)) {
+      const n = raw.signals[k];
+      if (Number.isInteger(n) && n > 0) signals.push({ signal: k, n: n });
+    }
+    signals.sort((a, b) => b.n - a.n);
+  }
+  return { kind: raw.kind, subject: raw.subject, n: raw.evidence_count, first: raw.first_seen, last: raw.last_seen,
+    draft: draft, sources: sources, signals: signals };
+}
+
+function lessonSource(it) {
+  const where = it.sources && it.sources.length
+    ? ' (' + listWords(it.sources.map((x) => STRINGS.lessonSurfaces[x])) + ')' : '';
+  const why = it.signals.map((x) => STRINGS.lessonSignalCount(STRINGS.lessonSignals[x.signal], x.n)).join(', ');
+  return [h('div', null, STRINGS.lessonTranscripts + where), why ? h('div', { class: 'reason' }, why) : null];
+}
+
+function lessonStatus(it) {
+  if (it.kind !== 'new-skill') return STRINGS.lessonWaiting;
+  if (!it.draft) return STRINGS.lessonNotDrafted;
+  return [link(it.draft.url, STRINGS.lessonDraft(it.draft.number)), ' (' + STRINGS.lessonDraftStates[it.draft.state] + ')'];
+}
+
+function lessonLeftOut(lo) {
+  const n = (k) => (lo && Number.isInteger(lo[k]) && lo[k] > 0 ? lo[k] : 0);
+  const parts = [];
+  if (n('memory_note')) parts.push(STRINGS.lessonLeftMemory(n('memory_note')));
+  if (n('agent_check')) parts.push(STRINGS.lessonLeftChecks(n('agent_check')));
+  if (n('private')) parts.push(STRINGS.lessonLeftPrivate(n('private')));
+  return (parts.length ? STRINGS.lessonLeftOut(listWords(parts)) + ' ' : '') + STRINGS.lessonNoText;
+}
+
+const ISSUE_REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+
+/* One memory promotion or skill proposal issue, or null when it is off the
+   shape explorer_data.py publishes. */
+function lessonIssue(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonIssueSources, raw.source)) return null;
+  if (typeof raw.repo !== 'string' || !ISSUE_REPO.test(raw.repo) || !Number.isInteger(raw.number) || raw.number < 1) return null;
+  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, raw.state) || raw.state === 'merged') return null;
+  if (!isFinite(lessonDayMs(raw.opened))) return null;
+  const url = githubLink(raw.url);
+  if (!url) return null;
+  const count = Number.isInteger(raw.count) && raw.count >= 0 ? raw.count : null;
+  const target = typeof raw.target === 'string' && raw.target ? raw.target : null;
+  if (raw.source === 'proposal' && !target) return null;
+  return { source: raw.source, repo: raw.repo, number: raw.number, state: raw.state, opened: raw.opened,
+    count: count, target: target, url: url };
+}
+
+function lessonIssueTitle(it) {
+  if (it.source === 'proposal') return clean(STRINGS.lessonNewSkill(it.target));
+  if (it.target === 'agent-checks') return clean(STRINGS.lessonMemoryChecks(it.count, it.repo));
+  return clean(STRINGS.lessonMemoryFacts(it.count, it.target, it.repo));
+}
+
+/* The skills view lists new-skill and skill:* items and the issue lessons,
+   the guidance view guidance:* ones. */
+function lessonsView(doc, mode) {
+  const L = doc.lessons;
+  const head = h('h2', null, STRINGS.lessonsHeading);
+  if (!L || typeof L !== 'object') {
+    return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
+  }
+  const miner = isFinite(lessonDayMs(L.date)) && Array.isArray(L.items);
+  const issues = mode === 'guidance' || !Array.isArray(L.issues) ? [] : L.issues.map(lessonIssue).filter(Boolean);
+  if (!miner && !issues.length) {
+    return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
+  }
+  const refMs = parseTime(doc.generated_at);
+  const headings = {};
+  ((doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : []).forEach((s) => {
+    if (s && typeof s.id === 'string' && typeof s.heading === 'string') headings[s.id] = s.heading;
+  });
+  const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === 'guidance'
+    ? it.subject.startsWith('guidance:')
+    : it.kind === 'new-skill' || it.subject.startsWith('skill:')));
+  const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
+  const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
+  const minerRows = items.map((it) => h('tr', null,
+    h('td', null, lessonTitle(it.subject, headings)), h('td', null, STRINGS.lessonKinds[it.kind]),
+    h('td', null, lessonSource(it)),
+    h('td', { class: 'num' }, STRINGS.lessonSeen(it.n)), h('td', { class: 'num' }, day(it.first)),
+    h('td', { class: 'num' }, day(it.last)), h('td', null, lessonStatus(it))));
+  const issueRows = issues.map((it) => h('tr', null,
+    h('td', null, lessonIssueTitle(it)), h('td', null, STRINGS.lessonIssueKinds[it.source]),
+    h('td', null, STRINGS.lessonIssueSources[it.source]),
+    h('td', { class: 'num' }, STRINGS.lessonNoValue), h('td', { class: 'num' }, day(it.opened)),
+    h('td', { class: 'num' }, STRINGS.lessonNoValue),
+    h('td', null, link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')')));
+  const rows = minerRows.concat(issueRows);
+  const table = rows.length ? h('div', { class: 'tablewrap' }, h('table', null,
+    h('thead', null, h('tr', null, cols.map((c) => h('th', null, c)))), h('tbody', null, rows)))
+    : h('p', null, mode === 'guidance' ? STRINGS.lessonsEmptyGuidance : STRINGS.lessonsEmptySkills);
+  return h('section', null, head,
+    h('p', { class: 'lead' }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone), table,
+    miner ? h('p', { class: 'note', style: 'margin-top:8px' }, lessonLeftOut(L.left_out)) : null);
+}
+
 function toolbar(mode, sortBy, handlers) {
   const hd = handlers || {};
   const seg = (label, opts) => h('div', { class: 'toolbar' }, h('span', { class: 'note' }, label),
@@ -1271,7 +1581,7 @@ function buildPage(doc, mode, opts) {
           h('p', { class: 'note' }, STRINGS.wholeNote),
           h('p', { class: 'sent' }, clean(whole.sentence)),
           legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-          sparkline(whole.trend, refMs))),
+          trendChart(whole.trend, refMs))),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
         h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
@@ -1280,6 +1590,7 @@ function buildPage(doc, mode, opts) {
             h('button', { type: 'button', 'aria-pressed': o.sortBy === 'value' ? 'true' : 'false', onclick: hd.sortValue || null }, STRINGS.sortValue),
             h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
         items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      lessonsView(doc, mode),
       removedView(doc)
     ];
   } else {
@@ -1289,6 +1600,7 @@ function buildPage(doc, mode, opts) {
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
       items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      lessonsView(doc, mode),
       removedSkillsView(doc)];
   }
   return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
@@ -1347,14 +1659,26 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
       const r = target.getBoundingClientRect();
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
-      let top = r.top - th - 8;
-      if (top < 8) top = r.bottom + 8;
+      let top;
+      if (target.getAttribute('data-tip-pos') === 'below') {
+        top = r.bottom + 8;
+        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+      } else {
+        top = r.top - th - 8;
+        if (top < 8) top = r.bottom + 8;
+      }
       tip.style.left = left + 'px';
       tip.style.top = top + 'px';
     }
     app.addEventListener('pointerover', (e) => showTip(e.target.closest ? e.target.closest('[data-tip]') : null));
     app.addEventListener('pointerout', () => { tip.hidden = true; });
-    app.addEventListener('focusin', (e) => showTip(e.target));
+    app.addEventListener('focusin', (e) => {
+      let kb = true;
+      try { kb = e.target.matches(':focus-visible'); } catch (err) { /* old browser */ }
+      if (kb) showTip(e.target);
+    });
+    app.addEventListener('pointerdown', () => { tip.hidden = true; });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') tip.hidden = true; });
     app.addEventListener('focusout', () => { tip.hidden = true; });
     window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
@@ -1377,8 +1701,8 @@ if (typeof module !== 'undefined') {
     STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
     clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
     modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-    poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
-    skillItems, sectionItems, wholeGuidance, buildPage, buildFailure, h, textOf, findAll, toDom
+    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression,
+    skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom
   };
 }
 </script>

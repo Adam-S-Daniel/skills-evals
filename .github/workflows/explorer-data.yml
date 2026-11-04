@@ -69,6 +69,23 @@ name: Publish explorer data
 #   the issues act on exactly the report the dashboard shows, and the weekly
 #   job would have to rebuild it from three more checkouts. It runs only
 #   when a report was built, so a failed listing closes nothing.
+# * The lessons (Adam, 2026-11-03): `build` mints the read-only registry App
+#   token for adam-agentskills-private alone (contents: read) and checks out
+#   only `lessons/` (proposals and records) from `persistent/lessons`, with no credentials
+#   kept, and lists adam-agentskills' pull requests with the job token (a
+#   public repository) for each new-skill lesson's draft. Every one of those
+#   steps is `continue-on-error` and prints only a fixed line, so a missing
+#   App or branch makes `lessons` unknown (null), never a red build. The
+#   proposals come from private local sessions: explorer_data.py publishes
+#   only a public proposal's kind, subject, count, dates and draft, and its
+#   records' machine surfaces and signal counts, never a session excerpt,
+#   session, record id, repository or check sketch, and counts the rest.
+#   One more `continue-on-error` step lists, with the job token, the memory
+#   curation routine's `Memory promotion` issues across both fleet owners
+#   (kept only in a repository that reads exactly `private: false`) and the
+#   skill-proposal issues of adam-agentskills, for `lessons.issues`: number,
+#   state, date, the count and target parsed from a title, a skill name and
+#   a built URL, never a body or other title text.
 
 on:
   workflow_run:
@@ -256,12 +273,148 @@ jobs:
           fi
           exit 0
 
+      # The lessons (Adam, 2026-11-03): every step that reaches the private
+      # lessons is continue-on-error, so a missing App, branch or checkout
+      # leaves `lessons` unknown (null) and never breaks the page build.
+      - name: Mint the read-only token for the lessons
+        id: lessons-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+
+      # ls-remote exits 2 when persistent/lessons is absent; any other
+      # nonzero code (no token, no network) also reads as absent here.
+      - name: Look for the lessons branch
+        id: lessons-branch
+        continue-on-error: true
+        env:
+          LESSONS_TOKEN: ${{ steps.lessons-token.outputs.token }}
+        run: |
+          set -uo pipefail
+          if [ -z "$LESSONS_TOKEN" ]; then
+            echo "lessons unavailable (no token)"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          auth="$(printf 'x-access-token:%s' "$LESSONS_TOKEN" | base64 -w0)"
+          rc=0
+          git -c "http.extraHeader=Authorization: basic $auth" ls-remote --exit-code --heads \
+            https://github.com/Adam-S-Daniel/adam-agentskills-private.git persistent/lessons \
+            > /dev/null 2>&1 || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "lessons unavailable (exit $rc)"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=true" >> "$GITHUB_OUTPUT"
+
+      # Only lessons/ (proposals/ and records/), read as data by
+      # explorer_data.py, which publishes only each public proposal's kind,
+      # subject, count, dates, and its records' sources and signals.
+      # Credentials not kept.
+      - name: Check out the lesson proposals (adam-agentskills-private)
+        if: steps.lessons-branch.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills-private
+          ref: persistent/lessons
+          path: private-lessons
+          persist-credentials: false
+          sparse-checkout: lessons
+          token: ${{ steps.lessons-token.outputs.token }}
+
+      # adam-agentskills is public: the job token lists its pull requests for
+      # each new-skill lesson's `draft-skill/<subject>` draft. Titles and
+      # bodies are dropped here; only head, number, state and merged remain.
+      - name: List the skill draft pull requests
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/draft-prs.json"
+          rc=0
+          gh api --method GET \
+            "repos/Adam-S-Daniel/adam-agentskills/pulls?state=all&per_page=100" \
+            --jq '[.[] | {head: .head.ref, number: .number, state: .state, merged: (.merged_at != null)}]' \
+            > "$out.tmp" 2>/dev/null && mv "$out.tmp" "$out" || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out" "$out.tmp"
+            echo "draft pull requests unavailable (exit $rc)"
+          fi
+          exit 0
+
+      # Lessons from two more sources (Adam, 2026-11-03), with the job token
+      # (`issues: read`): the memory curation routine's `Memory promotion`
+      # issues across both fleet owners, each kept only when its repository
+      # reads exactly `private: false`, and the skill-proposal issues of the
+      # public adam-agentskills. The file is data for explorer_data.py, which
+      # publishes only the number, state, date, the count and target parsed
+      # from a title, and a skill name; nothing from it is printed here.
+      - name: List the memory promotion and skill proposal issues
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/lesson-issues.json"
+          hits="$RUNNER_TEMP/memory-hits.jsonl"
+          rows="$RUNNER_TEMP/memory-rows.jsonl"
+          rc=0
+          : > "$hits"; : > "$rows"
+          for owner in Adam-S-Daniel jodidaniel; do
+            gh api -X GET search/issues -f "q=user:$owner is:issue \"Memory promotion\" in:title" \
+              -f per_page=100 \
+              --jq '.items[] | {repo: (.repository_url | sub("^https://api.github.com/repos/"; "")), number: .number, state: .state, created_at: .created_at, title: .title}' \
+              >> "$hits" 2>/dev/null || rc=$?
+          done
+          if [ "$rc" -eq 0 ]; then
+            for repo in $(jq -r '.repo' "$hits" | sort -u); do
+              case "$repo" in */*) ;; *) continue ;; esac
+              private=$(gh api "repos/$repo" --jq '.private' 2>/dev/null) || private=unknown
+              [ "$private" = false ] || continue
+              jq -c --arg repo "$repo" 'select(.repo == $repo) + {private: false}' "$hits" >> "$rows"
+            done
+            gh api "repos/Adam-S-Daniel/adam-agentskills/issues?labels=skill-proposal&state=all&per_page=100" \
+              > "$RUNNER_TEMP/proposal-issues.json" 2>/dev/null || rc=$?
+          fi
+          if [ "$rc" -eq 0 ]; then
+            jq -n --slurpfile memory "$rows" --slurpfile proposals "$RUNNER_TEMP/proposal-issues.json" \
+              '{memory: $memory, proposals: $proposals[0]}' > "$out.tmp" 2>/dev/null \
+              && mv "$out.tmp" "$out" || rc=$?
+          fi
+          rm -f "$hits" "$rows" "$RUNNER_TEMP/proposal-issues.json" "$out.tmp"
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out"
+            echo "lesson issues unavailable (exit $rc)"
+          fi
+          exit 0
+
       - name: Build the explorer data
         working-directory: skills-evals
         run: |
           set -euo pipefail
           as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
           mkdir -p "$RUNNER_TEMP/explorer"
+          lessons=()
+          if [ -d "$GITHUB_WORKSPACE/private-lessons/lessons/proposals" ]; then
+            lessons+=(--lessons "$GITHUB_WORKSPACE/private-lessons/lessons/proposals")
+          fi
+          if [ -d "$GITHUB_WORKSPACE/private-lessons/lessons/records" ]; then
+            lessons+=(--lesson-records "$GITHUB_WORKSPACE/private-lessons/lessons/records")
+          fi
+          if [ -f "$RUNNER_TEMP/lesson-issues.json" ]; then
+            lessons+=(--lesson-issues "$RUNNER_TEMP/lesson-issues.json")
+          fi
+          if [ -f "$RUNNER_TEMP/draft-prs.json" ]; then
+            lessons+=(--draft-prs "$RUNNER_TEMP/draft-prs.json")
+          fi
           python3 scripts/explorer_data.py \
             --results-tree "$GITHUB_WORKSPACE/eval-results" \
             --roster evals/roster.yml --policy evals/gate-policy.yml \
@@ -283,6 +436,7 @@ jobs:
             --context-repo "Adam-S-Daniel/wsl-automation=$GITHUB_WORKSPACE/context-wsl-automation" \
             --fire-runs "$RUNNER_TEMP/fire-runs.json" \
             --fixture-queue "$RUNNER_TEMP/fixture-queue/fixture-queue.json" \
+            "${lessons[@]}" \
             --out "$RUNNER_TEMP/explorer/latest.json"
 
       - name: Upload the explorer data

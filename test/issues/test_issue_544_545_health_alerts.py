@@ -475,7 +475,9 @@ class WorkflowAndPageTests(unittest.TestCase):
         steps = wf["jobs"]["build"]["steps"]
         checkouts = {s["with"]["path"]: s["with"] for s in steps
                      if s.get("uses", "").startswith("actions/checkout@")
-                     and s["with"].get("path") != "eval-results"}
+                     # The lesson proposals (2026-11-03) are data, not a
+                     # consumer: a sparse, shallow checkout of one directory.
+                     and s["with"].get("path") not in ("eval-results", "private-lessons")}
         for path, opts in checkouts.items():
             with self.subTest(path=path):
                 self.assertEqual(opts.get("fetch-depth"), 0)
@@ -501,9 +503,14 @@ class WorkflowAndPageTests(unittest.TestCase):
         literal with a constant `"kind"` key is an alert the page must label;
         tool/test/run.js checks each listed kind has a label."""
         tree = ast.parse((ROOT / "scripts" / "explorer_data.py").read_text(encoding="utf-8"))
+        # A lesson item and a record's subject (2026-11-03) carry a proposal's
+        # kind or a subject kind, not an alert's.
+        not_alerts = {id(n) for f in ast.walk(tree)
+                      if isinstance(f, ast.FunctionDef) and f.name in ("lesson_item", "record_target")
+                      for n in ast.walk(f)}
         emitted = set()
         for node in ast.walk(tree):
-            if isinstance(node, ast.Dict):
+            if isinstance(node, ast.Dict) and id(node) not in not_alerts:
                 for key, value in zip(node.keys, node.values):
                     if isinstance(key, ast.Constant) and key.value == "kind":
                         self.assertIsInstance(value, ast.Constant, "a kind must be a literal")

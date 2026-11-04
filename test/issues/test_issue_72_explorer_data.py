@@ -159,7 +159,7 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
                                      "coverage", "fires_without_results",
                                      "fixture_queue", "generated_at",
-                                     "guidance", "newest_run", "policy", "removed_skills",
+                                     "guidance", "lessons", "newest_run", "policy", "removed_skills",
                                      "roster", "schema_version",
                                      "skills", "source", "usage"])
         self.assertIsNone(d["usage"])
@@ -168,6 +168,8 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertIsNone(d["fires_without_results"])
         # No --fixture-queue report: unknown, not an empty queue.
         self.assertIsNone(d["fixture_queue"])
+        # No --lessons directory: unknown, not an empty list.
+        self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
@@ -672,8 +674,8 @@ class QueueConfidenceUsageTests(unittest.TestCase):
              "judge": {"helps_confidence": 0.9, "no_help_confidence": 0.1}},
             {"objective": {"helps_confidence": 0.95, "no_help_confidence": 0.3},
              "keep_tests": [{"route": "objective", "p": 0.05}]}]}
-        self.assertEqual(explorer_data.subject_confidence(verdict),
-                         {"helps": 0.9, "no_help": 0.3})
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["helps"], got["no_help"]), (0.9, 0.3))
         # A family of one, or none recorded, is m = 1.
         self.assertEqual(explorer_data.subject_confidence(
             {**verdict, "keep_family": None})["helps"], 0.95)
@@ -684,9 +686,67 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         # A voting cell with no figure blocks a no-help claim; no figure at all is None.
         verdict["cells"].append({"class": "missing"})
         self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
-        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}),
-                         {"helps": None, "no_help": None})
-        self.assertEqual(explorer_data.subject_confidence({}), {"helps": None, "no_help": None})
+        empty = {**{k: None for k in ("helps", "no_help", "keep_pairs", "no_help_pairs",
+                                      "max_pairs", "keep_family")}, "cells": []}
+        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}), empty)
+        self.assertEqual(explorer_data.subject_confidence({}), empty)
+
+    def test_confidence_carries_the_pair_counts_behind_each_level(self):
+        verdict = {"keep_family": 2, "cells": [
+            {"objective": {"no_help_confidence": 0.7, "pairs": 11},
+             "keep_tests": [{"route": "objective", "p": 0.6}]},
+            {"objective": {"no_help_confidence": 0.3, "pairs": 6},
+             "keep_tests": [{"route": "objective", "p": 0.05}]}]}
+        got = explorer_data.subject_confidence(verdict)
+        # keep comes from the second cell (smallest p), remove from the second
+        # (lowest level), and the busiest cell is the first.
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"],
+                          got["keep_family"]), (6, 6, 11, 2))
+        verdict["cells"][1]["objective"]["pairs"] = "6"
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"]),
+                         (None, None, 11))
+
+    def test_confidence_lists_each_figured_cell_for_the_gain_range_chart(self):
+        # The page's gain range chart: one row per cell with an objective
+        # figure, in percentage points, rounded to one decimal only here.
+        verdict = {"keep_family": 2, "cells": [
+            {"fixture": "fx-two", "model": "model-b", "class": "benefit",
+             "objective": {"delta": 0.22049, "pairs": 5, "benefit_lower": 0.0123456,
+                           "retire_upper": 0.61449, "no_help_confidence": 0.0},
+             "keep_tests": [{"route": "objective", "p": 0.01}]},
+            {"fixture": "fx-one", "model": "model-a", "class": "ceiling",
+             "objective": {"delta": -0.05, "pairs": 12, "benefit_lower": -1.7,
+                           "retire_upper": 0.04449, "no_help_confidence": 0.95}},
+            {"fixture": "fx-three", "model": "model-a", "class": "missing"}]}
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual(got, [
+            {"model": "model-a", "task": "fx-one", "pairs": 12, "gain": -5.0,
+             "low": -100.0, "high": 4.4, "votes": False, "status": "no-room"},
+            {"model": "model-b", "task": "fx-two", "pairs": 5, "gain": 22.0,
+             "low": 1.2, "high": 61.4, "votes": True, "status": "keeps"}])
+        # Each class maps to one status; an unlisted one is open.
+        for cls, status in (("no-benefit", "removes-ready"), ("ceiling-unconfirmed", "no-room"),
+                            ("paused", "paused"), ("insufficient", "open"),
+                            ("cannot-discriminate", "open")):
+            verdict["cells"][1]["class"] = cls
+            row = explorer_data.subject_confidence(verdict)["cells"][0]
+            self.assertEqual(row["status"], status, cls)
+            self.assertEqual(row["votes"], cls in ("no-benefit", "insufficient"), cls)
+        # A gain that rounds to zero is 0.0, never -0.0.
+        verdict["cells"][1]["objective"]["delta"] = -0.0001
+        self.assertEqual(str(explorer_data.subject_confidence(verdict)["cells"][0]["gain"]), "0.0")
+        # A number that is not finite drops the cell; a fixtureless one has no task.
+        verdict["cells"][1]["objective"]["retire_upper"] = float("nan")
+        verdict["cells"][0]["fixture"] = None
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual([(r["model"], r["task"]) for r in got], [("model-b", None)])
+        # The document's last gate holds every row to its fields.
+        doc = {"skills": [{"confidence": {"cells": got}}]}
+        explorer_data.finish(doc)
+        doc["skills"][0]["confidence"]["cells"][0]["extra"] = 1
+        with self.assertRaises(explorer_data.Refused):
+            explorer_data.finish(doc)
 
     def test_usage_counts_listed_skills_and_names_its_window(self):
         t = Tree(self)

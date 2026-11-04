@@ -306,12 +306,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("--lessons", text)
 
     def test_no_workflow_passes_lessons_to_a_reader_of_other_kinds(self):
-        # draft_new_skill.py keeps new-skill; plan_week and pick read counts.
+        # draft_new_skill.py keeps new-skill; plan_week and pick read counts;
+        # explorer_data.py publishes only public proposals' safe fields.
         for path in sorted(WORKFLOWS.glob("*.yml")):
             text = path.read_text(encoding="utf-8")
             if "--lessons" in text:
                 with self.subTest(workflow=path.name):
-                    self.assertIn(path.name, {"routine-draft-skill.yml",
+                    self.assertIn(path.name, {"explorer-data.yml",
+                                              "routine-draft-skill.yml",
                                               "routine-eval-fire.yml",
                                               "routine-eval-weekly.yml",
                                               "routine-fixture-supply.yml"})

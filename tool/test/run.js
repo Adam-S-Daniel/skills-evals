@@ -77,14 +77,14 @@ test('skill sentence for a canned run', () => {
     skillRun('example-model-1-0', 14, 8, 5, 9)
   ];
   const s = P.sentenceFor(P.poolRuns(runs, 'skills', refMs, []), 'skills', refMs);
-  eq(s, 'With this skill, Example Model 1.0 passed 24 of 27 checks; without it, 15 of 27. Tried 9 times, last on Oct 31.');
+  eq(s, 'With this skill, Example Model 1.0 passed 24 of 27 checks; without it, 15 of 27. 9 trials in all, the last on Oct 31.');
 });
 
 test('guidance sentence includes the ablation clause', () => {
   const runs = [secRun('example-model-1-0', 1, 7, 4, 7, 5, 8)];
   const s = P.sentenceFor(P.poolRuns(runs, 'guidance', refMs, []), 'guidance', refMs);
   eq(s, 'With this section, Example Model 1.0 passed 7 of 8 checks; without it, 4 of 8. '
-    + 'With all the rules, 7 of 8; with all the other rules but not this one, 5 of 8. Tried 3 times, last on Oct 30.');
+    + 'With all the guidance, 7 of 8; with all of it but this section, 5 of 8. 3 trials in all, the last on Oct 30.');
 });
 
 test('runs older than the window are left out of the sentence', () => {
@@ -237,34 +237,122 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   ok(text.includes('No eval needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
   eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
 });
-test('the confidence line shows whole percents and never rounds up to certainty', () => {
+const cv = (c, policy) => P.confidenceView(c, { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, max_runs_per_cell: 40, ...policy }, 'skills');
+const svgs = (n) => P.findAll(n, (x) => x.tag === 'svg');
+const byClass = (n, cls) => P.findAll(n, (x) => x.attrs && x.attrs.class === cls);
+const axisX = (v) => 116 + ((v + 100) / 200) * (282 - 116);
+const cell = (over) => ({ model: 'claude-sonnet-5-5', task: 'fetch-retry', pairs: 5, gain: 22, low: -18, high: 61, votes: true, status: 'open', ...over });
+const twoCells = [cell({ status: 'keeps', low: 3.5, high: 70 }),
+  cell({ model: 'claude-opus-5-5', task: 'a-really-long-invented-task-name-here', pairs: 40, gain: -5, low: -60.2, high: 10, status: 'removes-ready' })];
+const withCells = (cells, over) => ({ helps: 0.5, no_help: 0.5, keep_pairs: 10, no_help_pairs: 10, max_pairs: 10, cells, ...over });
+test('the confidence view with no figure says so', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
-  doc.skills[0].confidence = { helps: 0.8571, no_help: 0.9999 };
   doc.skills[1].confidence = { helps: null, no_help: null };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('How sure the loop is: 85% that it helps, over 99% that any gain is under 5 points. It keeps a skill at 80% and removes one at 90%.'), 'levels');
-  ok(text.includes(P.STRINGS.confidenceNone), 'no-figure line');
+  ok(P.textOf(P.buildPage(doc, 'skills', {})).includes(P.STRINGS.confidenceNone), 'page');
+  ok(P.textOf(cv(null)).includes(P.STRINGS.confidenceNone), 'null');
+  eq(svgs(cv({ helps: null })).length, 0);
 });
-test('the confidence line names the run cap and a subject with no room to show a gain', () => {
-  // 2026-11-03: a cell undecided at the cap can only propose a removal, and a
-  // subject whose every cell is at the ceiling has no removal level at all.
-  const doc = JSON.parse(JSON.stringify(fixture));
-  doc.policy = { ...doc.policy, max_runs_per_cell: 40 };
-  doc.skills[0].confidence = { helps: 0.5, no_help: 0.25 };
-  doc.skills[1].confidence = { helps: 0, no_help: null };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('removes one at 90%. A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
-  ok(text.includes('How sure the loop is: 0% that it helps. No task leaves room to show a gain of 5 points, because Claude already passes without it, so it needs a harder test.'), 'no room');
+test('the gain range chart draws one row per cell, each range on the axis scale', () => {
+  const n = cv(withCells(twoCells));
+  const chart = svgs(n);
+  eq(chart.length, 1);
+  eq(chart[0].attrs.class, 'chart range');
+  eq(chart[0].attrs.role, 'img');
+  ok(/2 tasks and models/.test(chart[0].attrs['aria-label']), 'aria summary');
+  const bars = byClass(n, 'range-bar');
+  eq(bars.length, 2);
+  twoCells.forEach((c, i) => {
+    const x = Number(bars[i].attrs.x), w = Number(bars[i].attrs.width);
+    ok(Math.abs(x - axisX(c.low)) < 0.5, 'left end ' + i + ': ' + x);
+    ok(Math.abs(x + w - axisX(c.high)) < 0.5, 'right end ' + i + ': ' + (x + w));
+    eq(Number(bars[i].attrs.height), 10, 'height');
+  });
+  const dots = byClass(n, 'gain-dot');
+  eq(dots.length, 2);
+  twoCells.forEach((c, i) => ok(Math.abs(Number(dots[i].attrs.cx) - axisX(c.gain)) < 0.5, 'dot ' + i));
+  eq(dots[0].attrs.fill, 'var(--ink)');
+  eq(Number(dots[0].attrs.r), 4);
+  const marks = byClass(n, 'mark');
+  eq(marks.length, 2);
+  ok(marks.every((m) => m.attrs.tabindex === 0 && m.attrs['data-tip-pos'] === 'below'), 'focusable targets below');
+  eq(marks[0].attrs['data-tip'], 'Claude Sonnet 5.5, task fetch-retry: gain +22 points so far; likely between +4 and +70. 5 of 40 runs.');
+});
+test('the gain range chart marks 0 and the margin, labels the axis and colors by status', () => {
+  const n = cv(withCells(twoCells));
+  const line = (k) => P.findAll(n, (x) => x.tag === 'line' && x.attrs['data-line'] === k)[0];
+  ok(Math.abs(line('zero').attrs.x1 - axisX(0)) < 0.5, 'zero line');
+  ok(!line('zero').attrs['stroke-dasharray'], 'zero line is solid');
+  eq(line('margin').attrs['stroke-dasharray'], '3 3');
+  ok(Math.abs(line('margin').attrs.x1 - axisX(15)) < 0.5, 'margin line at +15');
+  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
+  for (const want of ['−100', '−50', '0', '+50', '+100', '+15']) ok(labels.includes(want), 'label ' + want);
+  const wider = cv(withCells(twoCells), { objective_margin: 0.2 });
+  ok(Math.abs(P.findAll(wider, (x) => x.attrs && x.attrs['data-line'] === 'margin')[0].attrs.x1 - axisX(20)) < 0.5, 'policy margin');
+  const fills = {};
+  for (const status of ['keeps', 'removes-ready', 'no-room', 'paused', 'open']) {
+    const bar = byClass(cv(withCells([cell({ status })])), 'range-bar')[0];
+    fills[status] = bar.attrs.fill + '@' + bar.attrs['fill-opacity'];
+  }
+  eq(JSON.stringify(fills), JSON.stringify({ keeps: 'var(--good)@1', 'removes-ready': 'var(--s2)@1', 'no-room': 'var(--axis)@1', paused: 'var(--axis)@1', open: 'var(--s1)@0.55' }));
+});
+test('the gain range chart shows runs toward the cap and clips long task names', () => {
+  const n = cv(withCells(twoCells));
+  const runs = byClass(n, 'runs').map((x) => P.textOf(x).trim());
+  eq(runs.join(), '5/40,40/40');
+  const fills = byClass(n, 'runs-fill').map((x) => Number(x.attrs.width));
+  ok(Math.abs(fills[0] - 42 * 5 / 40) < 0.01 && Math.abs(fills[1] - 42) < 0.01, 'meter widths ' + fills);
+  const task = P.findAll(n, (x) => x.tag === 'text' && x.attrs['data-tip'] === 'a-really-long-invented-task-name-here')[0];
+  ok(task, 'full name in data-tip');
+  const shown = P.textOf(task.children[0]);
+  ok(shown.endsWith('…') && shown.length <= 19, 'clipped: ' + shown);
+  eq(P.clipName('short', 19), 'short');
+  ok(byClass(n, 'mark')[1].attrs['data-tip'].includes('task a-really-long-invented-task-name-here:'), 'full name in the range tip');
+  // No cap in the policy: a count, no meter.
+  const free = cv(withCells(twoCells), { max_runs_per_cell: null });
+  eq(byClass(free, 'runs').map((x) => P.textOf(x).trim()).join(), '5,40');
+  eq(byClass(free, 'runs-fill').length, 0);
+});
+test('the gain range chart explains itself with the policy levels', () => {
+  const t = P.textOf(cv(withCells(twoCells), { benefit_confidence: 0.85, retire_confidence: 0.95, min_cli_versions: 3 }));
+  ok(t.includes('Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.'), 'what');
+  ok(t.includes('Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +15.'), 'rule');
+  ok(t.includes('The left end is held to 85% certainty shared across the skill\'s tasks and models, the right end to 95%; a decision also waits for runs on three Claude Code versions.'), 'levels');
+  const g = P.textOf(P.confidenceView(withCells(twoCells), { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, min_cli_versions: 2 }, 'guidance'));
+  ok(g.includes('shared across the section\'s tasks and models, the right end to 90%; a decision also waits for runs on two Claude Code versions.'), 'section wording');
+});
+test('the confidence view estimates the runs still needed, or says it is past the cap', () => {
+  const near = P.textOf(cv(withCells(twoCells)));
+  ok(near.includes('Keep: at this pace, about 14 more runs.'), 'keep estimate ' + near);
+  ok(near.includes('Removal: at this pace, about 24 more runs.'), 'removal estimate');
+  ok(near.includes(P.STRINGS.confPace), 'pace note');
+  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.'), 'runs');
+  const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
+  ok(far.includes('Keep: not before the 40-run cap at this pace.') && far.includes('Removal: not before the 40-run cap at this pace.'), 'past cap');
+  ok(!far.includes('more run'), 'no estimate past the cap');
+  const done = P.textOf(cv(withCells(twoCells, { helps: 0.85, no_help: 0 })));
+  ok(done.includes('Keep: reached.') && done.includes('Removal: no movement yet.'), 'reached ' + done);
+  ok(!done.includes(P.STRINGS.confPace), 'no pace note without a projection');
+  eq(P.STRINGS.confMore('Keep', 1), 'Keep: at this pace, about 1 more run.');
+});
+test('the confidence view names a subject with no room to show a gain', () => {
+  const t = P.textOf(cv(withCells(twoCells, { no_help: null })));
+  ok(t.includes('Removal: no task leaves room for a 15-point gain (Claude already passes without it), so this needs a harder test.'), 'no room');
   ok(!/\b(85|95)% confiden/.test(P.STRINGS.chipRules.helps + P.STRINGS.chipRules.none), 'no fixed levels in the chip rules');
 });
-test('the confidence line takes its keep and removal levels from the data policy', () => {
-  // Regression: the page hard-coded "removes one at 95%" after the removal
-  // level became 90% (Adam, 2026-11-02).
-  const doc = JSON.parse(JSON.stringify(fixture));
-  doc.policy = { ...doc.policy, benefit_confidence: 0.8, retire_confidence: 0.97 };
-  doc.skills[0].confidence = { helps: 0.5, no_help: 0.25 };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('It keeps a skill at 80% and removes one at 97%.'), 'policy levels');
+test('the confidence view without cells (older data) shows the sentences only', () => {
+  const n = cv({ helps: 0.5, no_help: 0.25 });
+  eq(svgs(n).length, 0);
+  const t = P.textOf(n);
+  ok(t.includes('Testing a task and model stops at 40 comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.'), 'cap');
+  ok(!t.includes('more run') && !t.includes(P.STRINGS.confPace) && !t.includes(P.STRINGS.rangeWhat), 'no estimates, no chart notes');
+  eq(svgs(cv({ helps: 0.5, no_help: 0.25, cells: [] })).length, 0);
+});
+test('no "Sure it helps" gauge text is left anywhere', () => {
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(fixture, m, {}));
+    ok(!/Sure it helps|Sure any gain/.test(t), m);
+  }
+  ok(!/Sure it helps|Sure any gain|class="gauge"|\.gauge\b|\.track\b/.test(html), 'page source');
 });
 test('real-use counts show on skill cards with the census window', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
@@ -302,7 +390,7 @@ test('sections sort by gain per KB, or by size', () => {
 test('whole-guidance headline pools full vs none', () => {
   const w = P.wholeGuidance(fixture);
   eq(w.chip, 'helps');
-  ok(w.sentence.startsWith('With all the rules, Example Large 2.0 passed'), w.sentence);
+  ok(w.sentence.startsWith('With all the guidance, Example Large 2.0 passed'), w.sentence);
 });
 
 // --- failure states ---------------------------------------------------------
@@ -463,6 +551,109 @@ test('?data accepts only localhost, 127.0.0.1 and this repo on raw.githubusercon
   eq(P.dataUrlFromSearch('?data=http://localhost:8000/test/fixture.json').url, 'http://localhost:8000/test/fixture.json');
 });
 
+// --- lessons (Adam, 2026-11-03) ---------------------------------------------------
+const lessonRows = (page) => P.findAll(page, (n) => n.tag === 'tr' && n.children.some((c) => c.tag === 'td'))
+  .map((tr) => tr.children.filter((c) => c.tag === 'td').map((td) => P.textOf(td).replace(/\s+/g, ' ').trim()));
+const lessonsSection = (doc, mode) => P.lessonsView(doc, mode);
+
+test('lesson titles mirror the miner\'s card titles', () => {
+  eq(P.lessonTitle('tool-edit'), 'Edit tool calls kept failing');
+  eq(P.lessonTitle('tool-bash-make'), 'Bash make commands kept failing');
+  eq(P.lessonTitle('red-ci-example-site'), 'Red CI after pushes in example-site');
+  eq(P.lessonTitle('skill:example-skill-alpha'), 'example-skill-alpha');
+  eq(P.lessonTitle('guidance:security', { security: 'Security' }), 'Security');
+  eq(P.lessonTitle('guidance:example-unknown-section', {}), 'example-unknown-section');
+  eq(P.lessonTitle('tool-bash-someone@example.com'), 'Bash ' + P.STRINGS.hidden + ' commands kept failing');
+});
+
+test('the skills view lists new-skill and skill items with kind, source, seen, dates and status', () => {
+  const sec = lessonsSection(fixture, 'skills');
+  const t = P.textOf(sec);
+  ok(t.includes(P.STRINGS.lessonsHeading), 'heading');
+  ok(t.includes(P.STRINGS.lessonsLead('Oct 30')), 'the lead names the transcripts and the day: ' + t);
+  ok(P.STRINGS.lessonsLead('X').includes('transcripts'), 'the lead says the proposals come from session transcripts');
+  const rows = lessonRows(sec);
+  eq(rows.length, 6, 'three miner rows, then three issue rows');
+  eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
+  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | Not drafted yet');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule I stated ×3 | 3 times | Oct 10 | Oct 20 | Waiting for review');
+  const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
+  ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 1, 'the table scrolls inside .tablewrap');
+});
+
+test('the guidance view lists guidance items by their heading', () => {
+  const rows = lessonRows(lessonsSection(fixture, 'guidance'));
+  eq(rows.length, 2);
+  eq(rows[0][0], 'Security');
+  eq(rows[0][1], 'Change to the guidance');
+  eq(rows[1][0], 'example-unknown-section');
+  eq(rows[1][1], 'Idea for a test');
+  eq(rows[1][2], 'Session transcripts (another computer) a correction I made ×1');
+});
+
+test('the left-out note counts memory notes, git checks and private subjects, omitting zero parts', () => {
+  const t = P.textOf(lessonsSection(fixture, 'skills'));
+  ok(t.includes('Left out on purpose: 2 personal memory notes, 1 proposed git check and 4 about private skills or repos. No session text is published.'), t);
+  const one = P.textOf(lessonsSection({ lessons: { date: '2026-10-30', items: [], left_out: { memory_note: 0, agent_check: 0, private: 1, other: 3 } } }, 'skills'));
+  ok(one.includes('Left out on purpose: 1 about private skills or repos. No session text is published.'), one);
+  ok(one.includes(P.STRINGS.lessonsEmptySkills), one);
+  const none = P.textOf(lessonsSection({ lessons: { date: '2026-10-30', items: [], left_out: {} } }, 'guidance'));
+  ok(!none.includes('Left out') && none.includes(P.STRINGS.lessonNoText), none);
+});
+
+test('null or malformed lessons say none were available, and bad items are skipped', () => {
+  for (const L of [null, undefined, 'x', { date: 'soon', items: [] }, { date: '2026-10-30' }]) {
+    const t = P.textOf(lessonsSection({ lessons: L }, 'skills'));
+    ok(t.includes(P.STRINGS.lessonsNone), JSON.stringify(L));
+  }
+  const good = { kind: 'skill-edit', subject: 'skill:example-skill-beta', evidence_count: 2, first_seen: '2026-10-01', last_seen: '2026-10-02' };
+  const bad = [null, { ...good, kind: 'memory-note' }, { ...good, evidence_count: 1.5 }, { ...good, first_seen: 'x' },
+    { ...good, subject: 7 }];
+  const rows = lessonRows(lessonsSection({ lessons: { date: '2026-10-30', items: bad.concat([good]), left_out: {} } }, 'skills'));
+  eq(rows.length, 1);
+  eq(rows[0][2], 'Session transcripts', 'no sources or signals: the bare label');
+  const odd = P.lessonItem({ ...good, kind: 'new-skill', sources: ['moon', 'wsl'], signals: { 'skill-invoked': 4, rule: 'x', abandoned: 2 },
+    draft: { number: 3, state: 'open', url: 'https://example.com/pull/3' } });
+  eq(JSON.stringify(odd.sources), '["wsl"]');
+  eq(JSON.stringify(odd.signals), '[{"signal":"abandoned","n":2}]');
+  eq(odd.draft, null, 'a draft not on github.com is dropped');
+});
+
+test('issue lessons show in the skills view after the miner rows, with their source and a link', () => {
+  const sec = lessonsSection(fixture, 'skills');
+  const rows = lessonRows(sec);
+  eq(rows.length, 6);
+  eq(rows[3].join(' | '), '3 facts for docs/EXAMPLE.md in Adam-S-Daniel/example-repo | Fact to move into a repo | Claude\'s auto-memory | — | Oct 29 | — | #17 (open)');
+  eq(rows[4].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
+  eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | My own proposal | — | Oct 27 | — | #88 (open)');
+  const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  eq(hrefs.filter((u) => u === 'https://github.com/Adam-S-Daniel/example-repo/issues/17').length, 1, 'the issue link: ' + hrefs.join(' '));
+  eq(lessonRows(lessonsSection(fixture, 'guidance')).length, 2, 'the guidance view shows no issue rows');
+});
+
+test('issue lessons alone still render, and bad issues are skipped', () => {
+  const good = fixture.lessons.issues[0];
+  const bad = [null, { ...good, source: 'rumor' }, { ...good, url: 'https://example.com/x' }, { ...good, repo: 'no-slash' },
+    { ...good, state: 'merged' }, { ...good, opened: '2026-10' }, { ...fixture.lessons.issues[2], target: null }];
+  const sec = lessonsSection({ lessons: { date: null, items: null, left_out: null, issues: bad.concat([good]) } }, 'skills');
+  const t = P.textOf(sec);
+  ok(t.includes(P.STRINGS.lessonMinerNone) && !t.includes('Left out'), t);
+  eq(lessonRows(sec).length, 1);
+  const bare = P.textOf(lessonsSection({ lessons: { date: null, items: null, left_out: null,
+    issues: [{ ...good, count: null, target: null }] } }, 'skills'));
+  ok(bare.includes('Facts in Adam-S-Daniel/example-repo'), 'no count or target: ' + bare);
+  ok(P.textOf(lessonsSection({ lessons: { date: null, items: null, left_out: null, issues: [] } }, 'skills')).includes(P.STRINGS.lessonsNone));
+});
+
+test('both views render the lessons section after the cards', () => {
+  for (const m of ['skills', 'guidance']) {
+    const t = P.textOf(P.buildPage(fixture, m, {}));
+    ok(t.indexOf(P.STRINGS.lessonsHeading) > t.indexOf(m === 'skills' ? P.STRINGS.skillsHeading : P.STRINGS.sectionsHeading), m);
+    ok(t.indexOf(P.STRINGS.lessonsHeading) < t.indexOf(P.STRINGS.rosterHeading), m);
+  }
+});
+
 // --- privacy ----------------------------------------------------------------------
 test('no @, /home/ or cse_ string from the data reaches rendered text', () => {
   for (const m of ['skills', 'guidance']) {
@@ -476,6 +667,51 @@ test('no @, /home/ or cse_ string from the data reaches rendered text', () => {
 });
 test('no markup is built from data strings', () => {
   ok(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write/.test(html), 'page must not use HTML-string sinks');
+});
+
+// --- trend chart ----------------------------------------------------------------------
+const trendPts = (specs) => specs.map(([week, gain]) => ({ week, start: Date.UTC(2026, 0, 1) + (25 - week) * 7 * 86400000, gain }));
+const trendRef = Date.UTC(2026, 6, 1);
+test('trendChart: no points gives the none caption and no svg', () => {
+  const n = P.trendChart([], trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  eq(P.textOf(n).trim(), P.STRINGS.trendNone);
+});
+test('trendChart: one point gives a sentence and no svg', () => {
+  const n = P.trendChart(trendPts([[0, 0.07]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 0);
+  const t = P.textOf(n);
+  ok(t.includes('only one week'), t);
+  ok(t.includes('7 points better with it'), t);
+});
+test('trendChart: three points span the plot with labeled axis', () => {
+  const n = P.trendChart(trendPts([[2, 0.07], [1, -0.03], [0, 0.12]]), trendRef);
+  eq(P.findAll(n, (x) => x.tag === 'svg').length, 1);
+  const labels = P.findAll(n, (x) => x.tag === 'text').map((x) => P.textOf(x).trim());
+  for (const want of ['0', '+15', '\u221215']) ok(labels.includes(want), 'label ' + want + ' in ' + labels.join('|'));
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 3);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[2].attrs.cx) - 292) < 0.5, 'last cx ' + dots[2].attrs.cx);
+  const targets = P.findAll(n, (x) => x.tag === 'circle' && x.attrs.class === 'mark');
+  eq(targets.length, 3);
+  ok(targets.every((x) => x.attrs['data-tip-pos'] === 'below'), 'every target is below');
+});
+test('trendChart: old weeks still span the full width', () => {
+  const n = P.trendChart(trendPts([[25, 0.02], [24, 0.04]]), trendRef);
+  const dots = P.findAll(n, (x) => x.tag === 'circle' && x.attrs['pointer-events'] === 'none');
+  eq(dots.length, 2);
+  ok(Math.abs(Number(dots[0].attrs.cx) - 34) < 0.5, 'first cx ' + dots[0].attrs.cx);
+  ok(Math.abs(Number(dots[1].attrs.cx) - 292) < 0.5, 'last cx ' + dots[1].attrs.cx);
+});
+
+test('guidance bars draw "All the guidance" as its own bar, not a tick line', () => {
+  const page = P.buildPage(fixture, 'guidance', {});
+  const txt = P.findAll(page, (n) => n.tag === 'text').map((n) => P.textOf(n).trim());
+  ok(txt.includes(P.STRINGS.barAll), 'an All the guidance bar label');
+  ok(txt.includes(P.STRINGS.barAblated), 'an All but this section bar label');
+  ok(!/Line:/.test(JSON.stringify(page)), 'no tick-line legend');
+  ok(!/\brules?\b/i.test(P.STRINGS.barNone + P.STRINGS.barAll + P.STRINGS.barAblated + P.STRINGS.colNone + P.STRINGS.colFull), 'bars and columns say guidance or section, not rules');
 });
 
 // --- size -----------------------------------------------------------------------------

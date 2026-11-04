@@ -861,7 +861,14 @@ Other unattributed failures stay records with no proposal, and the subject
    none accepted, the rest of that family is not drafted. It dispatches
    `routine-eval-fire.yml` in draft mode only when one fire fits the
    weekly allowance guard.
-2. **Triage, hooks first** (Adam, 2026-10-26: "I want the first choice to
+2. **Upstream check, then triage, hooks first.** Anthropic's own skills
+   (the claude.ai account skills and Claude Code's bundled ones,
+   `harness/upstream_skills.yml`) are background, never subjects (Adam,
+   2026-11-03): the selector skips a subject with an upstream name, and
+   if a skill Anthropic ships already does what the lesson asks, the
+   routine drafts nothing and records `decision: upstream-covered`; the
+   gate opens nothing for it and the subject is final. Next, **triage,
+   hooks first** (Adam, 2026-10-26: "I want the first choice to
    be git hooks whenever possible"). The routine first asks whether the
    lesson can be enforced mechanically: a check in the fleet's
    `.githooks/agent-checks` runner (_agent-guidance ADR 0021, enforced by
