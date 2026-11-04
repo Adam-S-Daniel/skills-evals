@@ -737,13 +737,14 @@ open for the next pass, so a withdrawal is never closed without its issue
 (PR #740 round 5's R5-4) or without its label: a closed one without the
 label would decide the subject. In `auto` mode an open removal whose
 verdict still supports it but which carries `loop-withdrawn`, or whose
-auto-merge the listing shows off (opened before the verdicts' `as_of`, and
-read again before acting), is a withdrawal that stopped part way, and the
+auto-merge the listing shows off (opened before the verdicts' `as_of`, read
+again before acting, and turned off by the loop itself: round 7's R7-3,
+below), is a withdrawal that stopped part way, and the
 pass finishes it as a pause (R6-2); otherwise it would sit open and
 disarmed, holding the one loop slot. In `proposal` mode it is only
 disarmed. The retirement issue says what closing it means: in `auto` mode
-nothing reads it, so it tells a person to close the removal pull request
-instead (R6-7).
+nothing reads it until the pause cap (R7-4, below), so it tells a person to
+close the removal pull request instead (R6-7).
 When adding the label fails and the repository's labels (`gh label list
 --search`) lack it, the pass runs `gh label create loop-withdrawn --force`
 and retries once; any other failure creates nothing. GitHub lets an
@@ -766,7 +767,8 @@ since keeps the branch. The withdraw mints therefore hold `contents: write`
 again. A failed delete is best effort: the status line names only the
 error's type, and the pause stands. A fresh removal then pushes plainly
 (`default_push` reads the remote branch first and refuses one that exists,
-for a person to restore or delete; nothing forces). The refresh in
+for a person to restore or delete, unless it is a failed delete's leftover:
+round 7's R7-2, below; nothing pushes over a commit). The refresh in
 `loop-pr-refresh.yml` pushes its merge leased on the head it fetched, so it
 never recreates a branch a withdrawal deleted.
 
@@ -805,7 +807,9 @@ re-check.
 **The one switch.** While a target's mode is `proposal`, a loop removal
 that is not withdrawn is disarmed instead: auto-merge is turned off and read
 back, the pull request stays open, and it gets one comment. Nothing turns
-it back on: a person merges it by hand or closes it. Setting
+it back on: a person merges it by hand or closes it. That comment
+(`DISARMED_MARKER`) also keeps an `auto`-mode pass from finishing it as a
+part-way withdrawal once the mode is back to `auto` (R7-3). Setting
 `retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
 stops removal pull requests from merging on their own, including those
 already open and armed.
@@ -851,6 +855,49 @@ pull requests makes no call with the App token, so it needs none.
 `agent-authored` (the pull request is then not the loop's and no pass
 touches it), restores the branch from the pull request page, then reopens
 it and merges it by hand.
+
+**Round 7 (2026-11-04).** Six minor findings, each fixed with a test that
+fails without it:
+
+- *A person's close during a withdrawal (R7-1).* `gh pr close` exits 0 on a
+  pull request already closed, so after its close the pass reads `closed_by`
+  again. Anyone but `LOOP_AUTHOR`, or no closer at all, decides the subject:
+  the branch is kept, the status line says it decides, and a correction is
+  posted on the pull request and the retirement issue, whose earlier text
+  called it a pause. An unreadable closer keeps the branch as well.
+- *A failed delete stranded the subject (R7-2).* The closed listing now
+  carries each removal's head (`sha`), and the plan passes the paused
+  removals' heads to `default_push`. A branch whose tip is one of them, when
+  every closed removal from it is a loop pause, is a failed delete's
+  leftover: the leased delete is retried and the push is plain. A delete
+  whose branch is already gone (read with `git ls-remote`, not from the
+  error text) counts as deleted. The comment and the issue now say the
+  branch "will be" deleted, since they go out before the delete.
+- *A person's disarm was read as a part-way withdrawal (R7-3).* A
+  `disarmed` candidate is finished only when the latest
+  `auto_merge_disabled` event on its timeline (`GET
+  repos/{r}/issues/{n}/timeline`, every page) is `LOOP_AUTHOR`'s. The
+  proposal switch disarms with the same App, so a pull request that App
+  commented `DISARMED_MARKER` on is excluded too: that comment is what the
+  switch already writes, so no new marker or label was added. An unreadable
+  timeline keeps the pull request. A person who turns auto-merge off by hand
+  therefore holds the removal, as `on-hold` does.
+- *The pause cap (R7-4).* The first time the cap reaches an open retirement
+  issue, the job comments there, mentioning the owner (a body edit sends no
+  notification); the body carries `CAP_MARKER`, so it comments once. The
+  `auto`-mode issue text now says closing it declines nothing only until the
+  cap, after which a closed issue declines the removal. Nothing lowers the
+  count, so the way back after the cap is a person's, and the simplest
+  honest one was chosen: take over the last withdrawn removal (remove
+  `agent-authored`, restore the branch, reopen and merge by hand), or close
+  the issue to decline. No resume mechanism was added.
+- *Docs (R7-5).* The refresh now checks `git merge-base --is-ancestor` on the
+  fetched head before its leased push, so it is fast-forward only by check,
+  not only by construction; its header and the AGENTS.md row say "fast-forward
+  only, leased" instead of "never a force-push", and the row names the
+  withdraw job's branch delete and its mints' `contents: write`.
+- *A null `closed_by` (R7-6)* is pinned by a test: GitHub returns null for
+  some closes, and such a close decides.
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

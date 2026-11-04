@@ -1480,7 +1480,7 @@ class GuidanceRemovalTests(unittest.TestCase):
         old = os.environ.copy()
         os.environ.update(GIT_ENV)
         try:
-            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b: pushed.append(b),
+            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b, *_: pushed.append(b),
                          registry_gh=self.registry, out=out)
         finally:
             os.environ.clear()
@@ -1568,7 +1568,7 @@ class GuidanceRemovalTests(unittest.TestCase):
         try:
             rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
                           str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
-                         push=lambda c, b: None, registry_gh=registry, out=io.StringIO())
+                         push=lambda c, b, *_: None, registry_gh=registry, out=io.StringIO())
         finally:
             os.environ.clear()
             os.environ.update(old)

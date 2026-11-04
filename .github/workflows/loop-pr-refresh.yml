@@ -17,9 +17,12 @@ name: Refresh loop pull requests
 # the base is merged in and only those append-only paths are re-resolved (the
 # base's copy plus the pull request's own block). Anything else, or a change
 # that is not one inserted block, is left for a person and named in the job
-# summary. A resolved merge is pushed as a plain merge commit on top of the
-# head, never a force-push, by a GitHub App token, so the pull request's own
-# checks run again (a job-token push would start none).
+# summary. A resolved merge is pushed as a merge commit on top of the head:
+# fast-forward only (the fetched head must be its ancestor, or nothing is
+# pushed), leased on that head (`--force-with-lease`, so a branch that moved
+# or was deleted is refused, never rewritten or recreated), by a GitHub App
+# token, so the pull request's own checks run again (a job-token push would
+# start none).
 #
 # * Tokens: the job token reads (contents and pull-requests: read). Two App
 #   tokens, each minted under continue-on-error and used by the refresh step
@@ -376,8 +379,14 @@ jobs:
               fi
               local commit
               commit="$(git -C "$dir" rev-parse HEAD)"
-              # A fast-forward (the merge sits on top of the fetched head),
-              # leased on that head: if the branch moved since the fetch, or
+              # Fast-forward only: the merge must sit on top of the fetched
+              # head, so the lease below can never rewrite history.
+              if ! git -C "$dir" merge-base --is-ancestor "$head" "$commit"; then
+                echo "::error::${repo}#${n}: the merge does not descend from the fetched head; not pushed"
+                failed=1
+                continue
+              fi
+              # Leased on that head: if the branch moved since the fetch, or
               # a withdrawal deleted it (ADR 0014), it is refused rather than
               # recreated, and the next run starts again from the new state.
               if ! git -C "$dir" -c "http.https://github.com/.extraheader=$auth" \

@@ -826,20 +826,35 @@ to record the withdrawal and link the pull request; only then does a comment
 give the new verdict, why and the override, and the pull request is closed.
 The label is read back before the issue: one that did not land leaves the
 pull request open. A failure at any of those steps leaves the pull request
-open for the next pass. After the close, the branch is deleted, leased on
-the closed pull request's head, so a commit anyone pushed since keeps it;
-that needs the App token's `contents: write`. A failed delete keeps the
-pause, and the status line names only the error's type. Any open removal
-notice for the subject is closed as not planned and then commented on; if
-that fails, the withdrawal still stands and the status line says so.
+open for the next pass. After the close, who closed it is read again: `gh
+pr close` succeeds on a pull request someone else closed first, and only the
+App's own close is a pause. If anyone else closed it (or GitHub records no
+closer), it decides the subject; the pass posts a correction on the pull
+request and the retirement issue, since both already called it a pause, and
+keeps the branch. If the closer cannot be read, the branch is kept too.
+Otherwise the branch is deleted, leased on the closed pull request's head,
+so a commit anyone pushed since keeps it; that needs the App token's
+`contents: write`. The comment and the issue say the branch "will be"
+deleted, since they go out first. A failed delete keeps the pause, and the
+status line names only the error's type; the next removal retries it (see
+below). Any open removal notice for the subject is closed as not planned and
+then commented on; if that fails, the withdrawal still stands and the status
+line says so.
 
 In `auto` mode, an open removal whose verdict still supports it but which
-carries `loop-withdrawn`, or whose auto-merge is off, is a withdrawal that
-stopped part way, so the pass finishes it as a pause and the next daily run
-opens a fresh, armed one. The auto-merge test counts only a pull request
-opened before the verdicts' `as_of`, and one found armed after all is
-kept, so a removal the retirement job is still arming is never caught. In
-`proposal` mode such a pull request is only disarmed, as before.
+carries `loop-withdrawn`, or whose auto-merge the loop itself turned off, is
+a withdrawal that stopped part way, so the pass finishes it as a pause and
+the next daily run opens a fresh, armed one. Auto-merge off counts only for
+a pull request opened before the verdicts' `as_of` that is still unarmed
+when read again, and only when the latest `auto_merge_disabled` event on its
+timeline is the App's and the App never left the `proposal` switch's disarm
+comment on it. Turning auto-merge off by hand is therefore a hold, as is a
+removal the `proposal` switch disarmed: both stay open, untouched. An
+unreadable timeline keeps it too. A removal the retirement job is still
+arming is caught only if it was opened before `as_of`, which the arm (it
+follows the create within seconds) makes unlikely; even then the timeline has
+no disable event, so it is kept. In `proposal` mode such a pull request is
+only disarmed, as before.
 
 A pass judges a pull request only by verdicts at least as new as the results
 it was opened on: the `as_of` its body's first line records ("Removes ... is
@@ -854,16 +869,26 @@ as a pause only if the App opened it, it carries `loop-withdrawn`, AND the
 App closed it (`closed_by`, read from the issue). Such a pause does not
 decide its subject, so when the verdict supports an automatic removal again,
 this job opens a fresh one with a plain push to the same branch name. If
-that branch still exists (a failed delete, say), the run fails rather than
-push over it; a person restores its pull request or deletes the branch.
-Nothing here force-pushes. A subject whose verdict swings back and forth is
+that branch still exists, it is a failed delete's leftover only when its tip
+is the head of one of the subject's paused removals (and every closed
+removal from it is such a pause): then the leased delete is retried, a
+branch already gone counting as deleted, and the push is plain. Any other
+branch fails the run rather than be pushed over; a person restores its pull
+request or deletes the branch. Nothing here pushes over a commit. A subject
+whose verdict swings back and forth is
 withdrawn and reopened each time, up to `MAX_LOOP_PAUSES` (3) pauses; from
 then on this job files or updates the subject's proposal issue instead of
-opening a removal. Any other closed removal decides the subject: merged,
+opening a removal, and the first time it reaches an open issue it comments
+there (a comment notifies; a body edit does not), mentioning the owner. Any
+other closed removal decides the subject: merged,
 closed by a person (labeled or not), one whose closer cannot be read, or one
 a person removed `loop-withdrawn` from. So to decline a withdrawn removal for
 good, remove that label, or close the next removal yourself. In `auto`
-mode, closing the retirement issue declines nothing, and the issue says so.
+mode, closing the retirement issue declines nothing until the cap; at the
+cap the issue becomes the proposal, and a closed one declines the removal.
+The issue says both. Nothing lowers the count, so after the cap the loop
+never resumes on its own: the way back is a person's. To remove the subject,
+take over the last withdrawn removal as below; to decline, close the issue.
 To remove the subject anyway, remove the `agent-authored` label first, then
 restore the branch from the pull request page, then reopen it and merge it
 by hand. Without that label it is not the loop's, and no pass touches it;
@@ -875,7 +900,8 @@ every status line is printed, and the step then fails.
 While `retirement_mode` is `proposal`, a removal that is not withdrawn is
 disarmed instead: auto-merge is turned off, the pull request stays open, and
 it is commented once. Disarming goes one way only: switching the mode back to
-`auto` does not re-arm it. While it stays open, it blocks later removals and
+`auto` does not re-arm it, and that comment keeps a later pass from taking it
+for a withdrawal that stopped part way. While it stays open, it blocks later removals and
 keeps the skill out of the weekly plan's improve fires. Close it, or turn
 auto-merge on again by hand (a merge commit).
 
