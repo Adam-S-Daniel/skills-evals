@@ -767,10 +767,10 @@ labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
 adam-agentskills ADR 0021, and the
 [2026-11-03 addendum](decisions/0014-removal-pull-requests-merge-without-review.md#betting-bound-addendum-2026-11-03)).
-The committed value is `proposal` (Adam, 2026-11-03, "Resume, auto-removal
-off") while he decides between automatic removal and proposals only under
-the new rule, and a `removal: proposal` verdict files the issue whatever
-the mode. Each removal also files an `agent-authored`
+The committed value is `auto` again: Adam set it to `proposal` on
+2026-11-03 ("Resume, auto-removal off") and pre-approved turning it back on
+once a loop withdrawal was hardened (PR #740, skills-evals#645). A
+`removal: proposal` verdict files the issue whatever the mode. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
@@ -789,7 +789,24 @@ removal plugin-runtime-review would hold (the skill has its own `hooks/` or
 `bin/`, or a hook of its plugin names a path in it), it falls
 back to `proposal`: one skills-evals issue that is filed or updated and that
 a human acts on; once that issue is closed, the skill is not proposed
-again. Preview either mode with
+again. In `auto` mode no removal is opened for it either: the proposal path
+stamps the issue it files, and a closed one with that stamp (or one older
+than the stamps, which has none) declines the removal for good, whatever the
+close reason ("completed" and "not planned" alike), even once
+the reason it was only a proposal is gone (a `removal: proposal` verdict
+that firms up to `auto`, the token coming back, or the mode switched from
+`proposal` to `auto`). A closed issue the withdrawal path filed carries its
+own stamp and declines nothing until the pause cap (below); while `auto` is
+lowered to a proposal short of the cap, it does not count as already
+decided either, so a fresh proposal issue is filed for a person to decline.
+At the cap any closed retirement issue decides on that lowered path too, and
+no cap comment is posted on another issue of a subject one decides.
+If the reason for the proposal goes away while its issue is still open, a
+removal opens and the issue gets a comment linking it. Closing that issue
+then still declines the removal: the next withdrawal pass closes the open
+removal (see "Declined while open" below). Only a removal that has already
+merged is out of reach; press **Revert** on it. Guidance sections work the
+same way. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
 
 **Withdrawal.** An open removal pull request is armed on the verdict it was
@@ -826,20 +843,38 @@ to record the withdrawal and link the pull request; only then does a comment
 give the new verdict, why and the override, and the pull request is closed.
 The label is read back before the issue: one that did not land leaves the
 pull request open. A failure at any of those steps leaves the pull request
-open for the next pass. After the close, the branch is deleted, leased on
-the closed pull request's head, so a commit anyone pushed since keeps it;
-that needs the App token's `contents: write`. A failed delete keeps the
-pause, and the status line names only the error's type. Any open removal
-notice for the subject is closed as not planned and then commented on; if
-that fails, the withdrawal still stands and the status line says so.
+open for the next pass. After the close, who closed it is read again: `gh
+pr close` succeeds on a pull request someone else closed first, and only the
+App's own close is a pause. If anyone else closed it (or GitHub records no
+closer), it decides the subject; the pass posts a correction on the pull
+request and the retirement issue, since both already called it a pause, and
+keeps the branch. If the closer cannot be read, the branch is kept too.
+Otherwise the branch is deleted, leased on the closed pull request's head,
+so a commit anyone pushed since keeps it; that needs the App token's
+`contents: write`. The comment and the issue say the branch "will be"
+deleted, since they go out first. A failed delete keeps the pause, and the
+status line names only the error's type; the next removal retries it (see
+below). Any open removal notice for the subject is closed as not planned and
+then commented on; if that fails, the withdrawal still stands and the status
+line says so.
 
 In `auto` mode, an open removal whose verdict still supports it but which
-carries `loop-withdrawn`, or whose auto-merge is off, is a withdrawal that
-stopped part way, so the pass finishes it as a pause and the next daily run
-opens a fresh, armed one. The auto-merge test counts only a pull request
-opened before the verdicts' `as_of`, and one found armed after all is
-kept, so a removal the retirement job is still arming is never caught. In
-`proposal` mode such a pull request is only disarmed, as before.
+carries `loop-withdrawn`, or whose auto-merge the loop itself turned off, is
+a withdrawal that stopped part way, so the pass finishes it as a pause and
+the next daily run opens a fresh, armed one. Auto-merge off counts only for
+a pull request opened before the verdicts' `as_of` that is still unarmed
+when read again, and only when the latest `auto_merge_disabled` event on its
+timeline is the App's and the App left no `proposal` switch disarm comment
+after that event (one from an earlier disarm, since re-armed by a person,
+does not count). "After" is read from each event's time, and a comment in
+the same second as the disable counts as after it, whichever order the
+timeline lists them in; only when a time is missing does the order decide. Turning auto-merge off by hand is therefore a hold, as is a
+removal the `proposal` switch disarmed: both stay open, untouched. An
+unreadable timeline keeps it too. A removal the retirement job is still
+arming is caught only if it was opened before `as_of`, which the arm (it
+follows the create within seconds) makes unlikely; even then the timeline has
+no disable event, so it is kept. In `proposal` mode such a pull request is
+only disarmed, as before.
 
 A pass judges a pull request only by verdicts at least as new as the results
 it was opened on: the `as_of` its body's first line records ("Removes ... is
@@ -854,20 +889,53 @@ as a pause only if the App opened it, it carries `loop-withdrawn`, AND the
 App closed it (`closed_by`, read from the issue). Such a pause does not
 decide its subject, so when the verdict supports an automatic removal again,
 this job opens a fresh one with a plain push to the same branch name. If
-that branch still exists (a failed delete, say), the run fails rather than
-push over it; a person restores its pull request or deletes the branch.
-Nothing here force-pushes. A subject whose verdict swings back and forth is
+that branch still exists, it is a failed delete's leftover only when its tip
+is the head of one of the subject's paused removals (and every closed
+removal from it is such a pause): then the leased delete is retried, a
+branch already gone counting as deleted, and the push is plain. Any other
+branch fails the run rather than be pushed over; a person restores its pull
+request or deletes the branch. Nothing here pushes over a commit. A subject
+whose verdict swings back and forth is
 withdrawn and reopened each time, up to `MAX_LOOP_PAUSES` (3) pauses; from
 then on this job files or updates the subject's proposal issue instead of
-opening a removal. Any other closed removal decides the subject: merged,
+opening a removal, and the first time it reaches an open issue it comments
+there (a comment notifies; a body edit does not), mentioning the owner. Any
+other closed removal decides the subject: merged,
 closed by a person (labeled or not), one whose closer cannot be read, or one
 a person removed `loop-withdrawn` from. So to decline a withdrawn removal for
 good, remove that label, or close the next removal yourself. In `auto`
-mode, closing the retirement issue declines nothing, and the issue says so.
+mode, closing a retirement issue the withdrawal filed declines nothing until
+the cap; at the cap the issue becomes the proposal, and a closed one
+declines the removal. The issue says both. When the withdrawal only
+commented on the proposal issue, closing that issue declines at once, and
+the comment says so. Nothing lowers the count, so after the cap the loop
+never resumes on its own: the way back is a person's. To remove the subject,
+take over the last withdrawn removal as below; to decline, close the issue.
 To remove the subject anyway, remove the `agent-authored` label first, then
 restore the branch from the pull request page, then reopen it and merge it
 by hand. Without that label it is not the loop's, and no pass touches it;
 reopening it with the label only gets it withdrawn again.
+
+**Declined while open.** Before anything else, the pass reads each open
+removal's subject's retirement issues. If a person has closed its proposal
+issue (one the proposal path stamped, or an older one with no stamp) while
+the removal was open, the removal is declined, whatever its verdict and in
+either mode. Any close counts, whatever its reason. Auto-merge is turned
+off and read back. A `loop-withdrawn` label left by a withdrawal that
+stopped part way is taken off and read back; if it stays on, the pull
+request is left open and the step fails. Then a comment cites the closed
+issue, and the pull request is closed as a decision with no
+`loop-withdrawn` label, so the closed removal decides the subject: the loop
+opens no removal for it again, even if the issue is reopened, and its branch
+is kept, since no later removal pushes to it. No retirement issue is filed,
+since its text would say closing it declines nothing. The closed issue gets
+a comment saying so and stays closed, and any open removal notice is closed.
+If the issue list cannot be read, that pull request is left as it is and
+the step fails. A person who turned auto-merge on again after closing the
+issue overrides the close: when the latest `auto_merge_enabled` event on an
+armed removal is someone's other than the loop's and later than the issue's
+close, the pass leaves that pull request alone for a person. An unreadable
+timeline, or a missing time, does not override it.
 
 One pull request's failure does not stop the pass: the others still act,
 every status line is printed, and the step then fails.
@@ -875,7 +943,12 @@ every status line is printed, and the step then fails.
 While `retirement_mode` is `proposal`, a removal that is not withdrawn is
 disarmed instead: auto-merge is turned off, the pull request stays open, and
 it is commented once. Disarming goes one way only: switching the mode back to
-`auto` does not re-arm it. While it stays open, it blocks later removals and
+`auto` does not re-arm it, and that comment keeps a later pass from taking it
+for a withdrawal that stopped part way. If posting the comment fails, the
+next `proposal` pass that finds the App's disarm with no comment after it
+posts it. The gap left: if the mode is switched back to `auto` before such a
+pass, the removal is finished as a pause and the next daily run opens a
+fresh, armed one. While it stays open, it blocks later removals and
 keeps the skill out of the weekly plan's improve fires. Close it, or turn
 auto-merge on again by hand (a merge commit).
 
@@ -894,8 +967,10 @@ only keeps pull requests needs no token. The issue uses the job's token.
 
 `loop-pr-refresh.yml` brings a removal pull request up to date only while
 `scripts/refresh_loop_prs.py removal-check` finds its verdict still
-supported in `auto` mode. With the verdicts unknown, it refreshes none, so a
-refresh never re-runs a stale removal's checks. Its push is leased on the
+supported in `auto` mode and no closed proposal issue declining it. With the
+verdicts unknown, or the issue list unreadable, it refreshes none, so a
+refresh never re-runs a stale or declined removal's checks, even when the
+decline itself failed in that run's withdraw job. Its push is leased on the
 head it fetched, so it never recreates a branch a withdrawal just deleted.
 
 Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.
@@ -1141,7 +1216,10 @@ An open `retire-guidance/<section>` removal pull request is withdrawn (or,
 in `guidance: retirement_mode: proposal`, disarmed) the same way as a
 skill's (Withdrawal, above), from the guidance verdicts. A closed one
 decides the section, so no removal is opened for it again, unless it is a
-loop pause as for a skill (and then only up to `MAX_LOOP_PAUSES`).
+loop pause as for a skill (and then only up to `MAX_LOOP_PAUSES`). While any
+`retire-guidance/` pull request is open (one a person holds by turning its
+auto-merge off included), the guidance pass waits and writes nothing, as the
+skill pass does.
 
 ### The eval scope pass
 

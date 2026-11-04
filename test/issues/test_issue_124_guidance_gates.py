@@ -1059,10 +1059,10 @@ class UnfinishedAlonePairTests(unittest.TestCase):
 
 class GuidancePolicyTests(unittest.TestCase):
 
-    def test_the_committed_policy_has_its_own_guidance_block_in_proposal_mode(self):
+    def test_the_committed_policy_has_its_own_guidance_block_in_auto_mode(self):
         policy = gates.load_gate_policy()
         self.assertIsNotNone(policy["guidance"])
-        self.assertEqual(policy["guidance"]["retirement_mode"], "proposal")
+        self.assertEqual(policy["guidance"]["retirement_mode"], "auto")
         self.assertEqual(set(policy["guidance"]), set(policy["skills"]))
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
@@ -1168,7 +1168,7 @@ class ComputeGuidanceTests(unittest.TestCase):
     def test_flat_runs_of_both_pairs_retire_the_section(self):
         self.write_runs()
         doc = self.compute()
-        self.assertEqual(doc["guidance_retirement_mode"], "proposal")
+        self.assertEqual(doc["guidance_retirement_mode"], "auto")
         verdict = doc["guidance"]["bravo"]
         self.assertEqual(verdict["verdict"], "retire", verdict["reason"])
         self.assertEqual(verdict["cells"][0]["with"]["runs"], 20)
@@ -1352,10 +1352,14 @@ class GuidancePlanTests(unittest.TestCase):
     def test_auto_mode_must_be_wired_and_holds_one_slot(self):
         with self.assertRaises(rs.RetireError):
             rs.guidance_plan(guidance_gates(mode="auto"), None, FakeGh())
+        # PR #751 round 8's R8-5: an open removal (one a person holds included)
+        # makes the pass wait with nothing written, as the skill path does,
+        # never fail.
         open_pr = {"number": 1, "head": "retire-guidance/other", "url": "u"}
-        with self.assertRaises(rs.RetireError):
-            rs.guidance_plan(guidance_gates(mode="auto"), Path("."), FakeGh(prs=[open_pr]),
-                             allowed=("auto",))
+        plan = rs.guidance_plan(guidance_gates(mode="auto"), Path("."), FakeGh(prs=[open_pr]),
+                                allowed=("auto",))
+        self.assertEqual(plan["action"], "none")
+        self.assertIn("already open", plan["reason"])
         with self.assertRaises(rs.RetireError):
             rs.guidance_plan(guidance_gates(mode="auto"), None, FakeGh(), allowed=("auto",))
 
@@ -1480,7 +1484,7 @@ class GuidanceRemovalTests(unittest.TestCase):
         old = os.environ.copy()
         os.environ.update(GIT_ENV)
         try:
-            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b: pushed.append(b),
+            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b, *_: pushed.append(b),
                          registry_gh=self.registry, out=out)
         finally:
             os.environ.clear()
@@ -1568,7 +1572,7 @@ class GuidanceRemovalTests(unittest.TestCase):
         try:
             rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
                           str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
-                         push=lambda c, b: None, registry_gh=registry, out=io.StringIO())
+                         push=lambda c, b, *_: None, registry_gh=registry, out=io.StringIO())
         finally:
             os.environ.clear()
             os.environ.update(old)
