@@ -101,8 +101,9 @@ itself when it is still owed (R12-1), so no path erases `CAP_MARKER` and
 the comment is posted once whichever pass reaches the cap first.
 A proposal issue that is open when a removal opens gets a comment linking it
 (`open_proposal_note`): closing the issue still declines that removal, since
-the withdrawal pass closes it (R9-1, below); a removal that has merged is
-reverted, not declined. One the
+the withdrawal pass closes it (R9-1, below), unless a person armed it
+strictly after the close (round 13: the latest person action wins); a
+removal that has merged is reverted, not declined. One the
 loop withdrew (opened by `LOOP_AUTHOR`, labeled `loop-withdrawn` AND closed
 by `LOOP_AUTHOR`, read from the issue's `closed_by`) decides nothing: the
 withdrawal deleted its branch, so the next removal is a plain push, and a
@@ -259,20 +260,28 @@ new retirement issue is filed (one saying that closing it declines nothing
 would be wrong); then, best effort, the closed issue gets a comment and
 stays closed, and any open removal notice is closed as in step 7. An
 unreadable issue list fails that pull request's item (exit 2) and writes
-nothing to it. A removal under a person's arm (below) is not declined.
+nothing to it. A removal under a person's arm (below) made strictly after
+the issue's close is not declined.
 
 A PERSON'S ARM IN FORCE (round 12, `persons_arm`): the one exception to
 every action above and below. A removal pull request that is armed for
 auto-merge now, and whose latest `auto_merge_enabled` timeline event (by
-`created_at`) is someone's other than `LOOP_AUTHOR`, belongs to that
-person. The loop does not decline it, disarm it (the `proposal` switch),
-withdraw it (a stale verdict) or finish it as a stopped withdrawal; it logs
-`left #N for a person: armed by a person`, and `refresh_allowed` lets
-loop-pr-refresh.yml bring it up to date, so it can still merge. To stop
-it, a person turns its auto-merge off or closes it. Nothing is compared
-with when an issue was closed or when the loop last disarmed: who armed
-it, and that it is armed now, decide. A removal that is not armed (the
-loop's own disarm included), one the loop armed last, an unreadable
+`created_at`) is a person's, belongs to that person. A person is a
+`User` account other than `LOOP_AUTHOR` and `GHOST` (round 13): a `Bot`
+(any App or bot, github-actions[bot] included), a deleted account, or an
+actor with no type or no login is not. The loop does not disarm it (the
+`proposal` switch), withdraw it (a stale verdict) or finish it as a
+stopped withdrawal; it logs `left #N for a person: armed by a person`, and
+`refresh_allowed` lets loop-pr-refresh.yml bring it up to date, so it can
+still merge. To stop it, a person turns its auto-merge off or closes it.
+For those actions, nothing is compared with when the loop last disarmed:
+who armed it, and that it is armed now, decide. The one comparison (round
+13, the latest person action wins) is with a decline: when a closed
+proposal or legacy issue declines the subject, the arm wins only when its
+`created_at` is strictly later than the issue's `closed_at` (the latest
+close, when several decline); a tie, or a time missing or unparseable on
+either side, and the removal is declined. A removal that is not armed (the
+loop's own disarm included), one a non-person armed last, an unreadable
 timeline, no event, or a time missing or unparseable on any
 `auto_merge_enabled` event is not a person's arm in force, and gets the
 action above or below, so unknown data still leans toward disarming or
@@ -323,8 +332,10 @@ while no closed proposal issue declines it (R10-4: an unreadable issue list
 refreshes nothing), so a decline the withdrawal pass could not finish is
 not merged by a refresh. Given the pull request's number
 (`removal-check --number`), it also refreshes one under a person's arm in
-force, whatever its verdict, mode or proposal issue, since the withdrawal
-pass leaves that one to the person (round 12).
+force, whatever its verdict or mode, since the withdrawal pass leaves that
+one to the person (round 12), unless a closed proposal issue declines it
+and the arm is not strictly later than that close, or the issue list
+cannot be read (round 13).
 """
 
 from __future__ import annotations
@@ -1282,11 +1293,20 @@ def declined(found: dict, subject: str, mode: str, key: str) -> dict | None:
     declines, whatever its reason (`state_reason` is not read: "completed"
     and "not planned" alike). A closed issue the withdrawal path filed
     declines nothing until the pause cap. `found` is `guidance_issues`'s
-    result; None when nothing declines."""
+    result; None when nothing declines. `closed_at` is the latest close time
+    of the declining issues, or None when any of them is missing or
+    unparseable; a person's arm in force wins over the decline only when it
+    is strictly later than that time (round 13, `persons_arm`), so with None
+    the decline wins."""
     closed = [n for n in found["closed"] if n in found["proposals"]]
     if not closed:
         return None
+    times = [found.get("closed_at", {}).get(n) for n in closed]
+    moments = [_moment(t) for t in times]
+    latest = None if any(m is None for m in moments) else \
+        times[moments.index(max(moments))]
     return {"action": "none", "mode": mode, key: subject, "issue": closed[0],
+            "closed_at": latest,
             "reason": f"{subject} is already decided: its proposal issue #{closed[0]} is "
                       "closed, which declines the removal, so none is opened"}
 
@@ -1566,8 +1586,8 @@ def open_proposal_note(gh, found: dict, subject: str, url: str, target: str) -> 
             "auto-merges once its checks pass: the reason this issue gave for only proposing "
             "the removal no longer holds. Closing this issue still declines it: the next "
             "withdrawal pass (before each daily run and after every ingest) turns its "
-            "auto-merge off and closes it as a decision, if it has not merged by then. To "
-            "stop it at once, close the pull request yourself. Rule: "
+            "auto-merge off and closes it as a decision, if it has not merged by then. "
+            f"{LATEST_WINS} To stop it at once, close the pull request yourself. Rule: "
             f"[ADR 0014]({ADR}).\n\n{AGENT_MARKER}\n")
     done = []
     for number in [n for n in found["open"] if n in found["proposals"]]:
@@ -1717,14 +1737,19 @@ def guidance_closed_removal_prs(gh, section: str) -> list:
 
 def guidance_issues(gh, marker: str) -> dict:
     """As `existing_issues`, for any marker, plus `capped`: the issues
-    whose body records the pause cap's comment (`CAP_MARKER`, R11-1). The
-    close reason (`state_reason`) is not read: any close declines."""
+    whose body records the pause cap's comment (`CAP_MARKER`, R11-1), and
+    `closed_at`: each closed issue's close time as the API gives it (""
+    when it gives none), which a decline compares with a person's arm
+    (round 13, `persons_arm`). The close reason (`state_reason`) is not
+    read: any close declines."""
     text = gh(["api", "--paginate",
                f"repos/{EVALS_REPO}/issues?state=all&per_page=100",
                "--jq", ".[] | select(.pull_request == null) | "
                        "{number: .number, body: (.body // \"\"), "
-                       "author: .user.login, state: .state}"])
+                       "author: .user.login, state: .state, "
+                       "closed_at: (.closed_at // \"\")}"])
     found = {"open": [], "closed": [], "proposals": [], "capped": []}
+    closed_at = {}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
                 or marker not in item["body"]:
@@ -1733,11 +1758,14 @@ def guidance_issues(gh, marker: str) -> dict:
         if type(number) is not int or number < 1 or state not in ("open", "closed"):
             raise RetireError("an issue record from the API is malformed")
         found[state].append(number)
+        if state == "closed":
+            closed_at[number] = item.get("closed_at")
         if issue_origin(item["body"]) != "withdrawal":
             found["proposals"].append(number)
         if CAP_PREFIX in item["body"]:
             found["capped"].append(number)
-    return {state: sorted(numbers) for state, numbers in found.items()}
+    return {**{state: sorted(numbers) for state, numbers in found.items()},
+            "closed_at": closed_at}
 
 
 def guidance_evidence(verdict: dict) -> str:
@@ -2382,6 +2410,14 @@ OVERRIDE = ("To remove the subject anyway, take it over from the loop: remove th
             "no later pass touches it), then restore the branch from the pull request page, "
             "then reopen it and merge it by hand.")
 
+#: What every issue- and pull-request-facing text says about a person's arm
+#: and a closed proposal issue (round 13, `persons_arm`).
+LATEST_WINS = ("The latest person action wins: if a person (a user account, not a bot or "
+               "an App) turns the removal pull request's auto-merge on strictly after the "
+               "proposal issue is closed, the loop leaves that removal to them and it can "
+               "merge; a close after a person's arm, in the same second as it, or with either "
+               "time unknown declines it.")
+
 
 def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
     """The comment a withdrawn pull request gets: the new verdict, why, and
@@ -2494,31 +2530,57 @@ TIMELINE_JQ = ('.[] | select(.event == "auto_merge_disabled" or .event == "comme
                'created_at: (.created_at // "")}')
 
 
-#: The timeline events `persons_arm` reads: who turned auto-merge on, and when.
+#: The timeline events `persons_arm` reads: who turned auto-merge on, what
+#: kind of account that is (round 13: only a `User` is a person), and when.
 ARMS_JQ = ('.[] | select(.event == "auto_merge_enabled") '
-           '| {actor: (.actor.login // ""), created_at: (.created_at // "")}')
+           '| {actor: (.actor.login // ""), type: (.actor.type // ""), '
+           'created_at: (.created_at // "")}')
+
+#: The login GitHub shows for a deleted account: its type is `User`, but no
+#: person stands behind it now, so its arm is not a person's (round 13).
+GHOST = "ghost"
 
 
 #: The status line of a removal the loop leaves to a person (round 12).
 PERSONS_ARM = "armed by a person"
 
 
-def persons_arm(registry_gh, c: dict, armed: bool) -> bool:
+def _a_persons(event: dict) -> bool:
+    """Whether an `auto_merge_enabled` event (ARMS_JQ's row) is a human's
+    (round 13): its actor's type is `User` and its login is neither the
+    loop's (LOOP_AUTHOR) nor GHOST. A `Bot` (any App's or bot's arm,
+    github-actions[bot] included), an `Organization`, a missing type, a
+    missing login or a deleted account is not a person."""
+    return (event.get("type") == "User" and isinstance(event.get("actor"), str)
+            and event["actor"] not in ("", LOOP_AUTHOR, GHOST))
+
+
+def persons_arm(registry_gh, c: dict, armed: bool, decline: dict | None = None) -> bool:
     """Whether a person's arm is in force on a removal pull request (round
     12's single rule): it is armed now (`armed`, read by the caller) AND the
     latest `auto_merge_enabled` event on its timeline (`c["arms"]`, by
-    `created_at`) is someone's other than LOOP_AUTHOR. Such a removal is
-    that person's: the withdrawal pass does not decline, disarm or withdraw
-    it, and `refresh_allowed` lets it be refreshed. The arm's time is
-    compared with nothing else (an issue's close, the loop's last disarm):
-    who armed it last, and that it is still armed, decide. False for anything not
-    known to be that: not armed (the loop's own disarm included), an
-    unreadable timeline, no event, the loop's or an unnamed actor's arm
-    last, or a time missing or unparseable on any `auto_merge_enabled`
+    `created_at`) is a person's (`_a_persons`: a `User` other than
+    LOOP_AUTHOR, round 13). Such a removal is that person's: the withdrawal
+    pass does not disarm it (the `proposal` switch) or withdraw it (a stale
+    verdict, or a withdrawal that stopped part way), and `refresh_allowed`
+    lets it be refreshed. For those, the arm's time is compared with
+    nothing else. The one comparison (round 13, "the latest person action
+    wins"): when a closed proposal or legacy issue declines the subject
+    (`decline`, `declined`'s result), the arm wins only when its
+    `created_at` is strictly later than the decline's `closed_at`; a tie,
+    or either time missing or unparseable, and the decline wins. False for
+    anything not known to be a person's arm in force: not armed (the loop's
+    own disarm included), an unreadable timeline, no event, a non-person's
+    arm last, or a time missing or unparseable on any `auto_merge_enabled`
     event (then which arm is the latest is unknown). Two arms in the same
-    second count as a person's only when neither is the loop's."""
+    second count as a person's only when every one of them is."""
     if not armed:
         return False
+    closed = None
+    if decline is not None:
+        closed = _moment(decline.get("closed_at"))
+        if closed is None:
+            return False
     try:
         events = _json_lines(registry_gh(c["arms"]))
     except Exception:  # noqa: BLE001 - not known to be a person's arm
@@ -2527,8 +2589,9 @@ def persons_arm(registry_gh, c: dict, armed: bool) -> bool:
     if not events or any(m is None for m in moments):
         return False
     latest = max(moments)
-    return all(isinstance(e.get("actor"), str) and e["actor"] not in ("", LOOP_AUTHOR)
-               for e, m in zip(events, moments) if m == latest)
+    if closed is not None and latest <= closed:
+        return False
+    return all(_a_persons(e) for e, m in zip(events, moments) if m == latest)
 
 
 def loop_disarm_hold(registry_gh, c: dict, subject: str) -> str | None:
@@ -2619,7 +2682,8 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
     nothing. An unreadable issue list makes the item `unreadable`, which
     `_act` fails (the pull request is left as it is and the pass exits 2).
     `_act` leaves a removal under a person's arm (`persons_arm`) alone
-    instead of declining it."""
+    instead of declining it only when that arm is strictly later than the
+    issue's close (`closed_at`, round 13): the latest person action wins."""
     subject = decision.get("subject")
     if not isinstance(subject, str) or not isinstance(gates, dict):
         return decision
@@ -2638,6 +2702,7 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
     if "unreadable" in decline:
         return {"action": "unreadable", "subject": subject, "why": decline["unreadable"]}
     return {"action": "decline", "subject": subject, "declined": decline["issue"],
+            "closed_at": decline.get("closed_at"),
             "why": f"its proposal issue #{decline['issue']} in skills-evals is closed, "
                    "which declines the removal"}
 
@@ -2694,7 +2759,7 @@ def withdrawal_issue(item: dict, gates: dict, target: str, gh, run_url: str | No
         # R8-1: this issue is the proposal path's, so closing it declines.
         decline = ("This issue is the subject's proposal, so closing it declines the "
                    "removal: while it is closed the loop opens no removal for the subject. "
-                   f"{OVERRIDE}")
+                   f"{LATEST_WINS} {OVERRIDE}")
     elif auto:
         # R6-7: in auto mode the retirement job reads this issue only once
         # the pause cap is reached (R7-4), so until then closing it declines
@@ -2809,8 +2874,10 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
     before it comments and closes, so any failure before the close leaves
     the pull request open for the next pass; then it deletes the branch,
     best effort. A `disarmed` partial withdrawal (R6-2) found armed is
-    kept. A `withdraw`, `disarm` or `decline` under a person's arm
-    (`persons_arm`, round 12) is left for that person, with no write."""
+    kept. A `withdraw` or `disarm` under a person's arm (`persons_arm`,
+    round 12) is left for that person, with no write; so is a `decline`,
+    but only when that arm is strictly later than the declining issue's
+    close (round 13: the latest person action wins)."""
     n = item["number"]
     if item["action"] == "keep":
         return f"kept #{n}: {item['why']}"
@@ -2820,7 +2887,8 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete)
     if registry_gh(c["state"]).strip() != "OPEN":
         return f"skipped #{n}: it is no longer open"
     armed = bool(registry_gh(c["view"]).strip())
-    if persons_arm(registry_gh, c, armed):
+    decline = item if item["action"] == "decline" else None
+    if persons_arm(registry_gh, c, armed, decline):
         return f"left #{n} for a person: {PERSONS_ARM}"
     if item.get("partial") == "disarmed" and armed:
         return f"kept #{n}: its auto-merge is on after all"
@@ -2918,7 +2986,8 @@ def declined_comment(item: dict, target: str, run_url: str | None) -> str:
             "and this pull request is closed as a decision, not a pause: it carries no "
             f"`{WITHDRAWN_LABEL}` label and its branch is kept. This closed pull request now "
             "decides the subject: the loop opens no removal for it again, and reopening the "
-            f"issue does not resume it. {OVERRIDE} Rule: [ADR 0014]({ADR})."
+            f"issue does not resume it. {LATEST_WINS} No person's arm on this pull request "
+            f"was later than the close. {OVERRIDE} Rule: [ADR 0014]({ADR})."
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\n" + AGENT_MARKER + "\n")
 
@@ -2956,8 +3025,9 @@ def _decline(item: dict, gates: dict, target: str, registry_gh, gh, run_url,
            "reason, so the loop turned its auto-merge off and closed it as a decision (no "
            f"`{WITHDRAWN_LABEL}` label, branch kept). That closed pull request now decides "
            "the subject: nothing is removed, and reopening this issue does not resume the "
-           "loop. To remove the subject anyway, take that pull request over (remove its "
-           f"`{AGENT_LABEL}` label, then reopen and merge it by hand). Rule: "
+           f"loop. {LATEST_WINS} No person's arm on that pull request was later than this "
+           "issue's close. To remove the subject anyway, take that pull request over (remove "
+           f"its `{AGENT_LABEL}` label, then reopen and merge it by hand). Rule: "
            f"[ADR 0014]({ADR})."
            + (f"\n\nWorkflow run: {run_url}" if run_url else "")
            + "\n\n" + AGENT_MARKER + "\n")
@@ -3093,9 +3163,14 @@ def refresh_allowed(gates: dict | None, head: str, gh, number: int | None = None
     removal that should not merge. The one exception (round 12): given its
     pull request `number`, a removal under a person's arm in force
     (`persons_arm`, armed now as read through `gh`) is `(True, ...)`
-    whatever the rest says, since the withdrawal pass leaves it to that
-    person and it must still be able to merge. An unreadable arm is not a
-    person's, so the refusal stands."""
+    whatever its verdict or mode, since the withdrawal pass leaves it to
+    that person and it must still be able to merge. Its retirement issues
+    are read for it too, and the same comparison as the withdrawal pass's
+    applies (round 13, the latest person action wins): when a closed
+    proposal issue declines the subject, the arm wins only when it is
+    strictly later than that close, so a later close, a tie or a missing
+    time refuses, and so does an unreadable issue list. An unreadable arm is
+    not a person's, so the refusal stands."""
     for target, spec in WITHDRAW_TARGETS.items():
         if not head.startswith(spec["prefix"]):
             continue
@@ -3109,8 +3184,18 @@ def refresh_allowed(gates: dict | None, head: str, gh, number: int | None = None
                 armed = gh(c["armed"]).strip() == "true"
             except Exception:  # noqa: BLE001 - not known to be armed
                 armed = False
-            if persons_arm(gh, c, armed):
-                return True, f"{PERSONS_ARM}, so the loop leaves it to that person ({why})"
+            if armed:
+                try:
+                    decline = declined(retirement_issues(gh, subject, target)[1], subject,
+                                       "auto", "subject")
+                except Exception:  # noqa: BLE001 - its text may quote a response
+                    return False, "its retirement issues could not be read"
+                if persons_arm(gh, c, armed, decline):
+                    return True, f"{PERSONS_ARM}, so the loop leaves it to that person ({why})"
+                if decline is not None and persons_arm(gh, c, armed):
+                    return False, (f"its proposal issue #{decline['issue']} was closed no "
+                                   "earlier than a person armed it (or either time is "
+                                   "unknown), which declines it")
         return ok, why
     return True, "not a removal pull request"
 

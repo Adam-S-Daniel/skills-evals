@@ -994,7 +994,8 @@ fails without it:
   (R10-2).* Any close of a proposal or legacy issue still declines,
   whatever its `state_reason`, and this is now documented. A person's
   re-arm is now handled by round 12's single rule (below), which replaced
-  the comparison with the issue's `closed_at` made here. The decline's
+  the comparison with the issue's `closed_at` made here (round 13 brought
+  that comparison back, inside the single rule). The decline's
   comments now say the closed removal decides the subject and reopening the
   issue does not resume the loop, which is what happens.
 - *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
@@ -1053,15 +1054,18 @@ so they are replaced by one rule, used everywhere:
 - *A person's arm in force.* A removal pull request that is armed for
   auto-merge now, and whose latest `auto_merge_enabled` timeline event (by
   `created_at`) has an actor other than `LOOP_AUTHOR`, belongs to that
-  person (`persons_arm`).
+  person (`persons_arm`; round 13 requires that actor to be a `User`).
 - *What the loop leaves alone.* For such a removal the withdrawal pass does
   not decline it (a closed proposal issue), disarm it (the `proposal`
   switch) or withdraw it (a stale verdict, or a withdrawal that stopped
-  part way); it logs `left #N for a person: armed by a person`. The loop
+  part way); it logs `left #N for a person: armed by a person`. Round 13
+  narrowed the decline: the arm wins over it only when it is strictly
+  later than the issue's close. The loop
   never caps an open removal: the retirement job only waits while one is
   open.
 - *Refresh.* `refresh_allowed` (`removal-check --number`) refreshes it
-  whatever its verdict, mode or issue, so it can still merge.
+  whatever its verdict, mode or issue, so it can still merge (round 13:
+  not when a close no earlier than the arm declines it).
 - *Unknown data.* An unreadable timeline, no event, a missing or
   unparseable time on any arm, a removal that is not armed (the loop's own
   disarm included) or one the loop armed last is not a person's arm in
@@ -1080,6 +1084,41 @@ wants it stopped turns its auto-merge off or closes it.
   The lowered path at the cap now goes through `cap_notice` too: the body it
   writes keeps the note, and it posts the comment itself when it is still
   owed. The comment is posted once per subject on every path.
+
+**Round 13 (2026-11-04): the latest person action wins, and a person is a
+`User`.** One major finding and two minor ones, each fixed with a test that
+fails without it:
+
+- *A close after a person's arm did not decline (R13-1, major).* Round 12's
+  rule ignored order: a person who armed a removal and then closed its
+  proposal issue left it armed, the refresh allowed it, and it merged
+  against the later decision, while the issue texts still said closing the
+  issue declines it. Now the latest person action wins, for the decline
+  only: when a closed proposal or legacy issue declines a subject and a
+  person's arm is in force, the arm wins only when its `created_at` is
+  strictly later than the issue's `closed_at` (the latest close, when
+  several decline). A tie, or a time missing or unparseable on either side,
+  and the decline wins. The issue listing reads `closed_at` again and
+  `declined` carries it. `refresh_allowed` applies the same comparison: it
+  refuses when a later close declines, and refuses when the issue list
+  cannot be read. The `proposal` switch and a stale verdict keep round 12's
+  plain rule: a person's arm in force is left alone, whenever it was made.
+  The issue-facing texts (`open_proposal_note`, `withdrawal_issue`, the
+  decline's comments) state the rule (`LATEST_WINS`).
+- *A bot's arm counted as a person's (R13-2).* `persons_arm` asked only
+  "not `LOOP_AUTHOR`", so any other App or bot (`github-actions[bot]`, the
+  loop App under a new slug) or a deleted account could hold a removal open
+  against a decline and a `keep` verdict. `ARMS_JQ` now reads
+  `.actor.type`, and an arm is a person's only when its type is `User` and
+  its login is neither `LOOP_AUTHOR` nor `ghost` (`_a_persons`). A `Bot`, an
+  `Organization`, a missing type or a missing login is not a person.
+- *Test gaps (R13-3).* Tests now kill round 13's mutants 11 (a
+  `shorten-or-merge` counted pauses and got the cap note) and 13 (the
+  person's-arm exception reached before the head's subject check). Mutant
+  12 (the refresh's URL built with the skills repository for a guidance
+  removal) is equivalent: `withdraw_commands` takes the repository from the
+  target and only the number from the URL, so no test can tell them apart.
+  Mutant 2 is equivalent too.
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

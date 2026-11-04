@@ -941,16 +941,24 @@ the step fails.
 
 **A person's arm in force.** One rule overrides everything in this section.
 A removal that is armed for auto-merge now, and whose latest
-`auto_merge_enabled` event is someone's other than the App's, belongs to
-that person. The pass does not decline it, disarm it under the `proposal`
-switch, or withdraw it on a stale verdict; it logs
-`left #N for a person: armed by a person`, and the refresh below still
-brings it up to date, so it merges once its checks pass. Nothing is
-compared with when the issue was closed or when the App last disarmed it:
-only who armed it last, and that it is still armed. To stop it, turn its
-auto-merge off or close it. A removal that is not armed (the App's own
-disarm included), one the App armed last, an unreadable timeline, or a
-missing time is not a person's arm, and gets the action described here.
+`auto_merge_enabled` event is a person's, belongs to that person. A person
+is an actor whose account type is `User` and who is not the App: a `Bot`
+(any App or bot, `github-actions[bot]` included), a deleted account
+(`ghost`), or an actor with no type is not a person. The pass does not
+disarm it under the `proposal` switch or withdraw it on a stale verdict; it
+logs `left #N for a person: armed by a person`, and the refresh below still
+brings it up to date, so it merges once its checks pass. For those, nothing
+is compared with when the App last disarmed it: only who armed it last, and
+that it is still armed. A decline is the one comparison, because the
+latest person action wins: when a closed proposal issue (or an older,
+unstamped one) declines the subject, the arm wins only when its
+`created_at` is strictly later than the issue's `closed_at`. If the issue
+was closed after the arm, in the same second, or either time is missing or
+unreadable, the removal is declined. To stop it, close the proposal issue
+after the arm, turn its auto-merge off, or close it. A removal that is not
+armed (the App's own disarm included), one a non-person armed last, an
+unreadable timeline, or a missing arm time is not a person's arm, and gets
+the action described here.
 
 One pull request's failure does not stop the pass: the others still act,
 every status line is printed, and the step then fails.
@@ -989,8 +997,9 @@ verdicts unknown, or the issue list unreadable, it refreshes none, so a
 refresh never re-runs a stale or declined removal's checks, even when the
 decline itself failed in that run's withdraw job. The exception is a
 removal under a person's arm in force (`removal-check --number`), which is
-refreshed whatever its verdict, mode or issue, since the pass leaves it to
-that person. Its push is leased on the
+refreshed whatever its verdict or mode, since the pass leaves it to that
+person, unless a closed proposal issue declines it and the arm is not
+strictly later than the close, or the issue list cannot be read. Its push is leased on the
 head it fetched, so it never recreates a branch a withdrawal just deleted.
 
 Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.

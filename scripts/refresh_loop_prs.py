@@ -201,8 +201,9 @@ def removal_check(gates_path: Path, head: str, gh=None, number: int | None = Non
     retire_skill is imported here, not at the top, so `merge` keeps needing
     nothing beyond the standard library. `gh` reads the subject's retirement
     issues and, given the pull request's `number`, whether a person's arm is
-    in force on it, which allows the refresh (round 12; default: the `gh`
-    CLI with `GH_TOKEN`)."""
+    in force on it, which allows the refresh unless a closed proposal issue
+    declines it and the arm is not strictly later than that close (rounds
+    12 and 13; default: the `gh` CLI with `GH_TOKEN`)."""
     import retire_skill
     try:
         gates = retire_skill.load_gates(gates_path)

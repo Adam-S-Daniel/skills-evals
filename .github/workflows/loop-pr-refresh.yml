@@ -84,10 +84,12 @@ name: Refresh loop pull requests
 # closed removal decides the subject and its branch is kept. Any close of
 # the issue declines, whatever its reason. One rule overrides all of this
 # (round 12): a removal armed now whose latest `auto_merge_enabled` event is
-# a person's (not the loop App's) is that person's, so the withdraw job does
-# not decline, disarm or withdraw it, and `removal-check --number` lets the
-# refresh bring it up to date, whatever its verdict, mode or issue. An
-# unreadable timeline or a missing time is not a person's arm.
+# a person's (a `User`, not the loop App or any bot, round 13) is that
+# person's, so the withdraw job does not disarm or withdraw it, and
+# `removal-check --number` lets the refresh bring it up to date, whatever
+# its verdict or mode. The latest person action wins (round 13): a closed
+# proposal issue still declines it unless the arm is strictly later than
+# the close. An unreadable timeline or a missing time is not a person's arm.
 
 on:
   workflow_run:
