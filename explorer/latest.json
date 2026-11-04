@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:51:41Z",
+  "generated_at": "2026-11-04T02:53:55Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:50:38Z",
+ "generated_at": "2026-11-04T02:52:56Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:47:50Z",
+ "newest_run": "2026-11-04T02:49:14Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -15277,11 +15277,11 @@
    "confidence": {
     "cells": [
      {
-      "gain": 12.4,
+      "gain": 13.2,
       "high": 23.4,
-      "low": -1.3,
+      "low": 0.0,
       "model": "claude-opus-5-5",
-      "pairs": 21,
+      "pairs": 22,
       "status": "open",
       "task": null,
       "votes": true
@@ -15297,12 +15297,12 @@
       "votes": false
      }
     ],
-    "helps": 0.7444254665119768,
+    "helps": 0.7987602098519502,
     "keep_family": 2,
-    "keep_pairs": 21,
-    "max_pairs": 21,
+    "keep_pairs": 22,
+    "max_pairs": 22,
     "no_help": 0.13705583756345174,
-    "no_help_pairs": 21
+    "no_help_pairs": 22
    },
    "copies": {
     "alert": {
@@ -15316,7 +15316,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 41,
+   "current_text_runs": 42,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -15327,6 +15327,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-04T02:49:14Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T024718Z-5f51b0/github-actions-sha-pinning/20261104T024914Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.47031236,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 10,
+      "cost_usd": 0.23053640000000003,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T02:16:41Z",
      "cli_version": "2.1.318",
@@ -23799,7 +23820,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "6d259cfef67e1d191fcfd3c2ff0d2d39daaab6ff",
-  "results_commit": "49975477edb34d356891add91121e1017d64715e"
+  "results_commit": "7206298334db3610df7ac44905bd3bb1c809363b"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
