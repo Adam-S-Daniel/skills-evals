@@ -84,8 +84,9 @@
 # value is `proposal`. It was `auto` by Adam's 2026-10-26 decision (ADR 0014
 # and adam-agentskills ADR 0021); Adam set both blocks to `proposal` on
 # 2026-11-03 ("Resume, auto-removal off") after the statistics review, and
-# is deciding between automatic removal and proposals only under the rule
-# above. Even in `auto`, scripts/retire_skill.py files the issue instead for
+# pre-approved setting them back to `auto` once a loop withdrawal was
+# hardened (PR #740 and its round-7 fixes; skills-evals#645), which they now
+# are. Even in `auto`, scripts/retire_skill.py files the issue instead for
 # a verdict whose `removal` is `proposal`, when plugin-runtime-review would
 # hold the removal, or when the scheduled workflow has no write token; it
 # opens nothing while another loop pull request is open, and acts only from
@@ -99,7 +100,7 @@ skills:
   max_runs_per_cell: 40
   max_runs_high_cell: 20
   floor_fraction: 0.10
-  retirement_mode: proposal
+  retirement_mode: auto
 # Guidance sections (skills-evals#124): the same verdict over each section's
 # ablation pair (full vs full-minus-section), with the section-vs-none pair
 # read only for the `shorten-or-merge` outcome (harness/gates.py,
@@ -117,4 +118,4 @@ guidance:
   max_runs_per_cell: 40
   max_runs_high_cell: 20
   floor_fraction: 0.10
-  retirement_mode: proposal
+  retirement_mode: auto

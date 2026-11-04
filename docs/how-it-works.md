@@ -767,10 +767,10 @@ labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
 adam-agentskills ADR 0021, and the
 [2026-11-03 addendum](decisions/0014-removal-pull-requests-merge-without-review.md#betting-bound-addendum-2026-11-03)).
-The committed value is `proposal` (Adam, 2026-11-03, "Resume, auto-removal
-off") while he decides between automatic removal and proposals only under
-the new rule, and a `removal: proposal` verdict files the issue whatever
-the mode. Each removal also files an `agent-authored`
+The committed value is `auto` again: Adam set it to `proposal` on
+2026-11-03 ("Resume, auto-removal off") and pre-approved turning it back on
+once a loop withdrawal was hardened (PR #740, skills-evals#645). A
+`removal: proposal` verdict files the issue whatever the mode. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request

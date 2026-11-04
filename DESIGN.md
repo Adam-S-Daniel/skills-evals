@@ -2718,9 +2718,9 @@ file when this was its only `##`) and re-copies `base.md` to
 (`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
 `## Repo-specific additions` heading line. A dry run lists every step.
 Retirement was made automatic, with no human approval (Adam, 2026-10-10,
-#124); since Adam's 2026-11-03 "Resume, auto-removal off",
-`evals/gate-policy.yml` commits `guidance.retirement_mode: proposal` while he
-decides on the new rule. In `auto`, a verdict with `removal: auto` opens the
+#124); Adam's 2026-11-03 "Resume, auto-removal off" set
+`guidance.retirement_mode` to `proposal`, and `evals/gate-policy.yml` commits
+`auto` again since withdrawal was hardened (PR #740, #645). In `auto`, a verdict with `removal: auto` opens the
 removal pull request in `_agent-guidance` is written with the eval-improve
 GitHub App's token minted for that repository alone (`skill-coverage.yml`'s
 `retirement` job). With no token it files the issue instead. Every removal
