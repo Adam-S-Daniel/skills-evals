@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:51:11Z",
+  "generated_at": "2026-11-04T01:57:47Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T01:50:15Z",
+ "generated_at": "2026-11-04T01:56:47Z",
  "guidance": {
   "removed": [
    {
@@ -3673,24 +3673,24 @@
        "votes": true
       },
       {
-       "gain": 56.8,
+       "gain": 58.3,
        "high": 73.1,
-       "low": 22.0,
+       "low": 26.1,
        "model": "claude-sonnet-5-5",
-       "pairs": 11,
+       "pairs": 12,
        "status": "keeps",
        "task": "open-pull-request",
        "votes": true
       }
      ],
-     "helps": 0.9684201875891867,
+     "helps": 0.9811463806502607,
      "keep_family": 2,
-     "keep_pairs": 11,
-     "max_pairs": 11,
+     "keep_pairs": 12,
+     "max_pairs": 12,
      "no_help": 0.0,
      "no_help_pairs": 9
     },
-    "current_text_runs": 20,
+    "current_text_runs": 21,
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -3700,6 +3700,29 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-04T01:55:34Z",
+      "cli_version": "2.1.318",
+      "fixture": "open-pull-request",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 4,
+        "checks_total": 4,
+        "cost_usd": 0.10879110000000002,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 4,
+        "cost_usd": 0.11487999999999998,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T015406Z-ae4b6e/guidance/agent-contribution-markers/20261104T015534Z/report.md"
+     },
      {
       "at": "2026-11-04T01:21:47Z",
       "cli_version": "2.1.318",
@@ -9571,7 +9594,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:48:02Z",
+ "newest_run": "2026-11-04T01:55:34Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -23500,7 +23523,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "745d2385c33b6c5f7b0ecf884f142dbbe9a915ea"
+  "results_commit": "c246e32a2327c13d05082b4690d5f8f911881708"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
