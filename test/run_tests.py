@@ -4355,12 +4355,13 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "never `needs: eval` or run the agent)")
         self.assertEqual(
             doc["jobs"]["disarm"].get("permissions"),
-            {"pull-requests": "write", "contents": "read"},
+            {"pull-requests": "write", "contents": "write"},
             "the `disarm` job's permissions must be exactly "
-            "{pull-requests: write, contents: read} — B1 (round 4 on #209, "
+            "{pull-requests: write, contents: write} — B1 (round 4 on #209, "
             "blocker): it disables an earlier run's still-armed roster "
             "pull request's auto-merge BEFORE the `eval` job's agent "
-            "starts, and needs no other scope to do it")
+            "starts; GitHub refuses that to a job token without contents: "
+            "write (2026-11-04), and it runs no repository code")
         self.assertEqual(
             doc["jobs"]["eval"].get("permissions"),
             {"contents": "read", "id-token": "write"},
@@ -6956,7 +6957,7 @@ class TestIssue67(unittest.TestCase):
                          {"contents": "read", "id-token": "write",
                           "issues": "write"})
         self.assertEqual(doc["jobs"]["disarm"]["permissions"],
-                         {"pull-requests": "write", "contents": "read"})
+                         {"pull-requests": "write", "contents": "write"})
         self.assertEqual(doc["jobs"]["eval"]["permissions"],
                          {"contents": "read", "id-token": "write"})
         self.assertEqual(doc["jobs"]["publish"]["permissions"],
