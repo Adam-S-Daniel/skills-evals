@@ -80,9 +80,12 @@ checks): all three write the bundle version, `docs/skill-impact.md` and
 (adam-agentskills ADR 0021, decision 5). Nor while a closed pull request
 from `retire-skill/<skill>` decides it: one merged, or closed unmerged by a
 person, decides the skill, as a closed issue decides a proposal. One the
-loop withdrew (`LOOP_AUTHOR`'s, labeled `loop-withdrawn`) decides nothing:
-the next removal replaces its kept branch, only while the branch still
-points at that pull request's head (`default_push`'s lease).
+loop withdrew (opened by `LOOP_AUTHOR`, labeled `loop-withdrawn` AND closed
+by `LOOP_AUTHOR`, read from the issue's `closed_by`) decides nothing: the
+withdrawal deleted its branch, so the next removal is a plain push, and a
+branch that still exists is refused, never replaced. After
+`MAX_LOOP_PAUSES` (3) such pauses the skill's proposal issue is filed or
+updated instead of another removal.
 
 REFUSALS (exit 2, nothing written):
 
@@ -194,24 +197,38 @@ each the loop opened (head `retire-skill/` or `retire-guidance/`, the
 that no longer supports an automatic removal (not `retire`, or a `retire`
 lowered to a proposal; a `retire-pending` whose `raw_verdict` is `retire`
 still supports it, since `finalize` only ranks it behind another subject)
-withdraws it: auto-merge is turned off and read back, a comment gives the
-label `loop-withdrawn` is added, the subject's retirement issue here (the
-proposal path's marker) is filed, or the oldest open one gets a comment
-(its body is kept), then a comment gives the new verdict, why and the
-override, and the pull request is closed with its branch kept; any open
-removal notice (#557) for the subject is closed as not planned and then
-commented on, best effort. Each step before the close that fails leaves
-the pull request open for the next pass. A loop withdrawal is a pause, not
-a decision: a closed removal labeled `loop-withdrawn` decides nothing, so
-once the verdict supports an automatic removal again the retirement job
-opens a fresh one; a person who removes the label makes the closed pull
-request decide the subject. Only verdicts newer than the results a pull
-request was opened on judge it: its body's first line, "Removes ... is
+withdraws it, in this order:
+
+  1. auto-merge is turned off and read back;
+  2. the label `loop-withdrawn` is added and read back;
+  3. the subject's retirement issue here (the proposal path's marker) is
+     filed, or the oldest open one gets a comment (its body is kept);
+  4. a comment gives the new verdict, why and the override;
+  5. the pull request is closed;
+  6. its branch is deleted, leased on the closed pull request's head, so a
+     commit pushed since keeps it (best effort: a failure is named by its
+     error's type and the pause stands);
+  7. any open removal notice (#557) for the subject is closed as not
+     planned and then commented on, best effort.
+
+A failure at steps 1 to 5 leaves the pull request open for the next pass.
+In `auto` mode an open removal whose verdict still supports it but which
+carries `loop-withdrawn`, or whose auto-merge the listing shows off (one
+opened before the verdicts' results), is such a withdrawal that stopped
+part way, and is finished the same way (R6-2). A loop withdrawal is a
+pause, not a decision: a closed removal the loop opened, labeled and
+closed itself decides nothing, so once the verdict supports an automatic
+removal again the retirement job opens a fresh one; a person who removes
+the label, or closes a removal themselves, decides the subject.
+
+Only verdicts newer than the results a pull request was opened on judge
+it: its body's first line, "Removes ... is
 **retire** as of <as_of> (", names them (a basis later than its own
 `created_at` is ignored); with none, one whose `created_at` is later than
 the document's `as_of`, or with either time unknown, is kept. The override
-is a person's: remove `agent-authored`, then reopen and merge by hand; a
-pull request without the label is not the loop's. While the target's mode is
+is a person's: remove `agent-authored`, restore the branch from the pull
+request page, then reopen and merge by hand; a pull request without the
+label is not the loop's. While the target's mode is
 `proposal` (the one switch), a removal still supported is only disarmed,
 left open and commented once. Unknown data never withdraws: a missing or
 unreadable gates document (or no guidance block) withdraws nothing and
@@ -237,6 +254,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -333,40 +351,31 @@ def _auth_env(token: str) -> dict:
             "GIT_TERMINAL_PROMPT": "0"}
 
 
-def replace_lease(checkout: Path, branch: str, replaces, env=None) -> list:
-    """The push arguments that put HEAD on `branch` when a withdrawn removal
-    kept it (ADR 0014): `branch` absent, a plain push; present at one of
-    `replaces` (the withdrawn pull requests' head shas), a push leased on
-    exactly that sha, so it replaces the withdrawn branch and nothing
-    anyone pushed since; present anywhere else, RetireError."""
+def branch_exists(checkout: Path, branch: str, env=None) -> bool:
+    """Whether `branch` exists on the checkout's origin (`git ls-remote`);
+    RetireError when it cannot be read."""
     proc = subprocess.run(["git", "-C", str(checkout), "ls-remote", "origin",
                            f"refs/heads/{branch}"], capture_output=True, text=True,
                           check=False, env=env)
     if proc.returncode != 0:
         raise RetireError(f"git ls-remote exited {proc.returncode}")
-    now = proc.stdout.split()[0] if proc.stdout.split() else None
-    if now is None:
-        return ["push", "origin", f"HEAD:refs/heads/{branch}"]
-    if not SHA_RE.fullmatch(now) or now not in replaces:
-        raise RetireError(f"{branch} exists and is not a withdrawn removal's head, "
-                          "so it is not replaced")
-    return ["push", f"--force-with-lease=refs/heads/{branch}:{now}", "origin",
-            f"HEAD:refs/heads/{branch}"]
+    return bool(proc.stdout.split())
 
 
-def default_push(checkout: Path, branch: str, token: str | None = None,
-                 replaces=()) -> None:
-    """Push HEAD to `branch`, then prove it landed: a refused commit can
+def default_push(checkout: Path, branch: str, token: str | None = None) -> None:
+    """Push HEAD to a new `branch`, then prove it landed: a refused commit can
     still leave `git push` reporting success, so the pushed ref is fetched
-    back and HEAD must be its ancestor (the fleet's push rule). With
-    `replaces`, a branch a withdrawn removal kept is replaced under a lease
-    (`replace_lease`)."""
+    back and HEAD must be its ancestor (the fleet's push rule). A branch
+    that already exists is RetireError, never replaced (PR #740 round 6's
+    R6-5): a withdrawal deletes its branch, so one still there is a
+    person's to restore or delete, and nothing here ever forces a push."""
     if not token:
         raise RetireError(f"no {REGISTRY_TOKEN_ENV} to push with")
     env = _auth_env(token)
-    first = (replace_lease(checkout, branch, replaces, env) if replaces
-             else ["push", "origin", f"HEAD:refs/heads/{branch}"])
-    for args in (first,
+    if branch_exists(checkout, branch, env):
+        raise RetireError(f"{branch} already exists, so a removal is not pushed over it; "
+                          "a person restores its pull request or deletes the branch")
+    for args in (["push", "origin", f"HEAD:refs/heads/{branch}"],
                  ["fetch", "-q", "--no-tags", "origin",
                   f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
                  ["merge-base", "--is-ancestor", "HEAD", f"refs/remotes/origin/{branch}"]):
@@ -376,6 +385,32 @@ def default_push(checkout: Path, branch: str, token: str | None = None,
             raise RetireError(f"git {args[0]} exited {proc.returncode}"
                               + (": the pushed branch does not hold the removal commit"
                                  if args[0] == "merge-base" else ""))
+
+
+def default_delete_branch(repo: str, branch: str, sha: str, token: str | None = None,
+                          url: str | None = None) -> None:
+    """Delete a withdrawn removal's `branch` (R6-5, R6-11) only while it
+    still points at `sha`, the closed pull request's head: `git push
+    --force-with-lease=refs/heads/<branch>:<sha> <url> :refs/heads/<branch>`
+    from an empty repository. The server applies the delete only if the ref
+    still holds `sha` (receive-pack checks the old value under its ref
+    lock), so a commit anyone pushed since keeps the branch. `url` defaults
+    to the repository on github.com, authenticated with `token` through
+    `_auth_env`."""
+    if not token:
+        raise RetireError(f"no {REGISTRY_TOKEN_ENV} to delete a branch with")
+    if not SHA_RE.fullmatch(sha or ""):
+        raise RetireError("the closed pull request's head is not a commit sha")
+    env = _auth_env(token)
+    with tempfile.TemporaryDirectory() as tmp:
+        for args in (["init", "-q", tmp],
+                     ["-C", tmp, "push", f"--force-with-lease=refs/heads/{branch}:{sha}",
+                      url or f"https://github.com/{repo}.git", f":refs/heads/{branch}"]):
+            proc = subprocess.run(["git", *args], capture_output=True, text=True,
+                                  check=False, env=env)
+            if proc.returncode != 0:
+                raise RetireError(f"git {args[0] if args[0] != '-C' else args[2]} exited "
+                                  f"{proc.returncode}")
 
 
 def _git(checkout: Path, *args: str) -> str:
@@ -535,37 +570,58 @@ WITHDRAWN_LABEL = "loop-withdrawn"
 WITHDRAWN_LABEL_COLOR = "BFD4F2"
 WITHDRAWN_LABEL_DESCRIPTION = ("Eval loop closed this removal PR because the verdict moved; it "
                                "may open a fresh one")
-#: The closed listing's fields: who opened it, its labels, whether it merged
-#: and its head commit (the branch a fresh removal may replace).
+#: The closed listing's fields: who opened it, its labels and whether it
+#: merged. Who closed it is not in the listing; `with_closer` reads it.
 CLOSED_JQ = (".[] | {number: .number, head: .head.ref, url: .html_url, "
-             "labels: [.labels[].name], author: .user.login, sha: .head.sha, "
+             "labels: [.labels[].name], author: .user.login, "
              "merged: (.merged_at != null)}")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
+#: How many loop-paused removals a subject may have before the retirement
+#: job stops opening removals for it and files (or updates) its proposal
+#: issue instead, so a verdict near its threshold cannot open and withdraw
+#: removal pull requests without bound (PR #740 round 6's R6-6).
+MAX_LOOP_PAUSES = 3
 
 
 def loop_withdrawn(pr: dict) -> bool:
-    """A closed, unmerged removal the loop withdrew: LOOP_AUTHOR's, labeled
-    WITHDRAWN_LABEL. It decides nothing. Anything else closed decides its
-    subject: merged, closed by a person (no label), or one whose label a
-    person removed (the conservative reading)."""
+    """A closed, unmerged removal the loop withdrew: LOOP_AUTHOR opened it,
+    it carries WITHDRAWN_LABEL, AND LOOP_AUTHOR closed it (`closed_by`,
+    which `with_closer` reads from the issue; R6-1, R6-3). It decides
+    nothing. Anything else closed decides its subject: merged, closed by a
+    person (labeled or not), one whose closer is unknown, or one whose
+    label a person removed (the conservative reading)."""
     labels = pr.get("labels")
     return pr.get("merged") is False and pr.get("author") == LOOP_AUTHOR \
-        and isinstance(labels, list) and WITHDRAWN_LABEL in labels
+        and isinstance(labels, list) and WITHDRAWN_LABEL in labels \
+        and pr.get("closed_by") == LOOP_AUTHOR
 
 
 def deciding(closed: list) -> tuple:
-    """(the closed pull requests that decide the subject, the head shas of
-    those the loop withdrew); RetireError for a withdrawn one whose head is
-    not a commit sha, since its branch could not be replaced safely."""
-    decided, shas = [], []
+    """(the closed pull requests that decide the subject, those the loop
+    paused)."""
+    decided, paused = [], []
     for p in closed:
-        if not loop_withdrawn(p):
-            decided.append(p)
-        elif isinstance(p.get("sha"), str) and SHA_RE.fullmatch(p["sha"]):
-            shas.append(p["sha"])
-        else:
-            raise RetireError("a withdrawn removal pull request record has no head commit")
-    return decided, shas
+        (paused if loop_withdrawn(p) else decided).append(p)
+    return decided, paused
+
+
+def with_closer(gh, repo: str, closed: list) -> list:
+    """`closed` with each record's `closed_by` login, read from `GET
+    repos/{repo}/issues/{n}` for the records that could be a loop pause (the
+    listing does not carry it). An unreadable one is None, which decides."""
+    for p in closed:
+        p["closed_by"] = None
+        n = p.get("number")
+        if p.get("merged") is not False or p.get("author") != LOOP_AUTHOR \
+                or type(n) is not int:
+            continue
+        try:
+            login = gh(["api", f"repos/{repo}/issues/{n}", "--jq",
+                        '.closed_by.login // ""']).strip()
+        except Exception:  # noqa: BLE001 - unknown closer: it decides
+            continue
+        p["closed_by"] = login or None
+    return closed
 
 
 def closed_removal_prs(gh, skill: str) -> list:
@@ -576,7 +632,8 @@ def closed_removal_prs(gh, skill: str) -> list:
                f"repos/{REGISTRY_REPO}/pulls?state=closed&per_page=100"
                f"&head={owner}:{BRANCH_PREFIX}{skill}",
                "--jq", CLOSED_JQ])
-    return [p for p in _json_lines(text) if p.get("head") == f"{BRANCH_PREFIX}{skill}"]
+    return with_closer(gh, REGISTRY_REPO, [
+        p for p in _json_lines(text) if p.get("head") == f"{BRANCH_PREFIX}{skill}"])
 
 
 def runtime_refusal(checkout: Path, plugin: str, skill: str) -> str | None:
@@ -1017,6 +1074,35 @@ def _lowered(mode_reason: str, allowed) -> str:
     return "proposal"
 
 
+def paused_reason(count: int) -> str:
+    """Why a subject the loop has paused MAX_LOOP_PAUSES times or more gets
+    its proposal issue rather than another removal (R6-6)."""
+    return (f"the loop has already withdrawn {count} automatic removal pull requests for "
+            f"it (at most {MAX_LOOP_PAUSES} before a person decides, so a verdict near its "
+            "threshold cannot open and withdraw removals without end)")
+
+
+def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage) -> dict:
+    """The proposal path's action: create or update the skill's issue, or
+    nothing when a closed one already decided it."""
+    try:
+        location, problem = locate(registries, skill), None
+    except RetireError as exc:
+        location, problem = None, str(exc)
+    issues = existing_issues(gh, skill)
+    lowered = {"mode_reason": mode_reason} if mode_reason else {}
+    if not issues["open"] and issues["closed"]:
+        return {"action": "none", "mode": "proposal", "skill": skill, **lowered,
+                "issue": issues["closed"][0],
+                "reason": f"{skill} is already decided: issue "
+                          f"#{issues['closed'][0]} is closed, so none is filed again"}
+    number = issues["open"][0] if issues["open"] else None
+    return {"action": "update-issue" if number else "create-issue", "mode": "proposal",
+            "skill": skill, "issue": number, **lowered,
+            "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
+            "body": _issue_body(gates, skill, location, problem, run_url, usage, mode_reason)}
+
+
 def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
          allowed=("proposal",), usage: dict | None = None, fallback: bool = False,
          date: str | None = None) -> dict:
@@ -1042,33 +1128,22 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         if mode_reason:
             mode = _lowered(mode_reason, allowed)
     if mode == "proposal":
-        try:
-            location, problem = locate(registries, skill), None
-        except RetireError as exc:
-            location, problem = None, str(exc)
-        issues = existing_issues(gh, skill)
-        lowered = {"mode_reason": mode_reason} if mode_reason else {}
-        if not issues["open"] and issues["closed"]:
-            return {"action": "none", "mode": mode, "skill": skill, **lowered,
-                    "issue": issues["closed"][0],
-                    "reason": f"{skill} is already decided: issue "
-                              f"#{issues['closed'][0]} is closed, so none is filed again"}
-        number = issues["open"][0] if issues["open"] else None
-        return {"action": "update-issue" if number else "create-issue", "mode": mode,
-                "skill": skill, "issue": number, **lowered,
-                "title": f"Retire skill {skill}: no benefit on every roster model (#70)",
-                "body": _issue_body(gates, skill, location, problem, run_url, usage, mode_reason)}
+        return _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage)
     prs = open_loop_prs(gh)
     if prs:
         return {"action": "none", "mode": mode, "skill": skill,
                 "reason": "a loop pull request is already open in "
                           f"{REGISTRY_REPO}, so this removal waits for it: "
                           + ", ".join(str(p.get("url")) for p in prs)}
-    closed, replaces = deciding(closed_removal_prs(gh, skill))
+    closed, paused = deciding(closed_removal_prs(gh, skill))
     if closed:
         return {"action": "none", "mode": mode, "skill": skill,
                 "reason": f"{skill} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
+    if len(paused) >= MAX_LOOP_PAUSES:
+        mode_reason = paused_reason(len(paused))
+        _lowered(mode_reason, allowed)
+        return _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage)
     versions = manifest_versions(checkout, location["plugin"])
     check_registry(checkout, location, skill)
     repin = lock_relevant(checkout, location["plugin"])
@@ -1076,7 +1151,7 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
                          next(iter(versions.values())), date)
     return {"action": "removal", "mode": mode, "skill": skill, **location,
             "branch": f"{BRANCH_PREFIX}{skill}", "versions": versions,
-            "impact_entry": entry, "repin": repin, "replaces": replaces,
+            "impact_entry": entry, "repin": repin,
             "notice": skill_notice(gates, skill, location, run_url),
             "title": f"Remove {location['plugin']}/{skill}: no benefit (skills-evals#70)",
             "body": _pr_body(gates, skill, location, versions, run_url, repin)}
@@ -1206,24 +1281,11 @@ def commands(action: dict) -> list:
     return []
 
 
-def _push(push, checkout: Path, action: dict) -> None:
-    """`push`, told which withdrawn heads it may replace when there are any
-    (a push function that takes no `replaces` is called as before)."""
-    if action.get("replaces"):
-        push(checkout, action["branch"], action["replaces"])
-    else:
-        push(checkout, action["branch"])
-
-
 def _push_commands(action: dict) -> list:
-    """The dry run's push lines: a branch a withdrawn removal kept is read
-    first and replaced under a lease on its withdrawn head."""
-    ref = f"HEAD:refs/heads/{action['branch']}"
-    if action.get("replaces"):
-        return [["git", "ls-remote", "origin", f"refs/heads/{action['branch']}"],
-                ["git", "push", f"--force-with-lease=refs/heads/{action['branch']}:"
-                 "<a withdrawn head, or none if the branch is gone>", "origin", ref]]
-    return [["git", "push", "origin", ref]]
+    """The dry run's push lines: the branch must not exist yet (`default_push`
+    refuses one that does), then a plain push."""
+    return [["git", "ls-remote", "origin", f"refs/heads/{action['branch']}"],
+            ["git", "push", "origin", f"HEAD:refs/heads/{action['branch']}"]]
 
 
 def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> str:
@@ -1243,7 +1305,7 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
     checkout = Path(registries[TARGET]["path"])
     prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
-    _push(push, checkout, action)
+    push(checkout, action["branch"])
     url = registry_gh(["pr", "create", "-R", REGISTRY_REPO, "--base", "main",
                        "--head", action["branch"], "--title", action["title"],
                        "--body-file", "-"], action["body"]).strip()
@@ -1342,8 +1404,9 @@ def guidance_closed_removal_prs(gh, section: str) -> list:
                f"repos/{GUIDANCE_REPO}/pulls?state=closed&per_page=100"
                f"&head={owner}:{GUIDANCE_BRANCH_PREFIX}{section}",
                "--jq", CLOSED_JQ])
-    return [p for p in _json_lines(text)
-            if p.get("head") == f"{GUIDANCE_BRANCH_PREFIX}{section}"]
+    return with_closer(gh, GUIDANCE_REPO, [
+        p for p in _json_lines(text)
+        if p.get("head") == f"{GUIDANCE_BRANCH_PREFIX}{section}"])
 
 
 def guidance_issues(gh, marker: str) -> dict:
@@ -1537,6 +1600,23 @@ def guidance_issue_action(gates, section, kind, run_url, mode_reason=None) -> di
                        "scheduled workflow (#124).\n")}
 
 
+def _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url) -> dict:
+    """The issue path's action for a section: create or update its issue,
+    or nothing when a closed one already decided it."""
+    issue = guidance_issue_action(gates, section, kind, run_url, mode_reason)
+    lowered = {"mode_reason": mode_reason} if mode_reason else {}
+    found = guidance_issues(gh, issue["marker"])
+    if not found["open"] and found["closed"]:
+        return {"action": "none", "mode": mode, "section": section, **lowered,
+                "issue": found["closed"][0],
+                "reason": f"{section} is already decided: issue "
+                          f"#{found['closed'][0]} is closed, so none is filed again"}
+    number = found["open"][0] if found["open"] else None
+    return {"action": "update-issue" if number else "create-issue", "mode": mode,
+            "section": section, "issue": number, **lowered, "title": issue["title"],
+            "body": issue["body"]}
+
+
 def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = None,
                   allowed=("proposal",), fallback: bool = False) -> dict:
     """What to do for guidance, read-only. RetireError for a refusal."""
@@ -1561,27 +1641,20 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
             raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
                               f"not wired (allowed: {', '.join(allowed)})")
     if kind == "shorten" or mode == "proposal":
-        issue = guidance_issue_action(gates, section, kind, run_url, mode_reason)
-        lowered = {"mode_reason": mode_reason} if mode_reason else {}
-        found = guidance_issues(gh, issue["marker"])
-        if not found["open"] and found["closed"]:
-            return {"action": "none", "mode": mode, "section": section, **lowered,
-                    "issue": found["closed"][0],
-                    "reason": f"{section} is already decided: issue "
-                              f"#{found['closed'][0]} is closed, so none is filed again"}
-        number = found["open"][0] if found["open"] else None
-        return {"action": "update-issue" if number else "create-issue", "mode": mode,
-                "section": section, "issue": number, **lowered, "title": issue["title"],
-                "body": issue["body"]}
+        return _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url)
     prs = guidance_open_prs(gh)
     if prs:
         raise RetireError("a guidance removal pull request is already open: "
                           + ", ".join(str(p.get("url")) for p in prs))
-    closed, replaces = deciding(guidance_closed_removal_prs(gh, section))
+    closed, paused = deciding(guidance_closed_removal_prs(gh, section))
     if closed:
         return {"action": "none", "mode": mode, "section": section,
                 "reason": f"{section} is already decided: removal pull request "
                           f"{closed[0].get('url')} is closed, so none is opened again"}
+    if len(paused) >= MAX_LOOP_PAUSES:
+        mode_reason = paused_reason(len(paused))
+        _lowered(mode_reason, allowed)
+        return _guidance_issue(gates, section, kind, "proposal", mode_reason, gh, run_url)
     if checkout is None:
         raise RetireError("no _agent-guidance checkout was given (--guidance PATH)")
     row = guidance_row(checkout, section)
@@ -1589,7 +1662,7 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     return {"action": "guidance-removal", "mode": mode, "section": section,
             "notice": guidance_notice(gates, section, row, run_url),
             "file": row["file"], "heading": row["heading"],
-            "branch": f"{GUIDANCE_BRANCH_PREFIX}{section}", "replaces": replaces,
+            "branch": f"{GUIDANCE_BRANCH_PREFIX}{section}",
             "impact_entry": guidance_impact_entry(gates, section, run_url),
             "title": f"Remove guidance section {section}: no marginal benefit "
                      "(skills-evals#124)",
@@ -1720,7 +1793,7 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
     check_auto_env(env)
     guidance_prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
-    _push(push, checkout, action)
+    push(checkout, action["branch"])
     url = registry_gh(["pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
                        "--head", action["branch"], "--title", action["title"],
                        "--body-file", "-"], action["body"]).strip()
@@ -1923,13 +1996,48 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
     if spec["mode"](gates) != "auto":
         return {"action": "disarm", "subject": subject,
                 "why": f"the {spec['block']} retirement_mode is proposal ({why})"}
+    partial = partial_withdrawal(pr, gates) if state == "supported" else None
+    if partial is not None:
+        entry = block[subject]
+        return {"action": "withdraw", "subject": subject, "partial": partial,
+                "verdict": entry["verdict"],
+                "removal": entry.get("removal") if isinstance(entry.get("removal"), str)
+                else None,
+                "reason": _one_line(entry["reason"]),
+                "removal_reason": _one_line(entry.get("removal_reason")),
+                "why": f"a withdrawal stopped part way ({PARTIAL_WHY[partial]}), so it is "
+                       "finished as a pause; the next daily run opens a fresh, armed removal"}
     return {"action": "keep", "subject": subject, "why": why}
+
+
+#: R6-2: why an open loop removal whose verdict still supports it is a
+#: withdrawal that stopped part way. `_act` re-reads auto-merge for
+#: `disarmed` and keeps the pull request if it is armed after all.
+PARTIAL_WHY = {"labeled": f"it carries the `{WITHDRAWN_LABEL}` label",
+               "disarmed": "its auto-merge is off"}
+
+
+def partial_withdrawal(pr: dict, gates: dict) -> str | None:
+    """In `auto` mode, whether an open loop removal whose verdict supports it
+    is a withdrawal that stopped part way (R6-2): it carries WITHDRAWN_LABEL
+    (`labeled`), or the listing says its auto-merge is off (`disarmed`, only
+    for one opened before the results these verdicts stand on, so a removal
+    the retirement job is still arming is never caught). Anything else,
+    unknown data included, is None: the pull request is kept."""
+    labels = pr.get("labels") or []
+    if WITHDRAWN_LABEL in labels:
+        return "labeled"
+    opened, judged = _moment(pr.get("created_at")), _moment(gates.get("as_of"))
+    if pr.get("armed") is False and opened is not None and judged is not None \
+            and opened < judged:
+        return "disarmed"
+    return None
 
 
 OVERRIDE = ("To remove the subject anyway, take it over from the loop: remove the "
             f"`{AGENT_LABEL}` label first (a pull request without it is not the loop's, so "
-            "no later pass touches it), then reopen this pull request if it is closed and "
-            "merge it by hand.")
+            "no later pass touches it), then restore the branch from the pull request page, "
+            "then reopen it and merge it by hand.")
 
 
 def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
@@ -1941,17 +2049,21 @@ def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
            f"**{decision['verdict']}**{removal}: {decision['reason']}"
            + (f" ({decision['removal_reason']})" if decision.get("removal_reason") else "")
            + f". Why this withdraws the removal: {decision['why']}.")
+    lead = ("A withdrawal of this removal stopped part way, and this finishes it as a "
+            "pause." if decision.get("partial") else
+            "This removal pull request was opened on a `retire` verdict with an automatic "
+            "removal, and the subject no longer has one.")
     return (f"{WITHDRAWN_MARKER.format(subject=subject)}\n"
-            "**Withdrawn automatically.** This removal pull request was opened on a "
-            "`retire` verdict with an automatic removal, and the subject no longer has "
-            f"one.\n\n{now}\n\n"
-            "Auto-merge is turned off and the pull request is closed; its branch is "
-            f"kept. The `{WITHDRAWN_LABEL}` label marks this as a pause, not a decision: "
-            "if the verdict supports an automatic removal again, the loop opens a fresh "
-            "removal pull request (replacing this branch). To decline the removal for "
-            f"good, remove the `{WITHDRAWN_LABEL}` label; a closed removal without it "
-            "decides the subject. The subject's retirement issue in skills-evals records "
-            f"this withdrawal. {OVERRIDE} Rule: [ADR 0014]({ADR})."
+            f"**Withdrawn automatically.** {lead}\n\n{now}\n\n"
+            "Auto-merge is turned off, the pull request is closed, and then its branch is "
+            "deleted while it still points at this pull request's head. The "
+            f"`{WITHDRAWN_LABEL}` label marks this as a pause, not a decision: if the "
+            "verdict supports an automatic removal again, the loop opens a fresh removal "
+            f"pull request (after {MAX_LOOP_PAUSES} pauses it files the proposal issue "
+            "instead). To decline the removal for good, remove the "
+            f"`{WITHDRAWN_LABEL}` label; a closed removal without it, or one a person "
+            "closed, decides the subject. The subject's retirement issue in skills-evals "
+            f"records this withdrawal. {OVERRIDE} Rule: [ADR 0014]({ADR})."
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\n" + AGENT_MARKER + "\n")
 
@@ -1971,15 +2083,17 @@ def disarm_comment(decision: dict, run_url: str | None) -> str:
 
 def removal_prs(gh, target: str) -> list:
     """The target repository's open pull requests, each with its number,
-    head branch, URL, labels, author login, `created_at` (R2-1) and body
-    (its basis), read through the job's token.
+    head branch, URL, labels, author login, `created_at` (R2-1), body (its
+    basis) and whether auto-merge is on (`armed`, R6-2's partial withdrawal),
+    read through the job's token.
     Whether auto-merge is armed is read later, per pull request, by
     `withdraw_stale` (`gh pr view`)."""
     repo = WITHDRAW_TARGETS[target]["repo"]
     text = gh(["api", "--paginate", f"repos/{repo}/pulls?state=open&per_page=100",
                "--jq", ".[] | {number: .number, head: .head.ref, url: .html_url, "
                        "labels: [.labels[].name], author: .user.login, "
-                       "created_at: .created_at, body: (.body // \"\")}"])
+                       "created_at: .created_at, body: (.body // \"\"), "
+                       "armed: (.auto_merge != null)}"])
     return _json_lines(text)
 
 
@@ -1987,8 +2101,9 @@ def withdraw_commands(target: str, url: str) -> dict:
     """The calls one withdrawal or disarm makes: (state) the pull request
     must still be open; (merge) auto-merge off, then (view) read back;
     (label) WITHDRAWN_LABEL on, after (labels) the repository's labels show
-    it missing and (create_label) creates it; (comment); (close), which
-    keeps the branch."""
+    it missing and (create_label) creates it, then (pr_labels) read back;
+    (comment); (close); (head) the closed pull request's head commit, which
+    the branch delete is leased on."""
     repo = WITHDRAW_TARGETS[target]["repo"]
     return {"state": ["pr", "view", url, "-R", repo, "--json", "state", "--jq", ".state"],
             "merge": ["pr", "merge", url, "-R", repo, "--disable-auto"],
@@ -2000,18 +2115,26 @@ def withdraw_commands(target: str, url: str) -> dict:
             "create_label": ["label", "create", WITHDRAWN_LABEL, "-R", repo, "--color",
                              WITHDRAWN_LABEL_COLOR, "--description",
                              WITHDRAWN_LABEL_DESCRIPTION, "--force"],
+            "pr_labels": ["pr", "view", url, "-R", repo, "--json", "labels", "--jq",
+                          ".labels[].name"],
             "comment": ["pr", "comment", url, "-R", repo, "--body-file", "-"],
-            "close": ["pr", "close", url, "-R", repo]}
+            "close": ["pr", "close", url, "-R", repo],
+            "head": ["pr", "view", url, "-R", repo, "--json", "headRefOid", "--jq",
+                     ".headRefOid"]}
 
 
 def would_run(target: str, item: dict) -> list:
     """The dry run's list of the writes for one planned item."""
     c = withdraw_commands(target, item["url"])
     if item["action"] == "withdraw":
-        return [c["state"], c["view"], c["merge"], c["view"], c["label"],
+        branch = f"{WITHDRAW_TARGETS[target]['prefix']}{item['subject']}"
+        return [c["state"], c["view"], c["merge"], c["view"], c["label"], c["pr_labels"],
                 ["issue", "create-or-comment", "-R", EVALS_REPO,
                  "<the subject's retirement issue>"],
-                c["comment"], c["close"],
+                c["comment"], c["close"], c["head"],
+                ["git", "push", f"--force-with-lease=refs/heads/{branch}:<its head>",
+                 f"https://github.com/{WITHDRAW_TARGETS[target]['repo']}.git",
+                 f":refs/heads/{branch}"],
                 ["issue", "close", "<the subject's open removal notice>", "-R", EVALS_REPO,
                  "--reason", "not planned"],
                 ["issue", "comment", "<the subject's open removal notice>", "-R", EVALS_REPO,
@@ -2056,14 +2179,26 @@ def withdrawal_issue(item: dict, gates: dict, target: str, gh, run_url: str | No
         marker = GUIDANCE_ISSUE_MARKER.format(section=subject)
         found = guidance_issues(gh, marker)
         title = f"Retire guidance section {subject}: automatic removal withdrawn (#124)"
+    if WITHDRAW_TARGETS[target]["mode"](gates) == "auto":
+        # R6-7: in auto mode the retirement job never reads this issue, so
+        # closing it declines nothing.
+        decline = ("Closing this issue declines nothing while the retirement mode is "
+                   "`auto`. To decline the removal, close the removal pull request yourself "
+                   "(a fresh one, when the loop opens it), or remove the "
+                   f"`{WITHDRAWN_LABEL}` label from that closed one: a removal a person "
+                   f"closed, or one without the label, decides the subject. After "
+                   f"{MAX_LOOP_PAUSES} pauses the loop stops opening removals and updates "
+                   f"this issue instead. {OVERRIDE}")
+    else:
+        decline = ("To decline the removal for good, remove the "
+                   f"`{WITHDRAWN_LABEL}` label from that closed pull request. {OVERRIDE} "
+                   "Otherwise close this issue.")
     note = (f"The automatic removal pull request {item['url']} was withdrawn "
-            f"(turned off, labeled `{WITHDRAWN_LABEL}` and closed, branch kept) on the "
-            f"verdicts as of {gates['as_of']}: the verdict is now **{item['verdict']}**: "
-            f"{item['reason']}. Why: {item['why']}.\n\nA withdrawal is a pause, not a "
-            "decision: if the verdict supports an automatic removal again, the loop opens "
-            "a fresh removal pull request. To decline the removal for good, remove the "
-            f"`{WITHDRAWN_LABEL}` label from that closed pull request. {OVERRIDE} "
-            "Otherwise close this issue."
+            f"(turned off, labeled `{WITHDRAWN_LABEL}`, closed, and its branch deleted) "
+            f"on the verdicts as of {gates['as_of']}: the verdict is now "
+            f"**{item['verdict']}**: {item['reason']}. Why: {item['why']}.\n\nA "
+            "withdrawal is a pause, not a decision: if the verdict supports an automatic "
+            f"removal again, the loop opens a fresh removal pull request. {decline}"
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\nFiled by scripts/retire_skill.py --withdraw-stale (ADR 0014).\n\n"
             + AGENT_MARKER + "\n")
@@ -2085,7 +2220,7 @@ def close_removal_notices(item: dict, gates: dict, target: str, gh,
     else:
         marker = GUIDANCE_NOTICE_MARKER.format(section=subject)
     note = (f"**Removal withdrawn.** The automatic removal pull request {item['url']} for "
-            f"`{subject}` was withdrawn (turned off and closed, branch kept; a pause, not "
+            f"`{subject}` was withdrawn (turned off and closed, branch deleted; a pause, not "
             "a decision) on the "
             f"verdicts as of {gates['as_of']}: the verdict is now **{item['verdict']}**. "
             "Nothing is being removed, so this notice is closed; the subject's retirement "
@@ -2142,11 +2277,13 @@ class WithdrawFailed(RetireError):
         self.lines = lines
 
 
-def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
+def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url, delete) -> str:
     """One planned item's calls; its status line. A `keep` makes none. A
-    withdrawal records itself (label, then the retirement issue) before it
-    comments and closes, so any failure before the close leaves the pull
-    request open for the next pass."""
+    withdrawal records itself (label, read back, then the retirement issue)
+    before it comments and closes, so any failure before the close leaves
+    the pull request open for the next pass; then it deletes the branch,
+    best effort. A `disarmed` partial withdrawal (R6-2) found armed is
+    kept."""
     n = item["number"]
     if item["action"] == "keep":
         return f"kept #{n}: {item['why']}"
@@ -2154,6 +2291,8 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
     if registry_gh(c["state"]).strip() != "OPEN":
         return f"skipped #{n}: it is no longer open"
     armed = bool(registry_gh(c["view"]).strip())
+    if item.get("partial") == "disarmed" and armed:
+        return f"kept #{n}: its auto-merge is on after all"
     if armed:
         registry_gh(c["merge"])
         if registry_gh(c["view"]).strip():
@@ -2164,6 +2303,11 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
             return f"disarmed #{n}: {item['why']}"
         return f"left #{n} open and disarmed: {item['why']}"
     add_withdrawn_label(c, registry_gh)
+    # R6-4: read the label back; an add that exited 0 without landing would
+    # make the close below a person-like decision.
+    if WITHDRAWN_LABEL not in [x.strip() for x in registry_gh(c["pr_labels"]).split("\n")]:
+        raise RetireError(f"the {WITHDRAWN_LABEL} label is not on #{n} after adding it, "
+                          "so it is left open")
     issue = withdrawal_issue(item, gates, target, gh, run_url)
     if issue["action"] == "update-issue":
         gh(["issue", "comment", str(issue["issue"]), "-R", EVALS_REPO, "--body-file", "-"],
@@ -2175,6 +2319,20 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
         filed = "filed its retirement issue"
     registry_gh(c["comment"], withdrawal_comment(item, gates, run_url))
     registry_gh(c["close"])
+    # R6-5, R6-11: no branch outlives its pull request. Best effort: the
+    # pause has happened; a branch left behind (a lease that lost, say) is
+    # named by its error's type alone, and a person restores or deletes it
+    # (a later removal refuses to push over it).
+    branch = f"{WITHDRAW_TARGETS[target]['prefix']}{item['subject']}"
+    try:
+        sha = registry_gh(c["head"]).strip()
+        if not SHA_RE.fullmatch(sha):
+            raise RetireError("no head commit")
+        delete(WITHDRAW_TARGETS[target]["repo"], branch, sha)
+    except Exception as exc:  # noqa: BLE001 - its text may quote a response
+        filed += f"; could not delete its branch ({type(exc).__name__})"
+    else:
+        filed += "; deleted its branch"
     # Best effort: the withdrawal has happened; a notice left open is
     # named in the status line, never a failed pass.
     try:
@@ -2187,8 +2345,12 @@ def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
     return f"withdrew #{n}: {item['why']}; {filed}"
 
 
+def _no_delete(repo, branch, sha):
+    raise RetireError("no branch delete is wired")
+
+
 def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
-                   run_url: str | None = None, gh=None) -> list:
+                   run_url: str | None = None, gh=None, delete=None) -> list:
     """Withdraw every stale loop removal pull request among `prs` (the
     listing `removal_prs` read), and disarm every one the `proposal` switch
     holds; the status lines. Pull request writes go through `registry_gh`;
@@ -2197,12 +2359,15 @@ def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
     stop the others: WithdrawFailed at the end, with every status line (a
     RetireError's text, or only the type of any other exception, since its
     text may quote a response). A malformed listing still refuses before
-    any write."""
+    any write. `delete(repo, branch, sha)` deletes a withdrawn removal's
+    branch under a lease on its head (`default_delete_branch`); without
+    one, every delete is reported as not made."""
     gh = gh or registry_gh
+    delete = delete or _no_delete
     lines, errors = [], []
     for item in withdraw_plan(gates, prs, target):
         try:
-            lines.append(_act(item, gates, target, registry_gh, gh, run_url))
+            lines.append(_act(item, gates, target, registry_gh, gh, run_url, delete))
         except Exception as exc:  # noqa: BLE001 - isolate each pull request
             why = str(exc) if isinstance(exc, RetireError) else type(exc).__name__
             errors.append(why)
@@ -2212,7 +2377,7 @@ def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
     return lines or ["no open removal pull request to withdraw"]
 
 
-def withdraw_main(args, env, gh, registry_gh, run_url, out) -> int:
+def withdraw_main(args, env, gh, registry_gh, run_url, out, delete=None) -> int:
     """`--withdraw-stale`: unknown verdicts withdraw nothing and exit 0 with a
     status that names no subject; a refusal or a failed call exits 2."""
     try:
@@ -2236,7 +2401,7 @@ def withdraw_main(args, env, gh, registry_gh, run_url, out) -> int:
     if any(i["action"] in ("withdraw", "disarm") for i in items):
         check_auto_env(env)
     try:
-        lines = withdraw_stale(gates, prs, args.target, registry_gh, run_url, gh)
+        lines = withdraw_stale(gates, prs, args.target, registry_gh, run_url, gh, delete)
     except WithdrawFailed as exc:
         for line in exc.lines:
             out.write(f"retire_skill: {line}\n")
@@ -2274,12 +2439,18 @@ def refresh_allowed(gates: dict | None, head: str) -> tuple:
 
 
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
-         registry_gh=None, out=sys.stdout) -> int:
+         registry_gh=None, delete=None, out=sys.stdout) -> int:
     env = os.environ if env is None else env
     token = env.get(REGISTRY_TOKEN_ENV) or None
     if push is None:
-        def push(checkout, branch, replaces=()):
-            default_push(checkout, branch, token, replaces)
+        def push(checkout, branch):
+            default_push(checkout, branch, token)
+    if delete is None and gh is not default_gh:
+        def delete(repo, branch, sha):  # an injected gh (a test's fake): no network
+            raise RetireError("no branch delete is wired beside an injected gh")
+    elif delete is None:
+        def delete(repo, branch, sha):
+            default_delete_branch(repo, branch, sha, token)
     if registry_gh is None and gh is not default_gh:
         registry_gh = gh  # an injected gh (a test's fake) answers both
     elif registry_gh is None:
@@ -2318,7 +2489,7 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
         if not args.dry_run:
             check_event(env, WITHDRAW_EVENTS if args.withdraw_stale else ("schedule",))
         if args.withdraw_stale:
-            return withdraw_main(args, env, gh, registry_gh, run_url, out)
+            return withdraw_main(args, env, gh, registry_gh, run_url, out, delete)
         if args.date is not None and not DATE_RE.fullmatch(args.date):
             raise RetireError("--date is not YYYY-MM-DD")
         gates = load_gates(args.gates)

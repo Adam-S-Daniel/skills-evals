@@ -66,10 +66,12 @@ name: Refresh loop pull requests
 # per repository (adam-agentskills, then _agent-guidance) with
 # pull-requests: write under continue-on-error, for the disarm, the
 # `loop-withdrawn` label (creating it if missing, which pull-requests: write
-# allows), comment and close; this job's own token, issues: write, for the
-# retirement issue here. A withdrawal is a pause: the label keeps the closed
-# pull request from deciding its subject, so the retirement job opens a fresh
-# removal if the verdict supports one again.
+# allows), comment and close, and contents: write for the branch delete
+# after the close (leased on the closed pull request's head, so no branch
+# outlives its pull request); this job's own token, issues: write, for the
+# retirement issue here. A withdrawal is a pause: a closed removal the loop
+# opened, labeled and closed itself decides nothing, so the retirement job
+# opens a fresh removal if the verdict supports one again.
 
 on:
   workflow_run:
@@ -177,6 +179,7 @@ jobs:
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
           owner: Adam-S-Daniel
           repositories: adam-agentskills
+          permission-contents: write
           permission-pull-requests: write
 
       - name: Withdraw stale skill removal pull requests
@@ -200,6 +203,7 @@ jobs:
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
           owner: Adam-S-Daniel
           repositories: _agent-guidance
+          permission-contents: write
           permission-pull-requests: write
 
       - name: Withdraw stale guidance removal pull requests
@@ -372,10 +376,13 @@ jobs:
               fi
               local commit
               commit="$(git -C "$dir" rev-parse HEAD)"
-              # A plain push: if the branch moved since the fetch it is
-              # refused, and the next run starts again from the new head.
+              # A fast-forward (the merge sits on top of the fetched head),
+              # leased on that head: if the branch moved since the fetch, or
+              # a withdrawal deleted it (ADR 0014), it is refused rather than
+              # recreated, and the next run starts again from the new state.
               if ! git -C "$dir" -c "http.https://github.com/.extraheader=$auth" \
-                   push -q origin "${commit}:refs/heads/${ref}"; then
+                   push -q --force-with-lease="refs/heads/${ref}:${head}" origin \
+                   "${commit}:refs/heads/${ref}"; then
                 echo "::warning::${repo}#${n}: the push was refused (the branch moved); the next run retries"
                 note "${repo}#${n}" "push refused; retried next run"
                 continue

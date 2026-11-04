@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stderr
 from pathlib import Path
 
@@ -195,9 +196,16 @@ class FakeGitHub:
         self.calls.append((list(args), stdin))
         if args[:2] == ["api", "--paginate"] and "/pulls?" in args[2]:
             prs = self.closed if "state=closed" in args[2] else self.prs
-            return "".join(json.dumps(p) + "\n" for p in prs)
+            # The listing never carries `closed_by`: only the issue read does.
+            return "".join(json.dumps({k: v for k, v in p.items() if k != "closed_by"}) + "\n"
+                           for p in prs)
         if args[:2] == ["pr", "view"]:
             return self.merge_method + "\n"
+        if args[0] == "api" and "/issues/" in args[1]:
+            # Who closed a closed pull request (retire_skill.with_closer).
+            n = int(args[1].rsplit("/", 1)[1])
+            return next((p.get("closed_by") or "" for p in self.closed
+                         if p.get("number") == n), "") + "\n"
         if args[:2] == ["api", "--paginate"] and "/issues?" in args[2]:
             return "".join(json.dumps(i) + "\n" for i in self.issues)
         if args[:2] == ["pr", "create"]:
@@ -1200,7 +1208,8 @@ class MutationTests(Base):
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             git(repo, "commit", "-q", "--allow-empty", "-m", "x")
             git(repo, "remote", "add", "origin", str(Path(tmp) / "missing"))
-            with self.assertRaises(retire_skill.RetireError) as caught:
+            with self.assertRaises(retire_skill.RetireError) as caught, mock.patch.object(
+                    retire_skill, "branch_exists", return_value=False):
                 retire_skill.default_push(repo, "b", "a-token")
             self.assertRegex(str(caught.exception), r"^git push exited \d+$")
             with self.assertRaises(retire_skill.RetireError) as caught:
@@ -1222,7 +1231,10 @@ class MutationTests(Base):
             # a refused commit with a "successful" push looks.
             git(repo, "commit", "-q", "--allow-empty", "-m", "y")
             git(repo, "remote", "set-url", "--push", "origin", str(other))
-            with self.assertRaises(retire_skill.RetireError) as caught:
+            # (The existence check is passed over: it reads the fetch URL,
+            # where the branch already is.)
+            with self.assertRaises(retire_skill.RetireError) as caught, mock.patch.object(
+                    retire_skill, "branch_exists", return_value=False):
                 retire_skill.default_push(repo, "retire-skill/x", "a-token")
             self.assertIn("does not hold the removal commit", str(caught.exception))
 

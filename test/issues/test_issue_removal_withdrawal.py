@@ -378,6 +378,7 @@ class FakeGh:
         self.label_fails = label_fails  # how many `--add-label` calls fail first
         self.repo_labels = list(repo_labels)  # the repository's labels
         self.pr_labels = []
+        self.head = "c" * 40  # the closed pull request's head commit
         self.calls = []
 
     def __call__(self, args, stdin=None):
@@ -390,7 +391,9 @@ class FakeGh:
         if args[:2] == ["api", "--paginate"]:
             rows = (self.issues if "/issues?" in args[2] else
                     self.closed if "state=closed" in args[2] else self.prs)
-            return "".join(json.dumps(p) + "\n" for p in rows)
+            # A pulls listing never carries `closed_by`: only the issue read does.
+            return "".join(json.dumps({k: v for k, v in p.items() if k != "closed_by"}) + "\n"
+                           for p in rows)
         if args[:2] == ["pr", "merge"] and "--disable-auto" in args and not self.stuck:
             self.armed = False
         if args[:2] == ["pr", "edit"] and "--add-label" in args:
@@ -401,8 +404,16 @@ class FakeGh:
             return "".join(f"{x}\n" for x in self.repo_labels)
         if args[:2] == ["pr", "view"] and "state" in args:
             return self.state + "\n"
+        if args[:2] == ["pr", "view"] and "labels" in args:
+            return "".join(f"{x}\n" for x in self.pr_labels)
+        if args[:2] == ["pr", "view"] and "headRefOid" in args:
+            return self.head + "\n"
         if args[:2] == ["pr", "view"]:
             return ("MERGE" if self.armed else "") + "\n"
+        if args[0] == "api" and "/issues/" in args[1]:
+            n = int(args[1].rsplit("/", 1)[1])
+            return next((p.get("closed_by") or "" for p in self.closed
+                         if p.get("number") == n), "") + "\n"
         return ""
 
     def writes(self):
@@ -420,13 +431,17 @@ def issue(number, subject=SKILL, state="open", author=rs.ISSUE_AUTHOR,
 class WithdrawStaleTests(unittest.TestCase):
     """The thin layer: the calls, in order, with the fake."""
 
-    def test_disarms_labels_files_then_comments_then_closes_keeping_the_branch(self):
+    def test_disarms_labels_files_then_comments_closes_and_deletes_the_branch(self):
         gh = FakeGh()
         gates = doc({SKILL: VERDICTS["keep"]})
+        deletes = []
         lines = rs.withdraw_stale(gates, [pr()], "skill", gh,
-                                  "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/1")
+                                  "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/1",
+                                  delete=lambda *a: deletes.append(a))
         self.assertEqual(lines, ["withdrew #41: the verdict is keep, not retire; "
-                                 "filed its retirement issue"])
+                                 "filed its retirement issue; deleted its branch"])
+        # R6-5: the branch goes, leased on the closed pull request's head.
+        self.assertEqual(deletes, [(rs.REGISTRY_REPO, f"{rs.BRANCH_PREFIX}{SKILL}", gh.head)])
         repo = rs.REGISTRY_REPO
         self.assertEqual([a[:4] if a[0] == "issue" else a for a in gh.writes()], [
             ["pr", "merge", SKILL_URL, "-R", repo, "--disable-auto"],
@@ -478,7 +493,8 @@ class WithdrawStaleTests(unittest.TestCase):
         lines = rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill", gh)
         self.assertEqual([a[:3] for a, _ in gh.calls if a[0] == "issue"],
                          [["issue", "comment", "7"]])
-        self.assertTrue(lines[0].endswith("commented on issue #7"))
+        self.assertTrue(lines[0].endswith(
+            "commented on issue #7; could not delete its branch (RetireError)"))
         body = next(s for a, s in gh.calls if a[:2] == ["issue", "comment"])
         self.assertIn(SKILL_URL, body)
         self.assertIn("the verdict is keep, not retire", body)
@@ -965,11 +981,13 @@ class RefreshWorkflowTests(unittest.TestCase):
         self.assertEqual(tokens["guidance-token"]["with"]["repositories"], "_agent-guidance")
         for s in tokens.values():
             self.assertIs(s["continue-on-error"], True)
-            # pull-requests: write alone: it disarms, labels (creating the
-            # label too), comments and closes; it never arms or pushes.
+            # pull-requests: write to disarm, label (creating the label
+            # too), comment and close; contents: write for the leased branch
+            # delete after the close (R6-5). It never arms.
             self.assertEqual({k: v for k, v in s["with"].items()
                               if k.startswith("permission-")},
-                             {"permission-pull-requests": "write"})
+                             {"permission-contents": "write",
+                              "permission-pull-requests": "write"})
         for s, token in zip(withdraws, ("app-token", "guidance-token")):
             self.assertEqual(s["env"]["REGISTRY_TOKEN"],
                              f"${{{{ steps.{token}.outputs.token }}}}")
@@ -996,6 +1014,16 @@ class RefreshWorkflowTests(unittest.TestCase):
             "actions/download-artifact@"))
         self.assertIs(download["continue-on-error"], True)
         self.assertEqual(download["with"]["name"], "gates")
+
+    def test_the_refresh_push_cannot_recreate_a_deleted_branch(self):
+        # R6-11: a withdrawal deletes the branch; a refresh that fetched it
+        # before must not push it back. Leased on the fetched head, and the
+        # merge sits on that head, so the push is a fast-forward.
+        run = next(s for s in self.jobs["refresh"]["steps"]
+                   if "refresh_repo" in s.get("run", ""))["run"]
+        self.assertIn('push -q --force-with-lease="refs/heads/${ref}:${head}" origin', run)
+        self.assertLess(run.index('head="$(git -C "$dir" rev-parse HEAD)"'),
+                        run.index("--force-with-lease"))
 
 
 
@@ -1310,10 +1338,12 @@ SHA_A, SHA_B = "a" * 40, "b" * 40
 
 
 def closed_pr(number=8, labels=(rs.AGENT_LABEL, rs.WITHDRAWN_LABEL), author=rs.LOOP_AUTHOR,
-              merged=False, sha=SHA_A, head=f"{rs.BRANCH_PREFIX}{t70.SKILL}", **extra):
-    """One record as CLOSED_JQ shapes it."""
+              merged=False, head=f"{rs.BRANCH_PREFIX}{t70.SKILL}", closed_by=rs.LOOP_AUTHOR,
+              **extra):
+    """One record as CLOSED_JQ shapes it, with the `closed_by` login
+    `with_closer` adds (the fakes answer the issue read from it)."""
     return {"number": number, "head": head, "labels": list(labels), "author": author,
-            "merged": merged, "sha": sha,
+            "merged": merged, "closed_by": closed_by,
             "url": f"https://github.com/{rs.REGISTRY_REPO}/pull/{number}", **extra}
 
 
@@ -1323,7 +1353,7 @@ class LoopWithdrawnTests(unittest.TestCase):
 
     def test_a_loop_withdrawn_closed_pr_does_not_decide(self):
         self.assertTrue(rs.loop_withdrawn(closed_pr()))
-        self.assertEqual(rs.deciding([closed_pr()]), ([], [SHA_A]))
+        self.assertEqual(rs.deciding([closed_pr()]), ([], [closed_pr()]))
 
     def test_a_person_closed_pr_still_decides(self):
         # No label: a person closed it.
@@ -1334,7 +1364,7 @@ class LoopWithdrawnTests(unittest.TestCase):
     def test_a_loop_pr_whose_label_a_person_removed_still_decides(self):
         # The conservative reading: a person took the pause away.
         p = closed_pr(labels=())
-        self.assertEqual(rs.deciding([p, closed_pr(9, sha=SHA_B)]), ([p], [SHA_B]))
+        self.assertEqual(rs.deciding([p, closed_pr(9)]), ([p], [closed_pr(9)]))
 
     def test_merged_foreign_or_unreadable_records_decide(self):
         for p in (closed_pr(merged=True), closed_pr(merged=None),
@@ -1345,10 +1375,32 @@ class LoopWithdrawnTests(unittest.TestCase):
                 self.assertFalse(rs.loop_withdrawn(p))
                 self.assertEqual(rs.deciding([p])[0], [p])
 
-    def test_a_withdrawn_record_without_a_head_commit_is_refused(self):
-        for sha in (None, "", "A" * 40, "a" * 39, "main"):
-            with self.subTest(sha=sha), self.assertRaises(rs.RetireError):
-                rs.deciding([closed_pr(sha=sha)])
+    def test_a_labeled_pr_a_person_closed_decides(self):
+        # R6-1, R6-3: the label alone is not a pause; the loop must have
+        # closed it. An unknown closer decides too.
+        for closer in ("a-person", "Adam-S-Daniel", None, "", 7):
+            with self.subTest(closer=closer):
+                p = closed_pr(closed_by=closer)
+                self.assertFalse(rs.loop_withdrawn(p))
+                self.assertEqual(rs.deciding([p]), ([p], []))
+
+    def test_with_closer_reads_who_closed_each_candidate(self):
+        gh = FakeGh(closed=[closed_pr(8), closed_pr(9, closed_by="a-person"),
+                            closed_pr(10, merged=True), closed_pr(11, author="a-person")])
+        got = rs.with_closer(gh, rs.REGISTRY_REPO, [
+            {k: v for k, v in p.items() if k != "closed_by"} for p in gh.closed])
+        self.assertEqual([p["closed_by"] for p in got], [rs.LOOP_AUTHOR, "a-person", None, None])
+        # Only the two that could be a pause are read, by issue number.
+        self.assertEqual([a for a, _ in gh.calls], [
+            ["api", f"repos/{rs.REGISTRY_REPO}/issues/8", "--jq", '.closed_by.login // ""'],
+            ["api", f"repos/{rs.REGISTRY_REPO}/issues/9", "--jq", '.closed_by.login // ""']])
+
+    def test_with_closer_ignores_a_closer_in_the_listing_and_an_unreadable_one_decides(self):
+        def fails(args, stdin=None):
+            raise rs.RetireError("gh api exited 1")
+        got = rs.with_closer(fails, rs.REGISTRY_REPO, [closed_pr()])
+        self.assertIsNone(got[0]["closed_by"])
+        self.assertEqual(rs.deciding(got)[0], got)
 
     def test_the_closed_listings_read_what_deciding_needs(self):
         for fn, subject in ((rs.closed_removal_prs, t70.SKILL),
@@ -1358,7 +1410,7 @@ class LoopWithdrawnTests(unittest.TestCase):
                 fn(gh, subject)
                 jq = gh.calls[0][0][-1]
                 for field in ("labels: [.labels[].name]", "author: .user.login",
-                              "sha: .head.sha", "merged: (.merged_at != null)"):
+                              "merged: (.merged_at != null)"):
                     self.assertIn(field, jq)
 
     def test_the_label_text_and_color(self):
@@ -1369,60 +1421,45 @@ class LoopWithdrawnTests(unittest.TestCase):
 
 class ReopenAfterWithdrawalTests(t70.Base):
     """The retirement job opens a fresh removal for a subject whose last
-    removal the loop withdrew, and tells the push which heads it may
-    replace."""
+    removal the loop withdrew, with a plain push (R6-5: the withdrawal
+    deleted the branch)."""
 
-    def run_auto(self, closed, push=None):
+    def run_auto(self, closed, *extra):
         fake = t70.FakeGitHub(closed=closed)
-        pushes = []
-
-        def push3(checkout, branch, replaces=()):
-            pushes.append((branch, list(replaces)))
-
         argv = ["--gates", str(self.write_gates(t70.gates_doc("auto"))),
-                "--registry", f"adam-agentskills={self.registry}", "--allow-mode", "auto"]
+                "--registry", f"adam-agentskills={self.registry}", "--allow-mode", "auto",
+                *extra]
         out, err = io.StringIO(), io.StringIO()
         with redirect_stderr(err):
-            code = rs.main(argv, env=t70.AUTO_ENV, gh=fake.gh, push=push or push3, out=out)
-        return code, out.getvalue(), err.getvalue(), fake, pushes
+            code = rs.main(argv, env=t70.AUTO_ENV, gh=fake.gh, push=fake.push, out=out)
+        return code, out.getvalue(), err.getvalue(), fake
 
     def test_a_withdrawn_removal_is_opened_again(self):
-        code, out, err, fake, pushes = self.run_auto([closed_pr(), closed_pr(9, sha=SHA_B)])
+        code, out, err, fake = self.run_auto([closed_pr(), closed_pr(9)])
         self.assertEqual(code, 0, err)
         self.assertIn("opened", out)
-        self.assertEqual(pushes, [(f"{rs.BRANCH_PREFIX}{t70.SKILL}", [SHA_A, SHA_B])])
+        self.assertEqual([b for _, b in fake.pushes], [f"{rs.BRANCH_PREFIX}{t70.SKILL}"])
         self.assertTrue(any(a[:2] == ["pr", "create"] for a in fake.writes()))
 
     def test_a_person_closed_one_beside_it_still_decides(self):
-        code, out, err, fake, pushes = self.run_auto(
-            [closed_pr(), closed_pr(9, labels=(rs.AGENT_LABEL,))])
-        self.assertEqual(code, 0, err)
-        self.assertIn("already decided", out)
-        self.assertIn("/pull/9", out)
-        self.assertEqual((pushes, fake.writes()), ([], []))
+        for other in (closed_pr(9, labels=(rs.AGENT_LABEL,)),
+                      closed_pr(9, closed_by="a-person")):
+            with self.subTest(other=other):
+                code, out, err, fake = self.run_auto([closed_pr(), other])
+                self.assertEqual(code, 0, err)
+                self.assertIn("already decided", out)
+                self.assertIn("/pull/9", out)
+                self.assertEqual((fake.pushes, fake.writes()), ([], []))
 
-    def test_no_closed_removal_pushes_as_before(self):
-        # A push that takes no `replaces` (every existing caller) still works.
-        fake = t70.FakeGitHub()
-        code, _, err, fake = self.run_main_auto(fake)
-        self.assertEqual(code, 0, err)
-        self.assertEqual(len(fake.pushes), 1)
-
-    def run_main_auto(self, fake):
-        return t70.Base.run_main(self, t70.gates_doc("auto"), "--allow-mode", "auto",
-                                 env=t70.AUTO_ENV, fake=fake)
-
-    def test_the_dry_run_names_the_leased_push(self):
-        fake = t70.FakeGitHub(closed=[closed_pr()])
-        code, out, err, _ = t70.Base.run_main(self, t70.gates_doc("auto"), "--allow-mode",
-                                              "auto", "--dry-run", env={}, fake=fake)
+    def test_the_dry_run_names_a_plain_push(self):
+        code, out, err, _ = self.run_auto([closed_pr()], "--dry-run")
         self.assertEqual(code, 0, err)
         plan = json.loads(out)
-        self.assertEqual(plan["replaces"], [SHA_A])
+        self.assertNotIn("replaces", plan)
         branch = f"{rs.BRANCH_PREFIX}{t70.SKILL}"
         self.assertIn(["git", "ls-remote", "origin", f"refs/heads/{branch}"], plan["would_run"])
-        self.assertTrue(any(a[:2] == ["git", "push"] and a[2].startswith(
-            f"--force-with-lease=refs/heads/{branch}:") for a in plan["would_run"]))
+        self.assertIn(["git", "push", "origin", f"HEAD:refs/heads/{branch}"], plan["would_run"])
+        self.assertFalse(any("force" in x for a in plan["would_run"] for x in a))
 
     def test_the_guidance_plan_reopens_a_withdrawn_section(self):
         from unittest import mock
@@ -1430,14 +1467,14 @@ class ReopenAfterWithdrawalTests(t70.Base):
         row = {"file": "agents-md/base.md", "heading": "Example heading"}
         withdrawn = closed_pr(head=f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}")
         for closed, want in (([withdrawn], "guidance-removal"),
-                             ([{**withdrawn, "labels": [rs.AGENT_LABEL]}], "none")):
-            with self.subTest(want=want):
+                             ([{**withdrawn, "labels": [rs.AGENT_LABEL]}], "none"),
+                             ([{**withdrawn, "closed_by": "a-person"}], "none")):
+            with self.subTest(want=want, closed=closed):
                 gh = FakeGh(closed=closed)
                 with mock.patch.object(rs, "guidance_row", return_value=row):
                     plan = rs.guidance_plan(gates, Path("."), gh, allowed=("auto",))
                 self.assertEqual(plan["action"], want)
-                if want != "none":
-                    self.assertEqual(plan["replaces"], [SHA_A])
+                self.assertNotIn("replaces", plan)
 
 
 def _git(cwd, *args):
@@ -1447,10 +1484,11 @@ def _git(cwd, *args):
                           capture_output=True, text=True, check=True).stdout.strip()
 
 
-class ReplaceBranchTests(unittest.TestCase):
-    """default_push against a real (local, bare) remote: a branch a
-    withdrawn removal kept is replaced only while it still points at that
-    removal's head."""
+class BranchTests(unittest.TestCase):
+    """default_push and default_delete_branch against a real (local, bare)
+    remote (R6-5, R6-11): the withdrawal deletes the branch only while it
+    still points at the closed pull request's head; a removal never pushes
+    over a branch that exists, and nothing forces."""
 
     BRANCH = f"{rs.BRANCH_PREFIX}{SKILL}"
 
@@ -1464,7 +1502,7 @@ class ReplaceBranchTests(unittest.TestCase):
         _git(self.work, "remote", "add", "origin", str(self.remote))
         _git(self.work, "commit", "-q", "--allow-empty", "-m", "base")
         _git(self.work, "push", "-q", "origin", "main")
-        # The withdrawn removal's branch, kept on the remote.
+        # The withdrawn removal's branch, still on the remote.
         _git(self.work, "checkout", "-q", "-b", "old")
         _git(self.work, "commit", "-q", "--allow-empty", "-m", "withdrawn removal")
         self.old = _git(self.work, "rev-parse", "HEAD")
@@ -1475,32 +1513,52 @@ class ReplaceBranchTests(unittest.TestCase):
         self.fresh = _git(self.work, "rev-parse", "HEAD")
 
     def remote_head(self):
-        return _git(self.remote, "rev-parse", f"refs/heads/{self.BRANCH}")
+        out = subprocess.run(["git", "-C", str(self.remote), "rev-parse", "--verify", "-q",
+                              f"refs/heads/{self.BRANCH}"], capture_output=True, text=True)
+        return out.stdout.strip() or None
 
-    def test_the_withdrawn_branch_is_replaced(self):
-        rs.default_push(self.work, self.BRANCH, "token", [SHA_B, self.old])
-        self.assertEqual(self.remote_head(), self.fresh)
+    def delete(self, sha):
+        rs.default_delete_branch(rs.REGISTRY_REPO, self.BRANCH, sha, "token",
+                                 url=str(self.remote))
 
-    def test_without_replaces_the_kept_branch_refuses_the_push(self):
+    def test_the_withdrawal_deletes_the_branch_at_its_head(self):
+        self.delete(self.old)
+        self.assertIsNone(self.remote_head())
+
+    def test_a_branch_someone_pushed_to_since_is_kept(self):
         with self.assertRaises(rs.RetireError):
-            rs.default_push(self.work, self.BRANCH, "token")
+            self.delete(SHA_B)
         self.assertEqual(self.remote_head(), self.old)
 
-    def test_a_branch_someone_pushed_to_since_is_not_replaced(self):
+    def test_a_delete_needs_a_token_and_a_sha(self):
+        for token, sha in ((None, self.old), ("token", "main"), ("token", None)):
+            with self.subTest(token=token, sha=sha), self.assertRaises(rs.RetireError):
+                rs.default_delete_branch(rs.REGISTRY_REPO, self.BRANCH, sha, token,
+                                         url=str(self.remote))
+        self.assertEqual(self.remote_head(), self.old)
+
+    def test_the_reopen_never_pushes_over_a_branch_that_exists(self):
+        # A failed delete left it: a person's job, never a forced push.
         with self.assertRaises(rs.RetireError) as ctx:
-            rs.default_push(self.work, self.BRANCH, "token", [SHA_B])
-        self.assertIn("not a withdrawn removal's head", str(ctx.exception))
+            rs.default_push(self.work, self.BRANCH, "token")
+        self.assertIn("already exists", str(ctx.exception))
         self.assertEqual(self.remote_head(), self.old)
 
     def test_a_deleted_branch_is_pushed_plainly(self):
-        _git(self.work, "push", "-q", "origin", f":refs/heads/{self.BRANCH}")
-        rs.default_push(self.work, self.BRANCH, "token", [self.old])
+        self.delete(self.old)
+        rs.default_push(self.work, self.BRANCH, "token")
         self.assertEqual(self.remote_head(), self.fresh)
 
-    def test_the_lease_names_the_sha_it_read(self):
-        args = rs.replace_lease(self.work, self.BRANCH, [self.old])
-        self.assertEqual(args, ["push", f"--force-with-lease=refs/heads/{self.BRANCH}:{self.old}",
-                                "origin", f"HEAD:refs/heads/{self.BRANCH}"])
+    def test_no_forced_push_is_left_in_the_source(self):
+        import ast
+        src = (ROOT / "scripts" / "retire_skill.py").read_text()
+        for name in ("replace_lease", "_push"):
+            self.assertFalse(hasattr(rs, name), name)
+        lease = [n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.JoinedStr)
+                 and any(isinstance(v, ast.Constant) and "--force-with-lease" in v.value
+                         for v in n.values)]
+        # One lease, on the delete (and its dry-run line).
+        self.assertEqual(len(lease), 2)
 
 
 class WithdrawnLabelTests(unittest.TestCase):
@@ -1664,20 +1722,24 @@ class KeepNeedsNoTokenTests(unittest.TestCase):
     def test_a_keep_only_pass_exits_0_without_the_token(self):
         path = Path(tempfile.mkdtemp()) / "gates.json"
         self.addCleanup(lambda: (path.unlink(), path.parent.rmdir()))
-        for labels in ((rs.AGENT_LABEL,), (rs.AGENT_LABEL, rs.WITHDRAWN_LABEL)):
-            for gates in (doc({SKILL: VERDICTS["retire+auto"]}), doc({"other-skill": VERDICTS["keep"]})):
-                with self.subTest(labels=labels, gates=list(gates["skills"])):
-                    path.write_text(json.dumps(gates))
+        # (A labeled one whose verdict supports it is a partial withdrawal,
+        # R6-2, so it is not a keep: PartialWithdrawalTests.)
+        for labels, gates in (
+                ((rs.AGENT_LABEL,), doc({SKILL: VERDICTS["retire+auto"]})),
+                ((rs.AGENT_LABEL,), doc({"other-skill": VERDICTS["keep"]})),
+                ((rs.AGENT_LABEL, rs.WITHDRAWN_LABEL), doc({"other-skill": VERDICTS["keep"]}))):
+            with self.subTest(labels=labels, gates=list(gates["skills"])):
+                path.write_text(json.dumps(gates))
 
-                    def no_token(args, stdin=None):
-                        raise rs.RetireError(f"no {rs.REGISTRY_TOKEN_ENV}")
+                def no_token(args, stdin=None):
+                    raise rs.RetireError(f"no {rs.REGISTRY_TOKEN_ENV}")
 
-                    out = io.StringIO()
-                    code = rs.main(["--withdraw-stale", "--gates", str(path)],
-                                   env=SCHEDULE, gh=FakeGh([pr(labels=labels)]),
-                                   registry_gh=no_token, out=out)
-                    self.assertEqual(code, 0)
-                    self.assertIn("kept #41", out.getvalue())
+                out = io.StringIO()
+                code = rs.main(["--withdraw-stale", "--gates", str(path)],
+                               env=SCHEDULE, gh=FakeGh([pr(labels=labels)]),
+                               registry_gh=no_token, out=out)
+                self.assertEqual(code, 0)
+                self.assertIn("kept #41", out.getvalue())
 
 
 class RemovedMachineryTests(unittest.TestCase):
@@ -1701,6 +1763,259 @@ class RemovedMachineryTests(unittest.TestCase):
                           "cells": [cell("fx-a", "model-a", "missing")]}
         self.assertEqual(rs.removal_support(doc(), entry, "guidance")[0], "stale")
         self.assertEqual(rs.removal_support(doc(), entry)[0], "supported")
+
+
+# ---------------------------------------------------------------------------
+# PR #740 round 6.
+
+class LabelReadBackTests(unittest.TestCase):
+    """R6-4: the label is read back before anything records or closes the
+    withdrawal; an add that exited 0 without landing leaves it open."""
+
+    def noop_label(self, gh):
+        real = gh.__call__
+
+        def call(args, stdin=None):
+            if "--add-label" in args:
+                gh.calls.append((list(args), stdin))
+                return ""
+            return real(args, stdin)
+        return call
+
+    def test_a_label_that_did_not_land_leaves_the_pull_request_open(self):
+        gh = FakeGh()
+        with self.assertRaises(rs.WithdrawFailed) as ctx:
+            rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill",
+                              self.noop_label(gh), delete=lambda *a: None)
+        self.assertEqual(ctx.exception.lines, [
+            f"failed #41: the {rs.WITHDRAWN_LABEL} label is not on #41 after adding it, "
+            "so it is left open"])
+        self.assertFalse(any(a[:2] in (["pr", "close"], ["pr", "comment"]) or a[0] == "issue"
+                             for a in gh.writes()))
+        self.assertIn(["pr", "view", SKILL_URL, "-R", rs.REGISTRY_REPO, "--json", "labels",
+                       "--jq", ".labels[].name"], [a for a, _ in gh.calls])
+
+    def test_an_unreadable_label_read_back_leaves_it_open(self):
+        gh = FakeGh()
+        real = gh.__call__
+
+        def call(args, stdin=None):
+            if args[:2] == ["pr", "view"] and "labels" in args:
+                raise rs.RetireError("gh pr exited 1")
+            return real(args, stdin)
+
+        with self.assertRaises(rs.WithdrawFailed):
+            rs.withdraw_stale(doc({SKILL: VERDICTS["keep"]}), [pr()], "skill", call)
+        self.assertFalse(any(a[:2] == ["pr", "close"] for a in gh.writes()))
+
+
+class BranchDeleteActTests(unittest.TestCase):
+    """R6-5: after the close, the branch is deleted, leased on the closed
+    pull request's head; a failed delete is best effort, named by type."""
+
+    STALE = staticmethod(lambda: doc({SKILL: VERDICTS["keep"]}))
+
+    def test_the_delete_follows_the_close(self):
+        gh = FakeGh()
+        order = []
+        real = gh.__call__
+
+        def call(args, stdin=None):
+            if args[:2] == ["pr", "close"]:
+                order.append("close")
+            return real(args, stdin)
+
+        rs.withdraw_stale(self.STALE(), [pr()], "skill", call,
+                          delete=lambda *a: order.append(("delete",) + a))
+        self.assertEqual(order, ["close", ("delete", rs.REGISTRY_REPO,
+                                           f"{rs.BRANCH_PREFIX}{SKILL}", gh.head)])
+
+    def test_the_guidance_branch_is_deleted_in_agent_guidance(self):
+        deletes = []
+        rs.withdraw_stale(doc(guidance={SECTION: VERDICTS["keep"]}), [gpr()], "guidance",
+                          FakeGh(), delete=lambda *a: deletes.append(a))
+        self.assertEqual(deletes[0][:2], (rs.GUIDANCE_REPO,
+                                          f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"))
+
+    def test_a_failed_delete_keeps_the_pause_and_names_only_its_type(self):
+        for exc in (rs.RetireError("git push exited 1"), ValueError("secret response")):
+            with self.subTest(exc=type(exc).__name__):
+                def fails(*a, exc=exc):
+                    raise exc
+                gh = FakeGh()
+                lines = rs.withdraw_stale(self.STALE(), [pr()], "skill", gh, delete=fails)
+                self.assertEqual(lines, [
+                    "withdrew #41: the verdict is keep, not retire; filed its retirement "
+                    f"issue; could not delete its branch ({type(exc).__name__})"])
+                self.assertIn(["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO], gh.writes())
+
+    def test_a_head_that_is_not_a_sha_deletes_nothing(self):
+        gh = FakeGh()
+        gh.head = "main"
+        deletes = []
+        lines = rs.withdraw_stale(self.STALE(), [pr()], "skill", gh,
+                                  delete=lambda *a: deletes.append(a))
+        self.assertEqual(deletes, [])
+        self.assertTrue(lines[0].endswith("could not delete its branch (RetireError)"))
+
+    def test_main_passes_its_delete_through(self):
+        path = Path(tempfile.mkdtemp()) / "gates.json"
+        self.addCleanup(lambda: (path.unlink(), path.parent.rmdir()))
+        path.write_text(json.dumps(self.STALE()))
+        deletes, out = [], io.StringIO()
+        code = rs.main(["--withdraw-stale", "--gates", str(path)], env=AUTO_ENV,
+                       gh=FakeGh([pr()]), delete=lambda *a: deletes.append(a), out=out)
+        self.assertEqual(code, 0)
+        self.assertEqual(len(deletes), 1)
+        self.assertIn("deleted its branch", out.getvalue())
+
+    def test_the_dry_run_names_the_leased_delete(self):
+        item = {"action": "withdraw", "subject": SKILL, "url": SKILL_URL}
+        branch = f"{rs.BRANCH_PREFIX}{SKILL}"
+        self.assertIn(["git", "push", f"--force-with-lease=refs/heads/{branch}:<its head>",
+                       f"https://github.com/{rs.REGISTRY_REPO}.git", f":refs/heads/{branch}"],
+                      rs.would_run("skill", item))
+
+    def test_the_comment_tells_a_person_to_restore_the_branch(self):
+        gh = FakeGh()
+        rs.withdraw_stale(self.STALE(), [pr()], "skill", gh)
+        body = next(s for a, s in gh.calls if a[:2] == ["pr", "comment"])
+        self.assertIn("restore the branch from the pull request page, then reopen", body)
+        self.assertNotIn("branch is kept", body)
+
+
+class PartialWithdrawalTests(unittest.TestCase):
+    """R6-2: in auto mode, an open loop removal whose verdict supports it
+    but which is labeled `loop-withdrawn` or disarmed is a withdrawal that
+    stopped part way, and is finished as a pause."""
+
+    LABELED = (rs.AGENT_LABEL, rs.WITHDRAWN_LABEL)
+
+    def test_a_labeled_supported_removal_is_withdrawn_in_auto_mode(self):
+        d = rs.withdrawal_decision(pr(labels=self.LABELED), doc({SKILL: VERDICTS["retire+auto"]}))
+        self.assertEqual((d["action"], d["partial"]), ("withdraw", "labeled"))
+        gh = FakeGh(armed=False)
+        lines = rs.withdraw_stale(doc({SKILL: VERDICTS["retire+auto"]}),
+                                  [pr(labels=self.LABELED)], "skill", gh,
+                                  delete=lambda *a: None)
+        self.assertTrue(lines[0].startswith("withdrew #41: a withdrawal stopped part way"))
+        self.assertIn(["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO], gh.writes())
+        body = next(s for a, s in gh.calls if a[:2] == ["pr", "comment"])
+        self.assertIn("stopped part way", body)
+
+    def test_a_disarmed_supported_removal_is_withdrawn_in_auto_mode(self):
+        gates = doc({SKILL: VERDICTS["retire+auto"]})
+        d = rs.withdrawal_decision({**pr(), "armed": False}, gates)
+        self.assertEqual((d["action"], d["partial"]), ("withdraw", "disarmed"))
+        gh = FakeGh(armed=False)
+        rs.withdraw_stale(gates, [{**pr(), "armed": False}], "skill", gh)
+        self.assertIn(["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO], gh.writes())
+
+    def test_one_armed_after_all_is_kept_with_no_write(self):
+        gh = FakeGh(armed=True)
+        lines = rs.withdraw_stale(doc({SKILL: VERDICTS["retire+auto"]}),
+                                  [{**pr(), "armed": False}], "skill", gh)
+        self.assertEqual(lines, ["kept #41: its auto-merge is on after all"])
+        self.assertEqual(gh.writes(), [])
+
+    def test_an_armed_unknown_or_newly_opened_one_is_kept(self):
+        gates = doc({SKILL: VERDICTS["retire+auto"]}, as_of="20261101T000000Z")
+        for record in (pr(), {**pr(), "armed": True}, {**pr(), "armed": None},
+                       {**pr(created_at="2026-11-01T00:00:01Z"), "armed": False},
+                       {**pr(created_at="2026-11-01T00:00:00Z"), "armed": False},
+                       {**pr(created_at=None), "armed": False}):
+            with self.subTest(record=record):
+                self.assertEqual(rs.withdrawal_decision(record, gates)["action"], "keep")
+
+    def test_proposal_mode_keeps_todays_disarm(self):
+        for record in (pr(labels=self.LABELED), {**pr(), "armed": False}):
+            with self.subTest(record=record):
+                d = rs.withdrawal_decision(record, doc({SKILL: VERDICTS["retire+auto"]},
+                                                       mode="proposal"))
+                self.assertEqual(d["action"], "disarm")
+
+    def test_unknown_verdicts_never_finish_a_partial_withdrawal(self):
+        d = rs.withdrawal_decision(pr(labels=self.LABELED), doc({"other": VERDICTS["keep"]}))
+        self.assertEqual(d["action"], "keep")
+
+    def test_the_guidance_target_too(self):
+        g = {**gpr(), "labels": list(self.LABELED)}
+        d = rs.withdrawal_decision(g, doc(guidance={SECTION: gretire()}), "guidance")
+        self.assertEqual((d["action"], d["partial"]), ("withdraw", "labeled"))
+
+    def test_the_listing_reads_auto_merge(self):
+        gh = FakeGh()
+        rs.removal_prs(gh, "skill")
+        self.assertIn("armed: (.auto_merge != null)", gh.calls[0][0][-1])
+
+
+class PauseCapTests(t70.Base):
+    """R6-6: after MAX_LOOP_PAUSES loop pauses the retirement job files or
+    updates the proposal issue instead of opening another removal."""
+
+    def test_the_cap_is_three(self):
+        self.assertEqual(rs.MAX_LOOP_PAUSES, 3)
+
+    def run_auto(self, closed):
+        fake = t70.FakeGitHub(closed=closed)
+        code, out, err, fake = t70.Base.run_main(
+            self, t70.gates_doc("auto"), "--allow-mode", "auto", "--allow-mode", "proposal",
+            env=t70.AUTO_ENV, fake=fake)
+        return code, out, err, fake
+
+    def test_three_pauses_file_the_proposal_issue(self):
+        code, out, err, fake = self.run_auto([closed_pr(n) for n in (7, 8, 9)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(fake.pushes, [])
+        self.assertFalse(any(a[:2] == ["pr", "create"] for a in fake.writes()))
+        create = [(a, s) for a, s in fake.calls if a[:2] == ["issue", "create"]]
+        self.assertEqual(len(create), 1)
+        self.assertIn("already withdrawn 3 automatic removal pull requests", create[0][1])
+        self.assertIn("auto lowered to proposal", err)
+
+    def test_two_pauses_still_open_a_removal(self):
+        code, out, err, fake = self.run_auto([closed_pr(n) for n in (8, 9)])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(len(fake.pushes), 1)
+
+    def test_a_guidance_section_is_capped_too(self):
+        from unittest import mock
+        gates = doc(guidance={SECTION: gretire()})
+        row = {"file": "agents-md/base.md", "heading": "Example heading"}
+        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
+        for count, want in ((2, "guidance-removal"), (3, "create-issue"), (4, "create-issue")):
+            with self.subTest(count=count):
+                gh = FakeGh(closed=[closed_pr(n, head=head) for n in range(count)])
+                with mock.patch.object(rs, "guidance_row", return_value=row):
+                    plan = rs.guidance_plan(gates, Path("."), gh,
+                                            allowed=("auto", "proposal"))
+                self.assertEqual(plan["action"], want)
+                if want == "create-issue":
+                    self.assertIn(f"withdrawn {count} automatic", plan["body"])
+
+
+class WithdrawalIssueModeTests(unittest.TestCase):
+    """R6-7: the retirement issue says what closing it means in each mode."""
+
+    ITEM = {"subject": SKILL, "url": SKILL_URL, "verdict": "keep", "reason": "r", "why": "w"}
+
+    def test_auto_mode_says_closing_the_issue_declines_nothing(self):
+        note = rs.withdrawal_issue(self.ITEM, doc({}), "skill", FakeGh(), None)["comment"]
+        self.assertIn("Closing this issue declines nothing", note)
+        self.assertIn("close the removal pull request yourself", note)
+        self.assertNotIn("Otherwise close this issue", note)
+
+    def test_proposal_mode_keeps_the_existing_text(self):
+        note = rs.withdrawal_issue(self.ITEM, doc({}, mode="proposal"), "skill", FakeGh(),
+                                   None)["comment"]
+        self.assertIn("Otherwise close this issue", note)
+        self.assertNotIn("declines nothing", note)
+
+    def test_the_guidance_mode_is_its_own(self):
+        gates = {**doc({}, mode="proposal"), "guidance": {},
+                 "guidance_retirement_mode": "auto"}
+        note = rs.withdrawal_issue(self.ITEM, gates, "guidance", FakeGh(), None)["comment"]
+        self.assertIn("declines nothing", note)
 
 
 import gates as gates_mod  # noqa: E402
