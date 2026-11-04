@@ -18,8 +18,14 @@ name: Fixture PR gate
 #   `agent-authored`, same-repository head, body naming one open fixture-need
 #   issue) is armed or disarmed. Promotion, eval-scope and scaffold pull
 #   requests arm themselves and are left alone.
-# * The roster App token is minted only to arm, under `continue-on-error`:
-#   no App leaves the pull request for a person, with a warning.
+# * The roster App token is minted to arm, under `continue-on-error`: no
+#   App leaves the pull request for a person, with a warning.
+# * `disarm` turns auto-merge off with the same App token, minted the same
+#   way, because the job token cannot: GitHub answered "Resource not
+#   accessible by integration (disablePullRequestAutoMerge)" to it with
+#   `contents: read`, and #744 merged while judged ineligible. The job token,
+#   with `contents: write`, is only the fallback when no App token can be
+#   minted. A disarm that fails turns the run red.
 # * Every value reaching a `run:` block comes from the event file or a
 #   pattern-checked output, never an expression. No `concurrency` group; not
 #   a required check.
@@ -154,13 +160,27 @@ jobs:
     if: needs.judge.outputs.lane == 'true' && needs.judge.outputs.eligible != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The fallback job token needs `contents: write` to disable auto-merge;
+    # this job checks nothing out and runs nothing from the pull request.
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     steps:
+      - name: Mint the roster App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
       - name: Turn off auto-merge
         env:
-          GH_TOKEN: ${{ github.token }}
+          JOB_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           NUMBER: ${{ needs.judge.outputs.number }}
         run: |
@@ -169,10 +189,24 @@ jobs:
             echo "::error::the judged pull request has an unexpected shape"
             exit 1
           fi
-          armed="$(gh api "repos/${REPO}/pulls/${NUMBER}" --jq '.auto_merge != null')"
+          token="$JOB_TOKEN"
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*)
+              echo "::warning::the roster App token is unavailable; trying the job token" ;;
+            *) token="$APP_TOKEN" ;;
+          esac
+          armed="$(GH_TOKEN="$token" GITHUB_TOKEN="" gh api "repos/${REPO}/pulls/${NUMBER}" --jq '.auto_merge != null')"
           if [ "$armed" != true ]; then
             echo "auto-merge is off on #${NUMBER}; it waits for a person"
             exit 0
           fi
-          gh pr merge "$NUMBER" --repo "$REPO" --disable-auto > /dev/null
+          if ! GH_TOKEN="$token" GITHUB_TOKEN="" gh pr merge "$NUMBER" --repo "$REPO" --disable-auto > /dev/null; then
+            echo "::error::could not turn off auto-merge on #${NUMBER}; it is still armed"
+            exit 1
+          fi
+          armed="$(GH_TOKEN="$token" GITHUB_TOKEN="" gh api "repos/${REPO}/pulls/${NUMBER}" --jq '.auto_merge != null')"
+          if [ "$armed" != false ]; then
+            echo "::error::auto-merge still reads as on for #${NUMBER} after turning it off"
+            exit 1
+          fi
           echo "turned off auto-merge on #${NUMBER}: it no longer only adds fixtures for its issue"
