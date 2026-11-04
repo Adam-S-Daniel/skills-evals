@@ -5,7 +5,7 @@ Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...]
         [--roster PATH] [--no-judge | --judge {auto,always}]
-    python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
+    python3 harness/run_eval.py evals/guidance/<id> --arm both|in-situ [--guidance PATH]
     python3 harness/run_eval.py evals/<skill> --arm both [--fixture NAME]
         [--trials N]
 
@@ -7022,6 +7022,10 @@ SKILL_ARMS = ("objective-only", "with_skill", "without_skill", "both")
 
 DEFAULT_GUIDANCE_ARMS = {"with_guidance": {"mode": "section"},
                          "without_guidance": {"mode": "none"}}
+#: `--arm in-situ` (guidance only): run the fixture's arms of these two modes
+#: and no other (`guidance_arms`).
+IN_SITU_ARM = "in-situ"
+IN_SITU_MODES = ("full", "full-minus-section")
 
 _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -7197,12 +7201,27 @@ def guidance_arms(fixture: dict, arm_flag: str, ablation: bool = False,
     arms = [_validate_arm_entry(name, entry, pairing) for name, entry in declared.items()]
     if arm_flag in ("both", "all"):
         return arms
+    if arm_flag == IN_SITU_ARM:
+        # The in-situ pair alone (owner, 2026-11-03): the whole guidance with
+        # and without the section, which decides keep or remove. The
+        # section-alone pair runs only for a section leaning toward removal
+        # (scripts/plan_week.py `guidance_arms_for`), so a fire for any other
+        # section asks for these two. Their names are kept, so the ingest and
+        # harness/gates.py read them unchanged.
+        pair = [a for a in arms if a["mode"] in IN_SITU_MODES]
+        if sorted(a["mode"] for a in pair) != sorted(IN_SITU_MODES):
+            raise guidance.GuidanceError(
+                f"--arm {IN_SITU_ARM} needs the fixture to declare exactly one arm of "
+                f"each in-situ mode ({', '.join(IN_SITU_MODES)}); declared: "
+                f"{', '.join(a['name'] + '=' + a['mode'] for a in arms)}")
+        return pair
     for arm in arms:
         if arm["name"] == arm_flag:
             return [arm]
     raise guidance.GuidanceError(
         f"--arm {arm_flag!r} names no arm in this fixture (declared: "
-        f"{', '.join(a['name'] for a in arms)}; or `both` for all of them)")
+        f"{', '.join(a['name'] for a in arms)}; or `both` for all of them, or "
+        f"`{IN_SITU_ARM}` for the full and full-minus-section pair)")
 
 
 def substitute_token(value, token: str, decoy: str | None = None):
@@ -8187,8 +8206,10 @@ def main() -> int:
     # names the arms this fixture actually has.
     parser.add_argument("--arm", default="objective-only",
                         help="objective-only | with_skill | without_skill | both "
-                             "for a skill fixture; both, or any arm name the "
-                             "fixture declares, for a guidance fixture")
+                             "for a skill fixture; both, in-situ (only the "
+                             "fixture's full and full-minus-section arms), or "
+                             "any arm name the fixture declares, for a guidance "
+                             "fixture")
     parser.add_argument("--guidance", default=None,
                         help="path to an _agent-guidance checkout (guidance "
                              "fixtures only); else $AGENT_GUIDANCE_DIR, else the "

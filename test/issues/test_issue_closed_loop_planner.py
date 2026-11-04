@@ -1015,7 +1015,11 @@ class DispatchLegTests(unittest.TestCase):
         plan_week.validate_fire({**good, "ARMS": "bare"})
         guidance = {"FIXTURE": GUIDANCE_FIXTURE, "EVAL_KEY": GUIDANCE_FIXTURE[len("evals/"):]}
         plan_week.validate_fire({**good, **guidance})
+        # A guidance cell not leaning toward removal: its in-situ pair alone.
+        plan_week.validate_fire({**good, **guidance, "ARMS": "in-situ"})
         for change in ({"EVAL_KEY": "writing-adrs/supersede"}, {"MODEL": "claude-fable-5-1"},
+                       # The in-situ pair is a guidance fixture's only.
+                       {"ARMS": "in-situ"},
                        # An unscheduled fixture (evals/unscheduled.yml).
                        {"FIXTURE": "evals/browser-testing", "EVAL_KEY": "browser-testing"},
                        {"SKILL": "writing-adrs"}, {"MODE": "scaffold"},

@@ -25,6 +25,7 @@ fake `gh` and push, no network, no clock.
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -33,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import yaml
@@ -134,12 +136,40 @@ class FixtureLayoutTests(unittest.TestCase):
                     [(a["name"], a["mode"]) for a in run_eval.guidance_arms(doc, "both", True)],
                     [("ablation_full", "full"),
                      ("ablation_full_minus_section", "full-minus-section")])
+                # `--arm in-situ`: only the in-situ pair, under its own names
+                # (the planner fires it for a section not leaning toward
+                # removal, 2026-11-03).
+                self.assertEqual(
+                    [(a["name"], a["mode"]) for a in run_eval.guidance_arms(doc, "in-situ")],
+                    [(n, m) for n, m in MODES.items() if m in ("full", "full-minus-section")])
                 # Every mode the gate reads, and no other.
                 self.assertEqual(set(MODES.values()), set(compute_gates.GUIDANCE_MODES))
                 self.assertTrue(doc["objective_checks"])
                 self.assertTrue(doc.get("judge_rubric"))
                 self.assertNotIn("model", doc)
                 self.assertNotIn("draft", doc)
+
+    def test_in_situ_needs_both_in_situ_modes(self):
+        for arms in ({"with_guidance_section": {"mode": "section"},
+                      "without_guidance": {"mode": "none"}},
+                     {"with_guidance_full": {"mode": "full"},
+                      "without_guidance": {"mode": "none"}}):
+            with self.subTest(arms=sorted(arms)):
+                with self.assertRaises(run_eval.guidance.GuidanceError) as caught:
+                    run_eval.guidance_arms({"arms": arms}, "in-situ")
+                self.assertIn("--arm in-situ needs", str(caught.exception))
+        # The default pair (section / none) has no in-situ arm either.
+        with self.assertRaises(run_eval.guidance.GuidanceError):
+            run_eval.guidance_arms({}, "in-situ")
+
+    def test_in_situ_is_not_a_skill_arm(self):
+        self.assertNotIn("in-situ", run_eval.SKILL_ARMS)
+        skill = ROOT / "evals" / "writing-adrs" / "bootstrap"
+        out = io.StringIO()
+        with mock.patch.object(sys, "argv", ["run_eval.py", str(skill), "--arm", "in-situ"]), \
+                contextlib.redirect_stdout(out):
+            self.assertEqual(run_eval.main(), 2)
+        self.assertIn("--arm 'in-situ' is not valid for a skill fixture", out.getvalue())
 
     def test_fixture_data_is_invented(self):
         for path in GUIDANCE_EVALS.glob("[!_]*/*/**/*"):
@@ -976,6 +1006,57 @@ class GuidanceVerdictTests(unittest.TestCase):
         self.assertEqual(v["cells"][0]["class"], "missing")
 
 
+class UnfinishedAlonePairTests(unittest.TestCase):
+    """THE UNFINISHED ALONE PAIR (2026-11-03): the alone pair runs only for a
+    section leaning toward removal, so a `retire` whose alone pair has not
+    decided is a proposal, never an automatic removal."""
+
+    def verdict(self, alone_classes, in_situ=None):
+        in_situ = in_situ or {"verdict": "retire", "removal": "auto",
+                              "reason": "every cell with headroom shows no benefit",
+                              "removal_reason": "2 cells with headroom, every one no-benefit",
+                              "cells": [{"class": "no-benefit"}, {"class": "no-benefit"}],
+                              "runs_used": []}
+        alone = {"verdict": "insufficient", "reason": "r", "runs_used": [],
+                 "cells": [{"class": c} for c in alone_classes]}
+
+        def fake(index, models, section, policy, expected, bet_prior=None, strata=False,
+                 family=False):
+            return in_situ if strata else alone
+        with mock.patch.object(gates, "retirement", side_effect=fake):
+            return gates.guidance_verdict({"runs": []}, ["model-a", "model-b"], "sec",
+                                          TEST_POLICY, EXPECT)
+
+    def test_no_alone_cell_or_an_undecided_one_makes_it_a_proposal(self):
+        for classes in ((), ("insufficient", "insufficient"), ("missing",),
+                        ("no-benefit", "insufficient"), ("cannot-discriminate",),
+                        ("paused", "no-benefit")):
+            with self.subTest(classes=classes):
+                v = self.verdict(classes)
+                self.assertEqual((v["verdict"], v["removal"]), ("retire", "proposal"))
+                self.assertEqual(v["removal_reason"], gates.ALONE_UNFINISHED_REASON)
+                self.assertIn("section-alone check has not finished", v["removal_reason"])
+
+    def test_a_decided_alone_pair_leaves_the_automatic_removal(self):
+        for classes in (("no-benefit", "no-benefit"), ("no-clear-effect", "ceiling")):
+            with self.subTest(classes=classes):
+                v = self.verdict(classes)
+                self.assertEqual((v["verdict"], v["removal"]), ("retire", "auto"))
+                self.assertEqual(v["removal_reason"],
+                                 "2 cells with headroom, every one no-benefit")
+
+    def test_the_twist_still_wins_over_an_unfinished_pair(self):
+        v = self.verdict(("benefit", "insufficient"))
+        self.assertEqual(v["verdict"], "shorten-or-merge")
+        self.assertNotIn("removal", v)
+
+    def test_a_proposal_keeps_its_own_reason(self):
+        v = self.verdict((), in_situ={"verdict": "retire", "removal": "proposal",
+                                      "reason": "r", "removal_reason": "own reason",
+                                      "cells": [], "runs_used": []})
+        self.assertEqual((v["removal"], v["removal_reason"]), ("proposal", "own reason"))
+
+
 class GuidancePolicyTests(unittest.TestCase):
 
     def test_the_committed_policy_has_its_own_guidance_block_in_proposal_mode(self):
@@ -1192,18 +1273,27 @@ class ComputeGuidanceTests(unittest.TestCase):
 # retire_skill.py --target guidance.
 
 def guidance_gates(verdict="retire", mode="proposal", section="bravo", classes=None,
-                   removal="auto"):
+                   removal="auto", alone_classes=None):
+    """A gates file with one guidance section. Its alone pair has decided
+    (every alone cell `no-benefit`) unless `alone_classes` names other
+    classes per model (THE UNFINISHED ALONE PAIR); an empty mapping means no
+    alone cell at all."""
     roster = ["model-a", "model-b"]
     cells = [{"fixture": "fx", "model": m, "class": (classes or {}).get(m, "no-benefit"),
               "with": {"runs": 10}, "without": {"runs": 10},
               "objective": {"retire_upper": 0.01}, "judge": {"retire_upper": 0.2}}
              for m in roster]
+    alone_classes = {m: "no-benefit" for m in roster} if alone_classes is None \
+        else alone_classes
+    alone = [{"fixture": "fx", "model": m, "class": cls,
+              "with": {"runs": 4}, "without": {"runs": 4}}
+             for m, cls in alone_classes.items()]
     return {"schema_version": 1, "as_of": "20261020T000000Z", "roster_models": roster,
             "skills": {}, "guidance_retirement_mode": mode,
             "guidance": {section: {"verdict": verdict, "reason": "every cell shows no benefit",
                                    **({"removal": removal} if removal else {}),
                                    "cells": cells,
-                                   "alone": {"verdict": "keep", "cells": []}}}}
+                                   "alone": {"verdict": "retire", "cells": alone}}}}
 
 
 class FakeGh:
@@ -1268,6 +1358,27 @@ class GuidancePlanTests(unittest.TestCase):
                              allowed=("auto",))
         with self.assertRaises(rs.RetireError):
             rs.guidance_plan(guidance_gates(mode="auto"), None, FakeGh(), allowed=("auto",))
+
+    def test_an_unfinished_alone_pair_is_never_an_automatic_removal(self):
+        # The verdict says auto, but its alone pair has not decided: the
+        # removal path re-checks the cells, as it does the in-situ ones, and
+        # lowers it to a proposal (THE UNFINISHED ALONE PAIR).
+        for alone in ({}, {"model-a": "insufficient", "model-b": "no-benefit"},
+                      {"model-a": "missing", "model-b": "missing"}):
+            with self.subTest(alone=alone):
+                verdict = guidance_gates(mode="auto", alone_classes=alone)["guidance"]["bravo"]
+                self.assertEqual(verdict["removal"], "auto")
+                self.assertIn("section-alone check has not finished",
+                              rs.guidance_proposal_only(verdict))
+                plan = rs.guidance_plan(guidance_gates(mode="auto", alone_classes=alone),
+                                        None, FakeGh(), allowed=("auto", "proposal"))
+                self.assertEqual((plan["action"], plan["mode"]), ("create-issue", "proposal"))
+                self.assertIn("section-alone check has not finished", plan["mode_reason"])
+        self.assertIsNone(rs.guidance_proposal_only(
+            guidance_gates(mode="auto")["guidance"]["bravo"]))
+        broken = guidance_gates(mode="auto")["guidance"]["bravo"]
+        broken["alone"] = ["not a mapping"]
+        self.assertIsNotNone(rs.guidance_proposal_only(broken))
 
     def test_a_gates_file_without_guidance_is_refused_for_the_guidance_target(self):
         doc = guidance_gates()

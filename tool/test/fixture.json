@@ -769,6 +769,163 @@
         ]
       },
       {
+        "id": "dependency-updates",
+        "heading": "Dependency updates",
+        "bytes": 886,
+        "status": "covered",
+        "skip_reason": null,
+        "verdict": "keep",
+        "verdict_reason": "helps in situ",
+        "alone_verdict": null,
+        "runs": [
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-31T20:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-0/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-17T19:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-1/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-large-2-0",
+            "at": "2026-10-03T18:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-2/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-24T17:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-3/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-10-10T16:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 7,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 5,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-4/report.md"
+          },
+          {
+            "fixture": "example-guidance-task",
+            "model": "example-small-1-5",
+            "at": "2026-09-19T15:00:00Z",
+            "cli_version": "9.1.200",
+            "modes": {
+              "full": {
+                "trials": 3,
+                "checks_passed": 6,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "full_minus_section": {
+                "trials": 3,
+                "checks_passed": 4,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              },
+              "none": {
+                "trials": 3,
+                "checks_passed": 3,
+                "checks_total": 8,
+                "judge_mean": 6.5,
+                "cost_usd": 0.25
+              }
+            },
+            "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/example/deps-5/report.md"
+          }
+        ]
+      },
+      {
         "id": "security",
         "heading": "Security",
         "bytes": 431,

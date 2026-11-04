@@ -2628,7 +2628,16 @@ gate reads it. Each declares four arms, `with_guidance_section` (`section`),
 runs both pairs in one fire, at four agent runs per fire, so the agent gets
 180 s and the guard 60 s to fit the 45-minute job;
 `run_eval.py <fixture> --ablation` still runs the in-situ pair alone, as arms
-`ablation_full` and `ablation_full_minus_section`. Results go to
+`ablation_full` and `ablation_full_minus_section`. `--arm in-situ` runs only
+the declared `full` and `full-minus-section` arms under their own names, so
+the ingest and the gate read them unchanged. Since 2026-11-03 (the owner's
+decision; the alone pair was about 37% of guidance agent spend and is read
+only by the twist below) the weekly planner fires `arms: both` for a
+guidance cell only when its section leans toward removal (its in-situ
+verdict is `retire`, or its retire progress, the lowest no-help confidence
+over its cells as a share of `retire_confidence`, is at least
+`ALONE_PAIR_FROM_PROGRESS` = 0.5), and `arms: in-situ` otherwise
+(`scripts/plan_week.py`, THE ALONE PAIR). Results go to
 `results/guidance/<section id>/<ts>/<arm>/summary.json`, beside the section's
 other fixtures, so each guidance summary records `fixture_name`,
 `fixture_digest` (the git-staged digest), `guidance_digests` (`section`: the
@@ -2650,7 +2659,18 @@ favored removal, so older strata are ignored and an edit elsewhere in the
 guidance starts a section's evidence over. The in-situ verdict decides. The one change: a
 section whose in-situ verdict is `retire` but which shows `benefit` alone in
 any cell gets **`shorten-or-merge`**, since the rest of the guidance covers
-what it teaches. That verdict never removes anything.
+what it teaches. That verdict never removes anything. Because the alone pair
+now runs only near removal, it may have few or no runs when the in-situ test
+reaches `retire`: a `retire` whose alone pair is unfinished (no alone cell,
+or one still `missing`, `insufficient`, `cannot-discriminate` or `paused`)
+has `removal: proposal`, never `auto`, and `scripts/retire_skill.py`
+re-checks the alone cells itself rather than trusting the field. The
+explorer publishes a section's alone results (the `section` mode and
+`alone_verdict`) only when its in-situ verdict is `retire`, the one case
+they factor into its decision; it keeps every `none` run, which the page's
+whole-guidance headline (full vs none) pools across sections. The page's
+section trend, help-per-word sort and early-sign chip read the in-situ gain
+(full vs full-minus-section), the pair every section runs.
 
 **The rule** (2026-11-03, after that day's statistics review and threshold
 sweep; Adam's decision on it is pending), the same for skills and sections
