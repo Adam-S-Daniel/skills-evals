@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T03:59:10Z",
+  "generated_at": "2026-11-04T04:01:12Z",
   "requests": [
    {
     "closed_at": null,
@@ -333,7 +333,7 @@
    "requests_open": 28
   }
  },
- "generated_at": "2026-11-04T03:58:15Z",
+ "generated_at": "2026-11-04T04:00:06Z",
  "guidance": {
   "removed": [
    {
@@ -10697,11 +10697,11 @@
    "confidence": {
     "cells": [
      {
-      "gain": 8.4,
-      "high": 44.6,
-      "low": -34.4,
+      "gain": 6.1,
+      "high": 38.4,
+      "low": -30.3,
       "model": "claude-opus-5-5",
-      "pairs": 5,
+      "pairs": 6,
       "status": "open",
       "task": null,
       "votes": true
@@ -10721,8 +10721,8 @@
     "keep_family": 2,
     "keep_pairs": 15,
     "max_pairs": 15,
-    "no_help": 0.23075606456418896,
-    "no_help_pairs": 5
+    "no_help": 0.3666434077344711,
+    "no_help_pairs": 6
    },
    "copies": {
     "alert": {
@@ -10736,7 +10736,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 20,
+   "current_text_runs": 21,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
@@ -10747,6 +10747,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-04T03:55:11Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T035340Z-b499c2/consumer-repo-provisioning/20261104T035511Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.3698474,
+      "judge_mean": 5.5,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 19,
+      "cost_usd": 0.384293,
+      "judge_mean": 6.6,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T03:50:43Z",
      "cli_version": "2.1.318",
@@ -24210,7 +24231,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "f9a5f6f66a8fcfc0b18dc1c0d6525b5f63fa9153",
-  "results_commit": "9a086d672bebebcfe2f20654195efabddc147ae8"
+  "results_commit": "6961c168d0e4775f5819720f957adb6899c25ff5"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
