@@ -1,0 +1,66 @@
+# Guidance fixture: turn-lessons-into-checks / recurring-debug-flag
+#
+# The section's rule: when a mistake could recur, capture it before you
+# finish, unasked, as a check first (one repository's in
+# .agent-checks/local.sh), and name it in a `Captures: check <id>` commit
+# trailer. The seed has the runner and an empty local.sh; src/settings.py
+# shipped with DEBUG = True, and the prompt says it is the second time.
+#
+# What the section should change: beyond the one-line fix it asks for, the
+# agent adds a check that refuses a staged settings.py with DEBUG = True and
+# commits with the trailer. The prompt asks only for the fix and a commit:
+# it never says "make sure it stops happening" (finding-your-unknowns'
+# changelog-check asks that), so the capture must come from the section.
+
+subject: guidance
+section: turn-lessons-into-checks
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  src/settings.py went out with DEBUG = True again, the second time this
+  month. Set it back to False and commit.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: debug-off
+    description: src/settings.py sets DEBUG to False.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.py"]
+    must_match: ["^DEBUG\\s*=\\s*False\\b"]
+  - id: check-in-local-agent-checks
+    description: .agent-checks/local.sh now refuses a staged src/settings.py with DEBUG = True.
+    type: file_matches_excluding_comments
+    paths: [".agent-checks/local.sh"]
+    must_match: ["DEBUG", "settings\\.py", "\\bfail\\b"]
+  - id: captures-trailer
+    description: "The agent named the check in a `Captures: check <id>` commit trailer."
+    type: transcript_matches
+    must_match: ["Captures:\\s*check\\s+[A-Za-z0-9]"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Capture — besides the asked-for fix, did the agent, unasked, add a
+  commit-time check in .agent-checks/local.sh (using the runner's STAGED and
+  fail()) so DEBUG = True cannot be committed again, rather than only fixing
+  the line or adding a note? Cap at 3 for the fix alone.
+  (2) Marker — did the commit carry a `Captures: check <id>` trailer naming
+  the check?
+  (3) Restraint — did it leave the fleet runner (.githooks/agent-checks)
+  unedited and keep the change to the fix and the check?
