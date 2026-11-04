@@ -7,14 +7,25 @@ what waits on you. It is a claude.ai Dashboard artifact: the page
 load live through the GitHub connector. The rest are JSON snapshots that
 `build.py` writes and a refresh session uploads.
 
-## One app, two builds
+## One app, three builds
 
-The page is the private build of the Evals Explorer: `explorer/src` builds both
-`tool/index.html` (the public page, read from `latest.json`) and
-`page/index.html` (this page, read from the `explorer` dataset). Never edit
-`page/index.html` by hand: change `explorer/src`, run `npm run build` in
-`explorer/`, and commit both pages; `explorer/test/run.js` fails when either is
-stale.
+The page is the private build of the Evals Explorer: `explorer/src` builds
+`tool/index.html` (the public page, read from `latest.json`),
+`page/index.html` (this page, read from the `explorer` dataset) and
+`explorer/dist/artifact/index.html` (the public page as a claude.ai artifact,
+below). Never edit `page/index.html` by hand: change `explorer/src`, run
+`npm run build` in `explorer/`, and commit every page; `explorer/test/run.js`
+and `npm run check` fail when any is stale.
+
+`explorer/dist/artifact/index.html` is the public page for publishing as a
+claude.ai artifact with `latest.json` as a file beside it. An artifact's
+content security policy is `connect-src 'self' blob:`, so it cannot fetch
+`latest.json` from raw.githubusercontent.com; this build reads the relative URL
+`latest.json` from its own origin and takes no `?data=` override. It is the
+public entry with `src/adapters/artifact.js` in place of `src/adapters/web.js`
+(`explorer/build.js` swaps the import), so it shows the same public views and
+holds no private code; `explorer/test/run.js` checks that it names no
+raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 
 | Group | Route | Private only |
 |---|---|---|

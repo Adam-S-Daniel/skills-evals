@@ -85,6 +85,20 @@ class DataTests(unittest.TestCase):
         self.assertTrue(sf.data_check("2026-11-04T07:00:00-05:00", NOW).ok)
 
 
+
+class DrawnSelectorTests(unittest.TestCase):
+    """The check must look for something the CURRENT public page draws: the
+    six-group app drew no `p.asof`, so a selector naming only that would call
+    a healthy page broken."""
+
+    def test_the_built_page_draws_a_class_the_selector_names(self):
+        page = (ROOT / "tool" / "index.html").read_text(encoding="utf-8")
+        classes = [part.strip().split(".")[-1] for part in sf.DRAWN.split(",")]
+        self.assertIn("src", classes)
+        self.assertTrue(any(f"class: '{c}'" in page or f'class: "{c}"' in page
+                            for c in classes),
+                        "tool/index.html draws none of the classes in DRAWN")
+
 class PageTests(unittest.TestCase):
     def test_all_drew_passes(self):
         self.assertTrue(sf.page_check({"https://example.com/a": sf.PAGE_OK}).ok)

@@ -5,9 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
-import { bundle, buildPublicPage, buildPrivatePage } from '../build.js';
+import vm from 'node:vm';
+import { bundle, buildPublicPage, buildPrivatePage, buildArtifactPage } from '../build.js';
 import { readDashboard, dashboardSource, DATASET_ID } from '../src/adapters/dashboard.js';
 import { DEFAULT_DATA_URL, DATA_URL_PREFIX, allowedDataUrl } from '../src/adapters/web.js';
+import * as artifactAdapter from '../src/adapters/artifact.js';
+import * as webAdapter from '../src/adapters/web.js';
 import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue } from '../src/core/fixtures.js';
@@ -25,6 +28,7 @@ const REPO = path.resolve(EXPLORER, '..');
 const PAGE = path.join(REPO, 'tool', 'index.html');
 const PRIVATE_PAGE = path.join(REPO, 'dashboard', 'page', 'index.html');
 const DATASETS = path.join(REPO, 'dashboard', 'page', 'datasets.json');
+const ARTIFACT_PAGE = path.join(EXPLORER, 'dist', 'artifact', 'index.html');
 
 let passed = 0;
 const failures = [];
@@ -329,6 +333,107 @@ await test('both pages paint the whole window in the theme color, not only their
   ok(/html, body \{ background: var\(--color-bg, #FDFBF7\); \}/.test(priv), 'private light background');
   ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #1E1C19\); \} \}/.test(priv), 'private dark background');
   ok(/body \{ min-height: 100vh; \}/.test(priv), 'private body fills the window');
+});
+
+// --- the artifact build -------------------------------------------------------------
+// dist/artifact/index.html is published as a claude.ai artifact with latest.json
+// beside it; the artifact's CSP is connect-src 'self' blob:, so it must read only
+// that relative file.
+const artifactJs = await bundle('artifact.js');
+/* The page's EXPORTS, run in a Node sandbox as tool/test/run.js does. */
+function exportsOf(js) {
+  const sandbox = { module: { exports: {} }, URL, URLSearchParams, Intl, console, Date, Math, JSON };
+  vm.runInNewContext(js, sandbox, { filename: 'bundle.js' });
+  return sandbox.module.exports;
+}
+/* Every fetch-like call whose first argument is a string or template literal. */
+function literalFetches(js) {
+  const out = [];
+  const ast = acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'script' });
+  (function walk(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'CallExpression') {
+      const c = n.callee;
+      const name = c.type === 'Identifier' ? c.name : (c.type === 'MemberExpression' && c.property.type === 'Identifier' ? c.property.name : '');
+      const a = n.arguments[0];
+      if (/^(fetch|fetchFn|sendBeacon|open)$/.test(name) && a && (a.type === 'Literal' || a.type === 'TemplateLiteral')) out.push(name);
+    }
+    for (const [k, v] of Object.entries(n)) {
+      if (k === 'type') continue;
+      if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v);
+    }
+  })(ast);
+  return out;
+}
+await test('the artifact adapter exports what the web adapter exports, and reads latest.json only', async () => {
+  eq(Object.keys(artifactAdapter).sort().join(','), Object.keys(webAdapter).filter((k) => k !== 'DATA_URL_PREFIX').sort().join(','));
+  eq(artifactAdapter.DEFAULT_DATA_URL, 'latest.json');
+  eq(artifactAdapter.allowedDataUrl(DEFAULT_DATA_URL), null, 'no override, not even the public file');
+  eq(artifactAdapter.allowedDataUrl('http://localhost:8080/latest.json'), null);
+  eq(JSON.stringify(artifactAdapter.dataUrlFromSearch('?data=' + encodeURIComponent(DEFAULT_DATA_URL))), '{"url":"latest.json"}');
+  const asked = [];
+  const fakeFetch = async (u) => { asked.push(u); return { ok: true, json: async () => doc() }; };
+  const seen = await new Promise((resolve) => artifactAdapter.webSource(fakeFetch, '?data=https://example.com/x.json', 7)
+    .start({ onDoc: (d, url) => resolve(['doc', url]), onFail: (r) => resolve(['fail', r.kind]) }));
+  eq(seen.join(','), 'doc,latest.json');
+  eq(asked.join(','), 'latest.json?v=7', 'one relative, cache-busted read; the ?data override is ignored');
+});
+// Whether a bundle's text names the raw GitHub content host anywhere. This scans
+// built code for a string; it is not URL validation, so it counts occurrences
+// rather than matching a URL.
+const namesRawHost = (text) => text.split('raw.githubusercontent.com').length > 1;
+await test('the artifact bundle names no raw.githubusercontent.com URL', () => {
+  // The negative control: the public bundle does.
+  ok(namesRawHost(publicJs), 'the public bundle names raw.githubusercontent.com');
+  ok(!namesRawHost(artifactJs), 'the artifact bundle names raw.githubusercontent.com');
+  ok(!artifactJs.includes('src/adapters/web.js') && artifactJs.includes('src/adapters/artifact.js'), 'web.js is replaced by artifact.js');
+  const dataFiles = stringsIn(artifactJs).filter((x) => /\.json(\?|#|$)/.test(x));
+  eq([...new Set(dataFiles)].join(','), 'latest.json', 'the one data file it names');
+});
+await test('the artifact bundle fetches no literal URL and reads the data through one relative path', () => {
+  // The negative control: the check sees a literal absolute fetch.
+  eq(literalFetches("fetch('https://example.com/x.json');").join(','), 'fetch');
+  eq(literalFetches(artifactJs).join(','), '');
+  const E = exportsOf(artifactJs);
+  eq(E.DEFAULT_DATA_URL, 'latest.json');
+  eq(JSON.stringify(E.dataUrlFromSearch('?data=http://localhost/x.json')), '{"url":"latest.json"}');
+  eq(E.allowedDataUrl('https://raw.githubusercontent.com/' + DATA_REPO + '/main/x.json'), null);
+});
+await test('the artifact bundle holds no private code, dataset id or dash reference', () => {
+  eq(privateLeaks(artifactJs).join('; '), '');
+  for (const m of ['src/adapters/dashboard.js', 'src/entries/private.js', 'src/private/views.js', 'src/private/strings.js']) {
+    ok(privateJs.includes(m) && !artifactJs.includes(m), 'the artifact bundle names ' + m);
+  }
+  for (const t of ['Waiting on you', 'Half-built and broken features']) {
+    ok(!stringsIn(artifactJs).some((x) => x.includes(t)), 'the artifact bundle holds ' + t);
+  }
+  ok(!stringsIn(artifactJs).includes(DATASET_ID), 'no explorer dataset id');
+});
+await test('the artifact entry boots exactly as the public one, with the artifact adapter', () => {
+  // Parsed, not compared as text: positions and comments aside, the two entries
+  // are the same program once the adapter import is read as web.js.
+  const shape = (file, from, to) => JSON.stringify(acorn.parse(fs.readFileSync(path.join(EXPLORER, 'src', 'entries', file), 'utf8'),
+    { ecmaVersion: 'latest', sourceType: 'module' }), (k, v) => (k === 'start' || k === 'end' || k === 'raw') ? undefined : (v === from ? to : v));
+  const pub = shape('public.js'), art = shape('artifact.js', '../adapters/artifact.js', '../adapters/web.js');
+  ok(pub !== shape('private.js'), 'the comparison can tell two entries apart');
+  ok(art === pub, 'entries/artifact.js differs from entries/public.js beyond its adapter import');
+});
+await test('the artifact page exposes the public page\'s functions, and no dashboard runtime', () => {
+  const pub = exportsOf(publicJs), art = exportsOf(artifactJs);
+  eq(Object.keys(art).sort().join(','), Object.keys(pub).sort().join(','));
+  ok(!Object.keys(art).includes('readDashboard') && !Object.keys(art).includes('privateSource'), 'no dashboard adapter');
+});
+await test('explorer/dist/artifact/index.html is a fresh, self-contained build', async () => {
+  ok(fs.existsSync(ARTIFACT_PAGE), 'explorer/dist/artifact/index.html is missing: run `npm run build` in explorer/');
+  const html = fs.readFileSync(ARTIFACT_PAGE, 'utf8');
+  ok((await buildArtifactPage()) === html, 'explorer/dist/artifact/index.html differs from a build: run `npm run build` in explorer/ and commit every page');
+  ok(/^<!doctype html>/i.test(html), 'a whole document, like tool/index.html');
+  ok(!/<script\b[^>]*\bsrc\s*=/i.test(html) && !/<link\b/i.test(html) && !/@import\b/.test(html), 'nothing loaded from elsewhere');
+  const scripts = inlineScripts(html);
+  eq(scripts.length, 1, 'one inline script');
+  eq(privateLeaks(scripts[0]).join('; '), '');
+  ok(!namesRawHost(html), 'the page, noscript text included, names no raw URL');
+  ok(html.includes('latest.json') && !html.includes('{{') && !html.includes('__BUNDLE__'), 'the noscript names latest.json; no template marker left');
 });
 
 for (const f of failures) console.log('FAIL ' + f);

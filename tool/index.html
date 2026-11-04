@@ -1159,6 +1159,29 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     };
   }
 
+  // src/adapters/load.js
+  function cacheBust(url, stamp) {
+    return url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(String(stamp));
+  }
+  async function loadData(url, fetchFn, stamp) {
+    let res;
+    try {
+      res = await fetchFn(cacheBust(url, stamp), { cache: "no-store" });
+    } catch (e) {
+      return { ok: false, kind: "fetch", url };
+    }
+    if (!res || !res.ok) return { ok: false, kind: "fetch", url };
+    let doc;
+    try {
+      doc = await res.json();
+    } catch (e) {
+      return { ok: false, kind: "parse", url };
+    }
+    const v = validateDoc(doc);
+    if (!v.ok) return Object.assign({ url }, v);
+    return { ok: true, doc, url };
+  }
+
   // src/adapters/web.js
   var DEFAULT_DATA_URL = "https://raw.githubusercontent.com/" + DATA_REPO + "/persistent/eval-results/explorer/latest.json";
   var DATA_URL_PREFIX = "https://raw.githubusercontent.com/" + DATA_REPO + "/";
@@ -1180,27 +1203,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (!q.has("data")) return { url: DEFAULT_DATA_URL };
     const ok = allowedDataUrl(q.get("data"));
     return ok ? { url: ok } : { error: "badurl", url: DEFAULT_DATA_URL };
-  }
-  function cacheBust(url, stamp) {
-    return url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(String(stamp));
-  }
-  async function loadData(url, fetchFn, stamp) {
-    let res;
-    try {
-      res = await fetchFn(cacheBust(url, stamp), { cache: "no-store" });
-    } catch (e) {
-      return { ok: false, kind: "fetch", url };
-    }
-    if (!res || !res.ok) return { ok: false, kind: "fetch", url };
-    let doc;
-    try {
-      doc = await res.json();
-    } catch (e) {
-      return { ok: false, kind: "parse", url };
-    }
-    const v = validateDoc(doc);
-    if (!v.ok) return Object.assign({ url }, v);
-    return { ok: true, doc, url };
   }
   function webSource(fetchFn, search, stamp) {
     return {
