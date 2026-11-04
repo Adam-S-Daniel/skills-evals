@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:09:43Z",
+  "generated_at": "2026-11-04T01:17:36Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T01:08:46Z",
+ "generated_at": "2026-11-04T01:16:36Z",
  "guidance": {
   "removed": [
    {
@@ -9548,7 +9548,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:05:18Z",
+ "newest_run": "2026-11-04T01:14:56Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -9896,7 +9896,7 @@
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": "browser-cache",
       "votes": true
@@ -9904,8 +9904,8 @@
     ],
     "helps": 0.0,
     "keep_family": 2,
-    "keep_pairs": 2,
-    "max_pairs": 2,
+    "keep_pairs": 3,
+    "max_pairs": 3,
     "no_help": 0.005404469920257782,
     "no_help_pairs": 1
    },
@@ -9921,17 +9921,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
    "name": "ci-job-performance",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 4,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T01:14:56Z",
+     "cli_version": "2.1.318",
+     "fixture": "browser-cache",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T011303Z-91663c/ci-job-performance/20261104T011456Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.19248880000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 7,
+      "cost_usd": 0.1082741,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T09:47:17Z",
      "cli_version": "2.1.317",
@@ -20065,7 +20086,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -23246,7 +23267,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "4a9d58dc2a7a6aecb05970fa1426caa253aa28d7"
+  "results_commit": "239424a634b077b0e15e88a213dd57ff6af4306e"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
