@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:45:03Z",
+  "generated_at": "2026-11-04T00:47:37Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:44:00Z",
+ "generated_at": "2026-11-04T00:46:30Z",
  "guidance": {
   "removed": [
    {
@@ -9548,7 +9548,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T00:41:27Z",
+ "newest_run": "2026-11-04T00:43:45Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -13746,7 +13746,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16279,7 +16279,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17217,7 +17217,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21133,7 +21133,7 @@
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": "workflow-doc-in-step",
       "votes": true
@@ -21158,17 +21158,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 7,
+   "current_text_runs": 8,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T00:43:45Z",
+     "cli_version": "2.1.318",
+     "fixture": "workflow-doc-in-step",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T004209Z-f7a50b/workflow-path-audit/20261104T004345Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.14700590000000002,
+      "judge_mean": 6.375,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.1509658,
+      "judge_mean": 5.500000000000001,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:03:41Z",
      "cli_version": "2.1.317",
@@ -23099,7 +23120,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "814d0e86d40e0ee8875435d9b822450e8b006557"
+  "results_commit": "a378dab6485a012bfabb7c088671f98e7243781e"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
