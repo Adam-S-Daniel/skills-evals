@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:26:02Z",
+  "generated_at": "2026-11-04T00:28:15Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:25:09Z",
+ "generated_at": "2026-11-04T00:27:21Z",
  "guidance": {
   "removed": [
    {
@@ -9548,7 +9548,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T00:21:39Z",
+ "newest_run": "2026-11-04T00:23:16Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -16139,11 +16139,11 @@
       "votes": true
      },
      {
-      "gain": 25.0,
+      "gain": 0.0,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": null,
       "votes": true
@@ -16151,10 +16151,10 @@
     ],
     "helps": 0.0,
     "keep_family": 2,
-    "keep_pairs": 2,
-    "max_pairs": 2,
+    "keep_pairs": 3,
+    "max_pairs": 3,
     "no_help": 0.0,
-    "no_help_pairs": 2
+    "no_help_pairs": 3
    },
    "copies": {
     "alert": {
@@ -16168,17 +16168,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 3,
+   "current_text_runs": 4,
    "description": "Cut a new cms-platform release (vX.Y.Z) and reconcile BOTH consumer repos (adamdaniel.ai, jodidaniel.com) to it in single-version lockstep. Use when you've merged a platform fix and need it to flow to consumers, when bumping platform_ref, or when the pin-consistency guard fails after a partial bump. Covers the release dispatch, the exact set of references to bump (platform_ref, gem tag+revision, workflow and composite ref pins), the pin-consistency check, and the lockstep invariant. Trigger on \"cut a release\", \"release vX.Y.Z\", \"bump platform_ref\", \"reconcile consumers\", \"platform-pin-consistency\", or \"flow the fix to consumers\".",
    "name": "platform-release-and-bump",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-04T00:23:16Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T002144Z-859ad8/platform-release-and-bump/20261104T002316Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 10,
+      "cost_usd": 0.17587479999999997,
+      "judge_mean": 3.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.1543398,
+      "judge_mean": 8.799999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T15:04:33Z",
      "cli_version": "2.1.317",
@@ -19834,7 +19855,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21038,7 +21059,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -22973,7 +22994,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "2a4c9f5f4db1fe0c0c2d4612af9a3975305dcdb2",
-  "results_commit": "b7ab63aa26882ed8c199645e3166846bb2b762e5"
+  "results_commit": "0081905f0548f04307f0612a4ba725e9db74e8d8"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
