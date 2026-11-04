@@ -1,0 +1,82 @@
+[
+  {
+    "query": "sync my Claude Code settings between Windows and WSL, my permissions drifted",
+    "should_trigger": true
+  },
+  {
+    "query": "add a permission rule to my Claude Code settings.json so `npm test` never prompts",
+    "should_trigger": false
+  },
+  {
+    "query": "merge my settings.json from both sides — I've been editing the Windows one and the one in my WSL home separately",
+    "should_trigger": true
+  },
+  {
+    "query": "edit ~/.claude/settings.json in WSL to set the theme to dark",
+    "should_trigger": false
+  },
+  {
+    "query": "my WSL ~/.claude/settings.json has new allow rules that the Windows %USERPROFILE%\\.claude\\settings.json doesn't. reconcile them without clobbering the per-machine keys",
+    "should_trigger": true
+  },
+  {
+    "query": "sync my VS Code settings.json and keybindings between my laptop and desktop",
+    "should_trigger": false
+  },
+  {
+    "query": "I changed hooks in the settings.json on the Windows side yesterday and the WSL copy is now out of date. bring them back in line",
+    "should_trigger": true
+  },
+  {
+    "query": "my git config differs between WSL and Windows (user.email, core.autocrlf). make them match",
+    "should_trigger": false
+  },
+  {
+    "query": "can you union the permissions.allow lists from my two Claude Code settings files and write the result to both?",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I run a PowerShell script from WSL that needs administrator rights?",
+    "should_trigger": false
+  },
+  {
+    "query": "keep my Claude Code settings the same on Windows and in Ubuntu on WSL2, but additionalDirectories has to stay different on each",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a scheduled task on Windows that backs up my WSL distro every night",
+    "should_trigger": false
+  },
+  {
+    "query": "run the settings sync script for the WSL and Windows Claude homes and show me what it changed",
+    "should_trigger": true
+  },
+  {
+    "query": "rsync my ~/projects folder from WSL to an external drive",
+    "should_trigger": false
+  },
+  {
+    "query": "two settings.json files, one under \\\\wsl.localhost\\Ubuntu\\home\\me\\.claude and one in C:\\Users\\me\\.claude. merge them per property and back both up first",
+    "should_trigger": true
+  },
+  {
+    "query": "why does Claude Code in WSL not see the MCP servers I configured on Windows? walk me through where each config file lives",
+    "should_trigger": false
+  },
+  {
+    "query": "every time I switch between PowerShell and my WSL terminal Claude Code has different permissions. sync the two settings files",
+    "should_trigger": true
+  },
+  {
+    "query": "migrate my Claude memory notes from the old project folder to the new one",
+    "should_trigger": false
+  },
+  {
+    "query": "reconcile settings.json across Windows and WSL, newer value wins for scalar settings but arrays should be unioned",
+    "should_trigger": true
+  },
+  {
+    "query": "merge these two JSON config files for my web app, the staging one and the production one, keeping production values where they conflict",
+    "should_trigger": false
+  }
+]
