@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T04:12:34Z",
+  "generated_at": "2026-11-04T04:15:22Z",
   "requests": [
    {
     "closed_at": null,
@@ -333,7 +333,7 @@
    "requests_open": 28
   }
  },
- "generated_at": "2026-11-04T04:11:38Z",
+ "generated_at": "2026-11-04T04:14:23Z",
  "guidance": {
   "removed": [
    {
@@ -9567,7 +9567,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T04:09:37Z",
+ "newest_run": "2026-11-04T04:12:26Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -9946,7 +9946,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 3,
+    "position": 2,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -10374,7 +10374,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 4,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11585,7 +11585,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -12877,20 +12877,20 @@
       "votes": true
      },
      {
-      "gain": 18.5,
-      "high": 31.8,
-      "low": -0.3,
+      "gain": 18.1,
+      "high": 30.6,
+      "low": 0.4,
       "model": "claude-sonnet-5-5",
-      "pairs": 15,
-      "status": "open",
+      "pairs": 16,
+      "status": "keeps",
       "task": null,
       "votes": true
      }
     ],
-    "helps": 0.7923239654776516,
+    "helps": 0.8112036049796832,
     "keep_family": 2,
-    "keep_pairs": 15,
-    "max_pairs": 15,
+    "keep_pairs": 16,
+    "max_pairs": 16,
     "no_help": 0.0,
     "no_help_pairs": 6
    },
@@ -12906,17 +12906,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 21,
+   "current_text_runs": 22,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
    "name": "disarm-inherited-reach",
    "next_test": {
-    "band": "near",
-    "due": null,
-    "position": 2,
+    "band": null,
+    "due": "2026-12-02T03:55:59Z",
+    "position": null,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T04:12:26Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T041046Z-cb6b2b/disarm-inherited-reach/20261104T041226Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 9,
+      "cost_usd": 0.16732870000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.12138500000000002,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T03:55:59Z",
      "cli_version": "2.1.318",
@@ -13684,8 +13705,8 @@
    "usage": {
     "invocations": 9
    },
-   "verdict": "insufficient",
-   "verdict_reason": "a cell is insufficient or missing"
+   "verdict": "keep",
+   "verdict_reason": "a cell shows benefit"
   },
   {
    "bundle": null,
@@ -14332,7 +14353,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -15120,7 +15141,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17117,7 +17138,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17589,7 +17610,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18097,7 +18118,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -19298,7 +19319,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -20945,7 +20966,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 4,
+    "position": 3,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -22254,7 +22275,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -23076,7 +23097,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -24294,7 +24315,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "ac090811eb7930431caaf0891a1b8cf254d2d7c9",
-  "results_commit": "5e20005a7047df9eb0498179d5f711363413c223"
+  "results_commit": "a171da64cedaeebcfa80ad7caa012fa107aab926"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
