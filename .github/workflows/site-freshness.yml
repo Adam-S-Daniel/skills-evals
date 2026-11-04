@@ -4,7 +4,7 @@
 # provenance commit against the newest tool/index.html commit on main, stale
 # after 2 hours), the data (explorer/latest.json's generated_at, stale after
 # 30 hours) and that the live page draws its data in headless Chromium. It
-# heals what it can (update-branch on a BEHIND sync PR with the eval-improve
+# heals what it can (update-branch on a BEHIND sync PR with the EVAL_IMPROVE_APP
 # App token; a site-sync.yml dispatch when the design is stale and no sync PR
 # or branch exists), keeps one "Site freshness check is failing" issue while
 # anything fails, closes it on the first fresh run, and once that issue has
