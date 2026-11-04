@@ -1,10 +1,13 @@
-// Builds both pages from src/, each ONE self-contained file with its entry
+// Builds three pages from src/, each ONE self-contained file with its entry
 // bundled inline and no external scripts:
 //   ../tool/index.html            the public Evals Explorer (template/public.html)
 //   ../dashboard/page/index.html  the private dashboard page (template/private.html)
-// Both share template/base.css.
-//   node build.js          write both pages
-//   node build.js --check  exit 1 when either committed page differs from a build
+//   dist/artifact/index.html      the public Explorer as a claude.ai artifact
+//                                 (template/public.html), reading latest.json
+//                                 beside it on its own origin
+// All share template/base.css.
+//   node build.js          write every page
+//   node build.js --check  exit 1 when any committed page differs from a build
 import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,10 +19,25 @@ const TEMPLATE = path.join(HERE, 'template', 'public.html');
 const PRIVATE_OUT = path.join(HERE, '..', 'dashboard', 'page', 'index.html');
 const PRIVATE_TEMPLATE = path.join(HERE, 'template', 'private.html');
 const BASE_CSS = path.join(HERE, 'template', 'base.css');
+const ARTIFACT_OUT = path.join(HERE, 'dist', 'artifact', 'index.html');
+const WEB_ADAPTER = path.join(HERE, 'src', 'adapters', 'web.js');
+const ARTIFACT_ADAPTER = path.join(HERE, 'src', 'adapters', 'artifact.js');
+
+/* Resolves every import of adapters/web.js to adapters/artifact.js, so the
+   artifact bundle holds no raw.githubusercontent.com URL: views and app.js
+   import DEFAULT_DATA_URL from web.js too. */
+const artifactAdapter = {
+  name: 'artifact-adapter',
+  setup(b) {
+    b.onResolve({ filter: /(^|\/)web\.js$/ }, (args) =>
+      path.resolve(args.resolveDir, args.path) === WEB_ADAPTER ? { path: ARTIFACT_ADAPTER } : undefined);
+  }
+};
 
 /* The bundle of one entry, as a string. Exported for test/run.js. */
 export async function bundle(entry) {
   const res = await build({
+    plugins: entry === 'artifact.js' ? [artifactAdapter] : [],
     entryPoints: [path.join(HERE, 'src', 'entries', entry)],
     bundle: true,
     write: false,
@@ -60,9 +78,15 @@ export async function buildPrivatePage() {
   return fill(PRIVATE_TEMPLATE, await bundle('private.js'), {});
 }
 
+export async function buildArtifactPage() {
+  const { DEFAULT_DATA_URL } = await import('./src/adapters/artifact.js');
+  return fill(TEMPLATE, await bundle('artifact.js'), { DATA_URL: DEFAULT_DATA_URL });
+}
+
 export const OUTPUTS = [
   { name: 'tool/index.html', out: OUT, make: buildPublicPage },
-  { name: 'dashboard/page/index.html', out: PRIVATE_OUT, make: buildPrivatePage }
+  { name: 'dashboard/page/index.html', out: PRIVATE_OUT, make: buildPrivatePage },
+  { name: 'explorer/dist/artifact/index.html', out: ARTIFACT_OUT, make: buildArtifactPage }
 ];
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -72,10 +96,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (process.argv.includes('--check')) {
       const committed = fs.existsSync(o.out) ? fs.readFileSync(o.out, 'utf8') : '';
       if (committed !== page) {
-        console.error(o.name + ' is out of date with explorer/src: run `npm run build` in explorer/ and commit both');
+        console.error(o.name + ' is out of date with explorer/src: run `npm run build` in explorer/ and commit every page');
         stale += 1;
       } else console.log(o.name + ' matches a fresh build of explorer/src');
     } else {
+      fs.mkdirSync(path.dirname(o.out), { recursive: true });
       fs.writeFileSync(o.out, page);
       console.log('wrote ' + o.name + ' (' + page.length + ' characters)');
     }

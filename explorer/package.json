@@ -2,7 +2,7 @@
   "private": true,
   "name": "evals-explorer",
   "version": "1.0.0",
-  "description": "Source of the Evals Explorer and the project dashboard: npm run build writes ../tool/index.html and ../dashboard/page/index.html",
+  "description": "Source of the Evals Explorer and the project dashboard: npm run build writes ../tool/index.html, ../dashboard/page/index.html and dist/artifact/index.html",
   "type": "module",
   "scripts": {
     "build": "node build.js",
