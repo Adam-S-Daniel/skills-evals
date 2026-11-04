@@ -105,8 +105,8 @@ jobs:
       - name: Install Playwright and Chromium
         if: steps.site.outputs.skip != 'true'
         run: |
-          python3 -m pip install --quiet playwright==1.55.0
-          python3 -m playwright install --with-deps chromium >/dev/null
+          python3 -m pip install --quiet playwright==1.55.0 &&
+            python3 -m playwright install --with-deps chromium >/dev/null
 
       - name: Load the live page
         if: steps.site.outputs.skip != 'true'
