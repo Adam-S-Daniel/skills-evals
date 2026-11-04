@@ -70,7 +70,7 @@ jobs:
         if: steps.site.outputs.skip != 'true'
         env:
           HAVE_APP: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
-          HAVE_ROUTINE: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER != '' && vars.SITE_FRESHNESS_ROUTINE_ID != '' }}
+          HAVE_ROUTINE: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER != '' }}
         run: |
           echo "app=${HAVE_APP}" >>"$GITHUB_OUTPUT"
           echo "routine=${HAVE_ROUTINE}" >>"$GITHUB_OUTPUT"
@@ -138,7 +138,7 @@ jobs:
         if: steps.site.outputs.skip != 'true' && steps.issue.outputs.fire == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID }}
+          ROUTINE_ID: ${{ vars.SITE_FRESHNESS_ROUTINE_ID || 'trig_01Nu9F7UQ8aUWq4q2QsXHQhK' }}
           FIRE_BEARER: ${{ secrets.SITE_FRESHNESS_FIRE_BEARER }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
         run: python3 scripts/site_freshness.py fire --fire-text "$RUNNER_TEMP/fire.txt"

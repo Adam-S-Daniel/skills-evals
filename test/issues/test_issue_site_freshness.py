@@ -332,7 +332,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(holders), 2, "the presence check and the fire step")
         fire = [s for s in self.steps if s.get("name") == "Fire the Sonnet routine"][0]
         self.assertEqual(fire["env"]["FIRE_BEARER"], "${{ secrets.SITE_FRESHNESS_FIRE_BEARER }}")
-        self.assertEqual(fire["env"]["ROUTINE_ID"], "${{ vars.SITE_FRESHNESS_ROUTINE_ID }}")
+        self.assertEqual(fire["env"]["ROUTINE_ID"], "${{ vars.SITE_FRESHNESS_ROUTINE_ID || 'trig_01Nu9F7UQ8aUWq4q2QsXHQhK' }}")
         for step in holders:
             self.assertNotIn("secrets.SITE_FRESHNESS_FIRE_BEARER", step.get("run", ""))
             self.assertNotIn("secrets.SITE_FRESHNESS_FIRE_BEARER", json.dumps(step.get("with", {})))

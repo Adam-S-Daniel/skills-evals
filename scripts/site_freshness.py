@@ -258,8 +258,8 @@ def apply_issue_plan(gh, plan: dict, failing: list, fixes: list, issue: dict | N
     if plan["config_comment"]:
         gh(["issue", "comment", str(issue["number"]), "-R", EVALS_REPO, "--body",
             f"{CONFIG_MARKER}\nThis issue has been open more than an hour, but the Sonnet "
-            "routine was not fired: set the repository variable `SITE_FRESHNESS_ROUTINE_ID` "
-            "and the secret `SITE_FRESHNESS_FIRE_BEARER` (see "
+            "routine was not fired: set the secret `SITE_FRESHNESS_FIRE_BEARER` to the "
+            "routine's API trigger token (see "
             "docs/routines/site-freshness-fixer.md). This is said once.\n\n"
             "<sub>🤖 Written by Claude Code on behalf of @Adam-S-Daniel</sub>"])
     return url
