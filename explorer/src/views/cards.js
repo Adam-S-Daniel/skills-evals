@@ -5,6 +5,8 @@ import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor } from '../core/format.js
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf } from '../core/items.js';
+import { hashFor } from '../core/route.js';
+import { navLink, badge } from './bits.js';
 import { trendChart } from './trend.js';
 import { modelCharts, hasAlone, legendFor, hasData } from './models.js';
 import { confidenceView } from './range.js';
@@ -52,7 +54,8 @@ export function copiesLine(c) {
 
 export function skillCard(it, refMs, doc) {
   return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
+    h('div', { class: 'head' }, h('h3', null, navLink(hashFor('skills', it.name), clean(it.name))), chip(it.chip),
+      it.raw.private === true ? badge(STRINGS.privateBadge, 'private') : null),
     h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
     usageLine(it.raw.usage, doc && doc.usage, refMs),
     copiesLine(it.raw.copies),
@@ -67,7 +70,7 @@ export function skillCard(it, refMs, doc) {
 export function sectionCard(it, refMs, doc) {
   const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
   return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, clean(it.raw.heading || it.id)), chip(it.chip)),
+    h('div', { class: 'head' }, h('h3', null, navLink(hashFor('guidance', it.id), clean(it.raw.heading || it.id))), chip(it.chip)),
     h('p', { class: 'gl' }, gloss),
     h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
     nextLine(it.raw.next_test, refMs, 'section'),

@@ -52,21 +52,31 @@ name: Ingest routine eval results
 #   check parses fixture.yaml). A cost ingest, like an eval one, wakes
 #   explorer-data.yml and routine-eval-weekly.yml's top-up re-plan
 #   (accepted, 2026-11-02).
+# * Weekly spend totals: the private dashboard refresh pushes
+#   `claude/spend-<YYYYMMDDTHHMMSSZ>` adding exactly `spend/weekly.json`,
+#   signalled by spend-pushed.yml. `kind=spend`: validated against main's
+#   explorer/schema.json `$defs.spend_file` (jsonschema, installed for spend
+#   only) and held to weekly totals (no per-session, per-thread or id
+#   field), then written to `spend/weekly.json`; latest `generated_at` wins
+#   (`place --kind spend` reports `stale=true` for an older file and the run
+#   succeeds). It wakes explorer-data.yml like the other kinds.
 # * `workflow_dispatch` re-ingests a branch by name (for a missed or failed
 #   run); only the default branch's copy may run, as for the fire workflow.
 
 on:
   workflow_run:
-    workflows: [Routine eval results pushed, Routine eval cost pushed]
+    workflows: [Routine eval results pushed, Routine eval cost pushed, Spend totals pushed]
     types: [completed]
     branches:
       - claude/eval-*
+      - claude/spend-*
   workflow_dispatch:
     inputs:
       branch:
         description: >-
-          The routine branch, claude/eval-<run id> (results) or
-          claude/eval-cost-<run id> (an improve run's cost record).
+          The routine branch, claude/eval-<run id> (results),
+          claude/eval-cost-<run id> (an improve run's cost record) or
+          claude/spend-<YYYYMMDDTHHMMSSZ> (weekly spend totals).
         required: true
         type: string
 
@@ -111,6 +121,10 @@ jobs:
       - name: Install the private-skill check's YAML parser
         if: steps.resolve.outputs.kind == 'cost'
         run: python3 -m pip install pyyaml==6.0.3
+
+      - name: Install the spend check's schema validator
+        if: steps.resolve.outputs.kind == 'spend'
+        run: python3 -m pip install jsonschema==4.26.0
 
       - name: Fetch the results branch into a private ref
         working-directory: skills-evals
@@ -162,6 +176,10 @@ jobs:
             git worktree add --detach "$tree" refs/remotes/origin/persistent/eval-results
             placed="$(python3 scripts/ingest_routine_results.py place \
               --staged "$RUNNER_TEMP/staged" --tree "$tree" --kind "$KIND")"
+            if grep -qxF -- "stale=true" <<<"$placed"; then
+              echo "persistent/eval-results already has spend totals generated after ${RUN_ID}; they stand"
+              exit 0
+            fi
             if grep -qxF -- "conflict=true" <<<"$placed"; then
               echo "a different cost record for run ${RUN_ID} is already on persistent/eval-results; the first one stands"
               exit 0
@@ -179,6 +197,8 @@ jobs:
                 echo "::warning::no cost_estimate.json was written for run ${RUN_ID}"
               fi
               message="ingest: routine run ${RUN_ID} from ${SOURCE_SHA} [skip ci]"
+            elif [ "$KIND" = spend ]; then
+              message="ingest: weekly spend ${RUN_ID} from ${SOURCE_SHA} [skip ci]"
             else
               message="ingest: improve cost ${RUN_ID} from ${SOURCE_SHA} [skip ci]"
             fi

@@ -13,6 +13,9 @@ and each results-branch job's `git add` arguments are split with `shlex` (a
 lexical tokenizer); Python writers are found with `ast`. A whole-directory
 `git add` (eval.yml's `git add badges results`) names no file, so it is left
 out of the comparison; only file paths and file patterns are compared.
+routine-eval-ingest.yml adds `-- "$DEST"`, a validated destination, so its
+fixed-path kind (the weekly spend file) is read from the ingest script's
+`SPEND_DEST` constant with `ast` and registered as that job's writer.
 
 Hermetic: reads committed files only.
 """
@@ -146,8 +149,45 @@ def _overlaps(a: str, b: str) -> bool:
     return a == b or fnmatch.fnmatchcase(a, b) or fnmatch.fnmatchcase(b, a)
 
 
+def _module_constant(path: Path, name: str) -> str:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == name for t in node.targets):
+            value = _string_value(node.value)
+            assert value is not None, f"{name} is not a string literal"
+            return value
+    raise AssertionError(f"{path.name} defines no {name}")
+
+
+def ingest_spend_writes() -> set[str]:
+    """The fixed results-branch path routine-eval-ingest.yml writes for a
+    spend branch (`dest=` from `validate`, which is SPEND_DEST)."""
+    return {_module_constant(SCRIPTS / "ingest_routine_results.py", "SPEND_DEST")}
+
+
+def explorer_spend_read() -> str:
+    """The results-tree path explorer_public.build_spend joins with `/`."""
+    tree = ast.parse((SCRIPTS / "explorer_public.py").read_text(encoding="utf-8"))
+    function = next(node for node in ast.walk(tree)
+                    if isinstance(node, ast.FunctionDef) and node.name == "build_spend")
+    for node in ast.walk(function):
+        if isinstance(node, ast.Call) and _call_name(node) == "_read_json":
+            parts = []
+            arg = node.args[0]
+            while isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Div):
+                value = _string_value(arg.right)
+                if value is None:
+                    break
+                parts.insert(0, value)
+                arg = arg.left
+            return "/".join(parts)
+    raise AssertionError("build_spend reads no file")
+
+
 def all_writers() -> dict[str, set[str]]:
-    return {**workflow_writers(), "scripts/scaffold_skill_gaps.py": scaffold_writes()}
+    return {**workflow_writers(), "scripts/scaffold_skill_gaps.py": scaffold_writes(),
+            "routine-eval-ingest.yml:ingest (spend)": ingest_spend_writes()}
 
 
 class SingleWriterTests(unittest.TestCase):
@@ -177,6 +217,18 @@ class SingleWriterTests(unittest.TestCase):
         self.assertEqual(scaffold_guard_read(), "coverage/latest.json")
         self.assertFalse(any(_overlaps(path, "coverage/*")
                              for path in workflow_writers()["propagation.yml:coverage-publish"]))
+
+    def test_the_spend_file_has_one_writer_and_the_explorer_reads_it(self):
+        writers = all_writers()
+        self.assertEqual(writers["routine-eval-ingest.yml:ingest (spend)"],
+                         {"spend/weekly.json"})
+        owners = [name for name, paths in writers.items()
+                  if any(_overlaps(path, "spend/weekly.json") for path in paths)]
+        self.assertEqual(owners, ["routine-eval-ingest.yml:ingest (spend)"])
+        self.assertEqual(explorer_spend_read(), "spend/weekly.json")
+        # Negative control: a second writer of the file reads as a clash.
+        self.assertTrue(any(_overlaps(a, "spend/*.json")
+                            for a in writers["routine-eval-ingest.yml:ingest (spend)"]))
 
     def test_the_overlap_check_can_fail(self):
         # Negative control: the pre-#660 publisher line must read as a clash.

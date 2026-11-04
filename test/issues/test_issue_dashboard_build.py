@@ -59,6 +59,8 @@ def make_results(tmp_path):
                     {"surface": "cloud", "scope": "guidance-records", "from": "a", "to": "b", "records_scanned": 3}],
         "rows": [{"week": "2026-01-05", "kind": "hook", "name": "all", "invocations": 7},
                  {"week": "2026-01-05", "kind": "skill", "name": "writing-adrs", "invocations": 2}]})
+    write(er / "explorer" / "latest.json", {"schema_version": 1, "generated_at": "2026-01-05T00:00:00Z",
+                                           "skills": [], "guidance": {"sections": []}})
     return er
 
 
@@ -253,7 +255,12 @@ class DashboardBuildTests(unittest.TestCase):
                     "--config", str(DASH / "config.example"), "--out", str(out), "--now", NOW.isoformat()])
         built = {p.stem for p in out.glob("*.json")}
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
-        self.assertEqual(built, {k for k, v in defined.items() if v["source"]["kind"] == "file"})
+        files = {k for k, v in defined.items() if v["source"]["kind"] == "file"}
+        self.assertEqual(built, files - build.OPTIONAL_DATASETS)
+        self.assertLessEqual(build.OPTIONAL_DATASETS, files)
+        self.assertEqual(json.loads((out / "explorer.json").read_text()),
+                         json.loads((self.results / "explorer" / "latest.json").read_text()),
+                         "the explorer dataset is the results document, unchanged")
         for name in built:
             self.assertTrue(json.loads((out / f"{name}.json").read_text()), name)
         waiting = json.loads((out / "waiting.json").read_text())
@@ -536,89 +543,6 @@ class DashboardBuildTests(unittest.TestCase):
                          [(2, "partial", "low"), (1, "unknown", "unknown")])
         self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
 
-    def test_the_page_draws_the_half_built_banner_from_both_datasets(self):
-        page = (DASH / "page" / "index.html").read_text()
-        for name in ("half_built_issues", "half_built_summary"):
-            self.assertIn(f'data-source="{name}"', page)
-        self.assertIn("Half-built and broken features", page)
-        self.assertLess(page.index("card-halfbuilt"), page.index("tile-routines"))
-        self.assertIn("half_built_issues: 'key'", page)
-
-    FQ_NOW = datetime(2026, 11, 3, 12, 0, tzinfo=timezone.utc)
-
-    def fq_queue(self, **kw):
-        queue = {
-            "schema": 1, "generated_at": "2026-11-03T10:00:00Z",
-            "requests": [
-                {"issue": 11, "kind": "needs-fixtures", "subject": "demo-new", "state": "open",
-                 "opened_at": "2026-11-02T12:00:00Z", "closed_at": None, "prs": []},
-                {"issue": 12, "kind": "needs-harder-fixtures", "subject": "demo-old", "state": "open",
-                 "opened_at": "2026-10-30T00:00:00Z", "closed_at": None,
-                 "prs": [{"number": 40, "state": "closed", "merged_at": None, "auto_merge": False},
-                         {"number": 44, "state": "merged", "merged_at": "2026-11-01T00:00:00Z", "auto_merge": True}]},
-                {"issue": 13, "kind": "needs-trigger-set", "subject": "demo-done", "state": "closed",
-                 "opened_at": "2026-10-01T00:00:00Z", "closed_at": "2026-10-05T00:00:00Z", "prs": []},
-            ],
-            "fixtures": [
-                {"path": "evals/demo-old/a", "subject": "demo-old", "origin_kind": "real-work", "request": 12,
-                 "runs": 4, "cost_usd": 1.25},
-                {"path": "evals/demo-old/b", "subject": "demo-old", "origin_kind": "invented", "request": 12,
-                 "runs": 2, "cost_usd": 0.5},
-                {"path": "evals/other/c", "subject": "other", "origin_kind": "invented", "request": 99,
-                 "runs": 7, "cost_usd": 9.0},
-            ],
-            "totals": {"requests_open": 2, "requests_closed": 1, "prs_merged": 1, "fixtures_real_work": 1,
-                       "fixtures_invented": 2, "fixture_runs": 13, "cost_points": 3, "cost_usd": 10.75},
-            "findings": [],
-        }
-        queue.update(kw)
-        return {"fixture_queue": queue}
-
-    def test_fixture_queue_null_or_absent_is_not_reported(self):
-        for explorer in ({}, {"fixture_queue": None}, {"schema": 1}):
-            rows, summary = build.fixture_queue(explorer, self.FQ_NOW)
-            self.assertEqual([r["key"] for r in rows], ["none"])
-            self.assertEqual((summary[0]["key"], summary[0]["status"], summary[0]["findings"]), ("all", "not-reported", 0))
-            self.assertIsNone(summary[0]["requests_open"])
-
-    def test_fixture_queue_rows_fold_in_prs_and_fixtures_and_sort_open_oldest_first(self):
-        rows, summary = build.fixture_queue(self.fq_queue(), self.FQ_NOW)
-        self.assertEqual([r["key"] for r in rows], ["12", "11", "13"])
-        old = rows[0]
-        self.assertEqual((old["kind"], old["subject"], old["state"], old["opened"]), ("harder fixtures", "demo-old", "open", "2026-10-30"))
-        self.assertEqual(old["age_days"], 4.5)  # full precision; the page rounds
-        self.assertEqual((old["prs"], old["pr_url"], old["merged"]), (2, "https://github.com/Adam-S-Daniel/skills-evals/pull/44", True))
-        self.assertEqual((old["fixtures"], old["real_work"], old["runs"], old["cost_usd"]), (2, 1, 6, 1.75))
-        self.assertEqual(old["issue_url"], "https://github.com/Adam-S-Daniel/skills-evals/issues/12")
-        new = rows[1]
-        self.assertEqual((new["kind"], new["prs"], new["pr_url"], new["merged"], new["fixtures"]), ("new fixtures", 0, "", False, 0))
-        done = rows[2]
-        self.assertEqual((done["kind"], done["state"], done["age_days"], done["closed_at"]), ("trigger set", "closed", None, "2026-10-05T00:00:00Z"))
-        self.assertEqual({k: v for k, v in summary[0].items() if k != "key"},
-                         {"requests_open": 2, "requests_closed": 1, "prs_merged": 1, "fixtures_real_work": 1,
-                          "fixtures_invented": 2, "fixture_runs": 13, "cost_points": 3, "cost_usd": 10.75,
-                          "findings": 0, "findings_high": 0, "status": "ok", "generated_at": "2026-11-03T10:00:00Z"})
-
-    def test_fixture_queue_any_finding_needs_attention(self):
-        findings = [{"finding_id": "demo-1", "kind": "stuck-pr", "severity": "high", "subject": "demo-old", "url": "https://example.com/1"},
-                    {"finding_id": "demo-2", "kind": "stale-request", "severity": "low", "subject": "demo-new", "url": "https://example.com/2"}]
-        _, summary = build.fixture_queue(self.fq_queue(findings=findings), self.FQ_NOW)
-        self.assertEqual((summary[0]["status"], summary[0]["findings"], summary[0]["findings_high"]), ("attention", 2, 1))
-
-    def test_fixture_queue_with_no_requests_is_ok_with_a_placeholder(self):
-        rows, summary = build.fixture_queue(self.fq_queue(requests=[], fixtures=[]), self.FQ_NOW)
-        self.assertEqual([r["key"] for r in rows], ["none"])
-        self.assertEqual(summary[0]["status"], "ok")
-
-    def test_the_page_draws_the_fixture_requests_panel(self):
-        page = (DASH / "page" / "index.html").read_text()
-        for name in ("fixture_requests", "fixture_queue_summary"):
-            self.assertIn(f'data-source="{name}"', page)
-        self.assertIn("Fixture requests", page)
-        self.assertIn("fixture_requests: 'key'", page)
-        self.assertLess(page.index('id="loop"'), page.index("card-fixture-requests"))
-        self.assertLess(page.index("card-fixture-requests"), page.index('id="impact"'))
-
     def test_red_runs_list_links_public_runs_and_drops_bad_urls(self):
         with tempfile.TemporaryDirectory() as tmp:
             er = Path(tmp)
@@ -642,21 +566,63 @@ class DashboardBuildTests(unittest.TestCase):
             write(Path(tmp) / "usage" / "weekly-ci.json", {"schema": 1, "rows": []})
             self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
 
-    def test_the_page_shows_red_in_ci_by_repo_by_week_and_lists_the_runs(self):
+    def test_a_build_without_the_explorer_document_refuses(self):
+        (self.results / "explorer" / "latest.json").unlink()
+        with self.assertRaises(SystemExit) as e:
+            build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                        "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"), "--now", NOW.isoformat()])
+        self.assertIn("explorer", str(e.exception.code))
+
+    def test_spend_writes_weekly_totals_in_the_spend_file_shape(self):
+        """--spend writes what scripts/explorer_public.py's build_spend reads, totals only."""
+        spend = self.tmp / "weekly.json"
+        now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+        build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                    "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"),
+                    "--now", now.isoformat(), "--spend", str(spend)])
+        doc = json.loads(spend.read_text())
+        self.assertEqual((doc["schema"], doc["generated_at"]), (1, "2026-10-30T12:00:00Z"))
+        self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
+        for w in doc["weeks"]:
+            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "api_usd", "thread_spend_usd", "cost_per_verdict"})
+            self.assertIsInstance(w["eval_runs"], int)
+        self.assertIsNone(doc["weeks"][0]["cost_per_verdict"], "cost per verdict is on the latest week only")
+        sys.path.insert(0, str(REPO / "scripts"))
+        import explorer_public
+        tree = self.tmp / "tree"
+        write(tree / "spend" / "weekly.json", doc)
+        got = explorer_public.build_spend(tree, True)
+        self.assertEqual([w["week"] for w in got["weeks"]], ["2026-10-26", "2026-10-19"], "the public export reads it whole")
+
+    def test_spend_file_keeps_full_precision(self):
+        raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,
+                          "build_usd": 2.0000001}], "cost_per_verdict": 1 / 3}
+        w = build.spend_file(raw, NOW, "Example plan")["weeks"][0]
+        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["cost_per_verdict"]),
+                         (1.23456, 0.333333, 2.0000001, 1 / 3))
+        self.assertEqual(build.spend_file(raw, NOW, "Example plan")["plan"], "Example plan")
+        self.assertNotIn("plan", build.spend_file(raw, NOW))
+
+    def test_the_page_is_the_explorer_build_and_reads_every_dataset(self):
+        """dashboard/page/index.html is explorer/'s private build (explorer/build.js);
+        explorer/test/run.js checks it is fresh."""
         page = (DASH / "page" / "index.html").read_text()
-        for table in ("tbl-impact-repos", "tbl-impact-weeks"):
-            head = page[page.index(f'id="{table}"'):]
-            head = head[:head.index("</thead>")]
-            self.assertIn('data-field="overridden">Red in CI', head)
-        self.assertIn('data-source="ci_red_runs"', page)
-        self.assertIn("ci_red_runs: 'key'", page)
-        self.assertIn("overridden: usageSum(rs, 'overridden') }));", page)
+        self.assertTrue(page.startswith("<style>"), "a Dashboard page fragment")
+        self.assertEqual(page.count("<script>"), 1)
+        self.assertNotIn("d3.", page)
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        for name in defined:
+            self.assertRegex(page, r'["\']' + name + r'["\']', f"the page never reads {name}")
+        for name, key in (("half_built_issues", "key"), ("ci_red_runs", "key"), ("usage_rows", "kind"),
+                          ("cost_benefit_weeks", "week"), ("run_stream", "key"), ("waiting", "id")):
+            self.assertRegex(page, name + r':\s*"' + key + '"', f"{name} placeholder rows stay hidden")
 
     def test_the_page_names_no_owner(self):
         page = (DASH / "page" / "index.html").read_text()
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
         words = json.dumps({k: [v.get("title"), v.get("description")] for k, v in defined.items()})
         self.assertIn("Waiting on you", page)
+        self.assertIn("Needs you", page)
         for text in (page, words):
             for name in ("Waiting on Adam", "Adam's", "Adam "):
                 self.assertNotIn(name, text)

@@ -693,7 +693,10 @@ nothing but its data: vanilla JavaScript, inline CSS, and inline SVG charts it
 draws itself, light and dark. It is a committed build output: the source is
 [`explorer/src`](explorer/src) (shared core, one module per panel, and an
 adapter per data source), and `npm run build` in `explorer/` (esbuild, pinned
-in its lockfile) writes `tool/index.html`; CI fails when the two drift.
+in its lockfile) writes `tool/index.html`; CI fails when the two drift. The same
+build writes `explorer/dist/artifact/index.html`, this page for a claude.ai
+artifact that reads `latest.json` beside it (see
+[`dashboard/README.md`](dashboard/README.md), "One app, three builds").
 adamdaniel.ai iframes it once, at `/tools/evals/` (Adam, 2026-11-02: one
 Evals Explorer, not two pages). The
 skills view is the default; an on-page toggle switches to the guidance view

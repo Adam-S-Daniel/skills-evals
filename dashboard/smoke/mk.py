@@ -3,7 +3,7 @@
 
 Usage: python3 dashboard/smoke/mk.py <page.html> <datasets dir> <work dir>
 Writes <work dir>/test.html; <work dir> must also hold d3.js (d3@7.9.0's dist/d3.js).
-Live-only datasets (open_prs, merged_prs, open_issues, eval_ingests, eval_dirs) are empty here.
+Live-only datasets (open_prs, merged_prs, open_issues, eval_ingests) are empty here; any other unknown id stays loading.
 """
 import glob
 import json
@@ -12,7 +12,7 @@ import sys
 
 page, ds_dir, work = sys.argv[1:4]
 ds = {os.path.basename(f)[:-5]: json.load(open(f)) for f in glob.glob(os.path.join(ds_dir, "*.json"))}
-for k in ["open_prs", "merged_prs", "open_issues", "eval_ingests", "eval_dirs"]:
+for k in ["open_prs", "merged_prs", "open_issues", "eval_ingests"]:
     ds.setdefault(k, [])
 mock = """<script src="d3.js"></script><script>
 const DS=%s; const calcs={}; let params={}; let cb=null;
