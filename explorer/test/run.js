@@ -378,10 +378,14 @@ await test('the artifact adapter exports what the web adapter exports, and reads
   eq(seen.join(','), 'doc,latest.json');
   eq(asked.join(','), 'latest.json?v=7', 'one relative, cache-busted read; the ?data override is ignored');
 });
+// Whether a bundle's text names the raw GitHub content host anywhere. This scans
+// built code for a string; it is not URL validation, so it counts occurrences
+// rather than matching a URL.
+const namesRawHost = (text) => text.split('raw.githubusercontent.com').length > 1;
 await test('the artifact bundle names no raw.githubusercontent.com URL', () => {
   // The negative control: the public bundle does.
-  ok(publicJs.includes('raw.githubusercontent.com'), 'the public bundle names raw.githubusercontent.com');
-  ok(!artifactJs.includes('raw.githubusercontent.com'), 'the artifact bundle names raw.githubusercontent.com');
+  ok(namesRawHost(publicJs), 'the public bundle names raw.githubusercontent.com');
+  ok(!namesRawHost(artifactJs), 'the artifact bundle names raw.githubusercontent.com');
   ok(!artifactJs.includes('src/adapters/web.js') && artifactJs.includes('src/adapters/artifact.js'), 'web.js is replaced by artifact.js');
   const dataFiles = stringsIn(artifactJs).filter((x) => /\.json(\?|#|$)/.test(x));
   eq([...new Set(dataFiles)].join(','), 'latest.json', 'the one data file it names');
@@ -428,7 +432,7 @@ await test('explorer/dist/artifact/index.html is a fresh, self-contained build',
   const scripts = inlineScripts(html);
   eq(scripts.length, 1, 'one inline script');
   eq(privateLeaks(scripts[0]).join('; '), '');
-  ok(!html.includes('raw.githubusercontent.com'), 'the page, noscript text included, names no raw URL');
+  ok(!namesRawHost(html), 'the page, noscript text included, names no raw URL');
   ok(html.includes('latest.json') && !html.includes('{{') && !html.includes('__BUNDLE__'), 'the noscript names latest.json; no template marker left');
 });
 
