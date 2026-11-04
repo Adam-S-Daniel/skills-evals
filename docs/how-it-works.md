@@ -955,7 +955,7 @@ unstamped one) declines the subject, the arm wins only when its
 `created_at` is strictly later than the issue's `closed_at`. If the issue
 was closed after the arm, in the same second, or either time is missing or
 unreadable, the removal is declined. To stop it, close the proposal issue
-after the arm, turn its auto-merge off, or close it. A removal that is not
+after the arm (the close takes effect at the next withdrawal pass, if the removal has not merged by then), turn its auto-merge off, or close it. A removal that is not
 armed (the App's own disarm included), one a non-person armed last, an
 unreadable timeline, or a missing arm time is not a person's arm, and gets
 the action described here.

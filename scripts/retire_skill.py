@@ -1305,9 +1305,12 @@ def declined(found: dict, subject: str, mode: str, key: str) -> dict | None:
     moments = [_moment(t) for t in times]
     latest = None if any(m is None for m in moments) else \
         times[moments.index(max(moments))]
-    return {"action": "none", "mode": mode, key: subject, "issue": closed[0],
+    # Name the issue with the latest close (the one `closed_at` is); keep
+    # the first when any close time is missing or unparseable.
+    named = closed[0] if latest is None else closed[moments.index(max(moments))]
+    return {"action": "none", "mode": mode, key: subject, "issue": named,
             "closed_at": latest,
-            "reason": f"{subject} is already decided: its proposal issue #{closed[0]} is "
+            "reason": f"{subject} is already decided: its proposal issue #{named} is "
                       "closed, which declines the removal, so none is opened"}
 
 
@@ -2416,7 +2419,8 @@ LATEST_WINS = ("The latest person action wins: if a person (a user account, not 
                "an App) turns the removal pull request's auto-merge on strictly after the "
                "proposal issue is closed, the loop leaves that removal to them and it can "
                "merge; a close after a person's arm, in the same second as it, or with either "
-               "time unknown declines it.")
+               "time unknown declines it. The close takes effect at the next withdrawal "
+               "pass, if the removal has not merged by then.")
 
 
 def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
@@ -2987,7 +2991,7 @@ def declined_comment(item: dict, target: str, run_url: str | None) -> str:
             f"`{WITHDRAWN_LABEL}` label and its branch is kept. This closed pull request now "
             "decides the subject: the loop opens no removal for it again, and reopening the "
             f"issue does not resume it. {LATEST_WINS} No person's arm on this pull request "
-            f"was later than the close. {OVERRIDE} Rule: [ADR 0014]({ADR})."
+            f"is known to be later than the latest close. {OVERRIDE} Rule: [ADR 0014]({ADR})."
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\n" + AGENT_MARKER + "\n")
 
@@ -3025,8 +3029,8 @@ def _decline(item: dict, gates: dict, target: str, registry_gh, gh, run_url,
            "reason, so the loop turned its auto-merge off and closed it as a decision (no "
            f"`{WITHDRAWN_LABEL}` label, branch kept). That closed pull request now decides "
            "the subject: nothing is removed, and reopening this issue does not resume the "
-           f"loop. {LATEST_WINS} No person's arm on that pull request was later than this "
-           "issue's close. To remove the subject anyway, take that pull request over (remove "
+           f"loop. {LATEST_WINS} No person's arm on that pull request is known to be later than "
+           "the latest close. To remove the subject anyway, take that pull request over (remove "
            f"its `{AGENT_LABEL}` label, then reopen and merge it by hand). Rule: "
            f"[ADR 0014]({ADR})."
            + (f"\n\nWorkflow run: {run_url}" if run_url else "")

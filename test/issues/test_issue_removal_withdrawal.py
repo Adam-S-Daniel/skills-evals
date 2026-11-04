@@ -4167,6 +4167,23 @@ class RoundThirteenTests(t70.Base):
         found["closed_at"][901] = ""
         self.assertIsNone(rs.declined(found, SKILL, "auto", "skill")["closed_at"])
 
+    def test_the_decline_names_the_issue_with_the_latest_close(self):
+        # #900 closed at 09:00, #901 at 12:00, a person's arm at 10:00.
+        issues = [self.closed_issue("2026-11-04T09:00:00Z"),
+                  self.closed_issue("2026-11-04T12:00:00Z", number=901)]
+        found = rs.existing_issues(ArmsGh(issues=issues), SKILL)
+        decline = rs.declined(found, SKILL, "auto", "skill")
+        self.assertEqual(decline["issue"], 901)
+        self.assertIn("#901", decline["reason"])
+        lines, _ = self.one_pass(doc({SKILL: VERDICTS["retire+auto"]}),
+                                 [self.LOOP_ARM, self.ARM], issues)
+        self.assertTrue(lines[0].startswith("declined #41"), lines)
+        self.assertIn("#901", lines[0])
+        self.assertNotIn("#900", lines[0])
+        # A close time unknown: the first issue is still the one named.
+        found["closed_at"][901] = ""
+        self.assertEqual(rs.declined(found, SKILL, "auto", "skill")["issue"], 900)
+
     def test_the_switch_and_a_stale_verdict_keep_the_plain_rule(self):
         # No decline: a person's arm in force is left, whenever it was made.
         # A closed issue the withdrawal path filed declines nothing, so its
