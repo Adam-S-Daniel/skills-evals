@@ -364,8 +364,8 @@ only an allow-listed environment (no `XDG_*`): PATH, HOME, LANG, LANGUAGE,
 auto-memory never lands in your real `~/.claude/projects/`. The login keeps
 HOME real, so arms and the judge are isolated by flags instead
 (`--strict-mcp-config`, `--no-session-persistence` where no `--resume`
-follows, an empty setting source for the judge; DESIGN.md has the table), and
-a multi-turn arm's transcript is moved to
+follows, an empty setting source and no tools for the judge; DESIGN.md has
+the table), and a multi-turn arm's transcript is moved to
 `~/.local/state/skills-evals/sessions/` when it ends. Every CLI launch
 (version call, probe, arms, judge) goes through a temporary guard launcher that
 re-checks the settings in the directory the CLI is about to start in, so a

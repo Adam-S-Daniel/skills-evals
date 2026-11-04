@@ -362,9 +362,10 @@ class Runner:
         try:
             with guarded_environment() as env:
                 cmd = [env["CLAUDE_BIN"], "-p", "--output-format", "json",
-                       "--permission-mode", "default", "--tools", "", "--model", model,
+                       "--permission-mode", "default", "--model", model,
                        # The judge's isolation: no settings source, no MCP
-                       # connector, no transcript (auto-memory is off in env).
+                       # connector, no transcript, no tool (`--tools ""`,
+                       # last in the tuple; auto-memory is off in env).
                        *run_eval.judge.JUDGE_ISOLATION_FLAGS]
                 proc = subprocess.run(cmd, input=prompt, capture_output=True,
                                       text=True, env=env, timeout=600, check=False)
