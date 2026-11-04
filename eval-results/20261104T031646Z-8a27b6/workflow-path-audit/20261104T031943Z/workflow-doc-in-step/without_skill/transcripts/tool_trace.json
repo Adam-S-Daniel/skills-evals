@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EyWFMWjBZo4sHutbimroGy",
+      "name": "Bash",
+      "input": "ls -a . .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EyWFMWjBZo4sHutbimroGy",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\n\n.github/workflows:\n.\n..\ndocs-site.yml\nnightly-sweep.yml\nte...",
+      "output_chars": 2165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JMnyA59qt9pH9egsLNSZKr",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json; cat .gitmodules",
+      "input_chars": 65,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JMnyA59qt9pH9egsLNSZKr",
+      "is_error": true,
+      "output": "Exit code 1\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n ...",
+      "output_chars": 689,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ns5QR1LRJwMNK8nCAB7ZaP",
+      "name": "Bash",
+      "input": "grep -rl required_status_checks .gh .github; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json | head -40",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ns5QR1LRJwMNK8nCAB7ZaP",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id\": 4410273\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id...",
+      "output_chars": 588,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EK65vpeaGVo7iX7r74VxBB",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\np='.github/workflows/tests.yml'\ns=open(p).read()\ns=s.replace(\"\"\"on:\n  pull_request:\n  push:\n    branches: [main]\n\"\"\",\"\"\"on:\n  pull_request:\n    paths: &paths\n      - \"src/**\"...",
+      "input_chars": 1135,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EK65vpeaGVo7iX7r74VxBB",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml | 5 +++++\n .github/workflows/tests.yml     | 7 +++++++\n AGENTS.md                       | 4 ++--\n 3 files changed, 14 insertions(+), 2 deletions(-)",
+      "output_chars": 180,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016uD2Kt9xV9XERHR1bSksf8",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\nfor p in ['.github/workflows/tests.yml','.github/workflows/docs-site.yml']:\n    s=open(p).read()\n    m=re.search(r\"    paths: &paths\\n((?:      - .*\\n)+)\",s)\n    block=m.grou...",
+      "input_chars": 515,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016uD2Kt9xV9XERHR1bSksf8",
+      "is_error": false,
+      "output": "name: Tests\n\non:\n  pull_request:\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/tests.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      ...",
+      "output_chars": 789,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DGfjXZLAFtzdS8WyxqGuEB",
+      "name": "Bash",
+      "input": "npm test 2>&1 | tail -15; echo \"npm test exit: ${PIPESTATUS[0]}\"; git status --short",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DGfjXZLAFtzdS8WyxqGuEB",
+      "is_error": false,
+      "output": "  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 51.278302\nnpm test exit: 1\n M .github/workflows/docs-site.yml\n M .github/workflows/tests.yml...",
+      "output_chars": 572,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FHFcVuBqFuNtPtyJ3zJgzp",
+      "name": "Bash",
+      "input": "npm test 2>&1 | head -25",
+      "input_chars": 24,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FHFcVuBqFuNtPtyJ3zJgzp",
+      "is_error": false,
+      "output": "> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n#     at defaultResolveImpl (node:internal/modules/cjs/load...",
+      "output_chars": 967,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
