@@ -992,17 +992,17 @@ fails without it:
   for.
 - *The decline overrode a person's re-arm, and its comments overpromised
   (R10-2).* Any close of a proposal or legacy issue still declines,
-  whatever its `state_reason`, and this is now documented. But an armed
-  removal whose latest `auto_merge_enabled` event is a person's, later than
-  the issue's `closed_at`, is left for that person: turning auto-merge on
-  again overrides the close. An unreadable timeline or a missing time does
-  not. The decline's comments now say the closed removal decides the
-  subject and reopening the issue does not resume the loop, which is what
-  happens.
+  whatever its `state_reason`, and this is now documented. A person's
+  re-arm is now handled by round 12's single rule (below), which replaced
+  the comparison with the issue's `closed_at` made here (round 13 brought
+  that comparison back, inside the single rule). The decline's
+  comments now say the closed removal decides the subject and reopening the
+  issue does not resume the loop, which is what happens.
 - *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
   takes the subject's pause count, and at `MAX_LOOP_PAUSES` any closed
   retirement issue decides on the lowered path too. At the cap, a subject a
-  closed issue decides gets `none`, so no cap comment asks the owner again.
+  closed issue decides gets `none` once its cap comment is out or no issue
+  is open (narrowed in round 11's R11-1, below).
 - *A refresh could merge a failed decline (R10-4).* `refresh_allowed` now
   reads the subject's retirement issues and refuses a removal a closed
   proposal declines, and refuses when the list cannot be read. The refresh
@@ -1014,6 +1014,111 @@ fails without it:
   unreadable item, the Actions check on a decline-only pass, the guidance
   removal's note on its open proposal issue, and an unreadable issue list
   in that note being named, not raised.
+
+**Round 11 (2026-11-04, skills-evals#758).** Four minor findings, none able
+to remove a subject against a person's decision; each fixed with a test
+that fails without it:
+
+- *A subject at the cap was decided with no notice (R11-1).* A person who
+  closed a withdrawal-filed issue before the cap, when its text said closing
+  it declined nothing until the cap, made every later `auto` pass at the cap
+  return `none`, with no cap comment on the open issue the next withdrawal
+  filed. So the owner was never told the loop stopped, and round 10's "no
+  cap comment asks the owner again" was false: none had asked. The cap
+  comment is now owed (`cap_owed`) while an issue is open and none of the
+  subject's issues records `CAP_MARKER`; the open issue then gets it, once,
+  even beside a closed issue. After that, or with no issue open, a closed
+  issue decides with no comment, as round 10 intended. The lowered path
+  got the same guarantee in round 12 (R12-1).
+- *A person's re-arm protected more than the close (R11-2), and in
+  `proposal` mode a hand re-arm did not last (R11-3).* Round 11 answered
+  these with two more comparisons (`person_rearm` against the issue's
+  close, `switch_rearm` against the loop's last disarm). Round 12 found
+  defects in both and replaced them with one rule (below); neither
+  comparison is left.
+- *Test gaps (R11-4).* Tests now kill round 11's mutants 15 (the re-arm read
+  on an unarmed removal: a person's re-arm and then their hold is declined)
+  and 25 (the decline's dry-run listing names the unlabel and its read-back).
+
+**Round 12 (2026-11-04, skills-evals#758): one rule for a person's arm.**
+Five minor findings; four came from three rounds of special cases for a
+person who turns auto-merge on again (R12-2: the switch disarmed a person's
+arm that followed their own hold, and a transient timeline error turned
+the override into a permanent decline; R12-3: an overridden decline that
+then withdrew filed an issue saying closing it declines nothing, which was
+false; R12-4: the refresh refused every re-armed removal, so a conflicting
+one could never merge; R12-5: an arm made before the switch to `proposal`
+survived it). Each comparison of times answered one case and broke another,
+so they are replaced by one rule, used everywhere:
+
+- *A person's arm in force.* A removal pull request that is armed for
+  auto-merge now, and whose latest `auto_merge_enabled` timeline event (by
+  `created_at`) has an actor other than `LOOP_AUTHOR`, belongs to that
+  person (`persons_arm`; round 13 requires that actor to be a `User`).
+- *What the loop leaves alone.* For such a removal the withdrawal pass does
+  not decline it (a closed proposal issue), disarm it (the `proposal`
+  switch) or withdraw it (a stale verdict, or a withdrawal that stopped
+  part way); it logs `left #N for a person: armed by a person`. Round 13
+  narrowed the decline: the arm wins over it only when it is strictly
+  later than the issue's close. The loop
+  never caps an open removal: the retirement job only waits while one is
+  open.
+- *Refresh.* `refresh_allowed` (`removal-check --number`) refreshes it
+  whatever its verdict, mode or issue, so it can still merge (round 13:
+  not when a close no earlier than the arm declines it).
+- *Unknown data.* An unreadable timeline, no event, a missing or
+  unparseable time on any arm, a removal that is not armed (the loop's own
+  disarm included) or one the loop armed last is not a person's arm in
+  force: the loop acts as it would without the rule, so unknown data still
+  leans toward disarming or declining.
+
+So R12-5's case is now intended: an arm a person made before the owner
+switched to `proposal` is still a person's arm, and the switch, which
+exists so that no removal merges without a person, leaves it. A person who
+wants it stopped turns its auto-merge off or closes it.
+
+- *The cap comment was posted again after a lowered pass (R12-1).* A pass
+  lowered to a proposal at the cap (a failed token mint, or a `removal:
+  proposal` verdict) rewrote the open issue's body without the cap note,
+  erasing `CAP_MARKER`, so the next `auto` pass @-mentioned the owner again.
+  The lowered path at the cap now goes through `cap_notice` too: the body it
+  writes keeps the note, and it posts the comment itself when it is still
+  owed. The comment is posted once per subject on every path.
+
+**Round 13 (2026-11-04): the latest person action wins, and a person is a
+`User`.** One major finding and two minor ones, each fixed with a test that
+fails without it:
+
+- *A close after a person's arm did not decline (R13-1, major).* Round 12's
+  rule ignored order: a person who armed a removal and then closed its
+  proposal issue left it armed, the refresh allowed it, and it merged
+  against the later decision, while the issue texts still said closing the
+  issue declines it. Now the latest person action wins, for the decline
+  only: when a closed proposal or legacy issue declines a subject and a
+  person's arm is in force, the arm wins only when its `created_at` is
+  strictly later than the issue's `closed_at` (the latest close, when
+  several decline). A tie, or a time missing or unparseable on either side,
+  and the decline wins. The issue listing reads `closed_at` again and
+  `declined` carries it. `refresh_allowed` applies the same comparison: it
+  refuses when a later close declines, and refuses when the issue list
+  cannot be read. The `proposal` switch and a stale verdict keep round 12's
+  plain rule: a person's arm in force is left alone, whenever it was made.
+  The issue-facing texts (`open_proposal_note`, `withdrawal_issue`, the
+  decline's comments) state the rule (`LATEST_WINS`).
+- *A bot's arm counted as a person's (R13-2).* `persons_arm` asked only
+  "not `LOOP_AUTHOR`", so any other App or bot (`github-actions[bot]`, the
+  loop App under a new slug) or a deleted account could hold a removal open
+  against a decline and a `keep` verdict. `ARMS_JQ` now reads
+  `.actor.type`, and an arm is a person's only when its type is `User` and
+  its login is neither `LOOP_AUTHOR` nor `ghost` (`_a_persons`). A `Bot`, an
+  `Organization`, a missing type or a missing login is not a person.
+- *Test gaps (R13-3).* Tests now kill round 13's mutants 11 (a
+  `shorten-or-merge` counted pauses and got the cap note) and 13 (the
+  person's-arm exception reached before the head's subject check). Mutant
+  12 (the refresh's URL built with the skills repository for a guidance
+  removal) is equivalent: `withdraw_commands` takes the repository from the
+  target and only the number from the URL, so no test can tell them apart.
+  Mutant 2 is equivalent too.
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

@@ -799,8 +799,14 @@ that firms up to `auto`, the token coming back, or the mode switched from
 own stamp and declines nothing until the pause cap (below); while `auto` is
 lowered to a proposal short of the cap, it does not count as already
 decided either, so a fresh proposal issue is filed for a person to decline.
-At the cap any closed retirement issue decides on that lowered path too, and
-no cap comment is posted on another issue of a subject one decides.
+At the cap any closed retirement issue decides on that lowered path too. In
+`auto` mode at the cap, the cap comment (below) is posted once per subject:
+an open retirement issue gets it even beside a closed one, when none of the
+subject's issues carries it yet, so the owner learns the loop stopped; after
+that, or with no issue open, a closed issue decides and nothing is posted.
+A pass lowered to a proposal at the cap (no token, say) keeps the cap note
+in the issue body it rewrites, and posts the comment itself if it is still
+owed, so the comment is posted once whichever pass reaches the cap first.
 If the reason for the proposal goes away while its issue is still open, a
 removal opens and the issue gets a comment linking it. Closing that issue
 then still declines the removal: the next withdrawal pass closes the open
@@ -931,11 +937,28 @@ is kept, since no later removal pushes to it. No retirement issue is filed,
 since its text would say closing it declines nothing. The closed issue gets
 a comment saying so and stays closed, and any open removal notice is closed.
 If the issue list cannot be read, that pull request is left as it is and
-the step fails. A person who turned auto-merge on again after closing the
-issue overrides the close: when the latest `auto_merge_enabled` event on an
-armed removal is someone's other than the loop's and later than the issue's
-close, the pass leaves that pull request alone for a person. An unreadable
-timeline, or a missing time, does not override it.
+the step fails.
+
+**A person's arm in force.** One rule overrides everything in this section.
+A removal that is armed for auto-merge now, and whose latest
+`auto_merge_enabled` event is a person's, belongs to that person. A person
+is an actor whose account type is `User` and who is not the App: a `Bot`
+(any App or bot, `github-actions[bot]` included), a deleted account
+(`ghost`), or an actor with no type is not a person. The pass does not
+disarm it under the `proposal` switch or withdraw it on a stale verdict; it
+logs `left #N for a person: armed by a person`, and the refresh below still
+brings it up to date, so it merges once its checks pass. For those, nothing
+is compared with when the App last disarmed it: only who armed it last, and
+that it is still armed. A decline is the one comparison, because the
+latest person action wins: when a closed proposal issue (or an older,
+unstamped one) declines the subject, the arm wins only when its
+`created_at` is strictly later than the issue's `closed_at`. If the issue
+was closed after the arm, in the same second, or either time is missing or
+unreadable, the removal is declined. To stop it, close the proposal issue
+after the arm (the close takes effect at the next withdrawal pass, if the removal has not merged by then), turn its auto-merge off, or close it. A removal that is not
+armed (the App's own disarm included), one a non-person armed last, an
+unreadable timeline, or a missing arm time is not a person's arm, and gets
+the action described here.
 
 One pull request's failure does not stop the pass: the others still act,
 every status line is printed, and the step then fails.
@@ -950,7 +973,9 @@ posts it. The gap left: if the mode is switched back to `auto` before such a
 pass, the removal is finished as a pause and the next daily run opens a
 fresh, armed one. While it stays open, it blocks later removals and
 keeps the skill out of the weekly plan's improve fires. Close it, or turn
-auto-merge on again by hand (a merge commit).
+auto-merge on again by hand (a merge commit): that is a person's arm in
+force (above), which the switch leaves armed, so it merges once its checks
+pass. One the App armed last is disarmed.
 
 Unknown data withdraws nothing:
 
@@ -970,7 +995,11 @@ only keeps pull requests needs no token. The issue uses the job's token.
 supported in `auto` mode and no closed proposal issue declining it. With the
 verdicts unknown, or the issue list unreadable, it refreshes none, so a
 refresh never re-runs a stale or declined removal's checks, even when the
-decline itself failed in that run's withdraw job. Its push is leased on the
+decline itself failed in that run's withdraw job. The exception is a
+removal under a person's arm in force (`removal-check --number`), which is
+refreshed whatever its verdict or mode, since the pass leaves it to that
+person, unless a closed proposal issue declines it and the arm is not
+strictly later than the close, or the issue list cannot be read. Its push is leased on the
 head it fetched, so it never recreates a branch a withdrawal just deleted.
 
 Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.

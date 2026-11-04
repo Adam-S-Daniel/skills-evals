@@ -196,17 +196,20 @@ def merge(repo: Path, base: str) -> str:
     return "merged"
 
 
-def removal_check(gates_path: Path, head: str, gh=None) -> int:
+def removal_check(gates_path: Path, head: str, gh=None, number: int | None = None) -> int:
     """`removal-check`: 0 when `head` may be refreshed, 4 when it may not.
     retire_skill is imported here, not at the top, so `merge` keeps needing
     nothing beyond the standard library. `gh` reads the subject's retirement
-    issues (default: the `gh` CLI with `GH_TOKEN`)."""
+    issues and, given the pull request's `number`, whether a person's arm is
+    in force on it, which allows the refresh unless a closed proposal issue
+    declines it and the arm is not strictly later than that close (rounds
+    12 and 13; default: the `gh` CLI with `GH_TOKEN`)."""
     import retire_skill
     try:
         gates = retire_skill.load_gates(gates_path)
     except retire_skill.RetireError:
         gates = None
-    ok, why = retire_skill.refresh_allowed(gates, head, gh or retire_skill.default_gh)
+    ok, why = retire_skill.refresh_allowed(gates, head, gh or retire_skill.default_gh, number)
     print(f"outcome={'refresh' if ok else 'skip'}\nreason={why}")
     return 0 if ok else 4
 
@@ -220,9 +223,11 @@ def main(argv: list[str] | None = None, gh=None) -> int:
     c = sub.add_parser("removal-check")
     c.add_argument("--gates", type=Path, required=True)
     c.add_argument("--head", required=True)
+    c.add_argument("--number", type=int, default=None,
+                   help="the pull request's number, to read whether a person armed it")
     args = parser.parse_args(argv)
     if args.command == "removal-check":
-        return removal_check(args.gates, args.head, gh)
+        return removal_check(args.gates, args.head, gh, args.number)
     try:
         outcome = merge(args.repo, args.base)
     except Unresolvable as exc:
