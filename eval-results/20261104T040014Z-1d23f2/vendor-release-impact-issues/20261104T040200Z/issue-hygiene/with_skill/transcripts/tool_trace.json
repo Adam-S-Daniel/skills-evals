@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dc3JcEfDXQKrKSzaZuuPK8",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dc3JcEfDXQKrKSzaZuuPK8",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PXUkqMAyHE4NBTBySFoNV7",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor issues 2>&1 | head -30",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PXUkqMAyHE4NBTBySFoNV7",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nls: cannot access 'issues': No such file or directory\nvendor:\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  3 21:07 .\ndrwxr-xr-x 8 root root 4096 Nov  4 04:02 ..\n-rw-r--...",
+      "output_chars": 400,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y7rtcfzfbi4JGEGXS9Scc5",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json .example-cli/settings.json hooks/session-start.sh .github/workflows/ci.yml README.md",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y7rtcfzfbi4JGEGXS9Scc5",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3741,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018LkSmnoud3wezcBV94Jbds",
+      "name": "Bash",
+      "input": "mkdir -p issues && mkdir -p $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport json,re,sys\nroot=sys.argv[1]\nmd=open(f\"{root}<path>\").read()\ntimes={v:d[\"published_at\"] for v,d in json.load(open(f\"{...",
+      "input_chars": 4831,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018LkSmnoud3wezcBV94Jbds",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 hooks report source \"fork\": session-start matcher startup|resume skips forks\n\nFound in a review of the ExampleCLI release notes in `vendor/` (group: hook sources). Not yet verified against this repo.\n\n## ExampleCLI change\n\n> Session-start hooks now report source `\"fork\"` for forke...",
+      "output_chars": 4766,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qo4P5TRQM3NqSQcSFbPP7B",
+      "name": "Bash",
+      "input": "sed -i -e 's/still works on 4\\.1\\.0 too/still works on {{4.1.0}} too/' -e 's/bumped past 4\\.1\\.0 later/bumped past {{4.1.0}} later/' -e 's/pinned to 4\\.1\\.0 for the plugin/pinned to {{4.1.0}} for the ...",
+      "input_chars": 322,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qo4P5TRQM3NqSQcSFbPP7B",
+      "is_error": false,
+      "output": "issues/01-session-start-hook-misses-fork.md:16:- `.github/workflows/ci.yml` pins `example-cli@4.1.0`, so CI does not exercise this change. Only unpinned local installs on 4.2.0 or later may be affected.\nissues/01-session-start-hook-misses-fork.md:23:- [ ] If CI is bumped past 4.1.0 [2026-06-02T14:03...",
+      "output_chars": 1177,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
