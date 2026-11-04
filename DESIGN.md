@@ -315,9 +315,11 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
 ### Deployed context (ADR 0012)
 
 **Part 2 of 4: frozen resolution and delivery.** `--pairing isolation`
-remains the default. `--pairing in_place` is cloud-only and delivers the
-frozen skills and guidance into both arms' scratch user profiles; a local
-run fails with `in_place_local_unsupported`. No credential adapter exists.
+remains the default. `--pairing in_place` delivers the frozen skills and
+guidance into both arms' scratch user profiles. It runs only in the hosted
+eval routine or in a sealed eval container started by
+`scripts/container_eval.sh` (`harness/sealed.py`); anywhere else it fails with
+`in_place_local_unsupported`. No credential adapter exists.
 The model-call catalog and marker guard remain part 3 of
 [ADR 0012](docs/decisions/0012-ab-runs-in-the-deployed-context-minus-the-subject.md).
 
