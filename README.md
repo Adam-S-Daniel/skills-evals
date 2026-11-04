@@ -780,8 +780,19 @@ Without the secrets, or when the App is not installed there, the mint fails:
 `site-preview` **warns and succeeds** (it skips the mirror), but `site-sync`
 **fails** (red), because a green run that published nothing left the live site
 stale with nothing to say so. Each names the fix in its `::warning::` or
-`::error::` and the run's step summary. Set the repository variable `SITE_REPO`
-to `none` to skip the sync cleanly on a repository with no site.
+`::error::` and the run's step summary.
+
+The account-specific settings are repository variables (Settings > Secrets and
+variables > Actions > Variables), each set in exactly one place and **none with
+a default**: a run that needs one and finds it unset fails naming it.
+
+| Variable | Value | Read by |
+|---|---|---|
+| `SITE_REPO` | the site repository as `owner/name`, or `none` to skip cleanly on a repository with no site | `site-sync.yml`, `site-preview.yml`, `site-freshness.yml` |
+| `SITE_PAGE_URL` | the live page URL | `site-freshness.yml` |
+| `SITE_ASSET_URL` | the URL of the vendored asset on the site | `site-freshness.yml` |
+| `SITE_FRESHNESS_ROUTINE_ID` | the fixer routine's id; required once the `SITE_FRESHNESS_FIRE_BEARER` secret exists | `site-freshness.yml` |
+
 [`site-freshness.yml`](.github/workflows/site-freshness.yml) checks hourly that
 the site's design, data and drawn page are current, heals a behind sync PR, and
 keeps one `Site freshness check is failing` issue while anything is stale

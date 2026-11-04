@@ -46,12 +46,9 @@ import sys
 import urllib.request
 
 EVALS_REPO = "Adam-S-Daniel/skills-evals"
-DEFAULT_SITE_REPO = "Adam-S-Daniel/adamdaniel.ai"
 SYNC_BRANCH = "tool-sync/skills-evals"
 PROVENANCE_PATH = "_data/tool_sources/skills-evals.yml"
 SOURCE_FILE = "tool/index.html"
-DEFAULT_PAGE_URL = "https://adamdaniel.ai/tools/evals/"
-DEFAULT_ASSET_URL = "https://adamdaniel.ai/assets/tools/skills-evals/index.html"
 DATA_URL = ("https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/"
             "persistent/eval-results/explorer/latest.json")
 
@@ -436,13 +433,27 @@ def post_fire(routine_id: str, bearer: str, text: str) -> str:
 # CLI
 # --------------------------------------------------------------------------
 
+REQUIRED_VARIABLES = {
+    "SITE_REPO": "the site repository as owner/name",
+    "SITE_PAGE_URL": "the live page URL",
+    "SITE_ASSET_URL": "the URL of the vendored asset",
+}
+
+
 def env_config() -> dict:
-    site_repo = os.environ.get("SITE_REPO", DEFAULT_SITE_REPO)
+    """The site settings, all required: none has a default."""
+    missing = [name for name in REQUIRED_VARIABLES if not os.environ.get(name)]
+    if missing:
+        raise SystemExit(
+            "Missing repository variables: "
+            + "; ".join(f"{n} ({REQUIRED_VARIABLES[n]})" for n in missing)
+            + ". Set them under Settings > Secrets and variables > Actions > Variables.")
+    site_repo = os.environ["SITE_REPO"]
     if not _REPO.fullmatch(site_repo):
         raise SystemExit("SITE_REPO is not owner/name")
     return {"site_repo": site_repo,
-            "page_url": os.environ.get("SITE_PAGE_URL") or DEFAULT_PAGE_URL,
-            "asset_url": os.environ.get("SITE_ASSET_URL") or DEFAULT_ASSET_URL}
+            "page_url": os.environ["SITE_PAGE_URL"],
+            "asset_url": os.environ["SITE_ASSET_URL"]}
 
 
 def utcnow() -> datetime:
@@ -576,7 +587,8 @@ def cmd_fire(args) -> int:
     routine_id, bearer = os.environ.get("ROUTINE_ID", ""), os.environ.get("FIRE_BEARER", "")
     number = os.environ.get("ISSUE_NUMBER", "")
     if not _ROUTINE_ID.fullmatch(routine_id) or not bearer or not number.isdigit():
-        print("::error::the routine id, the bearer or the issue number is missing or malformed")
+        print("::error::the routine id (repository variable SITE_FRESHNESS_ROUTINE_ID), the "
+              "bearer (secret SITE_FRESHNESS_FIRE_BEARER) or the issue number is missing or malformed")
         return 1
     status = post_fire(routine_id, bearer, Path(args.fire_text).read_text(encoding="utf-8"))
     print(f"fire API status: {status}")

@@ -70,13 +70,14 @@ class SiteWorkflowTests(unittest.TestCase):
             for step in mints:
                 self.assertIs(step.get("continue-on-error"), True, name)
                 if name == "sync":
-                    # The target follows SITE_REPO (default Adam-S-Daniel/adamdaniel.ai).
+                    # The target follows SITE_REPO, which has no default.
                     self.assertEqual(step["with"]["repositories"],
                                      "${{ steps.site.outputs.name }}")
                     self.assertEqual(step["with"]["owner"], "${{ steps.site.outputs.owner }}")
                 else:
-                    self.assertEqual(step["with"]["repositories"], "adamdaniel.ai")
-                    self.assertEqual(step["with"]["owner"], "Adam-S-Daniel")
+                    self.assertEqual(step["with"]["repositories"],
+                                     "${{ steps.site.outputs.name }}")
+                    self.assertEqual(step["with"]["owner"], "${{ steps.site.outputs.owner }}")
                 self.assertIn("EVAL_IMPROVE_APP_CLIENT_ID", step["with"]["client-id"])
                 self.assertIn("EVAL_IMPROVE_APP_PEM", step["with"]["private-key"])
 
@@ -102,16 +103,21 @@ class SiteWorkflowTests(unittest.TestCase):
                 self.assertIn("::warning::", run, name)
                 self.assertIn("GITHUB_STEP_SUMMARY", run, name)
                 self.assertNotIn("exit 1", run, name)
-            self.assertIn("eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai",
+            self.assertIn("eval-improve GitHub App on the site repository named by SITE_REPO",
                           doc["env"]["FIX_HINT"], name)
+            self.assertNotIn("Adam-S-Daniel", doc["env"]["FIX_HINT"], name)
 
     def test_site_repo_comes_from_a_variable_and_none_skips_cleanly(self):
-        self.assertEqual(self.sync["env"]["SITE_REPO"],
-                         "${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}")
+        self.assertEqual(self.sync["env"]["SITE_REPO"], "${{ vars.SITE_REPO }}")
+        self.assertEqual(self.preview["env"]["SITE_REPO"], "${{ vars.SITE_REPO }}")
         resolve = [s for _, s in steps(self.sync) if s.get("id") == "site"]
         self.assertEqual(len(resolve), 1)
         run = resolve[0]["run"]
         self.assertIn('[ "$SITE_REPO" = none ]', run)
+        # Unset fails, naming the variable and where to set it.
+        self.assertIn('[ -z "$SITE_REPO" ]', run)
+        self.assertIn("SITE_REPO is not set", run)
+        self.assertIn("Settings > Secrets and variables > Actions > Variables", run)
         self.assertIn("::notice::", run)
         self.assertIn("skip=true", run)
         # Every step that touches the site waits on the skip output.
@@ -120,6 +126,12 @@ class SiteWorkflowTests(unittest.TestCase):
         self.assertTrue({"credential", "mint", "token"} <= gated, gated)
         checkout = [s for _, s in steps(self.sync) if s.get("name") == "Checkout site repo"][0]
         self.assertEqual(checkout["with"]["repository"], "${{ env.SITE_REPO }}")
+        preview_checkout = [s for _, s in steps(self.preview)
+                            if s.get("name") == "Checkout site repo"][0]
+        self.assertEqual(preview_checkout["with"]["repository"], "${{ env.SITE_REPO }}")
+        for _, doc in (("sync", self.sync), ("preview", self.preview)):
+            for step in [s for _, s in steps(doc) if s.get("id") == "site"]:
+                self.assertIn("SITE_REPO is not set", step["run"])
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.sync["permissions"], {"contents": "read"})
