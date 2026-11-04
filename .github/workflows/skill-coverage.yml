@@ -331,7 +331,8 @@ jobs:
       - name: Withdraw stale skill removal pull requests
         # Any open retire-skill/ pull request whose verdict no longer
         # supports it (ADR 0014); it needs the App token only when there is
-        # one to withdraw or disarm.
+        # one to withdraw, disarm or re-arm (a removal the loop disarmed,
+        # labeled loop-disarmed, whose verdict supports it again).
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
         working-directory: skills-evals
         env:

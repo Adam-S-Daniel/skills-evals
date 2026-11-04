@@ -372,10 +372,17 @@ class FakeGh:
     read-back's state, turned off by `--disable-auto` unless `stuck`."""
 
     def __init__(self, prs=(), armed=True, stuck=False, fail=None, issues=(), state="OPEN",
-                 head="a" * 40, arms=True, label_fails=0):
+                 head="a" * 40, arms=True, label_fails=0, merge_now=False,
+                 pr_labels=(rs.AGENT_LABEL, rs.DISARMED_LABEL), email=rs.COMMIT_EMAIL,
+                 last=None, repo_labels=()):
         self.prs, self.armed, self.stuck, self.fail = list(prs), armed, stuck, fail
         self.issues, self.state, self.head, self.arms = list(issues), state, head, arms
         self.label_fails = label_fails  # how many `--add-label` calls fail first
+        # gh 2.89 merges a pull request that can merge now instead of
+        # arming it (pkg/cmd/pr/merge/merge.go, isImmediatelyMergeable).
+        self.merge_now = merge_now
+        self.pr_labels, self.email, self.last = list(pr_labels), email, last
+        self.repo_labels = list(repo_labels)  # the repository's labels
         self.calls = []
 
     def __call__(self, args, stdin=None):
@@ -390,10 +397,23 @@ class FakeGh:
             return "".join(json.dumps(p) + "\n" for p in rows)
         if args[:2] == ["pr", "merge"] and "--disable-auto" in args and not self.stuck:
             self.armed = False
-        if args[:2] == ["pr", "merge"] and "--auto" in args and self.arms:
+        if args[:2] == ["pr", "merge"] and "--auto" in args and self.merge_now:
+            self.state, self.armed = "MERGED", False
+        elif args[:2] == ["pr", "merge"] and "--auto" in args and self.arms:
             self.armed = True
-        if args[:2] == ["pr", "view"] and "headRefOid" in args:
-            return self.head + "\n"
+        if args[:2] == ["pr", "edit"] and "--add-label" in args:
+            self.pr_labels.append(args[-1])
+        if args[:2] == ["pr", "edit"] and "--remove-label" in args:
+            self.pr_labels = [x for x in self.pr_labels if x != args[-1]]
+        if args[:2] == ["label", "create"]:
+            self.repo_labels.append(args[2])
+        if args[:2] == ["label", "list"]:
+            return "".join(f"{x}\n" for x in self.repo_labels)
+        if args[:2] == ["pr", "view"] and "state,labels,headRefOid,commits" in args:
+            return json.dumps({"state": self.state, "labels": self.pr_labels,
+                               "head": self.head,
+                               "last": self.head if self.last is None else self.last,
+                               "emails": [self.email]}) + "\n"
         if args[:2] == ["pr", "view"] and "state" in args:
             return self.state + "\n"
         if args[:2] == ["pr", "view"]:
@@ -402,7 +422,7 @@ class FakeGh:
 
     def writes(self):
         return [a for a, _ in self.calls if a[:2] != ["api", "--paginate"]
-                and a[:2] != ["pr", "view"]]
+                and a[:2] not in (["pr", "view"], ["label", "list"])]
 
 
 def issue(number, subject=SKILL, state="open", author=rs.ISSUE_AUTHOR,
@@ -1253,7 +1273,7 @@ class IncompleteDataTests(unittest.TestCase):
         rs.withdraw_stale(doc({SKILL: roster_added(retire())}), [pr()], "skill", gh)
         body = next(s for a, s in gh.calls if a[:2] == ["pr", "comment"])
         self.assertIn(rs.DISARMED_MARKER.format(subject=SKILL), body)
-        self.assertIn("not complete yet", body)
+        self.assertIn("still being measured", body)
         self.assertIn(rs.DISARMED_LABEL, body)
         self.assertNotIn("is `proposal`", body)
         self.assertTrue(body.rstrip("\n").endswith(rs.AGENT_MARKER.strip()))
@@ -1403,8 +1423,8 @@ class RearmTests(unittest.TestCase):
         self.assertEqual([i["action"] for i in plan["withdraw"]], ["rearm"])
         c = rs.withdraw_commands("skill", SKILL_URL)
         self.assertEqual(plan["would_run"], [["gh", *x] for x in (
-            c["state"], c["view"], c["head"], c["arm"], c["view"], c["unlabel"],
-            c["comment"])])
+            c["state"], c["view"], c["recheck"], c["arm"], c["state"], c["view"],
+            c["unlabel"], c["comment"])])
         self.assertEqual(gh.writes(), [])
         err = io.StringIO()
         with redirect_stderr(err):
@@ -1433,7 +1453,7 @@ class BasisTests(unittest.TestCase):
         return (f"Removes `x`: its retirement verdict in [skills-evals#70](u) is "
                 f"**retire** as of {stamp} (every cell shows no benefit).\n")
 
-    def decide(self, body, created_at=OPENED, gates=None):
+    def decide(self, body, created_at="2026-11-03T00:00:00Z", gates=None):
         item = pr(created_at=created_at)
         if body is not None:
             item["body"] = body
@@ -1465,7 +1485,7 @@ class BasisTests(unittest.TestCase):
             with self.subTest(body=body):
                 self.assertEqual(self.decide(body, created_at="2026-11-02T11:00:00Z")["action"],
                                  "keep")
-                self.assertEqual(self.decide(body)["action"], "withdraw")
+                self.assertEqual(self.decide(body, created_at=OPENED)["action"], "withdraw")
                 self.assertEqual(self.decide(body, created_at=None)["action"], "keep")
 
     def test_an_unknown_as_of_keeps(self):
@@ -1474,16 +1494,17 @@ class BasisTests(unittest.TestCase):
                          "keep")
 
     def test_the_basis_reads_the_first_stamp(self):
+        late = "2026-12-02T00:00:00Z"
         self.assertEqual(rs._basis(self.body("2026-11-01T00:00:00Z")
-                                   + self.body("2026-12-01T00:00:00Z")),
+                                   + self.body("2026-12-01T00:00:00Z"), late),
                          rs._moment("2026-11-01T00:00:00Z"))
-        self.assertIsNone(rs._basis(None))
+        self.assertIsNone(rs._basis(None, late))
 
     def test_the_skill_pr_body_records_a_readable_basis(self):
         gates = {**doc({SKILL: retire()}, as_of=self.AS_OF)}
         body = rs._pr_body(gates, SKILL, {"path": "plugins/p/skills/x", "plugin": "p"},
                            {"plugins/p/plugin.json": ("1.0.0", "1.0.1")}, None)
-        self.assertEqual(rs._basis(body), rs._moment(self.AS_OF))
+        self.assertEqual(rs._basis(body, "2026-11-02T10:05:00Z"), rs._moment(self.AS_OF))
 
     def test_the_guidance_pr_body_records_a_readable_basis(self):
         from unittest import mock
@@ -1496,7 +1517,8 @@ class BasisTests(unittest.TestCase):
         with mock.patch.object(rs, "guidance_row", return_value=row):
             plan = rs.guidance_plan(gates, Path("."), gh, allowed=("auto",))
         self.assertEqual(plan["action"], "guidance-removal")
-        self.assertEqual(rs._basis(plan["body"]), rs._moment(self.AS_OF))
+        self.assertEqual(rs._basis(plan["body"], "2026-11-02T10:05:00Z"),
+                         rs._moment(self.AS_OF))
 
     def test_the_listing_reads_the_body(self):
         gh = FakeGh()
@@ -1618,3 +1640,281 @@ class DisarmLabelProvisioningTests(unittest.TestCase):
         self.assertIn("could not add the", out.getvalue())
         path.unlink()
         path.parent.rmdir()
+
+
+# ---------------------------------------------------------------------------
+# PR #740 round 4.
+
+import plan_week  # noqa: E402
+
+ERRORED = {"fixture": "fx-b", "model": "model-b", "class": "insufficient", "at_cap": False,
+           "reason": "no-benefit on the numbers, but the cell has 1 agent-errored trial(s) "
+                     "or a run skipped as anomalous, so it cannot retire",
+           "with": {"runs": 20}, "without": {"runs": 20}}
+CAPPED = {"fixture": "fx-b", "model": "model-b", "class": "insufficient", "at_cap": True,
+          "reason": "no clear effect on the numbers, but 1 CLI version(s) in the pairs, "
+                    "under the 2 a removal needs", "with": {"runs": 20}, "without": {"runs": 20}}
+
+
+def frozen_skill(extra):
+    """sim_r4_1's skill cases: one cell more runs cannot move beside
+    decided ones, as harness/gates.py `_verdict` judges them."""
+    cells = [cell("fx-a", m) for m in MODELS] + [cell("fx-b", "model-a"), extra]
+    return {**gates_mod._verdict(cells, True), "cells": cells}
+
+
+def alone_of(cls, runs=0):
+    return {**gretire("proposal"), "removal_reason": gates_mod.ALONE_UNFINISHED_REASON,
+            "alone": {"verdict": "insufficient", "cells": [
+                {"fixture": "fx-a", "model": m, "class": cls, "reason": "x",
+                 "with": {"runs": runs}, "without": {"runs": runs}} for m in MODELS]}}
+
+
+class FrozenDataTests(unittest.TestCase):
+    """R4-1: data more runs can never move is not incomplete. The planner's
+    own test (plan_week.gates_cell_blocking) decides, so the two never
+    disagree; such a removal is stale and withdrawn, as before round 3."""
+
+    def test_sim_r4_1_four_terminal_cases_withdraw(self):
+        for name, entry, target in (
+                ("errored-trial overrule", frozen_skill(ERRORED), "skill"),
+                ("at_cap, one CLI version", frozen_skill(CAPPED), "skill"),
+                ("alone cell paused", alone_of("paused"), "guidance"),
+                ("alone cell cannot-discriminate on enough runs",
+                 alone_of("cannot-discriminate", plan_week.BLOCKING_MIN_RUNS), "guidance")):
+            with self.subTest(name):
+                if target == "skill":
+                    self.assertEqual(entry["verdict"], "insufficient")
+                    gates, item = doc({SKILL: entry}), pr()
+                else:
+                    gates, item = doc(guidance={SECTION: entry}), gpr()
+                self.assertEqual(rs.removal_support(gates, entry, target)[0], "stale")
+                for mode in ("auto", "proposal"):
+                    d = rs.withdrawal_decision(item, {**gates, "retirement_mode": mode,
+                                                      "guidance_retirement_mode": mode},
+                                               target)
+                    self.assertEqual(d["action"], "withdraw")
+                self.assertFalse(rs.refresh_allowed(gates, item["head"])[0])
+
+    def test_movable_cells_stay_incomplete(self):
+        self.assertEqual(rs.removal_support(doc(), roster_added(retire()))[0], "incomplete")
+        few = alone_of("cannot-discriminate", plan_week.BLOCKING_MIN_RUNS - 1)
+        self.assertEqual(rs.removal_support(doc(), few, "guidance")[0], "incomplete")
+        for cls in ("missing", "insufficient"):
+            self.assertEqual(rs.removal_support(doc(), alone_of(cls), "guidance")[0],
+                             "incomplete")
+        # A missing cell beside a frozen one: the frozen one decides.
+        entry = frozen_skill(CAPPED)
+        entry["cells"].append(cell("fx-a", NEW_MODEL, "missing"))
+        self.assertEqual(rs.removal_support(doc(), entry)[0], "stale")
+
+    def test_the_predicate_is_the_planners(self):
+        for c in (ERRORED, CAPPED, cell("fx-a", NEW_MODEL, "missing"),
+                  {**cell("fx", "m", "cannot-discriminate"),
+                   "with": {"runs": 3}, "without": {"runs": 3}}):
+            planner = {"class": c["class"], "reason": c.get("reason"),
+                       "at_cap": c.get("at_cap") is True,
+                       "with_counted": c["with"]["runs"], "without_counted": c["without"]["runs"]}
+            self.assertEqual(plan_week.gates_cell_blocking(c), plan_week._blocking(planner))
+        from unittest import mock
+        with mock.patch.object(plan_week, "gates_cell_blocking", return_value=True):
+            self.assertEqual(rs.removal_support(doc(), roster_added(retire()))[0], "stale")
+            self.assertEqual(rs.removal_support(doc(), alone_of("missing"), "guidance")[0],
+                             "stale")
+
+    def test_counted_runs_reads_the_arm_summaries(self):
+        self.assertEqual(plan_week.counted_runs({"with": {"runs": 4}, "without": None}),
+                         {"with_counted": 4, "without_counted": 0})
+
+
+class RearmMergesAtOnceTests(unittest.TestCase):
+    """R4-2: gh merges a pull request whose checks have passed instead of
+    arming it; that is the re-arm's success, not an error."""
+
+    LABELS = (rs.AGENT_LABEL, rs.DISARMED_LABEL)
+
+    def test_a_merge_at_once_is_success(self):
+        gh = FakeGh(armed=False, merge_now=True)
+        lines = rs.withdraw_stale(doc({SKILL: retire()}), [pr(labels=self.LABELS)], "skill", gh)
+        self.assertEqual(gh.state, "MERGED")
+        self.assertTrue(lines[0].startswith("re-armed #41, and it merged at once"))
+        self.assertEqual([a[1] for a in gh.writes()], ["merge", "edit", "comment"])
+        body = next(st for a, st in gh.calls if a[:2] == ["pr", "comment"])
+        self.assertIn("merged at once", body)
+        self.assertIn(rs.REARMED_MARKER.format(subject=SKILL), body)
+
+    def test_an_unlabel_refused_on_the_merged_pr_still_succeeds(self):
+        gh = FakeGh(armed=False, merge_now=True)
+        real = gh.__call__
+
+        def refuse_unlabel(args, stdin=None):
+            if "--remove-label" in args:
+                gh.calls.append((list(args), stdin))
+                raise rs.RetireError("gh pr exited 1")
+            return real(args, stdin)
+
+        lines = rs.withdraw_stale(doc({SKILL: retire()}), [pr(labels=self.LABELS)], "skill",
+                                  refuse_unlabel)
+        self.assertTrue(lines[0].startswith("re-armed #41, and it merged at once"))
+
+    def test_neither_merged_nor_armed_refuses(self):
+        gh = FakeGh(armed=False, arms=False)
+        with self.assertRaises(rs.RetireError):
+            rs.withdraw_stale(doc({SKILL: retire()}), [pr(labels=self.LABELS)], "skill", gh)
+
+
+class ItemIsolationTests(unittest.TestCase):
+    """R4-2's second half: one pull request's failed call does not skip the
+    later ones; the pass still fails, with every status line."""
+
+    def test_a_failure_does_not_skip_the_next_item(self):
+        second = pr(head=f"{rs.BRANCH_PREFIX}other-skill", number=43,
+                    url=f"https://github.com/{rs.REGISTRY_REPO}/pull/43")
+        gh = FakeGh(fail=["pr", "close"])
+        gates = doc({SKILL: VERDICTS["keep"], "other-skill": VERDICTS["keep"]})
+        with self.assertRaises(rs.WithdrawFailed) as ctx:
+            rs.withdraw_stale(gates, [pr(), second], "skill", gh)
+        self.assertEqual([x.split(":")[0] for x in ctx.exception.lines],
+                         ["failed #41", "failed #43"])
+        self.assertEqual(len([a for a in gh.writes() if a[:2] == ["pr", "close"]]), 2)
+
+    def test_the_next_item_still_acts(self):
+        second = pr(head=f"{rs.BRANCH_PREFIX}other-skill", number=43,
+                    url=f"https://github.com/{rs.REGISTRY_REPO}/pull/43")
+        calls = {"n": 0}
+        gh = FakeGh()
+        real = gh.__call__
+
+        def first_disable_sticks(args, stdin=None):
+            if "--disable-auto" in args:
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    gh.calls.append((list(args), stdin))
+                    return ""  # the read-back still says armed: #41 fails
+            return real(args, stdin)
+
+        gates = doc({SKILL: VERDICTS["keep"], "other-skill": VERDICTS["keep"]})
+        with self.assertRaises(rs.WithdrawFailed) as ctx:
+            rs.withdraw_stale(gates, [pr(), second], "skill", first_disable_sticks)
+        self.assertTrue(ctx.exception.lines[0].startswith("failed #41: auto-merge is still"))
+        self.assertTrue(ctx.exception.lines[1].startswith("withdrew #43"))
+        self.assertEqual(str(ctx.exception), "auto-merge is still enabled on #41")
+
+    def test_main_prints_every_line_then_exits_2(self):
+        path = Path(tempfile.mkdtemp()) / "gates.json"
+        path.write_text(json.dumps(doc({SKILL: VERDICTS["keep"]})))
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stderr(err):
+            code = rs.main(["--withdraw-stale", "--gates", str(path)], env=AUTO_ENV,
+                           gh=FakeGh([pr()], fail=["pr", "close"]), out=out)
+        self.assertEqual(code, 2)
+        self.assertIn("retire_skill: failed #41: gh pr exited 1", out.getvalue())
+        self.assertEqual(err.getvalue().strip(), "retire_skill: gh pr exited 1")
+        path.unlink()
+        path.parent.rmdir()
+
+
+class RearmRecheckTests(unittest.TestCase):
+    """R4-4: just before arming, the state, labels and head commit are read
+    again; the listing is not trusted."""
+
+    LABELS = (rs.AGENT_LABEL, rs.DISARMED_LABEL)
+
+    def run_pass(self, **kw):
+        gh = FakeGh(armed=False, **kw)
+        lines = rs.withdraw_stale(doc({SKILL: retire()}), [pr(labels=self.LABELS)], "skill", gh)
+        return gh, lines
+
+    def test_each_refusal_arms_nothing(self):
+        cases = {"label removed": {"pr_labels": (rs.AGENT_LABEL,)},
+                 "on-hold added": {"pr_labels": (*self.LABELS, rs.ON_HOLD_LABEL)},
+                 "a person's commit": {"email": "someone@example.com"},
+                 "commits listing behind the head": {"last": "b" * 40}}
+        for name, kw in cases.items():
+            with self.subTest(name):
+                gh, lines = self.run_pass(**kw)
+                self.assertEqual(gh.writes(), [])
+                self.assertTrue(lines[0].startswith("skipped #41"))
+                self.assertIn("not armed again", lines[0])
+
+    def test_the_refresh_merge_commit_is_the_loops(self):
+        gh, lines = self.run_pass(email=rs.REFRESH_COMMIT_EMAIL)
+        self.assertTrue(lines[0].startswith("re-armed #41"))
+        source = (ROOT / "scripts/refresh_loop_prs.py").read_text()
+        self.assertIn(f"user.email={rs.REFRESH_COMMIT_EMAIL}", source)
+        self.assertIn(rs.COMMIT_EMAIL, rs.LOOP_COMMIT_EMAILS)
+
+    def test_the_recheck_reads_one_call(self):
+        gh, _ = self.run_pass()
+        c = rs.withdraw_commands("skill", SKILL_URL)
+        self.assertIn(c["recheck"], [a for a, _ in gh.calls])
+        self.assertEqual(c["recheck"][6], "state,labels,headRefOid,commits")
+
+    def test_a_kept_armed_pr_loses_a_stale_label(self):
+        # A person re-armed it by hand: the label no longer means the loop
+        # disarmed it, so a later hand disarm stays off.
+        gates = doc({}, mode="auto")  # unknown data: keep
+        gh = FakeGh(armed=True)
+        lines = rs.withdraw_stale(gates, [pr(labels=self.LABELS)], "skill", gh)
+        self.assertEqual(gh.writes(), [["pr", "edit", SKILL_URL, "-R", rs.REGISTRY_REPO,
+                                        "--remove-label", rs.DISARMED_LABEL]])
+        self.assertIn("removed loop-disarmed", lines[0])
+        gh = FakeGh(armed=False)
+        rs.withdraw_stale(gates, [pr(labels=self.LABELS)], "skill", gh)
+        self.assertEqual(gh.writes(), [])
+        gh = FakeGh(armed=True)
+        rs.withdraw_stale(gates, [pr()], "skill", gh)
+        self.assertEqual(gh.calls, [])
+
+
+class BasisGuardTests(unittest.TestCase):
+    """R4-5: a basis later than the pull request itself, or not on the
+    loop's own first line, is ignored."""
+
+    STALE = doc({SKILL: VERDICTS["keep"]}, as_of="2026-11-02T10:00:00Z")
+
+    def body(self, stamp):
+        return f"Removes `x`: its verdict is **retire** as of {stamp} (reason).\n"
+
+    def test_a_future_basis_falls_back_to_created_at(self):
+        item = {**pr(created_at="2026-11-01T00:00:00Z"), "body": self.body("20991231T000000Z")}
+        self.assertEqual(rs.withdrawal_decision(item, self.STALE)["action"], "withdraw")
+        self.assertIsNone(rs._basis(item["body"], item["created_at"]))
+        self.assertIsNone(rs._basis(item["body"], None))
+        ok = self.body("2026-10-31T00:00:00Z")
+        self.assertIsNotNone(rs._basis(ok, "2026-10-31T00:00:00Z"))  # equal is fine
+
+    def test_only_the_loops_first_line_counts(self):
+        quoted = "Notes.\n> " + self.body("2026-12-01T00:00:00Z")
+        self.assertIsNone(rs._basis(quoted, "2027-01-01T00:00:00Z"))
+        later = "Some text\n" + self.body("2026-12-01T00:00:00Z")
+        self.assertIsNone(rs._basis(later, "2027-01-01T00:00:00Z"))
+        two = self.body("2026-10-01T00:00:00Z").rstrip("\n") + " " + \
+            self.body("2026-12-01T00:00:00Z")
+        self.assertEqual(rs._basis(two, "2027-01-01T00:00:00Z"),
+                         rs._moment("2026-10-01T00:00:00Z"))
+
+
+class LabelCreateOnlyWhenMissingTests(unittest.TestCase):
+    """R4-6: the label is created only when the add failed and the
+    repository's labels lack it."""
+
+    GATES = staticmethod(lambda: doc({SKILL: roster_added(retire())}))
+
+    def test_a_failure_with_the_label_present_creates_nothing(self):
+        gh = FakeGh(label_fails=1, repo_labels=(rs.DISARMED_LABEL,))
+        lines = rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+        self.assertFalse(any(a[:2] == ["label", "create"] for a in gh.writes()))
+        self.assertTrue(lines[0].endswith("so no pass turns its auto-merge back on"))
+        self.assertFalse(gh.armed)
+
+    def test_an_unreadable_label_list_creates_nothing(self):
+        gh = FakeGh(label_fails=1, fail=["label", "list"])
+        lines = rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+        self.assertFalse(any(a[:2] == ["label", "create"] for a in gh.writes()))
+        self.assertIn("could not add the loop-disarmed label", lines[0])
+
+    def test_the_list_is_searched_by_the_exact_name(self):
+        gh = FakeGh(label_fails=1, repo_labels=(f"{rs.DISARMED_LABEL}-old",))
+        rs.withdraw_stale(self.GATES(), [pr()], "skill", gh)
+        self.assertTrue(any(a[:2] == ["label", "create"] for a in gh.writes()))

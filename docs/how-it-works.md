@@ -810,8 +810,8 @@ pass), it carries `agent-authored`, and its author is the eval-improve App's
 bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
 
 The pull request is withdrawn when the verdict no longer supports an
-automatic removal: `keep`, `insufficient` with every cell decided, a
-`retire` lowered to a proposal, or a `retire-pending` that was not a
+automatic removal: `keep`, `insufficient` with no cell that more runs can
+still decide (or with a blocking one), a `retire` lowered to a proposal, or a `retire-pending` that was not a
 supported `retire` before `finalize` ranked it. A `retire-pending` whose raw verdict is a supported
 `retire` keeps its pull request, since only one subject retires per
 evaluation and it is simply next.
@@ -825,7 +825,9 @@ for the subject is closed as not planned and then commented on; if that
 fails, the withdrawal still stands and the status line says so.
 
 A pass judges a pull request only on results at least as new as the ones it
-was opened on: its body's "**retire** as of `<as_of>`". One whose basis is
+was opened on: the first stamp on its body's first line, "Removes ... is
+**retire** as of `<as_of>` (", ignored when it is later than the pull
+request's own creation. One whose basis is
 later than the pass's `as_of` (the results commit's time) is kept for a
 newer pass to judge; the same results judge it. With no readable basis in
 its body, a pass withdraws only pull requests created at or before its
@@ -842,19 +844,30 @@ only gets it withdrawn again.
 
 A removal whose verdict's data is incomplete is disarmed in either mode,
 never withdrawn: an `insufficient` verdict over a `missing` or
-`insufficient` cell (a roster model just added makes every cell on it
-`missing`), or a section's `retire` held to a proposal only because its
-section-alone pair has not finished. While `retirement_mode` is `proposal`,
+`insufficient` cell more runs can still decide (a roster model just added
+makes every cell on it `missing`), or a section's `retire` held to a
+proposal only because its section-alone pair has not finished and still can.
+"Can still decide" is the planner's test (`plan_week.gates_cell_blocking`):
+a cell overruled by an agent-errored trial, one at `max_runs_per_cell` pairs,
+a `cannot-discriminate` cell on enough runs or a `paused` alone cell never
+moves, so a verdict held by one is stale and withdrawn. While `retirement_mode` is `proposal`,
 a removal that is not withdrawn is disarmed too. A disarm turns auto-merge
 off, labels the pull request `loop-disarmed`, leaves it open and comments
-once. A repository without that label gets it created (`gh label create
---force`, same token) and the add is retried once; if it still fails, the
+once. If the add fails and the repository's labels lack it, the label is
+created (`gh label create --force`, same token) and the add is retried
+once; any other failure creates nothing; if it still fails, the
 disarm stands, and the status line and comment say no pass will re-arm it.
 
 In `auto` mode, a `loop-disarmed` removal whose verdict supports it again is
-armed again (`gh pr merge --auto --merge --match-head-commit`, as the
-retirement job arms it), unlabeled and commented once. A removal whose
-auto-merge a person turned off has no label, so no pass arms it again. While
+armed again. Just before, the pass reads it again and goes on only while it
+is open, still labeled, not `on-hold`, and its head commit is the loop's
+(the retirement job's or the refresh's merge). It runs `gh pr merge --auto
+--merge --match-head-commit`, as the retirement job arms it; when the checks
+have already passed, gh merges it at once, which counts as success. The label
+comes off and one comment says which happened. A pass that finds a labeled
+removal armed (a person turned auto-merge back on) takes the label off, so a
+removal whose auto-merge a person turned off stays off. One pull request's
+failed call does not stop the pass's other items; the step fails at the end. While
 a disarmed removal stays open, it blocks later removals and keeps the skill
 out of the weekly plan's improve fires; close it to decline, or merge it by
 hand.

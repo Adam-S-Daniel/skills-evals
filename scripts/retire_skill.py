@@ -197,18 +197,21 @@ marker) is filed, or the oldest open one gets a comment (its body is kept),
 to record it; any open removal notice (#557) for the subject is closed as
 not planned and then commented on, best effort. A closed removal pull request
 decides its subject, so the loop never reopens it. Only verdicts newer than
-a pull request's basis judge it: one whose body's "**retire** as of <as_of>"
-is later than the document's `as_of` is kept; with no basis in its body,
+a pull request's basis judge it: one whose body's first line, "Removes ...
+is **retire** as of <as_of> (", is later than the document's `as_of` (and
+not later than its own `created_at`) is kept; with no basis in its body,
 one whose `created_at` is later, or with either time unknown, is kept. The
 override is a person's: remove `agent-authored`, then reopen and merge by
 hand; a pull request without the label is not the loop's. While the
 target's mode is `proposal` (the one switch), and in either mode while the
 verdict's data is incomplete (an `insufficient` verdict over a `missing` or
-`insufficient` cell, or a section's `retire` lowered only by its unfinished
-alone pair), a removal is only disarmed: left open, labeled `loop-disarmed`
-and commented once. In `auto` mode a labeled one whose verdict supports it
-again is armed again and unlabeled; one a person disarmed (no label) never
-is. Unknown data never withdraws: a missing or
+`insufficient` cell more runs can decide, by the planner's own
+`plan_week.gates_cell_blocking`, or a section's `retire` lowered only by an
+alone pair that can still finish), a removal is only disarmed: left open,
+labeled `loop-disarmed` and commented once. In `auto` mode a labeled one
+whose verdict supports it again is re-read (open, labeled, not `on-hold`,
+its head commit the loop's) and armed again, a merge at once counting as
+success, and unlabeled; one a person disarmed (no label) never is. Unknown data never withdraws: a missing or
 unreadable gates document (or no guidance block) withdraws nothing and
 exits 0 with a status naming no subject, and a subject the document does
 not list, whose verdict raised in compute_gates.py (`VERDICT_RAISED`) or
@@ -247,6 +250,7 @@ import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
 import improve_gate  # noqa: E402
+import plan_week  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
@@ -1689,17 +1693,20 @@ DISARMED_LABEL_DESCRIPTION = ("Eval loop turned off auto-merge on this removal P
 #: Cell classes that say a verdict's data is unfinished (harness/gates.py
 #: `retirement`): `missing` (no run on a roster model, as for every cell on a
 #: model the roster just added) and `insufficient` (a test that has not
-#: decided). An `insufficient` verdict over one is incomplete, not stale.
+#: decided). An `insufficient` verdict over one more runs can decide (and
+#: no blocking cell) is incomplete, not stale (`_still_measured`).
 INCOMPLETE_CELL_CLASSES = frozenset({"missing", "insufficient"})
-#: The basis a removal pull request's body records (`_pr_body` and
-#: `guidance_plan`): "**retire** as of <the gates document's as_of> (".
-BASIS_RE = re.compile(r"\*\*retire\*\* as of (\S+) \(")
+#: The basis a removal pull request's body records on its first line
+#: (`_pr_body` and `guidance_plan`): "Removes ... is **retire** as of <the
+#: gates document's as_of> (". Matched from the body's start only.
+BASIS_RE = re.compile(r"Removes [^\n]*? is \*\*retire\*\* as of (\S+) \(")
 #: harness/gates.py's reason for a section `retire` whose alone pair is
 #: unfinished (`removal_support` takes a parameter named `gates`).
 ALONE_UNFINISHED_REASON = gates.ALONE_UNFINISHED_REASON
 #: The events that may withdraw: the daily retirement job and the pass after
-#: every ingest (loop-pr-refresh.yml). Withdrawal only disarms, closes and
-#: files an issue; it never arms or opens anything.
+#: every ingest (loop-pr-refresh.yml). A pass disarms, closes and files an
+#: issue, and arms again only a removal it disarmed itself (DISARMED_LABEL,
+#: `rearm`); it never opens anything.
 WITHDRAW_EVENTS = ("schedule", "workflow_run")
 #: Per target: the repository, the loop's head prefix, the gates document's
 #: verdict block, and how its mode is read.
@@ -1764,11 +1771,10 @@ def removal_support(gates: dict, entry, target: str = "skill") -> tuple:
     if verdict == "retire-pending" and entry.get("raw_verdict") == "retire":
         verdict = "retire"
     if verdict != "retire":
-        if verdict == "insufficient" and any(
-                isinstance(c, dict) and c.get("class") in INCOMPLETE_CELL_CLASSES
-                for c in cells or []):
-            return "incomplete", ("the verdict is insufficient because a cell is missing "
-                                  "or insufficient (runs still to come, or a roster model "
+        if verdict == "insufficient" and _still_measured(cells or []):
+            return "incomplete", ("the verdict is insufficient because a cell is still "
+                                  "being measured (missing or insufficient, and more runs "
+                                  "can decide it: runs still to come, or a roster model "
                                   "with none yet)")
         return "stale", f"the verdict is {entry['verdict']}, not retire"
     try:
@@ -1779,7 +1785,8 @@ def removal_support(gates: dict, entry, target: str = "skill") -> tuple:
         lowered = guidance_proposal_only(entry)
         if lowered is not None and cells_allow_auto(entry) and (
                 lowered == ALONE_UNFINISHED_REASON
-                or entry.get("removal_reason") == ALONE_UNFINISHED_REASON):
+                or entry.get("removal_reason") == ALONE_UNFINISHED_REASON) \
+                and _alone_can_finish(entry.get("alone")):
             return "incomplete", ALONE_UNFINISHED_REASON
     else:
         lowered = proposal_only(entry)
@@ -1788,11 +1795,53 @@ def removal_support(gates: dict, entry, target: str = "skill") -> tuple:
     return "supported", "the verdict is still retire with an automatic removal"
 
 
-def _basis(body):
+def _movable(cell) -> bool:
+    """Whether more runs can still decide a cell: `missing`, `insufficient`
+    or `cannot-discriminate` (on few runs) and not blocking by the
+    planner's own test (`plan_week.gates_cell_blocking`: an errored-trial
+    overrule, `at_cap`, or a cannot-discriminate cell on enough runs). PR
+    #740 round 4's R4-1: a cell that can never move is not incomplete
+    data."""
+    return isinstance(cell, dict) \
+        and cell.get("class") in ("missing", "insufficient", "cannot-discriminate") \
+        and not plan_week.gates_cell_blocking(cell)
+
+
+def _still_measured(cells: list) -> bool:
+    """An `insufficient` verdict's cells can still turn it: one is a
+    `missing` or `insufficient` cell more runs can decide, and none is
+    blocking (the planner calls such a subject `blocked`: no run moves
+    it)."""
+    cells = [c for c in cells if isinstance(c, dict)]
+    return any(c.get("class") in INCOMPLETE_CELL_CLASSES and _movable(c) for c in cells) \
+        and not any(plan_week.gates_cell_blocking(c) for c in cells)
+
+
+def _alone_can_finish(alone) -> bool:
+    """Whether an unfinished section-alone pair can still finish: no alone
+    cell yet (the planner fires the pair), or every undecided alone cell
+    (gates.ALONE_UNDECIDED_CLASSES) is one more runs can decide. A `paused`
+    alone cell gets no more fires, and a blocking one is frozen, so that
+    pair never finishes (R4-1)."""
+    cells = (alone or {}).get("cells") if isinstance(alone, dict) else None
+    cells = [c for c in cells or [] if isinstance(c, dict)]
+    return all(c.get("class") not in gates.ALONE_UNDECIDED_CLASSES or _movable(c)
+               for c in cells)
+
+
+def _basis(body, created_at=None):
     """The `as_of` a removal pull request's body says it was opened on, as
-    an aware datetime, or None when the body records none that parses."""
-    match = BASIS_RE.search(body) if isinstance(body, str) else None
-    return _moment(match.group(1)) if match else None
+    an aware datetime, or None. Only the loop's own opening line counts:
+    the body's first line, "Removes ... is **retire** as of <as_of> (" (the
+    first stamp on it), so a quote or a later line cannot supply one. A
+    basis later than the pull request's `created_at` is None too (R4-5): no
+    pull request is opened on results newer than itself."""
+    match = BASIS_RE.match(body) if isinstance(body, str) else None
+    basis = _moment(match.group(1)) if match else None
+    opened = _moment(created_at)
+    if basis is None or opened is None or basis > opened:
+        return None
+    return basis
 
 
 def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> dict:
@@ -1816,10 +1865,11 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
     proposal mode).
 
     A pull request is withdrawn only by verdicts newer than the results it
-    was opened on (round 3's M2): the `as_of` its body records
-    ("**retire** as of <as_of> (", BASIS_RE) must not be later than the
-    gates document's. A body with no parseable basis falls back to its
-    `created_at` (R2-1): one created after the gates document's `as_of` is
+    was opened on (round 3's M2): the `as_of` its body's first line records
+    ("Removes ... is **retire** as of <as_of> (", BASIS_RE) must not be
+    later than the gates document's. A body with no parseable basis, or one
+    later than its `created_at` (R4-5), falls back to its `created_at`
+    (R2-1): one created after the gates document's `as_of` is
     kept, as it is when either time is missing or unparseable. A pass that
     started on older results can otherwise close, for good, a removal the
     retirement job has just opened on newer ones."""
@@ -1845,7 +1895,7 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
         return {"action": "disarm", "cause": "incomplete", "subject": subject, "why": why}
     if state == "stale":
         judged = _moment(gates.get("as_of"))
-        basis = _basis(pr.get("body"))
+        basis = _basis(pr.get("body"), pr.get("created_at"))
         if basis is not None and judged is not None:
             if basis > judged:
                 return {"action": "keep", "subject": subject,
@@ -1910,8 +1960,9 @@ def disarm_comment(decision: dict, run_url: str | None, labeled: bool = True) ->
              f"turn auto-merge back on by hand (a merge commit): the `{DISARMED_LABEL}` "
              "label could not be added, so no pass does")
     if decision.get("cause") == "incomplete":
-        why = ("The subject's verdict is not complete yet, so this removal neither "
-               f"merges nor is withdrawn: {decision['why']}. This pull request stays "
+        why = ("The subject's verdict is still being measured: more runs can still "
+               "decide it, so this removal neither merges nor is withdrawn: "
+               f"{decision['why']}. This pull request stays "
                "open; once the verdict supports an automatic removal again in `auto` "
                f"mode, {rearm}, and if the verdict turns against the removal it is "
                "withdrawn.")
@@ -1929,13 +1980,17 @@ def disarm_comment(decision: dict, run_url: str | None, labeled: bool = True) ->
             + "\n\n" + AGENT_MARKER + "\n")
 
 
-def rearm_comment(decision: dict, run_url: str | None) -> str:
-    """The comment a removal the loop disarmed gets when it is armed again."""
+def rearm_comment(decision: dict, run_url: str | None, merged: bool = False) -> str:
+    """The comment a removal the loop disarmed gets when it is armed again;
+    `merged`: its checks had passed, so arming it merged it at once."""
+    then = ("Its required checks had already passed, so it merged at once (merge "
+            "commit); revert it to restore the subject." if merged else
+            "It merges (merge commit) once required checks pass. To decline the "
+            "removal, close it.")
     return (f"{REARMED_MARKER.format(subject=decision['subject'])}\n"
             "**Auto-merge turned back on.** A pass turned it off earlier (the "
             f"`{DISARMED_LABEL}` label); the subject's verdict supports an automatic "
-            f"removal again in `auto` mode: {decision['why']}. It merges (merge commit) "
-            "once required checks pass. To decline the removal, close it. Rule: "
+            f"removal again in `auto` mode: {decision['why']}. {then} Rule: "
             f"[ADR 0014]({ADR})."
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\n" + AGENT_MARKER + "\n")
@@ -1958,9 +2013,11 @@ def removal_prs(gh, target: str) -> list:
 def withdraw_commands(target: str, url: str) -> dict:
     """The calls one withdrawal, disarm or re-arm makes: (state) the pull
     request must still be open; (merge) auto-merge off, then (view) read
-    back; (label) DISARMED_LABEL on, after (create_label) when the
-    repository lacks it; (comment); (close), which keeps the branch. A re-arm reads (head) the head commit, arms (arm) as `execute`
-    does, reads back (view) and takes the label off (unlabel)."""
+    back; (label) DISARMED_LABEL on, after (labels) the repository's labels
+    show it missing and (create_label) creates it; (comment); (close), which
+    keeps the branch. A re-arm re-reads (recheck) the state, labels and head
+    commit, arms (arm) as `execute` does, reads back (state, then view) and
+    takes the label off (unlabel)."""
     repo = WITHDRAW_TARGETS[target]["repo"]
     return {"state": ["pr", "view", url, "-R", repo, "--json", "state", "--jq", ".state"],
             "merge": ["pr", "merge", url, "-R", repo, "--disable-auto"],
@@ -1971,8 +2028,10 @@ def withdraw_commands(target: str, url: str) -> dict:
                              DISARMED_LABEL_COLOR, "--description",
                              DISARMED_LABEL_DESCRIPTION, "--force"],
             "unlabel": ["pr", "edit", url, "-R", repo, "--remove-label", DISARMED_LABEL],
-            "head": ["pr", "view", url, "-R", repo, "--json", "headRefOid", "--jq",
-                     ".headRefOid"],
+            "labels": ["label", "list", "-R", repo, "--search", DISARMED_LABEL,
+                       "--json", "name", "--jq", ".[].name"],
+            "recheck": ["pr", "view", url, "-R", repo, "--json",
+                        "state,labels,headRefOid,commits", "--jq", RECHECK_JQ],
             "arm": ["pr", "merge", url, "-R", repo, "--auto", "--merge",
                     "--match-head-commit", "<head sha>"],
             "comment": ["pr", "comment", url, "-R", repo, "--body-file", "-"],
@@ -1993,8 +2052,8 @@ def would_run(target: str, item: dict) -> list:
     if item["action"] == "disarm":
         return [c["state"], c["view"], c["merge"], c["view"], c["label"], c["comment"]]
     if item["action"] == "rearm":
-        return [c["state"], c["view"], c["head"], c["arm"], c["view"], c["unlabel"],
-                c["comment"]]
+        return [c["state"], c["view"], c["recheck"], c["arm"], c["state"], c["view"],
+                c["unlabel"], c["comment"]]
     return []
 
 
@@ -2013,7 +2072,8 @@ def withdraw_plan(gates: dict | None, prs: list, target: str) -> list:
         if decision["action"] in ("withdraw", "disarm", "rearm") and (
                 not match or type(number) is not int or match.group(1) != str(number)):
             raise RetireError("an open pull request record from the API is malformed")
-        out.append({**decision, "number": number, "url": url})
+        out.append({**decision, "number": number, "url": url,
+                    "labels": [x for x in pr.get("labels") or [] if isinstance(x, str)]})
     return out
 
 
@@ -2079,19 +2139,25 @@ def close_removal_notices(item: dict, gates: dict, target: str, gh,
 
 def add_disarmed_label(c: dict, registry_gh) -> bool:
     """DISARMED_LABEL on a pull request this pass disarmed; True once it is
-    on. When the add fails (the repository has no such label yet), the
-    label is created (`--force`, so an existing one is only updated) and
-    the add is tried once more. Auto-merge is already off by then, so a
-    failure only loses the later re-arm: False, never an exception, and no
-    error detail is kept."""
+    on. Only when the add failed AND the repository's labels (read back)
+    lack it (R4-6: a transient failure must not recreate an existing label)
+    is the label created and the add tried once more. Auto-merge is already
+    off by then, so a failure only loses the later re-arm: False, never an
+    exception, and no error detail is kept."""
     try:
         registry_gh(c["label"])
         return True
     except Exception:  # noqa: BLE001 - the disarm stands either way
         pass
     try:
+        names = [n.strip() for n in registry_gh(c["labels"]).split("\n")]
+    except Exception:  # noqa: BLE001 - not known to be missing: create nothing
+        return False
+    if DISARMED_LABEL in names:
+        return False
+    try:
         registry_gh(c["create_label"])
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - another pass may have created it
         pass
     try:
         registry_gh(c["label"])
@@ -2100,23 +2166,134 @@ def add_disarmed_label(c: dict, registry_gh) -> bool:
         return False
 
 
+#: The commit authors a loop removal's head may carry (R4-4): the
+#: retirement job's removal commit (`prepare_branch`, `guidance_prepare_branch`)
+#: and loop-pr-refresh.yml's merge of the base (scripts/refresh_loop_prs.py).
+REFRESH_COMMIT_EMAIL = "skills-evals@users.noreply.github.com"
+LOOP_COMMIT_EMAILS = (COMMIT_EMAIL, REFRESH_COMMIT_EMAIL)
+RECHECK_JQ = ('{state: .state, labels: [.labels[].name], head: .headRefOid, '
+              'last: (.commits[-1].oid // ""), '
+              'emails: [(.commits[-1].authors // [])[].email]}')
+
+
+def _recheck(item: dict, c: dict, registry_gh) -> tuple:
+    """(head sha, None) when a removal may be armed again now, else (None,
+    why). Read just before the arm (R4-4): still open, still labeled
+    DISARMED_LABEL, not `on-hold`, and its head commit is the loop's
+    (LOOP_COMMIT_EMAILS). RetireError for a reply that does not parse."""
+    try:
+        now = json.loads(registry_gh(c["recheck"]))
+    except ValueError:
+        now = None
+    head = now.get("head") if isinstance(now, dict) else None
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-f]{40}", head) \
+            or not isinstance(now.get("labels"), list) \
+            or not isinstance(now.get("emails"), list):
+        raise RetireError(f"#{item['number']}'s head commit could not be read")
+    if now.get("state") != "OPEN":
+        return None, "it is no longer open"
+    if ON_HOLD_LABEL in now["labels"]:
+        return None, f"it is labeled {ON_HOLD_LABEL}"
+    if DISARMED_LABEL not in now["labels"]:
+        return None, f"it no longer carries {DISARMED_LABEL}"
+    if now.get("last") != head or not any(e in LOOP_COMMIT_EMAILS for e in now["emails"]):
+        return None, "its head commit is not the loop's"
+    return head, None
+
+
 def rearm(item: dict, c: dict, armed: bool, registry_gh, run_url: str | None) -> str:
-    """Arm again a removal the loop disarmed (R2-5): auto-merge on with the
-    command `execute` uses, at the head read now, read back, then the label
-    off and one comment; the status line. An armed one only loses the
-    label."""
-    if not armed:
-        head = registry_gh(c["head"]).strip()
-        if not re.fullmatch(r"[0-9a-f]{40}", head):
-            raise RetireError(f"#{item['number']}'s head commit could not be read")
-        registry_gh([*c["arm"][:-1], head])
-        if registry_gh(c["view"]).strip() != "MERGE":
-            raise RetireError(f"auto-merge (merge commit) is not enabled on #{item['number']}")
-    registry_gh(c["unlabel"])
+    """Arm again a removal the loop disarmed (R2-5): re-checked (`_recheck`),
+    auto-merge on with the command `execute` uses at that head, read back,
+    then the label off and one comment; the status line. gh merges a pull
+    request that can merge now instead of arming it (R4-2), so a read-back
+    of MERGED is success too: the comment says it merged, and the label
+    comes off best effort. An armed one only loses the label."""
+    n = item["number"]
     if armed:
-        return f"unlabeled #{item['number']}: auto-merge was already on"
+        registry_gh(c["unlabel"])
+        return f"unlabeled #{n}: auto-merge was already on"
+    head, why = _recheck(item, c, registry_gh)
+    if head is None:
+        return f"skipped #{n}: {why}, so it is not armed again"
+    registry_gh([*c["arm"][:-1], head])
+    if registry_gh(c["state"]).strip() == "MERGED":
+        try:
+            registry_gh(c["unlabel"])
+        except Exception:  # noqa: BLE001 - the merge stands; the label is cosmetic
+            pass
+        registry_gh(c["comment"], rearm_comment(item, run_url, merged=True))
+        return f"re-armed #{n}, and it merged at once: {item['why']}"
+    if registry_gh(c["view"]).strip() != "MERGE":
+        raise RetireError(f"auto-merge (merge commit) is not enabled on #{n}")
+    registry_gh(c["unlabel"])
     registry_gh(c["comment"], rearm_comment(item, run_url))
-    return f"re-armed #{item['number']}: {item['why']}"
+    return f"re-armed #{n}: {item['why']}"
+
+
+class WithdrawFailed(RetireError):
+    """At least one pull request's calls failed; `lines` holds every item's
+    status line, the failed ones included, so a failure never hides the
+    others (R4-2)."""
+
+    def __init__(self, message: str, lines: list):
+        super().__init__(message)
+        self.lines = lines
+
+
+def _act(item: dict, gates: dict, target: str, registry_gh, gh, run_url) -> str:
+    """One planned item's calls; its status line."""
+    n = item["number"]
+    c = withdraw_commands(target, item["url"])
+    if item["action"] == "keep":
+        line = f"kept #{n}: {item['why']}"
+        if DISARMED_LABEL in item.get("labels", ()) and item.get("subject") \
+                and registry_gh(c["state"]).strip() == "OPEN" \
+                and registry_gh(c["view"]).strip():
+            # Armed by someone since the loop disarmed it: the label no
+            # longer means "the loop disarmed it and nobody re-armed" (R4-4).
+            registry_gh(c["unlabel"])
+            line += f"; removed {DISARMED_LABEL}, since auto-merge is on"
+        return line
+    if registry_gh(c["state"]).strip() != "OPEN":
+        return f"skipped #{n}: it is no longer open"
+    armed = bool(registry_gh(c["view"]).strip())
+    if item["action"] == "rearm":
+        return rearm(item, c, armed, registry_gh, run_url)
+    if armed:
+        registry_gh(c["merge"])
+        if registry_gh(c["view"]).strip():
+            raise RetireError(f"auto-merge is still enabled on #{n}")
+    if item["action"] == "disarm":
+        if not armed:
+            return f"left #{n} open and disarmed: {item['why']}"
+        # Labeled only when this pass turned auto-merge off: a pull request
+        # a person disarmed is never armed again (R2-5).
+        labeled = add_disarmed_label(c, registry_gh)
+        registry_gh(c["comment"], disarm_comment(item, run_url, labeled))
+        return f"disarmed #{n}: {item['why']}" + (
+            "" if labeled else f"; could not add the {DISARMED_LABEL} label, "
+                               "so no pass turns its auto-merge back on")
+    registry_gh(c["comment"], withdrawal_comment(item, gates, run_url))
+    registry_gh(c["close"])
+    issue = withdrawal_issue(item, gates, target, gh, run_url)
+    if issue["action"] == "update-issue":
+        gh(["issue", "comment", str(issue["issue"]), "-R", EVALS_REPO, "--body-file", "-"],
+           issue["comment"])
+        filed = f"commented on issue #{issue['issue']}"
+    else:
+        gh(["issue", "create", "-R", EVALS_REPO, "--title", issue["title"],
+            "--body-file", "-"], issue["body"])
+        filed = "filed its retirement issue"
+    # Best effort: the withdrawal has happened; a notice left open is
+    # named in the status line, never a failed pass.
+    try:
+        closed = close_removal_notices(item, gates, target, gh, run_url)
+    except Exception:  # noqa: BLE001
+        filed += "; could not close its removal notice"
+    else:
+        if closed:
+            filed += "; closed its removal notice " + ", ".join(closed)
+    return f"withdrew #{n}: {item['why']}; {filed}"
 
 
 def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
@@ -2124,60 +2301,21 @@ def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
     """Withdraw every stale loop removal pull request among `prs` (the
     listing `removal_prs` read), disarm every one the `proposal` switch or
     incomplete data holds, and re-arm every one the loop disarmed that is
-    supported again in `auto` mode; the status lines. Pull request writes go through `registry_gh`;
-    the retirement issue and the removal notice through `gh` (the job's
-    token; default `registry_gh`)."""
+    supported again in `auto` mode; the status lines. Pull request writes
+    go through `registry_gh`; the retirement issue and the removal notice
+    through `gh` (the job's token; default `registry_gh`). One item's failed
+    call does not stop the others: WithdrawFailed at the end, with every
+    status line (R4-2). A malformed listing still refuses before any write."""
     gh = gh or registry_gh
-    lines = []
+    lines, errors = [], []
     for item in withdraw_plan(gates, prs, target):
-        if item["action"] == "keep":
-            lines.append(f"kept #{item['number']}: {item['why']}")
-            continue
-        c = withdraw_commands(target, item["url"])
-        if registry_gh(c["state"]).strip() != "OPEN":
-            lines.append(f"skipped #{item['number']}: it is no longer open")
-            continue
-        armed = bool(registry_gh(c["view"]).strip())
-        if item["action"] == "rearm":
-            lines.append(rearm(item, c, armed, registry_gh, run_url))
-            continue
-        if armed:
-            registry_gh(c["merge"])
-            if registry_gh(c["view"]).strip():
-                raise RetireError(f"auto-merge is still enabled on #{item['number']}")
-        if item["action"] == "disarm":
-            if armed:
-                # Labeled only when this pass turned auto-merge off: a pull
-                # request a person disarmed is never armed again (R2-5).
-                labeled = add_disarmed_label(c, registry_gh)
-                registry_gh(c["comment"], disarm_comment(item, run_url, labeled))
-                lines.append(f"disarmed #{item['number']}: {item['why']}" + (
-                    "" if labeled else f"; could not add the {DISARMED_LABEL} label, "
-                                       "so no pass turns its auto-merge back on"))
-            else:
-                lines.append(f"left #{item['number']} open and disarmed: {item['why']}")
-            continue
-        registry_gh(c["comment"], withdrawal_comment(item, gates, run_url))
-        registry_gh(c["close"])
-        issue = withdrawal_issue(item, gates, target, gh, run_url)
-        if issue["action"] == "update-issue":
-            gh(["issue", "comment", str(issue["issue"]), "-R", EVALS_REPO, "--body-file", "-"],
-               issue["comment"])
-            filed = f"commented on issue #{issue['issue']}"
-        else:
-            gh(["issue", "create", "-R", EVALS_REPO, "--title", issue["title"],
-                "--body-file", "-"], issue["body"])
-            filed = "filed its retirement issue"
-        # Best effort: the withdrawal has happened; a notice left open is
-        # named in the status line, never a failed pass.
         try:
-            closed = close_removal_notices(item, gates, target, gh, run_url)
-        except Exception:  # noqa: BLE001
-            filed += "; could not close its removal notice"
-        else:
-            if closed:
-                filed += "; closed its removal notice " + ", ".join(closed)
-        lines.append(f"withdrew #{item['number']}: {item['why']}; {filed}")
+            lines.append(_act(item, gates, target, registry_gh, gh, run_url))
+        except RetireError as exc:
+            errors.append(str(exc))
+            lines.append(f"failed #{item['number']}: {exc}")
+    if errors:
+        raise WithdrawFailed("; ".join(errors), lines)
     return lines or ["no open removal pull request to withdraw"]
 
 
@@ -2204,7 +2342,13 @@ def withdraw_main(args, env, gh, registry_gh, run_url, out) -> int:
         return 0
     if any(i["action"] in ("withdraw", "disarm", "rearm") for i in items):
         check_auto_env(env)
-    for line in withdraw_stale(gates, prs, args.target, registry_gh, run_url, gh):
+    try:
+        lines = withdraw_stale(gates, prs, args.target, registry_gh, run_url, gh)
+    except WithdrawFailed as exc:
+        for line in exc.lines:
+            out.write(f"retire_skill: {line}\n")
+        raise
+    for line in lines:
         out.write(f"retire_skill: {line}\n")
     return 0
 

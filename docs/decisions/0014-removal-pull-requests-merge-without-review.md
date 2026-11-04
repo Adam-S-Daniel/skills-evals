@@ -713,7 +713,10 @@ is closed; that step is best effort and never stops the withdrawal (PR #724
 round 2's R2-3 and R2-6, round 3's m2).
 
 **Only verdicts newer than its basis withdraw.** A removal pull request's
-body records the results it was opened on: "**retire** as of `<as_of>`".
+body records the results it was opened on, on its first line: "Removes ...
+is **retire** as of `<as_of>` (". Only that line's first stamp counts, and
+a basis later than the pull request's own `created_at` is ignored (PR #740
+round 4's R4-5: an edited body cannot keep a stale removal armed).
 A pass keeps it when that basis is later than the pass's own `as_of` (the
 results commit's time), and judges it otherwise, the same results included
 (PR #724 round 3's M2). A body with no parseable basis falls back to the
@@ -736,20 +739,31 @@ empty or partial block withdraws nothing), a verdict that raised in
 `compute_gates.py` (`VERDICT_RAISED`), and a `retire` that fails the
 re-check.
 
-**Incomplete data disarms (round 3's M1).** Undecided data argues neither
-for the removal nor against it, so `removal_support` calls it `incomplete`:
+**Incomplete data disarms (round 3's M1).** Data more runs can still decide
+argues neither for the removal nor against it, so `removal_support` calls
+it `incomplete`:
 
-- an `insufficient` verdict over a cell whose class is `missing` or
-  `insufficient`. Adding a roster model makes every cell on it `missing`
-  (`harness/gates.py`, "no run on this model"), so without this rule every
-  open removal was withdrawn for good at the first ingest after a roster
-  change;
+- an `insufficient` verdict over a `missing` or `insufficient` cell more runs
+  can decide, with no blocking cell. Adding a roster model makes every cell
+  on it `missing` (`harness/gates.py`, "no run on this model"), so without
+  this rule every open removal was withdrawn for good at the first ingest
+  after a roster change;
 - a section's `retire` whose only lowering is its unfinished section-alone
-  pair (`ALONE_UNFINISHED_REASON`, skills-evals#738).
+  pair (`ALONE_UNFINISHED_REASON`, skills-evals#738), while that pair can
+  still finish: no alone cell yet, or every undecided one movable.
 
-In both modes such a removal is disarmed, never withdrawn, and the refresh
-leaves it alone. A `keep`, or an `insufficient` verdict with no such cell
-(no fixture on main, every cell parked), is still stale.
+"Can decide" is the planner's own test, `plan_week.gates_cell_blocking`
+(its `_blocking` over a gates cell; PR #740 round 4's R4-1), so the planner
+and the withdrawal never disagree. A cell it calls blocking can never move:
+a `no-benefit` or `no-clear-effect` overruled by an agent-errored trial, an
+`insufficient` cell at `max_runs_per_cell` pairs (`at_cap`), or a
+`cannot-discriminate` cell on enough runs. A `paused` alone cell gets no more
+fires. A verdict held by any of them is stale and withdrawn.
+
+In both modes an incomplete removal is disarmed, never withdrawn, and the
+refresh leaves it alone. A `keep`, an `insufficient` verdict with no movable
+unfinished cell (no fixture on main, every cell parked, a blocking cell), or
+an alone pair that cannot finish is stale.
 
 **The one switch.** While a target's mode is `proposal`, a loop removal
 that is not withdrawn is disarmed instead: auto-merge is turned off and read
@@ -760,18 +774,34 @@ already open and armed.
 
 **Re-arm (R2-5).** A pass that turns auto-merge off also labels the pull
 request `loop-disarmed`. In `auto` mode, a labeled removal whose verdict
-supports it again and that is not armed is armed again with the command the
-retirement job uses (`gh pr merge --auto --merge --match-head-commit` at
-the head read then), read back, unlabeled and commented once. Only the label
-re-arms: a removal whose auto-merge a person turned off carries no label and
-stays off, and one labeled `on-hold` is never touched. The pull request
+supports it again and that is not armed is armed again. Just before the arm
+the pass reads the pull request again (state, labels, head commit; PR #740
+round 4's R4-4) and goes on only while it is open, still labeled
+`loop-disarmed`, not `on-hold`, and its head commit's author is the loop's:
+the retirement job's commit identity or `refresh_loop_prs.py`'s merge
+(`LOOP_COMMIT_EMAILS`). It then runs the retirement job's command (`gh pr
+merge --auto --merge --match-head-commit` at that head). gh merges a pull
+request whose checks have passed at once instead of arming it (R4-2), so the
+read-back accepts `MERGED` as well as an armed merge commit; either way the
+label comes off (best effort once merged) and one comment says which
+happened. Anything else raises.
+
+Only the label re-arms, and the label means only "the loop disarmed it and
+nobody has armed it since": a pass that finds a labeled pull request armed
+(a person turned auto-merge back on) takes the label off. So a removal whose
+auto-merge a person turned off stays off, unless that person re-armed and
+disarmed it between two passes, which no pass sees. One labeled `on-hold` is
+never touched. Anyone who can label a pull request can add `loop-disarmed`;
+the head-commit check keeps that from arming a commit the loop did not
+write. The pull request
 writes, re-arm included, use the eval-improve App token, which needs
 `contents: write` for the re-arm in `loop-pr-refresh.yml` as it does in the
 retirement job.
 
-The pass provisions the label itself. When adding it fails (the repository
-has no `loop-disarmed` label yet), it runs `gh label create loop-disarmed
---force` with the same token and retries the add once. GitHub lets an
+The pass provisions the label itself. When adding it fails and the
+repository's labels (`gh label list --search`) lack it, it runs `gh label
+create loop-disarmed --force` with the same token and retries the add once;
+any other failure creates nothing (R4-6). GitHub lets an
 installation token with `pull-requests: write` create a label (`POST
 /repos/{owner}/{repo}/labels` is listed under both the Issues and the Pull
 requests permission in "Permissions required for GitHub Apps"), so the mints
@@ -808,6 +838,19 @@ that window is not covered. Two more windows are not covered either (round
   daily run: those passes judge it on the same results as its basis or
   newer ones, and the same results withdraw. Until then, the refresh still re-checks the verdict before it
   brings a removal up to date, so it never re-runs that removal's checks.
+- (c) The daily `retirement` job and an ingest's `withdraw` job run in
+  different concurrency groups, so their passes can overlap (PR #740 round
+  4's R4-3, with round 3's m1). In that overlap one pass can act on verdicts
+  the other has already superseded: both can withdraw one pull request (two
+  comments, two retirement issues), and a pass on older verdicts can re-arm
+  a removal a pass on newer ones has just disarmed. A change on main (a
+  roster model added) leaves both passes on the same `as_of`, so no time
+  rule tells them apart. With the checks already passed, that re-arm merges
+  at once. The window is the overlap of the two jobs, and the next pass
+  corrects only what has not merged.
+
+A failed call on one pull request no longer stops the pass: the other items
+still act, every status line is printed, and the step then fails (R4-2).
 
 **The override and the decision.** A closed removal pull request decides its
 subject, as before for skills and now for sections too

@@ -975,6 +975,23 @@ def _blocking(cell: dict) -> bool:
             and (cell.get("without_counted") or 0) >= BLOCKING_MIN_RUNS)
 
 
+def counted_runs(cell: dict) -> dict:
+    """A gates cell's COUNTED runs per arm (its arm summaries' `runs`), as
+    `with_counted` and `without_counted`, the fields `_blocking` reads."""
+    arms = {role: cell.get(role) for role in ("with", "without")}
+    return {f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
+            for role, arm in arms.items()}
+
+
+def gates_cell_blocking(cell: dict) -> bool:
+    """`_blocking` for a cell as harness/gates.py writes it (a gates
+    document's cell): the one test the planner and scripts/retire_skill.py's
+    withdrawal share for "more runs on the current content cannot move this
+    cell" (PR #740 round 4's R4-1)."""
+    return _blocking({"class": cell.get("class"), "reason": cell.get("reason"),
+                      "at_cap": cell.get("at_cap") is True, **counted_runs(cell)})
+
+
 def guidance_focus(ctx: dict) -> tuple:
     """([{section, score}], {section: progress}) for the guidance focus,
     from the eval cells alone (module docstring, band 4). A section's score
@@ -2828,14 +2845,12 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # cell's confidence blocks, its reason and its COUNTED runs
                 # per arm (the arm summaries' `runs`; `with_runs` above
                 # counts every pooled run, skipped ones included).
-                arms = {role: (cell or {}).get(role) for role in ("with", "without")}
                 cells[-1].update({
                     "objective": (cell or {}).get("objective"),
                     "judge": (cell or {}).get("judge"),
                     "judge_carried": bool((cell or {}).get("judge_carried")),
                     "reason": (cell or {}).get("reason"),
-                    **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
-                       for role, arm in arms.items()}})
+                    **counted_runs(cell or {})})
     # A fire past PENDING_WINDOW is lost when the routine has delivered a run
     # of any cell since it started: the routine is up, so this fire alone
     # failed, and its cell is planned again now. With no delivery since,
