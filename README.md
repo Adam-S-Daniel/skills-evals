@@ -124,6 +124,7 @@ evals/
   platform-release-and-bump/ # A/B eval, Class A+B: local platform consumer bump
     fixture.yaml           # tagged verifier exit, structural refs, caller set, replay restraint
     seed/                  # older consumer pins and fixed platform release machinery
+  sync-cc-settings-between-wsl-and-windows/  # reviewed trigger-eval-set.json only, no fixture yet
   skills-doctor/           # A/B eval, Class B: diagnose what a session is
     bucketed-account-store/ # actually being delivered, when the account store
       fixture.yaml         # is bucketed per account and its copy of a skill is
