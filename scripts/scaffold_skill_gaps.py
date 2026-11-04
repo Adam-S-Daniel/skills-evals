@@ -18,6 +18,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -40,6 +41,10 @@ REGISTRY_POLICY = {entry["name"]: entry for entry in yaml.safe_load(
 
 class GapError(Exception):
     """A safe refusal; the message contains no registry content."""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 def _revision(path: Path) -> str:
@@ -272,7 +277,8 @@ class GitHub:
         except urllib.error.HTTPError as exc:
             if missing_ok and exc.code == 404:
                 return None
-            raise GapError(f"GitHub {method} request failed with HTTP {exc.code}") from None
+            raise GapError(f"GitHub {method} request failed with HTTP {exc.code}",
+                           exc.code) from None
         except (urllib.error.URLError, TimeoutError) as exc:
             raise GapError(f"GitHub {method} request failed") from exc
         try:
@@ -293,19 +299,38 @@ class GitHub:
         raise GapError("GitHub list exceeded the checked pagination limit")
 
 
+# Other publishers, this workflow's own regression-publish job among them,
+# push persistent/eval-results every minute or two. A contents-API write that
+# races one of those pushes is refused with 409 (run 41866904451, 2026-11-04:
+# regression-publish pushed at 16:25:19Z as this job's first PUT ran), so a
+# 409 re-reads the file and tries again, waiting about 2, 4, 8 and 16 s.
+PUT_ATTEMPTS = 5
+
+
+def _sleep(seconds: float) -> None:
+    time.sleep(seconds)
+
+
 def _put_coverage(api: GitHub, path: str, raw: bytes) -> None:
     url = f"/repos/{REPO}/contents/{path}"
-    existing = api.request("GET", url + "?ref=persistent/eval-results", missing_ok=True)
-    if existing is not None:
-        old = _decode_content(existing)
-        if old == raw:
+    for attempt in range(1, PUT_ATTEMPTS + 1):
+        existing = api.request("GET", url + "?ref=persistent/eval-results", missing_ok=True)
+        if existing is not None:
+            old = _decode_content(existing)
+            if old == raw:
+                return
+        payload = {"message": "Publish complete skill coverage census",
+                   "content": base64.b64encode(raw).decode("ascii"),
+                   "branch": "persistent/eval-results"}
+        if existing is not None:
+            payload["sha"] = existing["sha"]
+        try:
+            api.request("PUT", url, payload)
             return
-    payload = {"message": "Publish complete skill coverage census",
-               "content": base64.b64encode(raw).decode("ascii"),
-               "branch": "persistent/eval-results"}
-    if existing is not None:
-        payload["sha"] = existing["sha"]
-    api.request("PUT", url, payload)
+        except GapError as exc:
+            if exc.status != 409 or attempt == PUT_ATTEMPTS:
+                raise
+        _sleep(2 ** attempt)
 
 
 def _decode_content(item: dict) -> bytes:
@@ -498,7 +523,12 @@ def main(argv: list[str] | None = None) -> int:
             tags = automate(GitHub(os.environ.get("GH_TOKEN", "")) if args.write else None,
                             coverage, sources, args.run_id, args.main_sha, write=args.write)
             print(f"Public GAP proposals requiring work: {len(tags)}")
-    except (GapError, OSError, ValueError, KeyError, TypeError, UnicodeError,
+    except GapError as exc:
+        # GapError messages are fixed text written in this file, never data.
+        print(f"skill-gap automation refused incomplete or unsafe input: {exc}",
+              file=sys.stderr)
+        return 2
+    except (OSError, ValueError, KeyError, TypeError, UnicodeError,
             binascii.Error, context.ContextError) as exc:
         # The exception text of malformed artifacts or API bodies can contain
         # private data; workflow logs receive a fixed refusal only.
