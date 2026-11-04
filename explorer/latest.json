@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:55:58Z",
+  "generated_at": "2026-11-04T01:00:45Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:55:05Z",
+ "generated_at": "2026-11-04T00:59:52Z",
  "guidance": {
   "removed": [
    {
@@ -9548,7 +9548,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T00:53:32Z",
+ "newest_run": "2026-11-04T00:58:08Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -11259,11 +11259,11 @@
       "votes": true
      },
      {
-      "gain": 9.4,
-      "high": 51.7,
+      "gain": 12.5,
+      "high": 47.4,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "secret-name",
       "votes": true
@@ -11291,8 +11291,8 @@
     ],
     "helps": 0.0,
     "keep_family": 8,
-    "keep_pairs": 3,
-    "max_pairs": 4,
+    "keep_pairs": 5,
+    "max_pairs": 5,
     "no_help": 0.0,
     "no_help_pairs": 3
    },
@@ -11308,7 +11308,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 28,
+   "current_text_runs": 29,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
    "name": "debug-github-workflows",
    "next_test": {
@@ -11319,6 +11319,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T00:58:08Z",
+     "cli_version": "2.1.318",
+     "fixture": "secret-name",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T005623Z-592a85/debug-github-workflows/20261104T005808Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.15195329999999999,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 8,
+      "cost_usd": 0.1102187,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T21:07:14Z",
      "cli_version": "2.1.317",
@@ -23141,7 +23162,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "6c1d2e6e48535013ad41637de5b70905fd25d0b7"
+  "results_commit": "ddbc01b8a557697415a0aae4a7b185bb1c89f58f"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
