@@ -417,7 +417,7 @@ class WorkflowTests(unittest.TestCase):
                                    # The lessons (2026-11-03): public listings.
                                    "List the skill draft pull requests",
                                    "List the memory promotion and skill proposal issues",
-                                   # Schema 2 (2026-11-04): public listings.
+                                   # The public data contract (2026-11-04): public listings.
                                    "List the public repositories",
                                    "List recent activity in the public repositories",
                                    "List the lesson outcomes"})

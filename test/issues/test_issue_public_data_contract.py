@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""explorer/latest.json schema 2: the single public data contract.
+"""explorer/latest.json as the single public data contract (schema_version 1:
+the new sections only add fields, so the live page keeps reading it).
 
 scripts/explorer_public.py builds the new sections (`evals`, `hooks`,
 `lesson_funnel`, `activity`, `spend`) from public inputs only, and
@@ -37,7 +38,8 @@ from test_issue_72_explorer_data import AS_OF, SHA_A, SHA_B, Tree  # noqa: E402
 
 WORKFLOW = ROOT / ".github" / "workflows" / "explorer-data.yml"
 NOW = datetime(2026, 10, 31, 21, 0, tzinfo=timezone.utc)
-PUBLIC = frozenset({"Adam-S-Daniel/open-one", "Adam-S-Daniel/open-two", "jodidaniel/open-three"})
+PUBLIC = frozenset({"Adam-S-Daniel/open-one", "Adam-S-Daniel/open-two", "jodidaniel/open-three",
+                    "Adam-S-Daniel/skills-evals"})
 POLICY = dict(pub.HOOK_POLICY_DEFAULTS)
 
 _spec = importlib.util.spec_from_file_location("dashboard_build_contract", ROOT / "dashboard" / "build.py")
@@ -280,22 +282,39 @@ class HookUseTests(unittest.TestCase):
         self.assertNotIn("open-one", json.dumps(h))
 
     def test_verdicts_follow_the_policy(self):
-        ci = [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 10, 10, 1, "ci"),
-              hook_row("2026-10-26", "lesson-alpha", "Adam-S-Daniel/open-one", 10, 4, 2, "ci")]
-        local = [hook_row("2026-10-26", "lesson-beta", None, 10, 3),
+        # Measured overrides (a local row that counts them).
+        local = [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 10, 10, 1),
+                 hook_row("2026-10-26", "lesson-alpha", "Adam-S-Daniel/open-one", 10, 4, 2),
+                 # Blocks with no override count anywhere.
+                 hook_row("2026-10-26", "lesson-beta", None, 10, 3),
                  # Outside the 8-week window: its block does not count.
                  hook_row("2026-08-24", "rules-dir", None, 10, 9, 0)]
-        h = self.hooks(local, ci)
-        self.assertEqual(self.check(h, "secret-file")["verdict"], "earning")
-        self.assertEqual(self.check(h, "secret-file")["window_totals"]["override_rate"], 0.1)
+        h = self.hooks(local)
+        secret = self.check(h, "secret-file")
+        self.assertEqual((secret["verdict"], secret["overrides_measured"]), ("earning", True))
+        self.assertEqual(secret["window_totals"]["override_rate"], 0.1)
         self.assertEqual(self.check(h, "lesson-alpha")["verdict"], "overridden-often")
-        self.assertIsNone(self.check(h, "lesson-beta")["verdict"])
-        self.assertEqual(self.check(h, "lesson-beta")["verdict_reason"],
-                         "blocks, but no source counts its overrides")
+        beta = self.check(h, "lesson-beta")
+        self.assertEqual((beta["verdict"], beta["overrides_measured"]), ("earning", False))
+        self.assertEqual(beta["verdict_reason"], "blocked in 8 weeks; no source counts its overrides")
+        self.assertIsNone(beta["window_totals"]["override_rate"])
         self.assertEqual(self.check(h, "rules-dir")["verdict"], "never-fires")
         self.assertEqual(h["window"], {"weeks": 8, "from": "2026-09-07", "to": "2026-10-31"})
-        stricter = self.hooks(local, ci, policy={**POLICY, "max_override_rate": 0.05})
+        stricter = self.hooks(local, policy={**POLICY, "max_override_rate": 0.05})
         self.assertEqual(self.check(stricter, "secret-file")["verdict"], "overridden-often")
+
+    def test_the_ci_files_overridden_is_not_an_override_count(self):
+        # The CI file repeats `blocked` as `overridden`; read as a rate it would
+        # call every blocking check overridden-often.
+        ci = [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 10, 4, 4, "ci"),
+              hook_row("2026-10-26", "agent-checks", "Adam-S-Daniel/open-one", 9, 3, 3, "ci")]
+        h = self.hooks([], ci)
+        secret = self.check(h, "secret-file")
+        self.assertEqual((secret["verdict"], secret["overrides_measured"]), ("earning", False))
+        self.assertIsNone(secret["use"][0]["overridden"])
+        self.assertEqual(h["totals"]["ci"], [
+            {"week": "2026-10-26", "surface": "ci", "repo": "Adam-S-Daniel/open-one",
+             "invocations": 9, "blocked": 3, "overridden": None}])
 
     def test_no_usage_file_is_unknown_and_an_unknown_name_is_only_counted(self):
         h = pub.build_hooks(self.t.tree, NOW, self.t.root / "ac", {}, PUBLIC, POLICY)
@@ -420,6 +439,15 @@ class ActivityTests(unittest.TestCase):
                          {"repo": "Adam-S-Daniel/open-two", "id": 1233, "workflow": "CI",
                           "title": "old", "status": "completed", "conclusion": "success",
                           "created_at": "2026-10-10T10:00:00Z"},
+                         {"repo": "Adam-S-Daniel/skills-evals", "id": 1235,
+                          "path": ".github/workflows/explorer-data.yml",
+                          "workflow": "Publish explorer data", "title": "Publish explorer data",
+                          "status": "completed", "conclusion": "success",
+                          "created_at": "2026-10-30T11:00:00Z"},
+                         {"repo": "Adam-S-Daniel/skills-evals", "id": 1236,
+                          "path": ".github/workflows/ci.yml", "workflow": "CI", "title": "CI",
+                          "status": "completed", "conclusion": "success",
+                          "created_at": "2026-10-30T09:00:00Z"},
                          {"repo": "Adam-S-Daniel/hidden-a", "id": 99, "workflow": "CI",
                           "title": "Hidden run", "status": "completed",
                           "created_at": "2026-10-30T10:00:00Z"}], **extra}
@@ -428,7 +456,9 @@ class ActivityTests(unittest.TestCase):
         a = self.activity(self.doc())
         self.assertEqual([(p["number"], p["state"]) for p in a["pulls"]], [(7, "merged"), (3, "open")])
         self.assertEqual([i["number"] for i in a["issues"]], [4])
-        self.assertEqual([r["run_id"] for r in a["runs"]], [1234])
+        # explorer-data.yml's own run is left out; another workflow here stays.
+        self.assertEqual([r["run_id"] for r in a["runs"]], [1234, 1236])
+        self.assertNotIn("path", a["runs"][0])
         self.assertEqual(a["since"], "2026-10-17T20:00:00Z")
         self.assertEqual(a["repos"], sorted(PUBLIC))
         text = json.dumps(a)
@@ -541,7 +571,7 @@ class FullDocumentTests(unittest.TestCase):
         explorer_data.finish(doc, PUBLIC)
         explorer_data.validate(doc)
 
-    def test_the_schema_is_draft_2020_12_and_names_version_2(self):
+    def test_the_schema_is_draft_2020_12_and_names_version_1(self):
         import jsonschema
         schema = json.loads(explorer_data.SCHEMA_PATH.read_text(encoding="utf-8"))
         self.assertEqual(schema["$schema"], "https://json-schema.org/draft/2020-12/schema")
@@ -554,7 +584,7 @@ class FullDocumentTests(unittest.TestCase):
         doc = self.build()
         for name, change in (
                 ("an extra top-level key", lambda d: d.update(surprise=1)),
-                ("an old schema version", lambda d: d.update(schema_version=1)),
+                ("another schema version", lambda d: d.update(schema_version=2)),
                 ("an extra eval run field", lambda d: d["evals"]["runs"][0].update(session="x")),
                 ("a bad verdict", lambda d: d["hooks"]["checks"][0].update(verdict="maybe")),
                 ("an activity row with a body", lambda d: d["activity"]["issues"][0].update(body="x")),
@@ -615,7 +645,7 @@ class FullDocumentTests(unittest.TestCase):
                 "--out", str(out)]
         self.assertEqual(explorer_data.main(args), 0)
         doc = json.loads(out.read_text())
-        self.assertEqual(doc["schema_version"], 2)
+        self.assertEqual(doc["schema_version"], 1)
         self.assertEqual(doc["lesson_funnel"]["sources_missing"],
                          ["draft-skill", "memory", "skill-proposal"])
         # No --activity file: unknown, not empty.
@@ -677,6 +707,12 @@ class WorkflowTests(unittest.TestCase):
         run = self.steps["List recent activity in the public repositories"]["run"]
         self.assertIn("select(.private == false)", run)
         self.assertNotIn(".body", run)
+        # The run's path is read so explorer_data.py can leave out this
+        # workflow's own runs.
+        self.assertIn("{repo: $repo, id, path, workflow: .name", run)
+        publish = next(s for s in self.wf["jobs"]["publish"]["steps"]
+                       if s["name"].startswith("Commit to"))["run"]
+        self.assertIn(".activity.fetched_at, .activity.since)'", publish)
         listing = self.steps["List the public repositories"]["run"]
         self.assertIn("for owner in Adam-S-Daniel jodidaniel", listing)
 

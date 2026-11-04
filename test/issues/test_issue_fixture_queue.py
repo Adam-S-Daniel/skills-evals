@@ -501,7 +501,7 @@ class WorkflowTests(unittest.TestCase):
     def test_publish_ignores_only_the_moving_clocks(self):
         push = next(s for s in self.wf["jobs"]["publish"]["steps"]
                     if s["name"].startswith("Commit to"))["run"]
-        # Schema 2: the activity listing's window moves with every build too.
+        # The public data contract: the activity listing's window moves with every build too.
         self.assertIn("strip='del(.generated_at, .source.results_commit, "
                       ".fixture_queue.generated_at, .activity.fetched_at, .activity.since)'", push)
 

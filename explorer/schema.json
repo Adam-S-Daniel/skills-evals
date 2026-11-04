@@ -2,11 +2,11 @@
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "$id": "https://github.com/Adam-S-Daniel/skills-evals/blob/main/explorer/schema.json",
  "title": "Evals Explorer public data (explorer/latest.json)",
- "description": "The single public data contract behind the Evals Explorer and the project dashboard, written by scripts/explorer_data.py. Every field comes from a public input; null means unknown, never zero or empty. scripts/explorer_data.py validates its output against this schema, after `finish`, before writing.",
+ "description": "The single public data contract behind the Evals Explorer and the project dashboard, written by scripts/explorer_data.py. It is schema_version 1: the contract only added fields to the earlier document. Every field comes from a public input; null means unknown, never zero or empty. scripts/explorer_data.py validates its output against this schema, after `finish`, before writing.",
  "type": "object",
  "properties": {
   "schema_version": {
-   "const": 2
+   "const": 1
   },
   "generated_at": {
    "type": "string",
@@ -1816,10 +1816,21 @@
     },
     "verdict_reason": {
      "type": "string"
+    },
+    "overrides_measured": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
     "name",
+    "overrides_measured",
     "repo",
     "source_url",
     "use",

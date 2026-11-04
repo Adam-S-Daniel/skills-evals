@@ -148,8 +148,10 @@ when neither the proposals directory nor the issues file is readable; with
 only the issues, its `date`, `items` and `left_out` are None (unknown, not
 empty). `finish` holds every item and issue to its keys.
 
-SCHEMA 2 (2026-11-04) makes this document the single public data contract
-of the Evals Explorer and the project dashboard. `explorer/schema.json`
+THE PUBLIC DATA CONTRACT (2026-11-04) makes this document the single public data contract
+of the Evals Explorer and the project dashboard, still `schema_version` 1:
+the change only adds fields, so a reader of the earlier document keeps
+working. `explorer/schema.json`
 describes all of it, and `main` validates the document against it after
 `finish` and before writing (no jsonschema: nothing is written). The new
 sections are built in scripts/explorer_public.py, each from public inputs
@@ -212,7 +214,7 @@ import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 import timeweeks  # noqa: E402  (harness/)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 1
 SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
@@ -1629,7 +1631,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     signals counted from the records directory `lesson_records`, and
     `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`.
 
-    Schema 2 (scripts/explorer_public.py): `visible_repos` is the fleet
+    The contract's added sections (scripts/explorer_public.py): `visible_repos` is the fleet
     owners' GitHub visibility list (None: unknown, so no repository is named
     in `hooks` and `activity` is None); `activity` the `--activity` file;
     `agent_checks_dir` _agent-guidance's templates/agent-checks/;
@@ -1850,7 +1852,7 @@ def finish(doc: dict, public_repos: frozenset | None = None) -> str:
             if draft is not None and (not isinstance(draft, dict)
                                       or set(draft) != {"number", "state", "url"}):
                 raise Refused("a lesson's draft carries a field it may not publish")
-    _finish_schema_2(doc, public_repos or frozenset())
+    _finish_contract(doc, public_repos or frozenset())
     return text
 
 
@@ -1874,8 +1876,8 @@ def _exact(rows, keys, what: str) -> None:
         raise Refused(f"{what} carries a field it may not publish")
 
 
-def _finish_schema_2(doc: dict, public: frozenset) -> None:
-    """`finish`'s checks of the schema 2 sections (scripts/explorer_public.py)."""
+def _finish_contract(doc: dict, public: frozenset) -> None:
+    """`finish`'s checks of the contract's added sections (scripts/explorer_public.py)."""
     pub = explorer_public
     evals = doc.get("evals")
     if evals is not None:
@@ -1888,7 +1890,7 @@ def _finish_schema_2(doc: dict, public: frozenset) -> None:
     if hooks is not None:
         rows = [c for c in hooks.get("checks") or []]
         _exact(rows, ("name", "where", "repo", "source_url", "use", "window_totals", "verdict",
-                      "verdict_reason"), "a hook check")
+                      "verdict_reason", "overrides_measured"), "a hook check")
         cells = [u for c in rows for u in c["use"] or []]
         cells += [u for surface in (hooks.get("totals") or {}).values() for u in surface]
         _exact(cells, ("week", "surface", "repo", "invocations", "blocked", "overridden"),

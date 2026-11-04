@@ -156,7 +156,8 @@ class ShapeAndMathTests(unittest.TestCase):
     def test_top_level_keys_and_types(self):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
-        # Schema 2 adds evals, hooks, lesson_funnel, activity and spend
+        # The public data contract adds evals, hooks, lesson_funnel, activity and
+        # spend, keeping schema_version 1
         # (test_issue_public_data_contract.py covers them).
         self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_unknown",
                                      "coverage", "evals", "fires_without_results",
@@ -174,7 +175,7 @@ class ShapeAndMathTests(unittest.TestCase):
         # No --lessons directory: unknown, not an empty list.
         self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
-        self.assertEqual(d["schema_version"], 2)
+        self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")
         self.assertEqual(d["source"], {"repository": "Adam-S-Daniel/skills-evals",
@@ -352,7 +353,7 @@ class PrivacyTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(explorer_data.main([*args, "--repository-commit", "main"]), 2)
         self.assertEqual(explorer_data.main([*args, "--repository-commit", SHA_A]), 0)
-        self.assertEqual(json.loads(out.read_text())["schema_version"], 2)
+        self.assertEqual(json.loads(out.read_text())["schema_version"], 1)
 
 
 class RemovedSectionsTests(unittest.TestCase):

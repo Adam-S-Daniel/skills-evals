@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The public-by-construction sections of `explorer/latest.json` (schema 2).
+"""The public-by-construction sections of `explorer/latest.json` (the public
+data contract, added fields only, so `schema_version` stays 1).
 
 scripts/explorer_data.py calls these builders; each takes only public inputs
 and returns None when its input is missing or unreadable (unknown, never zero
@@ -28,7 +29,7 @@ field again before the document is written.
     still open), counted over public issues and pull requests only.
   * `activity`: the last ACTIVITY_DAYS of pull requests (open, or merged in the
     window), open issues and workflow runs in the fleet owners' public
-    repositories, from `--activity`. Never a body; a title only when
+    repositories, from `--activity`, leaving out explorer-data.yml's own runs. Never a body; a title only when
     `safe_text` accepts it.
   * `spend`: weekly totals from `spend/weekly.json`, only with
     `include_spend: true` (SPEND_WEEK_KEYS; never a per-session or per-thread
@@ -331,7 +332,10 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
                                        "invocations": 0, "blocked": None, "overridden": None})
         cell["invocations"] += row["invocations"]
         cell["blocked"] = _add(cell["blocked"], row.get("blocked"))
-        cell["overridden"] = _add(cell["overridden"], row.get("overridden"))
+        # The CI file's `overridden` repeats its `blocked` (a red CI run is
+        # counted as both), so it is not an override count and is never read.
+        if surface != "ci":
+            cell["overridden"] = _add(cell["overridden"], row.get("overridden"))
     shown = len(private_seen) >= policy["min_private_repos"]
     if not shown:
         checks.pop((REPO_LOCAL, PRIVATE_BUCKET), None)
@@ -357,31 +361,36 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
 
 
 def verdict(rows: list | None, start: str, policy: dict) -> dict:
-    """{"window_totals", "verdict", "verdict_reason"} over the rows in the
-    window. The override rate is overridden over blocked across the rows that
-    count overrides (the local hook log does not, so a check seen only there
-    has none). No rows (no usage file) is unknown."""
+    """{"window_totals", "verdict", "verdict_reason", "overrides_measured"}
+    over the rows in the window. The override rate is overridden over blocked
+    across the rows that count overrides; the CI file's copy of `blocked` is
+    not one (`build_hooks` drops it), and the local hook log counts none, so
+    a check is usually unmeasured. A check that blocked with no override
+    count is `earning` with `overrides_measured: false`; `overridden-often`
+    needs a measured rate. No rows (no usage file) is unknown."""
     if rows is None:
-        return {"window_totals": None, "verdict": None, "verdict_reason": "no usage file"}
+        return {"window_totals": None, "verdict": None, "verdict_reason": "no usage file",
+                "overrides_measured": None}
     recent = [r for r in rows if r["week"] >= start]
     blocked = sum(r["blocked"] or 0 for r in recent)
     known = [r for r in recent if r["overridden"] is not None]
     known_blocked = sum(r["blocked"] or 0 for r in known)
     overridden = sum(r["overridden"] for r in known)
     rate = overridden / known_blocked if known_blocked else None
+    measured = rate is not None
     totals = {"invocations": sum(r["invocations"] for r in recent), "blocked": blocked,
               "overridden": overridden if known else None, "override_rate": rate}
     weeks, limit = policy["window_weeks"], policy["max_override_rate"]
+    out = {"window_totals": totals, "overrides_measured": measured}
     if blocked == 0:
-        return {"window_totals": totals, "verdict": "never-fires",
-                "verdict_reason": f"no block in {weeks} weeks"}
-    if rate is None:
-        return {"window_totals": totals, "verdict": None,
-                "verdict_reason": "blocks, but no source counts its overrides"}
+        return {**out, "verdict": "never-fires", "verdict_reason": f"no block in {weeks} weeks"}
+    if not measured:
+        return {**out, "verdict": "earning",
+                "verdict_reason": f"blocked in {weeks} weeks; no source counts its overrides"}
     if rate > limit:
-        return {"window_totals": totals, "verdict": "overridden-often",
+        return {**out, "verdict": "overridden-often",
                 "verdict_reason": f"override rate above {limit:.0%}"}
-    return {"window_totals": totals, "verdict": "earning",
+    return {**out, "verdict": "earning",
             "verdict_reason": f"blocked in {weeks} weeks, override rate at most {limit:.0%}"}
 
 
@@ -503,6 +512,9 @@ ISSUE_KEYS = ("repo", "number", "title", "state", "created_at", "updated_at", "u
 RUN_ACTIVITY_KEYS = ("repo", "run_id", "workflow", "title", "event", "state", "conclusion",
                      "created_at", "updated_at", "url")
 _EVENT_RE = re.compile(r"[a-z_]{1,40}")
+#: explorer-data.yml's own runs, left out of `activity.runs` (read by its
+#: `path`, which is never published).
+OWN_WORKFLOW = ("Adam-S-Daniel/skills-evals", ".github/workflows/explorer-data.yml")
 _RUN_STATES = frozenset({"queued", "in_progress", "completed", "waiting", "requested",
                          "pending", "action_required"})
 _CONCLUSIONS = frozenset({"success", "failure", "cancelled", "skipped", "timed_out",
@@ -564,6 +576,8 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
         if repo is None or type(run_id) is not int or not 0 < run_id < 10 ** 13 \
                 or created is None or created < since_text or (repo, run_id) in seen:
             continue
+        if (repo, row.get("path")) == OWN_WORKFLOW:
+            continue  # this document's own builds would change it on every run
         seen.add((repo, run_id))
         event, status, conclusion = row.get("event"), row.get("status"), row.get("conclusion")
         runs.append({"repo": repo, "run_id": run_id, "workflow": safe_text(row.get("workflow"), 100),

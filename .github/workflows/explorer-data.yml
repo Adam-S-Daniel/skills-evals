@@ -86,7 +86,7 @@ name: Publish explorer data
 #   skill-proposal issues of adam-agentskills, for `lessons.issues`: number,
 #   state, date, the count and target parsed from a title, a skill name and
 #   a built URL, never a body or other title text.
-# * Schema 2, the single public data contract (explorer/schema.json, which
+# * The single public data contract (explorer/schema.json, which
 #   explorer_data.py validates the document against before writing; hence
 #   the jsonschema pin, and the Tree-sitter pins that parse the fleet hook
 #   runner). Every new input is public and read with the job token in a
@@ -104,9 +104,9 @@ name: Publish explorer data
 #     memory promotion rows now keep `state_reason`.
 #   The hook catalog reads _agent-guidance's templates/agent-checks/ from the
 #   checkout above and each context checkout's `.agent-checks/local.sh`.
-#   `activity` moves with every run (this workflow's own runs among them), so
-#   the document is committed on most runs; the triggers are not pushes, so
-#   that is a commit per run, never a loop.
+#   `activity` leaves out this workflow's own runs (by their `path`, which is
+#   not published), and publish ignores only its two clocks (`fetched_at`,
+#   `since`); a real change elsewhere in the fleet still commits the document.
 
 on:
   workflow_run:
@@ -417,7 +417,7 @@ jobs:
           fi
           exit 0
 
-      # Schema 2: GitHub's own visibility list of both fleet owners'
+      # The public data contract: GitHub's own visibility list of both fleet owners'
       # repositories. Only `private == false` rows name a repository in the
       # document; without this file none is named and `activity` is null.
       - name: List the public repositories
@@ -444,7 +444,7 @@ jobs:
           fi
           exit 0
 
-      # Schema 2 `activity`: per public repository, one call each for pull
+      # The public data contract's `activity`: per public repository, one call each for pull
       # requests (newest updated first), open issues and the last 14 days of
       # workflow runs. Bodies are dropped here; explorer_data.py validates
       # every row again and builds every URL. Any failed call drops the file.
@@ -478,7 +478,7 @@ jobs:
                 "$work/page.json" >> "$work/issues.jsonl" \
               && gh api --method GET -f "created=>=$since" -f per_page=100 "repos/$repo/actions/runs" \
                 > "$work/page.json" 2>/dev/null \
-              && jq -c --arg repo "$repo" '.workflow_runs[] | {repo: $repo, id, workflow: .name, title: .display_title, event, status, conclusion, created_at, updated_at}' \
+              && jq -c --arg repo "$repo" '.workflow_runs[] | {repo: $repo, id, path, workflow: .name, title: .display_title, event, status, conclusion, created_at, updated_at}' \
                 "$work/page.json" >> "$work/runs.jsonl"; } || { rc=$?; break; }
           done
           if [ "$rc" -eq 0 ]; then
@@ -494,7 +494,7 @@ jobs:
           fi
           exit 0
 
-      # Schema 2 `lesson_funnel`: the hook-proposal issues of this
+      # The public data contract's `lesson_funnel`: the hook-proposal issues of this
       # repository and _agent-guidance's lesson-check pull requests, both
       # public. Only numbers, states, close reasons, labels and heads remain.
       - name: List the lesson outcomes
