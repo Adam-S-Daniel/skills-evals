@@ -1775,6 +1775,109 @@ class TestLocalEval(unittest.TestCase):
         for summary in self._summaries("with_skill", 1):
             self.assertIs(summary.get("local_exhibit"), True)
 
+    BASE_URL = "http://skills-evals-1-ab12-credproxy:8080"
+
+    def test_the_nonessential_traffic_toggle_reaches_every_child(self):
+        registry = self._registry()
+        name = "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={name: "1"})
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            self.assertIn(name, call["env_names"], call["role"])
+
+    def test_container_mode_accepts_a_credproxy_base_url_and_records_it(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         "--container-token",
+                         env_extra={"CLAUDE_CODE_OAUTH_TOKEN": self.TOKEN,
+                                    "SKILLS_EVALS_IN_CONTAINER": "1",
+                                    "ANTHROPIC_BASE_URL": self.BASE_URL})
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        calls = self._calls()
+        # The judge is included: it inherits the process environment.
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            if call["role"] == "probe":
+                # The probe black-holes the endpoint itself (init_probe).
+                self.assertNotEqual(call["env"].get("ANTHROPIC_BASE_URL"),
+                                    self.BASE_URL)
+            else:
+                self.assertIn("ANTHROPIC_BASE_URL", call["secret_env"],
+                              call["role"])
+        manifest_text = (self.out / "manifest.json").read_text(encoding="utf-8")
+        manifest = json.loads(manifest_text)
+        self.assertEqual(manifest["api_base_url"], self.BASE_URL)
+        self.assertEqual(manifest["auth"], "container-oauth-token")
+        self.assertNotIn(self.TOKEN, manifest_text)
+
+    def test_container_mode_without_a_base_url_records_none(self):
+        registry = self._registry()
+        proc = self._container_run(registry)
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        self.assertIsNone(self._json("manifest.json")["api_base_url"])
+        for call in self._calls():
+            if call["role"] != "probe":  # the probe sets its own endpoint
+                self.assertNotIn("ANTHROPIC_BASE_URL", call["env_names"],
+                                 call["role"])
+
+    def test_container_mode_refuses_a_base_url_that_is_not_a_sidecar(self):
+        registry = self._registry()
+        secret_looking = "http://user:pw-example-0123@proxy:8080"
+        for value in ("https://api.example.com:443",
+                      "http://api.example.com:8080",
+                      secret_looking,
+                      "http://proxy:8080/path",
+                      "http://proxy:8080/",
+                      "http://proxy",
+                      "http://Proxy:8080",
+                      "http://proxy:8080\n",
+                      "http://proxy:80a",
+                      "http://-proxy:8080",
+                      "http://" + "a" * 64 + ":8080",
+                      "http://proxy:123456",
+                      "proxy:8080",
+                      ""):
+            with self.subTest(value=value):
+                self.log.unlink(missing_ok=True)
+                proc = self._container_run(
+                    registry, env_extra={"ANTHROPIC_BASE_URL": value})
+                self._assert_nothing_ran(proc)
+                self.assertIn("ANTHROPIC_BASE_URL", proc.stderr)
+                everything = proc.stdout + proc.stderr
+                for needle in (value, "api.example.com", "pw-example-0123",
+                               self.TOKEN):
+                    if needle:
+                        self.assertNotIn(needle, everything)
+                self.assertFalse(self.out.exists())
+
+    def test_a_base_url_is_still_refused_without_the_container_flag(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"ANTHROPIC_BASE_URL": self.BASE_URL,
+                                    "SKILLS_EVALS_IN_CONTAINER": "1"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("ANTHROPIC_BASE_URL", proc.stderr)
+        self.assertNotIn(self.BASE_URL, proc.stdout + proc.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_the_base_url_exemption_is_one_exact_name(self):
+        registry = self._registry()
+        proc = self._container_run(
+            registry, env_extra={"ANTHROPIC_BASE_URL": self.BASE_URL,
+                                 "ANTHROPIC_AUTH_TOKEN": "example-auth"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN", proc.stderr)
+        self.assertNotIn("ANTHROPIC_BASE_URL", proc.stderr)
+        self.assertNotIn("example-auth", proc.stdout + proc.stderr)
+
     def test_manifest_records_login_auth_without_the_flag(self):
         registry = self._registry()
         proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
