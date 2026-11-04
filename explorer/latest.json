@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:24:15Z",
+  "generated_at": "2026-11-04T01:26:26Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 30
   }
  },
- "generated_at": "2026-11-04T01:23:25Z",
+ "generated_at": "2026-11-04T01:25:33Z",
  "guidance": {
   "removed": [
    {
@@ -9562,7 +9562,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:21:47Z",
+ "newest_run": "2026-11-04T01:23:43Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -20066,11 +20066,11 @@
       "votes": true
      },
      {
-      "gain": 25.0,
+      "gain": 27.8,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": "closing-keywords",
       "votes": true
@@ -20115,7 +20115,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 14,
+   "current_text_runs": 15,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
    "name": "vendor-release-impact-issues",
    "next_test": {
@@ -20126,6 +20126,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T01:23:43Z",
+     "cli_version": "2.1.318",
+     "fixture": "closing-keywords",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T012158Z-426b3a/vendor-release-impact-issues/20261104T012343Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.17070729999999998,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 4,
+      "checks_total": 6,
+      "cost_usd": 0.1438296,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:20:07Z",
      "cli_version": "2.1.317",
@@ -23302,7 +23323,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "852ea686a3adab1b67f474b96cda16ea3561fdb8"
+  "results_commit": "278a26d141164387dfa6dce1e1b5154371037633"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
