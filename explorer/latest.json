@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T00:19:39Z",
+  "generated_at": "2026-11-04T00:22:03Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T00:18:16Z",
+ "generated_at": "2026-11-04T00:20:54Z",
  "guidance": {
   "removed": [
    {
@@ -9157,7 +9157,7 @@
   ]
  },
  "lessons": {
-  "date": null,
+  "date": "2026-11-03",
   "issues": [
    {
     "count": 1,
@@ -9210,10 +9210,315 @@
     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/issues/19"
    }
   ],
-  "items": null,
-  "left_out": null
+  "items": [
+   {
+    "draft": {
+     "number": 109,
+     "state": "merged",
+     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/109"
+    },
+    "evidence_count": 54,
+    "first_seen": "2026-04-18",
+    "kind": "new-skill",
+    "last_seen": "2026-10-05",
+    "signals": {
+     "red-ci-after-push": 54
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "red-ci-adamdaniel-ai"
+   },
+   {
+    "draft": null,
+    "evidence_count": 19,
+    "first_seen": "2026-04-19",
+    "kind": "new-skill",
+    "last_seen": "2026-10-23",
+    "signals": {
+     "repeated-tool-failure": 19
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-edit"
+   },
+   {
+    "draft": null,
+    "evidence_count": 17,
+    "first_seen": "2026-05-07",
+    "kind": "new-skill",
+    "last_seen": "2026-10-09",
+    "signals": {
+     "repeated-tool-failure": 17
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-cd"
+   },
+   {
+    "draft": null,
+    "evidence_count": 10,
+    "first_seen": "2026-04-19",
+    "kind": "new-skill",
+    "last_seen": "2026-10-04",
+    "signals": {
+     "repeated-tool-failure": 10
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-gh"
+   },
+   {
+    "draft": null,
+    "evidence_count": 10,
+    "first_seen": "2026-04-25",
+    "kind": "new-skill",
+    "last_seen": "2026-10-05",
+    "signals": {
+     "repeated-tool-failure": 10
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "tool-bash-git"
+   },
+   {
+    "draft": {
+     "number": 111,
+     "state": "merged",
+     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/111"
+    },
+    "evidence_count": 4,
+    "first_seen": "2026-09-25",
+    "kind": "new-skill",
+    "last_seen": "2026-10-20",
+    "signals": {
+     "repeated-tool-failure": 4
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "tool-powershell"
+   },
+   {
+    "draft": null,
+    "evidence_count": 3,
+    "first_seen": "2026-04-20",
+    "kind": "new-skill",
+    "last_seen": "2026-06-25",
+    "signals": {
+     "repeated-tool-failure": 3
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "tool-bash-sleep"
+   },
+   {
+    "evidence_count": 16,
+    "first_seen": "2026-11-02",
+    "kind": "skill-edit",
+    "last_seen": "2026-11-02",
+    "signals": {
+     "rule": 16
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:github-actions-repo-settings"
+   },
+   {
+    "evidence_count": 6,
+    "first_seen": "2026-11-02",
+    "kind": "skill-edit",
+    "last_seen": "2026-11-02",
+    "signals": {
+     "rule": 6
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:vendor-release-impact-issues"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-09-22",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-28",
+    "signals": {
+     "rule": 2
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-09-08",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "rule": 2
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:workflow-path-audit"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-09-22",
+    "kind": "skill-edit",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "rule": 1
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:windows-elevation-from-wsl"
+   },
+   {
+    "evidence_count": 5,
+    "first_seen": "2026-06-05",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-10-09",
+    "signals": {
+     "red-ci-after-push": 3,
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:writing-adrs"
+   },
+   {
+    "evidence_count": 4,
+    "first_seen": "2026-09-08",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-22",
+    "signals": {
+     "interrupted": 1,
+     "redirection": 3
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:windows-elevation-from-wsl"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-12",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-23",
+    "signals": {
+     "redirection": 1,
+     "repeated-tool-failure": 1
+    },
+    "sources": [
+     "windows",
+     "wsl"
+    ],
+    "subject": "skill:fastmail"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-17",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-07-17",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:github-actions-repo-settings"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-06",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-25",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:migrate-claude-memory"
+   },
+   {
+    "evidence_count": 2,
+    "first_seen": "2026-07-16",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-07-17",
+    "signals": {
+     "redirection": 2
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:sync-cc-settings-between-wsl-and-windows"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-08-18",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-08-18",
+    "signals": {
+     "red-ci-after-push": 1
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "guidance:pinning-github-actions"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-10-04",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-10-04",
+    "signals": {
+     "repeated-tool-failure": 1
+    },
+    "sources": [
+     "wsl"
+    ],
+    "subject": "skill:launch-top-level-claude-session"
+   },
+   {
+    "evidence_count": 1,
+    "first_seen": "2026-09-24",
+    "kind": "fixture-candidate",
+    "last_seen": "2026-09-24",
+    "signals": {
+     "redirection": 1
+    },
+    "sources": [
+     "windows"
+    ],
+    "subject": "skill:skills-doctor"
+   }
+  ],
+  "left_out": {
+   "agent_check": 1,
+   "memory_note": 2,
+   "other": 0,
+   "private": 7
+  }
  },
- "newest_run": "2026-11-04T00:16:41Z",
+ "newest_run": "2026-11-04T00:18:46Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -13324,11 +13629,11 @@
       "votes": true
      },
      {
-      "gain": 75.0,
+      "gain": 77.8,
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 2,
+      "pairs": 3,
       "status": "open",
       "task": "single-file",
       "votes": true
@@ -13363,7 +13668,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 9,
+   "current_text_runs": 10,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
@@ -13374,6 +13679,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T00:18:46Z",
+     "cli_version": "2.1.318",
+     "fixture": "single-file",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T001651Z-2f6d38/fan-out-triage/20261104T001846Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.1491811,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 6,
+      "cost_usd": 0.09071010000000002,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:16:41Z",
      "cli_version": "2.1.318",
@@ -22596,7 +22922,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "31cc927f63e2b8b8f73a08dec2c20a204bc5e58b",
-  "results_commit": "686952b85c62cc35552470bcd64c4c45c2b7d6ec"
+  "results_commit": "7d1491249a655f0e51a421e4540a4a5e118ad5bb"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
