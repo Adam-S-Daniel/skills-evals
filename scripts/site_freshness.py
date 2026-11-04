@@ -10,8 +10,8 @@ on dispatch). Three checks decide:
           and that commit is more than DESIGN_MAX_AGE old (its committer time).
   data    explorer/latest.json's `generated_at` is older than DATA_MAX_AGE.
   page    the live page, loaded in headless Chromium, did not draw the data
-          (the `p.asof` line, built only after the data loaded; a
-          `.panel.failure` means the page drew its error panel).
+          (a `p.src` source line, or the older page's `p.asof`, built only
+          after the data loaded; a `.panel.failure` means the page drew its error panel).
 
 Mechanical fixes (`fix`): an open sync PR that is BEHIND its base gets
 update-branch with the eval-improve App token; a stale design with neither a
@@ -74,6 +74,9 @@ _ROUTINE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
 _REPO = re.compile(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}")
 
 #: The reasons the page check can give; fixed text, never page content.
+# What the page draws only once its data loaded: the source line under each
+# panel heading (`p.src`), or `p.asof` on the page before the six-group app.
+DRAWN = "#app p.src, #app p.asof"
 PAGE_OK = "drew"
 
 
@@ -381,7 +384,7 @@ def sync_state(site_repo: str, token: str | None) -> tuple:
 
 def browser_results(urls: list) -> dict:
     """Load each URL in headless Chromium: PAGE_OK when the data-dependent
-    `p.asof` line appears, else a fixed reason. The page's text is never
+    `DRAWN` line appears, else a fixed reason. The page's text is never
     returned."""
     from playwright.sync_api import TimeoutError as PwTimeout, sync_playwright
 
@@ -397,12 +400,12 @@ def browser_results(urls: list) -> dict:
                         results[url] = f"http {response.status if response else 'none'}"
                         continue
                     try:
-                        page.wait_for_selector("#app p.asof, #app .panel.failure",
+                        page.wait_for_selector(DRAWN + ", #app .panel.failure",
                                                timeout=45_000)
                     except PwTimeout:
                         results[url] = "nothing drew in 45 seconds"
                         continue
-                    results[url] = (PAGE_OK if page.query_selector("#app p.asof")
+                    results[url] = (PAGE_OK if page.query_selector(DRAWN)
                                     else "the page drew its error panel")
                 except Exception as err:  # noqa: BLE001
                     results[url] = f"browser error {type(err).__name__}"
