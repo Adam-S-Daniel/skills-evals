@@ -79,7 +79,6 @@ on:
       - .github/dependabot.yml
       - evals/**
       - dashboard/**
-      - explorer/**
       - harness/**
       - scripts/**
       - test/**
@@ -156,11 +155,11 @@ jobs:
             .github/dependabot.yml
             evals/**
             dashboard/**
-            explorer/**
             harness/**
             scripts/**
             test/**
             tool/**
+            explorer/**
             README.md
             DESIGN.md
             docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
