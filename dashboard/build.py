@@ -29,14 +29,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "scripts"))
+from eval_facts import (add_costs, arm_model, cli_version, cost, fired_at, iso, judge,  # noqa: E402,F401
+                        objective, scored_runs)
+
 PLACEHOLDER_ID = "none"
 HB_FIXED_WINDOW = timedelta(days=7)
 EVALS_URL = "https://github.com/Adam-S-Daniel/skills-evals"  # fixture_queue.py numbers every issue and PR in this repo
 FQ_KINDS = {"needs-fixtures": "new fixtures", "needs-harder-fixtures": "harder fixtures", "needs-trigger-set": "trigger set"}
-
-
-def iso(dt):
-    return dt.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def parse(ts):
@@ -54,19 +54,6 @@ def load(path, default=None):
         return json.load(f)
 
 
-def fired_at(run_name):
-    stamp = run_name.split("-")[0]
-    return iso(datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc))
-
-
-def arm_model(d):
-    model = (d.get("cross_model") or {}).get("model")
-    if model:
-        return model
-    used = d.get("models_used") or []
-    return ([m for m in used if "haiku" not in m] or used or [None])[0]
-
-
 def model_name(model_id):
     """claude-sonnet-5-5 -> Sonnet 5.5"""
     parts = (model_id or "").split("-")
@@ -77,121 +64,10 @@ def model_name(model_id):
 
 # --- Tests tab -----------------------------------------------------------------
 
-def objective(d):
-    if not d.get("aggregate") and d.get("objective_checks") is not None:
-        ch = d["objective_checks"]  # single-trial summary: no aggregate block
-        return sum(1 for c in ch if c.get("passed")), len(ch)
-    o = (d.get("aggregate") or {}).get("objective") or {}
-    return o.get("mean_passed"), o.get("mean_total")
-
-
-def judge(d):
-    j = (d.get("aggregate") or {}).get("judge") or {}
-    o = j.get("overall")
-    return (o.get("mean") if isinstance(o, dict) else o), j.get("status")
-
-
-def cost(d):
-    if not d.get("aggregate"):
-        return (d.get("agent") or {}).get("cost_usd")
-    return ((d.get("aggregate") or {}).get("cost_usd") or {}).get("sum")
-
-
-def add_costs(a, b):
-    return None if a is None and b is None else (a or 0) + (b or 0)
-
-
-def cli_version(d):
-    return ((d.get("harness") or {}).get("version") or "").replace(" (Claude Code)", "")
-
-
 def eval_rows(er, report_base):
-    """Paired runs (with/without a skill or guidance section) and bare baseline runs."""
-    rows, bare = [], []
-    root = Path(er) / "routine-results"
-    for run in sorted(root.iterdir()) if root.is_dir() else []:
-        for rep in run.rglob("report.md"):
-            base = rep.parent
-            arms = {}
-            for s in base.rglob("summary.json"):
-                if "trial-" in str(s):
-                    continue
-                d = json.loads(s.read_text())
-                arms[d["arm"]] = (s, d)
-            url = report_base + str(rep.relative_to(er))
-            rel = base.relative_to(run).parts  # skill/ts[/fixture]
-            if "with_guidance_full" in arms and "with_guidance_full_minus_section" in arms:
-                # One trial per arm; the section's effect is full vs full minus the section.
-                g, gm = arms["with_guidance_full"][1], arms["with_guidance_full_minus_section"][1]
-                wp, tot = objective(g)
-                wop, _ = objective(gm)
-                sec = g.get("section") or base.parent.name
-                rows.append({
-                    "run_id": run.name, "fired_at": fired_at(run.name),
-                    "fixture": "guidance/" + sec + "/" + (g.get("fixture_name") or ""),
-                    "skill": "guidance/" + sec, "model": arm_model(g), "trials": 1,
-                    "with_skill": wp, "without_skill": wop, "checks": tot, "gain": wp - wop,
-                    "with_judge": None, "without_judge": None,
-                    "judge": "skipped: checks decided" if (g.get("judge") or {}).get("status") == "skipped" else "not run",
-                    "with_share": wp / tot if tot else None, "without_share": wop / tot if tot else None,
-                    "cost_usd": add_costs(cost(g), cost(gm)),
-                    "meter_points": None, "account_week_after": None,
-                    "cli": cli_version(g), "report_url": url,
-                })
-                continue
-            if "without_skill" in arms and "with_skill" not in arms:
-                # Bare baseline (ADR 0012 addendum): one isolation arm, nothing of ours loaded.
-                path, b = arms["without_skill"]
-                bp, tot = objective(b)
-                if bp is None:
-                    continue
-                sub = path.relative_to(base).parts
-                bare.append({
-                    "run_id": run.name, "fired_at": fired_at(run.name),
-                    "fixture": rel[0] + ("/" + sub[0] if len(sub) > 2 else ""), "skill": rel[0],
-                    "model": arm_model(b), "trials": b.get("n") or 1, "bare": bp, "checks": tot,
-                    "bare_share": bp / tot if tot else None, "cost_usd": cost(b), "report_url": url,
-                })
-                continue
-            if "with_skill" not in arms or "without_skill" not in arms:
-                continue
-            path, w = arms["with_skill"]
-            wo = arms["without_skill"][1]
-            wp, tot = objective(w)
-            wop, _ = objective(wo)
-            if wp is None or wop is None:
-                continue
-            wj, js = judge(w)
-            woj, _ = judge(wo)
-            sub = path.relative_to(base).parts
-            md = ((w.get("usage") or {}).get("meter_delta") or {}).get("windows", {}).get("seven_day") or {}
-            rows.append({
-                "run_id": run.name, "fired_at": fired_at(run.name),
-                "fixture": rel[0] + ("/" + sub[0] if len(sub) > 2 else ""), "skill": rel[0],
-                "model": arm_model(w), "trials": w.get("n"),
-                "with_skill": wp, "without_skill": wop, "checks": tot, "gain": wp - wop,
-                "with_judge": wj, "without_judge": woj,
-                "judge": "ran" if (wj is not None or woj is not None) else ("skipped: checks decided" if js == "skipped" else "not run"),
-                "with_share": wp / tot if tot else None, "without_share": wop / tot if tot else None,
-                "cost_usd": add_costs(cost(w), cost(wo)),
-                "meter_points": None if md.get("delta") is None else md["delta"] * 100,
-                "account_week_after": None if md.get("to") is None else md["to"] * 100,
-                "cli": cli_version(w), "report_url": url,
-            })
-    rows.sort(key=lambda r: r["fired_at"], reverse=True)
-    # Each bare run beside the newest paired run of the same test and model.
-    latest = {}
-    for r in rows:
-        latest.setdefault((r["fixture"], r["model"]), r)
-    for b in bare:
-        p = latest.get((b["fixture"], b["model"]))
-        if not p:  # older paired runs name only the skill (one fixture, no subfolder)
-            q = latest.get((b["skill"], b["model"]))
-            p = q if q and q["checks"] == b["checks"] else None
-        b["paired_at"] = p["fired_at"] if p else None
-        b["with_share"] = p["with_share"] if p else None
-        b["without_share"] = p["without_share"] if p else None
-    bare.sort(key=lambda r: r["fired_at"], reverse=True)
+    """Paired runs (with/without a skill or guidance section) and bare baseline runs
+    (scripts/eval_facts.py `scored_runs`), each list given one placeholder row when empty."""
+    rows, bare = scored_runs(er, report_base)
     if not bare:
         bare = [{"run_id": PLACEHOLDER_ID, "fired_at": None, "fixture": "No bare runs yet", "skill": None,
                  "model": None, "trials": None, "bare": None, "checks": None, "bare_share": None,

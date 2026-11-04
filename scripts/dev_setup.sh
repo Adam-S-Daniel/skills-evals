@@ -37,6 +37,7 @@ PIP_PINS=(
   tree-sitter-bash==0.25.1
   pytest==9.1.1
   pytest-xdist==3.8.0
+  jsonschema==4.26.0
 )
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

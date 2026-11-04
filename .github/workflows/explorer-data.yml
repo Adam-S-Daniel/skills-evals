@@ -86,6 +86,27 @@ name: Publish explorer data
 #   skill-proposal issues of adam-agentskills, for `lessons.issues`: number,
 #   state, date, the count and target parsed from a title, a skill name and
 #   a built URL, never a body or other title text.
+# * The single public data contract (explorer/schema.json, which
+#   explorer_data.py validates the document against before writing; hence
+#   the jsonschema pin, and the Tree-sitter pins that parse the fleet hook
+#   runner). Every new input is public and read with the job token in a
+#   `continue-on-error` step that holds GH_TOKEN alone and prints only a fixed
+#   `... unavailable (exit N)` line, so a failed listing makes its field
+#   unknown (null), never a red build or a zero:
+#   - the fleet owners' repositories as GitHub lists them (`private`
+#     included), the only source of which repositories are public;
+#   - for each public one, its pull requests, open issues and the last 14
+#     days of workflow runs (one list call per kind, 100 rows each), reduced
+#     here to numbers, states, dates, titles and run names (never a body) for
+#     `activity`;
+#   - the hook-proposal issues here and _agent-guidance's
+#     `agent/lesson-check-*` pull requests for `lesson_funnel`, and the
+#     memory promotion rows now keep `state_reason`.
+#   The hook catalog reads _agent-guidance's templates/agent-checks/ from the
+#   checkout above and each context checkout's `.agent-checks/local.sh`.
+#   `activity` leaves out this workflow's own runs (by their `path`, which is
+#   not published), and publish ignores only its two clocks (`fetched_at`,
+#   `since`); a real change elsewhere in the fleet still commits the document.
 
 on:
   workflow_run:
@@ -189,7 +210,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install the offline verdict dependency
-        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0 jsonschema==4.26.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1
 
       - name: List the open regression issues
         env:
@@ -371,7 +392,7 @@ jobs:
           for owner in Adam-S-Daniel jodidaniel; do
             gh api -X GET search/issues -f "q=user:$owner is:issue \"Memory promotion\" in:title" \
               -f per_page=100 \
-              --jq '.items[] | {repo: (.repository_url | sub("^https://api.github.com/repos/"; "")), number: .number, state: .state, created_at: .created_at, title: .title}' \
+              --jq '.items[] | {repo: (.repository_url | sub("^https://api.github.com/repos/"; "")), number: .number, state: .state, state_reason: .state_reason, created_at: .created_at, title: .title}' \
               >> "$hits" 2>/dev/null || rc=$?
           done
           if [ "$rc" -eq 0 ]; then
@@ -396,6 +417,115 @@ jobs:
           fi
           exit 0
 
+      # The public data contract: GitHub's own visibility list of both fleet owners'
+      # repositories. Only `private == false` rows name a repository in the
+      # document; without this file none is named and `activity` is null.
+      - name: List the public repositories
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/public-repos.json"
+          rows="$RUNNER_TEMP/public-repos.jsonl"
+          rc=0
+          : > "$rows"
+          for owner in Adam-S-Daniel jodidaniel; do
+            gh api --method GET --paginate "users/$owner/repos?type=owner&per_page=100" \
+              --jq '.[] | {full_name: .full_name, private: .private}' >> "$rows" 2>/dev/null || rc=$?
+          done
+          if [ "$rc" -eq 0 ]; then
+            jq -s '{repos: .}' "$rows" > "$out.tmp" 2>/dev/null && mv "$out.tmp" "$out" || rc=$?
+          fi
+          rm -f "$rows" "$out.tmp"
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out"
+            echo "public repositories unavailable (exit $rc)"
+          fi
+          exit 0
+
+      # The public data contract's `activity`: per public repository, one call each for pull
+      # requests (newest updated first), open issues and the last 14 days of
+      # workflow runs. Bodies are dropped here; explorer_data.py validates
+      # every row again and builds every URL. Any failed call drops the file.
+      - name: List recent activity in the public repositories
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          repos="$RUNNER_TEMP/public-repos.json"
+          out="$RUNNER_TEMP/activity.json"
+          work="$RUNNER_TEMP/activity"
+          if [ ! -f "$repos" ]; then
+            echo "activity unavailable (no repository list)"
+            exit 0
+          fi
+          fetched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          since=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          rc=0
+          mkdir -p "$work"
+          : > "$work/pulls.jsonl"; : > "$work/issues.jsonl"; : > "$work/runs.jsonl"
+          for repo in $(jq -r '.repos[] | select(.private == false) | .full_name' "$repos"); do
+            [[ "$repo" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || continue
+            { gh api --method GET "repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=100" \
+                > "$work/page.json" 2>/dev/null \
+              && jq -c --arg repo "$repo" '.[] | {repo: $repo, number, title, state, created_at, updated_at, closed_at, merged_at}' \
+                "$work/page.json" >> "$work/pulls.jsonl" \
+              && gh api --method GET "repos/$repo/issues?state=open&per_page=100" \
+                > "$work/page.json" 2>/dev/null \
+              && jq -c --arg repo "$repo" '.[] | select(.pull_request == null) | {repo: $repo, number, title, state, created_at, updated_at}' \
+                "$work/page.json" >> "$work/issues.jsonl" \
+              && gh api --method GET -f "created=>=$since" -f per_page=100 "repos/$repo/actions/runs" \
+                > "$work/page.json" 2>/dev/null \
+              && jq -c --arg repo "$repo" '.workflow_runs[] | {repo: $repo, id, path, workflow: .name, title: .display_title, event, status, conclusion, created_at, updated_at}' \
+                "$work/page.json" >> "$work/runs.jsonl"; } || { rc=$?; break; }
+          done
+          if [ "$rc" -eq 0 ]; then
+            jq -n --arg fetched_at "$fetched_at" --slurpfile pulls "$work/pulls.jsonl" \
+              --slurpfile issues "$work/issues.jsonl" --slurpfile runs "$work/runs.jsonl" \
+              '{fetched_at: $fetched_at, pulls: $pulls, issues: $issues, runs: $runs}' \
+              > "$out.tmp" 2>/dev/null && mv "$out.tmp" "$out" || rc=$?
+          fi
+          rm -rf "$work" "$out.tmp"
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out"
+            echo "activity unavailable (exit $rc)"
+          fi
+          exit 0
+
+      # The public data contract's `lesson_funnel`: the hook-proposal issues of this
+      # repository and _agent-guidance's lesson-check pull requests, both
+      # public. Only numbers, states, close reasons, labels and heads remain.
+      - name: List the lesson outcomes
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/lesson-funnel.json"
+          rc=0
+          { gh api --method GET --paginate --slurp \
+              "repos/$GITHUB_REPOSITORY/issues?labels=hook-proposal&state=all&per_page=100" \
+              > "$RUNNER_TEMP/hook-proposals.json" 2>/dev/null \
+            && gh api --method GET --paginate --slurp \
+              "repos/Adam-S-Daniel/_agent-guidance/pulls?state=all&per_page=100" \
+              > "$RUNNER_TEMP/guidance-pulls.json" 2>/dev/null \
+            && jq -n --slurpfile hooks "$RUNNER_TEMP/hook-proposals.json" \
+              --slurpfile pulls "$RUNNER_TEMP/guidance-pulls.json" \
+              '{hook_proposals: [$hooks[0][][] | {number, state, state_reason, labels: [.labels[] | {name}]}
+                                 + (if .pull_request then {pull_request: true} else {} end)],
+                lesson_check_prs: [$pulls[0][][] | select(.head.ref | startswith("agent/lesson-check-"))
+                                   | {head: .head.ref, number, state, merged: (.merged_at != null)}]}' \
+              > "$out.tmp" 2>/dev/null \
+            && mv "$out.tmp" "$out"; } || rc=$?
+          rm -f "$RUNNER_TEMP/hook-proposals.json" "$RUNNER_TEMP/guidance-pulls.json" "$out.tmp"
+          if [ "$rc" -ne 0 ]; then
+            rm -f "$out"
+            echo "lesson outcomes unavailable (exit $rc)"
+          fi
+          exit 0
+
       - name: Build the explorer data
         working-directory: skills-evals
         run: |
@@ -415,6 +545,12 @@ jobs:
           if [ -f "$RUNNER_TEMP/draft-prs.json" ]; then
             lessons+=(--draft-prs "$RUNNER_TEMP/draft-prs.json")
           fi
+          public=()
+          for name in public-repos activity lesson-funnel; do
+            if [ -f "$RUNNER_TEMP/$name.json" ]; then
+              public+=("--$name" "$RUNNER_TEMP/$name.json")
+            fi
+          done
           python3 scripts/explorer_data.py \
             --results-tree "$GITHUB_WORKSPACE/eval-results" \
             --roster evals/roster.yml --policy evals/gate-policy.yml \
@@ -437,6 +573,9 @@ jobs:
             --fire-runs "$RUNNER_TEMP/fire-runs.json" \
             --fixture-queue "$RUNNER_TEMP/fixture-queue/fixture-queue.json" \
             "${lessons[@]}" \
+            --agent-checks "$GITHUB_WORKSPACE/agent-guidance/templates/agent-checks" \
+            --hook-policy evals/hook-policy.yml --export-policy evals/public-export.yml \
+            "${public[@]}" \
             --out "$RUNNER_TEMP/explorer/latest.json"
 
       - name: Upload the explorer data
@@ -484,8 +623,9 @@ jobs:
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           refspec="+refs/heads/persistent/eval-results:refs/remotes/origin/persistent/eval-results"
           # The two fields that change with every commit to the branch, and the
-          # fixture queue report's clock, which changes with every build.
-          strip='del(.generated_at, .source.results_commit, .fixture_queue.generated_at)'
+          # fixture queue report's clock and the activity listing's window,
+          # which change with every build.
+          strip='del(.generated_at, .source.results_commit, .fixture_queue.generated_at, .activity.fetched_at, .activity.since)'
           for attempt in 1 2 3 4 5 6; do
             # Other publishers push this branch every minute or two, so wait
             # (about 2, 4, 8, 16 and 32 s plus jitter) before each retry.
