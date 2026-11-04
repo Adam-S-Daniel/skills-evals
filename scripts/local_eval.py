@@ -27,7 +27,9 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    `CLAUDE_CONFIG_DIR`; or contains `API_KEY`, `AUTH_TOKEN`, `ACCESS_KEY`,
    `SECRET` or `BEARER` (the one tool toggle in that family,
    `CLAUDE_CODE_USE_POWERSHELL_TOOL`, is not a provider and passes). Empty
-   counts. The message names the variable, never
+   counts. The one exemption is `CLAUDE_CODE_OAUTH_TOKEN` under
+   `--container-token` (see "Container mode" below); every other name
+   still refuses. The message names the variable, never
    its value; `env -u NAME` clears it. A run under `/login` needs none of them,
    and each one either bills a dollar or cloud account, re-routes the CLI to
    another provider, or puts a credential in reach of an arm.
@@ -201,6 +203,20 @@ Limits a reader must know:
   set CLAUDE_BIN or PATH for what the agent spawns afterwards; the harness's
   own launches still go through the guard. The interactive login is the only credential the judge is left able
   to use, if those checks and the CLI's documented precedence hold.
+
+Container mode (`--container-token`): for a run INSIDE a Docker container on
+the owner's workstation (see `scripts/container_eval.sh`), authenticating with
+a long-lived token from `claude setup-token` that reached the container only
+through `docker run --env-file`. The flag is refused (exit 2) unless the
+process is in a container (`/.dockerenv` exists or
+`SKILLS_EVALS_IN_CONTAINER=1`) and `CLAUDE_CODE_OAUTH_TOKEN` is set and
+non-empty. That one variable is then exempt from rule 1 and is added to the
+child allow-list, so the version call, arms and judge see it. After each trial
+every regular file under `<out>/t<k>/` (symlinks and files over 50 MB
+skipped) has the exact token replaced with `[REDACTED:CLAUDE_CODE_OAUTH_TOKEN]`;
+manifest.json records `token_redactions` (a count of files changed, never the
+value) and `auth` (`container-oauth-token` or `login`). Results remain a
+local exhibit.
 """
 
 from __future__ import annotations
@@ -241,6 +257,12 @@ CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR")
 CHILD_ENV_PREFIXES = ("LC_",)
 
+#: The one credential `--container-token` lets through rule 1 and the
+#: child allow-list.
+CONTAINER_TOKEN_NAME = "CLAUDE_CODE_OAUTH_TOKEN"
+CONTAINER_ENV_FLAG = "SKILLS_EVALS_IN_CONTAINER"
+REDACTION_MAX_BYTES = 50 * 1024 * 1024
+
 #: Written at the results dir's root and in each trial dir before the trial
 #: launches; scripts/make_badge.py refuses a results dir at or below one.
 EXHIBIT_MARKER = "LOCAL_EXHIBIT"
@@ -273,14 +295,47 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def child_environment(environ) -> dict:
+def in_container(dockerenv: Path = Path("/.dockerenv"), environ=None) -> bool:
+    """True when running inside a container: `dockerenv` exists, or
+    SKILLS_EVALS_IN_CONTAINER=1."""
+    environ = os.environ if environ is None else environ
+    return Path(dockerenv).exists() or environ.get(CONTAINER_ENV_FLAG) == "1"
+
+
+def redact_token(directory: Path, token: str) -> int:
+    """Replace `token` with a marker in every regular file under `directory`
+    (bytes-level; symlinks and files over REDACTION_MAX_BYTES skipped).
+    Returns the number of files changed."""
+    needle = token.encode("utf-8")
+    marker = f"[REDACTED:{CONTAINER_TOKEN_NAME}]".encode("ascii")
+    changed = 0
+    for root, _dirs, files in os.walk(directory, followlinks=False):
+        for name in files:
+            path = Path(root, name)
+            try:
+                if path.is_symlink() or not path.is_file():
+                    continue
+                if path.stat().st_size > REDACTION_MAX_BYTES:
+                    continue
+                data = path.read_bytes()
+                if needle not in data:
+                    continue
+                path.write_bytes(data.replace(needle, marker))
+                changed += 1
+            except OSError:
+                continue
+    return changed
+
+
+def child_environment(environ, allow=()) -> dict:
     """The allow-listed environment every child runs under, plus
     `guidance.CLI_FORCED_ENV` (auto-memory off) SET, not inherited: the
     children run under the real HOME, and skill-creator's own `claude`
     calls (propose_skill_edit) reach no harness sink that would set it."""
     return guidance.cli_child_env(
         {name: value for name, value in environ.items()
-         if name in CHILD_ENV_NAMES or name.startswith(CHILD_ENV_PREFIXES)})
+         if name in CHILD_ENV_NAMES or name in allow
+         or name.startswith(CHILD_ENV_PREFIXES)})
 
 
 def check_user_settings(home: Path) -> None:
@@ -744,6 +799,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="passed to run_eval.py and recorded in "
                              "manifest.json (default "
                              f"{run_eval.guidance.DEFAULT_PERMISSION_MODE})")
+    parser.add_argument("--container-token", action="store_true",
+                        help="inside a container only: authenticate with "
+                             "CLAUDE_CODE_OAUTH_TOKEN from the environment "
+                             "(see Container mode)")
     args = parser.parse_args(argv)
     if not 1 <= args.trials <= MAX_TRIALS:
         parser.error(f"--trials must be 1..{MAX_TRIALS}, got {args.trials}")
@@ -835,8 +894,21 @@ def main(argv=None) -> int:
 
 
 def _run(args: argparse.Namespace, guard_dir: Path) -> int:
+    allow = ()
     try:
-        refused = refused_env_names(os.environ)
+        if args.container_token:
+            if not in_container():
+                raise Refused(
+                    "--container-token is only for a run inside a container "
+                    f"(no /.dockerenv and {CONTAINER_ENV_FLAG} is not 1); "
+                    "run under your own /login instead.")
+            if not os.environ.get(CONTAINER_TOKEN_NAME):
+                raise Refused(
+                    f"--container-token needs {CONTAINER_TOKEN_NAME} set and "
+                    "non-empty in the environment (pass it with "
+                    "`docker run --env-file`).")
+            allow = (CONTAINER_TOKEN_NAME,)
+        refused = refused_env_names(os.environ, allow)
         if refused:
             raise Refused(
                 "refusing to run with " + ", ".join(refused) + " set: a local "
@@ -853,7 +925,7 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         check_user_settings(Path(os.environ.get("HOME") or Path.home()))
         # From here every child (the version call, the probe, run_eval and
         # through it the arms, and the judge) inherits only the allow-list.
-        allowed = child_environment(os.environ)
+        allowed = child_environment(os.environ, allow)
         os.environ.clear()
         os.environ.update(allowed)
         out = check_results_dir(args.results_dir)
@@ -889,6 +961,8 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         "fixture": (eval_dir.relative_to(REPO_ROOT).as_posix()
                     if REPO_ROOT in eval_dir.parents else str(eval_dir)),
         "skill": skill,
+        "auth": "container-oauth-token" if args.container_token else "login",
+        "token_redactions": 0,
         "invocation": {"trials": args.trials, "arm": args.arm,
                        "timestamp": args.timestamp,
                        "no_judge": args.no_judge, "fixture": args.fixture,
@@ -968,6 +1042,13 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
         stamp_local_exhibit(trial_dir)
         (trial_dir / "run_eval.log").write_text(
             (proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
+        token = os.environ.get(CONTAINER_TOKEN_NAME, "") if allow else ""
+        if token:
+            manifest["token_redactions"] += redact_token(trial_dir, token)
+            proc.stdout = (proc.stdout or "").replace(
+                token, f"[REDACTED:{CONTAINER_TOKEN_NAME}]")
+            proc.stderr = (proc.stderr or "").replace(
+                token, f"[REDACTED:{CONTAINER_TOKEN_NAME}]")
         sys.stdout.write(proc.stdout or "")
         sys.stderr.write(proc.stderr or "")
         manifest["trials"].append({

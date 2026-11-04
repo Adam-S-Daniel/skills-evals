@@ -1687,6 +1687,250 @@ class TestLocalEval(unittest.TestCase):
             ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_POWERSHELL",
              "CLAUDE_CODE_USE_POWERSHELL_TOOL_X"])
 
+    # -- container mode (--container-token) --------------------------------
+
+    TOKEN = "example-oauth-token-0123456789"
+
+    def _container_run(self, registry, *extra, env_extra=None, plant=None):
+        env = {"CLAUDE_CODE_OAUTH_TOKEN": self.TOKEN,
+               "SKILLS_EVALS_IN_CONTAINER": "1", **(env_extra or {})}
+        return self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}",
+                         "--container-token", *extra, env_extra=env,
+                         plant=plant)
+
+    @unittest.skipIf(Path("/.dockerenv").exists(),
+                     "this test host is itself a container")
+    def test_container_token_flag_refused_outside_a_container(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         "--container-token",
+                         env_extra={"CLAUDE_CODE_OAUTH_TOKEN": self.TOKEN})
+        self._assert_nothing_ran(proc)
+        self.assertIn("--container-token", proc.stderr)
+        self.assertNotIn(self.TOKEN, proc.stdout + proc.stderr)
+        self.assertFalse(self.out.exists())
+
+    def test_container_token_flag_refused_without_a_token(self):
+        registry = self._registry()
+        for value in (None, ""):
+            with self.subTest(value=value):
+                extra = {"SKILLS_EVALS_IN_CONTAINER": "1"}
+                if value is not None:
+                    extra["CLAUDE_CODE_OAUTH_TOKEN"] = value
+                proc = self._run(str(EVAL_DIR), "--trials", "1",
+                                 "--registry", f"adam-agentskills={registry}",
+                                 "--container-token", env_extra=extra)
+                self._assert_nothing_ran(proc)
+                self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", proc.stderr)
+                self.assertFalse(self.out.exists())
+
+    def test_token_without_the_flag_is_still_refused_in_a_container(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={registry}",
+                         env_extra={"CLAUDE_CODE_OAUTH_TOKEN": self.TOKEN,
+                                    "SKILLS_EVALS_IN_CONTAINER": "1"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", proc.stderr)
+        self.assertNotIn(self.TOKEN, proc.stdout + proc.stderr)
+
+    def test_container_token_does_not_exempt_any_other_credential(self):
+        registry = self._registry()
+        proc = self._container_run(
+            registry, env_extra={"ANTHROPIC_API_KEY": "example-key"})
+        self._assert_nothing_ran(proc)
+        self.assertIn("ANTHROPIC_API_KEY", proc.stderr)
+        self.assertNotIn("example-key", proc.stdout + proc.stderr)
+        self.assertNotIn(self.TOKEN, proc.stdout + proc.stderr)
+
+    def test_container_token_reaches_children_and_is_redacted(self):
+        registry = self._registry()
+        planted = self.out / "t1" / "planted.txt"
+        proc = self._container_run(
+            registry, plant=(str(planted), f"before {self.TOKEN} after\n"))
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertTrue(calls)
+        # The contamination probe strips credentials itself (init_probe).
+        seen = {c["role"] for c in calls if c["role"] != "probe"}
+        self.assertTrue({"version", "agent"} <= seen, seen)
+        for call in calls:
+            if call["role"] != "probe":
+                self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", call["secret_env"],
+                              call["role"])
+        self.assertEqual(
+            planted.read_text(encoding="utf-8"),
+            "before [REDACTED:CLAUDE_CODE_OAUTH_TOKEN] after\n")
+        manifest_text = (self.out / "manifest.json").read_text(encoding="utf-8")
+        manifest = json.loads(manifest_text)
+        self.assertNotIn(self.TOKEN, manifest_text)
+        self.assertGreaterEqual(manifest["token_redactions"], 1)
+        self.assertEqual(manifest["auth"], "container-oauth-token")
+        for path in self.out.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(self.TOKEN.encode(), path.read_bytes(),
+                                 str(path))
+        for summary in self._summaries("with_skill", 1):
+            self.assertIs(summary.get("local_exhibit"), True)
+
+    def test_manifest_records_login_auth_without_the_flag(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}")
+        self.assertIn(proc.returncode, (0, 1), proc.stdout + proc.stderr)
+        manifest = self._json("manifest.json")
+        self.assertEqual(manifest["auth"], "login")
+        self.assertEqual(manifest["token_redactions"], 0)
+
+
+
+class TestContainerHelpers(unittest.TestCase):
+    """In-process checks of the container-mode helpers."""
+
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location("local_eval_mod", LOCAL_EVAL)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="local-eval-helpers-"))
+        self.addCleanup(shutil.rmtree, self.dir, ignore_errors=True)
+
+    def test_in_container_detection(self):
+        missing = self.dir / "no-dockerenv"
+        present = self.dir / "dockerenv"
+        present.write_text("", encoding="utf-8")
+        self.assertFalse(self.mod.in_container(missing, {}))
+        self.assertFalse(self.mod.in_container(missing,
+                                               {"SKILLS_EVALS_IN_CONTAINER": "0"}))
+        self.assertTrue(self.mod.in_container(present, {}))
+        self.assertTrue(self.mod.in_container(missing,
+                                              {"SKILLS_EVALS_IN_CONTAINER": "1"}))
+
+    def test_allow_exempts_only_the_named_variable(self):
+        env = {"CLAUDE_CODE_OAUTH_TOKEN": "x", "ANTHROPIC_API_KEY": "y"}
+        self.assertEqual(self.mod.refused_env_names(env),
+                         ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"])
+        self.assertEqual(
+            self.mod.refused_env_names(env, ("CLAUDE_CODE_OAUTH_TOKEN",)),
+            ["ANTHROPIC_API_KEY"])
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN",
+                         self.mod.child_environment(env))
+        self.assertIn("CLAUDE_CODE_OAUTH_TOKEN", self.mod.child_environment(
+            env, ("CLAUDE_CODE_OAUTH_TOKEN",)))
+
+    def test_redact_token_counts_files_and_skips_symlinks(self):
+        token = "example-oauth-token-0123456789"
+        (self.dir / "sub").mkdir()
+        (self.dir / "a.txt").write_bytes(f"x{token}y{token}".encode())
+        (self.dir / "sub" / "b.bin").write_bytes(b"\x00" + token.encode())
+        (self.dir / "clean.txt").write_text("nothing here", encoding="utf-8")
+        outside = self.dir.parent / (self.dir.name + "-outside.txt")
+        outside.write_text(token, encoding="utf-8")
+        self.addCleanup(outside.unlink)
+        (self.dir / "link.txt").symlink_to(outside)
+        self.assertEqual(self.mod.redact_token(self.dir, token), 2)
+        self.assertEqual((self.dir / "a.txt").read_bytes(),
+                         b"x[REDACTED:CLAUDE_CODE_OAUTH_TOKEN]y"
+                         b"[REDACTED:CLAUDE_CODE_OAUTH_TOKEN]")
+        self.assertNotIn(token.encode(), (self.dir / "sub" / "b.bin").read_bytes())
+        self.assertEqual(outside.read_text(encoding="utf-8"), token)
+
+
+CONTAINER_EVAL = REPO_ROOT / "scripts" / "container_eval.sh"
+
+
+@unittest.skipUnless(shutil.which("bash"), "bash is required")
+class TestContainerEvalScript(unittest.TestCase):
+    """scripts/container_eval.sh, with a fake `docker` on PATH."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(
+            prefix="container-eval-test-", dir=TestLocalEval._temp_base())).resolve()
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.calls = self.root / "docker-calls.txt"
+        fake = self.bin / "docker"
+        fake.write_text('#!/bin/bash\nprintf \'%s\\n\' "$@" > "$DOCKER_CALLS"\n'
+                        'exit "${DOCKER_EXIT:-0}"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        self.token = self.root / "token.env"
+        self.token.write_text("CLAUDE_CODE_OAUTH_TOKEN=example-token-value\n",
+                              encoding="utf-8")
+        self.token.chmod(0o600)
+        self.results = self.root / "results"
+
+    def _run(self, token=None, results=None, extra_env=None, args=("evals/x",)):
+        env = {"PATH": f"{self.bin}:/usr/bin:/bin", "HOME": str(self.root),
+               "DOCKER_CALLS": str(self.calls), **(extra_env or {})}
+        return subprocess.run(
+            ["bash", str(CONTAINER_EVAL),
+             "--token-file", str(token or self.token), "--image", "img:test",
+             "--results-dir", str(results or self.results), "--", *args],
+            capture_output=True, text=True, env=env, timeout=60)
+
+    def test_syntax(self):
+        proc = subprocess.run(["bash", "-n", str(CONTAINER_EVAL)],
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+    def test_runs_docker_with_env_file_and_returns_its_exit_code(self):
+        proc = self._run(extra_env={"DOCKER_EXIT": "7"})
+        self.assertEqual(proc.returncode, 7, proc.stderr)
+        argv = self.calls.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(argv[0], "run")
+        self.assertIn("--env-file", argv)
+        self.assertEqual(argv[argv.index("--env-file") + 1], str(self.token))
+        self.assertIn("SKILLS_EVALS_IN_CONTAINER=1", argv)
+        self.assertIn("evals/x", argv)
+        self.assertNotIn("example-token-value", "".join(argv))
+        self.assertNotIn("example-token-value", proc.stdout + proc.stderr)
+        self.assertFalse(any(a.startswith("CLAUDE_CODE_OAUTH_TOKEN") for a in argv))
+        self.assertTrue(self.results.is_dir())
+
+    def test_refuses_a_token_file_with_group_or_other_bits(self):
+        for mode in (0o640, 0o604, 0o644, 0o666):
+            with self.subTest(mode=oct(mode)):
+                self.token.chmod(mode)
+                proc = self._run()
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertFalse(self.calls.exists())
+                self.assertNotIn("example-token-value", proc.stdout + proc.stderr)
+
+    def test_accepts_mode_400(self):
+        self.token.chmod(0o400)
+        self.assertEqual(self._run().returncode, 0)
+
+    def test_refuses_a_missing_or_non_regular_token_file(self):
+        self.assertNotEqual(self._run(token=self.root / "absent").returncode, 0)
+        self.assertNotEqual(self._run(token=self.root).returncode, 0)
+        self.assertFalse(self.calls.exists())
+
+    def test_refuses_a_token_file_inside_a_git_work_tree(self):
+        if not shutil.which("git"):
+            self.skipTest("git is required")
+        repo = self.root / "repo"
+        repo.mkdir()
+        _git(repo, "init", "-q")
+        inside = repo / "token.env"
+        inside.write_text("CLAUDE_CODE_OAUTH_TOKEN=example-token-value\n",
+                          encoding="utf-8")
+        inside.chmod(0o600)
+        proc = self._run(token=inside)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse(self.calls.exists())
+
+    def test_refuses_a_non_empty_results_dir(self):
+        self.results.mkdir()
+        (self.results / "old.txt").write_text("x", encoding="utf-8")
+        proc = self._run()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertFalse(self.calls.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,11 +45,14 @@ class Refused(Exception):
     """A preflight refusal: printed, exit 2, no trial run."""
 
 
-def refused_env_names(environ) -> list[str]:
+def refused_env_names(environ, allow=()) -> list[str]:
     """Every name in `environ` the wrapper refuses to run under. Names only: a
-    value is never read."""
+    value is never read. `allow` exempts those exact names (case-sensitive)
+    from the rule; every other refused name still refuses."""
     refused = []
     for name in environ:
+        if str(name) in allow:
+            continue
         upper = str(name).upper()
         if upper in NOT_PROVIDER_ENV:
             continue
