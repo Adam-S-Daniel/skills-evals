@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T03:00:34Z",
+  "generated_at": "2026-11-04T03:04:13Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:59:36Z",
+ "generated_at": "2026-11-04T03:03:11Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:57:49Z",
+ "newest_run": "2026-11-04T03:01:45Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -14835,7 +14835,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 14,
+    "position": 13,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -17218,10 +17218,10 @@
      },
      {
       "gain": 0.0,
-      "high": 46.4,
-      "low": -100.0,
+      "high": 39.4,
+      "low": -49.1,
       "model": "claude-sonnet-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "paths-required",
       "votes": true
@@ -17256,17 +17256,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 16,
+   "current_text_runs": 17,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 14,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T03:01:45Z",
+     "cli_version": "2.1.318",
+     "fixture": "paths-required",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T025939Z-7c99bc/red-ci-adamdaniel-ai/20261104T030145Z/report.md",
+     "with": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.1334116,
+      "judge_mean": 9.0,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 2,
+      "checks_total": 3,
+      "cost_usd": 0.08930119999999998,
+      "judge_mean": 9.0,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:23:04Z",
      "cli_version": "2.1.317",
@@ -17749,7 +17770,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -18950,7 +18971,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 12,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -22644,7 +22665,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 13,
+    "position": 12,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -23862,7 +23883,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "b5e13e47e54f5b1e8f8509e2d2e91569aadf3c65",
-  "results_commit": "f1b4436af7916d2efda1b6f1bd22eebfcd14f1f3"
+  "results_commit": "309ac649e24c9f8b4fd2607d0a7fbc98d64f7ffa"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
