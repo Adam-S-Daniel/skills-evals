@@ -62,3 +62,5 @@ fixtures:
     reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
   - path: evals/tool-powershell/silent-exit-one
     reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/skills-doctor/laptop-double-delivery
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
