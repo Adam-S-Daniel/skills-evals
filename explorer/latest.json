@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-03T23:58:51Z",
+  "generated_at": "2026-11-04T00:00:55Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-03T23:57:59Z",
+ "generated_at": "2026-11-04T00:00:13Z",
  "guidance": {
   "removed": [
    {
@@ -11191,7 +11191,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-03T23:56:26Z",
+ "newest_run": "2026-11-03T23:58:34Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -11251,7 +11251,7 @@
     "main": "04dceca4cc1d",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11296,7 +11296,7 @@
     "main": "9c535047e8c8",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11341,7 +11341,7 @@
     "main": "51699965a19a",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11450,7 +11450,7 @@
     "main": "0e47fa91bcde",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11495,7 +11495,7 @@
     "main": "e581767d6022",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11561,7 +11561,7 @@
     "main": "626243e25887",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 3,
@@ -11838,7 +11838,7 @@
     "main": "74f41e45207e",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -11968,7 +11968,7 @@
     "main": "cf987a60e341",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 7,
@@ -12161,7 +12161,7 @@
     "main": "00feb6dc9faa",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -12270,7 +12270,7 @@
     "main": "6c6c010d2e58",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -12310,11 +12310,11 @@
       "votes": true
      },
      {
-      "gain": 9.6,
-      "high": 40.7,
-      "low": -28.0,
+      "gain": 8.3,
+      "high": 36.2,
+      "low": -24.6,
       "model": "claude-sonnet-5-5",
-      "pairs": 6,
+      "pairs": 7,
       "status": "open",
       "task": null,
       "votes": true
@@ -12322,8 +12322,8 @@
     ],
     "helps": 0.0,
     "keep_family": 2,
-    "keep_pairs": 6,
-    "max_pairs": 6,
+    "keep_pairs": 7,
+    "max_pairs": 7,
     "no_help": 0.07693826414977878,
     "no_help_pairs": 2
    },
@@ -12336,10 +12336,10 @@
     "main": "20f3c3341dcf",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
-   "current_text_runs": 8,
+   "current_text_runs": 9,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
@@ -12350,6 +12350,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T23:57:44Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T235549Z-7eef27/consumer-repo-provisioning/20261103T235744Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.1639816,
+      "judge_mean": 7.6,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.1738138,
+      "judge_mean": 5.199999999999999,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:33:57Z",
      "cli_version": "2.1.317",
@@ -12906,7 +12927,7 @@
     "main": "11725318c8c0",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 28,
@@ -14170,7 +14191,7 @@
     "main": "0be479e716d5",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 9,
@@ -14722,7 +14743,7 @@
     "main": "82971d4f8ae9",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -14831,7 +14852,7 @@
     "main": "298d082a12a9",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 4,
@@ -15317,7 +15338,7 @@
     "main": "533e43578831",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 9,
@@ -15552,7 +15573,7 @@
     "main": "84ca5a67efee",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -15597,7 +15618,7 @@
     "main": "de8ba4767b85",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -15937,7 +15958,7 @@
     "main": "b8d280f4811e",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 9,
@@ -16420,10 +16441,10 @@
      },
      {
       "gain": 1.2,
-      "high": 16.0,
-      "low": -13.9,
+      "high": 15.2,
+      "low": -13.1,
       "model": "claude-sonnet-5-5",
-      "pairs": 16,
+      "pairs": 17,
       "status": "open",
       "task": null,
       "votes": true
@@ -16432,7 +16453,7 @@
     "helps": 0.6819305618928069,
     "keep_family": 2,
     "keep_pairs": 16,
-    "max_pairs": 16,
+    "max_pairs": 17,
     "no_help": 0.13705583756345174,
     "no_help_pairs": 16
    },
@@ -16445,10 +16466,10 @@
     "main": "258fce200ce9",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
-   "current_text_runs": 32,
+   "current_text_runs": 33,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -16459,6 +16480,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-03T23:58:34Z",
+     "cli_version": "2.1.317",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261103T235705Z-deadd8/github-actions-sha-pinning/20261103T235834Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 10,
+      "cost_usd": 0.1303905,
+      "judge_mean": 8.5,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 8,
+      "checks_total": 10,
+      "cost_usd": 0.089902,
+      "judge_mean": 8.5,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:35:02Z",
      "cli_version": "2.1.317",
@@ -17438,7 +17480,7 @@
     "main": "58fe55ea81f7",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -17483,7 +17525,7 @@
     "main": "48f171dd7696",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -17528,7 +17570,7 @@
     "main": "782685cbc106",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -17573,7 +17615,7 @@
     "main": "42ec533b02e9",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -17682,7 +17724,7 @@
     "main": "6cb45ea01fbf",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 3,
@@ -17812,7 +17854,7 @@
     "main": "c4fd98edccd3",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 7,
@@ -18026,7 +18068,7 @@
     "main": "fcac14b6c503",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -18112,7 +18154,7 @@
     "main": "5ec63e5f61b3",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 16,
@@ -18599,7 +18641,7 @@
     "main": "c5df383b6f9e",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 4,
@@ -18852,7 +18894,7 @@
     "main": "fc025b6ccc11",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 19,
@@ -19695,7 +19737,7 @@
     "main": "0c175919f7ea",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 16,
@@ -20413,7 +20455,7 @@
     "main": "0f45fb10ce53",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -20458,7 +20500,7 @@
     "main": "01f8e865ec90",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 0,
@@ -20564,7 +20606,7 @@
     "main": "f15b1fb0529d",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 20,
@@ -21342,7 +21384,7 @@
     "main": "b7bc6f17c002",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 14,
@@ -22039,7 +22081,7 @@
     "main": "6c3afa3eec04",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 4,
@@ -22546,7 +22588,7 @@
     "main": "09be56481068",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 6,
@@ -23284,7 +23326,7 @@
     "main": "88722a1b11d7",
     "window": {
      "from": "2026-10-26",
-     "to": "2026-11-03"
+     "to": "2026-11-04"
     }
    },
    "current_text_runs": 8,
@@ -24448,7 +24490,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "e0fa3dfccbd4926ab687182cd7d0d914d453d2b5",
-  "results_commit": "2e2e651adb2b2d50c69a935f744c9ef003d189f5"
+  "results_commit": "63d8ac890efcb5f0c8faf308418a1a22827363c3"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
