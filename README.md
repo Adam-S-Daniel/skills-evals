@@ -86,6 +86,7 @@ evals/
     git-identity/          # a bare exit 128 from a test script that commits without a git identity
     secret-name/           # a workflow reads a secret name the repository does not have
   ci-job-performance/      # Class B: speed up a slow CI job from recorded timings
+  add-received-from-addresses/  # trigger eval set only (trigger lane)
     browser-cache/         # a Playwright browser cache that slows the firefox leg it was meant to speed up
       fixture.yaml         # gh-log timing reads, parsed-workflow probes per matrix leg, file guards, rubric
       seed/                # an e2e browser-matrix workflow, shared gh symlink, eight recorded runs
