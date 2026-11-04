@@ -17,7 +17,7 @@ export function alertText(a) {
 
 export function alertsView(doc, mode) {
   const want = mode === 'guidance' ? 'guidance' : 'skill';
-  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
+  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && (mode === 'all' || a.subject === want));
   const f = doc.fires_without_results;
   const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === 'string'
     ? h('p', { class: 'note' }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
@@ -27,5 +27,5 @@ export function alertsView(doc, mode) {
       const l = link(a.url, STRINGS.alertDetails);
       return h('li', null, h('strong', null, kind + ': ' + clean(a.name)), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
         a.text ? ' ' + clean(a.text) : (alertText(a) ? ' ' + alertText(a) : null), l ? [' ', l] : null);
-    })) : h('p', null, STRINGS.alertsNone));
+    })) : h('p', null, fires ? STRINGS.alertsNoneOther : STRINGS.alertsNone));
 }

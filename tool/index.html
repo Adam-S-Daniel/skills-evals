@@ -75,99 +75,162 @@
   --chip-bg: #322E28;
   --hover: #2E2A25;
 }
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font: 15px/1.5 Helvetica, Arial, sans-serif;
+/* The page color fills the whole window, outside the column and below short pages. */
+html { -webkit-text-size-adjust: 100%; background: var(--page); min-height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh; }
+/* Shared by both builds, scoped under .ex so the dashboard host's own styles
+   and these never meet. Each template sets the palette variables. */
+.ex, .ex * { box-sizing: border-box; }
+.ex { color: var(--ink); font: var(--ex-font, 15px/1.5 Helvetica, Arial, sans-serif); max-width: 1120px; margin: 0 auto; padding: 0 16px 48px; overflow-wrap: anywhere; }
+.ex h1 { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); font-weight: normal; font-size: 1.75rem; line-height: 1.25; margin: 16px 0 4px; }
+.ex h2 { font-size: 0.8rem; font-weight: normal; letter-spacing: 1.6px; text-transform: uppercase; margin: 32px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--base); }
+.ex h3 { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); font-weight: normal; font-size: 1.15rem; margin: 14px 0 4px; overflow-wrap: anywhere; }
+.ex p { margin: 0 0 12px; }
+.ex a { color: var(--link); }
+.ex .asof, .ex .note, .ex .src { color: var(--ink-2); font-size: 0.9rem; }
+.ex .src { font-size: 0.8rem; color: var(--muted); margin: -4px 0 8px; }
+.ex .muted { color: var(--muted); }
+.ex .warn { color: var(--warning); font-weight: 600; }
+.ex .lead { max-width: 70ch; }
+.ex .n { cursor: help; text-decoration: underline dotted var(--axis); text-underline-offset: 3px; }
+
+/* The top bar: one row of groups and a search box; at phone width one menu button. */
+.ex .topbar { position: sticky; top: 0; z-index: 5; background: var(--page); border-bottom: 1px solid var(--base); margin: 0 -16px; padding: 0 16px; }
+.ex .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-height: 52px; }
+.ex .brand { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); font-size: 1.1rem; color: var(--ink); text-decoration: none; padding: 8px 0; }
+.ex .menu { display: none; font: inherit; font-size: 0.9rem; margin-left: auto; padding: 6px 12px; min-height: 36px; border: 1px solid var(--base); border-radius: 9px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.ex .drawer { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.ex nav.groups { display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 auto; }
+.ex a.group { color: var(--ink-2); text-decoration: none; padding: 14px 10px 12px; border-bottom: 2px solid transparent; font-size: 0.92rem; }
+.ex a.group:hover { color: var(--ink); }
+.ex a.group[aria-current="page"] { color: var(--ink); border-bottom-color: var(--s1); font-weight: 600; }
+.ex input.search { font: inherit; font-size: 0.9rem; padding: 6px 10px; min-height: 36px; width: 16rem; max-width: 100%; border: 1px solid var(--base); border-radius: 9px; background: var(--surface); color: var(--ink); }
+@media (max-width: 760px) {
+  .ex .menu { display: inline-block; }
+  .ex .drawer { display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; padding: 0 0 12px; }
+  .ex .topbar.open .drawer { display: flex; }
+  .ex nav.groups { flex-direction: column; }
+  .ex a.group { padding: 10px 4px; border-bottom: 0; border-left: 3px solid transparent; padding-left: 10px; }
+  .ex a.group[aria-current="page"] { border-left-color: var(--s1); }
+  .ex input.search { width: 100%; }
 }
-main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; }
-h1 { font-family: Georgia, "Times New Roman", serif; font-weight: normal; font-size: 1.75rem; line-height: 1.25; margin: 8px 0 4px; }
-h2 { font-size: 0.8rem; font-weight: normal; letter-spacing: 1.6px; text-transform: uppercase; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--base); }
-h3 { font-family: Georgia, "Times New Roman", serif; font-weight: normal; font-size: 1.15rem; margin: 0 0 4px; overflow-wrap: anywhere; }
-p { margin: 0 0 12px; }
-a { color: var(--link); }
-.asof, .note { color: var(--ink-2); font-size: 0.9rem; }
-.lead { max-width: 70ch; }
-.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
-.seg { display: inline-flex; border: 1px solid var(--base); border-radius: 9px; overflow: hidden; }
-.seg button {
-  font: inherit; font-size: 0.9rem; padding: 6px 12px; border: 0; background: var(--surface);
-  color: var(--ink); cursor: pointer; min-height: 36px;
-}
-.seg button + button { border-left: 1px solid var(--base); }
-.seg button:hover { background: var(--hover); }
-.seg button[aria-pressed="true"] { background: var(--s1); color: var(--page); font-weight: 600; }
-.seg button:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
-.panel {
-  background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
-  padding: 16px; margin: 12px 0;
-}
-dl.gloss { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: 6px 16px; margin: 8px 0 0; }
-dl.gloss dt { font-weight: 600; }
-dl.gloss dd { margin: 0; color: var(--ink-2); }
-@media (max-width: 560px) { dl.gloss { grid-template-columns: 1fr; } dl.gloss dd { margin-bottom: 8px; } }
-summary { cursor: pointer; font-weight: 600; min-height: 32px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-@media (max-width: 400px) { .cards { grid-template-columns: 1fr; } }
-.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
-.card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
-.card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
-.card .sent { font-size: 0.95rem; margin-top: 10px; }
-.card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
-.model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
-.chip {
-  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none;
-  font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
-  background: var(--chip-bg); color: var(--ink); border: 1px solid var(--ring); cursor: help;
-}
-.chip .ic { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--axis); }
-.chip.helps .ic { background: var(--good); }
-.chip.worse .ic { background: var(--critical); }
-.chip.alone .ic { background: var(--warning); }
-.chip.none .ic { background: var(--axis); }
-.chip.insufficient .ic { background: transparent; border: 2px solid var(--axis); }
-.chip.canttell .ic { background: transparent; border: 2px dashed var(--axis); }
-.chip.early .ic { background: transparent; border: 2px solid var(--good); }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
-svg text { font-family: Helvetica, Arial, sans-serif; }
-.chart { max-width: 396px; }
-.spark { max-width: 320px; margin-top: 10px; }
-.mark:hover, .mark:focus { opacity: 0.8; outline: none; }
-.trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
-ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }
-.reason { color: var(--ink-2); font-size: 0.9rem; }
-.failure { border-left: 4px solid var(--critical); }
-.summary-line { font-size: 1rem; }
-.tablewrap { overflow-x: auto; max-width: 100%; }
-table { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
-th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tip {
-  position: fixed; z-index: 10; pointer-events: none; max-width: 260px;
-  background: var(--surface); color: var(--ink); border: 1px solid var(--base);
-  border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; box-shadow: 0 2px 8px rgba(61,58,52,0.15);
-}
-.tip[hidden] { display: none; }
-.headline .answer { font-size: 1.1rem; font-weight: 600; }
-@media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
-.conf { margin: 12px 0 0; }
-.conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
-.chart.range { max-width: 420px; margin-top: 4px; }
+.ex .subnav { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.ex .subnav a { text-decoration: none; color: var(--ink-2); padding: 4px 12px; border: 1px solid var(--base); border-radius: 999px; font-size: 0.88rem; }
+.ex .subnav a[aria-current="page"] { background: var(--s1); color: var(--page); border-color: var(--s1); font-weight: 600; }
+.ex .group-title { margin-top: 18px; }
+.ex .back { display: inline-block; margin: 12px 0 0; font-size: 0.9rem; }
+
+.ex .toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
+.ex .seg { display: inline-flex; border: 1px solid var(--base); border-radius: 9px; overflow: hidden; max-width: 100%; flex-wrap: wrap; }
+.ex .seg button { font: inherit; font-size: 0.9rem; padding: 6px 12px; border: 0; background: var(--surface); color: var(--ink); cursor: pointer; min-height: 36px; }
+.ex .seg button + button { border-left: 1px solid var(--base); }
+.ex .seg button:hover { background: var(--hover); }
+.ex .seg button[aria-pressed="true"] { background: var(--s1); color: var(--page); font-weight: 600; }
+.ex .seg button:focus-visible, .ex a:focus-visible, .ex th:focus-visible, .ex .tile:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
+.ex .panel, .ex .block.banner { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 16px; margin: 12px 0; }
+.ex .block.banner h2 { margin-top: 0; }
+.ex .big { font-size: 1.1rem; font-weight: 600; }
+.ex dl.gloss { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: 6px 16px; margin: 8px 0 0; }
+.ex dl.gloss dt { font-weight: 600; }
+.ex dl.gloss dd { margin: 0; color: var(--ink-2); }
+@media (max-width: 560px) { .ex dl.gloss { grid-template-columns: 1fr; } .ex dl.gloss dd { margin-bottom: 8px; } }
+.ex summary { cursor: pointer; font-weight: 600; min-height: 32px; }
+
+/* Tiles */
+.ex .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 12px; margin: 12px 0; }
+.ex .tile { display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; color: var(--ink); text-decoration: none; min-width: 0; }
+.ex a.tile:hover { border-color: var(--axis); }
+.ex .tile-label { font-size: 0.8rem; color: var(--ink-2); }
+.ex .tile-num { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); font-size: 1.7rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.ex .tile-num[data-tip] { cursor: help; }
+.ex .tile-num.small { font-size: 1.2rem; }
+.ex .tile-note { font-size: 0.8rem; color: var(--muted); }
+.ex .tile:first-child { border-color: var(--s1); }
+.ex .headline-num { font-size: 1.1rem; font-weight: 600; }
+
+/* Cards */
+.ex .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.ex .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
+.ex .card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
+.ex .card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
+.ex .card .sent { font-size: 0.95rem; margin-top: 10px; }
+.ex .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
+.ex .card h3 a, .ex a.nav-link { text-decoration: none; }
+.ex .card h3 a:hover, .ex a.nav-link:hover { text-decoration: underline; }
+.ex .model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
+.ex .chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none; font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--chip-bg); color: var(--ink); border: 1px solid var(--ring); cursor: help; }
+.ex .chip .ic { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--axis); }
+.ex .chip.helps .ic { background: var(--good); }
+.ex .chip.worse .ic { background: var(--critical); }
+.ex .chip.alone .ic { background: var(--warning); }
+.ex .chip.none .ic { background: var(--axis); }
+.ex .chip.insufficient .ic { background: transparent; border: 2px solid var(--axis); }
+.ex .chip.canttell .ic { background: transparent; border: 2px dashed var(--axis); }
+.ex .chip.early .ic { background: transparent; border: 2px solid var(--good); }
+.ex .badge { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.4px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--s1); color: var(--s1); vertical-align: middle; white-space: nowrap; }
+.ex .st { display: inline-block; font-size: 0.78rem; padding: 1px 8px; border-radius: 999px; background: var(--chip-bg); border: 1px solid var(--ring); white-space: nowrap; }
+.ex .st.good { border-color: var(--good); color: var(--good-ink); }
+.ex .st.bad { border-color: var(--critical); color: var(--critical); }
+.ex .st.warn { border-color: var(--warning); color: var(--warning); }
+.ex .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
+.ex .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.ex .sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.ex svg { display: block; width: 100%; height: auto; overflow: visible; }
+.ex svg text { font-family: Helvetica, Arial, sans-serif; }
+.ex .chart { max-width: 396px; }
+.ex .chart.weeks { max-width: 640px; }
+.ex .spark { max-width: 320px; margin-top: 10px; }
+.ex .mark:hover, .ex .mark:focus { opacity: 0.8; outline: none; }
+.ex .trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+.ex .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
+.ex ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
+.ex ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }
+.ex ol.stages { margin: 6px 0 12px; padding-left: 1.4em; }
+.ex ol.stages li { margin: 4px 0; }
+.ex .reason { color: var(--ink-2); font-size: 0.9rem; }
+.ex .failure { border-left: 4px solid var(--critical); }
+.ex .summary-line { font-size: 1rem; }
+.ex .subject-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; }
+.ex .subject-head .title { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); text-transform: none; letter-spacing: 0; font-size: 1.6rem; border: 0; margin: 0; padding: 0; }
+.ex .meter { position: relative; height: 10px; border-radius: 5px; background: var(--grid); margin: 4px 0 10px; max-width: 480px; }
+.ex .meter .fill { height: 100%; border-radius: 5px; background: var(--s1); }
+.ex .meter .fill.over { background: var(--critical); }
+.ex .meter-mark { position: absolute; top: -3px; width: 2px; height: 16px; background: var(--ink); }
+
+/* Tables */
+.ex .tablewrap { overflow-x: auto; max-width: 100%; }
+.ex .tablewrap.tall { max-height: 520px; overflow-y: auto; }
+.ex table { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
+.ex th, .ex td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; overflow-wrap: break-word; }
+.ex th { position: sticky; top: 0; background: var(--surface); cursor: pointer; font-weight: 600; white-space: nowrap; }
+.ex th[aria-sort="ascending"]::after { content: " \25B4"; }
+.ex th[aria-sort="descending"]::after { content: " \25BE"; }
+.ex td.num, .ex th.num { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.ex .block { min-width: 0; }
+.ex table.console { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
+.ex .problems-only tr[data-ok] { display: none; }
+.ex label.check, .ex label.filter { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; margin: 0 12px 8px 0; }
+.ex .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0; }
+.ex select { font: inherit; font-size: 0.88rem; padding: 4px 6px; border: 1px solid var(--base); border-radius: 6px; background: var(--surface); color: var(--ink); max-width: 100%; }
+.ex .linkish { font: inherit; font-size: 0.88rem; border: 0; background: none; color: var(--link); text-decoration: underline; cursor: pointer; padding: 4px; }
+.ex-tip { font-family: var(--ex-font-family, Helvetica, Arial, sans-serif); position: fixed; z-index: 10; pointer-events: none; max-width: 260px; background: var(--surface); color: var(--ink); border: 1px solid var(--base); border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; box-shadow: 0 2px 8px rgba(61,58,52,0.15); }
+.ex-tip[hidden] { display: none; }
+.ex .headline .answer { font-size: 1.1rem; font-weight: 600; }
+@media (forced-colors: active) { .ex .chip .ic { forced-color-adjust: none; } }
+.ex .conf { margin: 12px 0 0; }
+.ex .conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
+.ex .chart.range { max-width: 420px; margin-top: 4px; }
+.ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
+.ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
+.ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
 </style>
 </head>
 <body>
-<main id="app">
+<main id="app" class="ex">
   <h1>Evals Explorer</h1>
   <p id="loading">Loading the latest results.</p>
 </main>
+<div class="ex-tip" id="tip" role="tooltip" hidden></div>
 <noscript>
   <div style="max-width:640px;margin:16px auto;padding:16px">
     This page needs JavaScript to read the latest test results and draw its charts.
@@ -175,7 +238,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json
   </div>
 </noscript>
-<div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 'use strict';
 (() => {
@@ -200,306 +262,504 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   // src/config.js
   var DATA_REPO = "Adam-S-Daniel/skills-evals";
 
-  // src/core/strings.js
-  var ISSUES_URL = "https://github.com/" + DATA_REPO + "/issues";
-  var STRINGS = {
-    title: "Evals Explorer",
-    loading: "Loading the latest results…",
-    dataAsOf: (when) => "Data as of " + when + ".",
-    newestRun: (when) => "Newest test run: " + when + ".",
-    noRunsYet: "No test runs have been recorded yet.",
-    modeLabel: "Show results for",
-    modeSkills: "Skills",
-    modeGuidance: "Guidance",
-    hidden: "[hidden]",
-    unknown: "unknown",
-    et: "ET",
-    introHeading: "What you are looking at",
-    introSkills: [
-      "A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don't write most of them myself. I've set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.",
-      "So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.",
-      'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
-    ],
-    introGuidance: [
-      "The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn't happen twice. This page shows whether each section earns its place.",
-      "To test a section, Claude gets an ordinary task with that section's trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.",
-      `Two things matter here that don't for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.`
-    ],
-    glossaryHeading: "Words used on this page",
-    glossary: [
-      ["Fixture", "One small, fixed practice task used for testing. The same task is used every time so results can be compared."],
-      ["Arm", 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
-      ["Trial", "A single attempt at the task. A run is made of several trials."],
-      ["Judge", "A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself."],
-      ["Objective check", 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
-      ["Roster", "The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen."],
-      ["Improvement loop", "The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn't. I set its thresholds and budget; day to day, it runs without me."],
-      ["Regression", "A result that has become worse than it used to be. A regression alert means something needs a closer look."]
-    ],
-    glossaryGuidance: [
-      ["Section", "One topic within the guidance, under its own heading."],
-      ["Ablation", "Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there."],
-      ["Cost per session", "How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length."]
-    ],
-    chipGlossaryIntro: "The colored label on each card means:",
-    chips: {
-      helps: "Helps",
-      alone: "Helps only on its own",
-      none: "No measurable difference",
-      worse: "Getting worse",
-      early: "Early sign: helps",
-      canttell: "Test cannot tell",
-      insufficient: "Not enough data"
-    },
-    chipRules: {
-      helps: "The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.",
-      alone: "It helps when it's the only section present, but the loop found it adds less than " + pts(HELPS_MIN_GAIN) + " percentage points once the rest of the guidance is there too.",
-      none: "On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.",
-      canttell: "Claude already passes this test without it, so the test can't show whether it helps. It needs a harder test.",
-      worse: "An automatic alert says recent results are worse than they used to be — worth a closer look.",
-      early: "The loop hasn't decided yet, but every model tried so far passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with it than without it.",
-      insufficient: "The loop hasn't decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn't, and the early results don't clearly lean either way."
-    },
-    chipOrder: ["helps", "alone", "early", "none", "canttell", "worse", "insufficient"],
-    skillsHeading: "Does each skill help?",
-    purposeMissing: "No description of what this skill is for was found.",
-    skillsNote: "One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can't judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week's budget. Under each name is what the skill is for. Numbers pool every comparison run from the last " + WINDOW_WEEKS + " weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.",
-    sectionsHeading: "Does each section earn its place?",
-    sectionsNote: "One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last " + WINDOW_WEEKS + " weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.",
-    sortLabel: "Order sections by",
-    sortNext: "Next test",
-    sortValue: "Help per word",
-    sortSize: "Size",
-    noCards: "Nothing has been tested yet.",
-    summaryCounts: (parts) => "Right now: " + parts + ".",
-    sentenceSkill: (m, a, b, c, d) => "With this skill, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
-    sentenceSection: (m, a, b, c, d) => "With this section, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
-    sentenceAblation: (e, f, g, h2) => "With all the guidance, " + e + " of " + f + "; with all of it but this section, " + g + " of " + h2 + ".",
-    sentenceWhole: (m, a, b, c, d) => "With all the guidance, " + m + " passed " + a + " of " + b + " checks; with no guidance, " + c + " of " + d + ".",
-    aloneShown: "Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.",
-    tried: (n, when) => n + (n === 1 ? " trial" : " trials") + " in all, the last on " + when + ".",
-    notTried: "No trials in the last " + WINDOW_WEEKS + " weeks.",
-    pairedRuns: (n) => n + (n === 1 ? " comparison run" : " comparison runs"),
-    judgeScores: (a, b) => "judge score " + a + " with, " + b + " without (out of 10)",
-    nextQueued: (n, kind) => "Next test: " + ordinal(n) + " " + kind + " in line for the next round of tests.",
-    nextDue: (when) => "Next test: a re-check due " + when + ".",
-    nextNone: "Next test: none planned right now.",
-    nextUnscheduled: "Next test: none. It has no task on the test schedule yet.",
-    stakesHigh: (reason) => "High stakes: " + reason + ". It is tested first and re-checked every 4 weeks instead of 8.",
-    stakesNone: (reason, check) => "No eval needed: " + reason + ". A check enforces it: " + check + ".",
-    confidenceCap: (n) => "Testing a task and model stops at " + n + " comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.",
-    confHeading: "How close is a decision?",
-    confKeepWord: "Keep",
-    confRemoveWord: "Removal",
-    confReached: (which) => which + ": reached.",
-    confNoMove: (which) => which + ": no movement yet.",
-    confPastCap: (which, cap) => which + ": not before the " + cap + "-run cap at this pace.",
-    confMore: (which, n) => which + ": at this pace, about " + n + " more run" + (n === 1 ? "" : "s") + ".",
-    confNoRoom: (margin) => "Removal: no task leaves room for a " + margin + "-point gain (Claude already passes without it), so this needs a harder test.",
-    confRuns: (n, cap) => "Runs that count toward a decision, busiest task and model: " + n + " of " + cap + ". Testing stops at " + cap + " runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.",
-    confPace: "The run estimates project how fast certainty has grown per run so far; they are rough.",
-    rangeAria: (n, margin) => "The range the gain likely falls in, for " + n + (n === 1 ? " task and model" : " tasks and models") + ", from −100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +" + margin + ".",
-    rangeAxis: "Gain, points",
-    rangeRuns: "Runs",
-    rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ", task " + task : "") + ": gain " + gain + " points so far; likely between " + low + " and " + high + ". " + runs + "." + (counted ? "" : " Not counted toward removal."),
-    rangeTipRuns: (n, cap) => cap ? n + " of " + cap + " runs" : n + (n === 1 ? " run" : " runs"),
-    rangeWhat: "Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.",
-    rangeRule: (margin) => "Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +" + margin + ".",
-    rangeLevels: (keepPct, removePct, subject, versions) => "The left end is held to " + keepPct + " certainty shared across the " + (subject === "guidance" ? "section's" : "skill's") + " tasks and models, the right end to " + removePct + "; a decision also waits for runs on " + countWord(versions) + " Claude Code version" + (versions === 1 ? "" : "s") + ".",
-    confidenceNone: "How sure the loop is: no figure yet. It needs a completed comparison first.",
-    used: (n, from, to) => n === 0 ? "Not used in my real work from " + from + " to " + to + "." : "Used " + n + (n === 1 ? " time" : " times") + " in my real work from " + from + " to " + to + ".",
-    copies: (match, older, unknown) => "Copies loaded in the last 2 weeks: " + match + " match main, " + older + " older, " + unknown + " unknown.",
-    copiesNone: "Copies loaded in the last 2 weeks: no uses in the window.",
-    usageNote: (sessions) => "Real-work counts come from " + sessions + " of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.",
-    size: (words) => "About " + words + " words. It costs that much reading in every session.",
-    barWith: "With the skill",
-    barWithout: "Without it",
-    barSection: "Only this section",
-    barNone: "No guidance",
-    barAblated: "All but this section",
-    barAll: "All the guidance",
-    barWholeFull: "All the guidance",
-    barWholeNone: "No guidance",
-    barTip: (label, a, b, rate) => label + ": " + a + " of " + b + " checks (" + rate + ")",
-    chartLabel: (m) => "Checks passed by " + m,
-    trendCaption: "Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.",
-    trendOne: (when, gain) => "Week by week: only one week of comparisons so far (week of " + when + "): " + gain + ".",
-    trendNone: "No weekly trend yet.",
-    trendTip: (when, gain) => "Week of " + when + ": " + gain,
-    gainUp: (p) => p + " points better with it",
-    gainDown: (p) => p + " points worse with it",
-    gainZero: "no difference",
-    verdict: {
-      retain: "Official decision: keep it.",
-      keep: "Official decision: keep it.",
-      "cannot-discriminate": "Official decision: the test cannot tell, because its checks do not separate the two sides.",
-      "shorten-or-merge": "Official decision: shorten it or merge it into another section.",
-      retire: "Official decision: remove it.",
-      "retire-pending": "Official decision: remove it, after another removal finishes.",
-      retired: "It has been removed.",
-      ceiling: "Official decision: the test cannot tell, because Claude already passes without it.",
-      insufficient: "No official decision yet: it needs more runs.",
-      "helps-only-alone": "Official decision: it helps only on its own."
-    },
-    verdictOther: (v) => "Official decision: " + v + ".",
-    wholeHeading: "Does the guidance help at all?",
-    wholeNote: `All the guidance compared with no guidance, pooled across every section's task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ` + MIN_PAIRED_RUNS + " comparison runs passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with the guidance, and no model with that many runs did more than " + pts(WORSE_TOLERANCE) + " points worse.",
-    wholeRule: "The simple test in the note above — not a decision by the improvement loop.",
-    wholeAnswer: {
-      helps: "Yes. With the guidance, Claude passed measurably more checks.",
-      alone: "Yes. With the guidance, Claude passed measurably more checks.",
-      none: "Not clearly. The difference so far is too small to count.",
-      worse: "Results are getting worse and need a closer look.",
-      early: "Early results say yes, but there are not enough runs yet for a final answer.",
-      insufficient: "Too early to say. There are not enough runs yet."
-    },
-    rosterHeading: "Which models are measured, and why",
-    rosterIntro: "Each task runs on these AI models. A separate judge model scores the work but never does the task itself. The reasons below are recorded automatically whenever the list changes.",
-    rosterArm: "Tested",
-    rosterJudge: "Judge",
-    rosterEmpty: "No models are listed yet.",
-    coverageHeading: "Coverage",
-    coverageIntroSkills: "Which skills have a test, which are left out on purpose, and which still need one.",
-    coverageIntroGuidance: "Which sections have a test, which are left out on purpose, and which still need one.",
-    covered: "Tested",
-    skipped: "Left out on purpose",
-    gap: "Not yet tested",
-    census: (when, total, c, s, g) => "The latest count, from " + when + ", found " + total + " public skills: " + c + " tested, " + s + " left out on purpose, " + g + " not yet tested.",
-    noneListed: "None.",
-    alertsHeading: "Alerts",
-    removedHeading: "Removed sections",
-    removedNote: "Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.",
-    removedLink: "removal and revert",
-    removedSkillsHeading: "Removed skills",
-    removedSkillsNote: "Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.",
-    alertsNone: "No open alerts.",
-    alertKinds: {
-      regression: "Getting worse",
-      retire: "Suggested for removal",
-      retired: "Removed",
-      "not-schedulable": "Not being tested",
-      "context-drift": "Context out of date",
-      "loaded-copy": "Sessions load an old copy"
-    },
-    // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
-    alertCopy: (surface, loaded, main) => "Most " + (surface === "cloud" ? "cloud" : "local") + " uses in the last 2 weeks loaded copy " + loaded + ", which main did not have at any point in that time. Main is " + main + ".",
-    // #545: this alert carries fields, not text, so the page words it.
-    alertDrift: (task, repo, day) => "The other skills deployed beside the task " + task + " in " + repo + " have changed since " + day + ", so it no longer tests what is deployed there. It needs a new pin.",
-    alertDetails: "Details",
-    // #555: past events, worded from counts; `since` is the oldest counted fire.
-    firesLine: (n, day, m, k) => n + (n === 1 ? " fire" : " fires") + " produced no results since " + day + " (" + m + (m === 1 ? " sweep" : " sweeps") + "); " + k + " produced results that did not validate.",
-    lessonsHeading: "Lessons from my sessions",
-    lessonsLead: (day) => "Every day a script reads the transcripts of my local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from " + day + ", followed by facts Claude's auto-memory turned up that belong in a repo and skills I proposed myself.",
-    lessonsNone: "No lesson proposals were available for this build.",
-    lessonsEmptySkills: "None of that day's proposals are about skills.",
-    lessonsEmptyGuidance: "None of that day's proposals are about the guidance.",
-    colProposal: "Proposal",
-    colKind: "Kind",
-    colSource: "Source",
-    colSeen: "Seen",
-    colFirst: "First seen",
-    colLast: "Last seen",
-    colStatus: "Status",
-    lessonKinds: {
-      "new-skill": "New skill idea",
-      "skill-edit": "Change to a skill",
-      "guidance-edit": "Change to the guidance",
-      "fixture-candidate": "Idea for a test"
-    },
-    lessonToolCalls: (tool) => tool + " tool calls kept failing",
-    lessonToolCommand: (tool, word) => tool + " " + word + " commands kept failing",
-    lessonRedCi: (repo) => "Red CI after pushes in " + repo,
-    lessonSeen: (n) => n + (n === 1 ? " time" : " times"),
-    lessonDraft: (n) => "Draft #" + n,
-    lessonDraftStates: { open: "open", merged: "merged", closed: "closed" },
-    lessonNotDrafted: "Not drafted yet",
-    lessonWaiting: "Waiting for review",
-    lessonTranscripts: "Session transcripts",
-    lessonSurfaces: { wsl: "WSL", windows: "Windows", cloud: "cloud", other: "another computer" },
-    lessonSignals: {
-      rule: "a rule I stated",
-      correction: "a correction I made",
-      redirection: "I redirected Claude",
-      interrupted: "I interrupted Claude",
-      abandoned: "an abandoned session",
-      "repeated-tool-failure": "a tool call kept failing",
-      "red-ci-after-push": "CI went red after a push"
-    },
-    lessonSignalCount: (what, n) => what + " ×" + n,
-    lessonLeftMemory: (n) => n + (n === 1 ? " personal memory note" : " personal memory notes"),
-    lessonLeftChecks: (n) => n + (n === 1 ? " proposed git check" : " proposed git checks"),
-    lessonLeftPrivate: (n) => n + " about private skills or repos",
-    lessonLeftOut: (parts) => "Left out on purpose: " + parts + ".",
-    lessonNoText: "No session text is published.",
-    lessonMinerNone: "No proposals from my session transcripts were available for this build.",
-    lessonIssueSources: { memory: "Claude's auto-memory", proposal: "My own proposal" },
-    lessonIssueKinds: { memory: "Fact to move into a repo", proposal: "New skill idea" },
-    lessonMemoryFacts: (n, target, repo) => (n === null ? "Facts" : n + (n === 1 ? " fact" : " facts")) + (target ? " for " + target : "") + " in " + repo,
-    lessonMemoryChecks: (n, repo) => (n === null ? "Agent checks" : n + (n === 1 ? " agent check" : " agent checks")) + " in " + repo,
-    lessonNewSkill: (name) => "New skill: " + name,
-    lessonNoValue: "—",
-    lessonIssueStatus: (n) => "#" + n,
-    engineersHeading: "For engineers",
-    engineersIntro: "Every run behind the numbers above, with a link to its full report.",
-    source: (repo, main, results) => "Built from " + repo + " at " + main + ", results at " + results + ".",
-    colName: "Name",
-    colFixture: "Task",
-    colModel: "Model",
-    colWhen: "When",
-    colCli: "Tool version",
-    colWith: "With",
-    colWithout: "Without",
-    colSection: "Section only",
-    colNone: "No guidance",
-    colFull: "All the guidance",
-    colAblated: "All but this section",
-    colReport: "Report",
-    colVerdict: "Decision and reason",
-    report: "report",
-    dataFile: (url) => "Data file: " + url,
-    failHeading: "The results could not be shown",
-    failFetch: "The results file couldn't be loaded.",
-    failParse: "The results file loaded, but it is not readable.",
-    failSchema: (got) => "The results file is in a format this page does not understand (version " + got + "; this page reads version " + SCHEMA_VERSION + ").",
-    failBadUrl: "The page was asked to read results from an address it does not trust, so it did not.",
-    failFile: (url) => "File: " + url,
-    failWhat: "Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at " + ISSUES_URL + " with the file name above."
+  // src/core/glosses.js
+  function buildGlosses(you) {
+    const whose = you ? "your" : "the owner's", Whose = you ? "Your" : "The owner's";
+    return {
+      "working-in-these-repos": "For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.",
+      "anything-you-name-gets-its-link": "Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.",
+      "finding-your-unknowns": "Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.",
+      "workstation-layout": "Where project folders live on " + whose + " computers, so Claude looks in the right place.",
+      "security": "Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.",
+      "data-exposure-in-ci": "Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.",
+      "read-before-you-start": "A short list of reference pages to read before touching certain settings.",
+      "automation-vs-branch-protection": "The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.",
+      "two-github-connectors": "Claude can reach GitHub through two different connections with different powers, and must know which one it is using.",
+      "agent-contribution-markers": "Anything Claude posts on GitHub under " + whose + " name ends with a note saying an AI wrote it.",
+      "pr-tldr": "Every pull request description starts with a short plain-English summary of what changes and why.",
+      "github-404-means-not-authorized": 'When GitHub says "not found", it may only mean "you are not allowed to see this", so do not report something as gone on that alone.',
+      "fleet-spans-two-owners": Whose + " projects sit under two different accounts, so a search of only one gives an answer that looks complete but is wrong.",
+      "watch-finished-is-not-ci-passed": "A command that waits for the automatic checks finishing does not mean the checks passed; read the actual results.",
+      "git-push-does-not-mean-commit-exists": "Uploading changes can report success even when the new change was never saved, so confirm the change is really there.",
+      "dependency-updates": "Wait about a week before adopting a new version of an outside package, and record exact versions.",
+      "name-becomes-scanner-data": 'Names that contain words like "secret" or "token" can set off the leak scanner, so choose names that describe the purpose instead.',
+      "pinning-github-actions": "Each outside building block the automation uses is locked to one exact, reviewed version, so it cannot change underneath us.",
+      "test-that-can-signal-kills-every-session": "A test once stopped every program on a computer by mistake; code that stops programs must double-check what it is about to stop.",
+      "subagent-delegation": "How Claude hands work to helper assistants, chooses cheaper models when that is safe, and checks their work before trusting it.",
+      "skills-ecosystem": "Where " + whose + " skills come from, how they are installed, and how a project chooses which ones to load.",
+      "two-setup-gaps": "Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.",
+      "git-practices": "How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.",
+      "section-docker": "For building software containers: fixed versions, no administrator access, and no passwords inside.",
+      "section-dotnet": "For C# code: switch on the strictest warnings and keep to the version the project already uses.",
+      "section-go": "For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.",
+      "section-javascript": "For JavaScript code: never hide errors, and stay consistent with the project's existing style.",
+      "section-python": "For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.",
+      "section-rust": "For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.",
+      "section-typescript": "For TypeScript code: no catch-all types, and respect the project's strict settings."
+    };
+  }
+  var GLOSSES = {};
+  function useGlossVoice(v) {
+    for (const k of Object.keys(GLOSSES)) delete GLOSSES[k];
+    Object.assign(GLOSSES, buildGlosses(v === "you"));
+  }
+  useGlossVoice("owner");
+  var GLOSS_MISSING = "A plain-language description of this section has not been written yet.";
+  var HOOK_GLOSSES = {
+    "dated-phrasing": "Warns, and never refuses, when Markdown that agents load as instructions holds dated history or phrasing relative to a migration.",
+    "persistent-delete": "Refuses a push that deletes a persistent/* branch, which outlives its pull requests and holds data such as results and usage records.",
+    "pr-tldr": "In CI, fails a pull request whose description does not open with a TLDR heading and text under it.",
+    "push-to-default": "Refuses a push straight to a default branch, which takes changes only through pull requests.",
+    "rules-dir": "Refuses path-scoped rules files (.claude/rules/), which only one tool reads; the rule belongs in AGENTS.md, a skill or a check.",
+    "secret-file": "Refuses a file that looks like a secret or credential file, because git history in a public repo is public.",
+    "skill-shell": "Refuses a skill line that would run a shell command the moment the skill loads, before anyone reads it.",
+    "staged-index": "Refuses a push while staged changes sit in no commit, so a commit a hook refused cannot slip out with the one before it.",
+    "repo-local": "Runs a repo's own checks (.agent-checks/local.sh) and refuses when they do."
   };
 
-  // src/core/glosses.js
-  var GLOSSES = {
-    "working-in-these-repos": "For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.",
-    "anything-you-name-gets-its-link": "Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.",
-    "finding-your-unknowns": "Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.",
-    "workstation-layout": "Where project folders live on Adam's computers, so Claude looks in the right place.",
-    "security": "Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.",
-    "data-exposure-in-ci": "Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.",
-    "read-before-you-start": "A short list of reference pages to read before touching certain settings.",
-    "automation-vs-branch-protection": "The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.",
-    "two-github-connectors": "Claude can reach GitHub through two different connections with different powers, and must know which one it is using.",
-    "agent-contribution-markers": "Anything Claude posts on GitHub under Adam's name ends with a note saying an AI wrote it.",
-    "pr-tldr": "Every pull request description starts with a short plain-English summary of what changes and why.",
-    "github-404-means-not-authorized": 'When GitHub says "not found", it may only mean "you are not allowed to see this", so do not report something as gone on that alone.',
-    "fleet-spans-two-owners": "Adam's projects sit under two different accounts, so a search of only one gives an answer that looks complete but is wrong.",
-    "watch-finished-is-not-ci-passed": "A command that waits for the automatic checks finishing does not mean the checks passed; read the actual results.",
-    "git-push-does-not-mean-commit-exists": "Uploading changes can report success even when the new change was never saved, so confirm the change is really there.",
-    "dependency-updates": "Wait about a week before adopting a new version of an outside package, and record exact versions.",
-    "name-becomes-scanner-data": 'Names that contain words like "secret" or "token" can set off the leak scanner, so choose names that describe the purpose instead.',
-    "pinning-github-actions": "Each outside building block the automation uses is locked to one exact, reviewed version, so it cannot change underneath us.",
-    "test-that-can-signal-kills-every-session": "A test once stopped every program on a computer by mistake; code that stops programs must double-check what it is about to stop.",
-    "subagent-delegation": "How Claude hands work to helper assistants, chooses cheaper models when that is safe, and checks their work before trusting it.",
-    "skills-ecosystem": "Where Adam's skills come from, how they are installed, and how a project chooses which ones to load.",
-    "two-setup-gaps": "Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.",
-    "git-practices": "How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.",
-    "section-docker": "For building software containers: fixed versions, no administrator access, and no passwords inside.",
-    "section-dotnet": "For C# code: switch on the strictest warnings and keep to the version the project already uses.",
-    "section-go": "For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.",
-    "section-javascript": "For JavaScript code: never hide errors, and stay consistent with the project's existing style.",
-    "section-python": "For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.",
-    "section-rust": "For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.",
-    "section-typescript": "For TypeScript code: no catch-all types, and respect the project's strict settings."
-  };
-  var GLOSS_MISSING = "A plain-language description of this section has not been written yet.";
+  // src/core/strings.js
+  var ISSUES_URL = "https://github.com/" + DATA_REPO + "/issues";
+  function buildStrings(you) {
+    const W = you ? { who: "you", Who: "You", whose: "your", Whose: "Your", s: "", obj: "you", own: "your own", dont: "don't" } : { who: "the owner", Who: "The owner", whose: "the owner's", Whose: "The owner's", s: "s", obj: "the owner", own: "their own", dont: "doesn't" };
+    return {
+      title: you ? "Self-improvement project" : "Evals Explorer",
+      voice: you ? "you" : "owner",
+      loading: "Loading the latest results…",
+      dataAsOf: (when) => "Data as of " + when + ".",
+      newestRun: (when) => "Newest test run: " + when + ".",
+      noRunsYet: "No test runs have been recorded yet.",
+      modeLabel: "Show results for",
+      modeSkills: "Skills",
+      modeGuidance: "Guidance",
+      hidden: "[hidden]",
+      unknown: "unknown",
+      et: "ET",
+      introHeading: "What you are looking at",
+      introSkills: [
+        "A skill is a page of instructions that Claude, the AI coding assistant " + W.who + " work" + W.s + " with, reads before it starts a certain kind of task. " + W.Who + " " + W.dont + " write most of them. Claude drafts a skill when it spots a lesson worth keeping, and the improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.",
+        "So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.",
+        'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
+      ],
+      introGuidance: [
+        "The guidance is a page of instructions Claude reads at the start of every working session on " + W.whose + " projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn't happen twice. This page shows whether each section earns its place.",
+        "To test a section, Claude gets an ordinary task with that section's trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.",
+        `Two things matter here that don't for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.`
+      ],
+      glossaryHeading: "Words used on this page",
+      glossary: [
+        ["Fixture", "One small, fixed practice task used for testing. The same task is used every time so results can be compared."],
+        ["Arm", 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
+        ["Trial", "A single attempt at the task. A run is made of several trials."],
+        ["Judge", "A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself."],
+        ["Objective check", 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
+        ["Roster", "The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen."],
+        ["Improvement loop", "The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn't. " + W.Who + " set" + W.s + " its thresholds and budget; day to day, it runs without " + W.obj + "."],
+        ["Regression", "A result that has become worse than it used to be. A regression alert means something needs a closer look."]
+      ],
+      glossaryGuidance: [
+        ["Section", "One topic within the guidance, under its own heading."],
+        ["Ablation", "Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there."],
+        ["Cost per session", "How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length."]
+      ],
+      chipGlossaryIntro: "The colored label on each card means:",
+      chips: {
+        helps: "Helps",
+        alone: "Helps only on its own",
+        none: "No measurable difference",
+        worse: "Getting worse",
+        early: "Early sign: helps",
+        canttell: "Test cannot tell",
+        insufficient: "Not enough data"
+      },
+      chipRules: {
+        helps: "The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.",
+        alone: "It helps when it's the only section present, but the loop found it adds less than " + pts(HELPS_MIN_GAIN) + " percentage points once the rest of the guidance is there too.",
+        none: "On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.",
+        canttell: "Claude already passes this test without it, so the test can't show whether it helps. It needs a harder test.",
+        worse: "An automatic alert says recent results are worse than they used to be — worth a closer look.",
+        early: "The loop hasn't decided yet, but every model tried so far passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with it than without it.",
+        insufficient: "The loop hasn't decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn't, and the early results don't clearly lean either way."
+      },
+      chipOrder: ["helps", "alone", "early", "none", "canttell", "worse", "insufficient"],
+      skillsHeading: "Does each skill help?",
+      purposeMissing: "No description of what this skill is for was found.",
+      skillsNote: "One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can't judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week's budget. Under each name is what the skill is for. Numbers pool every comparison run from the last " + WINDOW_WEEKS + " weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.",
+      sectionsHeading: "Does each section earn its place?",
+      sectionsNote: "One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last " + WINDOW_WEEKS + " weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.",
+      sortLabel: "Order sections by",
+      sortNext: "Next test",
+      sortValue: "Help per word",
+      sortSize: "Size",
+      noCards: "Nothing has been tested yet.",
+      summaryCounts: (parts) => "Right now: " + parts + ".",
+      sentenceSkill: (m, a, b, c, d) => "With this skill, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
+      sentenceSection: (m, a, b, c, d) => "With this section, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
+      sentenceAblation: (e, f, g, h2) => "With all the guidance, " + e + " of " + f + "; with all of it but this section, " + g + " of " + h2 + ".",
+      sentenceWhole: (m, a, b, c, d) => "With all the guidance, " + m + " passed " + a + " of " + b + " checks; with no guidance, " + c + " of " + d + ".",
+      aloneShown: "Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.",
+      tried: (n, when) => n + (n === 1 ? " trial" : " trials") + " in all, the last on " + when + ".",
+      notTried: "No trials in the last " + WINDOW_WEEKS + " weeks.",
+      pairedRuns: (n) => n + (n === 1 ? " comparison run" : " comparison runs"),
+      judgeScores: (a, b) => "judge score " + a + " with, " + b + " without (out of 10)",
+      nextQueued: (n, kind) => "Next test: " + ordinal(n) + " " + kind + " in line for the next round of tests.",
+      nextDue: (when) => "Next test: a re-check due " + when + ".",
+      nextNone: "Next test: none planned right now.",
+      nextUnscheduled: "Next test: none. It has no task on the test schedule yet.",
+      stakesHigh: (reason) => "High stakes: " + reason + ". It is tested first and re-checked every 4 weeks instead of 8.",
+      stakesNone: (reason, check) => "No eval needed: " + reason + ". A check enforces it: " + check + ".",
+      confidenceCap: (n) => "Testing a task and model stops at " + n + " comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for " + W.obj + " to decide.",
+      confHeading: "How close is a decision?",
+      confKeepWord: "Keep",
+      confRemoveWord: "Removal",
+      confReached: (which) => which + ": reached.",
+      confNoMove: (which) => which + ": no movement yet.",
+      confPastCap: (which, cap) => which + ": not before the " + cap + "-run cap at this pace.",
+      confMore: (which, n) => which + ": at this pace, about " + n + " more run" + (n === 1 ? "" : "s") + ".",
+      confNoRoom: (margin) => "Removal: no task leaves room for a " + margin + "-point gain (Claude already passes without it), so this needs a harder test.",
+      confRuns: (n, cap) => "Runs that count toward a decision, busiest task and model: " + n + " of " + cap + ". Testing stops at " + cap + " runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for " + W.obj + " to decide.",
+      confPace: "The run estimates project how fast certainty has grown per run so far; they are rough.",
+      rangeAria: (n, margin) => "The range the gain likely falls in, for " + n + (n === 1 ? " task and model" : " tasks and models") + ", from −100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +" + margin + ".",
+      rangeAxis: "Gain, points",
+      rangeRuns: "Runs",
+      rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ", task " + task : "") + ": gain " + gain + " points so far; likely between " + low + " and " + high + ". " + runs + "." + (counted ? "" : " Not counted toward removal."),
+      rangeTipRuns: (n, cap) => cap ? n + " of " + cap + " runs" : n + (n === 1 ? " run" : " runs"),
+      rangeWhat: "Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.",
+      rangeRule: (margin) => "Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +" + margin + ".",
+      rangeLevels: (keepPct, removePct, subject, versions) => "The left end is held to " + keepPct + " certainty shared across the " + (subject === "guidance" ? "section's" : "skill's") + " tasks and models, the right end to " + removePct + "; a decision also waits for runs on " + countWord(versions) + " Claude Code version" + (versions === 1 ? "" : "s") + ".",
+      confidenceNone: "How sure the loop is: no figure yet. It needs a completed comparison first.",
+      used: (n, from, to) => n === 0 ? "Not used in " + W.whose + " real work from " + from + " to " + to + "." : "Used " + n + (n === 1 ? " time" : " times") + " in " + W.whose + " real work from " + from + " to " + to + ".",
+      copies: (match, older, unknown) => "Copies loaded in the last 2 weeks: " + match + " match main, " + older + " older, " + unknown + " unknown.",
+      copiesNone: "Copies loaded in the last 2 weeks: no uses in the window.",
+      usageNote: (sessions) => "Real-work counts come from " + sessions + " of " + W.whose + " Claude Code sessions on " + W.own + " computer. Sessions in the cloud are not counted yet.",
+      size: (words) => "About " + words + " words. It costs that much reading in every session.",
+      barWith: "With the skill",
+      barWithout: "Without it",
+      barSection: "Only this section",
+      barNone: "No guidance",
+      barAblated: "All but this section",
+      barAll: "All the guidance",
+      barWholeFull: "All the guidance",
+      barWholeNone: "No guidance",
+      barTip: (label, a, b, rate) => label + ": " + a + " of " + b + " checks (" + rate + ")",
+      chartLabel: (m) => "Checks passed by " + m,
+      trendCaption: "Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.",
+      trendOne: (when, gain) => "Week by week: only one week of comparisons so far (week of " + when + "): " + gain + ".",
+      trendNone: "No weekly trend yet.",
+      trendTip: (when, gain) => "Week of " + when + ": " + gain,
+      gainUp: (p) => p + " points better with it",
+      gainDown: (p) => p + " points worse with it",
+      gainZero: "no difference",
+      verdict: {
+        retain: "Official decision: keep it.",
+        keep: "Official decision: keep it.",
+        "cannot-discriminate": "Official decision: the test cannot tell, because its checks do not separate the two sides.",
+        "shorten-or-merge": "Official decision: shorten it or merge it into another section.",
+        retire: "Official decision: remove it.",
+        "retire-pending": "Official decision: remove it, after another removal finishes.",
+        retired: "It has been removed.",
+        ceiling: "Official decision: the test cannot tell, because Claude already passes without it.",
+        insufficient: "No official decision yet: it needs more runs.",
+        "helps-only-alone": "Official decision: it helps only on its own."
+      },
+      verdictOther: (v) => "Official decision: " + v + ".",
+      wholeHeading: "Does the guidance help at all?",
+      wholeNote: `All the guidance compared with no guidance, pooled across every section's task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ` + MIN_PAIRED_RUNS + " comparison runs passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with the guidance, and no model with that many runs did more than " + pts(WORSE_TOLERANCE) + " points worse.",
+      wholeRule: "The simple test in the note above — not a decision by the improvement loop.",
+      wholeAnswer: {
+        helps: "Yes. With the guidance, Claude passed measurably more checks.",
+        alone: "Yes. With the guidance, Claude passed measurably more checks.",
+        none: "Not clearly. The difference so far is too small to count.",
+        worse: "Results are getting worse and need a closer look.",
+        early: "Early results say yes, but there are not enough runs yet for a final answer.",
+        insufficient: "Too early to say. There are not enough runs yet."
+      },
+      rosterHeading: "Which models are measured, and why",
+      rosterIntro: "Each task runs on these AI models. A separate judge model scores the work but never does the task itself. The reasons below are recorded automatically whenever the list changes.",
+      rosterArm: "Tested",
+      rosterJudge: "Judge",
+      rosterEmpty: "No models are listed yet.",
+      coverageHeading: "Coverage",
+      coverageIntroSkills: "Which skills have a test, which are left out on purpose, and which still need one.",
+      coverageIntroGuidance: "Which sections have a test, which are left out on purpose, and which still need one.",
+      covered: "Tested",
+      skipped: "Left out on purpose",
+      gap: "Not yet tested",
+      census: (when, total, c, s, g) => "The latest count, from " + when + ", found " + total + " public skills: " + c + " tested, " + s + " left out on purpose, " + g + " not yet tested.",
+      noneListed: "None.",
+      alertsHeading: "Alerts",
+      removedHeading: "Removed sections",
+      removedNote: "Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.",
+      removedLink: "removal and revert",
+      removedSkillsHeading: "Removed skills",
+      removedSkillsNote: "Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.",
+      alertsNone: "No open alerts.",
+      alertsNoneOther: "No other open alerts.",
+      alertKinds: {
+        regression: "Getting worse",
+        retire: "Suggested for removal",
+        retired: "Removed",
+        "not-schedulable": "Not being tested",
+        "context-drift": "Context out of date",
+        "loaded-copy": "Sessions load an old copy"
+      },
+      // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
+      alertCopy: (surface, loaded, main) => "Most " + (surface === "cloud" ? "cloud" : "local") + " uses in the last 2 weeks loaded copy " + loaded + ", which main did not have at any point in that time. Main is " + main + ".",
+      // #545: this alert carries fields, not text, so the page words it.
+      alertDrift: (task, repo, day) => "The other skills deployed beside the task " + task + " in " + repo + " have changed since " + day + ", so it no longer tests what is deployed there. It needs a new pin.",
+      alertDetails: "Details",
+      // #555: past events, worded from counts; `since` is the oldest counted fire.
+      firesLine: (n, day, m, k) => n + (n === 1 ? " fire" : " fires") + " produced no results since " + day + " (" + m + (m === 1 ? " sweep" : " sweeps") + "); " + k + " produced results that did not validate.",
+      lessonsHeading: "Lessons from " + W.whose + " sessions",
+      lessonsLead: (day) => "Every day a script reads the transcripts of " + W.whose + " local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from " + day + ", followed by facts Claude's auto-memory turned up that belong in a repo and skills " + W.who + " proposed.",
+      lessonsNone: "No lesson proposals were available for this build.",
+      lessonsEmptySkills: "None of that day's proposals are about skills.",
+      lessonsEmptyGuidance: "None of that day's proposals are about the guidance.",
+      colProposal: "Proposal",
+      colKind: "Kind",
+      colSource: "Source",
+      colSeen: "Seen",
+      colFirst: "First seen",
+      colLast: "Last seen",
+      colStatus: "Status",
+      lessonKinds: {
+        "new-skill": "New skill idea",
+        "skill-edit": "Change to a skill",
+        "guidance-edit": "Change to the guidance",
+        "fixture-candidate": "Idea for a test"
+      },
+      lessonToolCalls: (tool) => tool + " tool calls kept failing",
+      lessonToolCommand: (tool, word) => tool + " " + word + " commands kept failing",
+      lessonRedCi: (repo) => "Red CI after pushes in " + repo,
+      lessonSeen: (n) => n + (n === 1 ? " time" : " times"),
+      lessonDraft: (n) => "Draft #" + n,
+      lessonDraftStates: { open: "open", merged: "merged", closed: "closed" },
+      lessonNotDrafted: "Not drafted yet",
+      lessonWaiting: "Waiting for review",
+      lessonTranscripts: "Session transcripts",
+      lessonSurfaces: { wsl: "WSL", windows: "Windows", cloud: "cloud", other: "another computer" },
+      lessonSignals: {
+        rule: "a rule " + W.who + " stated",
+        correction: "a correction " + W.who + " made",
+        redirection: W.who + " redirected Claude",
+        interrupted: W.who + " interrupted Claude",
+        abandoned: "an abandoned session",
+        "repeated-tool-failure": "a tool call kept failing",
+        "red-ci-after-push": "CI went red after a push"
+      },
+      lessonSignalCount: (what, n) => what + " ×" + n,
+      lessonLeftMemory: (n) => n + (n === 1 ? " personal memory note" : " personal memory notes"),
+      lessonLeftChecks: (n) => n + (n === 1 ? " proposed git check" : " proposed git checks"),
+      lessonLeftPrivate: (n) => n + " about private skills or repos",
+      lessonLeftOut: (parts) => "Left out on purpose: " + parts + ".",
+      lessonNoText: "No session text is published.",
+      lessonMinerNone: "No proposals from " + W.whose + " session transcripts were available for this build.",
+      lessonIssueSources: { memory: "Claude's auto-memory", proposal: W.Whose + " proposal" },
+      lessonIssueKinds: { memory: "Fact to move into a repo", proposal: "New skill idea" },
+      lessonMemoryFacts: (n, target, repo) => (n === null ? "Facts" : n + (n === 1 ? " fact" : " facts")) + (target ? " for " + target : "") + " in " + repo,
+      lessonMemoryChecks: (n, repo) => (n === null ? "Agent checks" : n + (n === 1 ? " agent check" : " agent checks")) + " in " + repo,
+      lessonNewSkill: (name) => "New skill: " + name,
+      lessonNoValue: "—",
+      lessonIssueStatus: (n) => "#" + n,
+      engineersHeading: "For engineers",
+      engineersIntro: "Every run behind the numbers above, with a link to its full report.",
+      source: (repo, main, results) => "Built from " + repo + " at " + main + ", results at " + results + ".",
+      colName: "Name",
+      colFixture: "Task",
+      colModel: "Model",
+      colWhen: "When",
+      colCli: "Tool version",
+      colWith: "With",
+      colWithout: "Without",
+      colSection: "Section only",
+      colNone: "No guidance",
+      colFull: "All the guidance",
+      colAblated: "All but this section",
+      colReport: "Report",
+      colVerdict: "Decision and reason",
+      colVerdictShort: "Verdict",
+      report: "report",
+      dataFile: (url) => "Data file: " + url,
+      failHeading: "The results could not be shown",
+      failFetch: "The results file couldn't be loaded.",
+      failParse: "The results file loaded, but it is not readable.",
+      failSchema: (got) => "The results file is in a format this page does not understand (version " + got + "; this page reads version " + SCHEMA_VERSION + ").",
+      failBadUrl: "The page was asked to read results from an address it does not trust, so it did not.",
+      failFile: (url) => "File: " + url,
+      failWhat: "Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at " + ISSUES_URL + " with the file name above.",
+      // --- the six groups (PR4) ---------------------------------------------------
+      groups: { summary: "Summary", needs: "Needs you", hooks: "Hooks, skills and guidance", loop: "Loop", impact: "Impact", ops: "Operations" },
+      subTabs: { hooks: "Git hooks", skills: "Skills", guidance: "Guidance", removed: "Removed", method: "How the tests work" },
+      menu: "Menu",
+      navLabel: "Sections",
+      subNavLabel: "Hooks, skills and guidance",
+      srcDoc: "the results document",
+      srcLine: (source, when) => "From " + source + (when ? ", as of " + when : "") + ".",
+      srcTip: (source, when) => "Source: " + source + "." + (when ? " As of " + when + "." : ""),
+      noValue: "—",
+      privateBadge: "Private",
+      back: (what) => "← " + what,
+      searchLabel: "Search subjects, pull requests and issues",
+      searchPlaceholder: "Search",
+      searchHeading: (q) => "Results for “" + q + "”",
+      searchNone: "Nothing matches.",
+      searchClear: "Clear search",
+      filterRegistry: "Registry",
+      filterVerdict: "Verdict",
+      filterModel: "Model",
+      filterStakes: "Stakes",
+      filterAny: "Any",
+      stakesWords: { high: "High stakes", none: "No eval needed", normal: "Normal" },
+      kinds: { skill: "Skill", section: "Guidance section", check: "Git hook check", pr: "Pull request", issue: "Issue" },
+      colWhat: "What",
+      colDetail: "Detail",
+      tileStopped: "Commits and pushes git hook checks stopped this week",
+      tileStoppedNote: (l, c, week) => l + " on " + W.whose + " computers and " + c + " in CI, in the week of " + week + " (weeks start Monday, UTC).",
+      tileStoppedNone: "No git hook counts in this build.",
+      tileHelped: "Skills that help",
+      tileHelpedNote: (n) => "of " + n + " tested skills, by the loop's own keep decision",
+      tileWhole: "Does the guidance help at all?",
+      tileAsOf: "Data as of",
+      tileNewest: "Newest test run",
+      tileAlerts: "Open alerts",
+      tileAlertsNote: "From the results document's own checks",
+      summaryLead: "What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.",
+      hooksHeading: "Does each git hook check earn its place?",
+      hooksNote: (weeks, from, to) => "Each check runs before a commit or push on " + W.whose + " computers (git hooks) and again in CI. Counts cover the " + weeks + " weeks from " + from + " to " + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
+      hooksNone: "No git hook counts in this build.",
+      hookVerdicts: { earning: "Earning its place", "never-fires": "Never fires", "overridden-often": "Overridden often" },
+      hookVerdictNone: "No verdict yet",
+      hookWhere: { fleet: "Fleet template", repo: "Repo-local" },
+      hookWhereLine: (where2, repo) => where2 === "repo" ? "Runs from " + (repo || "one repo") + "'s own checks (repo-local)." : "Runs in every fleet repo from the shared template.",
+      colCheck: "Check",
+      colWhere: "Where it runs",
+      colRuns: "Runs",
+      colBlocked: "Blocked",
+      colOverrides: "Overrides",
+      overridesNotCounted: "not counted",
+      hookOverridesNote: 'Overrides (work pushed past a refusal) are not counted for this check yet, so "overridden often" cannot be judged; the verdict rests on runs and blocks alone.',
+      hookRule: (rate, weeks) => "A check earns its place when it blocks something in " + weeks + " weeks; it is overridden often when more than " + rate + " of its blocks are pushed past anyway.",
+      hookEnforcesHeading: "What it enforces",
+      hookEnforcesMissing: "A plain description of this check has not been written yet.",
+      hookSourceLink: "source",
+      hookByWeek: "Runs and blocks by week",
+      hookByRepo: "By repo",
+      colWeek: "Week of",
+      colLocalRuns: "Local runs",
+      colLocalBlocked: "Local blocks",
+      colCiRuns: "CI runs",
+      colCiBlocked: "CI blocks",
+      colRepo: "Repo",
+      hookUnlisted: (n) => n + " more " + (n === 1 ? "check ran but is" : "checks ran but are") + " not listed.",
+      hookPrivateFold: 'Checks in private repos are counted in one "private repos" row.',
+      hookBack: "All git hook checks",
+      hookNotFound: "No git hook check by that name is in this build.",
+      subjectBack: { skills: "All skills", guidance: "All guidance sections" },
+      subjectUntested: "The loop does not test this skill yet, so there are no results to show. The coverage list on the Skills page says why.",
+      subjectNotFound: "Nothing by that name is in this build.",
+      runsHeading: "Every scored run",
+      runsNone: "No scored runs in this build.",
+      colStarted: "Started",
+      colChecks: "Checks",
+      colJudge: "Judge",
+      colCost: "List-price cost",
+      colPoints: "Points",
+      judgeRan: (a, b) => a + " vs " + b,
+      judgeNotNeeded: "not needed",
+      bareHeading: "Bare model vs the full setup",
+      bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
+      colBare: "Bare",
+      colPaired: "Paired run",
+      colTrials: "Trials",
+      useHeading: "Real-work use",
+      copiesHeading: "Loaded copies",
+      colCopy: "Copy",
+      colSurface: "Where",
+      colVsMain: "Against main",
+      colUses: "Uses",
+      vsMain: { current: "matches main now", "in-window": "matched main in the window", older: "older than main", unknown: "unknown" },
+      fixturesHeading: "Fixtures",
+      fixturesNone: "No fixtures are listed for it in this build.",
+      colFixturePath: "Fixture",
+      colOrigin: "Origin",
+      lessonsAbout: "Lessons about it",
+      lessonsAboutNone: "No lesson proposal names it.",
+      verdictHeading: "Decision and reason",
+      registryLine: (r) => "Registry: " + r + ".",
+      gainHeading: "Gain by task and model",
+      loopHeading: "How the loop works, stage by stage",
+      loopStages: [
+        ["Signal", "Real work leaves traces: a session that went wrong, a correction, a red CI run, a skill that never loads."],
+        ["Proposal", "A script turns repeated trouble into a proposal: a git hook check, a new skill, an edit, or a test idea."],
+        ["Test", "Each subject is tested with and without it, on several models, by fixed checks and a judge."],
+        ["Decision", "A statistical test decides keep, change or remove; nothing is kept on a hunch."],
+        ["Merge or retire", "The change merges itself once its checks pass, and a subject that stops helping is removed the same way."]
+      ],
+      loopStagesNote: "Fixes are chosen in this order: a git hook check first, then a skill, then guidance text, then a memory note.",
+      fqHeading: "Fixture requests",
+      fqNote: "When a test finds a subject too easy to measure, the loop asks for harder fixtures, ideally rebuilt from real work. Each request is followed to the fixtures that ran.",
+      fqNone: "This build does not report the fixture queue.",
+      fqTotals: (o, c, m, rw, inv, runs) => o + " open, " + c + " closed, " + m + " pull requests merged, " + rw + " fixtures from real work and " + inv + " invented, " + runs + " runs.",
+      fqFindings: (n, high) => n + (n === 1 ? " finding needs" : " findings need") + " a look (" + high + " high severity).",
+      colSubject: "Subject",
+      colState: "State",
+      colAge: "Age",
+      colPr: "Pull request",
+      colFixtures: "Fixtures (real work)",
+      ageDays: (n) => n + " d",
+      prState: (merged, n) => (merged ? "merged" : "open") + (n > 1 ? " (" + n + ")" : ""),
+      funnelHeading: "Where lessons went",
+      funnelHeadline: (pct2, n) => pct2 + " of the " + n + " lessons with an outcome became git hook checks.",
+      funnelNone: "This build does not report where lessons went.",
+      funnelKinds: { check: "A git hook check", skill: "A skill", guidance: "Guidance text", nothing: "Nothing", open: "Still open", unknown: "Unknown" },
+      funnelSources: { "hook-proposal": "Hook proposals", "lesson-check": "Lesson checks", memory: "Memory promotions", "draft-skill": "Drafted skills", "skill-proposal": "Skill proposals" },
+      funnelMissing: (list) => "Not counted, because their records could not be read: " + list + ".",
+      loopPrsHeading: "Improve and removal pull requests",
+      loopPrsNote: "Pull requests the loop opened in public repos: new skills, edits and removals.",
+      loopPrsNone: "No loop pull requests in this build.",
+      impactUseWeeks: "Git hook runs and blocks by week",
+      impactUseSkills: "Real-work use by skill",
+      impactUseSkillsNote: (from, to) => "Uses from " + from + " to " + to + ". Guidance has no direct use signal; its effect shows only in test results.",
+      impactUseChecks: "Real-work use by git hook check",
+      impactPrs: "Pull requests by week",
+      impactPrsNote: (repos, since) => "Opened and merged in " + repos + " since " + since + ".",
+      colOpened: "Opened",
+      colMerged: "Merged",
+      impactRed: "Red CI runs",
+      impactRedNote: "Workflow runs in the public repos that ended in failure, newest first.",
+      impactRedNone: "No failed runs in this window.",
+      impactSpend: "Cost",
+      impactSpendNote: "Weekly totals. Dollars are API-equivalent, not what is paid; points are the account's usage meter.",
+      colEvalRuns: "Eval runs",
+      colMeter: "Meter points",
+      colApi: "API $",
+      colThreads: "Thread spend $",
+      colPerVerdict: "Per verdict $",
+      colPlan: "Plan",
+      opsRuns: "Workflow and routine runs",
+      opsRunsNote: (since) => "GitHub Actions runs in the public repos since " + since + ", newest first.",
+      problemsOnly: "Problems only",
+      colWorkflow: "Workflow",
+      colRun: "Run",
+      colNumber: "#",
+      colTitle: "Title",
+      colUpdated: "Updated",
+      opsPrs: "Pull requests",
+      opsPrsNote: "Open and recently merged pull requests in the public repos.",
+      opsIssues: "Open issues",
+      prStates: { open: "open", merged: "merged" },
+      noneYet: "Nothing here yet.",
+      methodLead: "How every number on this page is made.",
+      removedNone: "Nothing has been removed by the evals.",
+      sortHint: "Select a column heading to sort."
+    };
+  }
+  var STRINGS = {};
+  function useVoice(v) {
+    for (const k of Object.keys(STRINGS)) delete STRINGS[k];
+    Object.assign(STRINGS, buildStrings(v === "you"));
+    useGlossVoice(v);
+  }
+  useVoice("owner");
 
   // src/core/format.js
   var UNSAFE = /\S*(?:@|\/home\/|\/Users\/|\/root\/|\/tmp\/|cse_|session_|[A-Za-z]:\\)\S*/g;
@@ -585,17 +845,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   function wordsFor(bytes) {
     const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
     return w;
-  }
-  function modeFromSearch(search) {
-    const q = new URLSearchParams(search || "");
-    return q.get("subject") === "guidance" ? "guidance" : "skills";
-  }
-  function searchForMode(search, mode) {
-    const q = new URLSearchParams(search || "");
-    if (mode === "guidance") q.set("subject", "guidance");
-    else q.delete("subject");
-    const s = q.toString();
-    return s ? "?" + s : "";
   }
 
   // src/core/validate.js
@@ -1141,6 +1390,134 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     return pooled.models.some((m) => m.n > 0 || m.nAbl > 0);
   }
 
+  // src/core/route.js
+  var GROUPS = {
+    summary: ["summary"],
+    needs: ["needs"],
+    hooks: ["hooks", "skills", "guidance", "removed", "method"],
+    loop: ["loop"],
+    impact: ["impact"],
+    ops: ["ops"]
+  };
+  var LEGACY = {
+    overview: "needs",
+    loop: "loop",
+    impact: "impact",
+    costbenefit: "impact",
+    evals: "skills",
+    cleanup: "ops",
+    work: "ops",
+    routines: "ops",
+    console: "ops",
+    decisions: "ops"
+  };
+  var SUBJECT_ROUTES = ["hooks", "skills", "guidance"];
+  function groupOf(name) {
+    for (const g of Object.keys(GROUPS)) if (GROUPS[g].includes(name)) return g;
+    return "summary";
+  }
+  function parseRoute(hash, search, groups) {
+    const have = groups || Object.keys(GROUPS);
+    const raw = String(hash || "");
+    if (/^#[a-z]+$/.test(raw) && Object.prototype.hasOwnProperty.call(LEGACY, raw.slice(1))) {
+      const to = LEGACY[raw.slice(1)];
+      return have.includes(groupOf(to)) ? { name: to, id: null } : { name: "summary", id: null };
+    }
+    const m = /^#\/([a-z]+)(?:\/(.+))?$/.exec(raw);
+    if (!m) {
+      const q = new URLSearchParams(search || "");
+      if (q.get("subject") === "guidance") return { name: "guidance", id: null };
+      return { name: "summary", id: null };
+    }
+    const name = m[1];
+    const g = groupOf(name);
+    if (!GROUPS[g].includes(name) || !have.includes(g)) return { name: "summary", id: null };
+    let id = null;
+    if (m[2] && SUBJECT_ROUTES.includes(name)) {
+      try {
+        id = decodeURIComponent(m[2]);
+      } catch (e) {
+        id = null;
+      }
+    }
+    return { name, id };
+  }
+  function hashFor(name, id) {
+    return "#/" + name + (id ? "/" + encodeURIComponent(id) : "");
+  }
+
+  // src/views/bits.js
+  function navLink(hash, text, attrs) {
+    return h("a", Object.assign({ href: hash, class: "nav-link" }, attrs || {}), text);
+  }
+  function srcLine(source, ms) {
+    return h("p", { class: "src" }, STRINGS.srcLine(source, isFinite(ms) ? fmtDateTime(ms) : ""));
+  }
+  function srcTip(source, ms) {
+    return STRINGS.srcTip(source, isFinite(ms) ? fmtDateTime(ms) : "");
+  }
+  function badge(text, kind) {
+    return h("span", { class: "badge" + (kind ? " " + kind : "") }, text);
+  }
+  function tile(t) {
+    const kids = [
+      h("span", { class: "tile-label" }, t.label),
+      h("span", { class: "tile-num" + (t.small ? " small" : ""), tabindex: t.tip ? 0 : null, "data-tip": t.tip || null }, t.value),
+      t.note ? h("span", { class: "tile-note" }, t.note) : null
+    ];
+    return t.href ? h("a", { class: "tile", href: t.href }, kids) : h("div", { class: "tile" }, kids);
+  }
+  function panel(title, kids, attrs) {
+    const list = (Array.isArray(kids) ? kids : [kids]).filter((k) => k !== null && k !== void 0 && k !== false);
+    if (!list.length) return null;
+    return h("section", Object.assign({ class: "block" }, attrs || {}), h("h2", null, title), list);
+  }
+  function cellValue(td) {
+    const raw = td.getAttribute("data-sort");
+    return raw === null ? td.textContent : raw;
+  }
+  function sorter(index) {
+    return (e) => {
+      if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+      if (e.type === "keydown") e.preventDefault();
+      const th = e.currentTarget;
+      const tableEl = th.closest("table");
+      const tbody = tableEl.querySelector("tbody");
+      const dir = th.getAttribute("aria-sort") === "ascending" ? -1 : 1;
+      tableEl.querySelectorAll("th").forEach((x) => x.setAttribute("aria-sort", "none"));
+      th.setAttribute("aria-sort", dir === 1 ? "ascending" : "descending");
+      const rows = Array.from(tbody.children);
+      rows.sort((a, b) => {
+        const x = cellValue(a.children[index]), y = cellValue(b.children[index]);
+        const nx = Number(x), ny = Number(y);
+        const c = x !== "" && y !== "" && isFinite(nx) && isFinite(ny) ? nx - ny : String(x).localeCompare(String(y));
+        return c * dir;
+      });
+      rows.forEach((r) => tbody.appendChild(r));
+    };
+  }
+  function table(cols, rows, opts) {
+    const o = opts || {};
+    const head = h("tr", null, cols.map((c, i) => h("th", {
+      class: c.num ? "num" : null,
+      scope: "col",
+      tabindex: 0,
+      "aria-sort": "none",
+      title: STRINGS.sortHint,
+      onclick: sorter(i),
+      onkeydown: sorter(i)
+    }, c.label)));
+    const body = rows.map((r) => h("tr", o.rowAttrs ? o.rowAttrs(r) : null, cols.map((c) => {
+      const v = c.sort ? c.sort(r) : null;
+      return h("td", { class: c.num ? "num" : null, "data-sort": v === null || v === void 0 ? null : String(v) }, c.cell(r));
+    })));
+    return h(
+      "div",
+      { class: "tablewrap" + (o.tall ? " tall" : "") },
+      h("table", { class: o.cls || null }, h("thead", null, head), h("tbody", null, body))
+    );
+  }
+
   // src/views/range.js
   function estimateLine(which, conf, level, pairs, cap) {
     const line = (text) => h("p", { class: "meta", "data-est": which }, text);
@@ -1319,7 +1696,13 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     return h(
       "article",
       { class: "card" },
-      h("div", { class: "head" }, h("h3", null, clean(it.name)), chip(it.chip)),
+      h(
+        "div",
+        { class: "head" },
+        h("h3", null, navLink(hashFor("skills", it.name), clean(it.name))),
+        chip(it.chip),
+        it.raw.private === true ? badge(STRINGS.privateBadge, "private") : null
+      ),
       h("p", { class: "gl" }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
       usageLine(it.raw.usage, doc && doc.usage, refMs),
       copiesLine(it.raw.copies),
@@ -1336,7 +1719,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     return h(
       "article",
       { class: "card" },
-      h("div", { class: "head" }, h("h3", null, clean(it.raw.heading || it.id)), chip(it.chip)),
+      h("div", { class: "head" }, h("h3", null, navLink(hashFor("guidance", it.id), clean(it.raw.heading || it.id))), chip(it.chip)),
       h("p", { class: "gl" }, gloss),
       h("p", { class: "meta", style: "margin:0 0 6px" }, STRINGS.size(wordsFor(it.bytes))),
       nextLine(it.raw.next_test, refMs, "section"),
@@ -1370,7 +1753,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   }
   function alertsView(doc, mode) {
     const want = mode === "guidance" ? "guidance" : "skill";
-    const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
+    const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && (mode === "all" || a.subject === want));
     const f = doc.fires_without_results;
     const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === "string" ? h("p", { class: "note" }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
     return h(
@@ -1389,7 +1772,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
           a.text ? " " + clean(a.text) : alertText(a) ? " " + alertText(a) : null,
           l ? [" ", l] : null
         );
-      })) : h("p", null, STRINGS.alertsNone)
+      })) : h("p", null, fires ? STRINGS.alertsNoneOther : STRINGS.alertsNone)
     );
   }
 
@@ -1444,9 +1827,9 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     };
   }
   function lessonSource(it) {
-    const where = it.sources && it.sources.length ? " (" + listWords(it.sources.map((x) => STRINGS.lessonSurfaces[x])) + ")" : "";
+    const where2 = it.sources && it.sources.length ? " (" + listWords(it.sources.map((x) => STRINGS.lessonSurfaces[x])) + ")" : "";
     const why = it.signals.map((x) => STRINGS.lessonSignalCount(STRINGS.lessonSignals[x.signal], x.n)).join(", ");
-    return [h("div", null, STRINGS.lessonTranscripts + where), why ? h("div", { class: "reason" }, why) : null];
+    return [h("div", null, STRINGS.lessonTranscripts + where2), why ? h("div", { class: "reason" }, why) : null];
   }
   function lessonStatus(it) {
     if (it.kind !== "new-skill") return STRINGS.lessonWaiting;
@@ -1505,7 +1888,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     (doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : []).forEach((s) => {
       if (s && typeof s.id === "string" && typeof s.heading === "string") headings[s.id] = s.heading;
     });
-    const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === "guidance" ? it.subject.startsWith("guidance:") : it.kind === "new-skill" || it.subject.startsWith("skill:")));
+    const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === "all" || (mode === "guidance" ? it.subject.startsWith("guidance:") : it.kind === "new-skill" || it.subject.startsWith("skill:"))));
     const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
     const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
     const minerRows = items.map((it) => h(
@@ -1531,7 +1914,7 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       h("td", null, link(it.url, STRINGS.lessonIssueStatus(it.number)), " (" + STRINGS.lessonDraftStates[it.state] + ")")
     ));
     const rows = minerRows.concat(issueRows);
-    const table = rows.length ? h("div", { class: "tablewrap" }, h(
+    const table2 = rows.length ? h("div", { class: "tablewrap" }, h(
       "table",
       null,
       h("thead", null, h("tr", null, cols.map((c) => h("th", null, c)))),
@@ -1542,45 +1925,9 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       null,
       head,
       h("p", { class: "lead" }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone),
-      table,
+      table2,
       miner ? h("p", { class: "note", style: "margin-top:8px" }, lessonLeftOut(L.left_out)) : null
     );
-  }
-
-  // src/views/intro.js
-  function introView(mode) {
-    const paras = mode === "guidance" ? STRINGS.introGuidance : STRINGS.introSkills;
-    const terms = STRINGS.glossary.concat(mode === "guidance" ? STRINGS.glossaryGuidance : []);
-    const chipKinds = STRINGS.chipOrder.filter((k) => mode === "guidance" || k !== "alone");
-    return h(
-      "section",
-      null,
-      h("h2", null, STRINGS.introHeading),
-      h("div", { class: "lead" }, paras.map((p) => h("p", null, p))),
-      h(
-        "details",
-        { class: "panel", open: "" },
-        h("summary", null, STRINGS.glossaryHeading),
-        h("dl", { class: "gloss" }, terms.map((t) => [h("dt", null, t[0]), h("dd", null, t[1])])),
-        h("p", { class: "note", style: "margin-top:12px" }, STRINGS.chipGlossaryIntro),
-        h("dl", { class: "gloss" }, chipKinds.map((k) => [h("dt", null, chip(k)), h("dd", null, STRINGS.chipRules[k])]))
-      )
-    );
-  }
-
-  // src/views/toolbar.js
-  function toolbar(mode, sortBy, handlers) {
-    const hd = handlers || {};
-    const seg = (label, opts) => h(
-      "div",
-      { class: "toolbar" },
-      h("span", { class: "note" }, label),
-      h("div", { class: "seg", role: "group", "aria-label": label }, opts.map((o) => h("button", { type: "button", "aria-pressed": o.on ? "true" : "false", onclick: o.fn || null }, o.text)))
-    );
-    return seg(STRINGS.modeLabel, [
-      { text: STRINGS.modeSkills, on: mode === "skills", fn: hd.skills },
-      { text: STRINGS.modeGuidance, on: mode === "guidance", fn: hd.guidance }
-    ]);
   }
 
   // src/views/whole.js
@@ -1604,31 +1951,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
         h("div", { class: "cols" }, modelCharts(whole.pooled, "whole")),
         trendChart(whole.trend, refMs)
       )
-    );
-  }
-
-  // src/views/roster.js
-  function rosterView(doc) {
-    const r = doc.roster || {};
-    const arms = Array.isArray(r.arms) ? r.arms : [];
-    const items = arms.filter(Boolean).map((a) => h(
-      "li",
-      null,
-      h("strong", null, STRINGS.rosterArm + ": " + friendlyModel(a.model)),
-      a.reason ? h("div", { class: "reason" }, clean(a.reason)) : null
-    ));
-    if (r.judge && r.judge.model) items.push(h(
-      "li",
-      null,
-      h("strong", null, STRINGS.rosterJudge + ": " + friendlyModel(r.judge.model)),
-      r.judge.reason ? h("div", { class: "reason" }, clean(r.judge.reason)) : null
-    ));
-    return h(
-      "section",
-      null,
-      h("h2", null, STRINGS.rosterHeading),
-      h("p", { class: "lead" }, STRINGS.rosterIntro),
-      items.length ? h("ul", { class: "plain" }, items) : h("p", null, STRINGS.rosterEmpty)
     );
   }
 
@@ -1658,6 +1980,761 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       h("p", { class: "lead" }, mode === "guidance" ? STRINGS.coverageIntroGuidance : STRINGS.coverageIntroSkills),
       census,
       h("div", { class: "cols" }, group("covered", STRINGS.covered), group("skipped", STRINGS.skipped), group("gap", STRINGS.gap))
+    );
+  }
+
+  // src/core/hooks.js
+  var HOOK_RANK = ["earning", "overridden-often", "never-fires"];
+  function hookItems(doc) {
+    const h2 = doc && doc.hooks;
+    const checks = h2 && Array.isArray(h2.checks) ? h2.checks : [];
+    return checks.filter((c) => c && typeof c.name === "string").map((c) => {
+      const t = c.window_totals && typeof c.window_totals === "object" ? c.window_totals : null;
+      return {
+        name: c.name,
+        raw: c,
+        where: c.where === "repo" ? "repo" : "fleet",
+        repo: typeof c.repo === "string" ? c.repo : null,
+        runs: t ? t.invocations : null,
+        blocked: t ? t.blocked : null,
+        overridden: t && Number.isInteger(t.overridden) ? t.overridden : null,
+        overrideRate: t && typeof t.override_rate === "number" ? t.override_rate : null,
+        measured: c.overrides_measured === true,
+        verdict: typeof c.verdict === "string" ? c.verdict : null,
+        reason: typeof c.verdict_reason === "string" ? c.verdict_reason : "",
+        use: Array.isArray(c.use) ? c.use.filter((u) => u && typeof u.week === "string") : []
+      };
+    }).sort((a, b) => {
+      const ra = HOOK_RANK.indexOf(a.verdict), rb = HOOK_RANK.indexOf(b.verdict);
+      return (ra < 0 ? 9 : ra) - (rb < 0 ? 9 : rb) || (b.blocked || 0) - (a.blocked || 0) || (a.name < b.name ? -1 : 1);
+    });
+  }
+  function mondayOf(ms) {
+    if (!isFinite(ms)) return null;
+    const d = new Date(ms);
+    const back = (d.getUTCDay() + 6) % 7;
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
+  }
+  function hookWeeks(doc) {
+    const t = doc && doc.hooks && doc.hooks.totals;
+    if (!t || typeof t !== "object") return [];
+    const by = /* @__PURE__ */ new Map();
+    for (const surface of ["local", "ci"]) {
+      for (const u of Array.isArray(t[surface]) ? t[surface] : []) {
+        if (!u || typeof u.week !== "string") continue;
+        if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 } });
+        const cell = by.get(u.week)[surface];
+        cell.runs += Number(u.invocations) || 0;
+        cell.blocked += Number(u.blocked) || 0;
+      }
+    }
+    return Array.from(by.values()).sort((a, b) => a.week < b.week ? 1 : -1);
+  }
+  function blockedThisWeek(doc) {
+    if (!doc || !doc.hooks || !doc.hooks.totals) return null;
+    const week = mondayOf(parseTime(doc.generated_at));
+    const row = hookWeeks(doc).find((w) => w.week === week);
+    return { week, local: row ? row.local.blocked : 0, ci: row ? row.ci.blocked : 0 };
+  }
+
+  // src/views/summary.js
+  function summaryView(doc, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const src = STRINGS.srcDoc;
+    const tip = srcTip(src, refMs);
+    const tiles = [];
+    const b = blockedThisWeek(doc);
+    tiles.push(tile({
+      label: STRINGS.tileStopped,
+      href: hashFor("hooks"),
+      tip,
+      value: b ? fmtCount(b.local + b.ci) : STRINGS.noValue,
+      note: b ? STRINGS.tileStoppedNote(fmtCount(b.local), fmtCount(b.ci), b.week) : STRINGS.tileStoppedNone
+    }));
+    const skills = skillItems(doc);
+    const tested = skills.filter((s) => s.raw.status === "covered" || s.pooled.all.n > 0);
+    tiles.push(tile({
+      label: STRINGS.tileHelped,
+      href: hashFor("skills"),
+      tip,
+      value: fmtCount(tested.filter((s) => s.chip === "helps").length),
+      note: STRINGS.tileHelpedNote(tested.length)
+    }));
+    const whole = wholeGuidance(doc);
+    tiles.push(tile({
+      label: STRINGS.tileWhole,
+      href: hashFor("guidance"),
+      tip,
+      value: chip(whole.chip, STRINGS.wholeRule),
+      note: STRINGS.wholeAnswer[whole.chip]
+    }));
+    const newest = parseTime(doc.newest_run);
+    tiles.push(tile({
+      label: STRINGS.tileAsOf,
+      value: fmtDateTime(refMs),
+      tip,
+      small: true,
+      note: STRINGS.tileNewest + ": " + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet)
+    }));
+    const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter(Boolean) : [];
+    const f = doc.fires_without_results;
+    const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === "string" ? 1 : 0;
+    tiles.push(tile({ label: STRINGS.tileAlerts, value: fmtCount(alerts.length + fires), tip, note: STRINGS.tileAlertsNote }));
+    const extra = ctx && ctx.ext && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
+    return h(
+      "div",
+      null,
+      h("p", { class: "lead" }, STRINGS.summaryLead),
+      srcLine(src, refMs),
+      h("div", { class: "tiles" }, tiles, extra),
+      alertsView(doc, "all")
+    );
+  }
+
+  // src/views/weekchart.js
+  function weekChart(weeks, names, aria) {
+    if (!weeks.length || !weeks.some((w) => (w.a || 0) + (w.b || 0) > 0)) return null;
+    const W = 480, H = 142, L = 36, R = 474, T = 10, B = 118;
+    const top = Math.max(1, ...weeks.map((w) => Math.max(w.a || 0, w.b || 0)));
+    const step = (R - L) / weeks.length;
+    const bw = Math.max(2, Math.min(18, step / 2 - 3));
+    const y = (v) => B - v / top * (B - T);
+    const lab = { "font-size": 11, fill: "var(--muted)" };
+    const kids = [
+      h("line", { x1: L, x2: R, y1: B, y2: B, stroke: "var(--axis)", "stroke-width": 1 }),
+      h("text", Object.assign({ x: L - 4, y: T + 4, "text-anchor": "end" }, lab), fmtCount(top)),
+      h("text", Object.assign({ x: L - 4, y: B, "text-anchor": "end" }, lab), "0")
+    ];
+    weeks.forEach((w, i) => {
+      const cx = L + step * i + step / 2;
+      const pair = [[w.a || 0, "var(--s1)", -bw - 1], [w.b || 0, "var(--s2)", 1]];
+      for (const [v, color, dx] of pair) {
+        if (v > 0) kids.push(h("rect", { x: (cx + dx).toFixed(1), y: y(v).toFixed(1), width: bw, height: (B - y(v)).toFixed(1), rx: 2, fill: color, "pointer-events": "none" }));
+      }
+      kids.push(h("rect", {
+        x: (cx - step / 2).toFixed(1),
+        y: T,
+        width: step.toFixed(1),
+        height: B - T,
+        fill: "transparent",
+        class: "mark",
+        tabindex: 0,
+        "data-tip": w.label + ": " + names[0] + " " + fmtCount(w.a || 0) + ", " + names[1] + " " + fmtCount(w.b || 0)
+      }));
+      if (weeks.length <= 8 || i === 0 || i === weeks.length - 1) {
+        kids.push(h("text", Object.assign({ x: cx.toFixed(1), y: B + 17, "text-anchor": "middle" }, lab), w.short || w.label));
+      }
+    });
+    return h(
+      "div",
+      null,
+      legend([{ label: names[0], color: "var(--s1)" }, { label: names[1], color: "var(--s2)" }]),
+      h("svg", { viewBox: "0 0 " + W + " " + H, class: "chart weeks", role: "img", "aria-label": aria }, kids)
+    );
+  }
+
+  // src/views/hooks.js
+  var pct = (x) => Math.round(x * 100) + "%";
+  function hookVerdict(it) {
+    const label = it.verdict && Object.prototype.hasOwnProperty.call(STRINGS.hookVerdicts, it.verdict) ? STRINGS.hookVerdicts[it.verdict] : STRINGS.hookVerdictNone;
+    return badge(label, "hv " + (it.verdict || "none"));
+  }
+  function overrides(it) {
+    if (!it.measured) return h("span", { class: "muted", title: STRINGS.hookOverridesNote }, STRINGS.overridesNotCounted);
+    return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct(it.overrideRate) + ")" : "");
+  }
+  function where(it) {
+    return STRINGS.hookWhere[it.where] + (it.where === "repo" && it.repo ? ": " + clean(it.repo) : "");
+  }
+  function hooksList(doc) {
+    const refMs = parseTime(doc.generated_at);
+    const hk = doc.hooks;
+    if (!hk || typeof hk !== "object") return h("section", { class: "block" }, h("h2", null, STRINGS.hooksHeading), h("p", null, STRINGS.hooksNone));
+    const items = hookItems(doc);
+    const w = hk.window || {};
+    const day = (d) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
+    const rows = table([
+      { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor("hooks", it.name), clean(it.name)) },
+      { label: STRINGS.colWhere, sort: (it) => it.where, cell: where },
+      { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => it.runs === null ? STRINGS.noValue : fmtCount(it.runs) },
+      { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked) },
+      { label: STRINGS.colOverrides, num: true, sort: (it) => it.measured ? it.overridden : -1, cell: overrides },
+      { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || "", cell: hookVerdict }
+    ], items);
+    const policy = hk.policy || {};
+    return h(
+      "section",
+      { class: "block" },
+      h("h2", null, STRINGS.hooksHeading),
+      srcLine(STRINGS.srcDoc, refMs),
+      w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
+      typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
+      items.length ? rows : h("p", null, STRINGS.hooksNone),
+      Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h("p", { class: "note" }, STRINGS.hookUnlisted(hk.unlisted)) : null,
+      hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
+    );
+  }
+  function checkWeeks(it) {
+    const by = /* @__PURE__ */ new Map();
+    for (const u of it.use) {
+      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, overridden: null });
+      const r = by.get(u.week);
+      const s = u.surface === "ci" ? "ci" : "local";
+      r[s + "Runs"] += Number(u.invocations) || 0;
+      r[s + "Blocked"] += Number(u.blocked) || 0;
+      if (Number.isInteger(u.overridden)) r.overridden = (r.overridden || 0) + u.overridden;
+    }
+    return Array.from(by.values()).sort((a, b) => a.week < b.week ? -1 : 1);
+  }
+  function hookPage(doc, name, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const it = hookItems(doc).find((x) => x.name === name);
+    const back = h("p", { class: "back" }, navLink(hashFor("hooks"), STRINGS.back(STRINGS.hookBack)));
+    if (!it) return h("div", null, back, h("p", null, STRINGS.hookNotFound));
+    const day = (d) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
+    const weeks = checkWeeks(it);
+    const gloss = Object.prototype.hasOwnProperty.call(HOOK_GLOSSES, it.name) ? HOOK_GLOSSES[it.name] : STRINGS.hookEnforcesMissing;
+    const src = link(it.raw.source_url, STRINGS.hookSourceLink);
+    const byRepo = /* @__PURE__ */ new Map();
+    for (const u of it.use) {
+      const k = (u.repo || STRINGS.unknown) + "|" + u.surface;
+      if (!byRepo.has(k)) byRepo.set(k, { repo: u.repo || STRINGS.unknown, surface: u.surface, runs: 0, blocked: 0 });
+      const r = byRepo.get(k);
+      r.runs += Number(u.invocations) || 0;
+      r.blocked += Number(u.blocked) || 0;
+    }
+    const extra = ctx && ctx.ext && ctx.ext.hookPage ? ctx.ext.hookPage(ctx, it) : null;
+    return h(
+      "div",
+      null,
+      back,
+      h(
+        "section",
+        { class: "block subject" },
+        h("div", { class: "subject-head" }, h("h2", { class: "title" }, clean(it.name)), hookVerdict(it)),
+        srcLine(STRINGS.srcDoc, refMs),
+        h("h3", null, STRINGS.hookEnforcesHeading),
+        h("p", null, gloss, src ? [" (", src, ")"] : null),
+        h("p", { class: "meta" }, STRINGS.hookWhereLine(it.where, it.repo ? clean(it.repo) : null)),
+        h("h3", null, STRINGS.verdictHeading),
+        h("p", null, hookVerdict(it), " ", clean(it.reason)),
+        h(
+          "p",
+          { class: "meta" },
+          STRINGS.colRuns + ": " + (it.runs === null ? STRINGS.noValue : fmtCount(it.runs)) + ". " + STRINGS.colBlocked + ": " + (it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked)) + ". " + STRINGS.colOverrides + ": ",
+          overrides(it),
+          "."
+        ),
+        it.measured ? null : h("p", { class: "note" }, STRINGS.hookOverridesNote)
+      ),
+      panel(STRINGS.hookByWeek, weeks.length ? [
+        weekChart(
+          weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked, b: w.ciBlocked })),
+          [STRINGS.colLocalBlocked, STRINGS.colCiBlocked],
+          STRINGS.hookByWeek
+        ),
+        table([
+          { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => day(w.week) },
+          { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.localRuns, cell: (w) => fmtCount(w.localRuns) },
+          { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.localBlocked, cell: (w) => fmtCount(w.localBlocked) },
+          { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ciRuns, cell: (w) => fmtCount(w.ciRuns) },
+          { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ciBlocked, cell: (w) => fmtCount(w.ciBlocked) },
+          { label: STRINGS.colOverrides, num: true, sort: (w) => w.overridden, cell: (w) => it.measured && w.overridden !== null ? fmtCount(w.overridden) : STRINGS.overridesNotCounted }
+        ], weeks.slice().reverse())
+      ] : null),
+      panel(STRINGS.hookByRepo, byRepo.size ? table([
+        { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(r.repo) },
+        { label: STRINGS.colSurface, sort: (r) => r.surface, cell: (r) => r.surface },
+        { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
+        { label: STRINGS.colBlocked, num: true, sort: (r) => r.blocked, cell: (r) => fmtCount(r.blocked) }
+      ], Array.from(byRepo.values()).sort((a, b) => b.runs - a.runs)) : null),
+      extra
+    );
+  }
+
+  // src/core/fixtures.js
+  var EVALS_URL = "https://github.com/" + DATA_REPO;
+  var FQ_KINDS = { "needs-fixtures": "new fixtures", "needs-harder-fixtures": "harder fixtures", "needs-trigger-set": "trigger set" };
+  function fixtureQueue(doc, refMs) {
+    const q = doc && doc.fixture_queue;
+    if (!q || typeof q !== "object" || !Array.isArray(q.requests)) return null;
+    const fixtures = Array.isArray(q.fixtures) ? q.fixtures.filter((f) => f && typeof f === "object") : [];
+    const rows = q.requests.filter((r) => r && typeof r === "object" && Number.isInteger(r.issue)).map((req) => {
+      const mine = fixtures.filter((f) => String(f.request) === String(req.issue));
+      const prs = Array.isArray(req.prs) ? req.prs.filter((p) => p && Number.isInteger(p.number)) : [];
+      const latest = prs.reduce((a, p) => !a || p.number > a.number ? p : a, null);
+      const opened = parseTime(req.opened_at);
+      const open = req.state === "open";
+      return {
+        issue: req.issue,
+        issueUrl: EVALS_URL + "/issues/" + req.issue,
+        kind: Object.prototype.hasOwnProperty.call(FQ_KINDS, req.kind) ? FQ_KINDS[req.kind] : String(req.kind || "unknown"),
+        subject: String(req.subject || ""),
+        state: open ? "open" : "closed",
+        opened,
+        ageDays: open && isFinite(opened) && isFinite(refMs) ? (refMs - opened) / 864e5 : null,
+        prs: prs.length,
+        prUrl: latest ? EVALS_URL + "/pull/" + latest.number : null,
+        merged: prs.some((p) => p.state === "merged" || p.merged_at),
+        fixtures: mine.length,
+        realWork: mine.filter((f) => f.origin_kind === "real-work").length,
+        runs: mine.reduce((s, f) => s + (Number(f.runs) || 0), 0),
+        costUsd: mine.reduce((s, f) => s + (Number(f.cost_usd) || 0), 0)
+      };
+    });
+    rows.sort((a, b) => (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1) || (a.opened || 0) - (b.opened || 0));
+    const findings = Array.isArray(q.findings) ? q.findings.filter((f) => f && typeof f === "object") : [];
+    return { rows, totals: q.totals && typeof q.totals === "object" ? q.totals : {}, findings, fixtures };
+  }
+
+  // src/views/subject.js
+  var share = (x) => typeof x === "number" && isFinite(x) ? Math.round(x * 100) + "%" : STRINGS.noValue;
+  var usd = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var one = (x) => typeof x === "number" && isFinite(x) ? fmtCount(x) : STRINGS.noValue;
+  function runsOf2(doc, kind, name) {
+    const key = kind === "guidance" ? "guidance/" + name : name;
+    const e = doc.evals && typeof doc.evals === "object" ? doc.evals : {};
+    const pick = (list) => (Array.isArray(list) ? list : []).filter((r) => r && r.skill === key).sort((a, b) => a.fired_at < b.fired_at ? 1 : -1);
+    return { runs: pick(e.runs), bare: pick(e.bare_runs) };
+  }
+  function runsTable(runs, refMs) {
+    if (!runs.length) return h("p", { class: "note" }, STRINGS.runsNone);
+    const points = runs.some((r) => typeof r.meter_points === "number");
+    const cols = [
+      { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => fmtDateTime(parseTime(r.fired_at)) },
+      { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => clean(r.fixture) },
+      { label: STRINGS.colModel, sort: (r) => r.model, cell: (r) => friendlyModel(r.model) },
+      { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + " (" + share(r.with_share) + ")" },
+      { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + " (" + share(r.without_share) + ")" },
+      { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
+      { label: STRINGS.colJudge, sort: (r) => r.judge, cell: (r) => typeof r.with_judge === "number" && typeof r.without_judge === "number" ? STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1)) : STRINGS.judgeNotNeeded },
+      { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
+    ];
+    if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
+    cols.push({ label: STRINGS.colReport, cell: (r) => link(r.report_url, STRINGS.report) });
+    return table(cols, runs, { tall: true });
+  }
+  function bareTable(bare) {
+    if (!bare.length) return null;
+    return [h("p", { class: "note" }, STRINGS.bareNote), table([
+      { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => fmtDay(parseTime(r.fired_at)) },
+      { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => clean(r.fixture) },
+      { label: STRINGS.colModel, sort: (r) => r.model, cell: (r) => friendlyModel(r.model) },
+      { label: STRINGS.colBare, num: true, sort: (r) => r.bare_share, cell: (r) => share(r.bare_share) },
+      { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => share(r.without_share) },
+      { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => share(r.with_share) },
+      { label: STRINGS.colPaired, sort: (r) => r.paired_at, cell: (r) => r.paired_at ? fmtDay(parseTime(r.paired_at)) : STRINGS.noValue },
+      { label: STRINGS.colReport, cell: (r) => link(r.report_url, STRINGS.report) }
+    ], bare)];
+  }
+  function copiesTable(c) {
+    if (!c || !Array.isArray(c.loaded) || !c.loaded.length) return null;
+    return table([
+      { label: STRINGS.colCopy, sort: (e) => e.digest, cell: (e) => clean(String(e.digest).slice(0, 12)) },
+      { label: STRINGS.colSurface, sort: (e) => e.surface, cell: (e) => clean(e.surface || STRINGS.unknown) },
+      { label: STRINGS.colVsMain, sort: (e) => e.vs_main, cell: (e) => STRINGS.vsMain[e.vs_main] || STRINGS.unknown },
+      { label: STRINGS.colUses, num: true, sort: (e) => e.invocations, cell: (e) => fmtCount(e.invocations) }
+    ], c.loaded.filter((e) => e && typeof e.digest === "string"));
+  }
+  function fixturesPanel(doc, runs, name, refMs) {
+    const fq = fixtureQueue(doc, refMs);
+    const listed = fq ? fq.fixtures.filter((f) => f.subject === name && typeof f.path === "string") : [];
+    const seen = new Set(listed.map((f) => String(f.path).split("/").pop()));
+    const fromRuns = [];
+    for (const r of runs) {
+      const leaf = String(r.fixture || "").split("/").pop();
+      if (leaf && !seen.has(leaf)) {
+        seen.add(leaf);
+        fromRuns.push({ path: r.fixture, origin_kind: null, runs: null });
+      }
+    }
+    const rows = listed.concat(fromRuns);
+    if (!rows.length) return h("p", { class: "note" }, STRINGS.fixturesNone);
+    return table([
+      { label: STRINGS.colFixturePath, sort: (f) => f.path, cell: (f) => clean(f.path) },
+      { label: STRINGS.colOrigin, sort: (f) => f.origin_kind || "", cell: (f) => clean(f.origin_kind || STRINGS.unknown) },
+      { label: STRINGS.colRuns, num: true, sort: (f) => f.runs, cell: (f) => f.runs === null || f.runs === void 0 ? STRINGS.noValue : fmtCount(f.runs) }
+    ], rows);
+  }
+  function lessonsAbout(doc, kind, name, refMs) {
+    const L = doc.lessons && typeof doc.lessons === "object" ? doc.lessons : {};
+    const items = (Array.isArray(L.items) ? L.items : []).map(lessonItem).filter((it) => it && (kind === "guidance" ? it.subject === "guidance:" + name : it.subject === "skill:" + name || it.kind === "new-skill" && it.subject === name));
+    const issues = kind === "guidance" ? [] : (Array.isArray(L.issues) ? L.issues : []).map(lessonIssue).filter((it) => it && it.target === name);
+    if (!items.length && !issues.length) return h("p", { class: "note" }, STRINGS.lessonsAboutNone);
+    return h(
+      "ul",
+      { class: "plain" },
+      items.map((it) => h("li", null, lessonTitle(it.subject), " — ", STRINGS.lessonKinds[it.kind], ", ", STRINGS.lessonSeen(it.n), " (", lessonStatus(it), ")")),
+      issues.map((it) => h("li", null, lessonIssueTitle(it), " — ", link(it.url, STRINGS.lessonIssueStatus(it.number)), " (" + STRINGS.lessonDraftStates[it.state] + ")"))
+    );
+  }
+  function subjectPage(doc, kind, name, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const guidance = kind === "guidance";
+    const items = guidance ? sectionItems(doc, "next") : skillItems(doc);
+    const it = items.find((x) => (guidance ? x.id : x.name) === name);
+    const back = h("p", { class: "back" }, navLink(hashFor(kind), STRINGS.back(STRINGS.subjectBack[kind])));
+    if (!it) {
+      const known = guidance ? null : (Array.isArray(doc.skills) ? doc.skills : []).find((s) => s && s.name === name);
+      if (!known) return h("div", null, back, h("p", null, STRINGS.subjectNotFound));
+      return h("div", null, back, h(
+        "section",
+        { class: "block subject" },
+        h(
+          "div",
+          { class: "subject-head" },
+          h("h2", { class: "title" }, clean(name)),
+          known.private === true ? badge(STRINGS.privateBadge, "private") : null
+        ),
+        srcLine(STRINGS.srcDoc, refMs),
+        h("p", { class: "gl" }, clean(purposeOf(known.description) || STRINGS.purposeMissing)),
+        known.registry ? h("p", { class: "meta" }, STRINGS.registryLine(clean(known.registry))) : null,
+        h("p", null, STRINGS.subjectUntested)
+      ));
+    }
+    const raw = it.raw;
+    const subj = guidance ? "guidance" : "skills";
+    const { runs, bare } = runsOf2(doc, kind, name);
+    const gloss = guidance ? Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING : clean(purposeOf(raw.description) || STRINGS.purposeMissing);
+    const ext = ctx && ctx.ext;
+    return h(
+      "div",
+      null,
+      back,
+      h(
+        "section",
+        { class: "block subject" },
+        h(
+          "div",
+          { class: "subject-head" },
+          h("h2", { class: "title" }, clean(guidance ? raw.heading || it.id : it.name)),
+          chip(it.chip),
+          raw.private === true ? badge(STRINGS.privateBadge, "private") : null
+        ),
+        srcLine(STRINGS.srcDoc, refMs),
+        h("p", { class: "gl" }, gloss),
+        !guidance && raw.registry ? h("p", { class: "meta" }, STRINGS.registryLine(clean(raw.registry))) : null,
+        guidance ? h("p", { class: "meta" }, STRINGS.size(wordsFor(it.bytes))) : null,
+        nextLine(raw.next_test, refMs, guidance ? "section" : "skill"),
+        stakesLine(raw.stakes),
+        h("h3", null, STRINGS.verdictHeading),
+        verdictLine(raw.verdict) || h("p", { class: "meta" }, STRINGS.verdict.insufficient),
+        raw.verdict_reason ? h("p", { class: "meta" }, clean(raw.verdict_reason)) : null,
+        h("p", { class: "sent" }, clean(it.sentence)),
+        guidance && hasAlone(it.pooled) ? h("p", { class: "meta" }, STRINGS.aloneShown) : null
+      ),
+      panel(STRINGS.gainHeading, [
+        confidenceView(raw.confidence, doc.policy, subj),
+        hasData(it.pooled) ? h("div", { class: "cols" }, h("div", null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h("div", null, trendChart(it.trend, refMs))) : null
+      ]),
+      panel(STRINGS.runsHeading, runsTable(runs, refMs)),
+      panel(STRINGS.bareHeading, bareTable(bare)),
+      guidance ? null : panel(STRINGS.useHeading, [usageLine(raw.usage, doc.usage, refMs), ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null]),
+      guidance ? null : panel(STRINGS.copiesHeading, [copiesLine(raw.copies), copiesTable(raw.copies)]),
+      panel(STRINGS.fixturesHeading, fixturesPanel(doc, runs, name, refMs)),
+      panel(STRINGS.lessonsAbout, lessonsAbout(doc, kind, name, refMs))
+    );
+  }
+
+  // src/views/loop.js
+  var usd2 = (x) => "$" + (Number(x) || 0).toFixed(2);
+  function stagesView() {
+    return [
+      h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
+      h("p", { class: "note" }, STRINGS.loopStagesNote)
+    ];
+  }
+  function fixtureRequestsView(doc, refMs) {
+    const fq = fixtureQueue(doc, refMs);
+    if (!fq) return h("p", { class: "note" }, STRINGS.fqNone);
+    const t = fq.totals;
+    const n = (k) => fmtCount(Number(t[k]) || 0);
+    const high = fq.findings.filter((f) => f.severity === "high").length;
+    return [
+      h("p", { class: "note" }, STRINGS.fqNote),
+      h("p", null, STRINGS.fqTotals(n("requests_open"), n("requests_closed"), n("prs_merged"), n("fixtures_real_work"), n("fixtures_invented"), n("fixture_runs"))),
+      fq.findings.length ? h("p", { class: "warn" }, STRINGS.fqFindings(fq.findings.length, high)) : null,
+      fq.rows.length ? table([
+        { label: STRINGS.colSubject, sort: (r) => r.subject, cell: (r) => link(r.issueUrl, clean(r.subject)) || clean(r.subject) },
+        { label: STRINGS.colKind, sort: (r) => r.kind, cell: (r) => r.kind },
+        { label: STRINGS.colState, sort: (r) => r.state, cell: (r) => r.state },
+        { label: STRINGS.colAge, num: true, sort: (r) => r.ageDays, cell: (r) => r.ageDays === null ? "" : STRINGS.ageDays(Math.round(r.ageDays)) },
+        { label: STRINGS.colPr, sort: (r) => r.prs, cell: (r) => r.prs ? link(r.prUrl, STRINGS.prState(r.merged, r.prs)) : "" },
+        { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + " (" + r.realWork + ")" },
+        { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
+        { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd2(r.costUsd) }
+      ], fq.rows, { tall: true }) : null
+    ];
+  }
+  var FUNNEL_KEYS = ["check", "skill", "guidance", "nothing", "open", "unknown"];
+  var FUNNEL_COLORS = { check: "var(--good)", skill: "var(--s1)", guidance: "var(--s3)", nothing: "var(--axis)", open: "var(--warning)", unknown: "var(--base)" };
+  function funnelView(doc) {
+    const f = doc.lesson_funnel;
+    if (!f || typeof f !== "object") return null;
+    const c = (k) => Number.isInteger(f[k]) ? f[k] : 0;
+    const decided = c("check") + c("skill") + c("guidance") + c("nothing");
+    const all = FUNNEL_KEYS.reduce((s, k) => s + c(k), 0);
+    const pct2 = decided ? Math.round(c("check") / decided * 100) + "%" : "0%";
+    const sources = f.by_source && typeof f.by_source === "object" ? Object.keys(f.by_source) : [];
+    const missing = Array.isArray(f.sources_missing) ? f.sources_missing.filter((s) => STRINGS.funnelSources[s]) : [];
+    return [
+      h("p", { class: "headline-num" }, STRINGS.funnelHeadline(pct2, fmtCount(decided))),
+      barChart(FUNNEL_KEYS.filter((k) => c(k) > 0).map((k) => ({ label: STRINGS.funnelKinds[k], p: c(k), t: all, color: FUNNEL_COLORS[k] })), STRINGS.funnelHeading),
+      sources.length ? table([{ label: STRINGS.colSource, sort: (s) => s, cell: (s) => STRINGS.funnelSources[s] || clean(s) }].concat(FUNNEL_KEYS.map((k) => ({ label: STRINGS.funnelKinds[k], num: true, sort: (s) => f.by_source[s][k], cell: (s) => fmtCount(f.by_source[s][k] || 0) }))), sources) : null,
+      missing.length ? h("p", { class: "note" }, STRINGS.funnelMissing(missing.map((s) => STRINGS.funnelSources[s]).join(", "))) : null
+    ];
+  }
+  var LOOP_TITLE = /^(New skill: |Improve |Retire (skill|guidance section) |Remove .*: no (marginal )?benefit|Trim )/;
+  function loopPrsView(doc, refMs) {
+    const a = doc.activity;
+    const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter((p) => p && typeof p.title === "string" && LOOP_TITLE.test(p.title));
+    if (!rows.length) return null;
+    return [h("p", { class: "note" }, STRINGS.loopPrsNote), prTable(rows, refMs)];
+  }
+  function prTable(rows, refMs) {
+    return table([
+      { label: STRINGS.colRepo, sort: (p) => p.repo, cell: (p) => clean(String(p.repo).split("/").pop()) },
+      { label: STRINGS.colNumber, num: true, sort: (p) => p.number, cell: (p) => link(p.url, "#" + p.number) },
+      { label: STRINGS.colTitle, sort: (p) => p.title, cell: (p) => clean(p.title) },
+      { label: STRINGS.colState, sort: (p) => p.state, cell: (p) => STRINGS.prStates[p.state] || clean(p.state) },
+      { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at, cell: (p) => fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
+    ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || "").localeCompare(String(x.merged_at || x.updated_at || ""))), { tall: true });
+  }
+  function loopView(doc, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const ext = ctx && ctx.ext;
+    const stages = ext && ext.loopStages ? ext.loopStages(ctx) : null;
+    return h(
+      "div",
+      null,
+      srcLine(STRINGS.srcDoc, refMs),
+      panel(STRINGS.loopHeading, stages || stagesView()),
+      ext && ext.loopTop ? ext.loopTop(ctx) : null,
+      panel(STRINGS.funnelHeading, funnelView(doc)),
+      panel(STRINGS.fqHeading, fixtureRequestsView(doc, refMs)),
+      lessonsView(doc, "all"),
+      ext && ext.covers && ext.covers("loop-prs") ? ext.loopPrs(ctx) : panel(STRINGS.loopPrsHeading, loopPrsView(doc, refMs)),
+      ext && ext.loopBottom ? ext.loopBottom(ctx) : null
+    );
+  }
+
+  // src/views/impact.js
+  var usd3 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
+  function hookWeeksView(doc, refMs) {
+    const weeks = hookWeeks(doc);
+    if (!weeks.length) return null;
+    const old = weeks.slice().reverse();
+    return [
+      weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks),
+      table([
+        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+        { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
+        { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.local.blocked, cell: (w) => fmtCount(w.local.blocked) },
+        { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ci.runs, cell: (w) => fmtCount(w.ci.runs) },
+        { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) }
+      ], weeks)
+    ];
+  }
+  function skillUseView(doc, refMs) {
+    const u = doc.usage;
+    const rows = skillItems(doc).filter((s) => s.raw.usage && typeof s.raw.usage.invocations === "number");
+    if (!rows.length || !u) return null;
+    return [
+      h("p", { class: "note" }, STRINGS.impactUseSkillsNote(fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs))),
+      table([
+        { label: STRINGS.colName, sort: (s) => s.name, cell: (s) => navLink(hashFor("skills", s.name), clean(s.name)) },
+        { label: STRINGS.colUses, num: true, sort: (s) => s.raw.usage.invocations, cell: (s) => fmtCount(s.raw.usage.invocations) }
+      ], rows.sort((a, b) => b.raw.usage.invocations - a.raw.usage.invocations || (a.name < b.name ? -1 : 1)), { tall: true })
+    ];
+  }
+  function checkUseView(doc) {
+    const items = hookItems(doc).filter((it) => it.runs !== null);
+    if (!items.length) return null;
+    return table([
+      { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor("hooks", it.name), clean(it.name)) },
+      { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => fmtCount(it.runs) },
+      { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => fmtCount(it.blocked || 0) }
+    ], items.slice().sort((a, b) => b.runs - a.runs));
+  }
+  function prWeeks(doc) {
+    const a = doc.activity;
+    const pulls = a && Array.isArray(a.pulls) ? a.pulls : [];
+    const by = /* @__PURE__ */ new Map();
+    const add = (ts, key) => {
+      const w = mondayOf(parseTime(ts));
+      if (!w) return;
+      if (!by.has(w)) by.set(w, { week: w, opened: 0, merged: 0 });
+      by.get(w)[key] += 1;
+    };
+    for (const p of pulls) {
+      if (!p) continue;
+      add(p.created_at, "opened");
+      if (p.state === "merged") add(p.merged_at, "merged");
+    }
+    return Array.from(by.values()).sort((x, y) => x.week < y.week ? 1 : -1);
+  }
+  function prOutcomesView(doc, refMs) {
+    const a = doc.activity;
+    const weeks = prWeeks(doc);
+    if (!a || !weeks.length) return null;
+    const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split("/").pop())).join(", ");
+    return [
+      h("p", { class: "note" }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
+      weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs),
+      table([
+        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+        { label: STRINGS.colOpened, num: true, sort: (w) => w.opened, cell: (w) => fmtCount(w.opened) },
+        { label: STRINGS.colMerged, num: true, sort: (w) => w.merged, cell: (w) => fmtCount(w.merged) }
+      ], weeks)
+    ];
+  }
+  var RED = ["failure", "timed_out", "startup_failure"];
+  function redRunsView(doc, refMs) {
+    const a = doc.activity;
+    if (!a || !Array.isArray(a.runs)) return null;
+    const red = a.runs.filter((r) => r && RED.includes(r.conclusion)).sort((x, y) => x.created_at < y.created_at ? 1 : -1);
+    return [h("p", { class: "note" }, STRINGS.impactRedNote), red.length ? table([
+      { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
+      { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split("/").pop()) },
+      { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => link(r.url, clean(r.workflow || r.title || STRINGS.unknown)) },
+      { label: STRINGS.colState, sort: (r) => r.conclusion, cell: (r) => clean(r.conclusion) }
+    ], red) : h("p", null, STRINGS.impactRedNone)];
+  }
+  function spendView(doc, refMs) {
+    const s = doc.spend;
+    if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
+    return [
+      h("p", { class: "note" }, STRINGS.impactSpendNote),
+      s.generated_at ? srcLine(STRINGS.srcDoc, parseTime(s.generated_at)) : null,
+      table([
+        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+        { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
+        { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
+        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd3(w.api_usd) },
+        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd3(w.thread_spend_usd) },
+        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd3(w.cost_per_verdict) }
+      ], s.weeks)
+    ];
+  }
+  function impactView(doc, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const ext = ctx && ctx.ext;
+    const covers = (k) => !!(ext && ext.covers && ext.covers(k));
+    return h(
+      "div",
+      null,
+      srcLine(STRINGS.srcDoc, refMs),
+      panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
+      // The private usage table covers both lists, private repos included.
+      covers("use") ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))],
+      covers("pr-outcomes") ? ext.prOutcomes(ctx) : panel(STRINGS.impactPrs, prOutcomesView(doc, refMs)),
+      covers("red-runs") ? ext.redRuns(ctx) : panel(STRINGS.impactRed, redRunsView(doc, refMs)),
+      covers("cost") ? ext.cost(ctx) : panel(STRINGS.impactSpend, spendView(doc, refMs))
+    );
+  }
+
+  // src/views/ops.js
+  var PROBLEM = ["failure", "timed_out", "startup_failure", "cancelled", "action_required"];
+  function problemsToggle() {
+    return h("label", { class: "check" }, h("input", { type: "checkbox", onchange: (e) => {
+      const box = e.currentTarget.closest("section");
+      if (box) box.classList.toggle("problems-only", e.currentTarget.checked);
+    } }), " " + STRINGS.problemsOnly);
+  }
+  function runsView(doc, refMs) {
+    const a = doc.activity;
+    if (!a || !Array.isArray(a.runs) || !a.runs.length) return null;
+    const rows = a.runs.filter(Boolean).slice().sort((x, y) => x.created_at < y.created_at ? 1 : -1);
+    const state = (r) => r.conclusion || r.state || STRINGS.unknown;
+    return [
+      h("p", { class: "note" }, STRINGS.opsRunsNote(fmtDateTime(parseTime(a.since)))),
+      problemsToggle(),
+      table([
+        { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
+        { label: STRINGS.colState, sort: state, cell: (r) => h("span", { class: "st " + (PROBLEM.includes(r.conclusion) ? "bad" : r.conclusion === "success" ? "good" : "") }, clean(state(r))) },
+        { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split("/").pop()) },
+        { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => clean(r.workflow || STRINGS.unknown) },
+        { label: STRINGS.colRun, sort: (r) => r.title, cell: (r) => link(r.url, clean(r.title || r.workflow || String(r.run_id))) }
+      ], rows, { tall: true, cls: "console", rowAttrs: (r) => PROBLEM.includes(r.conclusion) ? null : { "data-ok": "" } })
+    ];
+  }
+  function prsView(doc, refMs) {
+    const a = doc.activity;
+    if (!a || !Array.isArray(a.pulls) || !a.pulls.length) return null;
+    return [h("p", { class: "note" }, STRINGS.opsPrsNote), prTable(a.pulls.filter(Boolean), refMs)];
+  }
+  function issuesView(doc, refMs) {
+    const a = doc.activity;
+    if (!a || !Array.isArray(a.issues) || !a.issues.length) return null;
+    return table([
+      { label: STRINGS.colRepo, sort: (i) => i.repo, cell: (i) => clean(String(i.repo).split("/").pop()) },
+      { label: STRINGS.colNumber, num: true, sort: (i) => i.number, cell: (i) => link(i.url, "#" + i.number) },
+      { label: STRINGS.colTitle, sort: (i) => i.title, cell: (i) => clean(i.title) },
+      { label: STRINGS.colUpdated, sort: (i) => i.updated_at, cell: (i) => fmtDay(parseTime(i.updated_at), refMs) }
+    ], a.issues.filter(Boolean).slice().sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at))), { tall: true });
+  }
+  function opsView(doc, ctx) {
+    const refMs = parseTime(doc.generated_at);
+    const ext = ctx && ctx.ext;
+    const covers = (k) => !!(ext && ext.covers && ext.covers(k));
+    return h(
+      "div",
+      null,
+      srcLine(STRINGS.srcDoc, refMs),
+      ext && ext.opsTop ? ext.opsTop(ctx) : null,
+      covers("runs") ? ext.runs(ctx) : panel(STRINGS.opsRuns, runsView(doc, refMs)),
+      covers("prs") ? ext.prs(ctx) : panel(STRINGS.opsPrs, prsView(doc, refMs)),
+      covers("issues") ? ext.issues(ctx) : panel(STRINGS.opsIssues, issuesView(doc, refMs)),
+      ext && ext.opsBottom ? ext.opsBottom(ctx) : null
+    );
+  }
+
+  // src/views/intro.js
+  function introView(mode) {
+    const all = mode === "all";
+    const paras = all ? STRINGS.introSkills.concat(STRINGS.introGuidance) : mode === "guidance" ? STRINGS.introGuidance : STRINGS.introSkills;
+    const terms = STRINGS.glossary.concat(all || mode === "guidance" ? STRINGS.glossaryGuidance : []);
+    const chipKinds = STRINGS.chipOrder.filter((k) => all || mode === "guidance" || k !== "alone");
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.introHeading),
+      h("div", { class: "lead" }, paras.map((p) => h("p", null, p))),
+      h(
+        "details",
+        { class: "panel", open: "" },
+        h("summary", null, STRINGS.glossaryHeading),
+        h("dl", { class: "gloss" }, terms.map((t) => [h("dt", null, t[0]), h("dd", null, t[1])])),
+        h("p", { class: "note", style: "margin-top:12px" }, STRINGS.chipGlossaryIntro),
+        h("dl", { class: "gloss" }, chipKinds.map((k) => [h("dt", null, chip(k)), h("dd", null, STRINGS.chipRules[k])]))
+      )
+    );
+  }
+
+  // src/views/roster.js
+  function rosterView(doc, whyFor) {
+    const r = doc.roster || {};
+    const arms = Array.isArray(r.arms) ? r.arms : [];
+    const why = (m) => whyFor && whyFor(m.model) || m.reason;
+    const items = arms.filter(Boolean).map((a) => h(
+      "li",
+      null,
+      h("strong", null, STRINGS.rosterArm + ": " + friendlyModel(a.model)),
+      why(a) ? h("div", { class: "reason" }, clean(why(a))) : null
+    ));
+    if (r.judge && r.judge.model) items.push(h(
+      "li",
+      null,
+      h("strong", null, STRINGS.rosterJudge + ": " + friendlyModel(r.judge.model)),
+      why(r.judge) ? h("div", { class: "reason" }, clean(why(r.judge))) : null
+    ));
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.rosterHeading),
+      h("p", { class: "lead" }, STRINGS.rosterIntro),
+      items.length ? h("ul", { class: "plain" }, items) : h("p", null, STRINGS.rosterEmpty)
     );
   }
 
@@ -1750,31 +2827,159 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     );
   }
 
+  // src/views/method.js
+  function methodView(doc, ctx) {
+    const ext = ctx && ctx.ext;
+    return h(
+      "div",
+      null,
+      h("p", { class: "lead" }, STRINGS.methodLead),
+      introView("all"),
+      rosterView(doc, ext && ext.rosterWhy ? (m) => ext.rosterWhy(ctx, m) : null),
+      engineersView(doc, "skills", ctx && ctx.url),
+      engineersView(doc, "guidance", ctx && ctx.url)
+    );
+  }
+  function removedPage(doc) {
+    const a = removedSkillsView(doc), b = removedView(doc);
+    return h("div", null, a, b, a || b ? null : h("p", null, STRINGS.removedNone));
+  }
+
+  // src/views/search.js
+  var stakesOf = (raw) => raw && raw.stakes && (raw.stakes.level === "high" || raw.stakes.level === "none") ? raw.stakes.level : "normal";
+  var modelsOf = (pooled) => pooled.models.filter((m) => m.n > 0 || m.nAbl > 0).map((m) => m.model);
+  function searchItems(doc, extra) {
+    const out = [];
+    for (const s of skillItems(doc)) {
+      out.push({
+        kind: "skill",
+        title: s.name,
+        href: hashFor("skills", s.name),
+        text: [s.name, s.raw.description].join(" "),
+        registry: s.raw.registry || null,
+        verdict: s.chip,
+        models: modelsOf(s.pooled),
+        stakes: stakesOf(s.raw),
+        subject: true,
+        priv: s.raw.private === true
+      });
+    }
+    for (const s of sectionItems(doc, "next")) {
+      out.push({
+        kind: "section",
+        title: s.raw.heading || s.id,
+        href: hashFor("guidance", s.id),
+        text: [s.id, s.raw.heading].join(" "),
+        registry: null,
+        verdict: s.chip,
+        models: modelsOf(s.pooled),
+        stakes: stakesOf(s.raw),
+        subject: true
+      });
+    }
+    for (const c of hookItems(doc)) {
+      out.push({
+        kind: "check",
+        title: c.name,
+        href: hashFor("hooks", c.name),
+        text: [c.name, c.repo].join(" "),
+        registry: null,
+        verdict: c.verdict ? "hook:" + c.verdict : null,
+        models: [],
+        stakes: null,
+        subject: true
+      });
+    }
+    const a = doc.activity;
+    for (const p of a && Array.isArray(a.pulls) ? a.pulls : []) {
+      if (p) out.push({ kind: "pr", title: p.title || "#" + p.number, url: p.url, text: [p.title, p.repo, "#" + p.number].join(" "), detail: String(p.repo || "").split("/").pop() + " #" + p.number });
+    }
+    for (const i of a && Array.isArray(a.issues) ? a.issues : []) {
+      if (i) out.push({ kind: "issue", title: i.title || "#" + i.number, url: i.url, text: [i.title, i.repo, "#" + i.number].join(" "), detail: String(i.repo || "").split("/").pop() + " #" + i.number });
+    }
+    const seen = /* @__PURE__ */ new Set();
+    return out.concat(Array.isArray(extra) ? extra : []).filter((it) => {
+      const k = it.href || it.url || it.kind + ":" + it.title;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+  function filterItems(items, q) {
+    const words = String(q.text || "").toLowerCase().split(/\s+/).filter(Boolean);
+    const any = q.registry || q.verdict || q.model || q.stakes;
+    return items.filter((it) => {
+      if (any && !it.subject) return false;
+      if (q.registry && it.registry !== q.registry) return false;
+      if (q.verdict && it.verdict !== q.verdict) return false;
+      if (q.model && !(it.models || []).includes(q.model)) return false;
+      if (q.stakes && it.stakes !== q.stakes) return false;
+      const hay = String(it.text || "").toLowerCase();
+      return words.every((w) => hay.includes(w));
+    });
+  }
+  var verdictLabel = (v) => v && v.startsWith("hook:") ? STRINGS.hookVerdicts[v.slice(5)] || v.slice(5) : STRINGS.chips[v] || v;
+  function select(label, key, values, current, onFilter, show) {
+    return h(
+      "label",
+      { class: "filter" },
+      label + " ",
+      h(
+        "select",
+        { onchange: (e) => onFilter(key, e.currentTarget.value) },
+        h("option", { value: "" }, STRINGS.filterAny),
+        values.map((v) => h("option", current === v ? { value: v, selected: "" } : { value: v }, show ? show(v) : v))
+      )
+    );
+  }
+  function searchView(doc, q, ctx) {
+    const items = searchItems(doc, ctx && ctx.ext && ctx.ext.searchExtra ? ctx.ext.searchExtra(ctx) : null);
+    const uniq = (f) => Array.from(new Set(items.flatMap((it) => [].concat(f(it) || [])))).filter(Boolean).sort();
+    const on = ctx && ctx.onFilter || (() => {
+    });
+    const hits = filterItems(items, q).slice(0, 300);
+    return h(
+      "section",
+      { class: "block search" },
+      h("h2", null, STRINGS.searchHeading(clean(q.text || ""))),
+      h(
+        "div",
+        { class: "filters" },
+        select(STRINGS.filterRegistry, "registry", uniq((it) => it.registry), q.registry, on, clean),
+        select(STRINGS.filterVerdict, "verdict", uniq((it) => it.verdict), q.verdict, on, verdictLabel),
+        select(STRINGS.filterModel, "model", uniq((it) => it.models), q.model, on, friendlyModel),
+        select(STRINGS.filterStakes, "stakes", uniq((it) => it.stakes), q.stakes, on, (v) => STRINGS.stakesWords[v] || v),
+        h("button", { type: "button", class: "linkish", onclick: ctx && ctx.onClear ? ctx.onClear : null }, STRINGS.searchClear)
+      ),
+      hits.length ? table([
+        { label: STRINGS.colKind, sort: (it) => it.kind, cell: (it) => STRINGS.kinds[it.kind] },
+        { label: STRINGS.colWhat, sort: (it) => it.title, cell: (it) => [
+          it.href ? navLink(it.href, clean(it.title)) : link(it.url, clean(it.title)) || clean(it.title),
+          it.priv ? [" ", badge(STRINGS.privateBadge, "private")] : null
+        ] },
+        { label: STRINGS.colDetail, sort: (it) => it.verdict || it.detail || "", cell: (it) => it.verdict && !it.verdict.startsWith("hook:") ? chip(it.verdict) : it.verdict ? verdictLabel(it.verdict) : clean(it.detail || "") }
+      ], hits, { tall: true }) : h("p", null, STRINGS.searchNone)
+    );
+  }
+
   // src/views/page.js
   function buildPage(doc, mode, opts) {
     const o = opts || {};
     const refMs = parseTime(doc.generated_at);
-    const newest = parseTime(doc.newest_run);
-    const top = [
-      h("h1", null, STRINGS.title),
-      h("p", { class: "asof" }, STRINGS.dataAsOf(fmtDateTime(refMs)), " ", isFinite(newest) ? STRINGS.newestRun(fmtDateTime(newest)) : STRINGS.noRunsYet),
-      toolbar(mode, o.sortBy, o.handlers),
-      o.notice ? h("p", { class: "panel failure" }, o.notice) : null,
-      introView(mode)
-    ];
-    let body;
     if (mode === "guidance") {
-      const whole = wholeGuidance(doc);
-      const items = sectionItems(doc, o.sortBy);
+      const items2 = sectionItems(doc, o.sortBy);
       const hd = o.handlers || {};
-      body = [
-        wholeView(whole, refMs),
+      return h(
+        "div",
+        null,
+        srcLine(STRINGS.srcDoc, refMs),
+        wholeView(wholeGuidance(doc), refMs),
         h(
           "section",
           null,
           h("h2", null, STRINGS.sectionsHeading),
           h("p", { class: "note" }, STRINGS.sectionsNote),
-          chipSummary(items, mode),
+          chipSummary(items2, mode),
           h(
             "div",
             { class: "toolbar" },
@@ -1787,29 +2992,82 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
               h("button", { type: "button", "aria-pressed": o.sortBy === "size" ? "true" : "false", onclick: hd.sortSize || null }, STRINGS.sortSize)
             )
           ),
-          items.length ? h("div", { class: "cards" }, items.map((it) => sectionCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
+          items2.length ? h("div", { class: "cards" }, items2.map((it) => sectionCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
         ),
-        lessonsView(doc, mode),
-        removedView(doc)
-      ];
-    } else {
-      const items = skillItems(doc);
-      const u = doc.usage;
-      body = [
-        h(
-          "section",
-          null,
-          h("h2", null, STRINGS.skillsHeading),
-          h("p", { class: "note" }, STRINGS.skillsNote),
-          u && typeof u.sessions_scanned === "number" ? h("p", { class: "note" }, STRINGS.usageNote(u.sessions_scanned.toLocaleString("en-US"))) : null,
-          chipSummary(items, mode),
-          items.length ? h("div", { class: "cards" }, items.map((it) => skillCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
-        ),
-        lessonsView(doc, mode),
-        removedSkillsView(doc)
-      ];
+        coverageView(doc, mode),
+        alertsView(doc, mode)
+      );
     }
-    return h("div", null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
+    const items = skillItems(doc);
+    const u = doc.usage;
+    return h(
+      "div",
+      null,
+      srcLine(STRINGS.srcDoc, refMs),
+      h(
+        "section",
+        null,
+        h("h2", null, STRINGS.skillsHeading),
+        h("p", { class: "note" }, STRINGS.skillsNote),
+        u && typeof u.sessions_scanned === "number" ? h("p", { class: "note" }, STRINGS.usageNote(u.sessions_scanned.toLocaleString("en-US"))) : null,
+        chipSummary(items, mode),
+        items.length ? h("div", { class: "cards" }, items.map((it) => skillCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
+      ),
+      coverageView(doc, mode),
+      alertsView(doc, mode)
+    );
+  }
+  function subNav(current) {
+    return h("nav", { class: "subnav", "aria-label": STRINGS.subNavLabel }, GROUPS.hooks.map((name) => navLink(hashFor(name), STRINGS.subTabs[name], { id: "sub-" + name, "aria-current": name === current ? "page" : null })));
+  }
+  function isSearching(q) {
+    return !!(q && (q.text || q.registry || q.verdict || q.model || q.stakes));
+  }
+  function renderRoute(doc, route, opts) {
+    const o = opts || {};
+    const ctx = { doc, route, url: o.url || DEFAULT_DATA_URL, ext: o.ext || null, onFilter: o.onFilter, onClear: o.onClear };
+    if (isSearching(o.search)) return h("div", null, searchView(doc, o.search, ctx));
+    const group = groupOf(route.name);
+    let body;
+    switch (route.name) {
+      case "needs":
+        body = ctx.ext && ctx.ext.needs ? ctx.ext.needs(ctx) : null;
+        break;
+      case "hooks":
+        body = route.id ? hookPage(doc, route.id, ctx) : hooksList(doc);
+        break;
+      case "skills":
+        body = route.id ? subjectPage(doc, "skills", route.id, ctx) : buildPage(doc, "skills", o);
+        break;
+      case "guidance":
+        body = route.id ? subjectPage(doc, "guidance", route.id, ctx) : buildPage(doc, "guidance", o);
+        break;
+      case "removed":
+        body = removedPage(doc);
+        break;
+      case "method":
+        body = methodView(doc, ctx);
+        break;
+      case "loop":
+        body = loopView(doc, ctx);
+        break;
+      case "impact":
+        body = impactView(doc, ctx);
+        break;
+      case "ops":
+        body = opsView(doc, ctx);
+        break;
+      default:
+        body = summaryView(doc, ctx);
+    }
+    return h(
+      "div",
+      null,
+      h("h1", { class: "group-title" }, STRINGS.groups[group]),
+      group === "hooks" ? subNav(route.name) : null,
+      o.notice ? h("p", { class: "panel failure" }, o.notice) : null,
+      body
+    );
   }
 
   // src/views/failure.js
@@ -1855,8 +3113,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     fmtDateTime,
     fmtCount,
     wordsFor,
-    modeFromSearch,
-    searchForMode,
     allowedDataUrl,
     dataUrlFromSearch,
     cacheBust,
@@ -1880,37 +3136,101 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     lessonIssue,
     lessonsView,
     buildPage,
+    renderRoute,
     buildFailure,
     confidenceView,
     clipName,
     h,
     textOf,
     findAll,
-    toDom
+    toDom,
+    useVoice,
+    HOOK_GLOSSES,
+    parseRoute,
+    hashFor,
+    groupOf,
+    GROUPS,
+    hookItems,
+    hookWeeks,
+    blockedThisWeek,
+    mondayOf,
+    checkWeeks,
+    fixtureQueue,
+    searchItems,
+    filterItems,
+    prWeeks,
+    runsOf: runsOf2,
+    LOOP_TITLE
   };
 
   // src/app.js
-  function boot(source) {
-    const app = document.getElementById("app");
-    const tip = document.getElementById("tip");
-    const state = { mode: modeFromSearch(location.search), sortBy: "next", doc: null, url: DEFAULT_DATA_URL, notice: null };
+  function boot(source, opts) {
+    const o = opts || {};
+    const groups = o.groups || ["summary", "hooks", "loop", "impact", "ops"];
+    const root = document.getElementById(o.rootId || "app");
+    const tip = document.getElementById(o.tipId || "tip");
+    const state = {
+      route: parseRoute(location.hash, location.search, groups),
+      sortBy: "next",
+      doc: null,
+      url: DEFAULT_DATA_URL,
+      notice: null,
+      search: { text: "", registry: "", verdict: "", model: "", stakes: "" }
+    };
     try {
       const s = localStorage.getItem("explorer-sort");
       if (s === "size" || s === "value" || s === "next") state.sortBy = s;
     } catch (e) {
     }
-    function mount(node) {
-      while (app.firstChild) app.removeChild(app.firstChild);
-      app.appendChild(toDom(node, document));
-      document.title = STRINGS.title;
+    const top = toDom(h(
+      "header",
+      { class: "topbar" },
+      h(
+        "div",
+        { class: "bar" },
+        h("a", { class: "brand", href: hashFor("summary") }, STRINGS.title),
+        h("button", { type: "button", class: "menu", "aria-expanded": "false", "aria-controls": "ex-drawer", onclick: () => toggleMenu() }, STRINGS.menu),
+        h(
+          "div",
+          { class: "drawer", id: "ex-drawer" },
+          h("nav", { class: "groups", "aria-label": STRINGS.navLabel }, groups.map((g) => h("a", { id: "tab-" + g, href: hashFor(g === "hooks" ? "hooks" : g), class: "group" }, STRINGS.groups[g]))),
+          h("input", {
+            type: "search",
+            class: "search",
+            placeholder: STRINGS.searchPlaceholder,
+            "aria-label": STRINGS.searchLabel,
+            oninput: (e) => {
+              state.search.text = e.currentTarget.value;
+              renderContent();
+            }
+          })
+        )
+      )
+    ), document);
+    const content = document.createElement("div");
+    content.className = "content";
+    while (root.firstChild) {
+      content.appendChild(root.firstChild);
     }
-    function setMode(m) {
-      state.mode = m;
-      try {
-        history.replaceState(null, "", location.pathname + searchForMode(location.search, m) + location.hash);
-      } catch (e) {
-      }
-      render();
+    root.appendChild(top);
+    root.appendChild(content);
+    const searchBox = top.querySelector("input.search");
+    function toggleMenu(force) {
+      const open = force === void 0 ? !top.classList.contains("open") : force;
+      top.classList.toggle("open", open);
+      top.querySelector(".menu").setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    function markNav() {
+      const g = groupOf(state.route.name);
+      top.querySelectorAll("a.group").forEach((a) => {
+        if (a.id === "tab-" + g) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
+    }
+    function mount(node) {
+      while (content.firstChild) content.removeChild(content.firstChild);
+      content.appendChild(toDom(node, document));
+      document.title = STRINGS.title;
     }
     function setSort(s) {
       state.sortBy = s;
@@ -1918,17 +3238,51 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
         localStorage.setItem("explorer-sort", s);
       } catch (e) {
       }
-      render();
+      renderContent();
     }
-    function render() {
-      mount(buildPage(state.doc, state.mode, { sortBy: state.sortBy, url: state.url, notice: state.notice, handlers: {
-        skills: () => setMode("skills"),
-        guidance: () => setMode("guidance"),
-        sortNext: () => setSort("next"),
-        sortValue: () => setSort("value"),
-        sortSize: () => setSort("size")
-      } }));
+    function clearSearch() {
+      state.search = { text: "", registry: "", verdict: "", model: "", stakes: "" };
+      searchBox.value = "";
+      renderContent();
     }
+    function renderContent() {
+      markNav();
+      if (!state.doc) return;
+      try {
+        mount(renderRoute(state.doc, state.route, {
+          sortBy: state.sortBy,
+          url: state.url,
+          notice: state.notice,
+          ext: o.ext ? o.ext(state) : null,
+          search: state.search,
+          onFilter: (k, v) => {
+            state.search[k] = v;
+            renderContent();
+          },
+          onClear: clearSearch,
+          handlers: { sortNext: () => setSort("next"), sortValue: () => setSort("value"), sortSize: () => setSort("size") }
+        }));
+      } catch (e) {
+        mount(buildFailure({ kind: "parse", url: state.url }));
+      }
+    }
+    window.addEventListener("hashchange", () => {
+      state.route = parseRoute(location.hash, location.search, groups);
+      state.search = { text: "", registry: "", verdict: "", model: "", stakes: "" };
+      searchBox.value = "";
+      toggleMenu(false);
+      if (o.onRoute) {
+        try {
+          o.onRoute(location.hash);
+        } catch (e) {
+        }
+      }
+      renderContent();
+      try {
+        window.scrollTo(0, 0);
+      } catch (e) {
+      }
+    });
     function showTip(target) {
       const text = target && target.getAttribute && target.getAttribute("data-tip");
       if (!text) {
@@ -1939,23 +3293,23 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       tip.hidden = false;
       const r = target.getBoundingClientRect();
       const tw = tip.offsetWidth, th = tip.offsetHeight;
-      let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
-      let top;
+      const left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
+      let topPx;
       if (target.getAttribute("data-tip-pos") === "below") {
-        top = r.bottom + 8;
-        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
+        topPx = r.bottom + 8;
+        if (topPx + th > window.innerHeight - 8) topPx = r.top - th - 8;
       } else {
-        top = r.top - th - 8;
-        if (top < 8) top = r.bottom + 8;
+        topPx = r.top - th - 8;
+        if (topPx < 8) topPx = r.bottom + 8;
       }
       tip.style.left = left + "px";
-      tip.style.top = top + "px";
+      tip.style.top = topPx + "px";
     }
-    app.addEventListener("pointerover", (e) => showTip(e.target.closest ? e.target.closest("[data-tip]") : null));
-    app.addEventListener("pointerout", () => {
+    root.addEventListener("pointerover", (e) => showTip(e.target.closest ? e.target.closest("[data-tip]") : null));
+    root.addEventListener("pointerout", () => {
       tip.hidden = true;
     });
-    app.addEventListener("focusin", (e) => {
+    root.addEventListener("focusin", (e) => {
       let kb = true;
       try {
         kb = e.target.matches(":focus-visible");
@@ -1963,30 +3317,30 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
       }
       if (kb) showTip(e.target);
     });
-    app.addEventListener("pointerdown", () => {
+    root.addEventListener("pointerdown", () => {
       tip.hidden = true;
     });
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") tip.hidden = true;
+      if (e.key === "Escape") {
+        tip.hidden = true;
+        toggleMenu(false);
+      }
     });
-    app.addEventListener("focusout", () => {
+    root.addEventListener("focusout", () => {
       tip.hidden = true;
     });
     window.addEventListener("scroll", () => {
       tip.hidden = true;
     }, { passive: true });
+    markNav();
     source.start({
       onDoc(doc, url) {
         state.doc = doc;
         if (url) state.url = url;
-        try {
-          render();
-        } catch (e) {
-          mount(buildFailure({ kind: "parse", url: state.url }, state.mode));
-        }
+        renderContent();
       },
       onFail(result) {
-        mount(buildFailure(result, state.mode));
+        mount(buildFailure(result));
       }
     });
   }

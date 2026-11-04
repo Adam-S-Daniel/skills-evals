@@ -1,11 +1,19 @@
 /* Every sentence the page shows, in one place. */
 import { DATA_REPO } from '../config.js';
+import { useGlossVoice } from './glosses.js';
 import { SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, pts, ordinal, countWord } from './rules.js';
 
 const ISSUES_URL = 'https://github.com/' + DATA_REPO + '/issues';
 
-export const STRINGS = {
-  title: 'Evals Explorer',
+/* `you` is true in the private build (the dashboard speaks to its owner) and
+   false in the public one, which says "the owner" and names no person. */
+function buildStrings(you) {
+  const W = you
+    ? { who: 'you', Who: 'You', whose: 'your', Whose: 'Your', s: '', obj: 'you', own: 'your own', dont: 'don\'t' }
+    : { who: 'the owner', Who: 'The owner', whose: 'the owner\'s', Whose: 'The owner\'s', s: 's', obj: 'the owner', own: 'their own', dont: 'doesn\'t' };
+  return {
+  title: you ? 'Self-improvement project' : 'Evals Explorer',
+  voice: you ? 'you' : 'owner',
   loading: 'Loading the latest results…',
   dataAsOf: (when) => 'Data as of ' + when + '.',
   newestRun: (when) => 'Newest test run: ' + when + '.',
@@ -19,12 +27,12 @@ export const STRINGS = {
 
   introHeading: 'What you are looking at',
   introSkills: [
-    'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don\'t write most of them myself. I\'ve set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
+    'A skill is a page of instructions that Claude, the AI coding assistant ' + W.who + ' work' + W.s + ' with, reads before it starts a certain kind of task. ' + W.Who + ' ' + W.dont + ' write most of them. Claude drafts a skill when it spots a lesson worth keeping, and the improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
     'So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
     'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
   ],
   introGuidance: [
-    'The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
+    'The guidance is a page of instructions Claude reads at the start of every working session on ' + W.whose + ' projects.' + ' It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
     'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.',
     'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.'
   ],
@@ -36,7 +44,7 @@ export const STRINGS = {
     ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
     ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
     ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
-    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its thresholds and budget; day to day, it runs without me.'],
+    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. ' + W.Who + ' set' + W.s + ' its thresholds and budget; day to day, it runs without ' + W.obj + '.'],
     ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
   ],
   glossaryGuidance: [
@@ -93,7 +101,7 @@ export const STRINGS = {
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
   stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
   stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
-  confidenceCap: (n) => 'Testing a task and model stops at ' + n + ' comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
+  confidenceCap: (n) => 'Testing a task and model stops at ' + n + ' comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for ' + W.obj + ' to decide.',
   confHeading: 'How close is a decision?',
   confKeepWord: 'Keep',
   confRemoveWord: 'Removal',
@@ -102,7 +110,7 @@ export const STRINGS = {
   confPastCap: (which, cap) => which + ': not before the ' + cap + '-run cap at this pace.',
   confMore: (which, n) => which + ': at this pace, about ' + n + ' more run' + (n === 1 ? '' : 's') + '.',
   confNoRoom: (margin) => 'Removal: no task leaves room for a ' + margin + '-point gain (Claude already passes without it), so this needs a harder test.',
-  confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. Testing stops at ' + cap + ' runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
+  confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. Testing stops at ' + cap + ' runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for ' + W.obj + ' to decide.',
   confPace: 'The run estimates project how fast certainty has grown per run so far; they are rough.',
   rangeAria: (n, margin) => 'The range the gain likely falls in, for ' + n + (n === 1 ? ' task and model' : ' tasks and models') + ', from \u2212100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +' + margin + '.',
   rangeAxis: 'Gain, points',
@@ -113,11 +121,11 @@ export const STRINGS = {
   rangeRule: (margin) => 'Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +' + margin + '.',
   rangeLevels: (keepPct, removePct, subject, versions) => 'The left end is held to ' + keepPct + ' certainty shared across the ' + (subject === 'guidance' ? 'section\'s' : 'skill\'s') + ' tasks and models, the right end to ' + removePct + '; a decision also waits for runs on ' + countWord(versions) + ' Claude Code version' + (versions === 1 ? '' : 's') + '.',
   confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
-  used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
-    : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
+  used: (n, from, to) => n === 0 ? 'Not used in ' + W.whose + ' real work from ' + from + ' to ' + to + '.'
+    : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in ' + W.whose + ' real work from ' + from + ' to ' + to + '.',
   copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
   copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',
-  usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.',
+  usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of ' + W.whose + ' Claude Code sessions on ' + W.own + ' computer. Sessions in the cloud are not counted yet.',
   size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
 
   barWith: 'With the skill',
@@ -186,6 +194,7 @@ export const STRINGS = {
   removedSkillsHeading: 'Removed skills',
   removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
+  alertsNoneOther: 'No other open alerts.',
   alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date',
     'loaded-copy': 'Sessions load an old copy' },
@@ -197,8 +206,8 @@ export const STRINGS = {
   // #555: past events, worded from counts; `since` is the oldest counted fire.
   firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
 
-  lessonsHeading: 'Lessons from my sessions',
-  lessonsLead: (day) => 'Every day a script reads the transcripts of my local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from ' + day + ', followed by facts Claude\'s auto-memory turned up that belong in a repo and skills I proposed myself.',
+  lessonsHeading: 'Lessons from ' + W.whose + ' sessions',
+  lessonsLead: (day) => 'Every day a script reads the transcripts of ' + W.whose + ' local Claude Code sessions' + ' and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from ' + day + ', followed by facts Claude\'s auto-memory turned up that belong in a repo and skills ' + W.who + ' proposed.',
   lessonsNone: 'No lesson proposals were available for this build.',
   lessonsEmptySkills: 'None of that day\'s proposals are about skills.',
   lessonsEmptyGuidance: 'None of that day\'s proposals are about the guidance.',
@@ -215,8 +224,8 @@ export const STRINGS = {
   lessonWaiting: 'Waiting for review',
   lessonTranscripts: 'Session transcripts',
   lessonSurfaces: { wsl: 'WSL', windows: 'Windows', cloud: 'cloud', other: 'another computer' },
-  lessonSignals: { rule: 'a rule I stated', correction: 'a correction I made', redirection: 'I redirected Claude',
-    interrupted: 'I interrupted Claude', abandoned: 'an abandoned session',
+  lessonSignals: { rule: 'a rule ' + W.who + ' stated', correction: 'a correction ' + W.who + ' made', redirection: W.who + ' redirected Claude',
+    interrupted: W.who + ' interrupted Claude', abandoned: 'an abandoned session',
     'repeated-tool-failure': 'a tool call kept failing', 'red-ci-after-push': 'CI went red after a push' },
   lessonSignalCount: (what, n) => what + ' \u00d7' + n,
   lessonLeftMemory: (n) => n + (n === 1 ? ' personal memory note' : ' personal memory notes'),
@@ -224,8 +233,8 @@ export const STRINGS = {
   lessonLeftPrivate: (n) => n + ' about private skills or repos',
   lessonLeftOut: (parts) => 'Left out on purpose: ' + parts + '.',
   lessonNoText: 'No session text is published.',
-  lessonMinerNone: 'No proposals from my session transcripts were available for this build.',
-  lessonIssueSources: { memory: 'Claude\'s auto-memory', proposal: 'My own proposal' },
+  lessonMinerNone: 'No proposals from ' + W.whose + ' session transcripts were available for this build.',
+  lessonIssueSources: { memory: 'Claude\'s auto-memory', proposal: W.Whose + ' proposal' },
   lessonIssueKinds: { memory: 'Fact to move into a repo', proposal: 'New skill idea' },
   lessonMemoryFacts: (n, target, repo) => (n === null ? 'Facts' : n + (n === 1 ? ' fact' : ' facts'))
     + (target ? ' for ' + target : '') + ' in ' + repo,
@@ -239,7 +248,7 @@ export const STRINGS = {
   source: (repo, main, results) => 'Built from ' + repo + ' at ' + main + ', results at ' + results + '.',
   colName: 'Name', colFixture: 'Task', colModel: 'Model', colWhen: 'When', colCli: 'Tool version',
   colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No guidance',
-  colFull: 'All the guidance', colAblated: 'All but this section', colReport: 'Report', colVerdict: 'Decision and reason',
+  colFull: 'All the guidance', colAblated: 'All but this section', colReport: 'Report', colVerdict: 'Decision and reason', colVerdictShort: 'Verdict',
   report: 'report',
   dataFile: (url) => 'Data file: ' + url,
 
@@ -250,4 +259,150 @@ export const STRINGS = {
   failBadUrl: 'The page was asked to read results from an address it does not trust, so it did not.',
   failFile: (url) => 'File: ' + url,
   failWhat: 'Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at ' + ISSUES_URL + ' with the file name above.'
+,
+  // --- the six groups (PR4) ---------------------------------------------------
+  groups: { summary: 'Summary', needs: 'Needs you', hooks: 'Hooks, skills and guidance', loop: 'Loop', impact: 'Impact', ops: 'Operations' },
+  subTabs: { hooks: 'Git hooks', skills: 'Skills', guidance: 'Guidance', removed: 'Removed', method: 'How the tests work' },
+  menu: 'Menu',
+  navLabel: 'Sections',
+  subNavLabel: 'Hooks, skills and guidance',
+  srcDoc: 'the results document',
+  srcLine: (source, when) => 'From ' + source + (when ? ', as of ' + when : '') + '.',
+  srcTip: (source, when) => 'Source: ' + source + '.' + (when ? ' As of ' + when + '.' : ''),
+  noValue: '—',
+  privateBadge: 'Private',
+  back: (what) => '← ' + what,
+
+  searchLabel: 'Search subjects, pull requests and issues',
+  searchPlaceholder: 'Search',
+  searchHeading: (q) => 'Results for “' + q + '”',
+  searchNone: 'Nothing matches.',
+  searchClear: 'Clear search',
+  filterRegistry: 'Registry', filterVerdict: 'Verdict', filterModel: 'Model', filterStakes: 'Stakes', filterAny: 'Any',
+  stakesWords: { high: 'High stakes', none: 'No eval needed', normal: 'Normal' },
+  kinds: { skill: 'Skill', section: 'Guidance section', check: 'Git hook check', pr: 'Pull request', issue: 'Issue' },
+  colWhat: 'What', colDetail: 'Detail',
+
+  tileStopped: 'Commits and pushes git hook checks stopped this week',
+  tileStoppedNote: (l, c, week) => l + ' on ' + W.whose + ' computers and ' + c + ' in CI, in the week of ' + week + ' (weeks start Monday, UTC).',
+  tileStoppedNone: 'No git hook counts in this build.',
+  tileHelped: 'Skills that help',
+  tileHelpedNote: (n) => 'of ' + n + ' tested skills, by the loop\'s own keep decision',
+  tileWhole: 'Does the guidance help at all?',
+  tileAsOf: 'Data as of',
+  tileNewest: 'Newest test run',
+  tileAlerts: 'Open alerts',
+  tileAlertsNote: 'From the results document\'s own checks',
+  summaryLead: 'What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.',
+
+  hooksHeading: 'Does each git hook check earn its place?',
+  hooksNote: (weeks, from, to) => 'Each check runs before a commit or push on ' + W.whose + ' computers (git hooks) and again in CI. Counts cover the ' + weeks + ' weeks from ' + from + ' to ' + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
+  hooksNone: 'No git hook counts in this build.',
+  hookVerdicts: { earning: 'Earning its place', 'never-fires': 'Never fires', 'overridden-often': 'Overridden often' },
+  hookVerdictNone: 'No verdict yet',
+  hookWhere: { fleet: 'Fleet template', repo: 'Repo-local' },
+  hookWhereLine: (where, repo) => where === 'repo' ? 'Runs from ' + (repo || 'one repo') + '\'s own checks (repo-local).' : 'Runs in every fleet repo from the shared template.',
+  colCheck: 'Check', colWhere: 'Where it runs', colRuns: 'Runs', colBlocked: 'Blocked', colOverrides: 'Overrides',
+  overridesNotCounted: 'not counted',
+  hookOverridesNote: 'Overrides (work pushed past a refusal) are not counted for this check yet, so "overridden often" cannot be judged; the verdict rests on runs and blocks alone.',
+  hookRule: (rate, weeks) => 'A check earns its place when it blocks something in ' + weeks + ' weeks; it is overridden often when more than ' + rate + ' of its blocks are pushed past anyway.',
+  hookEnforcesHeading: 'What it enforces',
+  hookEnforcesMissing: 'A plain description of this check has not been written yet.',
+  hookSourceLink: 'source',
+  hookByWeek: 'Runs and blocks by week',
+  hookByRepo: 'By repo',
+  colWeek: 'Week of', colLocalRuns: 'Local runs', colLocalBlocked: 'Local blocks', colCiRuns: 'CI runs', colCiBlocked: 'CI blocks', colRepo: 'Repo',
+  hookUnlisted: (n) => n + ' more ' + (n === 1 ? 'check ran but is' : 'checks ran but are') + ' not listed.',
+  hookPrivateFold: 'Checks in private repos are counted in one "private repos" row.',
+  hookBack: 'All git hook checks',
+  hookNotFound: 'No git hook check by that name is in this build.',
+
+  subjectBack: { skills: 'All skills', guidance: 'All guidance sections' },
+  subjectUntested: 'The loop does not test this skill yet, so there are no results to show. The coverage list on the Skills page says why.',
+  subjectNotFound: 'Nothing by that name is in this build.',
+  runsHeading: 'Every scored run',
+  runsNone: 'No scored runs in this build.',
+  colStarted: 'Started', colChecks: 'Checks', colJudge: 'Judge', colCost: 'List-price cost', colPoints: 'Points',
+  judgeRan: (a, b) => a + ' vs ' + b,
+  judgeNotNeeded: 'not needed',
+  bareHeading: 'Bare model vs the full setup',
+  bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
+  colBare: 'Bare', colPaired: 'Paired run', colTrials: 'Trials',
+  useHeading: 'Real-work use',
+  copiesHeading: 'Loaded copies',
+  colCopy: 'Copy', colSurface: 'Where', colVsMain: 'Against main', colUses: 'Uses',
+  vsMain: { current: 'matches main now', 'in-window': 'matched main in the window', older: 'older than main', unknown: 'unknown' },
+  fixturesHeading: 'Fixtures',
+  fixturesNone: 'No fixtures are listed for it in this build.',
+  colFixturePath: 'Fixture', colOrigin: 'Origin',
+  lessonsAbout: 'Lessons about it',
+  lessonsAboutNone: 'No lesson proposal names it.',
+  verdictHeading: 'Decision and reason',
+  registryLine: (r) => 'Registry: ' + r + '.',
+  gainHeading: 'Gain by task and model',
+
+  loopHeading: 'How the loop works, stage by stage',
+  loopStages: [
+    ['Signal', 'Real work leaves traces: a session that went wrong, a correction, a red CI run, a skill that never loads.'],
+    ['Proposal', 'A script turns repeated trouble into a proposal: a git hook check, a new skill, an edit, or a test idea.'],
+    ['Test', 'Each subject is tested with and without it, on several models, by fixed checks and a judge.'],
+    ['Decision', 'A statistical test decides keep, change or remove; nothing is kept on a hunch.'],
+    ['Merge or retire', 'The change merges itself once its checks pass, and a subject that stops helping is removed the same way.']
+  ],
+  loopStagesNote: 'Fixes are chosen in this order: a git hook check first, then a skill, then guidance text, then a memory note.',
+  fqHeading: 'Fixture requests',
+  fqNote: 'When a test finds a subject too easy to measure, the loop asks for harder fixtures, ideally rebuilt from real work. Each request is followed to the fixtures that ran.',
+  fqNone: 'This build does not report the fixture queue.',
+  fqTotals: (o, c, m, rw, inv, runs) => o + ' open, ' + c + ' closed, ' + m + ' pull requests merged, ' + rw + ' fixtures from real work and ' + inv + ' invented, ' + runs + ' runs.',
+  fqFindings: (n, high) => n + (n === 1 ? ' finding needs' : ' findings need') + ' a look (' + high + ' high severity).',
+  colSubject: 'Subject', colState: 'State', colAge: 'Age', colPr: 'Pull request', colFixtures: 'Fixtures (real work)',
+  ageDays: (n) => n + ' d',
+  prState: (merged, n) => (merged ? 'merged' : 'open') + (n > 1 ? ' (' + n + ')' : ''),
+  funnelHeading: 'Where lessons went',
+  funnelHeadline: (pct, n) => pct + ' of the ' + n + ' lessons with an outcome became git hook checks.',
+  funnelNone: 'This build does not report where lessons went.',
+  funnelKinds: { check: 'A git hook check', skill: 'A skill', guidance: 'Guidance text', nothing: 'Nothing', open: 'Still open', unknown: 'Unknown' },
+  funnelSources: { 'hook-proposal': 'Hook proposals', 'lesson-check': 'Lesson checks', memory: 'Memory promotions', 'draft-skill': 'Drafted skills', 'skill-proposal': 'Skill proposals' },
+  funnelMissing: (list) => 'Not counted, because their records could not be read: ' + list + '.',
+  loopPrsHeading: 'Improve and removal pull requests',
+  loopPrsNote: 'Pull requests the loop opened in public repos: new skills, edits and removals.',
+  loopPrsNone: 'No loop pull requests in this build.',
+
+  impactUseWeeks: 'Git hook runs and blocks by week',
+  impactUseSkills: 'Real-work use by skill',
+  impactUseSkillsNote: (from, to) => 'Uses from ' + from + ' to ' + to + '. Guidance has no direct use signal; its effect shows only in test results.',
+  impactUseChecks: 'Real-work use by git hook check',
+  impactPrs: 'Pull requests by week',
+  impactPrsNote: (repos, since) => 'Opened and merged in ' + repos + ' since ' + since + '.',
+  colOpened: 'Opened', colMerged: 'Merged',
+  impactRed: 'Red CI runs',
+  impactRedNote: 'Workflow runs in the public repos that ended in failure, newest first.',
+  impactRedNone: 'No failed runs in this window.',
+  impactSpend: 'Cost',
+  impactSpendNote: 'Weekly totals. Dollars are API-equivalent, not what is paid; points are the account\'s usage meter.',
+  colEvalRuns: 'Eval runs', colMeter: 'Meter points', colApi: 'API $', colThreads: 'Thread spend $', colPerVerdict: 'Per verdict $', colPlan: 'Plan',
+
+  opsRuns: 'Workflow and routine runs',
+  opsRunsNote: (since) => 'GitHub Actions runs in the public repos since ' + since + ', newest first.',
+  problemsOnly: 'Problems only',
+  colWorkflow: 'Workflow', colRun: 'Run', colNumber: '#', colTitle: 'Title', colUpdated: 'Updated',
+  opsPrs: 'Pull requests',
+  opsPrsNote: 'Open and recently merged pull requests in the public repos.',
+  opsIssues: 'Open issues',
+  prStates: { open: 'open', merged: 'merged' },
+  noneYet: 'Nothing here yet.',
+
+  methodLead: 'How every number on this page is made.',
+  removedNone: 'Nothing has been removed by the evals.',
+  sortHint: 'Select a column heading to sort.'
 };
+}
+
+export const STRINGS = {};
+/* Switch every string to one voice: 'owner' (public, the default) or 'you'. */
+export function useVoice(v) {
+  for (const k of Object.keys(STRINGS)) delete STRINGS[k];
+  Object.assign(STRINGS, buildStrings(v === 'you'));
+  useGlossVoice(v);
+}
+useVoice('owner');
