@@ -695,7 +695,8 @@ a person or an agent opened by hand.
 **When it withdraws.** It re-reads the subject's current verdict
 (`removal_support`). It withdraws when that verdict no longer supports an
 automatic removal: not `retire`, or a `retire` lowered to a proposal (the
-`removal` field and `proposal_only` must agree on `auto`). A `retire-pending`
+`removal` field and `proposal_only` must agree on `auto`; for a section,
+`guidance_proposal_only`, which also re-checks the section-alone pair). A `retire-pending`
 whose `raw_verdict` is a supported `retire` keeps its pull request:
 `compute_gates.finalize` demotes every confirmed subject but one per
 evaluation, which ranks it and says nothing against it. Withdrawing it would
@@ -706,16 +707,23 @@ verdict, why, and the override, and closes the pull request with its branch
 kept. It then files the subject's retirement issue (the proposal path's
 marker and issue), or comments on the oldest open one, leaving its body and
 evidence as they are, so the subject is never decided in silence. Any open
-removal notice (#557) for the subject is commented on and closed as not
-planned; that step is best effort and never stops the withdrawal (PR #724
-round 2's R2-3 and R2-6).
+removal notice (#557) for the subject is closed as not planned and then
+commented on, so a failure never leaves an open notice whose comment says it
+is closed; that step is best effort and never stops the withdrawal (PR #724
+round 2's R2-3 and R2-6, round 3's m2).
 
-**Only newer verdicts withdraw.** A pull request whose `created_at` is later
-than the gates document's `as_of` (the results commit's time) was opened on
-newer results than the pass is judging, so it is kept; so is one whose
-creation time or `as_of` is missing or unparseable (round 2's R2-1). Without
-this, an ingest pass that started on older results could close, for good, a
-removal the retirement job had just opened on newer ones. The `withdraw` job
+**Only verdicts newer than its basis withdraw.** A removal pull request's
+body records the results it was opened on: "**retire** as of `<as_of>`".
+A pass keeps it when that basis is later than the pass's own `as_of` (the
+results commit's time), and judges it otherwise, the same results included
+(PR #724 round 3's M2). A body with no parseable basis falls back to the
+pull request's `created_at`: one created later than `as_of` is kept, and so
+is one whose creation time or `as_of` is missing or unparseable (round 2's
+R2-1). Without this, an ingest pass that started on older results could
+close, for good, a removal the retirement job had just opened on newer ones;
+with `created_at` alone, a removal opened late on results an ingest had
+already superseded, or made stale by a change on main, was kept until a
+later results commit. The `withdraw` job
 in `loop-pr-refresh.yml` also has its own concurrency group with
 `cancel-in-progress: false`, so two ingest passes never withdraw the same
 pull request twice (R2-2). The group is not shared with the retirement job,
@@ -728,12 +736,38 @@ empty or partial block withdraws nothing), a verdict that raised in
 `compute_gates.py` (`VERDICT_RAISED`), and a `retire` that fails the
 re-check.
 
+**Incomplete data disarms (round 3's M1).** Undecided data argues neither
+for the removal nor against it, so `removal_support` calls it `incomplete`:
+
+- an `insufficient` verdict over a cell whose class is `missing` or
+  `insufficient`. Adding a roster model makes every cell on it `missing`
+  (`harness/gates.py`, "no run on this model"), so without this rule every
+  open removal was withdrawn for good at the first ingest after a roster
+  change;
+- a section's `retire` whose only lowering is its unfinished section-alone
+  pair (`ALONE_UNFINISHED_REASON`, skills-evals#738).
+
+In both modes such a removal is disarmed, never withdrawn, and the refresh
+leaves it alone. A `keep`, or an `insufficient` verdict with no such cell
+(no fixture on main, every cell parked), is still stale.
+
 **The one switch.** While a target's mode is `proposal`, a loop removal
 that is not withdrawn is disarmed instead: auto-merge is turned off and read
 back, the pull request stays open, and it gets one comment. Setting
 `retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
 stops removal pull requests from merging on their own, including those
 already open and armed.
+
+**Re-arm (R2-5).** A pass that turns auto-merge off also labels the pull
+request `loop-disarmed`. In `auto` mode, a labeled removal whose verdict
+supports it again and that is not armed is armed again with the command the
+retirement job uses (`gh pr merge --auto --merge --match-head-commit` at
+the head read then), read back, unlabeled and commented once. Only the label
+re-arms: a removal whose auto-merge a person turned off carries no label and
+stays off, and one labeled `on-hold` is never touched. The pull request
+writes, re-arm included, use the eval-improve App token, which needs
+`contents: write` for the re-arm in `loop-pr-refresh.yml` as it does in the
+retirement job.
 
 **The refresh.** `loop-pr-refresh.yml` merges the base into a `retire-skill/`
 or `retire-guidance/` pull request only when `refresh_loop_prs.py
@@ -755,12 +789,14 @@ that window is not covered. Two more windows are not covered either (round
   removal it opens on verdicts an ingest has already superseded (the ingest's
   `withdraw` job listed pull requests before this one existed) is armed, its
   checks run on their own, and nothing re-reads its verdict until the next
-  ingest's `withdraw` job or the next daily run.
+  ingest's `withdraw` job or the next daily run, either of which judges it
+  by its recorded basis.
 - (b) Verdict inputs that change on main, not on the results branch
   (`evals/roster.yml`, `evals/gate-policy.yml`, `evals/scope-auto.yml`,
   `evals/unscheduled.yml`; eval-scope.yml's pull requests auto-merge), trigger
   no withdrawal. A removal they make stale is withdrawn at the next ingest or
-  daily run. Until then, the refresh still re-checks the verdict before it
+  daily run: those passes judge it on the same results as its basis or
+  newer ones, and the same results withdraw. Until then, the refresh still re-checks the verdict before it
   brings a removal up to date, so it never re-runs that removal's checks.
 
 **The override and the decision.** A closed removal pull request decides its

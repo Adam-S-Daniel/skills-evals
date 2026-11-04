@@ -200,9 +200,10 @@ jobs:
   # `retire-guidance/` head, `agent-authored`, opened by the skills-evals-improve
   # App, not `on-hold`) whose subject's current verdict no longer supports
   # an automatic removal is disarmed, commented on, closed (branch kept) and
-  # recorded in the subject's retirement issue; while the mode is `proposal`
-  # a still-supported one is only disarmed. Unknown verdicts withdraw
-  # nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
+  # recorded in the subject's retirement issue; while the mode is `proposal`,
+  # or while the verdict's data is incomplete, one is only disarmed (labeled
+  # `loop-disarmed`), and in `auto` mode a labeled one supported again is
+  # armed again. Unknown verdicts withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
   # ingest, so a verdict an ingest changes is acted on within that run.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'

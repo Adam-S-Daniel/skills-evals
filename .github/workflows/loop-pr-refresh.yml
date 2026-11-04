@@ -64,8 +64,10 @@ name: Refresh loop pull requests
 # `workflow_run`; a dispatch computes the verdicts for the refresh's check and
 # withdraws nothing. The withdraw job's tokens: the eval-improve App, minted
 # per repository (adam-agentskills, then _agent-guidance) with
-# pull-requests: write under continue-on-error, for the disarm, comment and
-# close; this job's own token, issues: write, for the retirement issue here.
+# pull-requests: write under continue-on-error, for the disarm, label,
+# comment and close, and contents: write for the re-arm of a removal a pass
+# disarmed (`loop-disarmed`); this job's own token, issues: write, for the
+# retirement issue here.
 
 on:
   workflow_run:
@@ -173,6 +175,10 @@ jobs:
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
           owner: Adam-S-Daniel
           repositories: adam-agentskills
+          # contents: write only to turn auto-merge back on for a removal
+          # this pass disarmed (the re-arm, ADR 0014), as the retirement
+          # job arms it.
+          permission-contents: write
           permission-pull-requests: write
 
       - name: Withdraw stale skill removal pull requests
@@ -196,6 +202,7 @@ jobs:
           private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
           owner: Adam-S-Daniel
           repositories: _agent-guidance
+          permission-contents: write
           permission-pull-requests: write
 
       - name: Withdraw stale guidance removal pull requests

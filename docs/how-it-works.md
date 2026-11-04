@@ -766,9 +766,9 @@ pass), it carries `agent-authored`, and its author is the eval-improve App's
 bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
 
 The pull request is withdrawn when the verdict no longer supports an
-automatic removal: `keep`, `insufficient`, a `retire` lowered to a
-proposal, or a `retire-pending` that was not a supported `retire` before
-`finalize` ranked it. A `retire-pending` whose raw verdict is a supported
+automatic removal: `keep`, `insufficient` with every cell decided, a
+`retire` lowered to a proposal, or a `retire-pending` that was not a
+supported `retire` before `finalize` ranked it. A `retire-pending` whose raw verdict is a supported
 `retire` keeps its pull request, since only one subject retires per
 evaluation and it is simply next.
 
@@ -777,14 +777,18 @@ verdict, why and the override, and the pull request is closed with its branch
 kept. Then the subject's retirement issue here (the one proposal mode files)
 is filed, or the oldest open one gets a comment (its body is left as it is),
 to record the withdrawal and link the pull request. Any open removal notice
-for the subject is commented on and closed as not planned; if that fails, the
-withdrawal still stands and the status line says so.
+for the subject is closed as not planned and then commented on; if that
+fails, the withdrawal still stands and the status line says so.
 
-A pass withdraws only pull requests opened at or before its verdicts' `as_of`
-(the results commit's time). One opened later, or with either time unknown,
-is kept for a newer pass to judge. The `withdraw` job in
-`loop-pr-refresh.yml` runs one pass at a time (its own concurrency group,
-`cancel-in-progress: false`).
+A pass judges a pull request only on results at least as new as the ones it
+was opened on: its body's "**retire** as of `<as_of>`". One whose basis is
+later than the pass's `as_of` (the results commit's time) is kept for a
+newer pass to judge; the same results judge it. With no readable basis in
+its body, a pass withdraws only pull requests created at or before its
+`as_of`, and keeps one created later or with either time unknown. The `withdraw` job in
+`loop-pr-refresh.yml` runs one pass at a time in its own concurrency group
+(`cancel-in-progress: false`): a running pass is never cancelled, and a
+pending one is replaced by a newer one.
 
 A withdrawn pull request counts as closed, so the loop opens no removal for
 the subject again. To remove it anyway, remove the `agent-authored` label
@@ -792,14 +796,24 @@ first, then reopen the pull request and merge it by hand. Without the label
 it is not the loop's, and no pass touches it; reopening it with the label
 only gets it withdrawn again.
 
-While `retirement_mode` is `proposal`, a removal that is not withdrawn is
-disarmed instead: auto-merge is turned off, the pull request stays open, and
-it is commented once. Disarming goes one way only: switching the mode back to
-`auto` does not re-arm it. While it stays open, it blocks later removals and
-keeps the skill out of the weekly plan's improve fires. Close it, or turn
-auto-merge on again by hand (a merge commit).
+A removal whose verdict's data is incomplete is disarmed in either mode,
+never withdrawn: an `insufficient` verdict over a `missing` or
+`insufficient` cell (a roster model just added makes every cell on it
+`missing`), or a section's `retire` held to a proposal only because its
+section-alone pair has not finished. While `retirement_mode` is `proposal`,
+a removal that is not withdrawn is disarmed too. A disarm turns auto-merge
+off, labels the pull request `loop-disarmed`, leaves it open and comments
+once.
 
-Unknown data withdraws nothing:
+In `auto` mode, a `loop-disarmed` removal whose verdict supports it again is
+armed again (`gh pr merge --auto --merge --match-head-commit`, as the
+retirement job arms it), unlabeled and commented once. A removal whose
+auto-merge a person turned off has no label, so no pass arms it again. While
+a disarmed removal stays open, it blocks later removals and keeps the skill
+out of the weekly plan's improve fires; close it to decline, or merge it by
+hand.
+
+Unknown or incomplete data withdraws nothing:
 
 - a missing or unreadable verdicts document exits 0 with a status naming no
   subject;
