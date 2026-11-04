@@ -61,13 +61,13 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    workspace copy does, and on each registry checkout's root
    `.claude/settings*.json`. This early check reads SOURCE files only.
    The judge itself now runs with `--setting-sources ""` (plus
-   `--strict-mcp-config` and `--no-session-persistence`), so it loads none
-   of these. The check still runs because other children do load them: the
-   arms load project settings, skill-creator's own `claude -p` calls
-   (propose_skill_edit) get `--setting-sources project` from the guard
-   launcher only when they name none, and managed settings apply to every
-   launch whatever its flags. A credential source in any of them is refused
-   before anything starts.
+   `--strict-mcp-config`, `--no-session-persistence` and `--tools ""`), so
+   it loads none of these. The check still runs because other children do
+   load them: the arms load project settings, skill-creator's own
+   `claude -p` calls (propose_skill_edit) get `--setting-sources project`
+   from the guard launcher only when they name none, and managed settings
+   apply to every launch whatever its flags. A credential source in any of
+   them is refused before anything starts.
 1c. The launch-time guard, which checks what the CLI will actually read. A
    source check cannot see a symlink resolved later or a fixture `setup:`
    command that writes `.claude/settings.json` into the workspace. So main()
@@ -173,8 +173,10 @@ Limits a reader must know:
 - The judge runs under the real HOME (its login lives there) and is
   isolated by flags: `--setting-sources ""` (no user or project settings,
   CLAUDE.md, hooks or settings-enabled plugins), `--strict-mcp-config` (none
-  of the account's claude.ai MCP connectors), `--no-session-persistence` and
-  auto-memory off (`judge.JUDGE_ISOLATION_FLAGS`, measured on CLI 2.1.289).
+  of the account's claude.ai MCP connectors), `--no-session-persistence`,
+  `--tools ""` (no tool at all, so text an arm wrote has nothing to act
+  through; CLI 2.1.318's init event lists `tools: []`) and auto-memory off
+  (`judge.JUDGE_ISOLATION_FLAGS`, measured on CLI 2.1.289).
   What still reaches it: managed settings, the CLI's bundled skills, and
   writes to `~/.claude.json`.
 - The probe measures which SKILLS an empty workspace sees. It does not
