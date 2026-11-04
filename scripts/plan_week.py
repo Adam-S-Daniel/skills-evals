@@ -298,7 +298,10 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   an eligible section whose id the fire workflow's `section` pattern
   (^[a-z0-9][a-z0-9-]{0,63}$) refuses. One with fewer fixtures and headroom
   gets `needs-fixtures`, one without headroom `needs-harder-fixtures`, each
-  carrying its `section`.
+  carrying its `section`. A section whose eval-coverage.yml row is `gap`
+  (tracked, no fixture yet; `guidance_gaps`) and that retirement does not
+  own gets `needs-fixtures` with zero fixtures and unknown headroom, so its
+  first fixture is asked for too.
 
 STOPPING (rule C): a rejection (every no-branch outcome, conservatively, and
 an accepted candidate whose pull request closed unmerged) starts a 14-day
@@ -1148,6 +1151,28 @@ def layout_skills(text: str) -> set:
     return out
 
 
+def guidance_gaps(guidance_dir: Path | None) -> list:
+    """The ids of _agent-guidance's agents-md/eval-coverage.yml rows that are
+    not `skipped` and have no fixture directory yet (`gap`), not `_`-prefixed:
+    the sections the improve lane cannot see, since guidance_contexts lists
+    only sections with fixtures. [] without a checkout or a readable file."""
+    import yaml  # noqa: PLC0415
+    if guidance_dir is None:
+        return []
+    path = Path(guidance_dir) / BATCH_GUIDANCE_HISTORY
+    try:
+        if path.is_symlink() or not path.is_file():
+            return []
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return []
+    if not isinstance(doc, list):
+        return []
+    return sorted(str(row["id"]) for row in doc
+                  if isinstance(row, dict) and row.get("status") == "gap"
+                  and isinstance(row.get("id"), str) and not row["id"].startswith("_"))
+
+
 def coverage_sections(text: str) -> set:
     """The section ids of _agent-guidance's agents-md/eval-coverage.yml: one
     row per `##` heading of base.md and per file under agents-md/sections/,
@@ -1973,6 +1998,19 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,
                 "fixtures": info["fixtures"], "headroom": headroom, "value": v,
                 "route": "issue"})
+    # A tracked section with no fixture at all (`guidance_gaps`: its manifest
+    # row is not skipped) never reaches ctx["guidance"], so nothing above
+    # asks for its first fixture; ask here, unless retirement owns it.
+    for section in sorted(set(ctx.get("guidance_gaps") or ()) - set(ctx.get("guidance") or {})):
+        if not outcomes_mod.SECTION_RE.fullmatch(section) \
+                or retirement_owner(ctx, section, {}, subject="guidance"):
+            continue
+        gstatus[section] = {"eligible": False, "reasons": ["no fixtures yet"],
+                            "headroom": None, "fixtures": 0}
+        guidance_work.append({
+            "kind": "needs-fixtures", "change_type": "fixture", "skill": "",
+            "section": section, "fixtures": 0, "headroom": None, "value": None,
+            "route": "issue"})
     guidance_work.sort(key=lambda w: (w["value"] is None, -(w["value"] or 0.0), w["section"]))
     return fires, work + guidance_work, status, gstatus, ranking
 
@@ -3408,6 +3446,7 @@ def gather(args, now: datetime) -> dict:
                                           compute_gates.parse_as_of(args.as_of), gates_doc,
                                           args.guidance, grecords, gprs, gremoval,
                                           evidence.get("guidance_on_hold", []), now),
+            "guidance_gaps": guidance_gaps(args.guidance),
             "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
             "trims": trim_busy(trim_contexts(registries), records, prs),

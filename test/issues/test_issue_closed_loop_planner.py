@@ -1492,6 +1492,41 @@ class ImproveValueTests(unittest.TestCase):
         self.assertFalse(any(s["eligible"] for s in status.values()))
         self.assertEqual(plan["fires"], [])
 
+    def test_a_tracked_section_with_no_fixtures_asks_for_its_first(self):
+        plan = plan_week.build_plan(ctx(
+            guidance={"few": gsection(fixtures=2, headroom=0.5)},
+            guidance_gaps=["few", "new-section", "retiring", "removing", "Bad_Id"],
+            gate_verdicts=None, guidance_removal_prs=["removing"],
+            guidance_use=10.0, room=1.0), NOW)
+        by_section = {w["section"]: w for w in plan["work"]}
+        # `few` has fixtures, so the ordinary rule answers for it; a retiring
+        # or removing section and an id the issue key cannot carry get none.
+        self.assertEqual(sorted(by_section), ["few", "new-section", "retiring"])
+        self.assertEqual(by_section["new-section"], {
+            "kind": "needs-fixtures", "change_type": "fixture", "skill": "",
+            "section": "new-section", "fixtures": 0, "headroom": None, "value": None,
+            "route": "issue"})
+        self.assertEqual(plan["guidance"]["new-section"],
+                         {"eligible": False, "reasons": ["no fixtures yet"],
+                          "headroom": None, "fixtures": 0})
+        self.assertNotIn("removing", plan["guidance"])
+
+    def test_guidance_gaps_reads_the_manifest(self):
+        root = Path(tempfile.mkdtemp(prefix="gaps-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        self.assertEqual(plan_week.guidance_gaps(None), [])
+        self.assertEqual(plan_week.guidance_gaps(root), [])
+        path = root / plan_week.BATCH_GUIDANCE_HISTORY
+        path.parent.mkdir(parents=True)
+        path.write_text(yaml.safe_dump([
+            {"id": "b-gap", "status": "gap"}, {"id": "a-gap", "status": "gap"},
+            {"id": "covered", "status": "covered", "fixture": "evals/guidance/covered/"},
+            {"id": "skipped", "status": "skipped"}, {"id": "_delivery", "status": "gap"},
+            "not a row"]), encoding="utf-8")
+        self.assertEqual(plan_week.guidance_gaps(root), ["a-gap", "b-gap"])
+        path.write_text("[\n", encoding="utf-8")
+        self.assertEqual(plan_week.guidance_gaps(root), [])
+
     def test_the_ranking_is_by_value_with_unknown_headroom_last(self):
         skills = {"blank": skill(headroom=None), "low": skill(headroom=0.2),
                   "high": skill(headroom=0.8)}
