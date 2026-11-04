@@ -178,1481 +178,1727 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 <div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 'use strict';
-
-/* ------------------------------------------------------------------ */
-/* Rules. Every threshold the status chips use lives here.            */
-/* ------------------------------------------------------------------ */
-const SCHEMA_VERSION = 1;
-const WINDOW_WEEKS = 26;          // pool runs from the last 26 weeks
-const MIN_PAIRED_RUNS = 5;        // the page's own rule for the whole-guidance headline only; the loop itself has no run minimum
-const HELPS_MIN_GAIN = 0.05;      // 5 percentage points better on at least one model
-const WORSE_TOLERANCE = -0.05;    // and never more than 5 points worse on any model
-const EPS = 1e-9;                 // float tolerance for the comparisons above
-const WEEK_MS = 7 * 24 * 3600 * 1000;
-const DEFAULT_DATA_URL =
-  'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json';
-const DATA_URL_PREFIX = 'https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/';
-const TIME_ZONE = 'America/New_York';
-
-const pts = (x) => Math.round(Math.abs(x) * 100);
-/* The keep and removal levels when the data carries no policy; the page
-   shows the data's own `policy.benefit_confidence`, `retire_confidence` and
-   `max_runs_per_cell`. */
-const KEEP_AT = 0.80, REMOVE_AT = 0.90;
-const ordinal = (n) => { const t = n % 100, u = n % 10;
-  return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th'); };
-const countWord = (n) => ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] || String(n);
-
-/* ------------------------------------------------------------------ */
-/* Every sentence the page shows, in one place.                       */
-/* ------------------------------------------------------------------ */
-const STRINGS = {
-  title: 'Evals Explorer',
-  loading: 'Loading the latest results…',
-  dataAsOf: (when) => 'Data as of ' + when + '.',
-  newestRun: (when) => 'Newest test run: ' + when + '.',
-  noRunsYet: 'No test runs have been recorded yet.',
-  modeLabel: 'Show results for',
-  modeSkills: 'Skills',
-  modeGuidance: 'Guidance',
-  hidden: '[hidden]',
-  unknown: 'unknown',
-  et: 'ET',
-
-  introHeading: 'What you are looking at',
-  introSkills: [
-    'A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don\'t write most of them myself. I\'ve set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.',
-    'So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.',
-    'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
-  ],
-  introGuidance: [
-    'The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn\'t happen twice. This page shows whether each section earns its place.',
-    'To test a section, Claude gets an ordinary task with that section\'s trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.',
-    'Two things matter here that don\'t for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.'
-  ],
-  glossaryHeading: 'Words used on this page',
-  glossary: [
-    ['Fixture', 'One small, fixed practice task used for testing. The same task is used every time so results can be compared.'],
-    ['Arm', 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
-    ['Trial', 'A single attempt at the task. A run is made of several trials.'],
-    ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
-    ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
-    ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
-    ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. I set its thresholds and budget; day to day, it runs without me.'],
-    ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
-  ],
-  glossaryGuidance: [
-    ['Section', 'One topic within the guidance, under its own heading.'],
-    ['Ablation', 'Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there.'],
-    ['Cost per session', 'How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length.']
-  ],
-  chipGlossaryIntro: 'The colored label on each card means:',
-
-  chips: {
-    helps: 'Helps',
-    alone: 'Helps only on its own',
-    none: 'No measurable difference',
-    worse: 'Getting worse',
-    early: 'Early sign: helps',
-    canttell: 'Test cannot tell',
-    insufficient: 'Not enough data'
-  },
-  chipRules: {
-    helps: 'The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.',
-    alone: 'It helps when it\'s the only section present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once the rest of the guidance is there too.',
-    none: 'On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
-    canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
-    worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
-    early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
-    insufficient: 'The loop hasn\'t decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
-  },
-  chipOrder: ['helps', 'alone', 'early', 'none', 'canttell', 'worse', 'insufficient'],
-
-  skillsHeading: 'Does each skill help?',
-  purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
-  sectionsHeading: 'Does each section earn its place?',
-  sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.',
-  sortLabel: 'Order sections by',
-  sortNext: 'Next test',
-  sortValue: 'Help per word',
-  sortSize: 'Size',
-  noCards: 'Nothing has been tested yet.',
-  summaryCounts: (parts) => 'Right now: ' + parts + '.',
-
-  sentenceSkill: (m, a, b, c, d) => 'With this skill, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
-  sentenceSection: (m, a, b, c, d) => 'With this section, ' + m + ' passed ' + a + ' of ' + b + ' checks; without it, ' + c + ' of ' + d + '.',
-  sentenceAblation: (e, f, g, h) => 'With all the guidance, ' + e + ' of ' + f + '; with all of it but this section, ' + g + ' of ' + h + '.',
-  sentenceWhole: (m, a, b, c, d) => 'With all the guidance, ' + m + ' passed ' + a + ' of ' + b + ' checks; with no guidance, ' + c + ' of ' + d + '.',
-  aloneShown: 'Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.',
-  tried: (n, when) => n + (n === 1 ? ' trial' : ' trials') + ' in all, the last on ' + when + '.',
-  notTried: 'No trials in the last ' + WINDOW_WEEKS + ' weeks.',
-  pairedRuns: (n) => n + (n === 1 ? ' comparison run' : ' comparison runs'),
-  judgeScores: (a, b) => 'judge score ' + a + ' with, ' + b + ' without (out of 10)',
-  nextQueued: (n, kind) => 'Next test: ' + ordinal(n) + ' ' + kind + ' in line for the next round of tests.',
-  nextDue: (when) => 'Next test: a re-check due ' + when + '.',
-  nextNone: 'Next test: none planned right now.',
-  nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
-  stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
-  stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
-  confidenceCap: (n) => 'Testing a task and model stops at ' + n + ' comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
-  confHeading: 'How close is a decision?',
-  confKeepWord: 'Keep',
-  confRemoveWord: 'Removal',
-  confReached: (which) => which + ': reached.',
-  confNoMove: (which) => which + ': no movement yet.',
-  confPastCap: (which, cap) => which + ': not before the ' + cap + '-run cap at this pace.',
-  confMore: (which, n) => which + ': at this pace, about ' + n + ' more run' + (n === 1 ? '' : 's') + '.',
-  confNoRoom: (margin) => 'Removal: no task leaves room for a ' + margin + '-point gain (Claude already passes without it), so this needs a harder test.',
-  confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. Testing stops at ' + cap + ' runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.',
-  confPace: 'The run estimates project how fast certainty has grown per run so far; they are rough.',
-  rangeAria: (n, margin) => 'The range the gain likely falls in, for ' + n + (n === 1 ? ' task and model' : ' tasks and models') + ', from \u2212100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +' + margin + '.',
-  rangeAxis: 'Gain, points',
-  rangeRuns: 'Runs',
-  rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ', task ' + task : '') + ': gain ' + gain + ' points so far; likely between ' + low + ' and ' + high + '. ' + runs + '.' + (counted ? '' : ' Not counted toward removal.'),
-  rangeTipRuns: (n, cap) => cap ? n + ' of ' + cap + ' runs' : n + (n === 1 ? ' run' : ' runs'),
-  rangeWhat: 'Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.',
-  rangeRule: (margin) => 'Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +' + margin + '.',
-  rangeLevels: (keepPct, removePct, subject, versions) => 'The left end is held to ' + keepPct + ' certainty shared across the ' + (subject === 'guidance' ? 'section\'s' : 'skill\'s') + ' tasks and models, the right end to ' + removePct + '; a decision also waits for runs on ' + countWord(versions) + ' Claude Code version' + (versions === 1 ? '' : 's') + '.',
-  confidenceNone: 'How sure the loop is: no figure yet. It needs a completed comparison first.',
-  used: (n, from, to) => n === 0 ? 'Not used in my real work from ' + from + ' to ' + to + '.'
-    : 'Used ' + n + (n === 1 ? ' time' : ' times') + ' in my real work from ' + from + ' to ' + to + '.',
-  copies: (match, older, unknown) => 'Copies loaded in the last 2 weeks: ' + match + ' match main, ' + older + ' older, ' + unknown + ' unknown.',
-  copiesNone: 'Copies loaded in the last 2 weeks: no uses in the window.',
-  usageNote: (sessions) => 'Real-work counts come from ' + sessions + ' of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.',
-  size: (words) => 'About ' + words + ' words. It costs that much reading in every session.',
-
-  barWith: 'With the skill',
-  barWithout: 'Without it',
-  barSection: 'Only this section',
-  barNone: 'No guidance',
-  barAblated: 'All but this section',
-  barAll: 'All the guidance',
-  barWholeFull: 'All the guidance',
-  barWholeNone: 'No guidance',
-  barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
-  chartLabel: (m) => 'Checks passed by ' + m,
-  trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
-  trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
-  trendNone: 'No weekly trend yet.',
-  trendTip: (when, gain) => 'Week of ' + when + ': ' + gain,
-  gainUp: (p) => p + ' points better with it',
-  gainDown: (p) => p + ' points worse with it',
-  gainZero: 'no difference',
-
-  verdict: {
-    retain: 'Official decision: keep it.',
-    keep: 'Official decision: keep it.',
-    'cannot-discriminate': 'Official decision: the test cannot tell, because its checks do not separate the two sides.',
-    'shorten-or-merge': 'Official decision: shorten it or merge it into another section.',
-    retire: 'Official decision: remove it.',
-    'retire-pending': 'Official decision: remove it, after another removal finishes.',
-    retired: 'It has been removed.',
-    ceiling: 'Official decision: the test cannot tell, because Claude already passes without it.',
-    insufficient: 'No official decision yet: it needs more runs.',
-    'helps-only-alone': 'Official decision: it helps only on its own.'
-  },
-  verdictOther: (v) => 'Official decision: ' + v + '.',
-
-  wholeHeading: 'Does the guidance help at all?',
-  wholeNote: 'All the guidance compared with no guidance, pooled across every section\'s task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ' + MIN_PAIRED_RUNS + ' comparison runs passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with the guidance, and no model with that many runs did more than ' + pts(WORSE_TOLERANCE) + ' points worse.',
-  wholeRule: 'The simple test in the note above — not a decision by the improvement loop.',
-  wholeAnswer: {
-    helps: 'Yes. With the guidance, Claude passed measurably more checks.',
-    alone: 'Yes. With the guidance, Claude passed measurably more checks.',
-    none: 'Not clearly. The difference so far is too small to count.',
-    worse: 'Results are getting worse and need a closer look.',
-    early: 'Early results say yes, but there are not enough runs yet for a final answer.',
-    insufficient: 'Too early to say. There are not enough runs yet.'
-  },
-
-  rosterHeading: 'Which models are measured, and why',
-  rosterIntro: 'Each task runs on these AI models. A separate judge model scores the work but never does the task itself. The reasons below are recorded automatically whenever the list changes.',
-  rosterArm: 'Tested',
-  rosterJudge: 'Judge',
-  rosterEmpty: 'No models are listed yet.',
-
-  coverageHeading: 'Coverage',
-  coverageIntroSkills: 'Which skills have a test, which are left out on purpose, and which still need one.',
-  coverageIntroGuidance: 'Which sections have a test, which are left out on purpose, and which still need one.',
-  covered: 'Tested',
-  skipped: 'Left out on purpose',
-  gap: 'Not yet tested',
-  census: (when, total, c, s, g) => 'The latest count, from ' + when + ', found ' + total + ' public skills: ' + c + ' tested, ' + s + ' left out on purpose, ' + g + ' not yet tested.',
-  noneListed: 'None.',
-
-  alertsHeading: 'Alerts',
-  removedHeading: 'Removed sections',
-  removedNote: 'Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
-  removedLink: 'removal and revert',
-  removedSkillsHeading: 'Removed skills',
-  removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
-  alertsNone: 'No open alerts.',
-  alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
-    'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date',
-    'loaded-copy': 'Sessions load an old copy' },
-  // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
-  alertCopy: (surface, loaded, main) => 'Most ' + (surface === 'cloud' ? 'cloud' : 'local') + ' uses in the last 2 weeks loaded copy ' + loaded + ', which main did not have at any point in that time. Main is ' + main + '.',
-  // #545: this alert carries fields, not text, so the page words it.
-  alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
-  alertDetails: 'Details',
-  // #555: past events, worded from counts; `since` is the oldest counted fire.
-  firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
-
-  lessonsHeading: 'Lessons from my sessions',
-  lessonsLead: (day) => 'Every day a script reads the transcripts of my local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from ' + day + ', followed by facts Claude\'s auto-memory turned up that belong in a repo and skills I proposed myself.',
-  lessonsNone: 'No lesson proposals were available for this build.',
-  lessonsEmptySkills: 'None of that day\'s proposals are about skills.',
-  lessonsEmptyGuidance: 'None of that day\'s proposals are about the guidance.',
-  colProposal: 'Proposal', colKind: 'Kind', colSource: 'Source', colSeen: 'Seen', colFirst: 'First seen', colLast: 'Last seen', colStatus: 'Status',
-  lessonKinds: { 'new-skill': 'New skill idea', 'skill-edit': 'Change to a skill',
-    'guidance-edit': 'Change to the guidance', 'fixture-candidate': 'Idea for a test' },
-  lessonToolCalls: (tool) => tool + ' tool calls kept failing',
-  lessonToolCommand: (tool, word) => tool + ' ' + word + ' commands kept failing',
-  lessonRedCi: (repo) => 'Red CI after pushes in ' + repo,
-  lessonSeen: (n) => n + (n === 1 ? ' time' : ' times'),
-  lessonDraft: (n) => 'Draft #' + n,
-  lessonDraftStates: { open: 'open', merged: 'merged', closed: 'closed' },
-  lessonNotDrafted: 'Not drafted yet',
-  lessonWaiting: 'Waiting for review',
-  lessonTranscripts: 'Session transcripts',
-  lessonSurfaces: { wsl: 'WSL', windows: 'Windows', cloud: 'cloud', other: 'another computer' },
-  lessonSignals: { rule: 'a rule I stated', correction: 'a correction I made', redirection: 'I redirected Claude',
-    interrupted: 'I interrupted Claude', abandoned: 'an abandoned session',
-    'repeated-tool-failure': 'a tool call kept failing', 'red-ci-after-push': 'CI went red after a push' },
-  lessonSignalCount: (what, n) => what + ' \u00d7' + n,
-  lessonLeftMemory: (n) => n + (n === 1 ? ' personal memory note' : ' personal memory notes'),
-  lessonLeftChecks: (n) => n + (n === 1 ? ' proposed git check' : ' proposed git checks'),
-  lessonLeftPrivate: (n) => n + ' about private skills or repos',
-  lessonLeftOut: (parts) => 'Left out on purpose: ' + parts + '.',
-  lessonNoText: 'No session text is published.',
-  lessonMinerNone: 'No proposals from my session transcripts were available for this build.',
-  lessonIssueSources: { memory: 'Claude\'s auto-memory', proposal: 'My own proposal' },
-  lessonIssueKinds: { memory: 'Fact to move into a repo', proposal: 'New skill idea' },
-  lessonMemoryFacts: (n, target, repo) => (n === null ? 'Facts' : n + (n === 1 ? ' fact' : ' facts'))
-    + (target ? ' for ' + target : '') + ' in ' + repo,
-  lessonMemoryChecks: (n, repo) => (n === null ? 'Agent checks' : n + (n === 1 ? ' agent check' : ' agent checks')) + ' in ' + repo,
-  lessonNewSkill: (name) => 'New skill: ' + name,
-  lessonNoValue: '\u2014',
-  lessonIssueStatus: (n) => '#' + n,
-
-  engineersHeading: 'For engineers',
-  engineersIntro: 'Every run behind the numbers above, with a link to its full report.',
-  source: (repo, main, results) => 'Built from ' + repo + ' at ' + main + ', results at ' + results + '.',
-  colName: 'Name', colFixture: 'Task', colModel: 'Model', colWhen: 'When', colCli: 'Tool version',
-  colWith: 'With', colWithout: 'Without', colSection: 'Section only', colNone: 'No guidance',
-  colFull: 'All the guidance', colAblated: 'All but this section', colReport: 'Report', colVerdict: 'Decision and reason',
-  report: 'report',
-  dataFile: (url) => 'Data file: ' + url,
-
-  failHeading: 'The results could not be shown',
-  failFetch: 'The results file couldn\'t be loaded.',
-  failParse: 'The results file loaded, but it is not readable.',
-  failSchema: (got) => 'The results file is in a format this page does not understand (version ' + got + '; this page reads version ' + SCHEMA_VERSION + ').',
-  failBadUrl: 'The page was asked to read results from an address it does not trust, so it did not.',
-  failFile: (url) => 'File: ' + url,
-  failWhat: 'Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at https://github.com/Adam-S-Daniel/skills-evals/issues with the file name above.'
-};
-
-/* ------------------------------------------------------------------ */
-/* One plain line per guidance section, keyed by the manifest id in   */
-/* _agent-guidance's agents-md/eval-coverage.yml.                     */
-/* ------------------------------------------------------------------ */
-const GLOSSES = {
-  'working-in-these-repos': 'For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
-  'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
-  'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
-  'workstation-layout': 'Where project folders live on Adam\'s computers, so Claude looks in the right place.',
-  'security': 'Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.',
-  'data-exposure-in-ci': 'Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.',
-  'read-before-you-start': 'A short list of reference pages to read before touching certain settings.',
-  'automation-vs-branch-protection': 'The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.',
-  'two-github-connectors': 'Claude can reach GitHub through two different connections with different powers, and must know which one it is using.',
-  'agent-contribution-markers': 'Anything Claude posts on GitHub under Adam\'s name ends with a note saying an AI wrote it.',
-  'pr-tldr': 'Every pull request description starts with a short plain-English summary of what changes and why.',
-  'github-404-means-not-authorized': 'When GitHub says "not found", it may only mean "you are not allowed to see this", so do not report something as gone on that alone.',
-  'fleet-spans-two-owners': 'Adam\'s projects sit under two different accounts, so a search of only one gives an answer that looks complete but is wrong.',
-  'watch-finished-is-not-ci-passed': 'A command that waits for the automatic checks finishing does not mean the checks passed; read the actual results.',
-  'git-push-does-not-mean-commit-exists': 'Uploading changes can report success even when the new change was never saved, so confirm the change is really there.',
-  'dependency-updates': 'Wait about a week before adopting a new version of an outside package, and record exact versions.',
-  'name-becomes-scanner-data': 'Names that contain words like "secret" or "token" can set off the leak scanner, so choose names that describe the purpose instead.',
-  'pinning-github-actions': 'Each outside building block the automation uses is locked to one exact, reviewed version, so it cannot change underneath us.',
-  'test-that-can-signal-kills-every-session': 'A test once stopped every program on a computer by mistake; code that stops programs must double-check what it is about to stop.',
-  'subagent-delegation': 'How Claude hands work to helper assistants, chooses cheaper models when that is safe, and checks their work before trusting it.',
-  'skills-ecosystem': 'Where Adam\'s skills come from, how they are installed, and how a project chooses which ones to load.',
-  'two-setup-gaps': 'Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.',
-  'git-practices': 'How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.',
-  'section-docker': 'For building software containers: fixed versions, no administrator access, and no passwords inside.',
-  'section-dotnet': 'For C# code: switch on the strictest warnings and keep to the version the project already uses.',
-  'section-go': 'For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.',
-  'section-javascript': 'For JavaScript code: never hide errors, and stay consistent with the project\'s existing style.',
-  'section-python': 'For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.',
-  'section-rust': 'For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.',
-  'section-typescript': 'For TypeScript code: no catch-all types, and respect the project\'s strict settings.'
-};
-const GLOSS_MISSING = 'A plain-language description of this section has not been written yet.';
-
-/* ------------------------------------------------------------------ */
-/* Pure helpers (exported for tests).                                 */
-/* ------------------------------------------------------------------ */
-const UNSAFE = /\S*(?:@|\/home\/|\/Users\/|\/root\/|\/tmp\/|cse_|session_|[A-Za-z]:\\)\S*/g;
-
-function clean(value) {
-  if (value === null || value === undefined) return '';
-  return String(value).replace(UNSAFE, STRINGS.hidden);
-}
-
-function githubLink(url) {
-  if (typeof url !== 'string' || !url.startsWith('https://github.com/')) return null;
-  let parsed;
-  try { parsed = new URL(url); } catch (e) { return null; }
-  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.username || parsed.password || parsed.port) return null;
-  return parsed.href;
-}
-
-function friendlyModel(id) {
-  const raw = String(id || '').toLowerCase();
-  if (!/^[a-z0-9-]+$/.test(raw)) return clean(id) || STRINGS.unknown;
-  const parts = raw.split('-').filter((p) => p && !/^\d{8}$/.test(p));
-  const words = [];
-  const nums = [];
-  for (const p of parts) {
-    if (/^\d+$/.test(p)) nums.push(p);
-    else {
-      if (nums.length) { words.push(nums.join('.')); nums.length = 0; }
-      words.push(p.charAt(0).toUpperCase() + p.slice(1));
-    }
-  }
-  if (nums.length) words.push(nums.join('.'));
-  return words.join(' ');
-}
-
-function parseTime(s) {
-  if (typeof s !== 'string') return NaN;
-  return Date.parse(s);
-}
-
-function fmtDay(ms, refMs) {
-  if (!isFinite(ms)) return STRINGS.unknown;
-  const opts = { timeZone: TIME_ZONE, month: 'short', day: 'numeric' };
-  const year = (t) => new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, year: 'numeric' }).format(new Date(t));
-  if (isFinite(refMs) && year(ms) !== year(refMs)) opts.year = 'numeric';
-  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
-}
-
-function fmtDateTime(ms) {
-  if (!isFinite(ms)) return STRINGS.unknown;
-  const s = new Intl.DateTimeFormat('en-US', {
-    timeZone: TIME_ZONE, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'
-  }).format(new Date(ms));
-  return s + ' ' + STRINGS.et;
-}
-
-/* A UTC calendar day (a census window edge, which is a UTC Monday), shown
-   as that day rather than shifted into Eastern time. */
-function fmtUtcDay(ms, refMs) {
-  if (!isFinite(ms)) return STRINGS.unknown;
-  const opts = { timeZone: 'UTC', month: 'short', day: 'numeric' };
-  if (isFinite(refMs) && new Date(ms).getUTCFullYear() !== new Date(refMs).getUTCFullYear()) opts.year = 'numeric';
-  return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
-}
-
-function fmtCount(x) {
-  const n = Number(x) || 0;
-  const r = Math.round(n);
-  if (Math.abs(n - r) < 1e-6) return String(r);
-  return n.toFixed(1);
-}
-
-function fmtRate(p, t) {
-  if (!(t > 0)) return '0%';
-  return Math.round((p / t) * 100) + '%';
-}
-
-function fmtGain(g) {
-  if (g === null || !isFinite(g)) return STRINGS.unknown;
-  const p = Math.round(g * 100);
-  if (p === 0) return STRINGS.gainZero;
-  return p > 0 ? STRINGS.gainUp(p) : STRINGS.gainDown(-p);
-}
-
-function wordsFor(bytes) {
-  const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
-  return w;
-}
-
-function modeFromSearch(search) {
-  const q = new URLSearchParams(search || '');
-  return q.get('subject') === 'guidance' ? 'guidance' : 'skills';
-}
-
-function searchForMode(search, mode) {
-  const q = new URLSearchParams(search || '');
-  if (mode === 'guidance') q.set('subject', 'guidance'); else q.delete('subject');
-  const s = q.toString();
-  return s ? '?' + s : '';
-}
-
-function allowedDataUrl(candidate) {
-  if (typeof candidate !== 'string' || !candidate) return null;
-  let u;
-  try { u = new URL(candidate); } catch (e) { return null; }
-  if (u.username || u.password) return null;
-  if (u.protocol === 'http:' && (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
-      && (candidate.startsWith('http://localhost') || candidate.startsWith('http://127.0.0.1'))) return u.href;
-  if (u.protocol === 'https:' && u.hostname === 'raw.githubusercontent.com' && !u.port
-      && candidate.startsWith(DATA_URL_PREFIX) && u.href.startsWith(DATA_URL_PREFIX)) return u.href;
-  return null;
-}
-
-/* Returns {url} for the file to read, or {error:'badurl', url} for a refused override. */
-function dataUrlFromSearch(search) {
-  const q = new URLSearchParams(search || '');
-  if (!q.has('data')) return { url: DEFAULT_DATA_URL };
-  const ok = allowedDataUrl(q.get('data'));
-  return ok ? { url: ok } : { error: 'badurl', url: DEFAULT_DATA_URL };
-}
-
-function cacheBust(url, stamp) {
-  return url + (url.includes('?') ? '&' : '?') + 'v=' + encodeURIComponent(String(stamp));
-}
-
-function validateDoc(doc) {
-  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ok: false, kind: 'parse' };
-  if (doc.schema_version !== SCHEMA_VERSION) {
-    const got = (typeof doc.schema_version === 'number' || typeof doc.schema_version === 'string')
-      ? clean(doc.schema_version) : STRINGS.unknown;
-    return { ok: false, kind: 'schema', got: got };
-  }
-  return { ok: true };
-}
-
-async function loadData(url, fetchFn, stamp) {
-  let res;
-  try {
-    res = await fetchFn(cacheBust(url, stamp), { cache: 'no-store' });
-  } catch (e) {
-    return { ok: false, kind: 'fetch', url: url };
-  }
-  if (!res || !res.ok) return { ok: false, kind: 'fetch', url: url };
-  let doc;
-  try { doc = await res.json(); } catch (e) { return { ok: false, kind: 'parse', url: url }; }
-  const v = validateDoc(doc);
-  if (!v.ok) return Object.assign({ url: url }, v);
-  return { ok: true, doc: doc, url: url };
-}
-
-/* --- run statistics --- */
-
-function armOf(x) {
-  if (!x || typeof x !== 'object') return null;
-  const passed = Number(x.checks_passed), total = Number(x.checks_total), trials = Number(x.trials);
-  if (!isFinite(passed) || !isFinite(total) || total <= 0) return null;
-  const judge = (typeof x.judge_mean === 'number' && isFinite(x.judge_mean)) ? x.judge_mean : null;
-  return { passed: passed, total: total, trials: isFinite(trials) ? trials : 0, judge: judge };
-}
-
-/* Normalize a run so both subjects share one shape:
-   with/without = the compared pair; full/ablated = the ablation pair (guidance only). */
-function normRun(run, subject) {
-  if (!run || typeof run !== 'object') return null;
-  const at = parseTime(run.at);
-  const base = { model: String(run.model || ''), at: at, fixture: run.fixture, cli: run.cli_version, url: run.report_url };
-  if (subject === 'guidance') {
-    const m = run.modes || {};
-    return Object.assign(base, { with: armOf(m.section), without: armOf(m.none), full: armOf(m.full), ablated: armOf(m.full_minus_section) });
-  }
-  if (subject === 'whole') {
-    const m = run.modes || {};
-    return Object.assign(base, { with: armOf(m.full), without: armOf(m.none), full: null, ablated: null });
-  }
-  return Object.assign(base, { with: armOf(run.with), without: armOf(run.without), full: null, ablated: null });
-}
-
-function inWindow(r, refMs) {
-  return isFinite(r.at) && (!isFinite(refMs) || r.at >= refMs - WINDOW_WEEKS * WEEK_MS);
-}
-
-function emptyAcc() { return { n: 0, wp: 0, wt: 0, op: 0, ot: 0, trials: 0, nAbl: 0, fp: 0, ft: 0, ap: 0, at: 0, trialsAbl: 0, lastAbl: NaN, last: NaN, wj: 0, wjn: 0, oj: 0, ojn: 0 }; }
-
-function addRun(acc, r) {
-  if (r.with && r.without) {
-    acc.n += 1; acc.wp += r.with.passed; acc.wt += r.with.total; acc.op += r.without.passed; acc.ot += r.without.total;
-    acc.trials += r.with.trials;
-    if (r.with.judge !== null && r.without.judge !== null) {
-      const tw = r.with.trials || 1, to = r.without.trials || 1;
-      acc.wj += r.with.judge * tw; acc.wjn += tw; acc.oj += r.without.judge * to; acc.ojn += to;
-    }
-    if (!(acc.last >= r.at)) acc.last = r.at;
-  }
-  if (r.full && r.ablated) {
-    acc.nAbl += 1; acc.fp += r.full.passed; acc.ft += r.full.total; acc.ap += r.ablated.passed; acc.at += r.ablated.total;
-    acc.trialsAbl += r.full.trials;
-    if (!(acc.lastAbl >= r.at)) acc.lastAbl = r.at;
-  }
-}
-
-function finish(acc) {
-  acc.gain = acc.wt > 0 && acc.ot > 0 ? acc.wp / acc.wt - acc.op / acc.ot : null;
-  acc.judgeWith = acc.wjn > 0 ? acc.wj / acc.wjn : null;
-  acc.judgeWithout = acc.ojn > 0 ? acc.oj / acc.ojn : null;
-  acc.inSitu = acc.ft > 0 && acc.at > 0 ? acc.fp / acc.ft - acc.ap / acc.at : null;
-  return acc;
-}
-
-/* Pool runs from the window per model. Returns {models:[{model, ...acc}], all: acc}. */
-function poolRuns(runs, subject, refMs, modelOrder) {
-  const by = new Map();
-  const all = emptyAcc();
-  for (const raw of Array.isArray(runs) ? runs : []) {
-    const r = normRun(raw, subject);
-    if (!r || !r.model || !inWindow(r, refMs)) continue;
-    if (!by.has(r.model)) by.set(r.model, emptyAcc());
-    addRun(by.get(r.model), r);
-    addRun(all, r);
-  }
-  const order = modelOrder || [];
-  const models = Array.from(by.keys()).sort((a, b) => {
-    const ia = order.indexOf(a), ib = order.indexOf(b);
-    if (ia !== ib) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
-    return a < b ? -1 : a > b ? 1 : 0;
-  });
-  return { models: models.map((m) => Object.assign({ model: m }, finish(by.get(m)))), all: finish(all) };
-}
-
-function hasRegression(alerts, subjectKind, name) {
-  return (Array.isArray(alerts) ? alerts : []).some((a) => a && a.kind === 'regression'
-    && (a.subject === subjectKind) && a.name === name);
-}
-
-/* The loop's verdict (harness/gates.py, via the data file) -> the chip it
-   earns. A verdict not listed here is not final, so the page's early rule
-   decides between 'early' and 'insufficient'. */
-const VERDICT_CHIPS = {
-  keep: 'helps', retain: 'helps', 'shorten-or-merge': 'alone', 'helps-only-alone': 'alone',
-  retire: 'none', 'retire-pending': 'none', retired: 'none',
-  ceiling: 'canttell', 'cannot-discriminate': 'canttell'
-};
-
-/* The gain a subject's card is judged by: for a guidance section, the
-   in-situ gain (all the guidance vs all of it but the section), which is the
-   pair that decides it and the one every section runs; otherwise the paired
-   with-vs-without gain. */
-function gainOf(acc, subject) { return subject === 'guidance' ? acc.inSitu : acc.gain; }
-function runsOf(acc, subject) { return subject === 'guidance' ? acc.nAbl : acc.n; }
-
-function earlyOrInsufficient(pooled, subject) {
-  // Not final, but say so when every model tried so far clearly gained.
-  const tried = pooled.models.filter((m) => runsOf(m, subject) > 0 && gainOf(m, subject) !== null);
-  return tried.length && tried.every((m) => gainOf(m, subject) >= HELPS_MIN_GAIN - EPS) ? 'early' : 'insufficient';
-}
-
-/* The chip rule. `pooled` comes from poolRuns. With `opts.verdict` (skills
-   and sections: the loop's own decision, null when it has none), the chip
-   follows the loop. Without one (the whole-guidance headline, which the loop
-   does not judge), the page's simple rule applies at the loop's run floor. */
-function chipFor(pooled, opts) {
-  const o = opts || {};
-  if (o.regression) return 'worse';
-  if (Object.prototype.hasOwnProperty.call(o, 'verdict')) {
-    const v = typeof o.verdict === 'string' ? o.verdict : '';
-    return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled, o.subject);
-  }
-  const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
-  if (!eligible.length) return earlyOrInsufficient(pooled, o.subject === 'guidance' ? 'guidance' : null);
-  const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS)
-    && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
-  if (!helps) return 'none';
-  if (o.subject === 'guidance') {
-    const abl = pooled.models.filter((m) => m.nAbl >= MIN_PAIRED_RUNS && m.inSitu !== null);
-    if (abl.length && abl.every((m) => m.inSitu < HELPS_MIN_GAIN - EPS)) return 'alone';
-  }
-  return 'helps';
-}
-
-function sentenceFor(pooled, subject, refMs) {
-  const out = [];
-  for (const m of pooled.models) {
-    if (m.n > 0) {
-      const name = friendlyModel(m.model);
-      const fn = subject === 'guidance' ? STRINGS.sentenceSection : subject === 'whole' ? STRINGS.sentenceWhole : STRINGS.sentenceSkill;
-      out.push(fn(name, fmtCount(m.wp), fmtCount(m.wt), fmtCount(m.op), fmtCount(m.ot)));
-    }
-    if (subject === 'guidance' && m.nAbl > 0) {
-      if (m.n === 0) out.push(friendlyModel(m.model) + ':');
-      out.push(STRINGS.sentenceAblation(fmtCount(m.fp), fmtCount(m.ft), fmtCount(m.ap), fmtCount(m.at)));
-    }
-  }
-  if (pooled.all.n > 0) out.push(STRINGS.tried(Math.round(pooled.all.trials), fmtDay(pooled.all.last, refMs)));
-  // A section whose section-alone results are not published (they count only
-  // near removal) is counted by its whole-guidance pair instead.
-  else if (subject === 'guidance' && pooled.all.nAbl > 0) out.push(STRINGS.tried(Math.round(pooled.all.trialsAbl), fmtDay(pooled.all.lastAbl, refMs)));
-  else out.push(STRINGS.notTried);
-  return out.join(' ');
-}
-
-/* Weekly pooled gain, oldest week first. Each point: {week, start, gain}. */
-function weeklyGains(runs, subject, refMs) {
-  if (!isFinite(refMs)) return [];
-  const buckets = new Map();
-  for (const raw of Array.isArray(runs) ? runs : []) {
-    const r = normRun(raw, subject);
-    // A guidance section's trend is its in-situ gain (gainOf).
-    const paired = subject === 'guidance' ? (r && r.full && r.ablated) : (r && r.with && r.without);
-    if (!r || !inWindow(r, refMs) || !paired) continue;
-    const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
-    if (w >= WINDOW_WEEKS) continue;
-    if (!buckets.has(w)) buckets.set(w, emptyAcc());
-    addRun(buckets.get(w), r);
-  }
-  return Array.from(buckets.keys()).sort((a, b) => b - a).map((w) => {
-    const acc = finish(buckets.get(w));
-    return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: gainOf(acc, subject) };
-  }).filter((p) => p.gain !== null);
-}
-
-function gainPerKb(pooled, bytes) {
-  // Sections only: the in-situ gain, what the section adds to the rest.
-  const g = gainOf(pooled.all, 'guidance');
-  const kb = (Number(bytes) || 0) / 1024;
-  if (g === null || !(kb > 0)) return null;
-  return g / kb;
-}
-
-/* ------------------------------------------------------------------ */
-/* A tiny node tree: the page is built as plain objects, then turned  */
-/* into DOM with createElement and text nodes only, never HTML text. */
-/* ------------------------------------------------------------------ */
-const SVG_TAGS = new Set(['svg', 'g', 'rect', 'line', 'circle', 'path', 'text', 'polyline']);
-
-function h(tag, attrs) {
-  const kids = [];
-  const push = (c) => {
-    if (c === null || c === undefined || c === false) return;
-    if (Array.isArray(c)) c.forEach(push);
-    else kids.push(typeof c === 'object' ? c : String(c));
+(() => {
+  // src/core/rules.js
+  var SCHEMA_VERSION = 1;
+  var WINDOW_WEEKS = 26;
+  var MIN_PAIRED_RUNS = 5;
+  var HELPS_MIN_GAIN = 0.05;
+  var WORSE_TOLERANCE = -0.05;
+  var EPS = 1e-9;
+  var WEEK_MS = 7 * 24 * 3600 * 1e3;
+  var TIME_ZONE = "America/New_York";
+  var pts = (x) => Math.round(Math.abs(x) * 100);
+  var KEEP_AT = 0.8;
+  var REMOVE_AT = 0.9;
+  var ordinal = (n) => {
+    const t = n % 100, u = n % 10;
+    return n + (t >= 11 && t <= 13 ? "th" : u === 1 ? "st" : u === 2 ? "nd" : u === 3 ? "rd" : "th");
   };
-  for (let i = 2; i < arguments.length; i++) push(arguments[i]);
-  return { tag: tag, attrs: attrs || {}, children: kids };
-}
+  var countWord = (n) => ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] || String(n);
 
-function link(url, text) {
-  const ok = githubLink(url);
-  if (!ok) return null;
-  return h('a', { href: ok, rel: 'noopener', target: '_blank' }, text);
-}
+  // src/config.js
+  var DATA_REPO = "Adam-S-Daniel/skills-evals";
 
-const VISIBLE_ATTRS = ['title', 'aria-label', 'data-tip'];
+  // src/core/strings.js
+  var ISSUES_URL = "https://github.com/" + DATA_REPO + "/issues";
+  var STRINGS = {
+    title: "Evals Explorer",
+    loading: "Loading the latest results…",
+    dataAsOf: (when) => "Data as of " + when + ".",
+    newestRun: (when) => "Newest test run: " + when + ".",
+    noRunsYet: "No test runs have been recorded yet.",
+    modeLabel: "Show results for",
+    modeSkills: "Skills",
+    modeGuidance: "Guidance",
+    hidden: "[hidden]",
+    unknown: "unknown",
+    et: "ET",
+    introHeading: "What you are looking at",
+    introSkills: [
+      "A skill is a page of instructions that Claude, the AI coding assistant I work with, reads before it starts a certain kind of task. I don't write most of them myself. I've set things up so that Claude drafts a skill when it spots a lesson worth keeping, and my improvement loop then tests and revises it. Writing one is easy — knowing it actually helps is not.",
+      "So every skill gets tested. Claude gets the same small task many times, sometimes with the skill and sometimes without it. Fixed checks score each attempt automatically, and a second AI model (the judge) also scores it from 0 to 10.",
+      'Read each number as "checks passed out of checks in total." A higher share with the skill than without it means the skill helped. "Trials" counts every attempt behind the numbers, and "comparison runs" counts how many times both sides ran together — the more of either, the more the result can be trusted.'
+    ],
+    introGuidance: [
+      "The guidance is a page of instructions Claude reads at the start of every working session on my projects. It is split into sections, one topic each. Claude writes most of it too: when something goes wrong, the session that hit it records the lesson in a section so it doesn't happen twice. This page shows whether each section earns its place.",
+      "To test a section, Claude gets an ordinary task with that section's trap hidden inside it and runs it with all the guidance and with all of it but that section. When a section is close to removal, it also runs with only that section and with no guidance at all. Fixed checks score each attempt.",
+      `Two things matter here that don't for skills. Claude reads every section in every session, so each one has a cost — shown as roughly how many words it adds. And a section can look useful on its own but add nothing once the rest of the guidance is present; compare the "All the guidance" and "All but this section" bars to see that.`
+    ],
+    glossaryHeading: "Words used on this page",
+    glossary: [
+      ["Fixture", "One small, fixed practice task used for testing. The same task is used every time so results can be compared."],
+      ["Arm", 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
+      ["Trial", "A single attempt at the task. A run is made of several trials."],
+      ["Judge", "A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself."],
+      ["Objective check", 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
+      ["Roster", "The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen."],
+      ["Improvement loop", "The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn't. I set its thresholds and budget; day to day, it runs without me."],
+      ["Regression", "A result that has become worse than it used to be. A regression alert means something needs a closer look."]
+    ],
+    glossaryGuidance: [
+      ["Section", "One topic within the guidance, under its own heading."],
+      ["Ablation", "Running with all the guidance except one section, to see whether that section still makes a difference when the rest is there."],
+      ["Cost per session", "How much reading a section adds to every working session, given here in rough words. Shorter is cheaper, so a section should earn its length."]
+    ],
+    chipGlossaryIntro: "The colored label on each card means:",
+    chips: {
+      helps: "Helps",
+      alone: "Helps only on its own",
+      none: "No measurable difference",
+      worse: "Getting worse",
+      early: "Early sign: helps",
+      canttell: "Test cannot tell",
+      insufficient: "Not enough data"
+    },
+    chipRules: {
+      helps: "The improvement loop decided to keep it. Its statistical test is confident that, on at least one model and task, Claude passes more checks with it than without it. The test compares runs with and without it side by side, stays valid no matter how often the loop checks, and keeps it once, on some task and model, the range its gain likely falls in sits entirely above 0, at the certainty shown on each card.",
+      alone: "It helps when it's the only section present, but the loop found it adds less than " + pts(HELPS_MIN_GAIN) + " percentage points once the rest of the guidance is there too.",
+      none: "On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.",
+      canttell: "Claude already passes this test without it, so the test can't show whether it helps. It needs a harder test.",
+      worse: "An automatic alert says recent results are worse than they used to be — worth a closer look.",
+      early: "The loop hasn't decided yet, but every model tried so far passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with it than without it.",
+      insufficient: "The loop hasn't decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn't, and the early results don't clearly lean either way."
+    },
+    chipOrder: ["helps", "alone", "early", "none", "canttell", "worse", "insufficient"],
+    skillsHeading: "Does each skill help?",
+    purposeMissing: "No description of what this skill is for was found.",
+    skillsNote: "One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can't judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week's budget. Under each name is what the skill is for. Numbers pool every comparison run from the last " + WINDOW_WEEKS + " weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.",
+    sectionsHeading: "Does each section earn its place?",
+    sectionsNote: "One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last " + WINDOW_WEEKS + " weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.",
+    sortLabel: "Order sections by",
+    sortNext: "Next test",
+    sortValue: "Help per word",
+    sortSize: "Size",
+    noCards: "Nothing has been tested yet.",
+    summaryCounts: (parts) => "Right now: " + parts + ".",
+    sentenceSkill: (m, a, b, c, d) => "With this skill, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
+    sentenceSection: (m, a, b, c, d) => "With this section, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
+    sentenceAblation: (e, f, g, h2) => "With all the guidance, " + e + " of " + f + "; with all of it but this section, " + g + " of " + h2 + ".",
+    sentenceWhole: (m, a, b, c, d) => "With all the guidance, " + m + " passed " + a + " of " + b + " checks; with no guidance, " + c + " of " + d + ".",
+    aloneShown: "Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.",
+    tried: (n, when) => n + (n === 1 ? " trial" : " trials") + " in all, the last on " + when + ".",
+    notTried: "No trials in the last " + WINDOW_WEEKS + " weeks.",
+    pairedRuns: (n) => n + (n === 1 ? " comparison run" : " comparison runs"),
+    judgeScores: (a, b) => "judge score " + a + " with, " + b + " without (out of 10)",
+    nextQueued: (n, kind) => "Next test: " + ordinal(n) + " " + kind + " in line for the next round of tests.",
+    nextDue: (when) => "Next test: a re-check due " + when + ".",
+    nextNone: "Next test: none planned right now.",
+    nextUnscheduled: "Next test: none. It has no task on the test schedule yet.",
+    stakesHigh: (reason) => "High stakes: " + reason + ". It is tested first and re-checked every 4 weeks instead of 8.",
+    stakesNone: (reason, check) => "No eval needed: " + reason + ". A check enforces it: " + check + ".",
+    confidenceCap: (n) => "Testing a task and model stops at " + n + " comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.",
+    confHeading: "How close is a decision?",
+    confKeepWord: "Keep",
+    confRemoveWord: "Removal",
+    confReached: (which) => which + ": reached.",
+    confNoMove: (which) => which + ": no movement yet.",
+    confPastCap: (which, cap) => which + ": not before the " + cap + "-run cap at this pace.",
+    confMore: (which, n) => which + ": at this pace, about " + n + " more run" + (n === 1 ? "" : "s") + ".",
+    confNoRoom: (margin) => "Removal: no task leaves room for a " + margin + "-point gain (Claude already passes without it), so this needs a harder test.",
+    confRuns: (n, cap) => "Runs that count toward a decision, busiest task and model: " + n + " of " + cap + ". Testing stops at " + cap + " runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for me to decide.",
+    confPace: "The run estimates project how fast certainty has grown per run so far; they are rough.",
+    rangeAria: (n, margin) => "The range the gain likely falls in, for " + n + (n === 1 ? " task and model" : " tasks and models") + ", from −100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +" + margin + ".",
+    rangeAxis: "Gain, points",
+    rangeRuns: "Runs",
+    rangeTip: (model, task, gain, low, high, runs, counted) => model + (task ? ", task " + task : "") + ": gain " + gain + " points so far; likely between " + low + " and " + high + ". " + runs + "." + (counted ? "" : " Not counted toward removal."),
+    rangeTipRuns: (n, cap) => cap ? n + " of " + cap + " runs" : n + (n === 1 ? " run" : " runs"),
+    rangeWhat: "Each bar is the range the gain likely falls in, for one task on one model, in percentage points of checks passed; the dot is the gain measured so far.",
+    rangeRule: (margin) => "Keep: a bar entirely right of 0. Remove: every counted bar entirely left of +" + margin + ".",
+    rangeLevels: (keepPct, removePct, subject, versions) => "The left end is held to " + keepPct + " certainty shared across the " + (subject === "guidance" ? "section's" : "skill's") + " tasks and models, the right end to " + removePct + "; a decision also waits for runs on " + countWord(versions) + " Claude Code version" + (versions === 1 ? "" : "s") + ".",
+    confidenceNone: "How sure the loop is: no figure yet. It needs a completed comparison first.",
+    used: (n, from, to) => n === 0 ? "Not used in my real work from " + from + " to " + to + "." : "Used " + n + (n === 1 ? " time" : " times") + " in my real work from " + from + " to " + to + ".",
+    copies: (match, older, unknown) => "Copies loaded in the last 2 weeks: " + match + " match main, " + older + " older, " + unknown + " unknown.",
+    copiesNone: "Copies loaded in the last 2 weeks: no uses in the window.",
+    usageNote: (sessions) => "Real-work counts come from " + sessions + " of my Claude Code sessions on my own computer. Sessions in the cloud are not counted yet.",
+    size: (words) => "About " + words + " words. It costs that much reading in every session.",
+    barWith: "With the skill",
+    barWithout: "Without it",
+    barSection: "Only this section",
+    barNone: "No guidance",
+    barAblated: "All but this section",
+    barAll: "All the guidance",
+    barWholeFull: "All the guidance",
+    barWholeNone: "No guidance",
+    barTip: (label, a, b, rate) => label + ": " + a + " of " + b + " checks (" + rate + ")",
+    chartLabel: (m) => "Checks passed by " + m,
+    trendCaption: "Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.",
+    trendOne: (when, gain) => "Week by week: only one week of comparisons so far (week of " + when + "): " + gain + ".",
+    trendNone: "No weekly trend yet.",
+    trendTip: (when, gain) => "Week of " + when + ": " + gain,
+    gainUp: (p) => p + " points better with it",
+    gainDown: (p) => p + " points worse with it",
+    gainZero: "no difference",
+    verdict: {
+      retain: "Official decision: keep it.",
+      keep: "Official decision: keep it.",
+      "cannot-discriminate": "Official decision: the test cannot tell, because its checks do not separate the two sides.",
+      "shorten-or-merge": "Official decision: shorten it or merge it into another section.",
+      retire: "Official decision: remove it.",
+      "retire-pending": "Official decision: remove it, after another removal finishes.",
+      retired: "It has been removed.",
+      ceiling: "Official decision: the test cannot tell, because Claude already passes without it.",
+      insufficient: "No official decision yet: it needs more runs.",
+      "helps-only-alone": "Official decision: it helps only on its own."
+    },
+    verdictOther: (v) => "Official decision: " + v + ".",
+    wholeHeading: "Does the guidance help at all?",
+    wholeNote: `All the guidance compared with no guidance, pooled across every section's task. The improvement loop judges sections one at a time, not the guidance as a whole, so this label uses a simpler test: "Helps" once a model with at least ` + MIN_PAIRED_RUNS + " comparison runs passed at least " + pts(HELPS_MIN_GAIN) + " percentage points more checks with the guidance, and no model with that many runs did more than " + pts(WORSE_TOLERANCE) + " points worse.",
+    wholeRule: "The simple test in the note above — not a decision by the improvement loop.",
+    wholeAnswer: {
+      helps: "Yes. With the guidance, Claude passed measurably more checks.",
+      alone: "Yes. With the guidance, Claude passed measurably more checks.",
+      none: "Not clearly. The difference so far is too small to count.",
+      worse: "Results are getting worse and need a closer look.",
+      early: "Early results say yes, but there are not enough runs yet for a final answer.",
+      insufficient: "Too early to say. There are not enough runs yet."
+    },
+    rosterHeading: "Which models are measured, and why",
+    rosterIntro: "Each task runs on these AI models. A separate judge model scores the work but never does the task itself. The reasons below are recorded automatically whenever the list changes.",
+    rosterArm: "Tested",
+    rosterJudge: "Judge",
+    rosterEmpty: "No models are listed yet.",
+    coverageHeading: "Coverage",
+    coverageIntroSkills: "Which skills have a test, which are left out on purpose, and which still need one.",
+    coverageIntroGuidance: "Which sections have a test, which are left out on purpose, and which still need one.",
+    covered: "Tested",
+    skipped: "Left out on purpose",
+    gap: "Not yet tested",
+    census: (when, total, c, s, g) => "The latest count, from " + when + ", found " + total + " public skills: " + c + " tested, " + s + " left out on purpose, " + g + " not yet tested.",
+    noneListed: "None.",
+    alertsHeading: "Alerts",
+    removedHeading: "Removed sections",
+    removedNote: "Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.",
+    removedLink: "removal and revert",
+    removedSkillsHeading: "Removed skills",
+    removedSkillsNote: "Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.",
+    alertsNone: "No open alerts.",
+    alertKinds: {
+      regression: "Getting worse",
+      retire: "Suggested for removal",
+      retired: "Removed",
+      "not-schedulable": "Not being tested",
+      "context-drift": "Context out of date",
+      "loaded-copy": "Sessions load an old copy"
+    },
+    // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
+    alertCopy: (surface, loaded, main) => "Most " + (surface === "cloud" ? "cloud" : "local") + " uses in the last 2 weeks loaded copy " + loaded + ", which main did not have at any point in that time. Main is " + main + ".",
+    // #545: this alert carries fields, not text, so the page words it.
+    alertDrift: (task, repo, day) => "The other skills deployed beside the task " + task + " in " + repo + " have changed since " + day + ", so it no longer tests what is deployed there. It needs a new pin.",
+    alertDetails: "Details",
+    // #555: past events, worded from counts; `since` is the oldest counted fire.
+    firesLine: (n, day, m, k) => n + (n === 1 ? " fire" : " fires") + " produced no results since " + day + " (" + m + (m === 1 ? " sweep" : " sweeps") + "); " + k + " produced results that did not validate.",
+    lessonsHeading: "Lessons from my sessions",
+    lessonsLead: (day) => "Every day a script reads the transcripts of my local Claude Code sessions and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from " + day + ", followed by facts Claude's auto-memory turned up that belong in a repo and skills I proposed myself.",
+    lessonsNone: "No lesson proposals were available for this build.",
+    lessonsEmptySkills: "None of that day's proposals are about skills.",
+    lessonsEmptyGuidance: "None of that day's proposals are about the guidance.",
+    colProposal: "Proposal",
+    colKind: "Kind",
+    colSource: "Source",
+    colSeen: "Seen",
+    colFirst: "First seen",
+    colLast: "Last seen",
+    colStatus: "Status",
+    lessonKinds: {
+      "new-skill": "New skill idea",
+      "skill-edit": "Change to a skill",
+      "guidance-edit": "Change to the guidance",
+      "fixture-candidate": "Idea for a test"
+    },
+    lessonToolCalls: (tool) => tool + " tool calls kept failing",
+    lessonToolCommand: (tool, word) => tool + " " + word + " commands kept failing",
+    lessonRedCi: (repo) => "Red CI after pushes in " + repo,
+    lessonSeen: (n) => n + (n === 1 ? " time" : " times"),
+    lessonDraft: (n) => "Draft #" + n,
+    lessonDraftStates: { open: "open", merged: "merged", closed: "closed" },
+    lessonNotDrafted: "Not drafted yet",
+    lessonWaiting: "Waiting for review",
+    lessonTranscripts: "Session transcripts",
+    lessonSurfaces: { wsl: "WSL", windows: "Windows", cloud: "cloud", other: "another computer" },
+    lessonSignals: {
+      rule: "a rule I stated",
+      correction: "a correction I made",
+      redirection: "I redirected Claude",
+      interrupted: "I interrupted Claude",
+      abandoned: "an abandoned session",
+      "repeated-tool-failure": "a tool call kept failing",
+      "red-ci-after-push": "CI went red after a push"
+    },
+    lessonSignalCount: (what, n) => what + " ×" + n,
+    lessonLeftMemory: (n) => n + (n === 1 ? " personal memory note" : " personal memory notes"),
+    lessonLeftChecks: (n) => n + (n === 1 ? " proposed git check" : " proposed git checks"),
+    lessonLeftPrivate: (n) => n + " about private skills or repos",
+    lessonLeftOut: (parts) => "Left out on purpose: " + parts + ".",
+    lessonNoText: "No session text is published.",
+    lessonMinerNone: "No proposals from my session transcripts were available for this build.",
+    lessonIssueSources: { memory: "Claude's auto-memory", proposal: "My own proposal" },
+    lessonIssueKinds: { memory: "Fact to move into a repo", proposal: "New skill idea" },
+    lessonMemoryFacts: (n, target, repo) => (n === null ? "Facts" : n + (n === 1 ? " fact" : " facts")) + (target ? " for " + target : "") + " in " + repo,
+    lessonMemoryChecks: (n, repo) => (n === null ? "Agent checks" : n + (n === 1 ? " agent check" : " agent checks")) + " in " + repo,
+    lessonNewSkill: (name) => "New skill: " + name,
+    lessonNoValue: "—",
+    lessonIssueStatus: (n) => "#" + n,
+    engineersHeading: "For engineers",
+    engineersIntro: "Every run behind the numbers above, with a link to its full report.",
+    source: (repo, main, results) => "Built from " + repo + " at " + main + ", results at " + results + ".",
+    colName: "Name",
+    colFixture: "Task",
+    colModel: "Model",
+    colWhen: "When",
+    colCli: "Tool version",
+    colWith: "With",
+    colWithout: "Without",
+    colSection: "Section only",
+    colNone: "No guidance",
+    colFull: "All the guidance",
+    colAblated: "All but this section",
+    colReport: "Report",
+    colVerdict: "Decision and reason",
+    report: "report",
+    dataFile: (url) => "Data file: " + url,
+    failHeading: "The results could not be shown",
+    failFetch: "The results file couldn't be loaded.",
+    failParse: "The results file loaded, but it is not readable.",
+    failSchema: (got) => "The results file is in a format this page does not understand (version " + got + "; this page reads version " + SCHEMA_VERSION + ").",
+    failBadUrl: "The page was asked to read results from an address it does not trust, so it did not.",
+    failFile: (url) => "File: " + url,
+    failWhat: "Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at " + ISSUES_URL + " with the file name above."
+  };
 
-function textOf(node) {
-  if (node === null || node === undefined) return '';
-  if (typeof node === 'string') return node;
-  let s = '';
-  for (const k of VISIBLE_ATTRS) if (node.attrs && typeof node.attrs[k] === 'string') s += ' ' + node.attrs[k] + ' ';
-  for (const c of node.children) s += textOf(c) + ' ';
-  return s;
-}
+  // src/core/glosses.js
+  var GLOSSES = {
+    "working-in-these-repos": "For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.",
+    "anything-you-name-gets-its-link": "Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.",
+    "finding-your-unknowns": "Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.",
+    "workstation-layout": "Where project folders live on Adam's computers, so Claude looks in the right place.",
+    "security": "Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.",
+    "data-exposure-in-ci": "Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.",
+    "read-before-you-start": "A short list of reference pages to read before touching certain settings.",
+    "automation-vs-branch-protection": "The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.",
+    "two-github-connectors": "Claude can reach GitHub through two different connections with different powers, and must know which one it is using.",
+    "agent-contribution-markers": "Anything Claude posts on GitHub under Adam's name ends with a note saying an AI wrote it.",
+    "pr-tldr": "Every pull request description starts with a short plain-English summary of what changes and why.",
+    "github-404-means-not-authorized": 'When GitHub says "not found", it may only mean "you are not allowed to see this", so do not report something as gone on that alone.',
+    "fleet-spans-two-owners": "Adam's projects sit under two different accounts, so a search of only one gives an answer that looks complete but is wrong.",
+    "watch-finished-is-not-ci-passed": "A command that waits for the automatic checks finishing does not mean the checks passed; read the actual results.",
+    "git-push-does-not-mean-commit-exists": "Uploading changes can report success even when the new change was never saved, so confirm the change is really there.",
+    "dependency-updates": "Wait about a week before adopting a new version of an outside package, and record exact versions.",
+    "name-becomes-scanner-data": 'Names that contain words like "secret" or "token" can set off the leak scanner, so choose names that describe the purpose instead.',
+    "pinning-github-actions": "Each outside building block the automation uses is locked to one exact, reviewed version, so it cannot change underneath us.",
+    "test-that-can-signal-kills-every-session": "A test once stopped every program on a computer by mistake; code that stops programs must double-check what it is about to stop.",
+    "subagent-delegation": "How Claude hands work to helper assistants, chooses cheaper models when that is safe, and checks their work before trusting it.",
+    "skills-ecosystem": "Where Adam's skills come from, how they are installed, and how a project chooses which ones to load.",
+    "two-setup-gaps": "Two one-time setup steps Claude may help with, mentioned once at most and never repeated as nagging.",
+    "git-practices": "How to save and combine changes: short, clear notes explaining why, one change at a time, and never rewriting shared history.",
+    "section-docker": "For building software containers: fixed versions, no administrator access, and no passwords inside.",
+    "section-dotnet": "For C# code: switch on the strictest warnings and keep to the version the project already uses.",
+    "section-go": "For Go code: let slow work be cancelled, run the standard checkers, and keep building blocks small.",
+    "section-javascript": "For JavaScript code: never hide errors, and stay consistent with the project's existing style.",
+    "section-python": "For Python code: describe what each function takes and returns, handle files carefully, and lock package versions.",
+    "section-rust": "For Rust code: explain every risky shortcut and keep crash-on-error shortcuts out of shared code.",
+    "section-typescript": "For TypeScript code: no catch-all types, and respect the project's strict settings."
+  };
+  var GLOSS_MISSING = "A plain-language description of this section has not been written yet.";
 
-function findAll(node, pred, out) {
-  out = out || [];
-  if (node && typeof node === 'object') {
-    if (pred(node)) out.push(node);
-    node.children.forEach((c) => findAll(c, pred, out));
+  // src/core/format.js
+  var UNSAFE = /\S*(?:@|\/home\/|\/Users\/|\/root\/|\/tmp\/|cse_|session_|[A-Za-z]:\\)\S*/g;
+  function clean(value) {
+    if (value === null || value === void 0) return "";
+    return String(value).replace(UNSAFE, STRINGS.hidden);
   }
-  return out;
-}
-
-function toDom(node, doc) {
-  if (typeof node === 'string') return doc.createTextNode(node);
-  const isSvg = SVG_TAGS.has(node.tag);
-  const el = isSvg ? doc.createElementNS('http://www.w3.org/2000/svg', node.tag) : doc.createElement(node.tag);
-  for (const k of Object.keys(node.attrs)) {
-    const v = node.attrs[k];
-    if (typeof v === 'function') el.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== undefined && v !== false) el.setAttribute(k, String(v));
+  function githubLink(url) {
+    if (typeof url !== "string" || !url.startsWith("https://github.com/")) return null;
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      return null;
+    }
+    if (parsed.protocol !== "https:" || parsed.hostname !== "github.com" || parsed.username || parsed.password || parsed.port) return null;
+    return parsed.href;
   }
-  for (const c of node.children) el.appendChild(toDom(c, doc));
-  return el;
-}
-
-/* --- charts --- */
-
-function barPath(x, y, w, hgt, r) {
-  // square at the baseline (left), 4px rounded data end (right)
-  const rr = Math.min(r, w, hgt / 2);
-  if (w <= 0) return '';
-  return 'M' + x + ',' + y + 'H' + (x + w - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w) + ',' + (y + rr)
-    + 'V' + (y + hgt - rr) + 'A' + rr + ',' + rr + ' 0 0 1 ' + (x + w - rr) + ',' + (y + hgt) + 'H' + x + 'Z';
-}
-
-/* rows: [{label, p, t, color}] */
-function barChart(rows, label) {
-  const W = 330, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
-  const H = TOP + rows.length * (BH + GAP) + 2;
-  const span = R - L;
-  const kids = [];
-  kids.push(h('line', { x1: L, x2: L, y1: 0, y2: H - 2, stroke: 'var(--base)', 'stroke-width': 1 }));
-  rows.forEach((row, i) => {
-    const y = TOP + i * (BH + GAP);
-    const rate = row.t > 0 ? row.p / row.t : 0;
-    const w = Math.max(0, Math.min(1, rate)) * span;
-    const a = fmtCount(row.p), b = fmtCount(row.t);
-    kids.push(h('text', { x: 0, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink-2)' }, row.label));
-    kids.push(h('rect', { x: L, y: y - 2, width: span, height: BH + 4, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': STRINGS.barTip(row.label, a, b, fmtRate(row.p, row.t)) }));
-    if (w > 0) kids.push(h('path', { d: barPath(L, y, w, BH, 4), fill: row.color, 'pointer-events': 'none' }));
-    kids.push(h('text', { x: L + w + 4, y: y + BH - 2, 'font-size': 12, fill: 'var(--ink)', 'pointer-events': 'none' }, a + ' of ' + b));
-  });
-  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
-}
-
-function trendChart(points, refMs) {
-  if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
-  if (points.length === 1) {
-    const p = points[0];
-    return h('p', { class: 'trend-cap' }, STRINGS.trendOne(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)));
+  function friendlyModel(id) {
+    const raw = String(id || "").toLowerCase();
+    if (!/^[a-z0-9-]+$/.test(raw)) return clean(id) || STRINGS.unknown;
+    const parts = raw.split("-").filter((p) => p && !/^\d{8}$/.test(p));
+    const words = [];
+    const nums = [];
+    for (const p of parts) {
+      if (/^\d+$/.test(p)) nums.push(p);
+      else {
+        if (nums.length) {
+          words.push(nums.join("."));
+          nums.length = 0;
+        }
+        words.push(p.charAt(0).toUpperCase() + p.slice(1));
+      }
+    }
+    if (nums.length) words.push(nums.join("."));
+    return words.join(" ");
   }
-  const W = 300, H = 124, XL = 34, XR = 292, YT = 10, YB = 102;
-  const m = Math.max(...points.map((p) => Math.abs(p.gain * 100)));
-  const top = Math.max(5, Math.ceil(m / 5) * 5);
-  const oldest = points[0], newest = points[points.length - 1];
-  const wOld = oldest.week, wNew = newest.week;
-  const x = (w) => (wOld === wNew ? XR : XL + ((wOld - w) / (wOld - wNew)) * (XR - XL));
-  const y = (g) => YT + ((top - g * 100) / (2 * top)) * (YB - YT);
-  const yMid = y(0);
-  const lab = { 'font-size': 11, fill: 'var(--muted)' };
-  const kids = [
-    h('line', { x1: XL, x2: XR, y1: YT, y2: YT, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
-    h('line', { x1: XL, x2: XR, y1: YB, y2: YB, stroke: 'var(--grid)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }),
-    h('line', { x1: XL, x2: XR, y1: yMid, y2: yMid, stroke: 'var(--axis)', 'stroke-width': 1 }),
-    h('text', { ...lab, x: 28, y: YT, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '+' + top),
-    h('text', { ...lab, x: 28, y: yMid, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '0'),
-    h('text', { ...lab, x: 28, y: YB, 'text-anchor': 'end', 'dominant-baseline': 'middle' }, '\u2212' + top),
-    h('text', { ...lab, x: XL, y: 118, 'text-anchor': 'start' }, fmtDay(oldest.start + 1000, refMs)),
-    h('text', { ...lab, x: XR, y: 118, 'text-anchor': 'end' }, fmtDay(newest.start + 1000, refMs)),
-    h('polyline', { points: points.map((p) => x(p.week).toFixed(1) + ',' + y(p.gain).toFixed(1)).join(' '),
-      fill: 'none', stroke: 'var(--s1)', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' })
-  ];
-  points.forEach((p, i) => {
-    const last = i === points.length - 1;
-    const cx = x(p.week).toFixed(1), cy = y(p.gain).toFixed(1);
-    kids.push(h('circle', { cx, cy, r: last ? 4.5 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': 1.5,
-      'pointer-events': 'none' }));
-    kids.push(h('circle', { cx, cy, r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)), 'data-tip-pos': 'below' }));
-  });
-  return h('div', null,
-    h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
-    h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
-}
+  function parseTime(s) {
+    if (typeof s !== "string") return NaN;
+    return Date.parse(s);
+  }
+  function fmtDay(ms, refMs) {
+    if (!isFinite(ms)) return STRINGS.unknown;
+    const opts = { timeZone: TIME_ZONE, month: "short", day: "numeric" };
+    const year = (t) => new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, year: "numeric" }).format(new Date(t));
+    if (isFinite(refMs) && year(ms) !== year(refMs)) opts.year = "numeric";
+    return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
+  }
+  function fmtDateTime(ms) {
+    if (!isFinite(ms)) return STRINGS.unknown;
+    const s = new Intl.DateTimeFormat("en-US", {
+      timeZone: TIME_ZONE,
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    }).format(new Date(ms));
+    return s + " " + STRINGS.et;
+  }
+  function fmtUtcDay(ms, refMs) {
+    if (!isFinite(ms)) return STRINGS.unknown;
+    const opts = { timeZone: "UTC", month: "short", day: "numeric" };
+    if (isFinite(refMs) && new Date(ms).getUTCFullYear() !== new Date(refMs).getUTCFullYear()) opts.year = "numeric";
+    return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
+  }
+  function fmtCount(x) {
+    const n = Number(x) || 0;
+    const r = Math.round(n);
+    if (Math.abs(n - r) < 1e-6) return String(r);
+    return n.toFixed(1);
+  }
+  function fmtRate(p, t) {
+    if (!(t > 0)) return "0%";
+    return Math.round(p / t * 100) + "%";
+  }
+  function fmtGain(g) {
+    if (g === null || !isFinite(g)) return STRINGS.unknown;
+    const p = Math.round(g * 100);
+    if (p === 0) return STRINGS.gainZero;
+    return p > 0 ? STRINGS.gainUp(p) : STRINGS.gainDown(-p);
+  }
+  function wordsFor(bytes) {
+    const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
+    return w;
+  }
+  function modeFromSearch(search) {
+    const q = new URLSearchParams(search || "");
+    return q.get("subject") === "guidance" ? "guidance" : "skills";
+  }
+  function searchForMode(search, mode) {
+    const q = new URLSearchParams(search || "");
+    if (mode === "guidance") q.set("subject", "guidance");
+    else q.delete("subject");
+    const s = q.toString();
+    return s ? "?" + s : "";
+  }
 
-function chip(kind, ruleText) {
-  const rule = ruleText || STRINGS.chipRules[kind];
-  return h('span', { class: 'chip ' + kind, title: STRINGS.chips[kind] + ': ' + rule, tabindex: 0,
-    'aria-label': STRINGS.chips[kind] + '. ' + rule },
-    h('span', { class: 'ic', 'aria-hidden': 'true' }), STRINGS.chips[kind]);
-}
+  // src/core/validate.js
+  function validateDoc(doc) {
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return { ok: false, kind: "parse" };
+    if (doc.schema_version !== SCHEMA_VERSION) {
+      const got = typeof doc.schema_version === "number" || typeof doc.schema_version === "string" ? clean(doc.schema_version) : STRINGS.unknown;
+      return { ok: false, kind: "schema", got };
+    }
+    return { ok: true };
+  }
 
-function legend(items) {
-  return h('div', { class: 'legend' }, items.map((it) =>
-    h('span', null, h('span', { class: 'sw', style: 'background:' + it.color }), it.label)));
-}
-
-function modelCharts(pooled, subject) {
-  return pooled.models.filter((m) => m.n > 0 || m.nAbl > 0).map((m) => {
-    const name = friendlyModel(m.model);
-    let rows;
-    if (subject === 'guidance') {
-      rows = [];
+  // src/core/stats.js
+  function armOf(x) {
+    if (!x || typeof x !== "object") return null;
+    const passed = Number(x.checks_passed), total = Number(x.checks_total), trials = Number(x.trials);
+    if (!isFinite(passed) || !isFinite(total) || total <= 0) return null;
+    const judge = typeof x.judge_mean === "number" && isFinite(x.judge_mean) ? x.judge_mean : null;
+    return { passed, total, trials: isFinite(trials) ? trials : 0, judge };
+  }
+  function normRun(run, subject) {
+    if (!run || typeof run !== "object") return null;
+    const at = parseTime(run.at);
+    const base = { model: String(run.model || ""), at, fixture: run.fixture, cli: run.cli_version, url: run.report_url };
+    if (subject === "guidance") {
+      const m = run.modes || {};
+      return Object.assign(base, { with: armOf(m.section), without: armOf(m.none), full: armOf(m.full), ablated: armOf(m.full_minus_section) });
+    }
+    if (subject === "whole") {
+      const m = run.modes || {};
+      return Object.assign(base, { with: armOf(m.full), without: armOf(m.none), full: null, ablated: null });
+    }
+    return Object.assign(base, { with: armOf(run.with), without: armOf(run.without), full: null, ablated: null });
+  }
+  function inWindow(r, refMs) {
+    return isFinite(r.at) && (!isFinite(refMs) || r.at >= refMs - WINDOW_WEEKS * WEEK_MS);
+  }
+  function emptyAcc() {
+    return { n: 0, wp: 0, wt: 0, op: 0, ot: 0, trials: 0, nAbl: 0, fp: 0, ft: 0, ap: 0, at: 0, trialsAbl: 0, lastAbl: NaN, last: NaN, wj: 0, wjn: 0, oj: 0, ojn: 0 };
+  }
+  function addRun(acc, r) {
+    if (r.with && r.without) {
+      acc.n += 1;
+      acc.wp += r.with.passed;
+      acc.wt += r.with.total;
+      acc.op += r.without.passed;
+      acc.ot += r.without.total;
+      acc.trials += r.with.trials;
+      if (r.with.judge !== null && r.without.judge !== null) {
+        const tw = r.with.trials || 1, to = r.without.trials || 1;
+        acc.wj += r.with.judge * tw;
+        acc.wjn += tw;
+        acc.oj += r.without.judge * to;
+        acc.ojn += to;
+      }
+      if (!(acc.last >= r.at)) acc.last = r.at;
+    }
+    if (r.full && r.ablated) {
+      acc.nAbl += 1;
+      acc.fp += r.full.passed;
+      acc.ft += r.full.total;
+      acc.ap += r.ablated.passed;
+      acc.at += r.ablated.total;
+      acc.trialsAbl += r.full.trials;
+      if (!(acc.lastAbl >= r.at)) acc.lastAbl = r.at;
+    }
+  }
+  function finish(acc) {
+    acc.gain = acc.wt > 0 && acc.ot > 0 ? acc.wp / acc.wt - acc.op / acc.ot : null;
+    acc.judgeWith = acc.wjn > 0 ? acc.wj / acc.wjn : null;
+    acc.judgeWithout = acc.ojn > 0 ? acc.oj / acc.ojn : null;
+    acc.inSitu = acc.ft > 0 && acc.at > 0 ? acc.fp / acc.ft - acc.ap / acc.at : null;
+    return acc;
+  }
+  function poolRuns(runs, subject, refMs, modelOrder) {
+    const by = /* @__PURE__ */ new Map();
+    const all = emptyAcc();
+    for (const raw of Array.isArray(runs) ? runs : []) {
+      const r = normRun(raw, subject);
+      if (!r || !r.model || !inWindow(r, refMs)) continue;
+      if (!by.has(r.model)) by.set(r.model, emptyAcc());
+      addRun(by.get(r.model), r);
+      addRun(all, r);
+    }
+    const order = modelOrder || [];
+    const models = Array.from(by.keys()).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      if (ia !== ib) return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
+    return { models: models.map((m) => Object.assign({ model: m }, finish(by.get(m)))), all: finish(all) };
+  }
+  function hasRegression(alerts, subjectKind, name) {
+    return (Array.isArray(alerts) ? alerts : []).some((a) => a && a.kind === "regression" && a.subject === subjectKind && a.name === name);
+  }
+  var VERDICT_CHIPS = {
+    keep: "helps",
+    retain: "helps",
+    "shorten-or-merge": "alone",
+    "helps-only-alone": "alone",
+    retire: "none",
+    "retire-pending": "none",
+    retired: "none",
+    ceiling: "canttell",
+    "cannot-discriminate": "canttell"
+  };
+  function gainOf(acc, subject) {
+    return subject === "guidance" ? acc.inSitu : acc.gain;
+  }
+  function runsOf(acc, subject) {
+    return subject === "guidance" ? acc.nAbl : acc.n;
+  }
+  function earlyOrInsufficient(pooled, subject) {
+    const tried = pooled.models.filter((m) => runsOf(m, subject) > 0 && gainOf(m, subject) !== null);
+    return tried.length && tried.every((m) => gainOf(m, subject) >= HELPS_MIN_GAIN - EPS) ? "early" : "insufficient";
+  }
+  function chipFor(pooled, opts) {
+    const o = opts || {};
+    if (o.regression) return "worse";
+    if (Object.prototype.hasOwnProperty.call(o, "verdict")) {
+      const v = typeof o.verdict === "string" ? o.verdict : "";
+      return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled, o.subject);
+    }
+    const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
+    if (!eligible.length) return earlyOrInsufficient(pooled, o.subject === "guidance" ? "guidance" : null);
+    const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS) && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
+    if (!helps) return "none";
+    if (o.subject === "guidance") {
+      const abl = pooled.models.filter((m) => m.nAbl >= MIN_PAIRED_RUNS && m.inSitu !== null);
+      if (abl.length && abl.every((m) => m.inSitu < HELPS_MIN_GAIN - EPS)) return "alone";
+    }
+    return "helps";
+  }
+  function sentenceFor(pooled, subject, refMs) {
+    const out = [];
+    for (const m of pooled.models) {
       if (m.n > 0) {
-        rows.push({ label: STRINGS.barSection, p: m.wp, t: m.wt, color: 'var(--s1)' });
-        rows.push({ label: STRINGS.barNone, p: m.op, t: m.ot, color: 'var(--s2)' });
+        const name = friendlyModel(m.model);
+        const fn = subject === "guidance" ? STRINGS.sentenceSection : subject === "whole" ? STRINGS.sentenceWhole : STRINGS.sentenceSkill;
+        out.push(fn(name, fmtCount(m.wp), fmtCount(m.wt), fmtCount(m.op), fmtCount(m.ot)));
       }
-      if (m.nAbl > 0) {
-        rows.push({ label: STRINGS.barAll, p: m.fp, t: m.ft, color: 'var(--axis)' });
-        rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: 'var(--s3)' });
+      if (subject === "guidance" && m.nAbl > 0) {
+        if (m.n === 0) out.push(friendlyModel(m.model) + ":");
+        out.push(STRINGS.sentenceAblation(fmtCount(m.fp), fmtCount(m.ft), fmtCount(m.ap), fmtCount(m.at)));
       }
-    } else if (subject === 'whole') {
-      rows = [{ label: STRINGS.barWholeFull, p: m.wp, t: m.wt, color: 'var(--s1)' },
-        { label: STRINGS.barWholeNone, p: m.op, t: m.ot, color: 'var(--s2)' }];
-    } else {
-      rows = [{ label: STRINGS.barWith, p: m.wp, t: m.wt, color: 'var(--s1)' },
-        { label: STRINGS.barWithout, p: m.op, t: m.ot, color: 'var(--s2)' }];
     }
-    return h('div', null,
-      h('p', { class: 'model' }, name + ' (' + STRINGS.pairedRuns(Math.max(m.n, m.nAbl))
-        + (m.judgeWith !== null && m.judgeWithout !== null ? '; ' + STRINGS.judgeScores(m.judgeWith.toFixed(1), m.judgeWithout.toFixed(1)) : '') + ')'),
-      barChart(rows, STRINGS.chartLabel(name)));
-  });
-}
-
-/* Whether a section's pooled runs carry its section-alone pair (only this
-   section vs no guidance), which the data file publishes only when it
-   factors into the section's decision. */
-function hasAlone(pooled) { return pooled.models.some((m) => m.n > 0); }
-
-function legendFor(subject, pooled) {
-  if (subject === 'guidance') {
-    const items = hasAlone(pooled) ? [{ label: STRINGS.barSection, color: 'var(--s1)' }, { label: STRINGS.barNone, color: 'var(--s2)' }] : [];
-    if (pooled.models.some((m) => m.nAbl > 0)) {
-      items.push({ label: STRINGS.barAll, color: 'var(--axis)' });
-      items.push({ label: STRINGS.barAblated, color: 'var(--s3)' });
-    }
-    return legend(items);
+    if (pooled.all.n > 0) out.push(STRINGS.tried(Math.round(pooled.all.trials), fmtDay(pooled.all.last, refMs)));
+    else if (subject === "guidance" && pooled.all.nAbl > 0) out.push(STRINGS.tried(Math.round(pooled.all.trialsAbl), fmtDay(pooled.all.lastAbl, refMs)));
+    else out.push(STRINGS.notTried);
+    return out.join(" ");
   }
-  if (subject === 'whole') return legend([{ label: STRINGS.barWholeFull, color: 'var(--s1)' }, { label: STRINGS.barWholeNone, color: 'var(--s2)' }]);
-  return legend([{ label: STRINGS.barWith, color: 'var(--s1)' }, { label: STRINGS.barWithout, color: 'var(--s2)' }]);
-}
+  function weeklyGains(runs, subject, refMs) {
+    if (!isFinite(refMs)) return [];
+    const buckets = /* @__PURE__ */ new Map();
+    for (const raw of Array.isArray(runs) ? runs : []) {
+      const r = normRun(raw, subject);
+      const paired = subject === "guidance" ? r && r.full && r.ablated : r && r.with && r.without;
+      if (!r || !inWindow(r, refMs) || !paired) continue;
+      const w = Math.max(0, Math.floor((refMs - r.at) / WEEK_MS));
+      if (w >= WINDOW_WEEKS) continue;
+      if (!buckets.has(w)) buckets.set(w, emptyAcc());
+      addRun(buckets.get(w), r);
+    }
+    return Array.from(buckets.keys()).sort((a, b) => b - a).map((w) => {
+      const acc = finish(buckets.get(w));
+      return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: gainOf(acc, subject) };
+    }).filter((p) => p.gain !== null);
+  }
+  function gainPerKb(pooled, bytes) {
+    const g = gainOf(pooled.all, "guidance");
+    const kb = (Number(bytes) || 0) / 1024;
+    if (g === null || !(kb > 0)) return null;
+    return g / kb;
+  }
 
-function hasData(pooled) { return pooled.models.some((m) => m.n > 0 || m.nAbl > 0); }
+  // src/core/h.js
+  var SVG_TAGS = /* @__PURE__ */ new Set(["svg", "g", "rect", "line", "circle", "path", "text", "polyline"]);
+  function h(tag, attrs) {
+    const kids = [];
+    const push = (c) => {
+      if (c === null || c === void 0 || c === false) return;
+      if (Array.isArray(c)) c.forEach(push);
+      else kids.push(typeof c === "object" ? c : String(c));
+    };
+    for (let i = 2; i < arguments.length; i++) push(arguments[i]);
+    return { tag, attrs: attrs || {}, children: kids };
+  }
+  function link(url, text) {
+    const ok = githubLink(url);
+    if (!ok) return null;
+    return h("a", { href: ok, rel: "noopener", target: "_blank" }, text);
+  }
+  var VISIBLE_ATTRS = ["title", "aria-label", "data-tip"];
+  function textOf(node) {
+    if (node === null || node === void 0) return "";
+    if (typeof node === "string") return node;
+    let s = "";
+    for (const k of VISIBLE_ATTRS) if (node.attrs && typeof node.attrs[k] === "string") s += " " + node.attrs[k] + " ";
+    for (const c of node.children) s += textOf(c) + " ";
+    return s;
+  }
+  function findAll(node, pred, out) {
+    out = out || [];
+    if (node && typeof node === "object") {
+      if (pred(node)) out.push(node);
+      node.children.forEach((c) => findAll(c, pred, out));
+    }
+    return out;
+  }
+  function toDom(node, doc) {
+    if (typeof node === "string") return doc.createTextNode(node);
+    const isSvg = SVG_TAGS.has(node.tag);
+    const el = isSvg ? doc.createElementNS("http://www.w3.org/2000/svg", node.tag) : doc.createElement(node.tag);
+    for (const k of Object.keys(node.attrs)) {
+      const v = node.attrs[k];
+      if (typeof v === "function") el.addEventListener(k.slice(2), v);
+      else if (v !== null && v !== void 0 && v !== false) el.setAttribute(k, String(v));
+    }
+    for (const c of node.children) el.appendChild(toDom(c, doc));
+    return el;
+  }
 
-function verdictLine(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const key = String(v);
-  return h('p', { class: 'meta' }, Object.prototype.hasOwnProperty.call(STRINGS.verdict, key) ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key)));
-}
-
-/* --- view models --- */
-
-function context(doc) {
-  const refMs = parseTime(doc.generated_at);
-  const roster = (doc.roster && Array.isArray(doc.roster.arms)) ? doc.roster.arms : [];
-  return { refMs: refMs, order: roster.map((a) => a && a.model).filter(Boolean), alerts: doc.alerts };
-}
-
-/* Skill cards, most helpful first: the loop's keep, then an early sign of
-   help, then the test cannot tell, then not enough data, then removal, then
-   getting worse; by pooled gain
-   within each group. */
-const SKILL_RANK = ['helps', 'early', 'canttell', 'insufficient', 'none', 'worse'];
-const SECTION_RANK = ['helps', 'alone', 'early', 'canttell', 'insufficient', 'none', 'worse'];
-
-/* When the loop tests a subject next, as a sort key: queued (by place in
-   line), then a re-check (soonest first), then nothing planned, then not on
-   the schedule. */
-function nextKey(nt) {
-  const n = nt && typeof nt === 'object' ? nt : {};
-  if (typeof n.position === 'number' && isFinite(n.position)) return [0, n.position];
-  const due = parseTime(n.due);
-  if (isFinite(due)) return [1, due];
-  return [n.scheduled ? 2 : 3, 0];
-}
-
-function byNext(a, b) {
-  const ka = nextKey(a.raw.next_test), kb = nextKey(b.raw.next_test);
-  return ka[0] - kb[0] || ka[1] - kb[1];
-}
-
-/* How well a subject is faring: its label's rank, then the pooled gain. */
-function byFaring(rank, subject) {
-  return (a, b) => {
-    const ra = rank.indexOf(a.chip), rb = rank.indexOf(b.chip);
-    if (ra !== rb) return ra - rb;
-    const ga = gainOf(a.pooled.all, subject), gb = gainOf(b.pooled.all, subject);
-    if (ga !== null && gb !== null && ga !== gb) return gb - ga;
-    if ((ga === null) !== (gb === null)) return ga === null ? 1 : -1;
-    return 0;
-  };
-}
-
-const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-
-function skillItems(doc) {
-  const c = context(doc);
-  const skills = Array.isArray(doc.skills) ? doc.skills : [];
-  return skills.filter((s) => s && (s.status === 'covered' || (Array.isArray(s.runs) && s.runs.length)))
-    .map((s) => {
-      const pooled = poolRuns(s.runs, 'skills', c.refMs, c.order);
-      return { name: String(s.name || ''), raw: s, pooled: pooled,
-        chip: chipFor(pooled, { subject: 'skills', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'skill', s.name) }),
-        sentence: sentenceFor(pooled, 'skills', c.refMs), trend: weeklyGains(s.runs, 'skills', c.refMs) };
+  // src/core/items.js
+  function context(doc) {
+    const refMs = parseTime(doc.generated_at);
+    const roster = doc.roster && Array.isArray(doc.roster.arms) ? doc.roster.arms : [];
+    return { refMs, order: roster.map((a) => a && a.model).filter(Boolean), alerts: doc.alerts };
+  }
+  var SKILL_RANK = ["helps", "early", "canttell", "insufficient", "none", "worse"];
+  var SECTION_RANK = ["helps", "alone", "early", "canttell", "insufficient", "none", "worse"];
+  function nextKey(nt) {
+    const n = nt && typeof nt === "object" ? nt : {};
+    if (typeof n.position === "number" && isFinite(n.position)) return [0, n.position];
+    const due = parseTime(n.due);
+    if (isFinite(due)) return [1, due];
+    return [n.scheduled ? 2 : 3, 0];
+  }
+  function byNext(a, b) {
+    const ka = nextKey(a.raw.next_test), kb = nextKey(b.raw.next_test);
+    return ka[0] - kb[0] || ka[1] - kb[1];
+  }
+  function byFaring(rank, subject) {
+    return (a, b) => {
+      const ra = rank.indexOf(a.chip), rb = rank.indexOf(b.chip);
+      if (ra !== rb) return ra - rb;
+      const ga = gainOf(a.pooled.all, subject), gb = gainOf(b.pooled.all, subject);
+      if (ga !== null && gb !== null && ga !== gb) return gb - ga;
+      if (ga === null !== (gb === null)) return ga === null ? 1 : -1;
+      return 0;
+    };
+  }
+  var byName = (a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  function skillItems(doc) {
+    const c = context(doc);
+    const skills = Array.isArray(doc.skills) ? doc.skills : [];
+    return skills.filter((s) => s && (s.status === "covered" || Array.isArray(s.runs) && s.runs.length)).map((s) => {
+      const pooled = poolRuns(s.runs, "skills", c.refMs, c.order);
+      return {
+        name: String(s.name || ""),
+        raw: s,
+        pooled,
+        chip: chipFor(pooled, { subject: "skills", verdict: s.verdict || null, regression: hasRegression(c.alerts, "skill", s.name) }),
+        sentence: sentenceFor(pooled, "skills", c.refMs),
+        trend: weeklyGains(s.runs, "skills", c.refMs)
+      };
     }).sort((a, b) => byNext(a, b) || byFaring(SKILL_RANK)(a, b) || byName(a, b));
-}
-
-/* What a skill is for: the first sentence of its SKILL.md description (the
-   rest says when it should load, which a reader of this page does not need). */
-function purposeOf(desc) {
-  const text = typeof desc === 'string' ? desc.trim() : '';
-  if (!text) return null;
-  const m = /^[\s\S]*?[.!?](?=\s+[A-Z(]|$)/.exec(text);
-  return (m ? m[0] : text).trim();
-}
-
-function sectionItems(doc, sortBy) {
-  const c = context(doc);
-  const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
-  const items = secs.filter((s) => s && s.id).map((s) => {
-    const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
-    return { id: String(s.id), name: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
-      chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
-      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
-      perKb: gainPerKb(pooled, s.bytes) };
-  });
-  if (sortBy === 'size') items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
-  else if (sortBy !== 'value') items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
-  else items.sort((a, b) => {
-    if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
-    if (a.perKb === null) return 1;
-    if (b.perKb === null) return -1;
-    return b.perKb - a.perKb || (a.id < b.id ? -1 : 1);
-  });
-  return items;
-}
-
-function wholeGuidance(doc) {
-  const c = context(doc);
-  const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
-  const runs = [];
-  secs.forEach((s) => (Array.isArray(s && s.runs) ? s.runs : []).forEach((r) => runs.push(r)));
-  const pooled = poolRuns(runs, 'whole', c.refMs, c.order);
-  return { pooled: pooled, chip: chipFor(pooled, { subject: 'whole' }), sentence: sentenceFor(pooled, 'whole', c.refMs),
-    trend: weeklyGains(runs, 'whole', c.refMs) };
-}
-
-/* --- page sections --- */
-
-function introView(mode) {
-  const paras = mode === 'guidance' ? STRINGS.introGuidance : STRINGS.introSkills;
-  const terms = STRINGS.glossary.concat(mode === 'guidance' ? STRINGS.glossaryGuidance : []);
-  const chipKinds = STRINGS.chipOrder.filter((k) => mode === 'guidance' || k !== 'alone');
-  return h('section', null,
-    h('h2', null, STRINGS.introHeading),
-    h('div', { class: 'lead' }, paras.map((p) => h('p', null, p))),
-    h('details', { class: 'panel', open: '' },
-      h('summary', null, STRINGS.glossaryHeading),
-      h('dl', { class: 'gloss' }, terms.map((t) => [h('dt', null, t[0]), h('dd', null, t[1])])),
-      h('p', { class: 'note', style: 'margin-top:12px' }, STRINGS.chipGlossaryIntro),
-      h('dl', { class: 'gloss' }, chipKinds.map((k) => [h('dt', null, chip(k)), h('dd', null, STRINGS.chipRules[k])]))));
-}
-
-function nextLine(nt, refMs, kind) {
-  const n = nt && typeof nt === 'object' ? nt : {};
-  let text;
-  if (typeof n.position === 'number' && isFinite(n.position)) text = STRINGS.nextQueued(n.position, kind);
-  else if (isFinite(parseTime(n.due))) text = STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
-  else text = n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
-  return h('p', { class: 'meta' }, text);
-}
-
-function stakesLine(st) {
-  if (!st || typeof st !== 'object' || typeof st.reason !== 'string') return null;
-  if (st.level === 'high') return h('p', { class: 'meta' }, STRINGS.stakesHigh(clean(st.reason)));
-  if (st.level === 'none' && typeof st.covered_by === 'string') return h('p', { class: 'meta' }, STRINGS.stakesNone(clean(st.reason), clean(st.covered_by)));
-  return null;
-}
-
-/* Runs still needed to move a level from `conf` to `level`, assuming the
-   evidence (-ln(1 - level)) grows in step with the pair count. Returns
-   { node, projected }: `projected` is true for a line that projects a pace. */
-function estimateLine(which, conf, level, pairs, cap) {
-  const line = (text) => h('p', { class: 'meta', 'data-est': which }, text);
-  if (conf >= level) return { node: line(STRINGS.confReached(which)), projected: false };
-  if (!Number.isInteger(pairs) || pairs <= 0) return { node: null, projected: false };
-  if (conf <= 0) return { node: line(STRINGS.confNoMove(which)), projected: false };
-  const more = Math.max(1, Math.ceil(pairs * (-Math.log(1 - level)) / (-Math.log(1 - conf))) - pairs);
-  if (Number.isInteger(cap) && cap > 0 && pairs + more > cap)
-    return { node: line(STRINGS.confPastCap(which, cap)), projected: true };
-  return { node: line(STRINGS.confMore(which, more)), projected: true };
-}
-
-/* A name cut to `n` characters, the last one an ellipsis. */
-function clipName(text, n) {
-  const t = String(text);
-  return t.length > n ? t.slice(0, n - 1) + '…' : t;
-}
-
-/* Signed whole points with a real minus sign: +22, 0, −18. */
-function signedPoints(x) {
-  const n = Math.round(x);
-  return n > 0 ? '+' + n : n < 0 ? '−' + (-n) : '0';
-}
-
-/* The gain range chart's geometry: the label column, the axis from -100
-   to +100 points, and the runs meter on the right. */
-const RANGE = { W: 340, AX0: 116, AX1: 282, MX: 292, MW: 42, TOP: 16, ROW: 32, TASK_CHARS: 19 };
-const rangeX = (v) => RANGE.AX0 + ((Math.max(-100, Math.min(100, v)) + 100) / 200) * (RANGE.AX1 - RANGE.AX0);
-const RANGE_COLORS = { keeps: 'var(--good)', 'removes-ready': 'var(--s2)', 'no-room': 'var(--axis)', paused: 'var(--axis)', open: 'var(--s1)' };
-
-/* rows: confidence.cells, each {model, task, pairs, gain, low, high, votes, status}. */
-function rangeChart(rows, margin, cap) {
-  const fin = (x) => typeof x === 'number' && isFinite(x);
-  rows = rows.filter((r) => r && fin(r.gain) && fin(r.low) && fin(r.high));
-  if (!rows.length) return null;
-  const { W, AX0, AX1, MX, MW, TOP, ROW } = RANGE;
-  const H = TOP + rows.length * ROW + 18;
-  const bottom = TOP + rows.length * ROW;
-  const lab = { 'font-size': 10, fill: 'var(--muted)' };
-  const kids = [];
-  for (const v of [-100, -50, 0, 50, 100]) {
-    const x = rangeX(v);
-    if (v !== 0) kids.push(h('line', { x1: x, x2: x, y1: TOP - 2, y2: bottom, stroke: 'var(--grid)', 'stroke-width': 1 }));
-    kids.push(h('text', { ...lab, x: x, y: H - 3, 'text-anchor': 'middle', 'data-axis': v }, signedPoints(v)));
   }
-  kids.push(h('line', { x1: rangeX(0), x2: rangeX(0), y1: TOP - 2, y2: bottom, stroke: 'var(--axis)', 'stroke-width': 1.5, 'data-line': 'zero' }));
-  const mx = rangeX(margin);
-  kids.push(h('line', { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'data-line': 'margin' }));
-  kids.push(h('text', { ...lab, x: mx, y: TOP - 5, 'text-anchor': 'middle' }, '+' + margin));
-  kids.push(h('text', { ...lab, x: 0, y: H - 3 }, STRINGS.rangeAxis));
-  kids.push(h('text', { ...lab, x: MX, y: TOP - 5 }, STRINGS.rangeRuns));
-  rows.forEach((r, i) => {
-    const y = TOP + i * ROW;
-    const model = friendlyModel(r.model);
-    const task = typeof r.task === 'string' && r.task ? clean(r.task) : null;
-    kids.push(h('text', { x: 0, y: y + 12, 'font-size': 11, fill: 'var(--ink-2)' }, model));
-    if (task) kids.push(h('text', { x: 0, y: y + 25, 'font-size': 10, fill: 'var(--muted)', 'data-tip': task }, clipName(task, RANGE.TASK_CHARS)));
-    const x0 = rangeX(Math.min(r.low, r.high)), x1 = rangeX(Math.max(r.low, r.high));
-    const width = Math.max(2, x1 - x0);
-    const color = RANGE_COLORS[r.status] || RANGE_COLORS.open;
-    kids.push(h('rect', { class: 'range-bar', x: x0.toFixed(2), y: y + 10, width: width.toFixed(2), height: 10,
-      rx: Math.min(5, width / 2).toFixed(2), fill: color, 'fill-opacity': r.status === 'open' || !RANGE_COLORS[r.status] ? 0.55 : 1,
-      'data-status': r.status, 'pointer-events': 'none' }));
-    kids.push(h('circle', { class: 'gain-dot', cx: rangeX(r.gain).toFixed(2), cy: y + 15, r: 4, fill: 'var(--ink)',
-      stroke: 'var(--surface)', 'stroke-width': 1.5, 'pointer-events': 'none' }));
-    const pairs = Number.isInteger(r.pairs) ? r.pairs : 0;
-    kids.push(h('text', { x: MX, y: y + 12, 'font-size': 11, fill: 'var(--ink)', class: 'runs' }, cap ? pairs + '/' + cap : String(pairs)));
-    if (cap) {
-      kids.push(h('rect', { x: MX, y: y + 17, width: MW, height: 4, rx: 2, fill: 'var(--base)' }));
-      const fw = MW * Math.min(1, pairs / cap);
-      if (fw > 0) kids.push(h('rect', { class: 'runs-fill', x: MX, y: y + 17, width: fw.toFixed(2), height: 4, rx: 2, fill: 'var(--ink-2)' }));
-      kids.push(h('line', { x1: MX + MW, x2: MX + MW, y1: y + 15, y2: y + 23, stroke: 'var(--ink)', 'stroke-width': 1 }));
+  function purposeOf(desc) {
+    const text = typeof desc === "string" ? desc.trim() : "";
+    if (!text) return null;
+    const m = /^[\s\S]*?[.!?](?=\s+[A-Z(]|$)/.exec(text);
+    return (m ? m[0] : text).trim();
+  }
+  function sectionItems(doc, sortBy) {
+    const c = context(doc);
+    const secs = doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : [];
+    const items = secs.filter((s) => s && s.id).map((s) => {
+      const pooled = poolRuns(s.runs, "guidance", c.refMs, c.order);
+      return {
+        id: String(s.id),
+        name: String(s.id),
+        raw: s,
+        pooled,
+        bytes: Number(s.bytes) || 0,
+        chip: chipFor(pooled, { subject: "guidance", verdict: s.verdict || null, regression: hasRegression(c.alerts, "guidance", s.id) }),
+        sentence: sentenceFor(pooled, "guidance", c.refMs),
+        trend: weeklyGains(s.runs, "guidance", c.refMs),
+        perKb: gainPerKb(pooled, s.bytes)
+      };
+    });
+    if (sortBy === "size") items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
+    else if (sortBy !== "value") items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, "guidance")(a, b) || byName(a, b));
+    else items.sort((a, b) => {
+      if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
+      if (a.perKb === null) return 1;
+      if (b.perKb === null) return -1;
+      return b.perKb - a.perKb || (a.id < b.id ? -1 : 1);
+    });
+    return items;
+  }
+  function wholeGuidance(doc) {
+    const c = context(doc);
+    const secs = doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : [];
+    const runs = [];
+    secs.forEach((s) => (Array.isArray(s && s.runs) ? s.runs : []).forEach((r) => runs.push(r)));
+    const pooled = poolRuns(runs, "whole", c.refMs, c.order);
+    return {
+      pooled,
+      chip: chipFor(pooled, { subject: "whole" }),
+      sentence: sentenceFor(pooled, "whole", c.refMs),
+      trend: weeklyGains(runs, "whole", c.refMs)
+    };
+  }
+
+  // src/adapters/web.js
+  var DEFAULT_DATA_URL = "https://raw.githubusercontent.com/" + DATA_REPO + "/persistent/eval-results/explorer/latest.json";
+  var DATA_URL_PREFIX = "https://raw.githubusercontent.com/" + DATA_REPO + "/";
+  function allowedDataUrl(candidate) {
+    if (typeof candidate !== "string" || !candidate) return null;
+    let u;
+    try {
+      u = new URL(candidate);
+    } catch (e) {
+      return null;
     }
-    kids.push(h('rect', { x: AX0 - 4, y: y + 4, width: AX1 - AX0 + 8, height: 22, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip-pos': 'below',
-      'data-tip': STRINGS.rangeTip(model, task, signedPoints(r.gain), signedPoints(r.low), signedPoints(r.high),
-        STRINGS.rangeTipRuns(pairs, cap), r.votes !== false) }));
-  });
-  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart range', role: 'img',
-    'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
-}
-
-function confidenceView(c, policy, subject) {
-  const ok = (x) => typeof x === 'number' && isFinite(x);
-  if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
-  const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
-  const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
-  const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
-  const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0
-    ? policy.min_cli_versions : 2;
-  const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
-    ? policy.max_runs_per_cell : null;
-  const whole = (x) => Math.round(x * 100) + '%';
-  const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
-  const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
-  if (chart) {
-    kids.push(chart);
-    kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));
-    kids.push(h('p', { class: 'meta' }, STRINGS.rangeRule(margin)));
-    kids.push(h('p', { class: 'meta' }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
+    if (u.username || u.password) return null;
+    if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1") && (candidate.startsWith("http://localhost") || candidate.startsWith("http://127.0.0.1"))) return u.href;
+    if (u.protocol === "https:" && u.hostname === "raw.githubusercontent.com" && !u.port && candidate.startsWith(DATA_URL_PREFIX) && u.href.startsWith(DATA_URL_PREFIX)) return u.href;
+    return null;
   }
-  const keepEst = estimateLine(STRINGS.confKeepWord, c.helps, keep, c.keep_pairs, cap);
-  kids.push(keepEst.node);
-  let removeEst = { node: null, projected: false };
-  if (c.no_help === null) kids.push(h('p', { class: 'meta' }, STRINGS.confNoRoom(margin)));
-  else if (ok(c.no_help)) {
-    removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
-    kids.push(removeEst.node);
+  function dataUrlFromSearch(search) {
+    const q = new URLSearchParams(search || "");
+    if (!q.has("data")) return { url: DEFAULT_DATA_URL };
+    const ok = allowedDataUrl(q.get("data"));
+    return ok ? { url: ok } : { error: "badurl", url: DEFAULT_DATA_URL };
   }
-  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
-  else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
-  if (keepEst.projected || removeEst.projected) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
-  return h('div', { class: 'conf' }, kids);
-}
-
-function usageLine(u, window, refMs) {
-  if (!u || typeof u.invocations !== 'number' || !window) return null;
-  return h('p', { class: 'meta' }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window.from), refMs), fmtUtcDay(parseTime(window.to), refMs)));
-}
-
-// #562: uses by which copy they loaded, counted from `copies.loaded`; nothing
-// when `copies` is null (no census of copies: unknown, not zero).
-function copiesLine(c) {
-  if (!c || !Array.isArray(c.loaded)) return null;
-  const n = { match: 0, older: 0, unknown: 0 };
-  for (const e of c.loaded) {
-    if (!e || !Number.isInteger(e.invocations)) continue;
-    const k = e.vs_main === 'current' || e.vs_main === 'in-window' ? 'match' : e.vs_main === 'older' ? 'older' : 'unknown';
-    n[k] += e.invocations;
+  function cacheBust(url, stamp) {
+    return url + (url.includes("?") ? "&" : "?") + "v=" + encodeURIComponent(String(stamp));
   }
-  if (n.match + n.older + n.unknown === 0) return h('p', { class: 'meta' }, STRINGS.copiesNone);
-  return h('p', { class: 'meta' }, STRINGS.copies(n.match, n.older, n.unknown));
-}
-
-function skillCard(it, refMs, doc) {
-  return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, clean(it.name)), chip(it.chip)),
-    h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
-    usageLine(it.raw.usage, doc && doc.usage, refMs),
-    copiesLine(it.raw.copies),
-    nextLine(it.raw.next_test, refMs, 'skill'),
-    stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs)] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'skills'),
-    verdictLine(it.raw.verdict));
-}
-
-function sectionCard(it, refMs, doc) {
-  const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
-  return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, clean(it.raw.heading || it.id)), chip(it.chip)),
-    h('p', { class: 'gl' }, gloss),
-    h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
-    nextLine(it.raw.next_test, refMs, 'section'),
-    stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, clean(it.sentence)),
-    hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null,
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance'),
-    verdictLine(it.raw.verdict));
-}
-
-function chipSummary(items, mode) {
-  const counts = {};
-  items.forEach((i) => { counts[i.chip] = (counts[i.chip] || 0) + 1; });
-  const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => counts[k] + ' ' + STRINGS.chips[k].toLowerCase());
-  if (!parts.length) return null;
-  return h('p', { class: 'summary-line' }, STRINGS.summaryCounts(parts.join(', ')));
-}
-
-function rosterView(doc) {
-  const r = doc.roster || {};
-  const arms = Array.isArray(r.arms) ? r.arms : [];
-  const items = arms.filter(Boolean).map((a) => h('li', null, h('strong', null, STRINGS.rosterArm + ': ' + friendlyModel(a.model)),
-    a.reason ? h('div', { class: 'reason' }, clean(a.reason)) : null));
-  if (r.judge && r.judge.model) items.push(h('li', null, h('strong', null, STRINGS.rosterJudge + ': ' + friendlyModel(r.judge.model)),
-    r.judge.reason ? h('div', { class: 'reason' }, clean(r.judge.reason)) : null));
-  return h('section', null, h('h2', null, STRINGS.rosterHeading), h('p', { class: 'lead' }, STRINGS.rosterIntro),
-    items.length ? h('ul', { class: 'plain' }, items) : h('p', null, STRINGS.rosterEmpty));
-}
-
-function coverageView(doc, mode) {
-  const list = mode === 'guidance'
-    ? ((doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : []).filter(Boolean).map((s) => ({ name: s.heading || s.id, status: s.status, reason: s.skip_reason }))
-    : (Array.isArray(doc.skills) ? doc.skills : []).filter(Boolean).map((s) => ({ name: s.name, status: s.status, reason: s.skip_reason }));
-  const group = (status, title) => {
-    const rows = list.filter((x) => x.status === status).sort((a, b) => String(a.name) < String(b.name) ? -1 : 1);
-    return h('div', { class: 'panel' }, h('h3', null, title + ' (' + rows.length + ')'),
-      rows.length ? h('ul', { class: 'plain' }, rows.map((x) => h('li', null, clean(x.name),
-        status === 'skipped' && x.reason ? h('div', { class: 'reason' }, clean(x.reason)) : null))) : h('p', { class: 'note' }, STRINGS.noneListed));
-  };
-  const cov = doc.coverage;
-  const census = mode !== 'guidance' && cov && typeof cov.total === 'number'
-    ? h('p', { class: 'note' }, STRINGS.census(fmtDay(parseTime(cov.as_of)), fmtCount(cov.total), fmtCount(cov.covered), fmtCount(cov.skipped), fmtCount(cov.gap)))
-    : null;
-  return h('section', null, h('h2', null, STRINGS.coverageHeading),
-    h('p', { class: 'lead' }, mode === 'guidance' ? STRINGS.coverageIntroGuidance : STRINGS.coverageIntroSkills), census,
-    h('div', { class: 'cols' }, group('covered', STRINGS.covered), group('skipped', STRINGS.skipped), group('gap', STRINGS.gap)));
-}
-
-// The sentence for an alert that carries fields instead of `text` (#545);
-// null when it has neither, so the label stands alone.
-function alertText(a) {
-  if (a.kind === 'context-drift' && typeof a.drift_since === 'string') {
-    return STRINGS.alertDrift(clean(a.fixture), clean(a.repository), fmtDay(parseTime(a.drift_since)));
-  }
-  if (a.kind === 'loaded-copy' && typeof a.loaded === 'string' && typeof a.main === 'string') {
-    return STRINGS.alertCopy(a.surface, clean(a.loaded), clean(a.main));
-  }
-  return null;
-}
-
-function alertsView(doc, mode) {
-  const want = mode === 'guidance' ? 'guidance' : 'skill';
-  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
-  const f = doc.fires_without_results;
-  const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === 'string'
-    ? h('p', { class: 'note' }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
-  return h('section', null, h('h2', null, STRINGS.alertsHeading), fires,
-    alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
-      const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
-      const l = link(a.url, STRINGS.alertDetails);
-      return h('li', null, h('strong', null, kind + ': ' + clean(a.name)), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
-        a.text ? ' ' + clean(a.text) : (alertText(a) ? ' ' + alertText(a) : null), l ? [' ', l] : null);
-    })) : h('p', null, STRINGS.alertsNone));
-}
-
-function engineersView(doc, mode, url) {
-  const guidance = mode === 'guidance';
-  const subjects = guidance
-    ? ((doc.guidance && doc.guidance.sections) || []).filter(Boolean).map((s) => ({ name: s.id, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason, alone: s.alone_verdict }))
-    : (doc.skills || []).filter(Boolean).map((s) => ({ name: s.name, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason }));
-  const refMs = parseTime(doc.generated_at);
-  const cell = (a) => a ? fmtCount(a.passed) + '/' + fmtCount(a.total) : '';
-  const head = [STRINGS.colName, STRINGS.colFixture, STRINGS.colModel, STRINGS.colWhen, STRINGS.colCli]
-    .concat(guidance ? [STRINGS.colSection, STRINGS.colNone, STRINGS.colFull, STRINGS.colAblated] : [STRINGS.colWith, STRINGS.colWithout])
-    .concat([STRINGS.colReport]);
-  const rows = [];
-  subjects.forEach((s) => (Array.isArray(s.runs) ? s.runs : []).forEach((raw) => {
-    const r = normRun(raw, guidance ? 'guidance' : 'skills');
-    if (!r) return;
-    const l = link(r.url, STRINGS.report);
-    rows.push(h('tr', null, h('td', null, clean(s.name)), h('td', null, clean(r.fixture)), h('td', null, friendlyModel(r.model)),
-      h('td', { class: 'num' }, fmtDay(r.at, refMs)), h('td', { class: 'num' }, clean(r.cli)),
-      guidance ? [h('td', { class: 'num' }, cell(r.with)), h('td', { class: 'num' }, cell(r.without)), h('td', { class: 'num' }, cell(r.full)), h('td', { class: 'num' }, cell(r.ablated))]
-        : [h('td', { class: 'num' }, cell(r.with)), h('td', { class: 'num' }, cell(r.without))],
-      h('td', null, l)));
-  }));
-  const verdicts = subjects.filter((s) => s.verdict || s.reason).map((s) => h('tr', null, h('td', null, clean(s.name)),
-    h('td', null, clean(s.verdict) + (s.alone ? ' / ' + clean(s.alone) : '') + (s.reason ? ': ' + clean(s.reason) : ''))));
-  const src = doc.source || {};
-  const short = (x) => /^[0-9a-f]{7,40}$/.test(String(x || '')) ? String(x).slice(0, 12) : STRINGS.unknown;
-  return h('section', null, h('details', { class: 'panel' }, h('summary', null, STRINGS.engineersHeading),
-    h('p', { class: 'note' }, STRINGS.engineersIntro),
-    h('p', { class: 'note' }, STRINGS.dataFile(url)),
-    src.repository ? h('p', { class: 'note' }, STRINGS.source(clean(src.repository), short(src.repository_commit), short(src.results_commit))) : null,
-    h('div', { class: 'tablewrap' }, h('table', null, h('thead', null, h('tr', null, head.map((c) => h('th', null, c)))), h('tbody', null, rows))),
-    verdicts.length ? h('div', { class: 'tablewrap', style: 'margin-top:12px' }, h('table', null,
-      h('thead', null, h('tr', null, h('th', null, STRINGS.colName), h('th', null, STRINGS.colVerdict))), h('tbody', null, verdicts))) : null));
-}
-
-/* Sections the evals removed (#557), with the date and a link to the
-   removal pull request, whose Revert button restores the section. */
-function removedView(doc) {
-  const removed = (doc.guidance && Array.isArray(doc.guidance.removed) ? doc.guidance.removed : [])
-    .filter((r) => r && typeof r.id === 'string' && typeof r.date === 'string');
-  if (!removed.length) return null;
-  return h('section', null, h('h2', null, STRINGS.removedHeading), h('p', { class: 'note' }, STRINGS.removedNote),
-    h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.id)), ' ', clean(r.date), ' ',
-      link(r.reverse_url, STRINGS.removedLink)))));
-}
-
-/* Skills the evals removed (#557), with the date and a link to the removal
-   pull request, whose Revert button restores the skill. */
-function removedSkillsView(doc) {
-  const removed = (Array.isArray(doc.removed_skills) ? doc.removed_skills : [])
-    .filter((r) => r && typeof r.name === 'string' && typeof r.date === 'string');
-  if (!removed.length) return null;
-  return h('section', null, h('h2', null, STRINGS.removedSkillsHeading), h('p', { class: 'note' }, STRINGS.removedSkillsNote),
-    h('ul', null, removed.map((r) => h('li', null, h('strong', null, clean(r.name)), ' ', clean(r.date), ' ',
-      link(r.reverse_url, STRINGS.removedLink)))));
-}
-
-/* --- lessons (Adam, 2026-11-03) --- */
-
-const LESSON_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const lessonDayMs = (d) => (typeof d === 'string' && LESSON_DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN);
-const listWords = (parts) => parts.length < 2 ? parts.join('')
-  : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
-
-/* A readable title for a proposal subject, as scripts/mine_sessions.py
-   card_title words it; a guidance section by its heading when the page has it. */
-function lessonTitle(subject, headings) {
-  const s = String(subject);
-  let m = /^tool-([a-z]+)(?:-(.+))?$/.exec(s);
-  if (m) {
-    const tool = m[1] === 'powershell' ? 'PowerShell' : m[1].charAt(0).toUpperCase() + m[1].slice(1);
-    return clean(m[2] ? STRINGS.lessonToolCommand(tool, m[2]) : STRINGS.lessonToolCalls(tool));
-  }
-  if (s.startsWith('red-ci-') && s.length > 7) return clean(STRINGS.lessonRedCi(s.slice(7)));
-  if (s.startsWith('skill:')) return clean(s.slice(6));
-  if (s.startsWith('guidance:')) {
-    const id = s.slice(9);
-    const h = headings && Object.prototype.hasOwnProperty.call(headings, id) ? headings[id] : null;
-    return clean(typeof h === 'string' && h ? h : id);
-  }
-  return clean(s);
-}
-
-/* One item, or null when it is off the shape explorer_data.py publishes. */
-function lessonItem(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonKinds, raw.kind) || typeof raw.subject !== 'string' || !raw.subject) return null;
-  if (!Number.isInteger(raw.evidence_count) || raw.evidence_count < 1) return null;
-  if (!isFinite(lessonDayMs(raw.first_seen)) || !isFinite(lessonDayMs(raw.last_seen))) return null;
-  let draft = null;
-  const d = raw.draft;
-  if (d && typeof d === 'object' && Number.isInteger(d.number) && d.number > 0
-      && Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, d.state) && githubLink(d.url)) {
-    draft = { number: d.number, state: d.state, url: githubLink(d.url) };
-  }
-  const sources = Array.isArray(raw.sources) ? raw.sources.filter((x) => typeof x === 'string'
-    && Object.prototype.hasOwnProperty.call(STRINGS.lessonSurfaces, x)) : null;
-  const signals = [];
-  if (raw.signals && typeof raw.signals === 'object' && !Array.isArray(raw.signals)) {
-    for (const k of Object.keys(STRINGS.lessonSignals)) {
-      const n = raw.signals[k];
-      if (Number.isInteger(n) && n > 0) signals.push({ signal: k, n: n });
+  async function loadData(url, fetchFn, stamp) {
+    let res;
+    try {
+      res = await fetchFn(cacheBust(url, stamp), { cache: "no-store" });
+    } catch (e) {
+      return { ok: false, kind: "fetch", url };
     }
-    signals.sort((a, b) => b.n - a.n);
+    if (!res || !res.ok) return { ok: false, kind: "fetch", url };
+    let doc;
+    try {
+      doc = await res.json();
+    } catch (e) {
+      return { ok: false, kind: "parse", url };
+    }
+    const v = validateDoc(doc);
+    if (!v.ok) return Object.assign({ url }, v);
+    return { ok: true, doc, url };
   }
-  return { kind: raw.kind, subject: raw.subject, n: raw.evidence_count, first: raw.first_seen, last: raw.last_seen,
-    draft: draft, sources: sources, signals: signals };
-}
-
-function lessonSource(it) {
-  const where = it.sources && it.sources.length
-    ? ' (' + listWords(it.sources.map((x) => STRINGS.lessonSurfaces[x])) + ')' : '';
-  const why = it.signals.map((x) => STRINGS.lessonSignalCount(STRINGS.lessonSignals[x.signal], x.n)).join(', ');
-  return [h('div', null, STRINGS.lessonTranscripts + where), why ? h('div', { class: 'reason' }, why) : null];
-}
-
-function lessonStatus(it) {
-  if (it.kind !== 'new-skill') return STRINGS.lessonWaiting;
-  if (!it.draft) return STRINGS.lessonNotDrafted;
-  return [link(it.draft.url, STRINGS.lessonDraft(it.draft.number)), ' (' + STRINGS.lessonDraftStates[it.draft.state] + ')'];
-}
-
-function lessonLeftOut(lo) {
-  const n = (k) => (lo && Number.isInteger(lo[k]) && lo[k] > 0 ? lo[k] : 0);
-  const parts = [];
-  if (n('memory_note')) parts.push(STRINGS.lessonLeftMemory(n('memory_note')));
-  if (n('agent_check')) parts.push(STRINGS.lessonLeftChecks(n('agent_check')));
-  if (n('private')) parts.push(STRINGS.lessonLeftPrivate(n('private')));
-  return (parts.length ? STRINGS.lessonLeftOut(listWords(parts)) + ' ' : '') + STRINGS.lessonNoText;
-}
-
-const ISSUE_REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
-
-/* One memory promotion or skill proposal issue, or null when it is off the
-   shape explorer_data.py publishes. */
-function lessonIssue(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonIssueSources, raw.source)) return null;
-  if (typeof raw.repo !== 'string' || !ISSUE_REPO.test(raw.repo) || !Number.isInteger(raw.number) || raw.number < 1) return null;
-  if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, raw.state) || raw.state === 'merged') return null;
-  if (!isFinite(lessonDayMs(raw.opened))) return null;
-  const url = githubLink(raw.url);
-  if (!url) return null;
-  const count = Number.isInteger(raw.count) && raw.count >= 0 ? raw.count : null;
-  const target = typeof raw.target === 'string' && raw.target ? raw.target : null;
-  if (raw.source === 'proposal' && !target) return null;
-  return { source: raw.source, repo: raw.repo, number: raw.number, state: raw.state, opened: raw.opened,
-    count: count, target: target, url: url };
-}
-
-function lessonIssueTitle(it) {
-  if (it.source === 'proposal') return clean(STRINGS.lessonNewSkill(it.target));
-  if (it.target === 'agent-checks') return clean(STRINGS.lessonMemoryChecks(it.count, it.repo));
-  return clean(STRINGS.lessonMemoryFacts(it.count, it.target, it.repo));
-}
-
-/* The skills view lists new-skill and skill:* items and the issue lessons,
-   the guidance view guidance:* ones. */
-function lessonsView(doc, mode) {
-  const L = doc.lessons;
-  const head = h('h2', null, STRINGS.lessonsHeading);
-  if (!L || typeof L !== 'object') {
-    return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
+  function webSource(fetchFn, search, stamp) {
+    return {
+      start({ onDoc, onFail }) {
+        const pick = dataUrlFromSearch(search);
+        if (pick.error) {
+          onFail({ kind: "badurl", url: pick.url });
+          return;
+        }
+        loadData(pick.url, fetchFn, stamp).then((res) => {
+          if (!res.ok) {
+            onFail(res);
+            return;
+          }
+          onDoc(res.doc, pick.url);
+        });
+      }
+    };
   }
-  const miner = isFinite(lessonDayMs(L.date)) && Array.isArray(L.items);
-  const issues = mode === 'guidance' || !Array.isArray(L.issues) ? [] : L.issues.map(lessonIssue).filter(Boolean);
-  if (!miner && !issues.length) {
-    return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
-  }
-  const refMs = parseTime(doc.generated_at);
-  const headings = {};
-  ((doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : []).forEach((s) => {
-    if (s && typeof s.id === 'string' && typeof s.heading === 'string') headings[s.id] = s.heading;
-  });
-  const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === 'guidance'
-    ? it.subject.startsWith('guidance:')
-    : it.kind === 'new-skill' || it.subject.startsWith('skill:')));
-  const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
-  const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
-  const minerRows = items.map((it) => h('tr', null,
-    h('td', null, lessonTitle(it.subject, headings)), h('td', null, STRINGS.lessonKinds[it.kind]),
-    h('td', null, lessonSource(it)),
-    h('td', { class: 'num' }, STRINGS.lessonSeen(it.n)), h('td', { class: 'num' }, day(it.first)),
-    h('td', { class: 'num' }, day(it.last)), h('td', null, lessonStatus(it))));
-  const issueRows = issues.map((it) => h('tr', null,
-    h('td', null, lessonIssueTitle(it)), h('td', null, STRINGS.lessonIssueKinds[it.source]),
-    h('td', null, STRINGS.lessonIssueSources[it.source]),
-    h('td', { class: 'num' }, STRINGS.lessonNoValue), h('td', { class: 'num' }, day(it.opened)),
-    h('td', { class: 'num' }, STRINGS.lessonNoValue),
-    h('td', null, link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')')));
-  const rows = minerRows.concat(issueRows);
-  const table = rows.length ? h('div', { class: 'tablewrap' }, h('table', null,
-    h('thead', null, h('tr', null, cols.map((c) => h('th', null, c)))), h('tbody', null, rows)))
-    : h('p', null, mode === 'guidance' ? STRINGS.lessonsEmptyGuidance : STRINGS.lessonsEmptySkills);
-  return h('section', null, head,
-    h('p', { class: 'lead' }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone), table,
-    miner ? h('p', { class: 'note', style: 'margin-top:8px' }, lessonLeftOut(L.left_out)) : null);
-}
 
-function toolbar(mode, sortBy, handlers) {
-  const hd = handlers || {};
-  const seg = (label, opts) => h('div', { class: 'toolbar' }, h('span', { class: 'note' }, label),
-    h('div', { class: 'seg', role: 'group', 'aria-label': label }, opts.map((o) =>
-      h('button', { type: 'button', 'aria-pressed': o.on ? 'true' : 'false', onclick: o.fn || null }, o.text))));
-  return seg(STRINGS.modeLabel, [
-    { text: STRINGS.modeSkills, on: mode === 'skills', fn: hd.skills },
-    { text: STRINGS.modeGuidance, on: mode === 'guidance', fn: hd.guidance }]);
-}
-
-function buildPage(doc, mode, opts) {
-  const o = opts || {};
-  const refMs = parseTime(doc.generated_at);
-  const newest = parseTime(doc.newest_run);
-  const top = [
-    h('h1', null, STRINGS.title),
-    h('p', { class: 'asof' }, STRINGS.dataAsOf(fmtDateTime(refMs)), ' ', isFinite(newest) ? STRINGS.newestRun(fmtDateTime(newest)) : STRINGS.noRunsYet),
-    toolbar(mode, o.sortBy, o.handlers),
-    o.notice ? h('p', { class: 'panel failure' }, o.notice) : null,
-    introView(mode)
-  ];
-  let body;
-  if (mode === 'guidance') {
-    const whole = wholeGuidance(doc);
-    const items = sectionItems(doc, o.sortBy);
-    const hd = o.handlers || {};
-    body = [
-      h('section', { class: 'headline' }, h('h2', null, STRINGS.wholeHeading),
-        h('div', { class: 'panel' },
-          h('div', { class: 'head', style: 'display:flex;gap:8px;justify-content:space-between;align-items:flex-start' },
-            h('p', { class: 'answer' }, STRINGS.wholeAnswer[whole.chip]), chip(whole.chip, STRINGS.wholeRule)),
-          h('p', { class: 'note' }, STRINGS.wholeNote),
-          h('p', { class: 'sent' }, clean(whole.sentence)),
-          legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-          trendChart(whole.trend, refMs))),
-      h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
-        chipSummary(items, mode),
-        h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
-          h('div', { class: 'seg', role: 'group', 'aria-label': STRINGS.sortLabel },
-            h('button', { type: 'button', 'aria-pressed': o.sortBy !== 'size' && o.sortBy !== 'value' ? 'true' : 'false', onclick: hd.sortNext || null }, STRINGS.sortNext),
-            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'value' ? 'true' : 'false', onclick: hd.sortValue || null }, STRINGS.sortValue),
-            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
-        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
-      lessonsView(doc, mode),
-      removedView(doc)
+  // src/views/trend.js
+  function trendChart(points, refMs) {
+    if (!points.length) return h("p", { class: "trend-cap" }, STRINGS.trendNone);
+    if (points.length === 1) {
+      const p = points[0];
+      return h("p", { class: "trend-cap" }, STRINGS.trendOne(fmtDay(p.start + 1e3, refMs), fmtGain(p.gain)));
+    }
+    const W = 300, H = 124, XL = 34, XR = 292, YT = 10, YB = 102;
+    const m = Math.max(...points.map((p) => Math.abs(p.gain * 100)));
+    const top = Math.max(5, Math.ceil(m / 5) * 5);
+    const oldest = points[0], newest = points[points.length - 1];
+    const wOld = oldest.week, wNew = newest.week;
+    const x = (w) => wOld === wNew ? XR : XL + (wOld - w) / (wOld - wNew) * (XR - XL);
+    const y = (g) => YT + (top - g * 100) / (2 * top) * (YB - YT);
+    const yMid = y(0);
+    const lab = { "font-size": 11, fill: "var(--muted)" };
+    const kids = [
+      h("line", { x1: XL, x2: XR, y1: YT, y2: YT, stroke: "var(--grid)", "stroke-dasharray": "3 3", "stroke-width": 1 }),
+      h("line", { x1: XL, x2: XR, y1: YB, y2: YB, stroke: "var(--grid)", "stroke-dasharray": "3 3", "stroke-width": 1 }),
+      h("line", { x1: XL, x2: XR, y1: yMid, y2: yMid, stroke: "var(--axis)", "stroke-width": 1 }),
+      h("text", { ...lab, x: 28, y: YT, "text-anchor": "end", "dominant-baseline": "middle" }, "+" + top),
+      h("text", { ...lab, x: 28, y: yMid, "text-anchor": "end", "dominant-baseline": "middle" }, "0"),
+      h("text", { ...lab, x: 28, y: YB, "text-anchor": "end", "dominant-baseline": "middle" }, "−" + top),
+      h("text", { ...lab, x: XL, y: 118, "text-anchor": "start" }, fmtDay(oldest.start + 1e3, refMs)),
+      h("text", { ...lab, x: XR, y: 118, "text-anchor": "end" }, fmtDay(newest.start + 1e3, refMs)),
+      h("polyline", {
+        points: points.map((p) => x(p.week).toFixed(1) + "," + y(p.gain).toFixed(1)).join(" "),
+        fill: "none",
+        stroke: "var(--s1)",
+        "stroke-width": 2,
+        "stroke-linejoin": "round",
+        "stroke-linecap": "round"
+      })
     ];
-  } else {
-    const items = skillItems(doc);
-    const u = doc.usage;
-    body = [h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
-      u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
-      chipSummary(items, mode),
-      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
-      lessonsView(doc, mode),
-      removedSkillsView(doc)];
+    points.forEach((p, i) => {
+      const last = i === points.length - 1;
+      const cx = x(p.week).toFixed(1), cy = y(p.gain).toFixed(1);
+      kids.push(h("circle", {
+        cx,
+        cy,
+        r: last ? 4.5 : 3.5,
+        fill: "var(--s1)",
+        stroke: "var(--surface)",
+        "stroke-width": 1.5,
+        "pointer-events": "none"
+      }));
+      kids.push(h("circle", {
+        cx,
+        cy,
+        r: 10,
+        fill: "transparent",
+        class: "mark",
+        tabindex: 0,
+        "data-tip": STRINGS.trendTip(fmtDay(p.start + 1e3, refMs), fmtGain(p.gain)),
+        "data-tip-pos": "below"
+      }));
+    });
+    return h(
+      "div",
+      null,
+      h("svg", { viewBox: "0 0 " + W + " " + H, class: "spark", role: "img", "aria-label": STRINGS.trendCaption }, kids),
+      h("p", { class: "trend-cap" }, STRINGS.trendCaption)
+    );
   }
-  return h('div', null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
-}
 
-function buildFailure(result, mode) {
-  let msg;
-  if (result.kind === 'schema') msg = STRINGS.failSchema(result.got);
-  else if (result.kind === 'parse') msg = STRINGS.failParse;
-  else if (result.kind === 'badurl') msg = STRINGS.failBadUrl;
-  else msg = STRINGS.failFetch;
-  return h('div', null,
-    h('h1', null, STRINGS.title),
-    h('div', { class: 'panel failure', role: 'alert' },
-      h('h2', { style: 'margin-top:0' }, STRINGS.failHeading),
-      h('p', null, msg),
-      h('p', null, STRINGS.failFile(result.url || DEFAULT_DATA_URL)),
-      h('p', null, STRINGS.failWhat)));
-}
+  // src/core/charts.js
+  function barPath(x, y, w, hgt, r) {
+    const rr = Math.min(r, w, hgt / 2);
+    if (w <= 0) return "";
+    return "M" + x + "," + y + "H" + (x + w - rr) + "A" + rr + "," + rr + " 0 0 1 " + (x + w) + "," + (y + rr) + "V" + (y + hgt - rr) + "A" + rr + "," + rr + " 0 0 1 " + (x + w - rr) + "," + (y + hgt) + "H" + x + "Z";
+  }
+  function barChart(rows, label) {
+    const W = 330, L = 112, R = 230, BH = 12, GAP = 8, TOP = 4;
+    const H = TOP + rows.length * (BH + GAP) + 2;
+    const span = R - L;
+    const kids = [];
+    kids.push(h("line", { x1: L, x2: L, y1: 0, y2: H - 2, stroke: "var(--base)", "stroke-width": 1 }));
+    rows.forEach((row, i) => {
+      const y = TOP + i * (BH + GAP);
+      const rate = row.t > 0 ? row.p / row.t : 0;
+      const w = Math.max(0, Math.min(1, rate)) * span;
+      const a = fmtCount(row.p), b = fmtCount(row.t);
+      kids.push(h("text", { x: 0, y: y + BH - 2, "font-size": 12, fill: "var(--ink-2)" }, row.label));
+      kids.push(h("rect", {
+        x: L,
+        y: y - 2,
+        width: span,
+        height: BH + 4,
+        fill: "transparent",
+        class: "mark",
+        tabindex: 0,
+        "data-tip": STRINGS.barTip(row.label, a, b, fmtRate(row.p, row.t))
+      }));
+      if (w > 0) kids.push(h("path", { d: barPath(L, y, w, BH, 4), fill: row.color, "pointer-events": "none" }));
+      kids.push(h("text", { x: L + w + 4, y: y + BH - 2, "font-size": 12, fill: "var(--ink)", "pointer-events": "none" }, a + " of " + b));
+    });
+    return h("svg", { viewBox: "0 0 " + W + " " + H, class: "chart", role: "img", "aria-label": label }, kids);
+  }
+  function chip(kind, ruleText) {
+    const rule = ruleText || STRINGS.chipRules[kind];
+    return h(
+      "span",
+      {
+        class: "chip " + kind,
+        title: STRINGS.chips[kind] + ": " + rule,
+        tabindex: 0,
+        "aria-label": STRINGS.chips[kind] + ". " + rule
+      },
+      h("span", { class: "ic", "aria-hidden": "true" }),
+      STRINGS.chips[kind]
+    );
+  }
+  function legend(items) {
+    return h("div", { class: "legend" }, items.map((it) => h("span", null, h("span", { class: "sw", style: "background:" + it.color }), it.label)));
+  }
 
-/* ------------------------------------------------------------------ */
-/* Browser start-up.                                                  */
-/* ------------------------------------------------------------------ */
-if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof module === 'undefined') {
-  (function boot() {
-    const app = document.getElementById('app');
-    const tip = document.getElementById('tip');
-    const state = { mode: modeFromSearch(location.search), sortBy: 'next', doc: null, url: DEFAULT_DATA_URL, notice: null };
-    try { const s = localStorage.getItem('explorer-sort'); if (s === 'size' || s === 'value' || s === 'next') state.sortBy = s; } catch (e) { /* storage unavailable */ }
+  // src/views/models.js
+  function modelCharts(pooled, subject) {
+    return pooled.models.filter((m) => m.n > 0 || m.nAbl > 0).map((m) => {
+      const name = friendlyModel(m.model);
+      let rows;
+      if (subject === "guidance") {
+        rows = [];
+        if (m.n > 0) {
+          rows.push({ label: STRINGS.barSection, p: m.wp, t: m.wt, color: "var(--s1)" });
+          rows.push({ label: STRINGS.barNone, p: m.op, t: m.ot, color: "var(--s2)" });
+        }
+        if (m.nAbl > 0) {
+          rows.push({ label: STRINGS.barAll, p: m.fp, t: m.ft, color: "var(--axis)" });
+          rows.push({ label: STRINGS.barAblated, p: m.ap, t: m.at, color: "var(--s3)" });
+        }
+      } else if (subject === "whole") {
+        rows = [
+          { label: STRINGS.barWholeFull, p: m.wp, t: m.wt, color: "var(--s1)" },
+          { label: STRINGS.barWholeNone, p: m.op, t: m.ot, color: "var(--s2)" }
+        ];
+      } else {
+        rows = [
+          { label: STRINGS.barWith, p: m.wp, t: m.wt, color: "var(--s1)" },
+          { label: STRINGS.barWithout, p: m.op, t: m.ot, color: "var(--s2)" }
+        ];
+      }
+      return h(
+        "div",
+        null,
+        h("p", { class: "model" }, name + " (" + STRINGS.pairedRuns(Math.max(m.n, m.nAbl)) + (m.judgeWith !== null && m.judgeWithout !== null ? "; " + STRINGS.judgeScores(m.judgeWith.toFixed(1), m.judgeWithout.toFixed(1)) : "") + ")"),
+        barChart(rows, STRINGS.chartLabel(name))
+      );
+    });
+  }
+  function hasAlone(pooled) {
+    return pooled.models.some((m) => m.n > 0);
+  }
+  function legendFor(subject, pooled) {
+    if (subject === "guidance") {
+      const items = hasAlone(pooled) ? [{ label: STRINGS.barSection, color: "var(--s1)" }, { label: STRINGS.barNone, color: "var(--s2)" }] : [];
+      if (pooled.models.some((m) => m.nAbl > 0)) {
+        items.push({ label: STRINGS.barAll, color: "var(--axis)" });
+        items.push({ label: STRINGS.barAblated, color: "var(--s3)" });
+      }
+      return legend(items);
+    }
+    if (subject === "whole") return legend([{ label: STRINGS.barWholeFull, color: "var(--s1)" }, { label: STRINGS.barWholeNone, color: "var(--s2)" }]);
+    return legend([{ label: STRINGS.barWith, color: "var(--s1)" }, { label: STRINGS.barWithout, color: "var(--s2)" }]);
+  }
+  function hasData(pooled) {
+    return pooled.models.some((m) => m.n > 0 || m.nAbl > 0);
+  }
 
+  // src/views/range.js
+  function estimateLine(which, conf, level, pairs, cap) {
+    const line = (text) => h("p", { class: "meta", "data-est": which }, text);
+    if (conf >= level) return { node: line(STRINGS.confReached(which)), projected: false };
+    if (!Number.isInteger(pairs) || pairs <= 0) return { node: null, projected: false };
+    if (conf <= 0) return { node: line(STRINGS.confNoMove(which)), projected: false };
+    const more = Math.max(1, Math.ceil(pairs * -Math.log(1 - level) / -Math.log(1 - conf)) - pairs);
+    if (Number.isInteger(cap) && cap > 0 && pairs + more > cap)
+      return { node: line(STRINGS.confPastCap(which, cap)), projected: true };
+    return { node: line(STRINGS.confMore(which, more)), projected: true };
+  }
+  function clipName(text, n) {
+    const t = String(text);
+    return t.length > n ? t.slice(0, n - 1) + "…" : t;
+  }
+  function signedPoints(x) {
+    const n = Math.round(x);
+    return n > 0 ? "+" + n : n < 0 ? "−" + -n : "0";
+  }
+  var RANGE = { W: 340, AX0: 116, AX1: 282, MX: 292, MW: 42, TOP: 16, ROW: 32, TASK_CHARS: 19 };
+  var rangeX = (v) => RANGE.AX0 + (Math.max(-100, Math.min(100, v)) + 100) / 200 * (RANGE.AX1 - RANGE.AX0);
+  var RANGE_COLORS = { keeps: "var(--good)", "removes-ready": "var(--s2)", "no-room": "var(--axis)", paused: "var(--axis)", open: "var(--s1)" };
+  function rangeChart(rows, margin, cap) {
+    const fin = (x) => typeof x === "number" && isFinite(x);
+    rows = rows.filter((r) => r && fin(r.gain) && fin(r.low) && fin(r.high));
+    if (!rows.length) return null;
+    const { W, AX0, AX1, MX, MW, TOP, ROW } = RANGE;
+    const H = TOP + rows.length * ROW + 18;
+    const bottom = TOP + rows.length * ROW;
+    const lab = { "font-size": 10, fill: "var(--muted)" };
+    const kids = [];
+    for (const v of [-100, -50, 0, 50, 100]) {
+      const x = rangeX(v);
+      if (v !== 0) kids.push(h("line", { x1: x, x2: x, y1: TOP - 2, y2: bottom, stroke: "var(--grid)", "stroke-width": 1 }));
+      kids.push(h("text", { ...lab, x, y: H - 3, "text-anchor": "middle", "data-axis": v }, signedPoints(v)));
+    }
+    kids.push(h("line", { x1: rangeX(0), x2: rangeX(0), y1: TOP - 2, y2: bottom, stroke: "var(--axis)", "stroke-width": 1.5, "data-line": "zero" }));
+    const mx = rangeX(margin);
+    kids.push(h("line", { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "3 3", "data-line": "margin" }));
+    kids.push(h("text", { ...lab, x: mx, y: TOP - 5, "text-anchor": "middle" }, "+" + margin));
+    kids.push(h("text", { ...lab, x: 0, y: H - 3 }, STRINGS.rangeAxis));
+    kids.push(h("text", { ...lab, x: MX, y: TOP - 5 }, STRINGS.rangeRuns));
+    rows.forEach((r, i) => {
+      const y = TOP + i * ROW;
+      const model = friendlyModel(r.model);
+      const task = typeof r.task === "string" && r.task ? clean(r.task) : null;
+      kids.push(h("text", { x: 0, y: y + 12, "font-size": 11, fill: "var(--ink-2)" }, model));
+      if (task) kids.push(h("text", { x: 0, y: y + 25, "font-size": 10, fill: "var(--muted)", "data-tip": task }, clipName(task, RANGE.TASK_CHARS)));
+      const x0 = rangeX(Math.min(r.low, r.high)), x1 = rangeX(Math.max(r.low, r.high));
+      const width = Math.max(2, x1 - x0);
+      const color = RANGE_COLORS[r.status] || RANGE_COLORS.open;
+      kids.push(h("rect", {
+        class: "range-bar",
+        x: x0.toFixed(2),
+        y: y + 10,
+        width: width.toFixed(2),
+        height: 10,
+        rx: Math.min(5, width / 2).toFixed(2),
+        fill: color,
+        "fill-opacity": r.status === "open" || !RANGE_COLORS[r.status] ? 0.55 : 1,
+        "data-status": r.status,
+        "pointer-events": "none"
+      }));
+      kids.push(h("circle", {
+        class: "gain-dot",
+        cx: rangeX(r.gain).toFixed(2),
+        cy: y + 15,
+        r: 4,
+        fill: "var(--ink)",
+        stroke: "var(--surface)",
+        "stroke-width": 1.5,
+        "pointer-events": "none"
+      }));
+      const pairs = Number.isInteger(r.pairs) ? r.pairs : 0;
+      kids.push(h("text", { x: MX, y: y + 12, "font-size": 11, fill: "var(--ink)", class: "runs" }, cap ? pairs + "/" + cap : String(pairs)));
+      if (cap) {
+        kids.push(h("rect", { x: MX, y: y + 17, width: MW, height: 4, rx: 2, fill: "var(--base)" }));
+        const fw = MW * Math.min(1, pairs / cap);
+        if (fw > 0) kids.push(h("rect", { class: "runs-fill", x: MX, y: y + 17, width: fw.toFixed(2), height: 4, rx: 2, fill: "var(--ink-2)" }));
+        kids.push(h("line", { x1: MX + MW, x2: MX + MW, y1: y + 15, y2: y + 23, stroke: "var(--ink)", "stroke-width": 1 }));
+      }
+      kids.push(h("rect", {
+        x: AX0 - 4,
+        y: y + 4,
+        width: AX1 - AX0 + 8,
+        height: 22,
+        fill: "transparent",
+        class: "mark",
+        tabindex: 0,
+        "data-tip-pos": "below",
+        "data-tip": STRINGS.rangeTip(
+          model,
+          task,
+          signedPoints(r.gain),
+          signedPoints(r.low),
+          signedPoints(r.high),
+          STRINGS.rangeTipRuns(pairs, cap),
+          r.votes !== false
+        )
+      }));
+    });
+    return h("svg", {
+      viewBox: "0 0 " + W + " " + H,
+      class: "chart range",
+      role: "img",
+      "aria-label": STRINGS.rangeAria(rows.length, margin)
+    }, kids);
+  }
+  function confidenceView(c, policy, subject) {
+    const ok = (x) => typeof x === "number" && isFinite(x);
+    if (!c || !ok(c.helps)) return h("p", { class: "meta" }, STRINGS.confidenceNone);
+    const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
+    const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
+    const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
+    const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : 2;
+    const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0 ? policy.max_runs_per_cell : null;
+    const whole = (x) => Math.round(x * 100) + "%";
+    const kids = [h("p", { class: "conf-h" }, STRINGS.confHeading)];
+    const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
+    if (chart) {
+      kids.push(chart);
+      kids.push(h("p", { class: "meta" }, STRINGS.rangeWhat));
+      kids.push(h("p", { class: "meta" }, STRINGS.rangeRule(margin)));
+      kids.push(h("p", { class: "meta" }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
+    }
+    const keepEst = estimateLine(STRINGS.confKeepWord, c.helps, keep, c.keep_pairs, cap);
+    kids.push(keepEst.node);
+    let removeEst = { node: null, projected: false };
+    if (c.no_help === null) kids.push(h("p", { class: "meta" }, STRINGS.confNoRoom(margin)));
+    else if (ok(c.no_help)) {
+      removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
+      kids.push(removeEst.node);
+    }
+    if (cap && Number.isInteger(c.max_pairs)) kids.push(h("p", { class: "meta" }, STRINGS.confRuns(c.max_pairs, cap)));
+    else if (cap) kids.push(h("p", { class: "meta" }, STRINGS.confidenceCap(cap)));
+    if (keepEst.projected || removeEst.projected) kids.push(h("p", { class: "meta" }, STRINGS.confPace));
+    return h("div", { class: "conf" }, kids);
+  }
+
+  // src/views/cards.js
+  function verdictLine(v) {
+    if (v === null || v === void 0 || v === "") return null;
+    const key = String(v);
+    return h("p", { class: "meta" }, Object.prototype.hasOwnProperty.call(STRINGS.verdict, key) ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key)));
+  }
+  function nextLine(nt, refMs, kind) {
+    const n = nt && typeof nt === "object" ? nt : {};
+    let text;
+    if (typeof n.position === "number" && isFinite(n.position)) text = STRINGS.nextQueued(n.position, kind);
+    else if (isFinite(parseTime(n.due))) text = STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
+    else text = n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
+    return h("p", { class: "meta" }, text);
+  }
+  function stakesLine(st) {
+    if (!st || typeof st !== "object" || typeof st.reason !== "string") return null;
+    if (st.level === "high") return h("p", { class: "meta" }, STRINGS.stakesHigh(clean(st.reason)));
+    if (st.level === "none" && typeof st.covered_by === "string") return h("p", { class: "meta" }, STRINGS.stakesNone(clean(st.reason), clean(st.covered_by)));
+    return null;
+  }
+  function usageLine(u, window2, refMs) {
+    if (!u || typeof u.invocations !== "number" || !window2) return null;
+    return h("p", { class: "meta" }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window2.from), refMs), fmtUtcDay(parseTime(window2.to), refMs)));
+  }
+  function copiesLine(c) {
+    if (!c || !Array.isArray(c.loaded)) return null;
+    const n = { match: 0, older: 0, unknown: 0 };
+    for (const e of c.loaded) {
+      if (!e || !Number.isInteger(e.invocations)) continue;
+      const k = e.vs_main === "current" || e.vs_main === "in-window" ? "match" : e.vs_main === "older" ? "older" : "unknown";
+      n[k] += e.invocations;
+    }
+    if (n.match + n.older + n.unknown === 0) return h("p", { class: "meta" }, STRINGS.copiesNone);
+    return h("p", { class: "meta" }, STRINGS.copies(n.match, n.older, n.unknown));
+  }
+  function skillCard(it, refMs, doc) {
+    return h(
+      "article",
+      { class: "card" },
+      h("div", { class: "head" }, h("h3", null, clean(it.name)), chip(it.chip)),
+      h("p", { class: "gl" }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
+      usageLine(it.raw.usage, doc && doc.usage, refMs),
+      copiesLine(it.raw.copies),
+      nextLine(it.raw.next_test, refMs, "skill"),
+      stakesLine(it.raw.stakes),
+      h("p", { class: "sent" }, clean(it.sentence)),
+      hasData(it.pooled) ? [legendFor("skills", it.pooled), modelCharts(it.pooled, "skills"), trendChart(it.trend, refMs)] : null,
+      confidenceView(it.raw.confidence, doc && doc.policy, "skills"),
+      verdictLine(it.raw.verdict)
+    );
+  }
+  function sectionCard(it, refMs, doc) {
+    const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
+    return h(
+      "article",
+      { class: "card" },
+      h("div", { class: "head" }, h("h3", null, clean(it.raw.heading || it.id)), chip(it.chip)),
+      h("p", { class: "gl" }, gloss),
+      h("p", { class: "meta", style: "margin:0 0 6px" }, STRINGS.size(wordsFor(it.bytes))),
+      nextLine(it.raw.next_test, refMs, "section"),
+      stakesLine(it.raw.stakes),
+      h("p", { class: "sent" }, clean(it.sentence)),
+      hasAlone(it.pooled) ? h("p", { class: "meta" }, STRINGS.aloneShown) : null,
+      hasData(it.pooled) ? [legendFor("guidance", it.pooled), modelCharts(it.pooled, "guidance"), trendChart(it.trend, refMs)] : null,
+      confidenceView(it.raw.confidence, doc && doc.policy, "guidance"),
+      verdictLine(it.raw.verdict)
+    );
+  }
+  function chipSummary(items, mode) {
+    const counts = {};
+    items.forEach((i) => {
+      counts[i.chip] = (counts[i.chip] || 0) + 1;
+    });
+    const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => counts[k] + " " + STRINGS.chips[k].toLowerCase());
+    if (!parts.length) return null;
+    return h("p", { class: "summary-line" }, STRINGS.summaryCounts(parts.join(", ")));
+  }
+
+  // src/views/alerts.js
+  function alertText(a) {
+    if (a.kind === "context-drift" && typeof a.drift_since === "string") {
+      return STRINGS.alertDrift(clean(a.fixture), clean(a.repository), fmtDay(parseTime(a.drift_since)));
+    }
+    if (a.kind === "loaded-copy" && typeof a.loaded === "string" && typeof a.main === "string") {
+      return STRINGS.alertCopy(a.surface, clean(a.loaded), clean(a.main));
+    }
+    return null;
+  }
+  function alertsView(doc, mode) {
+    const want = mode === "guidance" ? "guidance" : "skill";
+    const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.subject === want);
+    const f = doc.fires_without_results;
+    const fires = f && Number.isInteger(f.without_results) && Number.isInteger(f.rejected) && (f.without_results || f.rejected) && typeof f.since === "string" ? h("p", { class: "note" }, STRINGS.firesLine(f.without_results, fmtDay(parseTime(f.since)), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected)) : null;
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.alertsHeading),
+      fires,
+      alerts.length ? h("ul", { class: "plain" }, alerts.map((a) => {
+        const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
+        const l = link(a.url, STRINGS.alertDetails);
+        return h(
+          "li",
+          null,
+          h("strong", null, kind + ": " + clean(a.name)),
+          a.model ? " (" + friendlyModel(a.model) + ")" : null,
+          a.text ? " " + clean(a.text) : alertText(a) ? " " + alertText(a) : null,
+          l ? [" ", l] : null
+        );
+      })) : h("p", null, STRINGS.alertsNone)
+    );
+  }
+
+  // src/views/lessons.js
+  var LESSON_DAY = /^\d{4}-\d{2}-\d{2}$/;
+  var lessonDayMs = (d) => typeof d === "string" && LESSON_DAY.test(d) ? Date.parse(d + "T00:00:00Z") : NaN;
+  var listWords = (parts) => parts.length < 2 ? parts.join("") : parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1];
+  function lessonTitle(subject, headings) {
+    const s = String(subject);
+    let m = /^tool-([a-z]+)(?:-(.+))?$/.exec(s);
+    if (m) {
+      const tool = m[1] === "powershell" ? "PowerShell" : m[1].charAt(0).toUpperCase() + m[1].slice(1);
+      return clean(m[2] ? STRINGS.lessonToolCommand(tool, m[2]) : STRINGS.lessonToolCalls(tool));
+    }
+    if (s.startsWith("red-ci-") && s.length > 7) return clean(STRINGS.lessonRedCi(s.slice(7)));
+    if (s.startsWith("skill:")) return clean(s.slice(6));
+    if (s.startsWith("guidance:")) {
+      const id = s.slice(9);
+      const h2 = headings && Object.prototype.hasOwnProperty.call(headings, id) ? headings[id] : null;
+      return clean(typeof h2 === "string" && h2 ? h2 : id);
+    }
+    return clean(s);
+  }
+  function lessonItem(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonKinds, raw.kind) || typeof raw.subject !== "string" || !raw.subject) return null;
+    if (!Number.isInteger(raw.evidence_count) || raw.evidence_count < 1) return null;
+    if (!isFinite(lessonDayMs(raw.first_seen)) || !isFinite(lessonDayMs(raw.last_seen))) return null;
+    let draft = null;
+    const d = raw.draft;
+    if (d && typeof d === "object" && Number.isInteger(d.number) && d.number > 0 && Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, d.state) && githubLink(d.url)) {
+      draft = { number: d.number, state: d.state, url: githubLink(d.url) };
+    }
+    const sources = Array.isArray(raw.sources) ? raw.sources.filter((x) => typeof x === "string" && Object.prototype.hasOwnProperty.call(STRINGS.lessonSurfaces, x)) : null;
+    const signals = [];
+    if (raw.signals && typeof raw.signals === "object" && !Array.isArray(raw.signals)) {
+      for (const k of Object.keys(STRINGS.lessonSignals)) {
+        const n = raw.signals[k];
+        if (Number.isInteger(n) && n > 0) signals.push({ signal: k, n });
+      }
+      signals.sort((a, b) => b.n - a.n);
+    }
+    return {
+      kind: raw.kind,
+      subject: raw.subject,
+      n: raw.evidence_count,
+      first: raw.first_seen,
+      last: raw.last_seen,
+      draft,
+      sources,
+      signals
+    };
+  }
+  function lessonSource(it) {
+    const where = it.sources && it.sources.length ? " (" + listWords(it.sources.map((x) => STRINGS.lessonSurfaces[x])) + ")" : "";
+    const why = it.signals.map((x) => STRINGS.lessonSignalCount(STRINGS.lessonSignals[x.signal], x.n)).join(", ");
+    return [h("div", null, STRINGS.lessonTranscripts + where), why ? h("div", { class: "reason" }, why) : null];
+  }
+  function lessonStatus(it) {
+    if (it.kind !== "new-skill") return STRINGS.lessonWaiting;
+    if (!it.draft) return STRINGS.lessonNotDrafted;
+    return [link(it.draft.url, STRINGS.lessonDraft(it.draft.number)), " (" + STRINGS.lessonDraftStates[it.draft.state] + ")"];
+  }
+  function lessonLeftOut(lo) {
+    const n = (k) => lo && Number.isInteger(lo[k]) && lo[k] > 0 ? lo[k] : 0;
+    const parts = [];
+    if (n("memory_note")) parts.push(STRINGS.lessonLeftMemory(n("memory_note")));
+    if (n("agent_check")) parts.push(STRINGS.lessonLeftChecks(n("agent_check")));
+    if (n("private")) parts.push(STRINGS.lessonLeftPrivate(n("private")));
+    return (parts.length ? STRINGS.lessonLeftOut(listWords(parts)) + " " : "") + STRINGS.lessonNoText;
+  }
+  var ISSUE_REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+  function lessonIssue(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonIssueSources, raw.source)) return null;
+    if (typeof raw.repo !== "string" || !ISSUE_REPO.test(raw.repo) || !Number.isInteger(raw.number) || raw.number < 1) return null;
+    if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, raw.state) || raw.state === "merged") return null;
+    if (!isFinite(lessonDayMs(raw.opened))) return null;
+    const url = githubLink(raw.url);
+    if (!url) return null;
+    const count = Number.isInteger(raw.count) && raw.count >= 0 ? raw.count : null;
+    const target = typeof raw.target === "string" && raw.target ? raw.target : null;
+    if (raw.source === "proposal" && !target) return null;
+    return {
+      source: raw.source,
+      repo: raw.repo,
+      number: raw.number,
+      state: raw.state,
+      opened: raw.opened,
+      count,
+      target,
+      url
+    };
+  }
+  function lessonIssueTitle(it) {
+    if (it.source === "proposal") return clean(STRINGS.lessonNewSkill(it.target));
+    if (it.target === "agent-checks") return clean(STRINGS.lessonMemoryChecks(it.count, it.repo));
+    return clean(STRINGS.lessonMemoryFacts(it.count, it.target, it.repo));
+  }
+  function lessonsView(doc, mode) {
+    const L = doc.lessons;
+    const head = h("h2", null, STRINGS.lessonsHeading);
+    if (!L || typeof L !== "object") {
+      return h("section", null, head, h("p", { class: "note" }, STRINGS.lessonsNone));
+    }
+    const miner = isFinite(lessonDayMs(L.date)) && Array.isArray(L.items);
+    const issues = mode === "guidance" || !Array.isArray(L.issues) ? [] : L.issues.map(lessonIssue).filter(Boolean);
+    if (!miner && !issues.length) {
+      return h("section", null, head, h("p", { class: "note" }, STRINGS.lessonsNone));
+    }
+    const refMs = parseTime(doc.generated_at);
+    const headings = {};
+    (doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : []).forEach((s) => {
+      if (s && typeof s.id === "string" && typeof s.heading === "string") headings[s.id] = s.heading;
+    });
+    const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === "guidance" ? it.subject.startsWith("guidance:") : it.kind === "new-skill" || it.subject.startsWith("skill:")));
+    const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
+    const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
+    const minerRows = items.map((it) => h(
+      "tr",
+      null,
+      h("td", null, lessonTitle(it.subject, headings)),
+      h("td", null, STRINGS.lessonKinds[it.kind]),
+      h("td", null, lessonSource(it)),
+      h("td", { class: "num" }, STRINGS.lessonSeen(it.n)),
+      h("td", { class: "num" }, day(it.first)),
+      h("td", { class: "num" }, day(it.last)),
+      h("td", null, lessonStatus(it))
+    ));
+    const issueRows = issues.map((it) => h(
+      "tr",
+      null,
+      h("td", null, lessonIssueTitle(it)),
+      h("td", null, STRINGS.lessonIssueKinds[it.source]),
+      h("td", null, STRINGS.lessonIssueSources[it.source]),
+      h("td", { class: "num" }, STRINGS.lessonNoValue),
+      h("td", { class: "num" }, day(it.opened)),
+      h("td", { class: "num" }, STRINGS.lessonNoValue),
+      h("td", null, link(it.url, STRINGS.lessonIssueStatus(it.number)), " (" + STRINGS.lessonDraftStates[it.state] + ")")
+    ));
+    const rows = minerRows.concat(issueRows);
+    const table = rows.length ? h("div", { class: "tablewrap" }, h(
+      "table",
+      null,
+      h("thead", null, h("tr", null, cols.map((c) => h("th", null, c)))),
+      h("tbody", null, rows)
+    )) : h("p", null, mode === "guidance" ? STRINGS.lessonsEmptyGuidance : STRINGS.lessonsEmptySkills);
+    return h(
+      "section",
+      null,
+      head,
+      h("p", { class: "lead" }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone),
+      table,
+      miner ? h("p", { class: "note", style: "margin-top:8px" }, lessonLeftOut(L.left_out)) : null
+    );
+  }
+
+  // src/views/intro.js
+  function introView(mode) {
+    const paras = mode === "guidance" ? STRINGS.introGuidance : STRINGS.introSkills;
+    const terms = STRINGS.glossary.concat(mode === "guidance" ? STRINGS.glossaryGuidance : []);
+    const chipKinds = STRINGS.chipOrder.filter((k) => mode === "guidance" || k !== "alone");
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.introHeading),
+      h("div", { class: "lead" }, paras.map((p) => h("p", null, p))),
+      h(
+        "details",
+        { class: "panel", open: "" },
+        h("summary", null, STRINGS.glossaryHeading),
+        h("dl", { class: "gloss" }, terms.map((t) => [h("dt", null, t[0]), h("dd", null, t[1])])),
+        h("p", { class: "note", style: "margin-top:12px" }, STRINGS.chipGlossaryIntro),
+        h("dl", { class: "gloss" }, chipKinds.map((k) => [h("dt", null, chip(k)), h("dd", null, STRINGS.chipRules[k])]))
+      )
+    );
+  }
+
+  // src/views/toolbar.js
+  function toolbar(mode, sortBy, handlers) {
+    const hd = handlers || {};
+    const seg = (label, opts) => h(
+      "div",
+      { class: "toolbar" },
+      h("span", { class: "note" }, label),
+      h("div", { class: "seg", role: "group", "aria-label": label }, opts.map((o) => h("button", { type: "button", "aria-pressed": o.on ? "true" : "false", onclick: o.fn || null }, o.text)))
+    );
+    return seg(STRINGS.modeLabel, [
+      { text: STRINGS.modeSkills, on: mode === "skills", fn: hd.skills },
+      { text: STRINGS.modeGuidance, on: mode === "guidance", fn: hd.guidance }
+    ]);
+  }
+
+  // src/views/whole.js
+  function wholeView(whole, refMs) {
+    return h(
+      "section",
+      { class: "headline" },
+      h("h2", null, STRINGS.wholeHeading),
+      h(
+        "div",
+        { class: "panel" },
+        h(
+          "div",
+          { class: "head", style: "display:flex;gap:8px;justify-content:space-between;align-items:flex-start" },
+          h("p", { class: "answer" }, STRINGS.wholeAnswer[whole.chip]),
+          chip(whole.chip, STRINGS.wholeRule)
+        ),
+        h("p", { class: "note" }, STRINGS.wholeNote),
+        h("p", { class: "sent" }, clean(whole.sentence)),
+        legendFor("whole", whole.pooled),
+        h("div", { class: "cols" }, modelCharts(whole.pooled, "whole")),
+        trendChart(whole.trend, refMs)
+      )
+    );
+  }
+
+  // src/views/roster.js
+  function rosterView(doc) {
+    const r = doc.roster || {};
+    const arms = Array.isArray(r.arms) ? r.arms : [];
+    const items = arms.filter(Boolean).map((a) => h(
+      "li",
+      null,
+      h("strong", null, STRINGS.rosterArm + ": " + friendlyModel(a.model)),
+      a.reason ? h("div", { class: "reason" }, clean(a.reason)) : null
+    ));
+    if (r.judge && r.judge.model) items.push(h(
+      "li",
+      null,
+      h("strong", null, STRINGS.rosterJudge + ": " + friendlyModel(r.judge.model)),
+      r.judge.reason ? h("div", { class: "reason" }, clean(r.judge.reason)) : null
+    ));
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.rosterHeading),
+      h("p", { class: "lead" }, STRINGS.rosterIntro),
+      items.length ? h("ul", { class: "plain" }, items) : h("p", null, STRINGS.rosterEmpty)
+    );
+  }
+
+  // src/views/coverage.js
+  function coverageView(doc, mode) {
+    const list = mode === "guidance" ? (doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : []).filter(Boolean).map((s) => ({ name: s.heading || s.id, status: s.status, reason: s.skip_reason })) : (Array.isArray(doc.skills) ? doc.skills : []).filter(Boolean).map((s) => ({ name: s.name, status: s.status, reason: s.skip_reason }));
+    const group = (status, title) => {
+      const rows = list.filter((x) => x.status === status).sort((a, b) => String(a.name) < String(b.name) ? -1 : 1);
+      return h(
+        "div",
+        { class: "panel" },
+        h("h3", null, title + " (" + rows.length + ")"),
+        rows.length ? h("ul", { class: "plain" }, rows.map((x) => h(
+          "li",
+          null,
+          clean(x.name),
+          status === "skipped" && x.reason ? h("div", { class: "reason" }, clean(x.reason)) : null
+        ))) : h("p", { class: "note" }, STRINGS.noneListed)
+      );
+    };
+    const cov = doc.coverage;
+    const census = mode !== "guidance" && cov && typeof cov.total === "number" ? h("p", { class: "note" }, STRINGS.census(fmtDay(parseTime(cov.as_of)), fmtCount(cov.total), fmtCount(cov.covered), fmtCount(cov.skipped), fmtCount(cov.gap))) : null;
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.coverageHeading),
+      h("p", { class: "lead" }, mode === "guidance" ? STRINGS.coverageIntroGuidance : STRINGS.coverageIntroSkills),
+      census,
+      h("div", { class: "cols" }, group("covered", STRINGS.covered), group("skipped", STRINGS.skipped), group("gap", STRINGS.gap))
+    );
+  }
+
+  // src/views/engineers.js
+  function engineersView(doc, mode, url) {
+    const guidance = mode === "guidance";
+    const subjects = guidance ? (doc.guidance && doc.guidance.sections || []).filter(Boolean).map((s) => ({ name: s.id, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason, alone: s.alone_verdict })) : (doc.skills || []).filter(Boolean).map((s) => ({ name: s.name, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason }));
+    const refMs = parseTime(doc.generated_at);
+    const cell = (a) => a ? fmtCount(a.passed) + "/" + fmtCount(a.total) : "";
+    const head = [STRINGS.colName, STRINGS.colFixture, STRINGS.colModel, STRINGS.colWhen, STRINGS.colCli].concat(guidance ? [STRINGS.colSection, STRINGS.colNone, STRINGS.colFull, STRINGS.colAblated] : [STRINGS.colWith, STRINGS.colWithout]).concat([STRINGS.colReport]);
+    const rows = [];
+    subjects.forEach((s) => (Array.isArray(s.runs) ? s.runs : []).forEach((raw) => {
+      const r = normRun(raw, guidance ? "guidance" : "skills");
+      if (!r) return;
+      const l = link(r.url, STRINGS.report);
+      rows.push(h(
+        "tr",
+        null,
+        h("td", null, clean(s.name)),
+        h("td", null, clean(r.fixture)),
+        h("td", null, friendlyModel(r.model)),
+        h("td", { class: "num" }, fmtDay(r.at, refMs)),
+        h("td", { class: "num" }, clean(r.cli)),
+        guidance ? [h("td", { class: "num" }, cell(r.with)), h("td", { class: "num" }, cell(r.without)), h("td", { class: "num" }, cell(r.full)), h("td", { class: "num" }, cell(r.ablated))] : [h("td", { class: "num" }, cell(r.with)), h("td", { class: "num" }, cell(r.without))],
+        h("td", null, l)
+      ));
+    }));
+    const verdicts = subjects.filter((s) => s.verdict || s.reason).map((s) => h(
+      "tr",
+      null,
+      h("td", null, clean(s.name)),
+      h("td", null, clean(s.verdict) + (s.alone ? " / " + clean(s.alone) : "") + (s.reason ? ": " + clean(s.reason) : ""))
+    ));
+    const src = doc.source || {};
+    const short = (x) => /^[0-9a-f]{7,40}$/.test(String(x || "")) ? String(x).slice(0, 12) : STRINGS.unknown;
+    return h("section", null, h(
+      "details",
+      { class: "panel" },
+      h("summary", null, STRINGS.engineersHeading),
+      h("p", { class: "note" }, STRINGS.engineersIntro),
+      h("p", { class: "note" }, STRINGS.dataFile(url)),
+      src.repository ? h("p", { class: "note" }, STRINGS.source(clean(src.repository), short(src.repository_commit), short(src.results_commit))) : null,
+      h("div", { class: "tablewrap" }, h("table", null, h("thead", null, h("tr", null, head.map((c) => h("th", null, c)))), h("tbody", null, rows))),
+      verdicts.length ? h("div", { class: "tablewrap", style: "margin-top:12px" }, h(
+        "table",
+        null,
+        h("thead", null, h("tr", null, h("th", null, STRINGS.colName), h("th", null, STRINGS.colVerdict))),
+        h("tbody", null, verdicts)
+      )) : null
+    ));
+  }
+
+  // src/views/removed.js
+  function removedView(doc) {
+    const removed = (doc.guidance && Array.isArray(doc.guidance.removed) ? doc.guidance.removed : []).filter((r) => r && typeof r.id === "string" && typeof r.date === "string");
+    if (!removed.length) return null;
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.removedHeading),
+      h("p", { class: "note" }, STRINGS.removedNote),
+      h("ul", null, removed.map((r) => h(
+        "li",
+        null,
+        h("strong", null, clean(r.id)),
+        " ",
+        clean(r.date),
+        " ",
+        link(r.reverse_url, STRINGS.removedLink)
+      )))
+    );
+  }
+  function removedSkillsView(doc) {
+    const removed = (Array.isArray(doc.removed_skills) ? doc.removed_skills : []).filter((r) => r && typeof r.name === "string" && typeof r.date === "string");
+    if (!removed.length) return null;
+    return h(
+      "section",
+      null,
+      h("h2", null, STRINGS.removedSkillsHeading),
+      h("p", { class: "note" }, STRINGS.removedSkillsNote),
+      h("ul", null, removed.map((r) => h(
+        "li",
+        null,
+        h("strong", null, clean(r.name)),
+        " ",
+        clean(r.date),
+        " ",
+        link(r.reverse_url, STRINGS.removedLink)
+      )))
+    );
+  }
+
+  // src/views/page.js
+  function buildPage(doc, mode, opts) {
+    const o = opts || {};
+    const refMs = parseTime(doc.generated_at);
+    const newest = parseTime(doc.newest_run);
+    const top = [
+      h("h1", null, STRINGS.title),
+      h("p", { class: "asof" }, STRINGS.dataAsOf(fmtDateTime(refMs)), " ", isFinite(newest) ? STRINGS.newestRun(fmtDateTime(newest)) : STRINGS.noRunsYet),
+      toolbar(mode, o.sortBy, o.handlers),
+      o.notice ? h("p", { class: "panel failure" }, o.notice) : null,
+      introView(mode)
+    ];
+    let body;
+    if (mode === "guidance") {
+      const whole = wholeGuidance(doc);
+      const items = sectionItems(doc, o.sortBy);
+      const hd = o.handlers || {};
+      body = [
+        wholeView(whole, refMs),
+        h(
+          "section",
+          null,
+          h("h2", null, STRINGS.sectionsHeading),
+          h("p", { class: "note" }, STRINGS.sectionsNote),
+          chipSummary(items, mode),
+          h(
+            "div",
+            { class: "toolbar" },
+            h("span", { class: "note" }, STRINGS.sortLabel),
+            h(
+              "div",
+              { class: "seg", role: "group", "aria-label": STRINGS.sortLabel },
+              h("button", { type: "button", "aria-pressed": o.sortBy !== "size" && o.sortBy !== "value" ? "true" : "false", onclick: hd.sortNext || null }, STRINGS.sortNext),
+              h("button", { type: "button", "aria-pressed": o.sortBy === "value" ? "true" : "false", onclick: hd.sortValue || null }, STRINGS.sortValue),
+              h("button", { type: "button", "aria-pressed": o.sortBy === "size" ? "true" : "false", onclick: hd.sortSize || null }, STRINGS.sortSize)
+            )
+          ),
+          items.length ? h("div", { class: "cards" }, items.map((it) => sectionCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
+        ),
+        lessonsView(doc, mode),
+        removedView(doc)
+      ];
+    } else {
+      const items = skillItems(doc);
+      const u = doc.usage;
+      body = [
+        h(
+          "section",
+          null,
+          h("h2", null, STRINGS.skillsHeading),
+          h("p", { class: "note" }, STRINGS.skillsNote),
+          u && typeof u.sessions_scanned === "number" ? h("p", { class: "note" }, STRINGS.usageNote(u.sessions_scanned.toLocaleString("en-US"))) : null,
+          chipSummary(items, mode),
+          items.length ? h("div", { class: "cards" }, items.map((it) => skillCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
+        ),
+        lessonsView(doc, mode),
+        removedSkillsView(doc)
+      ];
+    }
+    return h("div", null, top, body, rosterView(doc), coverageView(doc, mode), alertsView(doc, mode), engineersView(doc, mode, o.url || DEFAULT_DATA_URL));
+  }
+
+  // src/views/failure.js
+  function buildFailure(result, mode) {
+    let msg;
+    if (result.kind === "schema") msg = STRINGS.failSchema(result.got);
+    else if (result.kind === "parse") msg = STRINGS.failParse;
+    else if (result.kind === "badurl") msg = STRINGS.failBadUrl;
+    else msg = STRINGS.failFetch;
+    return h(
+      "div",
+      null,
+      h("h1", null, STRINGS.title),
+      h(
+        "div",
+        { class: "panel failure", role: "alert" },
+        h("h2", { style: "margin-top:0" }, STRINGS.failHeading),
+        h("p", null, msg),
+        h("p", null, STRINGS.failFile(result.url || DEFAULT_DATA_URL)),
+        h("p", null, STRINGS.failWhat)
+      )
+    );
+  }
+
+  // src/entries/shared.js
+  var EXPORTS = {
+    SCHEMA_VERSION,
+    WINDOW_WEEKS,
+    MIN_PAIRED_RUNS,
+    VERDICT_CHIPS,
+    HELPS_MIN_GAIN,
+    WORSE_TOLERANCE,
+    DEFAULT_DATA_URL,
+    STRINGS,
+    GLOSSES,
+    GLOSS_MISSING,
+    purposeOf,
+    clean,
+    githubLink,
+    friendlyModel,
+    alertText,
+    fmtDay,
+    fmtDateTime,
+    fmtCount,
+    wordsFor,
+    modeFromSearch,
+    searchForMode,
+    allowedDataUrl,
+    dataUrlFromSearch,
+    cacheBust,
+    validateDoc,
+    loadData,
+    poolRuns,
+    trendChart,
+    chipFor,
+    sentenceFor,
+    weeklyGains,
+    gainPerKb,
+    hasRegression,
+    hasAlone,
+    legendFor,
+    sectionCard,
+    skillItems,
+    sectionItems,
+    wholeGuidance,
+    lessonTitle,
+    lessonItem,
+    lessonIssue,
+    lessonsView,
+    buildPage,
+    buildFailure,
+    confidenceView,
+    clipName,
+    h,
+    textOf,
+    findAll,
+    toDom
+  };
+
+  // src/app.js
+  function boot(source) {
+    const app = document.getElementById("app");
+    const tip = document.getElementById("tip");
+    const state = { mode: modeFromSearch(location.search), sortBy: "next", doc: null, url: DEFAULT_DATA_URL, notice: null };
+    try {
+      const s = localStorage.getItem("explorer-sort");
+      if (s === "size" || s === "value" || s === "next") state.sortBy = s;
+    } catch (e) {
+    }
     function mount(node) {
       while (app.firstChild) app.removeChild(app.firstChild);
       app.appendChild(toDom(node, document));
@@ -1660,73 +1906,98 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined' && typeof m
     }
     function setMode(m) {
       state.mode = m;
-      try { history.replaceState(null, '', location.pathname + searchForMode(location.search, m) + location.hash); } catch (e) { /* sandboxed frame */ }
+      try {
+        history.replaceState(null, "", location.pathname + searchForMode(location.search, m) + location.hash);
+      } catch (e) {
+      }
       render();
     }
     function setSort(s) {
       state.sortBy = s;
-      try { localStorage.setItem('explorer-sort', s); } catch (e) { /* storage unavailable */ }
+      try {
+        localStorage.setItem("explorer-sort", s);
+      } catch (e) {
+      }
       render();
     }
     function render() {
       mount(buildPage(state.doc, state.mode, { sortBy: state.sortBy, url: state.url, notice: state.notice, handlers: {
-        skills: () => setMode('skills'), guidance: () => setMode('guidance'),
-        sortNext: () => setSort('next'), sortValue: () => setSort('value'), sortSize: () => setSort('size') } }));
+        skills: () => setMode("skills"),
+        guidance: () => setMode("guidance"),
+        sortNext: () => setSort("next"),
+        sortValue: () => setSort("value"),
+        sortSize: () => setSort("size")
+      } }));
     }
     function showTip(target) {
-      const text = target && target.getAttribute && target.getAttribute('data-tip');
-      if (!text) { tip.hidden = true; return; }
+      const text = target && target.getAttribute && target.getAttribute("data-tip");
+      if (!text) {
+        tip.hidden = true;
+        return;
+      }
       tip.textContent = text;
       tip.hidden = false;
       const r = target.getBoundingClientRect();
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let left = Math.min(window.innerWidth - tw - 8, Math.max(8, r.left + r.width / 2 - tw / 2));
       let top;
-      if (target.getAttribute('data-tip-pos') === 'below') {
+      if (target.getAttribute("data-tip-pos") === "below") {
         top = r.bottom + 8;
         if (top + th > window.innerHeight - 8) top = r.top - th - 8;
       } else {
         top = r.top - th - 8;
         if (top < 8) top = r.bottom + 8;
       }
-      tip.style.left = left + 'px';
-      tip.style.top = top + 'px';
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
     }
-    app.addEventListener('pointerover', (e) => showTip(e.target.closest ? e.target.closest('[data-tip]') : null));
-    app.addEventListener('pointerout', () => { tip.hidden = true; });
-    app.addEventListener('focusin', (e) => {
+    app.addEventListener("pointerover", (e) => showTip(e.target.closest ? e.target.closest("[data-tip]") : null));
+    app.addEventListener("pointerout", () => {
+      tip.hidden = true;
+    });
+    app.addEventListener("focusin", (e) => {
       let kb = true;
-      try { kb = e.target.matches(':focus-visible'); } catch (err) { /* old browser */ }
+      try {
+        kb = e.target.matches(":focus-visible");
+      } catch (err) {
+      }
       if (kb) showTip(e.target);
     });
-    app.addEventListener('pointerdown', () => { tip.hidden = true; });
-    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') tip.hidden = true; });
-    app.addEventListener('focusout', () => { tip.hidden = true; });
-    window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
-
-    const pick = dataUrlFromSearch(location.search);
-    if (pick.error) { mount(buildFailure({ kind: 'badurl', url: pick.url }, state.mode)); return; }
-    state.url = pick.url;
-    loadData(pick.url, (u, o) => fetch(u, o), Date.now()).then((res) => {
-      if (!res.ok) { mount(buildFailure(res, state.mode)); return; }
-      state.doc = res.doc;
-      try { render(); } catch (e) {
-        mount(buildFailure({ kind: 'parse', url: pick.url }, state.mode));
+    app.addEventListener("pointerdown", () => {
+      tip.hidden = true;
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") tip.hidden = true;
+    });
+    app.addEventListener("focusout", () => {
+      tip.hidden = true;
+    });
+    window.addEventListener("scroll", () => {
+      tip.hidden = true;
+    }, { passive: true });
+    source.start({
+      onDoc(doc, url) {
+        state.doc = doc;
+        if (url) state.url = url;
+        try {
+          render();
+        } catch (e) {
+          mount(buildFailure({ kind: "parse", url: state.url }, state.mode));
+        }
+      },
+      onFail(result) {
+        mount(buildFailure(result, state.mode));
       }
     });
-  })();
-}
+  }
+  function inBrowser() {
+    return typeof window !== "undefined" && typeof document !== "undefined" && typeof globalThis.module === "undefined";
+  }
 
-if (typeof module !== 'undefined') {
-  module.exports = {
-    SCHEMA_VERSION, WINDOW_WEEKS, MIN_PAIRED_RUNS, VERDICT_CHIPS, HELPS_MIN_GAIN, WORSE_TOLERANCE, DEFAULT_DATA_URL,
-    STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
-    clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
-    modeFromSearch, searchForMode, allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-    poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
-    skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom
-  };
-}
+  // src/entries/public.js
+  if (inBrowser()) boot(webSource((u, o) => fetch(u, o), location.search, Date.now()));
+  if (typeof globalThis.module !== "undefined") globalThis.module.exports = EXPORTS;
+})();
 </script>
 </body>
 </html>
