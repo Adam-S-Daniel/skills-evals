@@ -214,6 +214,12 @@ WINDOW = timedelta(days=7)
 #: week ending then read `seven_day.resetsAt` 2026-10-26T17:00:00Z); the
 #: others are whole weeks from it. Update it if the account's reset moves.
 ACCOUNT_WEEK_RESET = datetime(2026, 10, 26, 17, 0, tzinfo=timezone.utc)
+#: Manual weekly-limit resets the owner pressed. The meter drops to 0 but
+#: `resetsAt` keeps the Monday anchor, so without these the week's earlier
+#: spend kept every fire refused. A window that contains one starts there
+#: instead; the next Monday reset ends it as usual. Adam pressed the first
+#: at 2026-11-04 18:15 UTC.
+MANUAL_RESETS = (datetime(2026, 11, 4, 18, 15, tzinfo=timezone.utc),)
 #: A fire without results younger than this is held at the full reservation;
 #: an older one failed or never started, and is charged per_run_overrun only.
 #: It was 24 hours until 2026-10-26, when fires whose routine never started
@@ -521,9 +527,13 @@ def window_start(now: datetime) -> datetime:
     days, `ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, which is
     1 PM Eastern in summer time and 12 PM after the clocks change. It is
     taken from this code, not from the meter snapshots on the bot-written
-    results branch, so a forged `resetsAt` cannot shorten the window."""
+    results branch, so a forged `resetsAt` cannot shorten the window. A
+    manual reset the owner pressed (`MANUAL_RESETS`) starts the window at
+    that instant for the rest of its week."""
     weeks = (now - ACCOUNT_WEEK_RESET) // WINDOW
-    return ACCOUNT_WEEK_RESET + weeks * WINDOW
+    start = ACCOUNT_WEEK_RESET + weeks * WINDOW
+    # A manual reset inside this week restarts the window (`MANUAL_RESETS`).
+    return max([start] + [reset for reset in MANUAL_RESETS if start <= reset <= now])
 
 
 def pace(runs: list[Path], limits: dict, now: datetime):

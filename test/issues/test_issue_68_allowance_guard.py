@@ -1643,6 +1643,20 @@ class WeekWindowTests(unittest.TestCase):
             with self.subTest(now=now.isoformat()):
                 self.assertEqual(guard.window_start(now), start)
 
+    def test_a_manual_reset_restarts_the_window_until_the_next_monday(self):
+        reset = self.at(2026, 11, 4, 18, 15)
+        self.assertIn(reset, guard.MANUAL_RESETS)
+        cases = {
+            self.at(2026, 11, 4, 18, 14, 59): self.at(2026, 11, 2, 17, 0),
+            reset: reset,
+            self.at(2026, 11, 7, 0, 0): reset,
+            self.at(2026, 11, 9, 16, 59, 59): reset,
+            self.at(2026, 11, 9, 17, 0): self.at(2026, 11, 9, 17, 0),
+        }
+        for now, start in cases.items():
+            with self.subTest(now=now.isoformat()):
+                self.assertEqual(guard.window_start(now), start)
+
     def test_the_window_is_never_longer_than_seven_days(self):
         now = self.at(2026, 10, 26, 16, 59, 59)
         self.assertLessEqual(now - guard.window_start(now), guard.WINDOW)

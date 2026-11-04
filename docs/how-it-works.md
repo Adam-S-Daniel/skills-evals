@@ -158,7 +158,7 @@ Three layers enforce it:
    `routine-eval-fire.yml` before the fire, in every mode). It adds up the
    account's current allowance week, from its last weekly reset
    (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
-   saving does not move it; a rolling seven days until 2026-10-26): each ingested run on `persistent/eval-results` at its
+   saving does not move it; a rolling seven days until 2026-10-26; a manual reset the owner pressed, listed in `MANUAL_RESETS`, starts it at that instant for the rest of its week): each ingested run on `persistent/eval-results` at its
    measured weekly delta plus the overrun (or the full reservation,
    `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
    fire without results: at the full reservation when it is under 2 hours
