@@ -468,5 +468,69 @@ class DocsTests(unittest.TestCase):
             self.assertIn(phrase, doc)
 
 
+class AlonePairTests(unittest.TestCase):
+    """THE ALONE PAIR (owner, 2026-11-03): a guidance eval fire runs the
+    section-alone pair (`arms: both`) only for a section leaning toward
+    removal; every other guidance fire is `arms: in-situ`. Skill fires are
+    `both` as before."""
+
+    def arms_of(self, cells, **over):
+        plan = plan_week.build_plan(ctx(cells=cells, **over), NOW)
+        return {(f["fixture"], f["model"]): f["arms"] for f in plan["fires"]
+                if f["mode"] == "eval"}
+
+    def test_a_section_far_from_removal_fires_only_its_in_situ_pair(self):
+        cells = [near("s", 0.49, "a"), near("s", 0.9, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+        for c in cells:
+            self.assertEqual(plan_week.eval_item(c, ctx(cells=cells))["arms"], "in-situ")
+
+    def test_from_the_threshold_on_every_cell_fires_both_pairs(self):
+        # The section's progress is its LOWEST cell's: both cells at least
+        # halfway, so the alone pair runs beside the in-situ pair.
+        at = plan_week.ALONE_PAIR_FROM_PROGRESS
+        self.assertEqual(at, 0.5)
+        cells = [near("s", at, "a"), near("s", 0.8, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"both"})
+        self.assertAlmostEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"),
+                               at, 12)
+
+    def test_a_missing_cell_holds_the_section_below_the_threshold(self):
+        # A removal needs every cell, so one with no run keeps it at 0.
+        cells = [near("s", 0.95, "a"), missing("s", "b")]
+        self.assertEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"), 0.0)
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+
+    def test_an_in_situ_retire_fires_both_pairs_whatever_the_progress(self):
+        c = ctx()
+        for over in ({"in_situ_verdict": "retire"}, {"verdict": "retire"},
+                     {"verdict": "shorten-or-merge"}):
+            with self.subTest(**over):
+                cell = gcell("s", "a", **over)
+                self.assertTrue(plan_week.leans_to_removal(cell, ctx(cells=[cell])))
+                self.assertEqual(plan_week.eval_item(cell, ctx(cells=[cell]))["arms"], "both")
+        self.assertEqual(plan_week.eval_item(gcell("s", "a"), c)["arms"], "in-situ")
+
+    def test_the_policy_retire_level_scales_the_progress(self):
+        cell = near("s", 0.5)  # 0.45 no-help confidence
+        self.assertEqual(plan_week.fire_arms(cell, ctx(cells=[cell])), "both")
+        tight = ctx(cells=[cell], guidance_policy={"retire_confidence": 0.95})
+        self.assertEqual(plan_week.fire_arms(cell, tight), "in-situ")
+
+    def test_skill_cells_stay_both(self):
+        cells = [scell("a-skill", "missing"), near("s", 0.1)]
+        arms = self.arms_of(cells)
+        self.assertEqual(arms[("evals/a-skill", "heavy")], "both")
+        self.assertEqual(arms[(f"evals/guidance/s/a", "heavy")], "in-situ")
+
+    def test_an_in_situ_fire_is_a_paired_eval_fire_for_the_probe(self):
+        # While the routine is down the probe ranks banded paired fires;
+        # an in-situ fire is one, as `both` is.
+        cells = [near("s", 0.1)]
+        plan = plan_week.build_plan(ctx(cells=cells, routine_down=NOW), NOW)
+        evals = [f for f in plan["fires"] if f["mode"] == "eval"]
+        self.assertEqual([(f["band"], f["arms"]) for f in evals], [("focus", "in-situ")])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -199,7 +199,7 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIs(inputs[name]["required"], False)
             self.assertNotIn("default", inputs[name])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["arms"]["options"],
-                         ["both", "with", "without", "bare"])
+                         ["both", "with", "without", "bare", "in-situ"])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["trials"]["options"],
                          ["1", "2", "3"])
 
@@ -824,6 +824,39 @@ class ValidateStepTests(unittest.TestCase):
                 proc, _ = self.run_step(
                     {"mode": "eval", "fixture": fixture, "arms": "both", "trials": "1"})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_accepts_in_situ_for_a_guidance_fixture(self):
+        # Owner, 2026-11-03: a guidance cell not leaning toward removal fires
+        # only the in-situ pair.
+        guidance = "evals/guidance/anything-you-name-gets-its-link/handoff"
+        proc, values = self.run_step(
+            {"mode": "eval", "fixture": guidance, "arms": "in-situ", "trials": "1",
+             "model": "claude-sonnet-5-5"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual((values["arms"], values["fixture"]), ("in-situ", guidance))
+
+    def test_refuses_in_situ_for_a_skill_fixture(self):
+        for fixture in (FIXTURE, NOT_IN_PLACE):
+            with self.subTest(fixture=fixture):
+                proc, values = self.run_step(
+                    {"mode": "eval", "fixture": fixture, "arms": "in-situ", "trials": "1"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {}, "no output on a refusal")
+                self.assertIn("::error::input 'arms' is in-situ but the fixture is not a "
+                              "guidance fixture", proc.stdout)
+                self.assertNotIn(fixture, proc.stdout + proc.stderr)
+
+    def test_refuses_in_situ_outside_eval_mode(self):
+        cases = {"improve": {"mode": "improve", "skill": SKILL, "holdout": HOLDOUT},
+                 "scaffold": {"mode": "scaffold", "candidate": CANDIDATE},
+                 "draft": {"mode": "draft", "proposal": PROPOSAL}}
+        for label, inputs in cases.items():
+            with self.subTest(mode=label):
+                proc, values = self.run_step({**inputs, "arms": "in-situ", "trials": "1"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {})
+                self.assertIn("::error::input 'arms' may be in-situ in eval mode only",
+                              proc.stdout)
 
     def test_refuses_bare_outside_eval_mode(self):
         cases = {"improve": {"mode": "improve", "skill": SKILL, "holdout": HOLDOUT},

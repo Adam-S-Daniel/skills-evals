@@ -148,7 +148,14 @@ empty). `finish` holds every item and issue to its keys.
 
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
-ran. Counts are per arm over the scored trials (infrastructure failures and
+ran, except that a section's section-alone results (the `section` mode,
+`alone_verdict`, and its alone cells in `current_text_runs`) are published
+only when they factor into its decision: when its in-situ verdict is
+`retire` (`alone_decides`), which is when harness/gates.py
+`guidance_verdict` reads them, `shorten-or-merge` included (owner,
+2026-11-03). The `none` mode is always kept: the page's whole-guidance
+headline (full vs none) is a separate question and pools every section's
+runs. A run left with no mode is not listed. Counts are per arm over the scored trials (infrastructure failures and
 agent-errored trials are left out, as in the gate). Rates are not computed
 here and nothing is rounded: the page rounds at display.
 """
@@ -189,6 +196,9 @@ SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
 MODE_NAMES = {("in_situ", "with"): "full", ("in_situ", "without"): "full_minus_section",
               ("alone", "with"): "section", ("alone", "without"): "none"}
+#: The section-alone pair's own arm, published only when `alone_decides`. Its
+#: control, `none`, is kept for the whole-guidance headline (full vs none).
+ALONE_MODES = frozenset({MODE_NAMES[("alone", "with")]})
 REGRESSION_MARKER = "skills-evals:regression:"
 _URL_RE = re.compile(r"https?://\S+")
 _DIGEST_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
@@ -1251,16 +1261,41 @@ def skill_description(registries: dict | None, registry: str | None, name: str) 
     return " ".join(desc.replace("@", "").split())
 
 
-def current_text_runs(verdict: dict) -> int:
+def alone_decides(verdict: dict) -> bool:
+    """Whether a guidance section's section-alone results factor into its
+    decision: its in-situ verdict is `retire`, the one case
+    harness/gates.py `guidance_verdict` reads the alone cells (to make it
+    `shorten-or-merge`). A verdict document without `in_situ_verdict` falls
+    back on the section verdict, `retire` or `shorten-or-merge`."""
+    in_situ = verdict.get("in_situ_verdict")
+    if in_situ is not None:
+        return in_situ == "retire"
+    return verdict.get("verdict") in ("retire", "shorten-or-merge")
+
+
+def without_alone(runs: list) -> list:
+    """`runs` (`guidance_runs`' entries) with the section-alone arm
+    (`section`) left out, and a run left with no mode dropped. `none` stays:
+    the whole-guidance headline reads it."""
+    out = []
+    for run in runs:
+        modes = {k: v for k, v in run["modes"].items() if k not in ALONE_MODES}
+        if modes:
+            out.append({**run, "modes": modes})
+    return out
+
+
+def current_text_runs(verdict: dict, alone: bool = True) -> int:
     """How many eval runs were made on the subject's CURRENT text: the with-arm
-    run entries across its verdict cells (a guidance section's in-situ cells and
-    its `alone` cells). Only the with arm counts because `gates.pool_cells` keeps
+    run entries across its verdict cells (a guidance section's in-situ cells and,
+    when `alone`, its `alone` cells). Only the with arm counts because `gates.pool_cells` keeps
     a with-arm run only when its `tested_digest` equals the subject's digest on
     main, so an edit empties it; a without-arm run pools across text changes and
     says nothing about the current text. A cell with no `with` key counts 0, and
     a subject with no verdict has 0."""
     cells = list(verdict.get("cells") or [])
-    cells += (verdict.get("alone") or {}).get("cells") or []
+    if alone:
+        cells += (verdict.get("alone") or {}).get("cells") or []
     return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
 
 
@@ -1631,17 +1666,20 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     sections = []
     for row in rows:
         verdict = guidance_verdicts.get(row["id"]) or {}
+        # The section-alone results only when they factor into its decision.
+        alone = alone_decides(verdict)
+        runs = by_section.get(row["id"], [])
         sections.append({
             "id": row["id"], "heading": row.get("heading", row["id"]),
             "bytes": row.get("bytes"), "status": row.get("status"),
             "skip_reason": row.get("reason"), "verdict": verdict.get("verdict"),
             "verdict_reason": verdict.get("reason"),
-            "current_text_runs": current_text_runs(verdict),
-            "alone_verdict": (verdict.get("alone") or {}).get("verdict"),
+            "current_text_runs": current_text_runs(verdict, alone),
+            "alone_verdict": (verdict.get("alone") or {}).get("verdict") if alone else None,
             "confidence": subject_confidence(verdict),
             "next_test": queue.get(("guidance", row["id"]), unqueued),
             "stakes": stakes_of("guidance", row["id"]),
-            "runs": by_section.get(row["id"], [])})
+            "runs": runs if alone else without_alone(runs)})
 
     renumber(sections)
 

@@ -482,9 +482,10 @@ jobs:
           case "$MODE" in
             eval)
               # A bare baseline is one arm at three trials; a cell's pair
-              # is both arms at one.
+              # (both arms, or a guidance fixture's in-situ pair alone) is
+              # at one.
               case "${ARMS:-}" in
-                both) trials=1 ;;
+                both|in-situ) trials=1 ;;
                 bare) trials=3 ;;
                 *)
                   echo "::error::Routine eval dispatch failed"

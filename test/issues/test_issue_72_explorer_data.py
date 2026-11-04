@@ -470,9 +470,13 @@ class GuidanceTests(unittest.TestCase):
         self.assertEqual((two["status"], two["skip_reason"], two["runs"]),
                          ("skipped", "invented reason", []))
         run = one["runs"][0]
-        self.assertEqual(sorted(run["modes"]), ["full", "full_minus_section", "none", "section"])
+        # One run decides nothing, so the in-situ verdict is not `retire` and
+        # the section-alone arm is left out (owner, 2026-11-03); `none` stays
+        # for the whole-guidance headline.
+        self.assertEqual(sorted(run["modes"]), ["full", "full_minus_section", "none"])
         passed = {mode: m["checks_passed"] for mode, m in run["modes"].items()}
-        self.assertEqual(passed, {"full": 4, "full_minus_section": 2, "section": 3, "none": 1})
+        self.assertEqual(passed, {"full": 4, "full_minus_section": 2, "none": 1})
+        self.assertIsNone(one["alone_verdict"])
         self.assertEqual(run["modes"]["full"], {"trials": 1, "checks_passed": 4,
                                                 "checks_total": 4, "judge_mean": 8.0,
                                                 "cost_usd": 0.5})
@@ -481,6 +485,51 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn("/guidance/sec-one/20261030T120000Z/report.md", run["report_url"])
         for key in ("verdict", "verdict_reason", "alone_verdict"):
             self.assertIn(key, one)
+
+    def gated(self, verdict):
+        """The document with sec-one's verdict replaced by `verdict`."""
+        real = explorer_data.compute_gates.compute
+
+        def compute(*args, **kwargs):
+            doc = real(*args, **kwargs)
+            doc["guidance"]["sec-one"] = verdict
+            return doc
+        with mock.patch.object(explorer_data.compute_gates, "compute", side_effect=compute):
+            return self.t.build(manifest=MANIFEST)["guidance"]["sections"][0]
+
+    def test_the_alone_modes_are_published_when_the_in_situ_verdict_is_retire(self):
+        alone = {"verdict": "retire", "cells": [cell(1, 1)]}
+        for verdict in ({"verdict": "retire", "in_situ_verdict": "retire", "alone": alone,
+                         "reason": "flat", "cells": [cell(2, 2)]},
+                        {"verdict": "shorten-or-merge", "in_situ_verdict": "retire",
+                         "alone": {**alone, "verdict": "keep"}, "cells": [cell(2, 2)]}):
+            with self.subTest(verdict=verdict["verdict"]):
+                one = self.gated(verdict)
+                self.assertEqual(sorted(one["runs"][0]["modes"]),
+                                 ["full", "full_minus_section", "none", "section"])
+                self.assertEqual(one["alone_verdict"], verdict["alone"]["verdict"])
+                self.assertEqual(one["current_text_runs"], 3)
+
+    def test_the_alone_modes_are_left_out_for_any_other_in_situ_verdict(self):
+        alone = {"verdict": "keep", "cells": [cell(1, 1)]}
+        for in_situ in ("keep", "insufficient", "ceiling"):
+            with self.subTest(in_situ=in_situ):
+                one = self.gated({"verdict": in_situ, "in_situ_verdict": in_situ,
+                                  "alone": alone, "cells": [cell(2, 2)]})
+                self.assertEqual(sorted(one["runs"][0]["modes"]),
+                                 ["full", "full_minus_section", "none"])
+                self.assertIsNone(one["alone_verdict"])
+                self.assertEqual(one["current_text_runs"], 2)
+
+    def test_a_run_with_only_the_section_arm_is_not_listed_unless_it_decides(self):
+        t = Tree(self)
+        t.guidance_arm("sec-one", "20261030T120000Z", "with_guidance_section", "section", 3)
+        self.assertEqual(t.build(manifest=MANIFEST)["guidance"]["sections"][0]["runs"], [])
+        # A `none` run stays: the whole-guidance headline reads it.
+        t = Tree(self)
+        t.guidance_arm("sec-one", "20261030T120000Z", "without_guidance", "none", 1)
+        runs = t.build(manifest=MANIFEST)["guidance"]["sections"][0]["runs"]
+        self.assertEqual([sorted(r["modes"]) for r in runs], [["none"]])
 
     def test_a_missing_mode_is_absent(self):
         t = Tree(self)
@@ -520,11 +569,19 @@ class CurrentTextRunsTests(unittest.TestCase):
                                   "skipped-skill": 0})
 
     def test_a_guidance_section_counts_in_situ_and_alone_cells(self):
+        # The alone cells count when they factor into the decision (an
+        # in-situ `retire`), and only then (owner, 2026-11-03).
         doc = self.build_with({"skills": {}, "guidance": {"sec-one": {
-            "verdict": "retain", "cells": [cell(2, 5)],
+            "verdict": "retire", "in_situ_verdict": "retire", "reason": "flat",
+            "cells": [cell(2, 5)],
             "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
         counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
         self.assertEqual(counts, {"sec-one": 4, "sec-two": 0})
+        doc = self.build_with({"skills": {}, "guidance": {"sec-one": {
+            "verdict": "retain", "in_situ_verdict": "retain", "cells": [cell(2, 5)],
+            "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
+        counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
+        self.assertEqual(counts, {"sec-one": 2, "sec-two": 0})
 
 
 class AlertTests(unittest.TestCase):
