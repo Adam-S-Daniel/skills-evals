@@ -400,6 +400,13 @@ class FixturePrWorkflowTests(unittest.TestCase):
         self.assertIs(checkout["with"]["persist-credentials"], False)
         self.assertEqual(jobs["arm"]["permissions"], {})
         self.assertIn("lane == 'true'", jobs["disarm"]["if"])
+        # Disabling auto-merge needs repository write access; with
+        # contents: read the job token is refused and the PR merges anyway
+        # (skills-evals#744).
+        self.assertEqual(
+            jobs["disarm"]["permissions"],
+            {"contents": "write", "pull-requests": "write"},
+        )
         for job in jobs.values():
             self.assertNotIn("concurrency", job)
             for step in job["steps"]:

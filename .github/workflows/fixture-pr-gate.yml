@@ -160,8 +160,11 @@ jobs:
     if: needs.judge.outputs.lane == 'true' && needs.judge.outputs.eligible != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The fallback job token needs `contents: write` to disable auto-merge;
-    # this job checks nothing out and runs nothing from the pull request.
+    # The roster App token disables auto-merge first; the job token is the
+    # fallback, and it needs `contents: write`: with `contents: read` GitHub
+    # refuses it ("Resource not accessible by integration") and a pull
+    # request the judge rejected still merges (skills-evals#744). This job
+    # checks nothing out and runs nothing from the pull request.
     permissions:
       contents: write
       pull-requests: write
