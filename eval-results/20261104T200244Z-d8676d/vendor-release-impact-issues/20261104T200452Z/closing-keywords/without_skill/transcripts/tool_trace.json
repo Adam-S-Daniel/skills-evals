@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cd2YjrbiqVZ7RGTFgcS9PV",
+      "name": "Bash",
+      "input": "cd <path>; git status --short; ls -R . | grep -v '^./.git' | head -50; cat docs/vendor-tracking.md; ls vendor",
+      "input_chars": 136,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cd2YjrbiqVZ7RGTFgcS9PV",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n# ExampleCLI release reviews\n\n|...",
+      "output_chars": 433,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TaAEkdHVZiDDhCi31mrzkC",
+      "name": "Bash",
+      "input": "cd <path>; cat vendor/RELEASES.md; cat vendor/releases.json | head -80; cat README.md hooks/warm-cache.sh; git log --oneline | head",
+      "input_chars": 158,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TaAEkdHVZiDDhCi31mrzkC",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011K7BnNVqahgDJFrjMKsU4d",
+      "name": "Bash",
+      "input": "cd <path>; ls -a; cat .example-cli/settings.json; cat .gitmodules; grep -rn \"config\\|status\" --include=* -il . 2><path> | grep -v '^./.git/' | head",
+      "input_chars": 177,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011K7BnNVqahgDJFrjMKsU4d",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.example-cli\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n{\n  \"telemetryOptOut\": true,\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\":...",
+      "output_chars": 533,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T4hgGwxNuxtbLa5tHpukML",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-session-start-hook-timeout-now-enforced.md <<'EOF'\n# Warm-cache SessionStart hook will be killed at 20 seconds under ExampleCLI 4.4.0\n\nExampleCLI 4.4.0 now h...",
+      "input_chars": 3805,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T4hgGwxNuxtbLa5tHpukML",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md\n|---|---|---|\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-04 | 2 filed |",
+      "output_chars": 183,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
