@@ -4,9 +4,10 @@ import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 
 export function introView(mode) {
-  const paras = mode === 'guidance' ? STRINGS.introGuidance : STRINGS.introSkills;
-  const terms = STRINGS.glossary.concat(mode === 'guidance' ? STRINGS.glossaryGuidance : []);
-  const chipKinds = STRINGS.chipOrder.filter((k) => mode === 'guidance' || k !== 'alone');
+  const all = mode === 'all';
+  const paras = all ? STRINGS.introSkills.concat(STRINGS.introGuidance) : mode === 'guidance' ? STRINGS.introGuidance : STRINGS.introSkills;
+  const terms = STRINGS.glossary.concat(all || mode === 'guidance' ? STRINGS.glossaryGuidance : []);
+  const chipKinds = STRINGS.chipOrder.filter((k) => all || mode === 'guidance' || k !== 'alone');
   return h('section', null,
     h('h2', null, STRINGS.introHeading),
     h('div', { class: 'lead' }, paras.map((p) => h('p', null, p))),

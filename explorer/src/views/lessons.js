@@ -118,9 +118,9 @@ export function lessonsView(doc, mode) {
   ((doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : []).forEach((s) => {
     if (s && typeof s.id === 'string' && typeof s.heading === 'string') headings[s.id] = s.heading;
   });
-  const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === 'guidance'
+  const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === 'all' || (mode === 'guidance'
     ? it.subject.startsWith('guidance:')
-    : it.kind === 'new-skill' || it.subject.startsWith('skill:')));
+    : it.kind === 'new-skill' || it.subject.startsWith('skill:'))));
   const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
   const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
   const minerRows = items.map((it) => h('tr', null,

@@ -87,15 +87,3 @@ export function wordsFor(bytes) {
   const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
   return w;
 }
-
-export function modeFromSearch(search) {
-  const q = new URLSearchParams(search || '');
-  return q.get('subject') === 'guidance' ? 'guidance' : 'skills';
-}
-
-export function searchForMode(search, mode) {
-  const q = new URLSearchParams(search || '');
-  if (mode === 'guidance') q.set('subject', 'guidance'); else q.delete('subject');
-  const s = q.toString();
-  return s ? '?' + s : '';
-}

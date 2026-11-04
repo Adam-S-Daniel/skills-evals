@@ -5,8 +5,9 @@ post there and read project files). Prompt:
 
 > Dashboard refresh, timed run. Follow `dashboard/README.md` ("Refresh") in
 > skills-evals at origin/main to refresh the snapshot datasets of
-> <dashboard artifact URL>. Use the config in <private config path>. Upload
-> only changed files. Reply in the thread only if something needs the owner;
+> <dashboard artifact URL>, the `explorer` dataset (the results branch's
+> `explorer/latest.json`) included. Use the config in <private config path>.
+> Upload only changed files. Reply in the thread only if something needs the owner;
 > otherwise update the checklist quietly.
 
 The same steps run at once when a merge relay arrives (`merge-relay.md`). Skip

@@ -75,99 +75,17 @@
   --chip-bg: #322E28;
   --hover: #2E2A25;
 }
-* { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body {
-  margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font: 15px/1.5 Helvetica, Arial, sans-serif;
-}
-main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; }
-h1 { font-family: Georgia, "Times New Roman", serif; font-weight: normal; font-size: 1.75rem; line-height: 1.25; margin: 8px 0 4px; }
-h2 { font-size: 0.8rem; font-weight: normal; letter-spacing: 1.6px; text-transform: uppercase; margin: 36px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--base); }
-h3 { font-family: Georgia, "Times New Roman", serif; font-weight: normal; font-size: 1.15rem; margin: 0 0 4px; overflow-wrap: anywhere; }
-p { margin: 0 0 12px; }
-a { color: var(--link); }
-.asof, .note { color: var(--ink-2); font-size: 0.9rem; }
-.lead { max-width: 70ch; }
-.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
-.seg { display: inline-flex; border: 1px solid var(--base); border-radius: 9px; overflow: hidden; }
-.seg button {
-  font: inherit; font-size: 0.9rem; padding: 6px 12px; border: 0; background: var(--surface);
-  color: var(--ink); cursor: pointer; min-height: 36px;
-}
-.seg button + button { border-left: 1px solid var(--base); }
-.seg button:hover { background: var(--hover); }
-.seg button[aria-pressed="true"] { background: var(--s1); color: var(--page); font-weight: 600; }
-.seg button:focus-visible { outline: 2px solid var(--s1); outline-offset: -2px; }
-.panel {
-  background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
-  padding: 16px; margin: 12px 0;
-}
-dl.gloss { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: 6px 16px; margin: 8px 0 0; }
-dl.gloss dt { font-weight: 600; }
-dl.gloss dd { margin: 0; color: var(--ink-2); }
-@media (max-width: 560px) { dl.gloss { grid-template-columns: 1fr; } dl.gloss dd { margin-bottom: 8px; } }
-summary { cursor: pointer; font-weight: 600; min-height: 32px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
-@media (max-width: 400px) { .cards { grid-template-columns: 1fr; } }
-.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; min-width: 0; }
-.card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 4px; }
-.card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
-.card .sent { font-size: 0.95rem; margin-top: 10px; }
-.card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
-.model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
-.chip {
-  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none;
-  font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 999px;
-  background: var(--chip-bg); color: var(--ink); border: 1px solid var(--ring); cursor: help;
-}
-.chip .ic { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--axis); }
-.chip.helps .ic { background: var(--good); }
-.chip.worse .ic { background: var(--critical); }
-.chip.alone .ic { background: var(--warning); }
-.chip.none .ic { background: var(--axis); }
-.chip.insufficient .ic { background: transparent; border: 2px solid var(--axis); }
-.chip.canttell .ic { background: transparent; border: 2px dashed var(--axis); }
-.chip.early .ic { background: transparent; border: 2px solid var(--good); }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
-.legend span { display: inline-flex; align-items: center; gap: 6px; }
-.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
-svg { display: block; width: 100%; height: auto; overflow: visible; }
-svg text { font-family: Helvetica, Arial, sans-serif; }
-.chart { max-width: 396px; }
-.spark { max-width: 320px; margin-top: 10px; }
-.mark:hover, .mark:focus { opacity: 0.8; outline: none; }
-.trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
-ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
-ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }
-.reason { color: var(--ink-2); font-size: 0.9rem; }
-.failure { border-left: 4px solid var(--critical); }
-.summary-line { font-size: 1rem; }
-.tablewrap { overflow-x: auto; max-width: 100%; }
-table { border-collapse: collapse; font-size: 0.82rem; width: 100%; }
-th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tip {
-  position: fixed; z-index: 10; pointer-events: none; max-width: 260px;
-  background: var(--surface); color: var(--ink); border: 1px solid var(--base);
-  border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; box-shadow: 0 2px 8px rgba(61,58,52,0.15);
-}
-.tip[hidden] { display: none; }
-.headline .answer { font-size: 1.1rem; font-weight: 600; }
-@media (forced-colors: active) { .chip .ic { forced-color-adjust: none; } }
-.conf { margin: 12px 0 0; }
-.conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
-.chart.range { max-width: 420px; margin-top: 4px; }
+body { margin: 0; background: var(--page); color: var(--ink); }
+/*__CSS__*/
 </style>
 </head>
 <body>
-<main id="app">
+<main id="app" class="ex">
   <h1>Evals Explorer</h1>
   <p id="loading">Loading the latest results.</p>
 </main>
+<div class="ex-tip" id="tip" role="tooltip" hidden></div>
 <noscript>
   <div style="max-width:640px;margin:16px auto;padding:16px">
     This page needs JavaScript to read the latest test results and draw its charts.
@@ -175,7 +93,6 @@ td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
     {{DATA_URL}}
   </div>
 </noscript>
-<div class="tip" id="tip" role="tooltip" hidden></div>
 <script>
 /*__BUNDLE__*/
 </script>
