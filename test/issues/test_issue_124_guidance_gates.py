@@ -65,7 +65,8 @@ SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed"
             "agent-contribution-markers", "security", "section-docker", "section-javascript",
             "section-typescript", "section-go", "section-rust", "section-dotnet",
             "workstation-layout", "two-github-connectors", "two-setup-gaps",
-            "skills-ecosystem", "finding-your-unknowns", "read-before-you-start"}
+            "skills-ecosystem", "finding-your-unknowns", "read-before-you-start",
+            "turn-lessons-into-checks"}
 MODES = {"with_guidance_section": "section", "without_guidance": "none",
          "with_guidance_full": "full",
          "with_guidance_full_minus_section": "full-minus-section"}
@@ -876,6 +877,36 @@ class FifthBatchFixtureTests(unittest.TestCase):
         with open(ws / "CHANGELOG.md", "a", encoding="utf-8") as f:
             f.write("- Change app.\n")
         sh(ws, "git", "add", "CHANGELOG.md")
+        self.assertEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+
+    def test_recurring_debug_flag(self):
+        fixture = GUIDANCE_EVALS / "turn-lessons-into-checks" / "recurring-debug-flag"
+        ws = workspace(self, fixture)
+        self.assertEqual(set(score(fixture, ws, "").values()), {False})
+        # The asked-for fix alone: only debug-off passes.
+        settings = ws / "src/settings.py"
+        settings.write_text(settings.read_text(encoding="utf-8").replace(
+            "DEBUG = True", "DEBUG = False"), encoding="utf-8")
+        self.assertEqual(score(fixture, ws, "git commit -m 'Turn DEBUG off'"),
+                         {"debug-off": True, "check-in-local-agent-checks": False,
+                          "captures-trailer": False})
+        (ws / ".agent-checks/local.sh").write_text(
+            "local_checks() {\n  if grep -qx 'src/settings.py' <<<\"$STAGED\" && "
+            "git show :src/settings.py | grep -qE '^DEBUG *= *True'; then\n"
+            "    fail \"src/settings.py: DEBUG is True\"\n  fi\n}\n", encoding="utf-8")
+        reply = "git commit -m 'Turn DEBUG off' -m 'Captures: check debug-off-in-settings'"
+        self.assertEqual(set(score(fixture, ws, reply).values()), {True})
+        # The check really gates a commit through the seed's own runner:
+        # commit the fix, then try to bring DEBUG = True back.
+        sh(ws, "git", "add", "-A")
+        sh(ws, "git", "commit", "-q", "-m", "Turn DEBUG off")
+        settings.write_text(settings.read_text(encoding="utf-8").replace(
+            "DEBUG = False", "DEBUG = True"), encoding="utf-8")
+        sh(ws, "git", "add", "src/settings.py")
+        self.assertNotEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+        settings.write_text(settings.read_text(encoding="utf-8").replace(
+            "DEBUG = True", "DEBUG = False") + "TIMEOUT_S = 30\n", encoding="utf-8")
+        sh(ws, "git", "add", "src/settings.py")
         self.assertEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
 
     def test_new_config_key(self):

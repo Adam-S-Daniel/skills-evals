@@ -56,6 +56,7 @@ REVIEWED = ["evals/embeddable-tool-pages",
             "evals/guidance/two-github-connectors/org-connector-ci",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
             "evals/guidance/finding-your-unknowns/changelog-check",
+            "evals/guidance/turn-lessons-into-checks/recurring-debug-flag",
             # Skill fixtures merged hermetic and left off the schedule while
             # the skills-fixture lane was stopped (#62's children): their
             # skills are live in adam-agentskills and cms-platform.

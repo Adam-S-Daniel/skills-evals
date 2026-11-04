@@ -100,6 +100,15 @@ moves nothing; no name, title or run id is published. None is unknown (no
 readable fire file, or a `fetched_at` out of bounds), never 0. The per-cell
 alert waits for #570.
 
+`agent_made` (Adam, 2026-11-04) is scripts/agent_made.py's block: for each
+fleet check, skill and guidance section this document lists, the commit that
+created it (a `Captures:` trailer, else its first appearance in the
+`--guidance` or `--registry` checkout's full history), whether an agent, a
+loop App or a person made it, whether that was after the guidance told
+agents to capture lessons, and its impact copied from this document. Null in
+private mode or without `--guidance`; a subject whose checkout is missing or
+shallow has origin null.
+
 `fixture_queue` (Adam, 2026-11-03) is scripts/fixture_queue.py's report,
 `--fixture-queue`, carried as is: the fixture requests the weekly sweep
 filed, the pull requests answering them, the fixtures they added (real fleet
@@ -223,6 +232,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import agent_made  # noqa: E402
 import compute_gates  # noqa: E402
 import draft_new_skill  # noqa: E402
 import eval_coverage  # noqa: E402
@@ -2160,6 +2170,14 @@ def main(argv: list[str] | None = None) -> int:
                     explorer_public.include_spend(args.export_policy),
                     args.lesson_funnel, args.lesson_issues, private_subjects,
                     args.source_repository)
+        # The agent-made checks, skills and sections (_agent-guidance#451);
+        # public mode only, since it dates subjects from public history.
+        doc["agent_made"] = (
+            agent_made.build(doc, args.guidance,
+                             {n: e["path"] for n, e in
+                              compute_gates.flag_registries(args.registry).items()},
+                             load_manifest(args.guidance_manifest))
+            if args.guidance is not None and private_subjects is None else None)
         text = finish(doc, public_repos)
         validate(doc)
     except Refused as exc:

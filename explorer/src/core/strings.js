@@ -369,6 +369,13 @@ function buildStrings(you) {
   loopPrsNone: 'No loop pull requests in this build.',
 
   impactUseWeeks: 'Git hook runs and blocks by week',
+  agentMade: 'Made by agents',
+  agentMadeNote: (since) => 'Git hook checks, skills and guidance sections, by who made them: an agent, an automated loop or a person. "After the rule" counts agent-made items from ' + since + ' on, when the guidance began telling agents to capture lessons this way. Impact is from this page\'s other data.',
+  agentMadeKinds: { check: 'Git hook checks', skill: 'Skills', section: 'Guidance sections' },
+  agentMadeKind: { check: 'Check', skill: 'Skill', section: 'Section' },
+  colTotal: 'Total', colByAgents: 'By agents', colByLoop: 'By the loop', colByPeople: 'By people', colAfterRule: 'After the rule', colAgentImpact: 'Impact of agent-made', colMade: 'Made', colImpact: 'Impact',
+  agentMadeImpact: { check: (runs, blocked) => runs + ' runs, ' + blocked + ' blocked', skill: (uses) => uses + ' uses', section: () => '' },
+  agentMadeVerdicts: (list) => list ? 'verdicts: ' + list : 'no verdicts yet',
   impactUseSkills: 'Real-work use by skill',
   impactUseSkillsNote: (from, to) => 'Uses from ' + from + ' to ' + to + '. Guidance has no direct use signal; its effect shows only in test results.',
   impactUseChecks: 'Real-work use by git hook check',

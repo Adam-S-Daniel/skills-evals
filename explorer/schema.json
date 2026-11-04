@@ -354,6 +354,16 @@
      "type": "null"
     }
    ]
+  },
+  "agent_made": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/agent_made"
+    },
+    {
+     "type": "null"
+    }
+   ]
   }
  },
  "required": [
@@ -2976,6 +2986,335 @@
     "level"
    ],
    "additionalProperties": false
+  },
+  "agent_made": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "rule_since",
+    "items",
+    "summary"
+   ],
+   "properties": {
+    "rule_since": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "id",
+       "origin",
+       "created",
+       "commit",
+       "method",
+       "under_rule",
+       "impact"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "check",
+         "skill",
+         "section"
+        ]
+       },
+       "id": {
+        "type": "string"
+       },
+       "origin": {
+        "enum": [
+         "agent",
+         "loop",
+         "person",
+         null
+        ]
+       },
+       "created": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "commit": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "pattern": "^[0-9a-f]{12}$"
+       },
+       "method": {
+        "enum": [
+         "trailer",
+         "first-add",
+         "first-appearance",
+         null
+        ]
+       },
+       "under_rule": {
+        "type": [
+         "boolean",
+         "null"
+        ]
+       },
+       "impact": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "runs": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "blocked": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "invocations": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "current_text_runs": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "verdict": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "summary": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "check",
+      "skill",
+      "section"
+     ],
+     "properties": {
+      "check": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      },
+      "skill": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      },
+      "section": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      }
+     }
+    }
+   }
   }
  }
 }
