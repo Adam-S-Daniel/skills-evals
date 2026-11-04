@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:04:37Z",
+  "generated_at": "2026-11-04T01:07:01Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T01:03:40Z",
+ "generated_at": "2026-11-04T01:06:00Z",
  "guidance": {
   "removed": [
    {
@@ -9548,7 +9548,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:01:38Z",
+ "newest_run": "2026-11-04T01:03:53Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10667,11 +10667,11 @@
       "votes": true
      },
      {
-      "gain": 8.6,
-      "high": 33.5,
-      "low": -20.9,
+      "gain": 8.2,
+      "high": 30.8,
+      "low": -18.4,
       "model": "claude-sonnet-5-5",
-      "pairs": 8,
+      "pairs": 9,
       "status": "open",
       "task": null,
       "votes": true
@@ -10679,8 +10679,8 @@
     ],
     "helps": 0.0,
     "keep_family": 2,
-    "keep_pairs": 8,
-    "max_pairs": 8,
+    "keep_pairs": 9,
+    "max_pairs": 9,
     "no_help": 0.07693826414977878,
     "no_help_pairs": 2
    },
@@ -10696,7 +10696,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 10,
+   "current_text_runs": 11,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
    "name": "consumer-repo-provisioning",
    "next_test": {
@@ -10707,6 +10707,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-04T01:02:51Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T010106Z-19e27e/consumer-repo-provisioning/20261104T010251Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 19,
+      "cost_usd": 0.18800640000000002,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 9,
+      "checks_total": 19,
+      "cost_usd": 0.25709020000000005,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:38:01Z",
      "cli_version": "2.1.318",
@@ -14965,11 +14986,11 @@
       "votes": true
      },
      {
-      "gain": 2.2,
-      "high": 15.2,
-      "low": -11.6,
+      "gain": 2.1,
+      "high": 14.8,
+      "low": -11.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 18,
+      "pairs": 19,
       "status": "open",
       "task": null,
       "votes": true
@@ -14978,7 +14999,7 @@
     "helps": 0.6819305618928069,
     "keep_family": 2,
     "keep_pairs": 18,
-    "max_pairs": 18,
+    "max_pairs": 19,
     "no_help": 0.13705583756345174,
     "no_help_pairs": 18
    },
@@ -14994,7 +15015,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 36,
+   "current_text_runs": 37,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
    "name": "github-actions-sha-pinning",
    "next_test": {
@@ -15005,6 +15026,27 @@
    },
    "registry": "cms-platform",
    "runs": [
+    {
+     "at": "2026-11-04T01:03:53Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T010220Z-d82250/github-actions-sha-pinning/20261104T010353Z/report.md",
+     "with": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.14052830000000002,
+      "judge_mean": 9.2,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.11921300000000001,
+      "judge_mean": 8.8,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:40:25Z",
      "cli_version": "2.1.318",
@@ -23183,7 +23225,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "0c3f881c2c07925309bf0e3a87d780249588d7ef"
+  "results_commit": "af88f0c64dce9a9900bec7e106f84e4cc7774504"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
