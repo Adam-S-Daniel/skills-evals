@@ -199,10 +199,17 @@ jobs:
   # every open loop removal pull request (`retire-skill/` or
   # `retire-guidance/` head, `agent-authored`, opened by the skills-evals-improve
   # App, not `on-hold`) whose subject's current verdict no longer supports
-  # an automatic removal is disarmed, commented on, closed (branch kept) and
-  # recorded in the subject's retirement issue; while the mode is `proposal`
-  # a still-supported one is only disarmed. Unknown verdicts withdraw
-  # nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
+  # an automatic removal is disarmed, labeled `loop-withdrawn` (read back),
+  # recorded in the subject's retirement issue, commented on and closed, and
+  # its branch deleted while it still points at the closed head (a leased
+  # delete, best effort; the mints' contents: write); while the mode is
+  # `proposal` a still-supported one is only disarmed, and in `auto` one
+  # left part way (labeled, or disarmed) is finished as a pause. A
+  # withdrawal is a pause, not a decision: a closed removal the loop opened,
+  # labeled and closed itself does not decide its subject, so a later
+  # `retire` opens a fresh one with a plain push, until a subject has been
+  # paused 3 times (MAX_LOOP_PAUSES), when its proposal issue is filed
+  # instead. Unknown verdicts withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
   # ingest, so a verdict an ingest changes is acted on within that run.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
@@ -330,7 +337,8 @@ jobs:
       - name: Withdraw stale skill removal pull requests
         # Any open retire-skill/ pull request whose verdict no longer
         # supports it (ADR 0014); it needs the App token only when there is
-        # one to withdraw or disarm.
+        # one to withdraw or disarm (a pass that only keeps makes no call
+        # with it).
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
         working-directory: skills-evals
         env:

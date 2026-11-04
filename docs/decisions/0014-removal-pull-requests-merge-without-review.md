@@ -694,28 +694,102 @@ a person or an agent opened by hand.
 
 **When it withdraws.** It re-reads the subject's current verdict
 (`removal_support`). It withdraws when that verdict no longer supports an
-automatic removal: not `retire`, or a `retire` lowered to a proposal (the
-`removal` field and `proposal_only` must agree on `auto`). A `retire-pending`
+automatic removal: not `retire` (an `insufficient` verdict included, such
+as every cell on a roster model just added), or a `retire` lowered to a
+proposal (the `removal` field and `proposal_only` must agree on `auto`; for
+a section, `guidance_proposal_only`, which also re-checks the section-alone
+pair, as `guidance_plan` does). A `retire-pending`
 whose `raw_verdict` is a supported `retire` keeps its pull request:
 `compute_gates.finalize` demotes every confirmed subject but one per
-evaluation, which ranks it and says nothing against it. Withdrawing it would
-have closed a confirmed removal and decided the subject for good.
+evaluation, which ranks it and says nothing against it.
 
-A withdrawal turns auto-merge off and reads it back, comments the new
-verdict, why, and the override, and closes the pull request with its branch
-kept. It then files the subject's retirement issue (the proposal path's
-marker and issue), or comments on the oldest open one, leaving its body and
-evidence as they are, so the subject is never decided in silence. Any open
-removal notice (#557) for the subject is commented on and closed as not
-planned; that step is best effort and never stops the withdrawal (PR #724
-round 2's R2-3 and R2-6).
+**A loop withdrawal is a pause, not a decision (2026-11-04).** Rounds 3 to 5
+of PR #740 found that a permanent withdrawal forced ever more machinery: an
+`incomplete` state for data still being measured, a re-arm, a
+`loop-disarmed` label and a head-commit check, each round's fix opening new
+holes. The root was that a withdrawal decided the subject for good, so any
+verdict that was merely in flux (a roster model just added, a cell not yet
+measured) had to be kept apart from one that had really turned. Instead, a
+withdrawal now only pauses the removal: the pass labels the pull request
+`loop-withdrawn` before it closes it, and a closed, unmerged removal that
+carries that label, was opened by `LOOP_AUTHOR` AND was closed by
+`LOOP_AUTHOR` does not decide its subject (`loop_withdrawn`, read by
+`closed_removal_prs` and `guidance_closed_removal_prs`; `closed_by` comes
+from `GET repos/{repo}/issues/{n}`, since the pulls listing lacks it). When the verdict supports an automatic
+removal again, the retirement job opens a fresh pull request. Incomplete
+data is therefore simply stale and withdraws, and nothing re-arms.
 
-**Only newer verdicts withdraw.** A pull request whose `created_at` is later
-than the gates document's `as_of` (the results commit's time) was opened on
-newer results than the pass is judging, so it is kept; so is one whose
-creation time or `as_of` is missing or unparseable (round 2's R2-1). Without
-this, an ingest pass that started on older results could close, for good, a
-removal the retirement job had just opened on newer ones. The `withdraw` job
+**Oscillation is bounded.** A subject whose verdict moves back and forth is
+withdrawn and opened again, at most once per daily retirement run, each time
+with its own comment, retirement-issue comment and removal notice. Round 6's
+R6-6 modeled 9 to 15 removals in 30 days when the removal's checks never
+pass, so after `MAX_LOOP_PAUSES` (3) pauses for a subject the retirement job
+files or updates its proposal issue instead of opening a removal, and a
+person decides. No removal merges while its verdict does not support it.
+
+**The steps, in order.** A withdrawal turns auto-merge off and reads it back,
+adds `loop-withdrawn` and reads it back (round 6's R6-4), files the subject's
+retirement issue (the proposal path's marker and issue) or comments on the
+oldest open one (its body and evidence are kept), then comments the new
+verdict, why and the override on the pull request, closes it, and deletes
+its branch. Every step before the close that fails leaves the pull request
+open for the next pass, so a withdrawal is never closed without its issue
+(PR #740 round 5's R5-4) or without its label: a closed one without the
+label would decide the subject. In `auto` mode an open removal whose
+verdict still supports it but which carries `loop-withdrawn`, or whose
+auto-merge the listing shows off (opened before the verdicts' `as_of`, and
+read again before acting), is a withdrawal that stopped part way, and the
+pass finishes it as a pause (R6-2); otherwise it would sit open and
+disarmed, holding the one loop slot. In `proposal` mode it is only
+disarmed. The retirement issue says what closing it means: in `auto` mode
+nothing reads it, so it tells a person to close the removal pull request
+instead (R6-7).
+When adding the label fails and the repository's labels (`gh label list
+--search`) lack it, the pass runs `gh label create loop-withdrawn --force`
+and retries once; any other failure creates nothing. GitHub lets an
+installation token with `pull-requests: write` create a label (`POST
+/repos/{owner}/{repo}/labels` is listed under both the Issues and the Pull
+requests permission in "Permissions required for GitHub Apps"). Any open removal notice (#557) for the subject
+is then closed as not planned and commented on, in that order, so a failure
+never leaves an open notice whose comment says it is closed; that step is
+best effort (PR #724 round 2's R2-3 and R2-6).
+
+**No branch outlives its pull request (round 6's R6-5 and R6-11).** Round 5
+kept the branch and replaced it at the reopen with a forced, leased push,
+which the fleet's rules forbid ("never force-push shared branches"; a branch
+that outlives its pull requests is `persistent/<purpose>`). Instead, after
+the close, the pass deletes the branch with `git push
+--force-with-lease=refs/heads/<branch>:<head> <url> :refs/heads/<branch>`,
+`<head>` being the closed pull request's head commit. The server applies the
+delete only while the ref still holds that commit, so a commit anyone pushed
+since keeps the branch. The withdraw mints therefore hold `contents: write`
+again. A failed delete is best effort: the status line names only the
+error's type, and the pause stands. A fresh removal then pushes plainly
+(`default_push` reads the remote branch first and refuses one that exists,
+for a person to restore or delete; nothing forces). The refresh in
+`loop-pr-refresh.yml` pushes its merge leased on the head it fetched, so it
+never recreates a branch a withdrawal deleted.
+
+**Who decides.** A closed removal decides its subject when it merged, when a
+person closed it (labeled or not: round 6's R6-1 and R6-3 found a label
+left by a withdrawal that stopped part way, or added by a triager, would
+otherwise turn a person's close into a pause), when its closer cannot be
+read, or when a person removed `loop-withdrawn` from a withdrawn one: a
+closed loop removal without the label is read conservatively as declined.
+So a person declines a withdrawn removal for good by removing that label, or
+by closing the next removal themselves.
+
+**Only verdicts newer than its basis withdraw.** A removal pull request's
+body records the results it was opened on, on its first line: "Removes ...
+is **retire** as of `<as_of>` (". Only that line's first stamp counts, and
+a basis later than the pull request's own `created_at` is ignored. A pass
+keeps it when that basis is later than the pass's own `as_of` (the results
+commit's time), and judges it otherwise, the same results included. A body
+with no parseable basis falls back to the pull request's `created_at`: one
+created later than `as_of` is kept, and so is one whose creation time or
+`as_of` is missing or unparseable (round 2's R2-1). Without this, an ingest
+pass that started on older results could close a removal the retirement job
+had just opened on newer ones. The `withdraw` job
 in `loop-pr-refresh.yml` also has its own concurrency group with
 `cancel-in-progress: false`, so two ingest passes never withdraw the same
 pull request twice (R2-2). The group is not shared with the retirement job,
@@ -730,7 +804,8 @@ re-check.
 
 **The one switch.** While a target's mode is `proposal`, a loop removal
 that is not withdrawn is disarmed instead: auto-merge is turned off and read
-back, the pull request stays open, and it gets one comment. Setting
+back, the pull request stays open, and it gets one comment. Nothing turns
+it back on: a person merges it by hand or closes it. Setting
 `retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
 stops removal pull requests from merging on their own, including those
 already open and armed.
@@ -762,13 +837,25 @@ that window is not covered. Two more windows are not covered either (round
   no withdrawal. A removal they make stale is withdrawn at the next ingest or
   daily run. Until then, the refresh still re-checks the verdict before it
   brings a removal up to date, so it never re-runs that removal's checks.
+- (c) The daily `retirement` job and an ingest's `withdraw` job run in
+  different concurrency groups, so their passes can overlap. In that overlap
+  both can withdraw one pull request (two comments, two retirement-issue
+  comments). Since a withdrawal only pauses the removal, the cost is noise.
 
-**The override and the decision.** A closed removal pull request decides its
-subject, as before for skills and now for sections too
-(`guidance_closed_removal_prs`), so the loop opens no removal for it again.
-To remove a subject anyway, a person removes `agent-authored` (the pull
-request is then not the loop's and no pass touches it), reopens it, and
-merges it by hand.
+One pull request's failure, of any kind, does not stop the pass: the other
+items still act, every status line is printed (an unexpected error by its
+type only, never its text), and the step then fails. A pass that only keeps
+pull requests makes no call with the App token, so it needs none.
+
+**The override.** To remove a subject anyway, a person removes
+`agent-authored` (the pull request is then not the loop's and no pass
+touches it), restores the branch from the pull request page, then reopens
+it and merges it by hand.
+
+**Accepted (round 6's R6-8).** A step that fails after the issue is written
+leaves a duplicate retirement-issue comment (and, after the PR comment, a
+duplicate PR comment) when the next pass converges; a person who closes the
+fresh retirement issue between those passes gets a second one filed.
 
 The decision is `withdrawal_decision`, a pure function; the tests are in
 `test/issues/test_issue_removal_withdrawal.py`. `retirement_mode` stays
