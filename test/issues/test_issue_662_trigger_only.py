@@ -816,7 +816,7 @@ class ValidateStepTests(unittest.TestCase):
             "bool": (self.improve(trigger_only=True), "not a string"),
             "holdout": (self.improve(trigger_only="true", holdout="bootstrap"),
                         "'holdout' must be empty when 'trigger_only' is true"),
-            "no set": (self.improve(trigger_only="true", skill="skills-doctor"),
+            "no set": (self.improve(trigger_only="true", skill="no-trigger-set-skill"),
                        "refused by the trigger-only loop's check"),
             "eval mode": ({"mode": "eval", "fixture": fire_tests.FIXTURE, "arms": "both",
                            "trials": "1", "trigger_only": "true"},
