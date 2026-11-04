@@ -85,6 +85,7 @@ evals/
     swallowed-failure/     # a green run whose process substitution hid a failed gh listing
     git-identity/          # a bare exit 128 from a test script that commits without a git identity
     secret-name/           # a workflow reads a secret name the repository does not have
+  add-from-address/  # trigger eval set only (trigger lane)
   ci-job-performance/      # Class B: speed up a slow CI job from recorded timings
     browser-cache/         # a Playwright browser cache that slows the firefox leg it was meant to speed up
       fixture.yaml         # gh-log timing reads, parsed-workflow probes per matrix leg, file guards, rubric
