@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WYo7ZVb1eNqUs6cXqkcypy",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:ci-job-performance",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WYo7ZVb1eNqUs6cXqkcypy",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:ci-job-performance",
+      "output_chars": 56,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E5ijziS4d4bCsBw1jN2Ln7",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; git log --oneline -5",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E5ijziS4d4bCsBw1jN2Ln7",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 1353,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019BCCScqXv1u65GnJvkZYjf",
+      "name": "Bash",
+      "input": "cd e2e 2><path>; cd \"$OLDPWD\"; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30 --json databaseId,conclusion,event,createdAt,headBranch 2>&1 | head -50",
+      "input_chars": 179,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019BCCScqXv1u65GnJvkZYjf",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 1498,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CW4AVvX4XdA8Tu2WKTj2dz",
+      "name": "Bash",
+      "input": "gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30 --json databaseId,createdAt,conclusion --jq '.[]|\"\\(.databaseId) \\(.createdAt) \\(.conclusion)\"'\nfor id in $(gh run list --repo...",
+      "input_chars": 575,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CW4AVvX4XdA8Tu2WKTj2dz",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 10660,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CeiNvahvW4X3jFKHaG6Fph",
+      "name": "Bash",
+      "input": "for id in 71001 71002 71003 71004 72001 72002 72003 72004; do\n echo \"== $id\"; gh run view $id --repo example-org/example-repo --json jobs --jq '.jobs[] | .name as $n | .steps[] | select(.name|test(\"ca...",
+      "input_chars": 335,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CeiNvahvW4X3jFKHaG6Fph",
+      "is_error": false,
+      "output": "== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"headBranch\": \"main\",\n  \"headSha\": \"3f6c1e23f6c1e23f6c1e23f6c1e23f6c1e23f6c1\",\n  \"name\": \"e2e\",\n  \"number\": 21,\n  ...",
+      "output_chars": 10325,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RyyBjLbjCDJBjrFn3pdfJG",
+      "name": "Bash",
+      "input": "mkdir -p $TMPDIR/runs; for id in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $id --repo example-org/example-repo --json jobs > $TMPDIR/runs/$id.json 2>&1; done\npython3 -I - <<EOF\ni...",
+      "input_chars": 759,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RyyBjLbjCDJBjrFn3pdfJG",
+      "is_error": false,
+      "output": "71001 e2e (chromium) 93 {'Install browser OS dependenc': ('success', 24), 'Install browser': ('success', 11), 'Run Playwright tests': ('success', 42)}\n71001 e2e (firefox) 97 {'Install browser OS dependenc': ('success', 20), 'Install browser': ('success', 5), 'Run Playwright tests': ('success', 51)}\n...",
+      "output_chars": 4630,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Apbb9P3ABvmgtwdXEqdv5i",
+      "name": "Bash",
+      "input": "python3 -I - <<'EOF'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Measured on runs 71001-71004 (no cache) ...",
+      "input_chars": 598,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Apbb9P3ABvmgtwdXEqdv5i",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/e2e.yml b/.github/workflows/e2e.yml\nindex b90594a..8ff378b 100644\n--- a/.github/workflows/e2e.yml\n+++ b/.github/workflows/e2e.yml\n@@ -31,12 +31,16 @@ jobs:\n           cache-dependency-path: e2e/package-lock.json\n       - name: Install dependencies\n         run: npm ci\n...",
+      "output_chars": 1098,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
