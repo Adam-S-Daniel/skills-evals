@@ -502,7 +502,9 @@ or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
 `routine-outage`) are listed in the plan, not fired; each carries a
-`change_type`. A skill run
+`change_type`. A guidance section whose `eval-coverage.yml` row is `gap`
+(tracked, no fixture yet) gets `needs-fixtures` with zero fixtures, so its
+first fixture is asked for before any headroom can be measured. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such

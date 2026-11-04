@@ -59,7 +59,9 @@ trigger a commit.
 - **Allowlist, then `other`.** A skill name is published only when this repo
   already names it publicly: a skill fixture under `evals/` or an
   `evals/non-coverage.yml` row, in either case only when its registry is not
-  private. Every other Skill tool call counts under `other`, private-registry
+  private, or a public registry's skill that the published coverage census
+  (`coverage/latest.json` on `persistent/eval-results`) lists, so a gap is
+  counted by name before its first fixture. Every other Skill tool call counts under `other`, private-registry
   skills included, and the planner reads their weight as unknown, never 0; a
   typed command that is not an allowlisted skill (`/clear`) is not counted at
   all.
