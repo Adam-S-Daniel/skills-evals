@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T02:53:55Z",
+  "generated_at": "2026-11-04T02:56:18Z",
   "requests": [
    {
     "closed_at": null,
@@ -342,7 +342,7 @@
    "requests_open": 29
   }
  },
- "generated_at": "2026-11-04T02:52:56Z",
+ "generated_at": "2026-11-04T02:55:21Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9576,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T02:49:14Z",
+ "newest_run": "2026-11-04T02:52:38Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -14007,7 +14007,7 @@
       "high": 100.0,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "keyword-lookalikes",
       "votes": true
@@ -14043,7 +14043,7 @@
       "votes": true
      }
     ],
-    "helps": 0.06705539358600587,
+    "helps": 0.18755231337457423,
     "keep_family": 8,
     "keep_pairs": 4,
     "max_pairs": 4,
@@ -14062,7 +14062,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 14,
+   "current_text_runs": 15,
    "description": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
    "name": "fan-out-triage",
    "next_test": {
@@ -14073,6 +14073,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T02:52:38Z",
+     "cli_version": "2.1.318",
+     "fixture": "keyword-lookalikes",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T025050Z-366c9e/fan-out-triage/20261104T025238Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.161014,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 1,
+      "checks_total": 7,
+      "cost_usd": 0.1356359,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T02:29:07Z",
      "cli_version": "2.1.318",
@@ -23820,7 +23841,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "6d259cfef67e1d191fcfd3c2ff0d2d39daaab6ff",
-  "results_commit": "7206298334db3610df7ac44905bd3bb1c809363b"
+  "results_commit": "c7add90ad107cec2a57c8a34ba6e900354b51ebb"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
