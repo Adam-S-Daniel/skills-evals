@@ -7,6 +7,7 @@ function buildGlosses(you) {
   'working-in-these-repos': 'For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.',
   'anything-you-name-gets-its-link': 'Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.',
   'finding-your-unknowns': 'Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.',
+  'turn-lessons-into-checks': 'When a mistake could happen again, turn it into a git hook check, a skill or a guidance section without being asked, and tag the commit so it can be counted.',
   'workstation-layout': 'Where project folders live on ' + whose + ' computers, so Claude looks in the right place.',
   'security': 'Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.',
   'data-exposure-in-ci': 'Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.',
