@@ -74,7 +74,10 @@ name: Refresh loop pull requests
 # outlives its pull request); this job's own token, issues: write, for the
 # retirement issue here. A withdrawal is a pause: a closed removal the loop
 # opened, labeled and closed itself decides nothing, so the retirement job
-# opens a fresh removal if the verdict supports one again.
+# opens a fresh removal if the verdict supports one again. A removal whose
+# subject's proposal issue a person closed while it was open is declined
+# instead: disarmed and closed as a decision, with no label and no new issue
+# (round 9's R9-1).
 
 on:
   workflow_run:

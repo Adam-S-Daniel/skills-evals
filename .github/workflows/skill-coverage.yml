@@ -204,12 +204,18 @@ jobs:
   # its branch deleted while it still points at the closed head (a leased
   # delete, best effort; the mints' contents: write); while the mode is
   # `proposal` a still-supported one is only disarmed, and in `auto` one
-  # left part way (labeled, or disarmed) is finished as a pause. A
-  # withdrawal is a pause, not a decision: a closed removal the loop opened,
+  # left part way is finished as a pause: one labeled `loop-withdrawn`, or
+  # one whose timeline shows the loop's own disarm with no `proposal`
+  # switch comment at or after it. A person's disarm, or the switch's, is a
+  # hold, and the pull request is left open. A withdrawal is a pause, not a
+  # decision: a closed removal the loop opened,
   # labeled and closed itself does not decide its subject, so a later
   # `retire` opens a fresh one with a plain push, until a subject has been
   # paused 3 times (MAX_LOOP_PAUSES), when its proposal issue is filed
-  # instead. Unknown verdicts withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass after every
+  # instead. A removal whose subject's proposal issue a person has closed
+  # is declined, in either mode: it is disarmed and closed as a decision
+  # (no label, branch kept, no new issue). Unknown verdicts withdraw nothing
+  # (ADR 0014). loop-pr-refresh.yml runs the same pass after every
   # ingest, so a verdict an ingest changes is acted on within that run.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'

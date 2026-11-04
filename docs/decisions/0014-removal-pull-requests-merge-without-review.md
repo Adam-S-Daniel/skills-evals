@@ -944,6 +944,40 @@ with a test that fails without it:
 - *Docs (R8-7).* The script's docstring and `docs/how-it-works.md` now
   describe R7-1, R7-3 and the above.
 
+**Round 9 (2026-11-04).** Five minor findings, each fixed with a test that
+fails without it:
+
+- *A decline did not reach a removal already open (R9-1).* A closed proposal
+  issue now stops an open removal: `--withdraw-stale` reads each open loop
+  removal's subject's retirement issues, and when `declined` finds a closed
+  proposal (stamped, or legacy) it turns auto-merge off and closes the
+  removal as a decision, in either mode and whatever the verdict. The closed
+  removal carries no `loop-withdrawn` label, so it decides the subject too;
+  its branch is kept; no withdrawal issue is filed (its text would say
+  closing it declines nothing), and the closed issue gets a comment and
+  stays closed. An unreadable issue list fails that item and writes nothing.
+  When a removal opens while a proposal issue is open, that issue gets a
+  comment linking it, since its body said no removal is opened. A removal
+  that merges before the next withdrawal pass is beyond a decline; it is
+  reverted.
+- *A same-second disarm comment could lose the switch's hold (R9-2).* The
+  timeline read now carries `created_at`, and a `DISARMED_MARKER` comment
+  counts as after the latest disable when its time is equal or later,
+  whichever order the timeline lists them in. Order decides only when a time
+  is missing.
+- *Test gaps (R9-3).* Tests now pin a body with both stamps reading as a
+  proposal, and a closed proposal declining beside a paused removal, for
+  skills and sections.
+- *Docs (R9-4).* The script's docstring, `docs/how-it-works.md`, this record
+  and the two workflow headers describe the above; the retirement job's
+  header no longer says a disarmed removal is finished as a pause without
+  the timeline hold.
+- *A closed withdrawal issue suppressed the proposal (R9-5).* While `auto`
+  is lowered to a proposal short of the pause cap, a closed issue the
+  withdrawal path filed no longer counts as already decided: a fresh
+  proposal issue is filed, so a person gets a decline to make. In
+  `proposal` mode, and at the cap, any closed issue still decides.
+
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a
 duplicate PR comment) when the next pass converges; a person who closes the
