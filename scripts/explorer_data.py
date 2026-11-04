@@ -9,7 +9,9 @@
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
                    [--fire-runs FILE] [--fixture-queue FILE]
                    [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
-                   [--lesson-issues FILE]
+                   [--lesson-issues FILE] [--public-repos FILE] [--activity FILE]
+                   [--agent-checks DIR] [--hook-policy FILE] [--export-policy FILE]
+                   [--lesson-funnel FILE]
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -146,6 +148,23 @@ when neither the proposals directory nor the issues file is readable; with
 only the issues, its `date`, `items` and `left_out` are None (unknown, not
 empty). `finish` holds every item and issue to its keys.
 
+SCHEMA 2 (2026-11-04) makes this document the single public data contract
+of the Evals Explorer and the project dashboard. `explorer/schema.json`
+describes all of it, and `main` validates the document against it after
+`finish` and before writing (no jsonschema: nothing is written). The new
+sections are built in scripts/explorer_public.py, each from public inputs
+only: `evals` (the dashboard's scored runs and summaries,
+scripts/eval_facts.py, for listed subjects only), `hooks` (the git hook
+check catalog, its weekly use with non-public repositories folded into one
+bucket, and a verdict from evals/hook-policy.yml), `lesson_funnel` (lessons
+by outcome), `activity` (pull requests, open issues and workflow runs in the
+fleet owners' public repositories, `--activity`, named only when
+`--public-repos` reads them `private: false`) and `spend` (weekly totals,
+only with evals/public-export.yml `include_spend: true`). `finish` also
+refuses any session, thread, message or trigger id anywhere, a repository in
+`activity` or `hooks` that is not on the visibility list, and any row of a
+new section with a field outside its key set.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran, except that a section's section-alone results (the `section` mode,
@@ -179,6 +198,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import compute_gates  # noqa: E402
 import draft_new_skill  # noqa: E402
+import eval_facts  # noqa: E402
+import explorer_public  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import improve_outcomes  # noqa: E402
@@ -191,7 +212,8 @@ import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 import timeweeks  # noqa: E402  (harness/)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
 MODE_NAMES = {("in_situ", "with"): "full", ("in_situ", "without"): "full_minus_section",
@@ -1594,7 +1616,10 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           fire_runs: dict | None = None, wall_clock: datetime | None = None,
           fixture_queue: dict | None = None, lessons: Path | None = None,
           draft_prs: dict | None = None, lesson_records: Path | None = None,
-          lesson_issues: list | None = None) -> dict:
+          lesson_issues: list | None = None, visible_repos: frozenset | None = None,
+          activity: Path | None = None, agent_checks_dir: Path | None = None,
+          hook_policy: dict | None = None, spend: bool = False,
+          lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
@@ -1602,7 +1627,15 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     is the proposals directory and `draft_prs` `load_draft_prs`' result,
     which `build_lessons` turns into `lessons`, with each item's sources and
     signals counted from the records directory `lesson_records`, and
-    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`."""
+    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`.
+
+    Schema 2 (scripts/explorer_public.py): `visible_repos` is the fleet
+    owners' GitHub visibility list (None: unknown, so no repository is named
+    in `hooks` and `activity` is None); `activity` the `--activity` file;
+    `agent_checks_dir` _agent-guidance's templates/agent-checks/;
+    `hook_policy` evals/hook-policy.yml; `spend` evals/public-export.yml's
+    `include_spend`; `lesson_funnel` the `--lesson-funnel` file and
+    `lesson_issues_path` the raw `--lesson-issues` file it shares."""
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
@@ -1713,6 +1746,16 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         lessons, {s["name"] for s in skills} - plan_week.private_skills(evals_dir),
         public_slugs, {r["id"] for r in (manifest or [])}, draft_prs,
         lesson_origins(lesson_records), lesson_issues)
+    listed_skills = {s["name"] for s in skills} - plan_week.private_skills(evals_dir)
+    evals_doc = explorer_public.build_evals(tree, gates.RESULTS_BLOB, listed_skills,
+                                            {s["id"] for s in sections}, spend)
+    hooks = explorer_public.build_hooks(
+        tree, now, agent_checks_dir, context_repos, visible_repos,
+        hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
+    funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path, draft_prs,
+                                                 memory_issue, proposal_issue)
+    activity_doc = explorer_public.build_activity(activity, visible_repos, now,
+                                                  wall_clock or datetime.now(timezone.utc))
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
@@ -1733,15 +1776,22 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
-        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window}
+        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window,
+        "evals": evals_doc, "hooks": hooks, "lesson_funnel": funnel, "activity": activity_doc,
+        "spend": explorer_public.build_spend(tree, spend)}
 
 
-def finish(doc: dict) -> str:
-    """The document as text, or Refused: the last gate before it is public."""
+def finish(doc: dict, public_repos: frozenset | None = None) -> str:
+    """The document as text, or Refused: the last gate before it is public.
+    `public_repos` is the visibility list the document was built with: every
+    repository `activity` or `hooks` names must be on it (`hooks` may also say
+    explorer_public.PRIVATE_BUCKET or null)."""
     text = json.dumps(doc, indent=1, sort_keys=True, allow_nan=False) + "\n"
     for forbidden in ("cse_", "session_"):
         if forbidden in text:
             raise Refused(f"the document contains {forbidden!r}")
+    if explorer_public.FORBIDDEN_ID_RE.search(text):
+        raise Refused("the document contains a session, thread, message or trigger id")
     if "@" in _URL_RE.sub("", text):
         raise Refused("the document contains an '@' outside a URL")
     if _DIGEST_RE.search(text):
@@ -1800,7 +1850,98 @@ def finish(doc: dict) -> str:
             if draft is not None and (not isinstance(draft, dict)
                                       or set(draft) != {"number", "state", "url"}):
                 raise Refused("a lesson's draft carries a field it may not publish")
+    _finish_schema_2(doc, public_repos or frozenset())
     return text
+
+
+def _strings(value):
+    """Every string in `value`, keys included (a number's digits are not a
+    hex run)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def _exact(rows, keys, what: str) -> None:
+    if not isinstance(rows, list) or not all(isinstance(r, dict) and set(r) == set(keys)
+                                             for r in rows):
+        raise Refused(f"{what} carries a field it may not publish")
+
+
+def _finish_schema_2(doc: dict, public: frozenset) -> None:
+    """`finish`'s checks of the schema 2 sections (scripts/explorer_public.py)."""
+    pub = explorer_public
+    evals = doc.get("evals")
+    if evals is not None:
+        _exact(evals.get("runs"), pub.RUN_KEYS, "an eval run")
+        _exact(evals.get("bare_runs"), pub.BARE_KEYS, "a bare run")
+        _exact(evals.get("latest"), eval_facts.LATEST_KEYS, "a latest eval row")
+        if any(_LONG_HEX_RE.search(v) for v in _strings(evals)):
+            raise Refused("an eval row carries a hex run longer than 12")
+    hooks = doc.get("hooks")
+    if hooks is not None:
+        rows = [c for c in hooks.get("checks") or []]
+        _exact(rows, ("name", "where", "repo", "source_url", "use", "window_totals", "verdict",
+                      "verdict_reason"), "a hook check")
+        cells = [u for c in rows for u in c["use"] or []]
+        cells += [u for surface in (hooks.get("totals") or {}).values() for u in surface]
+        _exact(cells, ("week", "surface", "repo", "invocations", "blocked", "overridden"),
+               "a hook use row")
+        for repo in [c["repo"] for c in rows] + [u["repo"] for u in cells]:
+            if repo is not None and repo not in public and repo != pub.PRIVATE_BUCKET:
+                raise Refused("a hook row names a repository that is not public")
+            if repo == pub.PRIVATE_BUCKET and not hooks.get("private_repos_shown"):
+                raise Refused("the private repos bucket is shown below its minimum")
+    activity = doc.get("activity")
+    if activity is not None:
+        if not public:
+            raise Refused("activity without a visibility list")
+        for key, keys, url in (("pulls", pub.PR_KEYS, "https://github.com/{repo}/pull/{number}"),
+                               ("issues", pub.ISSUE_KEYS, "https://github.com/{repo}/issues/{number}"),
+                               ("runs", pub.RUN_ACTIVITY_KEYS,
+                                "https://github.com/{repo}/actions/runs/{run_id}")):
+            _exact(activity.get(key), keys, f"an activity {key[:-1]}")
+            for row in activity[key]:
+                if row["repo"] not in public:
+                    raise Refused("activity names a repository that is not public")
+                if row["url"] != url.format(**row):
+                    raise Refused("an activity URL is not the one built for its row")
+        if not set(activity.get("repos") or []) <= public:
+            raise Refused("activity names a repository that is not public")
+    spend = doc.get("spend")
+    if spend is not None:
+        if set(spend) != {"generated_at", "weeks"}:
+            raise Refused("spend carries a field it may not publish")
+        _exact(spend["weeks"], pub.SPEND_WEEK_KEYS, "a spend week")
+    funnel = doc.get("lesson_funnel")
+    if funnel is not None:
+        counts = [v for k, v in funnel.items() if k in pub.OUTCOMES] + [
+            v for c in (funnel.get("by_source") or {}).values() for v in c.values()]
+        if set(funnel) != {*pub.OUTCOMES, "by_source", "sources_missing"} \
+                or not all(type(v) is int for v in counts):
+            raise Refused("the lesson funnel carries a field it may not publish")
+
+
+def validate(doc: dict) -> None:
+    """Refused unless `doc` validates against explorer/schema.json. Fails
+    closed: without jsonschema nothing is written."""
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise Refused("jsonschema is not installed, so the document cannot be validated") from exc
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc),
+                    key=lambda e: list(e.absolute_path))
+    if errors:
+        where = "/".join(map(str, errors[0].absolute_path)) or "(root)"
+        raise Refused(f"the document does not match explorer/schema.json at {where}: "
+                      f"{errors[0].validator} ({len(errors)} errors)")
 
 
 def context_drift_report(argv: list[str]) -> int:
@@ -1870,6 +2011,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--draft-prs", type=Path, metavar="FILE",
                         help="[{head, number, state, merged}] of adam-agentskills' pull "
                              "requests, for each new-skill lesson's draft")
+    parser.add_argument("--public-repos", type=Path, metavar="FILE",
+                        help="{repos: [{full_name, private}]}: the fleet owners' repositories "
+                             "as GitHub lists them; absent is unknown (no repository named)")
+    parser.add_argument("--activity", type=Path, metavar="FILE",
+                        help="{fetched_at, pulls, issues, runs} of the public repositories; "
+                             "absent or unreadable is unknown")
+    parser.add_argument("--agent-checks", type=Path, metavar="DIR",
+                        help="_agent-guidance's templates/agent-checks/, for the hook catalog")
+    parser.add_argument("--hook-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "hook-policy.yml")
+    parser.add_argument("--export-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "public-export.yml",
+                        help="include_spend: whether `spend` is published")
+    parser.add_argument("--lesson-funnel", type=Path, metavar="FILE",
+                        help="{hook_proposals: [issue rows], lesson_check_prs: [{head, number, "
+                             "state, merged}]}; absent is unknown")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -1878,6 +2035,7 @@ def main(argv: list[str] | None = None) -> int:
         for sha in (args.repository_commit, args.results_commit):
             if not SHA_RE.fullmatch(sha):
                 raise ValueError("a commit is not a 40-character lowercase hex sha")
+        public_repos = explorer_public.load_public_repos(args.public_repos)
         issues = (json.loads(args.regression_issues.read_text(encoding="utf-8"))
                   if args.regression_issues else {})
         if isinstance(issues, list):  # raw `gh issue list --json url,body`
@@ -1892,8 +2050,14 @@ def main(argv: list[str] | None = None) -> int:
                     load_fire_runs(args.fire_runs), datetime.now(timezone.utc),
                     load_fixture_queue(args.fixture_queue), args.lessons,
                     load_draft_prs(args.draft_prs), args.lesson_records,
-                    load_lesson_issues(args.lesson_issues))
-        text = finish(doc)
+                    load_lesson_issues(args.lesson_issues), public_repos, args.activity,
+                    args.agent_checks,
+                    explorer_public.load_policy(args.hook_policy,
+                                                explorer_public.HOOK_POLICY_DEFAULTS),
+                    explorer_public.include_spend(args.export_policy),
+                    args.lesson_funnel, args.lesson_issues)
+        text = finish(doc, public_repos)
+        validate(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)
         return 2

@@ -51,7 +51,10 @@ prompt that tells it to.
 
    A missing optional dump builds as empty. Never paste a credential into a dump.
 3. **Build.** `python3 dashboard/build.py --results <results> --inputs <inputs> --config <config> --out <ds>`.
-   It needs PyYAML and imports `scripts/allowance_guard.py`. It refuses to write
+   It needs PyYAML and imports `scripts/allowance_guard.py` and `scripts/eval_facts.py`,
+   whose `scored_runs` builds `eval_runs` and `bare_runs`. The public explorer document
+   (`explorer/latest.json`, schema 2) carries the same rows and the page's summaries of them
+   for public subjects only, so both read one copy of the logic. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
 4. **Compare.** Upload only datasets that changed. Skip `eval_allowance` when

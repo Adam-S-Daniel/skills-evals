@@ -416,7 +416,11 @@ class WorkflowTests(unittest.TestCase):
                                    "File, keep or close the fixture queue issues",
                                    # The lessons (2026-11-03): public listings.
                                    "List the skill draft pull requests",
-                                   "List the memory promotion and skill proposal issues"})
+                                   "List the memory promotion and skill proposal issues",
+                                   # Schema 2 (2026-11-04): public listings.
+                                   "List the public repositories",
+                                   "List recent activity in the public repositories",
+                                   "List the lesson outcomes"})
         self.assertEqual(self.fetch["env"], {"GH_TOKEN": "${{ github.token }}"})
 
     def test_the_fetch_step_cannot_fail_the_job(self):

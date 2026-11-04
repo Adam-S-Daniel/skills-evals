@@ -501,8 +501,9 @@ class WorkflowTests(unittest.TestCase):
     def test_publish_ignores_only_the_moving_clocks(self):
         push = next(s for s in self.wf["jobs"]["publish"]["steps"]
                     if s["name"].startswith("Commit to"))["run"]
+        # Schema 2: the activity listing's window moves with every build too.
         self.assertIn("strip='del(.generated_at, .source.results_commit, "
-                      ".fixture_queue.generated_at)'", push)
+                      ".fixture_queue.generated_at, .activity.fetched_at, .activity.since)'", push)
 
     def test_the_alerts_job_writes_issues_only_from_a_built_report(self):
         job = self.wf["jobs"]["queue-alerts"]
