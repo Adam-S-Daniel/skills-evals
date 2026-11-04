@@ -992,13 +992,11 @@ fails without it:
   for.
 - *The decline overrode a person's re-arm, and its comments overpromised
   (R10-2).* Any close of a proposal or legacy issue still declines,
-  whatever its `state_reason`, and this is now documented. But an armed
-  removal whose latest `auto_merge_enabled` event is a person's, later than
-  the issue's `closed_at`, is left for that person: turning auto-merge on
-  again overrides the close. An unreadable timeline or a missing time does
-  not. The decline's comments now say the closed removal decides the
-  subject and reopening the issue does not resume the loop, which is what
-  happens.
+  whatever its `state_reason`, and this is now documented. A person's
+  re-arm is now handled by round 12's single rule (below), which replaced
+  the comparison with the issue's `closed_at` made here. The decline's
+  comments now say the closed removal decides the subject and reopening the
+  issue does not resume the loop, which is what happens.
 - *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
   takes the subject's pause count, and at `MAX_LOOP_PAUSES` any closed
   retirement issue decides on the lowered path too. At the cap, a subject a
@@ -1030,27 +1028,58 @@ that fails without it:
   subject's issues records `CAP_MARKER`; the open issue then gets it, once,
   even beside a closed issue. After that, or with no issue open, a closed
   issue decides with no comment, as round 10 intended. The lowered path
-  is unchanged and posts no cap comment.
-- *A person's re-arm protected more than the close (R11-2).* `person_rearm`
-  returned "left for a person" before the item's own decision ran, so a
-  declined removal a person re-armed survived a stale verdict and the
-  `proposal` switch, though the same re-arm with no closed issue did not.
-  The rule is now: the re-arm overrides the decline and nothing else. The
-  decline carries the item's own decision (`otherwise`), and `_act` applies
-  it exactly as it would with no closed issue (keep, withdraw or disarm).
-- *In `proposal` mode a hand re-arm did not last (R11-3, predating PR
-  #751).* The documented "turn auto-merge on again by hand" was undone by
-  the next pass. The switch now disarms only the loop's arm: an armed
-  removal whose latest `auto_merge_enabled` event is someone's other than
-  `LOOP_AUTHOR`, later than the loop's last `auto_merge_disabled`
-  (`switch_rearm`), is left armed. One the loop armed and never turned off,
-  an unreadable timeline or a missing time is disarmed. A stale verdict
-  still withdraws it, since the withdrawal precedes the switch. This keeps
-  the switch's rule that no removal merges without a person: a person armed
-  this one.
+  got the same guarantee in round 12 (R12-1).
+- *A person's re-arm protected more than the close (R11-2), and in
+  `proposal` mode a hand re-arm did not last (R11-3).* Round 11 answered
+  these with two more comparisons (`person_rearm` against the issue's
+  close, `switch_rearm` against the loop's last disarm). Round 12 found
+  defects in both and replaced them with one rule (below); neither
+  comparison is left.
 - *Test gaps (R11-4).* Tests now kill round 11's mutants 15 (the re-arm read
   on an unarmed removal: a person's re-arm and then their hold is declined)
   and 25 (the decline's dry-run listing names the unlabel and its read-back).
+
+**Round 12 (2026-11-04, skills-evals#758): one rule for a person's arm.**
+Five minor findings; four came from three rounds of special cases for a
+person who turns auto-merge on again (R12-2: the switch disarmed a person's
+arm that followed their own hold, and a transient timeline error turned
+the override into a permanent decline; R12-3: an overridden decline that
+then withdrew filed an issue saying closing it declines nothing, which was
+false; R12-4: the refresh refused every re-armed removal, so a conflicting
+one could never merge; R12-5: an arm made before the switch to `proposal`
+survived it). Each comparison of times answered one case and broke another,
+so they are replaced by one rule, used everywhere:
+
+- *A person's arm in force.* A removal pull request that is armed for
+  auto-merge now, and whose latest `auto_merge_enabled` timeline event (by
+  `created_at`) has an actor other than `LOOP_AUTHOR`, belongs to that
+  person (`persons_arm`).
+- *What the loop leaves alone.* For such a removal the withdrawal pass does
+  not decline it (a closed proposal issue), disarm it (the `proposal`
+  switch) or withdraw it (a stale verdict, or a withdrawal that stopped
+  part way); it logs `left #N for a person: armed by a person`. The loop
+  never caps an open removal: the retirement job only waits while one is
+  open.
+- *Refresh.* `refresh_allowed` (`removal-check --number`) refreshes it
+  whatever its verdict, mode or issue, so it can still merge.
+- *Unknown data.* An unreadable timeline, no event, a missing or
+  unparseable time on any arm, a removal that is not armed (the loop's own
+  disarm included) or one the loop armed last is not a person's arm in
+  force: the loop acts as it would without the rule, so unknown data still
+  leans toward disarming or declining.
+
+So R12-5's case is now intended: an arm a person made before the owner
+switched to `proposal` is still a person's arm, and the switch, which
+exists so that no removal merges without a person, leaves it. A person who
+wants it stopped turns its auto-merge off or closes it.
+
+- *The cap comment was posted again after a lowered pass (R12-1).* A pass
+  lowered to a proposal at the cap (a failed token mint, or a `removal:
+  proposal` verdict) rewrote the open issue's body without the cap note,
+  erasing `CAP_MARKER`, so the next `auto` pass @-mentioned the owner again.
+  The lowered path at the cap now goes through `cap_notice` too: the body it
+  writes keeps the note, and it posts the comment itself when it is still
+  owed. The comment is posted once per subject on every path.
 
 **Accepted (round 6's R6-8).** A step that fails after the issue is written
 leaves a duplicate retirement-issue comment (and, after the PR comment, a

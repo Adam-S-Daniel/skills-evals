@@ -82,9 +82,12 @@ name: Refresh loop pull requests
 # instead (round 9's R9-1): disarmed, its `loop-withdrawn` label taken off and
 # read back (R10-1), and closed as a decision with no new issue, so the
 # closed removal decides the subject and its branch is kept. Any close of
-# the issue declines, whatever its reason; a person's re-arm after that
-# close overrides the decline only, and the removal gets the decision it
-# would get with no closed issue (R10-2, R11-2).
+# the issue declines, whatever its reason. One rule overrides all of this
+# (round 12): a removal armed now whose latest `auto_merge_enabled` event is
+# a person's (not the loop App's) is that person's, so the withdraw job does
+# not decline, disarm or withdraw it, and `removal-check --number` lets the
+# refresh bring it up to date, whatever its verdict, mode or issue. An
+# unreadable timeline or a missing time is not a person's arm.
 
 on:
   workflow_run:
@@ -340,7 +343,7 @@ jobs:
               case "$ref" in
                 retire-skill/*|retire-guidance/*)
                   local check crc=0
-                  check="$(python3 "$SCRIPT" removal-check --gates "$GATES" --head "$ref")" || crc=$?
+                  check="$(python3 "$SCRIPT" removal-check --gates "$GATES" --head "$ref" --number "$n")" || crc=$?
                   if [ "$crc" != 0 ]; then
                     echo "${repo}#${n}: removal not refreshed ($(sed -n 's/^reason=//p' <<<"$check"))"
                     note "${repo}#${n}" "removal not refreshed: its verdict does not support it"

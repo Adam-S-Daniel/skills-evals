@@ -392,7 +392,14 @@ class FakeGh:
             self.label_fails -= 1
             raise rs.RetireError(f"gh {args[0]} exited 1")
         if args[:2] == ["api", "--paginate"] and "/timeline?" in args[2]:
-            return "".join(json.dumps(e) + "\n" for e in self.timeline)
+            # The arms read (ARMS_JQ) keeps only the enables, as jq would; an
+            # entry with no `event` is one already shaped as an arm.
+            keep = [e for e in self.timeline
+                    if rs.ARMS_JQ not in args or e.get("event", "auto_merge_enabled")
+                    == "auto_merge_enabled"]
+            return "".join(json.dumps(e) + "\n" for e in keep)
+        if args[0] == "api" and "/pulls/" in args[1]:
+            return ("true" if self.armed else "false") + "\n"  # the REST armed read
         if args[:2] == ["api", "--paginate"]:
             rows = (self.issues if "/issues?" in args[2] else
                     self.closed if "state=closed" in args[2] else self.prs)
@@ -1056,7 +1063,8 @@ class RefreshWorkflowTests(unittest.TestCase):
         steps = self.jobs["refresh"]["steps"]
         run = next(s for s in steps if "refresh_repo" in s.get("run", ""))
         self.assertIn("retire-skill/*|retire-guidance/*)", run["run"])
-        self.assertIn('removal-check --gates "$GATES" --head "$ref"', run["run"])
+        self.assertIn('removal-check --gates "$GATES" --head "$ref" --number "$n"',
+                      run["run"])
         self.assertLess(run["run"].index("removal-check"), run["run"].index(" merge --repo"))
         self.assertEqual(run["env"]["GATES"], "${{ runner.temp }}/gates/latest.json")
         download = next(s for s in steps if str(s.get("uses", "")).startswith(
@@ -3308,8 +3316,8 @@ class ClosedWithdrawalIssueProposalTests(t70.Base):
 
 class RoundTenTests(t70.Base):
     """PR #751 round 10: R10-1 (a decline takes `loop-withdrawn` off first),
-    R10-2 (a person's later re-arm overrides the close; any close declines;
-    the comments say reopening does not resume), R10-3 (the pause cap
+    R10-2 (any close declines; the comments say reopening does not resume;
+    its re-arm comparison became round 12's single rule), R10-3 (the pause cap
     decides on the lowered path too, and no cap comment for a decided
     subject) and R10-6 (the tests mutants 10, 11, 22 and 27 survived)."""
 
@@ -3375,36 +3383,38 @@ class RoundTenTests(t70.Base):
                                   delete=lambda *a: None)
         return lines, gh
 
-    def test_a_persons_rearm_after_the_close_overrides_the_decline(self):
-        # R11-2: the item's own decision (here `keep`) then applies.
-        lines, gh = self.rearm_pass([{"actor": rs.LOOP_AUTHOR,
-                                      "created_at": "2026-11-01T09:00:00Z"},
-                                     {"actor": "a-person",
-                                      "created_at": "2026-11-02T10:00:01Z"}])
-        self.assertEqual(len(lines), 1)
-        self.assertTrue(lines[0].startswith("not declining #41: someone other than the "
-                                            "loop turned its auto-merge on after"), lines)
-        self.assertTrue(lines[0].endswith("; kept #41: the verdict is still retire with an "
-                                          "automatic removal"), lines)
-        self.assertEqual(gh.writes(), [])
+    def test_a_persons_arm_in_force_is_left_not_declined(self):
+        # Round 12: who armed it last and that it is armed decide; when the
+        # issue closed does not (an arm before the close, or in the same
+        # second, is left too). Before round 12 the item's own decision ran.
+        for when in ("2026-11-02T10:00:01Z", "2026-11-02T09:59:59Z", self.CLOSED_AT):
+            with self.subTest(when=when):
+                lines, gh = self.rearm_pass([{"actor": rs.LOOP_AUTHOR,
+                                              "created_at": "2026-11-01T09:00:00Z"},
+                                             {"actor": "a-person", "created_at": when}])
+                self.assertEqual(lines, ["left #41 for a person: armed by a person"])
+                self.assertEqual(gh.writes(), [])
+                self.assertTrue(gh.armed)
 
-    def test_anything_short_of_a_later_persons_rearm_still_declines(self):
+    def test_anything_short_of_a_persons_arm_in_force_still_declines(self):
         cases = {
-            "rearm before the close": ([{"actor": "a-person",
-                                         "created_at": "2026-11-02T09:59:59Z"}], self.CLOSED_AT),
-            "same second": ([{"actor": "a-person", "created_at": self.CLOSED_AT}],
-                            self.CLOSED_AT),
-            "the loop armed last": ([{"actor": "a-person", "created_at": "2026-11-02T11:00:00Z"},
-                                     {"actor": rs.LOOP_AUTHOR,
-                                      "created_at": "2026-11-02T12:00:00Z"}], self.CLOSED_AT),
-            "no arm event": ([], self.CLOSED_AT),
-            "close time unknown": ([{"actor": "a-person",
-                                     "created_at": "2026-11-02T11:00:00Z"}], ""),
-            "arm time unknown": ([{"actor": "a-person", "created_at": ""}], self.CLOSED_AT),
+            "the loop armed last": [{"actor": "a-person", "created_at": "2026-11-02T11:00:00Z"},
+                                    {"actor": rs.LOOP_AUTHOR,
+                                     "created_at": "2026-11-02T12:00:00Z"}],
+            "no arm event": [],
+            "arm time unknown": [{"actor": "a-person", "created_at": ""}],
+            "an earlier arm's time unknown": [{"actor": rs.LOOP_AUTHOR, "created_at": ""},
+                                              {"actor": "a-person",
+                                               "created_at": "2026-11-02T11:00:00Z"}],
+            "a tie with the loop's arm": [{"actor": "a-person",
+                                           "created_at": "2026-11-02T11:00:00Z"},
+                                          {"actor": rs.LOOP_AUTHOR,
+                                           "created_at": "2026-11-02T11:00:00Z"}],
+            "no actor": [{"actor": "", "created_at": "2026-11-02T11:00:00Z"}],
         }
-        for name, (arms, closed_at) in cases.items():
+        for name, arms in cases.items():
             with self.subTest(name):
-                lines, gh = self.rearm_pass(arms, closed_at)
+                lines, gh = self.rearm_pass(arms)
                 self.assertTrue(lines[0].startswith("declined #41"), lines)
                 self.assertIn(["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO], gh.writes())
         lines, gh = self.rearm_pass([], fail_arms=True)
@@ -3420,15 +3430,17 @@ class RoundTenTests(t70.Base):
         self.assertEqual(rows, [{"actor": "a-person", "created_at": "2026-11-02T10:00:00Z"},
                                 {"actor": "", "created_at": ""}])
 
-    def test_the_issue_listing_carries_the_close_time(self):
-        gh = FakeGh(issues=[{**stamped(900, rs.PROPOSAL_STAMP), "closed_at": self.CLOSED_AT},
-                            {**stamped(901, rs.PROPOSAL_STAMP), "closed_at": "2026-11-03T00:00:00Z"}])
+    def test_no_close_time_is_read_or_carried(self):
+        # Round 12 replaced the comparison with the issue's close, so the
+        # listing no longer reads `closed_at` and a decline carries none.
+        gh = FakeGh(issues=[{**stamped(900, rs.PROPOSAL_STAMP), "closed_at": self.CLOSED_AT}])
         found = rs.existing_issues(gh, SKILL)
-        self.assertIn("closed_at: (.closed_at // \"\")", gh.calls[0][0][-1])
-        self.assertEqual(rs.declined(found, SKILL, "auto", "skill")["closed_at"],
-                         "2026-11-03T00:00:00Z")
-        found["closed_at"][900] = "garbled"
-        self.assertIsNone(rs.declined(found, SKILL, "auto", "skill")["closed_at"])
+        self.assertNotIn("closed_at", gh.calls[0][0][-1])
+        self.assertNotIn("closed_at", found)
+        self.assertNotIn("closed_at", rs.declined(found, SKILL, "auto", "skill"))
+        item = rs.withdraw_plan(self.GATES(), [pr()], "skill", gh)[0]
+        self.assertEqual(item["action"], "decline")
+        self.assertFalse({"closed_at", "otherwise"} & set(item), item)
 
     def test_any_close_declines_whatever_its_reason(self):
         for reason in ("completed", "not_planned", None):
@@ -3596,9 +3608,9 @@ def event(kind, actor, when, body=""):
 
 class RoundElevenTests(t70.Base):
     """PR #751 round 11 (skills-evals#758): R11-1 (the cap comment is posted
-    once on the open issue, even beside a closed one), R11-2 (a person's
-    re-arm overrides only the decline), R11-3 (the `proposal` switch leaves a
-    person's re-arm armed) and R11-4 (mutants 15 and 25)."""
+    once on the open issue, even beside a closed one), R11-2 and R11-3 (a
+    person's re-arm, now round 12's single rule: these tests were rewritten
+    for it) and R11-4 (mutants 15 and 25)."""
 
     CLOSED_AT = "2026-11-02T10:00:00Z"
     LOOP_ARM = event("auto_merge_enabled", rs.LOOP_AUTHOR, "2026-11-01T08:00:00Z")
@@ -3680,36 +3692,33 @@ class RoundElevenTests(t70.Base):
                                   delete=lambda *a: None)
         return lines, gh
 
-    def assertSameAsWithoutTheIssue(self, gates, timeline):
-        with_issue, gh = self.pass_with(gates, timeline, True)
-        without, bare = self.pass_with(gates, timeline, False)
-        self.assertTrue(with_issue[0].startswith("not declining #41"), with_issue)
-        self.assertTrue(with_issue[0].endswith(without[0]), (with_issue, without))
-        self.assertEqual([a for a in gh.writes() if a[0] != "issue"],
-                         [a for a in bare.writes() if a[0] != "issue"])
-        self.assertEqual(gh.armed, bare.armed)
-        return with_issue, gh
+    LEFT = ["left #41 for a person: armed by a person"]
 
-    def test_a_stale_verdict_still_withdraws_a_rearmed_declined_removal(self):
-        lines, gh = self.assertSameAsWithoutTheIssue(doc({SKILL: VERDICTS["keep"]}),
-                                                     [self.LOOP_ARM, self.REARM])
-        self.assertIn("withdrew #41", lines[0])
-        self.assertIn(["pr", "close", SKILL_URL, "-R", rs.REGISTRY_REPO], gh.writes())
-        self.assertFalse(gh.armed)
+    def assertLeftEitherWay(self, gates, timeline):
+        # Round 12 (was R11-2's "the same as without the issue"): a person's
+        # arm in force is left alone with or without a closed issue.
+        for closed_issue in (True, False):
+            lines, gh = self.pass_with(gates, timeline, closed_issue)
+            self.assertEqual(lines, self.LEFT, closed_issue)
+            self.assertEqual(gh.writes(), [])
+            self.assertTrue(gh.armed)
 
-    def test_the_proposal_switch_still_disarms_a_rearmed_declined_removal(self):
-        # Re-armed after the close, but the loop never turned it off: the
-        # switch disarms it, as it would with no closed issue.
+    def test_a_stale_verdict_leaves_a_persons_arm(self):
+        self.assertLeftEitherWay(doc({SKILL: VERDICTS["keep"]}), [self.LOOP_ARM, self.REARM])
+
+    def test_the_proposal_switch_leaves_a_persons_arm(self):
+        # Re-armed with no disable of the loop's in between: still a person's
+        # arm in force (R11-3's `switch_rearm` disarmed this one).
         gates = doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal")
-        lines, gh = self.assertSameAsWithoutTheIssue(gates, [self.LOOP_ARM, self.REARM])
-        self.assertIn("disarmed #41", lines[0])
-        self.assertFalse(gh.armed)
+        self.assertLeftEitherWay(gates, [self.LOOP_ARM, self.REARM])
 
-    def test_a_supported_one_in_auto_mode_is_kept_either_way(self):
-        lines, gh = self.assertSameAsWithoutTheIssue(doc({SKILL: VERDICTS["retire+auto"]}),
-                                                     [self.LOOP_ARM, self.REARM])
-        self.assertEqual(gh.writes(), [])
-        self.assertTrue(gh.armed)
+    def test_a_supported_one_in_auto_mode_has_no_write_either_way(self):
+        gates = doc({SKILL: VERDICTS["retire+auto"]})
+        lines, gh = self.pass_with(gates, [self.LOOP_ARM, self.REARM], True)
+        self.assertEqual(lines, self.LEFT)
+        lines, bare = self.pass_with(gates, [self.LOOP_ARM, self.REARM], False)
+        self.assertTrue(lines[0].startswith("kept #41"), lines)
+        self.assertEqual((gh.writes(), bare.writes()), ([], []))
 
     # R11-3 ---------------------------------------------------------------
     PROPOSAL = staticmethod(lambda: doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal"))
@@ -3717,34 +3726,31 @@ class RoundElevenTests(t70.Base):
     def test_a_persons_rearm_after_the_switch_is_left_armed(self):
         lines, gh = self.pass_with(self.PROPOSAL(), [self.LOOP_ARM, self.LOOP_OFF,
                                                      self.REARM], False)
-        self.assertEqual(lines, ["kept #41 armed: someone other than the loop turned its "
-                                 "auto-merge on again after the loop turned it off, so the "
-                                 "proposal switch leaves it armed"])
+        self.assertEqual(lines, self.LEFT)
         self.assertEqual(gh.writes(), [])
         self.assertTrue(gh.armed)
-        # The same, with the person's own hold and re-arm in between.
+        # The same, with the person's own hold and re-arm in between (R12-2:
+        # `switch_rearm` disarmed this one).
         lines, gh = self.pass_with(self.PROPOSAL(), [
             self.LOOP_ARM, self.LOOP_OFF,
             event("auto_merge_enabled", "a-person", "2026-11-02T09:30:00Z"),
             event("auto_merge_disabled", "a-person", "2026-11-02T09:40:00Z"),
             self.REARM], False)
-        self.assertEqual(gh.writes(), [], lines)
+        self.assertEqual((lines, gh.writes()), (self.LEFT, []))
 
-    def test_anything_short_of_a_later_persons_rearm_is_disarmed(self):
+    def test_anything_short_of_a_persons_arm_in_force_is_disarmed(self):
+        # Round 12 (was "short of a later person's re-arm"): only who armed it
+        # last counts, so "no loop disable", "re-armed before the loop's
+        # disable", "same second" and "disable time unknown" left this list.
         cases = {
             "the loop's own arm only": [self.LOOP_ARM],
-            "no loop disable": [self.LOOP_ARM,
-                                event("auto_merge_disabled", "a-person", "2026-11-02T09:00:00Z"),
-                                self.REARM],
-            "re-armed before the loop's disable": [
-                event("auto_merge_enabled", "a-person", "2026-11-02T08:59:59Z"), self.LOOP_OFF],
-            "same second": [self.LOOP_OFF, event("auto_merge_enabled", "a-person",
-                                                 self.LOOP_OFF["created_at"])],
             "the loop armed last": [self.LOOP_OFF, self.REARM,
                                     event("auto_merge_enabled", rs.LOOP_AUTHOR,
                                           "2026-11-02T11:00:00Z")],
-            "disable time unknown": [{**self.LOOP_OFF, "created_at": ""}, self.REARM],
             "arm time unknown": [self.LOOP_OFF, {**self.REARM, "created_at": ""}],
+            "a tie with the loop's arm": [self.REARM, {**self.LOOP_ARM,
+                                                       "created_at": self.REARM["created_at"]}],
+            "no arm event": [self.LOOP_OFF],
         }
         for name, timeline in cases.items():
             with self.subTest(name):
@@ -3763,9 +3769,11 @@ class RoundElevenTests(t70.Base):
         lines = rs.withdraw_stale(self.PROPOSAL(), [{**pr(), "armed": True}], "skill", flaky)
         self.assertTrue(lines[0].startswith("disarmed #41"), lines)
 
-    def test_a_stale_verdict_still_withdraws_it_in_proposal_mode(self):
-        lines, gh = self.pass_with(doc({SKILL: VERDICTS["keep"]}, mode="proposal"),
-                                   [self.LOOP_ARM, self.LOOP_OFF, self.REARM], False)
+    def test_a_stale_verdict_in_proposal_mode_withdraws_only_the_loops_arm(self):
+        gates = doc({SKILL: VERDICTS["keep"]}, mode="proposal")
+        lines, gh = self.pass_with(gates, [self.LOOP_ARM, self.LOOP_OFF, self.REARM], False)
+        self.assertEqual(lines, self.LEFT)
+        lines, gh = self.pass_with(gates, [self.LOOP_ARM], False)
         self.assertTrue(lines[0].startswith("withdrew #41"), lines)
 
     def test_the_dry_run_names_both_timeline_reads(self):
@@ -3777,7 +3785,8 @@ class RoundElevenTests(t70.Base):
 
     def test_the_docs_say_a_hand_rearm_lasts(self):
         text = " ".join((ROOT / "docs" / "how-it-works.md").read_text().split())
-        self.assertIn("the switch disarms only the App's arm", text)
+        self.assertIn("that is a person's arm in force (above), which the switch leaves "
+                      "armed", text)
 
     # R11-4 ---------------------------------------------------------------
     def test_mutant_15_a_rearm_then_a_hold_is_declined(self):
@@ -3799,6 +3808,269 @@ class RoundElevenTests(t70.Base):
                                         c["view"], c["pr_labels"], c["unlabel"],
                                         c["pr_labels"], c["comment"], c["close"]])
         self.assertIn("--remove-label", c["unlabel"])
+
+
+class IssueStoreGitHub(t70.FakeGitHub):
+    """t70's fake whose skills-evals issues keep the bodies `issue edit`
+    writes, and whose body read (`cap_notice`) returns them, so one pass's
+    writes are what the next pass reads (R12-1)."""
+
+    def _issue(self, n):
+        return next(i for i in self.issues if i["number"] == int(n))
+
+    def gh(self, args, stdin=None):
+        if args[:2] == ["issue", "edit"]:
+            self.calls.append((list(args), stdin))
+            self._issue(args[2])["body"] = stdin
+            return ""
+        if args[0] == "api" and args[1].startswith(f"repos/{rs.EVALS_REPO}/issues/"):
+            self.calls.append((list(args), stdin))
+            return self._issue(args[1].rsplit("/", 1)[1])["body"] + "\n"
+        return super().gh(args, stdin)
+
+
+class RoundTwelveTests(t70.Base):
+    """PR #759 round 12 (skills-evals#758): one rule for a person's arm
+    (R12-2 to R12-5): a removal armed now whose latest `auto_merge_enabled`
+    event is someone's other than LOOP_AUTHOR is left for that person by
+    every action and refreshed; anything else falls back to the action. And
+    R12-1: a pass lowered to a proposal at the cap keeps CAP_MARKER, so the
+    cap comment is posted once."""
+
+    LOOP_ARM = event("auto_merge_enabled", rs.LOOP_AUTHOR, "2026-11-01T08:00:00Z")
+    LOOP_OFF = event("auto_merge_disabled", rs.LOOP_AUTHOR, "2026-11-02T09:00:00Z")
+    ARM = event("auto_merge_enabled", "a-person", "2026-11-02T10:00:00Z")
+    LEFT = ["left #41 for a person: armed by a person"]
+    HEAD = f"{rs.BRANCH_PREFIX}{SKILL}"
+
+    #: (name, gates, a closed proposal issue, labels, what the pass does
+    #: without a person's arm)
+    ACTIONS = (
+        ("decline", lambda: doc({SKILL: VERDICTS["retire+auto"]}), True, (rs.AGENT_LABEL,),
+         "declined #41"),
+        ("stale verdict", lambda: doc({SKILL: VERDICTS["keep"]}), False, (rs.AGENT_LABEL,),
+         "withdrew #41"),
+        ("stale verdict, issue closed", lambda: doc({SKILL: VERDICTS["keep"]}), True,
+         (rs.AGENT_LABEL,), "declined #41"),
+        ("proposal switch", lambda: doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal"),
+         False, (rs.AGENT_LABEL,), "disarmed #41"),
+        ("stopped withdrawal", lambda: doc({SKILL: VERDICTS["retire+auto"]}), False,
+         (rs.AGENT_LABEL, rs.WITHDRAWN_LABEL), "withdrew #41"),
+    )
+
+    def one_pass(self, gates, timeline, closed_issue, labels=(rs.AGENT_LABEL,), armed=True,
+                 gh=None):
+        gh = gh or ArmsGh(issues=[stamped(900, rs.PROPOSAL_STAMP)] if closed_issue else [],
+                          armed=armed)
+        gh.timeline = list(timeline)
+        gh.pr_labels = list(labels)
+        lines = rs.withdraw_stale(gates, [{**pr(labels=labels), "armed": armed}], "skill", gh,
+                                  delete=lambda *a: None)
+        return lines, gh
+
+    def test_a_persons_arm_is_left_by_every_action(self):
+        for name, gates, closed_issue, labels, _ in self.ACTIONS:
+            for timeline in ([self.LOOP_ARM, self.ARM],
+                             [self.LOOP_ARM, self.LOOP_OFF, self.ARM],
+                             [self.LOOP_ARM, event("auto_merge_disabled", "a-person",
+                                                   "2026-11-02T09:00:00Z"), self.ARM]):
+                with self.subTest(name, timeline=len(timeline)):
+                    lines, gh = self.one_pass(gates(), timeline, closed_issue, labels)
+                    self.assertEqual(lines, self.LEFT)
+                    self.assertEqual(gh.writes(), [])
+                    self.assertTrue(gh.armed)
+
+    def test_the_loops_arm_falls_back_to_the_action(self):
+        for name, gates, closed_issue, labels, want in self.ACTIONS:
+            for timeline in ([self.LOOP_ARM], [self.ARM, {**self.LOOP_ARM,
+                                                          "created_at": "2026-11-03T00:00:00Z"}]):
+                with self.subTest(name, timeline=timeline):
+                    lines, gh = self.one_pass(gates(), timeline, closed_issue, labels)
+                    self.assertTrue(lines[0].startswith(want), lines)
+                    self.assertFalse(gh.armed)
+
+    def test_an_unreadable_timeline_falls_back_to_the_action(self):
+        for name, gates, closed_issue, labels, want in self.ACTIONS:
+            with self.subTest(name):
+                base = ArmsGh(issues=[stamped(900, rs.PROPOSAL_STAMP)] if closed_issue else [])
+                base.timeline, base.pr_labels = [self.LOOP_ARM, self.ARM], list(labels)
+
+                def flaky(args, stdin=None):
+                    if rs.ARMS_JQ in args:
+                        raise rs.RetireError("gh api exited 1")
+                    return base(args, stdin)
+
+                lines = rs.withdraw_stale(gates(), [{**pr(labels=labels), "armed": True}],
+                                          "skill", flaky, delete=lambda *a: None)
+                self.assertTrue(lines[0].startswith(want), lines)
+                self.assertFalse(base.armed)
+
+    def test_an_unarmed_removal_is_never_a_persons(self):
+        # A person armed it, then the loop's own disarm turned it off: not
+        # armed, so not overridden, and who armed it is not even read.
+        timeline = [self.LOOP_ARM, self.ARM, event("auto_merge_disabled", rs.LOOP_AUTHOR,
+                                                   "2026-11-02T11:00:00Z")]
+        lines, gh = self.one_pass(doc({SKILL: VERDICTS["retire+auto"]}), timeline, True,
+                                  armed=False)
+        self.assertTrue(lines[0].startswith("declined #41"), lines)
+        self.assertFalse(any(rs.ARMS_JQ in a for a, _ in gh.calls))
+        c = rs.withdraw_commands("skill", SKILL_URL)
+        self.assertFalse(rs.persons_arm(gh, c, False))
+        self.assertTrue(rs.persons_arm(gh, c, True))
+        gh.armed = False
+        ok, why = rs.refresh_allowed(doc({SKILL: VERDICTS["retire+auto"]}), self.HEAD, gh, 41)
+        self.assertEqual((ok, why), (False, "its proposal issue #900 is closed, which "
+                                            "declines it"))
+
+    def test_the_latest_arm_is_read_by_time_not_by_position(self):
+        c = rs.withdraw_commands("skill", SKILL_URL)
+        late = {**self.LOOP_ARM, "created_at": "2026-11-02T11:00:00Z"}
+        for timeline, want in (([self.ARM, {**self.LOOP_ARM}], True),
+                               ([late, self.ARM], False)):
+            with self.subTest(timeline=timeline):
+                gh = ArmsGh()
+                gh.timeline = timeline
+                self.assertIs(rs.persons_arm(gh, c, True), want)
+
+    def test_the_status_line_and_the_dry_run(self):
+        self.assertEqual(rs.PERSONS_ARM, "armed by a person")
+        c = rs.withdraw_commands("skill", SKILL_URL)
+        for action in ("withdraw", "disarm", "decline"):
+            listing = rs.would_run("skill", {"action": action, "subject": SKILL,
+                                             "url": SKILL_URL, "declined": 900, "why": "w"})
+            self.assertLess(listing.index(c["arms"]), listing.index(c["merge"]), action)
+
+    # Refresh -------------------------------------------------------------
+    def refresh(self, gates, timeline=None, issues=(), number=41, armed=True,
+                head=None, gh=None):
+        gh = gh or ArmsGh(issues=list(issues), armed=armed)
+        gh.timeline = list(timeline if timeline is not None else [self.LOOP_ARM, self.ARM])
+        return rs.refresh_allowed(gates, head or self.HEAD, gh, number), gh
+
+    def test_refresh_allows_a_persons_arm_whatever_else_says_no(self):
+        cases = {
+            "stale verdict": (doc({SKILL: VERDICTS["keep"]}), ()),
+            "proposal mode": (doc({SKILL: VERDICTS["retire+auto"]}, mode="proposal"), ()),
+            "closed proposal issue": (doc({SKILL: VERDICTS["retire+auto"]}),
+                                      [stamped(900, rs.PROPOSAL_STAMP)]),
+            "verdicts unknown": (None, ()),
+        }
+        for name, (gates, issues) in cases.items():
+            with self.subTest(name):
+                (ok, why), gh = self.refresh(gates, issues=issues)
+                self.assertTrue(ok, why)
+                self.assertTrue(why.startswith("armed by a person"), why)
+                self.assertIn(["api", f"repos/{rs.REGISTRY_REPO}/pulls/41", "--jq",
+                               ".auto_merge != null"], [a for a, _ in gh.calls])
+                # Without the number, the refusal stands.
+                (ok, _), gh = self.refresh(gates, issues=issues, number=None)
+                self.assertFalse(ok)
+        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
+        (ok, why), gh = self.refresh(doc(guidance={SECTION: VERDICTS["keep"]}), head=head)
+        self.assertTrue(ok, why)
+        self.assertIn(["api", f"repos/{rs.GUIDANCE_REPO}/pulls/41", "--jq",
+                       ".auto_merge != null"], [a for a, _ in gh.calls])
+
+    def test_refresh_refuses_anything_short_of_a_persons_arm(self):
+        gates = doc({SKILL: VERDICTS["keep"]})
+        for name, kwargs in {
+                "the loop's arm": {"timeline": [self.LOOP_ARM]},
+                "not armed": {"armed": False},
+                "arm time unknown": {"timeline": [{**self.ARM, "created_at": ""}]},
+                "no arm": {"timeline": []},
+                "no number": {"number": None},
+                "a bad number": {"number": 0}}.items():
+            with self.subTest(name):
+                (ok, why), _ = self.refresh(gates, **kwargs)
+                self.assertEqual((ok, why), (False, "the verdict is keep, not retire"))
+        for jq in (rs.ARMS_JQ, ".auto_merge != null"):
+            with self.subTest(unreadable=jq):
+                base = ArmsGh()
+                base.timeline = [self.LOOP_ARM, self.ARM]
+
+                def flaky(args, stdin=None):
+                    if jq in args:
+                        raise rs.RetireError("gh api exited 1")
+                    return base(args, stdin)
+
+                self.assertFalse(rs.refresh_allowed(gates, self.HEAD, flaky, 41)[0])
+        # A supported removal is refreshed without reading who armed it.
+        (ok, _), gh = self.refresh(doc({SKILL: VERDICTS["retire+auto"]}))
+        self.assertTrue(ok)
+        self.assertFalse(any(rs.ARMS_JQ in a for a, _ in gh.calls))
+
+    def test_removal_check_passes_the_number(self):
+        import refresh_loop_prs as rlp
+        from contextlib import redirect_stdout
+        gh = ArmsGh()
+        gh.timeline = [self.LOOP_ARM, self.ARM]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps(doc({SKILL: VERDICTS["keep"]})))
+            for extra, want in (([], 4), (["--number", "41"], 0)):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    code = rlp.main(["removal-check", "--gates", str(path), "--head",
+                                     self.HEAD, *extra], gh=gh)
+                self.assertEqual(code, want, out.getvalue())
+        self.assertIn("reason=armed by a person", out.getvalue())
+
+    def test_no_time_comparison_is_left(self):
+        src = Path(rs.__file__).read_text()
+        for gone in ("def person_rearm", "def switch_rearm", '"otherwise"', "closed_at"):
+            self.assertNotIn(gone, src)
+
+    # R12-1 ---------------------------------------------------------------
+    def test_a_lowered_pass_at_the_cap_keeps_the_marker_and_the_comment_is_once(self):
+        withdrawn = RoundTenTests.withdrawn_body(self)
+        fake = IssueStoreGitHub(closed=[closed_pr(n) for n in (7, 8, 9)],
+                                issues=[t70.issue(900, withdrawn, state="closed"),
+                                        t70.issue(901, withdrawn)])
+        auto = ("--allow-mode", "auto", "--allow-mode", "proposal")
+        lowered = ("--allow-mode", "proposal", "--fallback-to-proposal")
+        marker = rs.CAP_MARKER.format(subject=t70.SKILL)
+        for extra in (auto, lowered, auto, lowered, auto):
+            code, out, err, _ = t70.Base.run_main(self, t70.gates_doc("auto"), *extra,
+                                                  env=t70.AUTO_ENV, fake=fake)
+            self.assertEqual(code, 0, err)
+            self.assertIn(marker, fake._issue(901)["body"], (extra, out))
+        caps = [s for a, s in fake.calls
+                if a[:2] == ["issue", "comment"] and marker in (s or "")]
+        self.assertEqual(len(caps), 1)
+        self.assertEqual(fake.pushes, [])
+
+    def test_the_lowered_path_posts_the_comment_when_it_is_first(self):
+        withdrawn = RoundTenTests.withdrawn_body(self)
+        fake = IssueStoreGitHub(closed=[closed_pr(n) for n in (7, 8, 9)],
+                                issues=[t70.issue(901, withdrawn)])
+        lowered = ("--allow-mode", "proposal", "--fallback-to-proposal")
+        auto = ("--allow-mode", "auto", "--allow-mode", "proposal")
+        for extra in (lowered, lowered, auto):
+            code, out, err, _ = t70.Base.run_main(self, t70.gates_doc("auto"), *extra,
+                                                  env=t70.AUTO_ENV, fake=fake)
+            self.assertEqual(code, 0, err)
+        marker = rs.CAP_MARKER.format(subject=t70.SKILL)
+        caps = [s for a, s in fake.calls
+                if a[:2] == ["issue", "comment"] and marker in (s or "")]
+        self.assertEqual(len(caps), 1)
+        self.assertIn(f"@{rs.NOTICE_OWNER}", caps[0])
+
+    def test_the_guidance_lowered_path_at_the_cap_keeps_the_note(self):
+        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
+        paused = [closed_pr(n, head=head) for n in (7, 8, 9)]
+        opened = stamped(901, rs.WITHDRAWAL_STAMP, subject=SECTION,
+                         marker=rs.GUIDANCE_ISSUE_MARKER, state="open")
+        gates = doc(guidance={SECTION: gretire(removal="proposal")})
+        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused),
+                                  allowed=("auto", "proposal"))
+        self.assertEqual((action["action"], action["issue"]), ("update-issue", 901))
+        self.assertIn(rs.CAP_MARKER.format(subject=SECTION), action["body"])
+        self.assertIn("cap_comment", action)
+        # Short of the cap the lowered body carries no cap note.
+        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused[:2]),
+                                  allowed=("auto", "proposal"))
+        self.assertNotIn(rs.CAP_PREFIX, action["body"])
+        self.assertNotIn("cap_comment", action)
 
 
 import gates as gates_mod  # noqa: E402

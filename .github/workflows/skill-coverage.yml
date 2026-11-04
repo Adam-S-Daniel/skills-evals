@@ -216,11 +216,11 @@ jobs:
   # whose subject's proposal issue a person has closed, for any reason, is
   # declined, in either mode: it is disarmed, its `loop-withdrawn` label
   # taken off and read back, and closed as a decision (branch kept, no new
-  # issue), which decides the subject even if the issue is reopened; a
-  # person's re-arm after that close overrides only the decline (R11-2), and
-  # the `proposal` switch leaves armed a removal a person re-armed after the
-  # loop's last disarm (R11-3). Unknown verdicts
-  # withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass
+  # issue), which decides the subject even if the issue is reopened. A
+  # removal armed now whose latest auto-merge arm is a person's, not the
+  # loop App's, is that person's: the pass does not decline, disarm or
+  # withdraw it (round 12; an unreadable timeline is not a person's arm).
+  # Unknown verdicts withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass
   # after every ingest, so a verdict an ingest changes is acted on within
   # that run.
   retirement:
