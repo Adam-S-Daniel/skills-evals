@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BewHTgeRWj2TSLHhD2dLg3",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && wc -l vendor/*",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BewHTgeRWj2TSLHhD2dLg3",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014k9m7aZkxheoTfQUEP4g83",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md .example-cli/settings.json hooks/session-start.sh; cat bin/gh | head -40; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json",
+      "input_chars": 188,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014k9m7aZkxheoTfQUEP4g83",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced skills are now named `...",
+      "output_chars": 6715,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PgzwjEtGpw3Vh3CcLsh8zk",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/example-org/example-repo/issues.json | head -60; cat .gh/replay/api/repos/example-org/example-repo/issues/57/comments.json | head -30; cat .gh/replay/auth-status.txt; git log ...",
+      "input_chars": 384,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PgzwjEtGpw3Vh3CcLsh8zk",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"open\",\n    \"state_reason\": null,\n    \"closed_at\": null,\n    \"created_at\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"html_url\": \"https://github.com/example-org/...",
+      "output_chars": 2618,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013MgfNZQMc31B4X2Rgv2hFC",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed-readme.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: update the README invocation\n\nFound in the ExampleCLI 4.2.0 review...",
+      "input_chars": 2903,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013MgfNZQMc31B4X2Rgv2hFC",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? issues/\n?? review.md",
+      "output_chars": 162,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

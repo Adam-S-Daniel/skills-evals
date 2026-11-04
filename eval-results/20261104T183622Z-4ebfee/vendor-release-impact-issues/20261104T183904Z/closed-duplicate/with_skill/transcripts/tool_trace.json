@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AsyvedTGEYc52r34FVb5i7",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AsyvedTGEYc52r34FVb5i7",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N6ZvfukujAntQC4Fb6EVCk",
+      "name": "Bash",
+      "input": "git status --short | head; ls -la; ls vendor; wc -c vendor/*; git ls-files | head -100",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N6ZvfukujAntQC4Fb6EVCk",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ntotal 44\ndrwxr-xr-x 9 root root 4096 Nov  4 18:39 .\ndrwx------ 6 root root 4096 Nov  4 18:39 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  4 01:22 .bash_profile\ncrw-rw-rw- 1 root ro...",
+      "output_chars": 1691,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LZSvRuTmzdLqVaxvx5crYq",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat AGENTS.md README.md .example-cli/settings.json; echo ----; cat bin/gh hooks/session-start.sh; echo; cat .gh/replay/auth-stat...",
+      "input_chars": 289,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LZSvRuTmzdLqVaxvx5crYq",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.8KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2188,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R3y3DWdhouK8DLV4RWdMnV",
+      "name": "Bash",
+      "input": "cat hooks/session-start.sh; cat .gh/replay/auth-status.txt; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json; cat .gh/replay/api/repos/example-org/example-repo/issues.json; head -c 1500 .g...",
+      "input_chars": 321,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R3y3DWdhouK8DLV4RWdMnV",
+      "is_error": false,
+      "output": "#!<path> bash\n# Runs on every SessionStart event matched by .example-cli/settings.json's\n# \"startup|resume\" matcher. Logs the session source so the team can audit\n# which sessions start cold vs. resume a previous one.\nset -euo pipefail\necho \"session-start: source=${EXAMPLE_CLI_SOURCE:-unknown}\" >> ....",
+      "output_chars": 7715,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JBDoxzqEsgyzkPBoQ5nzD6",
+      "name": "Bash",
+      "input": "grep -rniE \"proxy|windows|palette|theme|color|4\\.[0-9]\\.[0-9]|skills\" --exclude-dir=.git --exclude=gh --exclude-dir=.claude . | grep -v '^./.gh/replay/issue' ; ls .github 2>&1 | head -2; git log --one...",
+      "input_chars": 211,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JBDoxzqEsgyzkPBoQ5nzD6",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 2105,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RsQZq27RHrCs4m2P8SPAD7",
+      "name": "Bash",
+      "input": "mkdir -p issues $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport json, re, sys\nws = sys.argv[1]\nmd = open(f\"{ws}<path>\").read()\ntimes = json.load(open(f\"{ws}<path>\"))[\"example-cli\"]\n# index bull...",
+      "input_chars": 2776,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RsQZq27RHrCs4m2P8SPAD7",
+      "is_error": false,
+      "output": "rc=0\n# ExampleCLI 4.2.0 synced skills get a synced: prefix: README invokes them by bare name\n\nFound in the ExampleCLI 4.2.0 [2026-07-14T09:47Z] release review (group: synced-skill naming). Not yet verified against this repo.\n\n## ExampleCLI changes\n\n> Synced skills are now named `synced:NAME` instead...",
+      "output_chars": 1761,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L9zeKubck7y9Us39eJPhvX",
+      "name": "Bash",
+      "input": "cat > review.md <<'EOF'\n# ExampleCLI 4.2.0 release review for example-org/example-repo\n\nSource: `vendor/RELEASES.md`. Publish time used: `published_at` 2026-07-14T09:47Z from `vendor/releases.json`, n...",
+      "input_chars": 2298,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L9zeKubck7y9Us39eJPhvX",
+      "is_error": false,
+      "output": "01-synced-skills-prefix-readme.md",
+      "output_chars": 33,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
