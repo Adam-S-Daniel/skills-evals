@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014cn3DkGVEtUaQ8S6t3WDqD",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014cn3DkGVEtUaQ8S6t3WDqD",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Fyhp3SCEpUR7EiJrWuFvo9",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor",
+      "input_chars": 37,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Fyhp3SCEpUR7EiJrWuFvo9",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nRELEASES.md\nreleases.json",
+      "output_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CWN5ReLdFijUceMULHau52",
+      "name": "Bash",
+      "input": "cat AGENTS.md README.md .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh; echo ----; cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; ls -la vendor; ls",
+      "input_chars": 189,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CWN5ReLdFijUceMULHau52",
+      "is_error": false,
+      "output": "# AGENTS.md\n\n- Skill directory names never change.\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `...",
+      "output_chars": 4039,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012vGbuh48PqosxszmmTYef9",
+      "name": "Bash",
+      "input": "mkdir -p issues && mkdir -p $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport json, re, sys\nroot = sys.argv[1]\ntimes = json.load(open(f\"{root}<path>\"))[\"example-cli\"]\nnotes = {}; ver = None\nfor l...",
+      "input_chars": 4752,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012vGbuh48PqosxszmmTYef9",
+      "is_error": false,
+      "output": "rc=0\n# ExampleCLI 4.2.0 hooks report source \"fork\": session-start matcher is startup|resume\n\nFound in a review of the vendored ExampleCLI release notes (`vendor/RELEASES.md`) against this repository. Not yet verified against this repo.\n\n## ExampleCLI change\n\n> Session-start hooks now report source `...",
+      "output_chars": 4272,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LncAYGTjWk3RDAbxN8my8T",
+      "name": "Bash",
+      "input": "sed -i 's/On 4\\.1\\.0 (the CI pin)/On {{4.1.0}} (the CI pin)/' $TMPDIR/gen/gen.py && python3 -I $TMPDIR/gen/gen.py \"$PWD\" && grep -n \"4.1.0\" issues/*.md",
+      "input_chars": 151,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LncAYGTjWk3RDAbxN8my8T",
+      "is_error": false,
+      "output": "issues/01-hooks-fork-source-matcher.md:16:- `.github/workflows/ci.yml`: CI pins `example-cli@4.1.0`, so CI will not show this change until the pin moves; local installs on 4.2.0 or later may.\nissues/01-hooks-fork-source-matcher.md:21:- [ ] On 4.1.0 [2026-06-02T14:03Z] (the CI pin), confirm the same ...",
+      "output_chars": 353,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
