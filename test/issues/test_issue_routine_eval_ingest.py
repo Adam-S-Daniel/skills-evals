@@ -58,6 +58,7 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 INGEST = WORKFLOWS / "routine-eval-ingest.yml"
 SIGNAL = WORKFLOWS / "routine-eval-results-pushed.yml"
 COST_SIGNAL = WORKFLOWS / "routine-eval-cost-pushed.yml"
+SPEND_SIGNAL = WORKFLOWS / "spend-pushed.yml"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(TEST_DIR))
@@ -1490,9 +1491,11 @@ class WorkflowShapeTests(unittest.TestCase):
         on = triggers(self.ingest)
         self.assertEqual(set(on), {"workflow_run", "workflow_dispatch"})
         self.assertEqual(on["workflow_run"]["workflows"],
-                         [self.signal["name"], load(COST_SIGNAL)["name"]])
+                         [self.signal["name"], load(COST_SIGNAL)["name"],
+                          load(SPEND_SIGNAL)["name"]])
         self.assertEqual(on["workflow_run"]["types"], ["completed"])
-        self.assertEqual(on["workflow_run"]["branches"], ["claude/eval-*"])
+        self.assertEqual(on["workflow_run"]["branches"],
+                         ["claude/eval-*", "claude/spend-*"])
         self.assertEqual(set(on["workflow_dispatch"]["inputs"]), {"branch"})
 
     def test_signal_is_a_filtered_push_with_no_reach(self):
@@ -1506,7 +1509,7 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(set(cost), {"push"})
         self.assertEqual(cost["push"]["branches"], ["claude/eval-cost-*"])
         self.assertEqual(cost["push"]["paths"], [f"{ingest.COST_SOURCE_ROOT}/**"])
-        for doc in (self.signal, load(COST_SIGNAL)):
+        for doc in (self.signal, load(COST_SIGNAL), load(SPEND_SIGNAL)):
             self.assertEqual(doc["permissions"], {})
             for job in doc["jobs"].values():
                 self.assertNotIn("permissions", job)
@@ -1554,7 +1557,7 @@ class WorkflowShapeTests(unittest.TestCase):
                       self.job["if"])
 
     def test_no_concurrency_group(self):
-        for doc in (self.ingest, self.signal, load(COST_SIGNAL)):
+        for doc in (self.ingest, self.signal, load(COST_SIGNAL), load(SPEND_SIGNAL)):
             self.assertNotIn("concurrency", doc)
             for job in doc["jobs"].values():
                 self.assertNotIn("concurrency", job)
@@ -1562,10 +1565,10 @@ class WorkflowShapeTests(unittest.TestCase):
     def test_every_uses_is_locked_and_already_pinned_elsewhere(self):
         pinned = set()
         for other in WORKFLOWS.glob("*.yml"):
-            if other not in (INGEST, SIGNAL, COST_SIGNAL):
+            if other not in (INGEST, SIGNAL, COST_SIGNAL, SPEND_SIGNAL):
                 pinned |= {n.value for n in uses_nodes(
                     yaml.compose(other.read_text(encoding="utf-8")))}
-        for path in (INGEST, SIGNAL, COST_SIGNAL):
+        for path in (INGEST, SIGNAL, COST_SIGNAL, SPEND_SIGNAL):
             text = path.read_text(encoding="utf-8")
             lines = text.splitlines()
             for node in uses_nodes(yaml.compose(text)):
@@ -1577,7 +1580,7 @@ class WorkflowShapeTests(unittest.TestCase):
                     self.assertIn(node.value, pinned)
 
     def test_no_expressions_in_run_blocks(self):
-        for doc in (self.ingest, self.signal, load(COST_SIGNAL)):
+        for doc in (self.ingest, self.signal, load(COST_SIGNAL), load(SPEND_SIGNAL)):
             blocks = run_blocks(doc)
             self.assertTrue(blocks)
             for job, body in blocks:
@@ -1614,12 +1617,16 @@ class WorkflowShapeTests(unittest.TestCase):
         step = self._commit_step()
         self.assertEqual(step["env"]["KIND"], "${{ steps.validate.outputs.kind }}")
         self.assertEqual(step["env"]["DEST"], "${{ steps.validate.outputs.dest }}")
-        install = [s for s in self.job["steps"] if "pip install" in s.get("run", "")]
-        self.assertEqual(len(install), 1)
-        self.assertEqual(install[0]["if"], "steps.resolve.outputs.kind == 'cost'")
+        install = {s["if"]: s for s in self.job["steps"] if "pip install" in s.get("run", "")}
+        self.assertEqual(set(install), {"steps.resolve.outputs.kind == 'cost'",
+                                        "steps.resolve.outputs.kind == 'spend'"})
+        self.assertIn("pyyaml==", install["steps.resolve.outputs.kind == 'cost'"]["run"])
+        self.assertIn("jsonschema==4.26.0",
+                      install["steps.resolve.outputs.kind == 'spend'"]["run"])
         names = [s.get("name") for s in self.job["steps"]]
-        self.assertLess(names.index(install[0]["name"]),
-                        names.index("Validate and stage the results"))
+        for step in install.values():
+            self.assertLess(names.index(step["name"]),
+                            names.index("Validate and stage the results"))
 
     def test_commit_step_adds_dest_and_estimates_eval_only(self):
         """Parsed with tree-sitter-bash, never line-scanned: `git add` takes
