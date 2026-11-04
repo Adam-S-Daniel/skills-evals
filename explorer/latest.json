@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:28:43Z",
+  "generated_at": "2026-11-04T01:30:51Z",
   "requests": [
    {
     "closed_at": null,
@@ -351,7 +351,7 @@
    "requests_open": 30
   }
  },
- "generated_at": "2026-11-04T01:27:45Z",
+ "generated_at": "2026-11-04T01:29:53Z",
  "guidance": {
   "removed": [
    {
@@ -9562,7 +9562,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:25:21Z",
+ "newest_run": "2026-11-04T01:26:46Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -17555,11 +17555,11 @@
       "votes": true
      },
      {
-      "gain": 25.0,
-      "high": 100.0,
+      "gain": 21.9,
+      "high": 61.6,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "nightly-snapshot",
       "votes": true
@@ -17604,7 +17604,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 20,
+   "current_text_runs": 21,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
    "name": "review-bash-ci-reliability",
    "next_test": {
@@ -17615,6 +17615,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T01:26:46Z",
+     "cli_version": "2.1.318",
+     "fixture": "nightly-snapshot",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T012445Z-086a4b/review-bash-ci-reliability/20261104T012646Z/report.md",
+     "with": {
+      "checks_passed": 8,
+      "checks_total": 8,
+      "cost_usd": 0.14589149999999998,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 8,
+      "cost_usd": 0.0910746,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T01:19:11Z",
      "cli_version": "2.1.318",
@@ -23344,7 +23365,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "653a04932f73b39e2f0e56d5b389342d35e8d347"
+  "results_commit": "3aaa296e0cb4f54d8ed174adfd3f5c8bbc6b9af7"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
