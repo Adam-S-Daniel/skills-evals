@@ -39,7 +39,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T01:48:45Z",
+  "generated_at": "2026-11-04T01:51:11Z",
   "requests": [
    {
     "closed_at": null,
@@ -360,7 +360,7 @@
    "requests_open": 31
   }
  },
- "generated_at": "2026-11-04T01:47:49Z",
+ "generated_at": "2026-11-04T01:50:15Z",
  "guidance": {
   "removed": [
    {
@@ -9571,7 +9571,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T01:46:21Z",
+ "newest_run": "2026-11-04T01:48:02Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -13375,10 +13375,10 @@
      },
      {
       "gain": 14.3,
-      "high": 100.0,
-      "low": -100.0,
+      "high": 54.0,
+      "low": -38.7,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": null,
       "votes": true
@@ -13386,8 +13386,8 @@
     ],
     "helps": 0.0,
     "keep_family": 2,
-    "keep_pairs": 1,
-    "max_pairs": 3,
+    "keep_pairs": 4,
+    "max_pairs": 4,
     "no_help": 0.0,
     "no_help_pairs": 1
    },
@@ -13403,7 +13403,7 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 4,
+   "current_text_runs": 5,
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
    "name": "embeddable-tool-pages",
    "next_test": {
@@ -13414,6 +13414,27 @@
    },
    "registry": "adamdaniel.ai",
    "runs": [
+    {
+     "at": "2026-11-04T01:48:02Z",
+     "cli_version": "2.1.318",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T014539Z-511b38/embeddable-tool-pages/20261104T014802Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.1420313,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.11331,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-03T23:13:18Z",
      "cli_version": "2.1.317",
@@ -23479,7 +23500,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "452934069090c6e5d433335f014dd5eca46c75a9",
-  "results_commit": "2d80d3a454cf85050d1d2cd4bffc35c239b419ab"
+  "results_commit": "745d2385c33b6c5f7b0ecf884f142dbbe9a915ea"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
