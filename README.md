@@ -765,10 +765,17 @@ they mint an installation token for `adamdaniel.ai` alone from the
 `EVAL_IMPROVE_APP_CLIENT_ID` and `EVAL_IMPROVE_APP_PEM` secrets that the other
 routine gates already use. The App must be installed on
 `Adam-S-Daniel/adamdaniel.ai` with Contents and Pull requests read-write.
-Without the secrets, or when the App is not installed there, the mint fails
-and both workflows **warn and succeed**: `site-preview` skips the mirror, and
-`site-sync` skips the publish, so the live site goes stale. In both cases the
-`::warning::` and the run's step summary name the fix. The sync script,
+Without the secrets, or when the App is not installed there, the mint fails:
+`site-preview` **warns and succeeds** (it skips the mirror), but `site-sync`
+**fails** (red), because a green run that published nothing left the live site
+stale with nothing to say so. Each names the fix in its `::warning::` or
+`::error::` and the run's step summary. Set the repository variable `SITE_REPO`
+to `none` to skip the sync cleanly on a repository with no site.
+[`site-freshness.yml`](.github/workflows/site-freshness.yml) checks hourly that
+the site's design, data and drawn page are current, heals a behind sync PR, and
+keeps one `Site freshness check is failing` issue while anything is stale
+([`docs/routines/site-freshness-fixer.md`](docs/routines/site-freshness-fixer.md)
+is the prompt of the routine it fires). The sync script,
 [`scripts/sync_to_site.sh`](scripts/sync_to_site.sh), no-ops with a warning if
 the site has no `assets/tools/skills-evals/` directory yet.
 
