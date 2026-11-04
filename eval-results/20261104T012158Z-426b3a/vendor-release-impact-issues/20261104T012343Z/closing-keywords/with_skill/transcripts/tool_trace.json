@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0191NHk591Ru6ex7RypbxC58",
+      "name": "Bash",
+      "input": "git status --short && ls -R . | grep -v '^./.git' | head -50 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 123,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013V4MvXvkFVqgYjQdrNw2wi",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0191NHk591Ru6ex7RypbxC58",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n# ExampleCLI releas...",
+      "output_chars": 453,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013V4MvXvkFVqgYjQdrNw2wi",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017sGCJmGtagWHJ6VjGZR2aH",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -80; cat README.md hooks/warm-cache.sh .gitmodules; git log --oneline | head",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017sGCJmGtagWHJ6VjGZR2aH",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1225,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011Xah8iSPZknDd1No9rMBeK",
+      "name": "Bash",
+      "input": "ls -a .example-cli; cat .example-cli/settings.json; git ls-files",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011Xah8iSPZknDd1No9rMBeK",
+      "is_error": false,
+      "output": ".\n..\nsettings.json\n{\n  \"telemetryOptOut\": true,\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/warm-cache.sh\",\n            \"timeout\": 20\n          }\n        ]\n      }\n   ...",
+      "output_chars": 439,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BY1PePrfLJaS6YWKrYMXpD",
+      "name": "Bash",
+      "input": "mkdir -p issues && python3 - <<'EOF'\nimport re\nsrc=open('vendor/RELEASES.md').read()\nbul=[l[2:] for l in src.splitlines() if l.startswith('- ')]\nq={1:bul[0],2:bul[1]}\nT='2026-10-06T18:31Z'\nURL='https:...",
+      "input_chars": 4160,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BY1PePrfLJaS6YWKrYMXpD",
+      "is_error": false,
+      "output": "# ExampleCLI 4.4.0 enforces SessionStart hook timeout: warm-cache.sh may be killed at 20s\n\nFound in the ExampleCLI 4.4.0 [2026-10-06T18:31Z] release review (tracking PR: link to follow). Not yet verified against this repo.\n\n## ExampleCLI change\n\n4.4.0 (published 2026-10-06T18:31Z), [release notes](h...",
+      "output_chars": 650,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
