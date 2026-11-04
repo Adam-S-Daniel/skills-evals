@@ -39,17 +39,8 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-04T03:19:51Z",
+  "generated_at": "2026-11-04T03:23:04Z",
   "requests": [
-   {
-    "closed_at": null,
-    "issue": 680,
-    "kind": "needs-fixtures",
-    "opened_at": "2026-11-03T16:21:22Z",
-    "prs": [],
-    "state": "open",
-    "subject": "red-ci-adamdaniel-ai"
-   },
    {
     "closed_at": null,
     "issue": 681,
@@ -339,10 +330,10 @@
    "fixtures_real_work": 0,
    "prs_merged": 0,
    "requests_closed": 3,
-   "requests_open": 29
+   "requests_open": 28
   }
  },
- "generated_at": "2026-11-04T03:19:03Z",
+ "generated_at": "2026-11-04T03:22:03Z",
  "guidance": {
   "removed": [
    {
@@ -9576,7 +9567,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-04T03:14:05Z",
+ "newest_run": "2026-11-04T03:19:43Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -10383,7 +10374,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 6,
+    "position": 5,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -11510,7 +11501,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 7,
+    "position": 6,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -14131,7 +14122,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 8,
+    "position": 7,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -16895,7 +16886,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 9,
+    "position": 8,
     "scheduled": true
    },
    "registry": "cms-platform",
@@ -17875,7 +17866,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 10,
+    "position": 9,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -19076,7 +19067,7 @@
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 11,
+    "position": 10,
     "scheduled": true
    },
    "registry": "adam-agentskills",
@@ -21934,11 +21925,11 @@
       "votes": true
      },
      {
-      "gain": 0.0,
-      "high": 100.0,
+      "gain": -10.0,
+      "high": 41.6,
       "low": -100.0,
       "model": "claude-sonnet-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "workflow-doc-in-step",
       "votes": true
@@ -21963,17 +21954,38 @@
      "to": "2026-11-04"
     }
    },
-   "current_text_runs": 9,
+   "current_text_runs": 10,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
     "due": null,
-    "position": 5,
+    "position": 11,
     "scheduled": true
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-04T03:19:43Z",
+     "cli_version": "2.1.318",
+     "fixture": "workflow-doc-in-step",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261104T031646Z-8a27b6/workflow-path-audit/20261104T031943Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.1776847,
+      "judge_mean": 6.375,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.15345180000000003,
+      "judge_mean": 9.125,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-04T00:53:32Z",
      "cli_version": "2.1.318",
@@ -23988,7 +24000,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "59cb6863719adece4881fe9fac786128182ab6b4",
-  "results_commit": "1fc966b5682f1dc02124798ae42763972c9dc214"
+  "results_commit": "6e45cbb1a64a86bc2f7102bac71977db594dbe66"
  },
  "usage": {
   "from": "2026-09-14T00:00:00Z",
