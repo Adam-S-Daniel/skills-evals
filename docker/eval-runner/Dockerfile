@@ -103,6 +103,11 @@ RUN apt-get update \
 # harness's own Git boundary runs (harness/workspace_git.py GIT).
 COPY --from=git-build /opt/git /opt/git
 RUN ln -s /opt/git/bin/git /usr/bin/git
+# The workspace scorers' sandbox bootstrap and the fleet hooks' guard run
+# python3 only from /usr/bin or /bin (harness/scorers/commands.py
+# INTERPRETERS, harness/fleet_hooks.py GUARD_PYTHON_PATHS); this base
+# image has it only in /usr/local/bin, still inside the scorer's /usr mount.
+RUN ln -s /usr/local/bin/python3 /usr/bin/python3
 ENV PATH=/opt/git/bin:$PATH
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
