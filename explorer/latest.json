@@ -1,7 +1,16 @@
 {
  "activity": {
-  "fetched_at": "2026-11-05T10:33:17Z",
+  "fetched_at": "2026-11-05T12:35:29Z",
   "issues": [
+   {
+    "created_at": "2026-11-03T18:20:32Z",
+    "number": 700,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Needs a trigger eval set: skill compare-pdfpairs",
+    "updated_at": "2026-11-05T12:27:08Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/700"
+   },
    {
     "created_at": "2026-11-03T16:39:51Z",
     "number": 689,
@@ -343,15 +352,6 @@
     "title": "Needs a trigger eval set: skill debug-github-workflows",
     "updated_at": "2026-11-03T18:20:33Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/701"
-   },
-   {
-    "created_at": "2026-11-03T18:20:32Z",
-    "number": 700,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
-    "title": "Needs a trigger eval set: skill compare-pdfpairs",
-    "updated_at": "2026-11-03T18:20:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/700"
    },
    {
     "created_at": "2026-11-03T18:20:27Z",
@@ -697,6 +697,26 @@
    }
   ],
   "pulls": [
+   {
+    "created_at": "2026-11-05T12:26:54Z",
+    "merged_at": null,
+    "number": 781,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:31:02Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/781"
+   },
+   {
+    "created_at": "2026-11-03T23:25:29Z",
+    "merged_at": null,
+    "number": 736,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Add ci-job-performance sharded-required-check fixture",
+    "updated_at": "2026-11-05T12:24:32Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/736"
+   },
    {
     "created_at": "2026-11-04T22:27:14Z",
     "merged_at": null,
@@ -1516,16 +1536,6 @@
     "title": "Make explorer/latest.json the one public data contract",
     "updated_at": "2026-11-04T04:35:50Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/752"
-   },
-   {
-    "created_at": "2026-11-03T23:25:29Z",
-    "merged_at": null,
-    "number": 736,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
-    "title": "Add ci-job-performance sharded-required-check fixture",
-    "updated_at": "2026-11-04T04:23:03Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/736"
    },
    {
     "created_at": "2026-11-04T03:24:04Z",
@@ -3416,16 +3426,6 @@
     "title": "Fixtures for the drafted red-ci-adamdaniel-ai skill (draft run 20261103T003800Z-5baf20)",
     "updated_at": "2026-11-03T01:49:41Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/618"
-   },
-   {
-    "created_at": "2026-11-03T01:38:32Z",
-    "merged_at": "2026-11-03T01:44:05Z",
-    "number": 625,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "merged",
-    "title": "List drafted fixtures in unscheduled.yml when the gate adds them",
-    "updated_at": "2026-11-03T01:44:06Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/625"
    },
    {
     "created_at": "2026-11-03T00:44:49Z",
@@ -7684,6 +7684,330 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-05T12:34:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028230357,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-05T12:35:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028230357",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:34:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028230416,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-05T12:34:27Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028230416",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:34:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028230565,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-05T12:34:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028230565",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:34:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028230406,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-05T12:34:14Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028230406",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:33:39Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028170788,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-05T12:34:00Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028170788",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:33:28Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42028143934,
+    "state": "completed",
+    "title": "Refresh weekly spend snapshot",
+    "updated_at": "2026-11-05T12:33:35Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42028143934",
+    "workflow": "Spend totals pushed"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-05T12:26:58Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027210951,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:33:09Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210951",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:30:57Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027786318,
+    "state": "completed",
+    "title": "PR #781",
+    "updated_at": "2026-11-05T12:32:37Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027786318",
+    "workflow": "PR #781"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:31:09Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027816376,
+    "state": "completed",
+    "title": "Fixture PR gate",
+    "updated_at": "2026-11-05T12:31:36Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027816376",
+    "workflow": "Fixture PR gate"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:31:00Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027794891,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:31:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794891",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-05T12:31:00Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027794822,
+    "state": "in_progress",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:31:12Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794822",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:31:00Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027794726,
+    "state": "completed",
+    "title": "PR #781 \u2192 site preview (synchronize)",
+    "updated_at": "2026-11-05T12:31:10Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794726",
+    "workflow": "PR #781 \u2192 site preview (synchronize)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:31:00Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027794857,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:31:06Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794857",
+    "workflow": "Fixture PR seen"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-05T12:31:00Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027794962,
+    "state": "completed",
+    "title": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:31:02Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794962",
+    "workflow": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:26:56Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027207642,
+    "state": "completed",
+    "title": "PR #781",
+    "updated_at": "2026-11-05T12:28:40Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027207642",
+    "workflow": "PR #781"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:27:19Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027261598,
+    "state": "completed",
+    "title": "Fixture PR gate",
+    "updated_at": "2026-11-05T12:27:58Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027261598",
+    "workflow": "Fixture PR gate"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:27:07Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027231976,
+    "state": "completed",
+    "title": "Fixture PR gate",
+    "updated_at": "2026-11-05T12:27:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027231976",
+    "workflow": "Fixture PR gate"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:27:08Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027233975,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:27:16Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027233975",
+    "workflow": "Fixture PR seen"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:26:58Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027210917,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:27:09Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210917",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:26:58Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027210938,
+    "state": "completed",
+    "title": "PR #781 \u2192 site preview (opened)",
+    "updated_at": "2026-11-05T12:27:07Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210938",
+    "workflow": "PR #781 \u2192 site preview (opened)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:26:58Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027211088,
+    "state": "completed",
+    "title": "Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:27:04Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027211088",
+    "workflow": "Fixture PR seen"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-05T12:26:58Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42027210959,
+    "state": "completed",
+    "title": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)",
+    "updated_at": "2026-11-05T12:26:59Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210959",
+    "workflow": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T12:11:49Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42025088380,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-05T12:12:01Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42025088380",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T11:58:37Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42023269135,
+    "state": "completed",
+    "title": "Sweep stale CMS PRs",
+    "updated_at": "2026-11-05T11:58:52Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42023269135",
+    "workflow": "Sweep stale CMS PRs"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T11:40:52Z",
+    "event": "schedule",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42020924314,
+    "state": "completed",
+    "title": "Sweep stale CMS PRs",
+    "updated_at": "2026-11-05T11:41:05Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42020924314",
+    "workflow": "Sweep stale CMS PRs"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T10:59:26Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/rss-inator",
+    "run_id": 42015223152,
+    "state": "completed",
+    "title": "feeds",
+    "updated_at": "2026-11-05T11:00:06Z",
+    "url": "https://github.com/Adam-S-Daniel/rss-inator/actions/runs/42015223152",
+    "workflow": "feeds"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-05T10:35:43Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42012010011,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-05T10:36:25Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42012010011",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-05T10:32:00Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -8608,30 +8932,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T21:55:20Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920549814,
-    "state": "completed",
-    "title": "PR #780",
-    "updated_at": "2026-11-04T22:01:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920549814",
-    "workflow": "PR #780"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:54:06Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920358697,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T22:00:25Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920358697",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T21:58:42Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -8776,18 +9076,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T21:54:03Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920349991,
-    "state": "completed",
-    "title": "PR #780",
-    "updated_at": "2026-11-04T21:56:10Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920349991",
-    "workflow": "PR #780"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T21:55:27Z",
     "event": "push",
     "repo": "jodidaniel/jodidaniel.com",
@@ -8905,66 +9193,6 @@
     "updated_at": "2026-11-04T21:55:24Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920559205",
     "workflow": "PR #780 \u2014 Run local_eval in a container with a setup-token"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:48:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919491708,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:54:22Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919491708",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:54:06Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920358782,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:54:17Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920358782",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:54:06Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920358721,
-    "state": "completed",
-    "title": "PR #780 \u2192 site preview (synchronize)",
-    "updated_at": "2026-11-04T21:54:16Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920358721",
-    "workflow": "PR #780 \u2192 site preview (synchronize)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-04T21:54:06Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41920358663,
-    "state": "completed",
-    "title": "PR #780 \u2014 Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:54:07Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41920358663",
-    "workflow": "PR #780 \u2014 Run local_eval in a container with a setup-token"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:47:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919319036,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:53:27Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919319036",
-    "workflow": "CI"
    },
    {
     "conclusion": "success",
@@ -9088,66 +9316,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T21:48:22Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919483729,
-    "state": "completed",
-    "title": "PR #780",
-    "updated_at": "2026-11-04T21:50:39Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919483729",
-    "workflow": "PR #780"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:47:11Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919307130,
-    "state": "completed",
-    "title": "PR #780",
-    "updated_at": "2026-11-04T21:49:24Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919307130",
-    "workflow": "PR #780"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:48:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919491720,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:48:38Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919491720",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:48:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919491752,
-    "state": "completed",
-    "title": "PR #780 \u2192 site preview (synchronize)",
-    "updated_at": "2026-11-04T21:48:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919491752",
-    "workflow": "PR #780 \u2192 site preview (synchronize)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-04T21:48:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919491710,
-    "state": "completed",
-    "title": "PR #780 \u2014 Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:48:26Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919491710",
-    "workflow": "PR #780 \u2014 Run local_eval in a container with a setup-token"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T21:44:29Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/acsi-kit",
@@ -9157,42 +9325,6 @@
     "updated_at": "2026-11-04T21:48:14Z",
     "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/41918891599",
     "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:47:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919318993,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:47:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919318993",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:47:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919318850,
-    "state": "completed",
-    "title": "PR #780 \u2192 site preview (synchronize)",
-    "updated_at": "2026-11-04T21:47:25Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919318850",
-    "workflow": "PR #780 \u2192 site preview (synchronize)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-04T21:47:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41919319031,
-    "state": "completed",
-    "title": "PR #780 \u2014 Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:47:18Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41919319031",
-    "workflow": "PR #780 \u2014 Run local_eval in a container with a setup-token"
    },
    {
     "conclusion": "success",
@@ -10468,18 +10600,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T20:56:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41911345235,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T21:02:28Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41911345235",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T21:00:03Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -10489,18 +10609,6 @@
     "updated_at": "2026-11-04T21:01:15Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/41911883720",
     "workflow": null
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T21:00:00Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 41911874586,
-    "state": "completed",
-    "title": "PR #4659",
-    "updated_at": "2026-11-04T21:01:09Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/41911874586",
-    "workflow": "PR #4659"
    },
    {
     "conclusion": "success",
@@ -10732,18 +10840,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T20:56:28Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41911339364,
-    "state": "completed",
-    "title": "PR #780",
-    "updated_at": "2026-11-04T20:58:43Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41911339364",
-    "workflow": "PR #780"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T20:57:32Z",
     "event": "schedule",
     "repo": "jodidaniel/jodidaniel.com",
@@ -10753,42 +10849,6 @@
     "updated_at": "2026-11-04T20:58:38Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/41911503634",
     "workflow": "scheduled \u2014 0 15 * * *"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T20:56:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41911345414,
-    "state": "completed",
-    "title": "Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T20:56:42Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41911345414",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T20:56:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41911345333,
-    "state": "completed",
-    "title": "PR #780 \u2192 site preview (opened)",
-    "updated_at": "2026-11-04T20:56:38Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41911345333",
-    "workflow": "PR #780 \u2192 site preview (opened)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-04T20:56:30Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41911345451,
-    "state": "completed",
-    "title": "PR #780 \u2014 Run local_eval in a container with a setup-token",
-    "updated_at": "2026-11-04T20:56:31Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41911345451",
-    "workflow": "PR #780 \u2014 Run local_eval in a container with a setup-token"
    },
    {
     "conclusion": "success",
@@ -10813,18 +10873,6 @@
     "updated_at": "2026-11-04T20:47:40Z",
     "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/41908738513",
     "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T20:42:16Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41909113342,
-    "state": "completed",
-    "title": "manual \u2014 Adam-S-Daniel",
-    "updated_at": "2026-11-04T20:47:24Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41909113342",
-    "workflow": "manual \u2014 Adam-S-Daniel"
    },
    {
     "conclusion": "skipped",
@@ -11356,18 +11404,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-04T20:32:47Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41907621948,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-04T20:33:54Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41907621948",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-04T20:32:41Z",
     "event": "schedule",
     "repo": "Adam-S-Daniel/_agent-guidance",
@@ -11377,18 +11413,6 @@
     "updated_at": "2026-11-04T20:33:37Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/41907607839",
     "workflow": "Bump the fleet's skills pins"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T20:32:47Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 41907622000,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-04T20:32:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/41907622000",
-    "workflow": "Follow drafted-skill fixtures"
    },
    {
     "conclusion": "success",
@@ -13729,18 +13753,6 @@
     "updated_at": "2026-11-04T19:04:17Z",
     "url": "https://github.com/Adam-S-Daniel/repo-settings/actions/runs/41893111946",
     "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T19:04:02Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 41893299251,
-    "state": "completed",
-    "title": "reap PR #473 (closed)",
-    "updated_at": "2026-11-04T19:04:10Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/41893299251",
-    "workflow": "reap PR #473 (closed)"
    },
    {
     "conclusion": "success",
@@ -27328,18 +27340,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-10-27T02:09:27Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/rss-inator",
-    "run_id": 40436788382,
-    "state": "completed",
-    "title": "Pin actions through actions.lock",
-    "updated_at": "2026-10-27T02:09:37Z",
-    "url": "https://github.com/Adam-S-Daniel/rss-inator/actions/runs/40436788382",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-10-27T02:08:33Z",
     "event": "push",
     "repo": "Adam-S-Daniel/scratch-claude-001",
@@ -27759,7 +27759,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-10-22T10:33:17Z"
+  "since": "2026-10-22T12:35:29Z"
  },
  "agent_made": {
   "items": [
@@ -45120,7 +45120,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-05T10:32:55Z",
+  "generated_at": "2026-11-05T12:35:03Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -45157,15 +45157,6 @@
     "prs": [],
     "state": "open",
     "subject": "review-bash-ci-reliability"
-   },
-   {
-    "closed_at": null,
-    "issue": 700,
-    "kind": "needs-trigger-set",
-    "opened_at": "2026-11-03T18:20:32Z",
-    "prs": [],
-    "state": "open",
-    "subject": "compare-pdfpairs"
    },
    {
     "closed_at": null,
@@ -45357,10 +45348,10 @@
    "fixtures_real_work": 0,
    "prs_merged": 0,
    "requests_closed": 4,
-   "requests_open": 21
+   "requests_open": 20
   }
  },
- "generated_at": "2026-11-05T10:31:50Z",
+ "generated_at": "2026-11-05T12:33:54Z",
  "guidance": {
   "removed": [
    {
@@ -71156,18 +71147,18 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "df8541560180a657464ba846210540d8259eb96f",
-  "results_commit": "08ad9014e804c92e1b425b2292f0ef243aaf5c54"
+  "results_commit": "a11654f1dda32ddcf154d7c22e4067de90c05d24"
  },
  "spend": {
-  "generated_at": "2026-11-05T10:31:18Z",
+  "generated_at": "2026-11-05T12:33:10Z",
   "weeks": [
    {
     "api_usd": 91.72496880500002,
-    "cost_per_verdict": 2285.70044667,
+    "cost_per_verdict": 2287.6198139050002,
     "eval_runs": 403,
     "plan": null,
     "plan_meter_points": 48.0,
-    "thread_spend_usd": 1661.2644172689652,
+    "thread_spend_usd": 1665.1031517389652,
     "week": "2026-11-02"
    },
    {
