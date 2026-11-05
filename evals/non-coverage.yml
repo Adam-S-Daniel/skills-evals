@@ -41,20 +41,24 @@ skips:
     skill: sync-cc-settings-between-wsl-and-windows
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds: fails criterion 1 (no recorded local use
+      since 2026-09-14) and criterion 3 (needs Windows PowerShell 7 and the WSL
+      UNC share, which a fixture cannot fake cheaply)
   - registry: adam-agentskills
     skill: migrate-claude-memory
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds on criterion 1 only: one recorded local use
+      since 2026-09-14 (week of 2026-09-21). Its surface is Bash over
+      ~/.claude/projects, which a fake HOME can stand in for, so reopen it if
+      use grows
   - registry: adam-agentskills
     skill: compare-pdfpairs
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds on criterion 1 only: no recorded local use
+      since 2026-09-14. Its surface (PowerShell 7 and poppler over a folder of
+      PDFs) can be faked in a container, so reopen it if it is used
   - registry: adam-agentskills
     skill: ocr-pdfs
     decision: defer
