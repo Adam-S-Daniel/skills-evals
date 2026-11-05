@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-04T20:10:55Z",
+  "generated_at": "2026-11-05T17:37:13Z",
   "rows": [
     {
       "blocked": null,
@@ -1076,7 +1076,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 536,
+      "sessions": 561,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1089,7 +1089,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 89,
+      "sessions": 93,
       "surface": "local",
       "week": "2026-11-02"
     },
@@ -1102,7 +1102,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 291,
+      "sessions": 308,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1115,7 +1115,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 241,
+      "sessions": 248,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1141,8 +1141,21 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 3,
+      "sessions": 4,
       "surface": "cloud",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 1,
+      "invocations": 3,
+      "kind": "hook",
+      "name": "agents-md-size",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
       "week": "2026-11-02"
     },
     {
@@ -1172,8 +1185,8 @@
       "week": "2026-11-02"
     },
     {
-      "blocked": 0,
-      "invocations": 16,
+      "blocked": 1,
+      "invocations": 323,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -1329,6 +1342,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 11,
       "kind": "hook",
       "name": "persistent-delete",
@@ -1368,7 +1394,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 303,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -1485,6 +1511,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 11,
       "kind": "hook",
       "name": "push-to-default",
@@ -1524,7 +1563,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 303,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -1583,6 +1622,19 @@
       "overridden": null,
       "repo": "Adam-S-Daniel/skills-evals",
       "runner": "54f19e5f6e59",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
+      "invocations": 15,
+      "kind": "hook",
+      "name": "repo-local",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
       "sessions": null,
       "surface": "local",
       "week": "2026-11-02"
@@ -1680,6 +1732,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 15,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 23,
       "kind": "hook",
       "name": "rules-dir",
@@ -1719,7 +1784,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 308,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -1836,6 +1901,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 15,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 23,
       "kind": "hook",
       "name": "secret-file",
@@ -1875,7 +1953,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 308,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -1992,6 +2070,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 15,
+      "kind": "hook",
+      "name": "skill-shell",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 23,
       "kind": "hook",
       "name": "skill-shell",
@@ -2031,7 +2122,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 308,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -2148,6 +2239,19 @@
     },
     {
       "blocked": 0,
+      "invocations": 5,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "Adam-S-Daniel/skills-evals",
+      "runner": "b6e7be061e72",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": 0,
       "invocations": 11,
       "kind": "hook",
       "name": "staged-index",
@@ -2187,7 +2291,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 16,
+      "invocations": 303,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -2233,7 +2337,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 86,
+      "sessions": 90,
       "surface": "local",
       "week": "2026-11-02"
     },
@@ -2252,15 +2356,28 @@
     },
     {
       "blocked": null,
+      "invocations": 1,
+      "kind": "skill",
+      "name": "other",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 1,
+      "surface": "local",
+      "week": "2026-11-02"
+    },
+    {
+      "blocked": null,
       "digest": "0be479e716d5",
-      "invocations": 2,
+      "invocations": 3,
       "kind": "skill-digest",
       "name": "disarm-inherited-reach",
       "outcome": null,
       "overridden": null,
       "repo": "Adam-S-Daniel/adam-agentskills",
       "runner": null,
-      "sessions": 1,
+      "sessions": 2,
       "surface": "cloud",
       "week": "2026-11-02"
     }
@@ -2270,37 +2387,37 @@
     {
       "from": "2026-09-14T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2751,
+      "sessions_scanned": 2761,
       "surface": "local",
-      "to": "2026-11-04T20:10:55Z"
+      "to": "2026-11-05T17:37:13Z"
     },
     {
       "from": "2026-09-14T00:00:00Z",
-      "runs_scanned": 3129,
+      "runs_scanned": 3436,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-04T20:10:55Z"
+      "to": "2026-11-05T17:37:13Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
-      "records_scanned": 617,
+      "records_scanned": 642,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-04T20:10:55Z"
+      "to": "2026-11-05T17:37:13Z"
     },
     {
       "events_scanned": 0,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-04T20:10:55Z"
+      "to": "2026-11-05T17:37:13Z"
     },
     {
-      "events_scanned": 2,
+      "events_scanned": 3,
       "from": "2026-11-02T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-04T20:10:55Z"
+      "to": "2026-11-05T17:37:13Z"
     }
   ]
 }
