@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I've got a folder of scans where every file has a twin called something-needsocr.pdf. Before I delete the -needsocr copies, can you check which pairs actually print the same?",
+    "should_trigger": true
+  },
+  {
+    "query": "compare pdf pairs under ~/Documents/taxes. originals are like 2023-w2.pdf and the signed versions are 2023-w2-signed.pdf. I want to know if the signed ones are really different or just re-saves",
+    "should_trigger": true
+  },
+  {
+    "query": "are these pdfs identical? invoice-0412.pdf and invoice-0412-signed.pdf look the same when I flip between them but the sizes are different",
+    "should_trigger": true
+  },
+  {
+    "query": "find duplicate pdfs in my scans directory — each one has a '-ocr' sibling and I think a lot of them are redundant. don't delete anything yet, just tell me which are safe",
+    "should_trigger": true
+  },
+  {
+    "query": "I ran OCR on a batch of PDFs and kept both versions. can you tell me for each pair whether the pages render pixel-for-pixel the same and whether the extracted text differs?",
+    "should_trigger": true
+  },
+  {
+    "query": "dedupe scanned pdfs: name.pdf and name-scanned.pdf pairs in D:\\paperwork. show me only the pairs that are not redundant",
+    "should_trigger": true
+  },
+  {
+    "query": "which of my -signed pdfs have a different text layer than the original? I need a table with page counts and how many lines of text differ",
+    "should_trigger": true
+  },
+  {
+    "query": "before I clean up the receipts folder, check whether report.pdf and report-needsocr.pdf print identically and whether the suffixed one has any text at all",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to delete the duplicate PDFs that my scanner app made (it saves x.pdf and x-copy.pdf). verify that each pair prints the same first, then preview the delete with -WhatIf",
+    "should_trigger": true
+  },
+  {
+    "query": "do the original and '-signed' versions of these contracts have the same page count and the same printout? there are about 200 pairs under /mnt/c/legal",
+    "should_trigger": true
+  },
+  {
+    "query": "rename all the PDFs in my scans folder to descriptive date-prefixed names based on what's inside them",
+    "should_trigger": false
+  },
+  {
+    "query": "run OCR on the PDFs in this folder that are just images so they become searchable, and keep the originals",
+    "should_trigger": false
+  },
+  {
+    "query": "which of the PDFs in ~/scans need OCR? I just want an audit of which ones already have embedded text",
+    "should_trigger": false
+  },
+  {
+    "query": "merge these three PDFs into a single file in the order of their filenames",
+    "should_trigger": false
+  },
+  {
+    "query": "show me the diff between v1.txt and v2.txt for the contract draft",
+    "should_trigger": false
+  },
+  {
+    "query": "find duplicate photos in my Pictures folder and delete the extra copies",
+    "should_trigger": false
+  },
+  {
+    "query": "can you look at this one PDF and tell me what it says on page 3? summarize it",
+    "should_trigger": false
+  },
+  {
+    "query": "compare these two versions of my resume.docx and list what changed between them",
+    "should_trigger": false
+  },
+  {
+    "query": "split report.pdf into one file per chapter",
+    "should_trigger": false
+  },
+  {
+    "query": "compress the PDFs in this folder so they're under 5 MB each",
+    "should_trigger": false
+  }
+]
