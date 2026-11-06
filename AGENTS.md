@@ -116,6 +116,11 @@ session that lost the guidance must not also lose these.
 - **`tool/index.html` is built from `explorer/src`**: edit there, run
   `npm run build` in `explorer/`, commit both; CI fails on drift.
 
+- **A new `evals/<skill>/` directory needs a line in `README.md`'s layout
+  block** in the same commit. `test_every_eval_directory_is_named_in_the_readmes_layout`
+  (`test/run_tests.py`) fails CI otherwise; this check turned the first CI run
+  red on each of the trigger-set PRs skills-evals#785 to #792.
+
 - **Workflow triggers and salient paths.** `test` (ci.yml) is the one
   required check. Every workflow's triggers and salient-path handling are
   tabled in [`docs/workflows.md`](docs/workflows.md); keep that table in step
