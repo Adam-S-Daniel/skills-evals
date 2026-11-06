@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-06T00:32:51Z",
+  "fetched_at": "2026-11-06T02:32:24Z",
   "issues": [
    {
     "created_at": "2026-11-03T16:38:15Z",
@@ -7656,6 +7656,102 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-06T02:31:10Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150831782,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-06T02:32:16Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150831782",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T02:31:10Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150831672,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-06T02:31:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150831672",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T02:31:10Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150831671,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-06T02:31:21Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150831671",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T02:31:10Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150831761,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-06T02:31:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150831761",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T02:30:50Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150795248,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-06T02:31:07Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150795248",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T02:30:41Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42150777317,
+    "state": "completed",
+    "title": "Refresh weekly spend snapshot",
+    "updated_at": "2026-11-06T02:30:48Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42150777317",
+    "workflow": "Spend totals pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T01:06:10Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42141521486,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-06T01:06:18Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42141521486",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T00:35:13Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42137906329,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-06T00:44:27Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42137906329",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-06T00:31:30Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -10512,18 +10608,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-05T12:31:00Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027794822,
-    "state": "completed",
-    "title": "Add trigger eval set for compare-pdfpairs (#700)",
-    "updated_at": "2026-11-05T12:37:12Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794822",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-05T12:34:04Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -10595,30 +10679,6 @@
     "workflow": "Spend totals pushed"
    },
    {
-    "conclusion": "failure",
-    "created_at": "2026-11-05T12:26:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027210951,
-    "state": "completed",
-    "title": "Add trigger eval set for compare-pdfpairs (#700)",
-    "updated_at": "2026-11-05T12:33:09Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210951",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:30:57Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027786318,
-    "state": "completed",
-    "title": "PR #781",
-    "updated_at": "2026-11-05T12:32:37Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027786318",
-    "workflow": "PR #781"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-05T12:31:09Z",
     "event": "workflow_run",
@@ -10676,78 +10736,6 @@
     "title": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)",
     "updated_at": "2026-11-05T12:31:02Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027794962",
-    "workflow": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:27:19Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027261598,
-    "state": "completed",
-    "title": "Fixture PR gate",
-    "updated_at": "2026-11-05T12:27:58Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027261598",
-    "workflow": "Fixture PR gate"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:27:07Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027231976,
-    "state": "completed",
-    "title": "Fixture PR gate",
-    "updated_at": "2026-11-05T12:27:31Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027231976",
-    "workflow": "Fixture PR gate"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:27:08Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027233975,
-    "state": "completed",
-    "title": "Add trigger eval set for compare-pdfpairs (#700)",
-    "updated_at": "2026-11-05T12:27:16Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027233975",
-    "workflow": "Fixture PR seen"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:26:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027210938,
-    "state": "completed",
-    "title": "PR #781 \u2192 site preview (opened)",
-    "updated_at": "2026-11-05T12:27:07Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210938",
-    "workflow": "PR #781 \u2192 site preview (opened)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T12:26:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027211088,
-    "state": "completed",
-    "title": "Add trigger eval set for compare-pdfpairs (#700)",
-    "updated_at": "2026-11-05T12:27:04Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027211088",
-    "workflow": "Fixture PR seen"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-05T12:26:58Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42027210959,
-    "state": "completed",
-    "title": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)",
-    "updated_at": "2026-11-05T12:26:59Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42027210959",
     "workflow": "PR #781 \u2014 Add trigger eval set for compare-pdfpairs (#700)"
    },
    {
@@ -27731,7 +27719,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-10-23T00:32:51Z"
+  "since": "2026-10-23T02:32:24Z"
  },
  "agent_made": {
   "items": [
@@ -45092,7 +45080,7 @@
  "fixture_queue": {
   "findings": [],
   "fixtures": [],
-  "generated_at": "2026-11-06T00:32:26Z",
+  "generated_at": "2026-11-06T02:32:03Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -45323,7 +45311,7 @@
    "requests_open": 20
   }
  },
- "generated_at": "2026-11-06T00:31:23Z",
+ "generated_at": "2026-11-06T02:31:02Z",
  "guidance": {
   "removed": [
    {
@@ -71119,18 +71107,18 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "5062af33be98b46065ab6d3aa037638d5d68441c",
-  "results_commit": "e4fb60afa7db08e65c898a7e07d131c52509f7d0"
+  "results_commit": "e818576e8a5b6a2599a4432b3fcdb487a4dba793"
  },
  "spend": {
-  "generated_at": "2026-11-06T00:30:55Z",
+  "generated_at": "2026-11-06T02:30:34Z",
   "weeks": [
    {
     "api_usd": 91.72496880500002,
-    "cost_per_verdict": 2300.0557349650003,
+    "cost_per_verdict": 2302.44316422,
     "eval_runs": 403,
     "plan": null,
     "plan_meter_points": 48.0,
-    "thread_spend_usd": 1689.9749938589653,
+    "thread_spend_usd": 1694.749852368965,
     "week": "2026-11-02"
    },
    {
