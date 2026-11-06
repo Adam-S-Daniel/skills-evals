@@ -66,6 +66,7 @@ evals/
     why-no-comment-trail/  # "why did we do X?": record the relayed reason as an ADR
     trigger-eval-set.json  # reviewed should/should-not-trigger queries for
                            # propose_skill_edit.py --trigger-eval-set
+  pdf-ocr-audit/           # trigger eval set only
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings, five fixtures
     release-pipeline/      # six findings and two decoys in a release pipeline's shell
       fixture.yaml         # prompt, objective checks (file_matches over the seed scripts), rubric
