@@ -1,0 +1,82 @@
+[
+  {
+    "query": "my powershell tool call just came back with 'Exit code 1' and nothing else. I was running a Copy-Item of the build output to D:\\deploy\\staging. no error text at all, what now?",
+    "should_trigger": true
+  },
+  {
+    "query": "the PowerShell step in this session failed twice with the same error on Remove-Item against C:\\Temp\\build-cache. I reworded it the second time and it still died. should I just try a third variant with -Force and -Recurse?",
+    "should_trigger": true
+  },
+  {
+    "query": "powershell says the command was blocked by a protection policy when I tried to delete the old release folder. the user said 'do whatever works'. can I do the delete with cmd /c rmdir instead?",
+    "should_trigger": true
+  },
+  {
+    "query": "I ran robocopy from the PowerShell tool and the tool reported failure with exit code 1, but the files all copied. is something wrong or is that normal?",
+    "should_trigger": true
+  },
+  {
+    "query": "Get-Content on the config file prints nothing and the tool just says 'Exit code 1'. I have no idea whether the path is wrong or the file is empty. how do I get PowerShell to actually tell me what failed?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to delete every *.bak file under C:\\Users\\sam\\Projects\\invoices with Remove-Item -Recurse. before I run it, what's the safe way to check I'm not about to wipe something I shouldn't?",
+    "should_trigger": true
+  },
+  {
+    "query": "PowerShell refused to run my Remove-Item as 'protected'. the folder is the user's old photos export. it's clearly junk, so would [IO.Directory]::Delete get around the check?",
+    "should_trigger": true
+  },
+  {
+    "query": "the pwsh call to Install-Module returned only 'Exit code 1' and I retried it with a different repository flag, same result. what's the procedure when the second attempt fails identically?",
+    "should_trigger": true
+  },
+  {
+    "query": "native msiexec inside my PowerShell tool call exits with 3010 and the tool shows it as an error. how should I read $LASTEXITCODE here instead of assuming it failed?",
+    "should_trigger": true
+  },
+  {
+    "query": "Set-Location to the repo path worked but the next Test-Path call returned False and then the whole call exited 1 silently. walk me through catching the real error with try/catch and $ErrorActionPreference.",
+    "should_trigger": true
+  },
+  {
+    "query": "I get 'Access is denied' when powershell.exe, launched from WSL, tries to register a scheduled task. how do I get it elevated?",
+    "should_trigger": false
+  },
+  {
+    "query": "write me a PowerShell function that takes a folder and returns the 10 largest files, with comment-based help and Pester tests",
+    "should_trigger": false
+  },
+  {
+    "query": "my bash script exits with code 1 and prints nothing. set -e is on. how do I find which command failed?",
+    "should_trigger": false
+  },
+  {
+    "query": "explain the difference between Write-Host and Write-Output in PowerShell, and when each one ends up in the pipeline",
+    "should_trigger": false
+  },
+  {
+    "query": "git push from the Linux terminal fails with 'Permission denied (publickey)'. how do I debug the ssh key?",
+    "should_trigger": false
+  },
+  {
+    "query": "rm -rf on a build directory says 'Operation not permitted' on my Linux box. the files have the immutable attribute set I think. how do I clear it?",
+    "should_trigger": false
+  },
+  {
+    "query": "my Python script crashes with a KeyError in the config loader. here's the traceback, can you fix the lookup?",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this batch file that loops over *.log and zips each one into an equivalent PowerShell script",
+    "should_trigger": false
+  },
+  {
+    "query": "Docker Desktop says WSL integration is broken after a reboot and the socket under /mnt/wsl is missing. how do I repair it?",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a PowerShell one-liner to list all running services whose name starts with 'sql' and sort them by status",
+    "should_trigger": false
+  }
+]
