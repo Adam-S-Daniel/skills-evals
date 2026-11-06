@@ -1,0 +1,82 @@
+[
+  {
+    "query": "rename my pdfs in ~/Documents/scans, they're all called things like 'Scan from 2024-03-15 (3).pdf'",
+    "should_trigger": true
+  },
+  {
+    "query": "I just ran OCR on a folder of statements and the filenames are still scanner junk like QuickScan_001.pdf. clean up the names so I can tell what each one is",
+    "should_trigger": true
+  },
+  {
+    "query": "give my pdfs descriptive names based on what's in them, with the date first. there are about 40 in /mnt/d/paperwork and they all have text layers already",
+    "should_trigger": true
+  },
+  {
+    "query": "tidy pdf names in this folder: propose a name for each one from its content and let me confirm or edit before you rename anything",
+    "should_trigger": true
+  },
+  {
+    "query": "these are all called Document(47).pdf, Document(48).pdf and so on. can you rename them to something like 20240315-Statement-Bank of America-Checking Account.pdf?",
+    "should_trigger": true
+  },
+  {
+    "query": "rename the searchable PDFs in my taxes folder to YYYYMMDD-Type-Issuer-Title, pulling the date from the document itself and not the file modified time",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a pile of invoices and receipts that were scanned and OCRed last week. walk me through each one and suggest a filename",
+    "should_trigger": true
+  },
+  {
+    "query": "do a dry run first: show me what you'd rename every PDF in ~/scans/2024 to, then I'll say go",
+    "should_trigger": true
+  },
+  {
+    "query": "the superbills in this folder cover a date range, can you name them with both the start and end date up front?",
+    "should_trigger": true
+  },
+  {
+    "query": "undo the last PDF rename batch using the pdf-rename-log csv in that folder",
+    "should_trigger": true
+  },
+  {
+    "query": "OCR all the scanned PDFs in this folder and save the searchable copies to a new folder",
+    "should_trigger": false
+  },
+  {
+    "query": "which of the PDFs in ~/Documents/archive are image-only scans and need OCR? I just want a report",
+    "should_trigger": false
+  },
+  {
+    "query": "rename all the .jpg files in my vacation folder to include the date they were taken",
+    "should_trigger": false
+  },
+  {
+    "query": "batch rename the files in src/ from camelCase to snake_case",
+    "should_trigger": false
+  },
+  {
+    "query": "compare these PDF pairs and tell me whether the -signed copy prints the same as the original",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize this PDF and tell me who it is from and what date it covers",
+    "should_trigger": false
+  },
+  {
+    "query": "move all my PDFs into folders by year and issuer",
+    "should_trigger": false
+  },
+  {
+    "query": "merge these three PDFs into a single file and add page numbers",
+    "should_trigger": false
+  },
+  {
+    "query": "rename the git branch feature/pdf-export to feature/pdf-export-v2 and update the open PR",
+    "should_trigger": false
+  },
+  {
+    "query": "extract the text from invoice.pdf and put the line items into a CSV",
+    "should_trigger": false
+  }
+]
