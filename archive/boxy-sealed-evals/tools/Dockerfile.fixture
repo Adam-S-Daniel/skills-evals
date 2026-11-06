@@ -1,0 +1,10 @@
+# Fixture layer: one fixture's seed plus its locked deps, on the runner image.
+ARG BASE=skills-evals-runner:2.1.318-v2
+FROM ${BASE}
+ARG FIXTURE
+USER root
+COPY ${FIXTURE}/seed /opt/fixtures/seed
+RUN chown -R eval:eval /opt/fixtures
+USER eval
+# The same install run_eval's `deps:` makes (seed_prep.install_deps).
+RUN cd /opt/fixtures/seed/e2e && npm ci --ignore-scripts --no-audit --no-fund --cache /tmp/npm-cache && rm -rf /tmp/npm-cache && du -sh node_modules
