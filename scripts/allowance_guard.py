@@ -165,6 +165,13 @@ charged as one run, exactly as an eval fire of both arms, never as two.
 Its title (`Fire eval routine: eval bare <fixture> <model>`) is not an
 improve title, so it is never charged `improve_charge`.
 
+Pair fires (scripts/plan_week.py, PAIR FIRES): one eval fire may run a
+fixture on two models (`model: m1,m2`, title `... <fixture> m1,m2`), two
+run_eval invocations in sequence under one run id. It is still one fire:
+counted, held and matched to its one ingested run directory as any eval
+fire, so while pending it is reserved once. Once ingested, `run_cost` sums
+its two invocations' run-level blocks, so each is charged on its own.
+
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
 account has not used is released as its week ends. The newest account meter

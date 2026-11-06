@@ -480,6 +480,18 @@ titled `Fire eval routine: eval bare <fixture> <model>`. The allowance guard
 holds it as one run, like any eval fire; the plan reserves it as one arm
 (the cell's cost per arm trial, times three).
 
+**Pair fires.** A routine session costs about $0.67 of its own on every fire,
+and nothing counts it, so when one sweep plans a fixture's cells on two
+roster models with the same arms, it sends them as one fire with
+`model: m1,m2`, in roster order (`scripts/plan_week.py`, PAIR FIRES). The
+fire workflow checks each id as it checks one and sends `models: [m1, m2]`;
+the routine runs the harness once per model, in that order, under one run id
+and one results branch, and each summary keeps its own model. The run is
+titled `Fire eval routine: eval <fixture> m1,m2`, which the planner and the
+explorer read as a fire of each model's cell. The allowance guard reserves it
+as one fire and, once its run is ingested, charges each of its two
+invocations.
+
 A skill is paused while an improve pull request is open, an attempt is in
 flight, an open `on-hold` issue names it, for 14 days after a rejection, and
 after three rejections in a row until the skill, a fixture or the roster

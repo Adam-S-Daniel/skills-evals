@@ -60,11 +60,13 @@ FIRE_WORKFLOW = "routine-eval-fire.yml"
 #: an improve fire with `trigger_only: true` (skills-evals#662) or ` trim`
 #: for one with `trim_description: true` (skills-evals#687; never both), then
 #: the one target input of that mode (fixture, candidate, skill or section),
-#: then the model when one was given.
+#: then the model when one was given: one id, or an eval fire's pair of two
+#: distinct ids joined by a comma (`m1,m2`, one fire running both models).
 TITLE_RE = re.compile(r"Fire eval routine: (?P<mode>eval|scaffold|improve|guidance-improve)"
                       r"(?P<bare> bare)?(?P<trigger> trigger)?(?P<trim> trim)? "
                       r"(?P<target>[A-Za-z0-9][A-Za-z0-9/_.-]{0,255})"
-                      r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}))? ?")
+                      r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+                      r"(?:,[A-Za-z0-9][A-Za-z0-9._-]{0,127})?))? ?")
 SKILL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 #: A guidance section id the fire workflow accepts (its `section` input).
 SECTION_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
@@ -119,7 +121,13 @@ def parse_title(title) -> dict | None:
     is True for an improve fire with `trim_description: true`: only a
     shorter description, measured on the fixtures (skills-evals#687). A
     skill named `bare`, `trigger` or `trim` is still a target: the regex
-    tries a flag only when a target follows it."""
+    tries a flag only when a target follows it.
+
+    `model` is the title's model text as rendered: one id, or for a pair
+    fire (one eval fire running two models in sequence) the two ids joined
+    by a comma. A pair outside eval mode, or of one id twice, is None: the
+    workflow refuses both. Read the ids with `title_models`, never by
+    keying on `model`."""
     match = TITLE_RE.fullmatch(title) if isinstance(title, str) else None
     if match is None:
         return None
@@ -129,8 +137,21 @@ def parse_title(title) -> dict | None:
     if (bare and match["mode"] != "eval") \
             or ((trigger or trim) and match["mode"] != "improve") or (trigger and trim):
         return None
-    return {"mode": match["mode"], "target": match["target"], "model": match["model"],
+    model = match["model"]
+    if model is not None and "," in model:
+        first, second = model.split(",")
+        if match["mode"] != "eval" or first == second:
+            return None
+    return {"mode": match["mode"], "target": match["target"], "model": model,
             "bare": bare, "trigger": trigger, "trim": trim}
+
+
+def title_models(title: dict | None) -> tuple:
+    """The model ids of a parsed title (`parse_title`), in its order: one,
+    two for a pair fire, or none. A pair fire holds a cell of each, so a
+    reader keyed per (fixture, model) cell counts it once for each id."""
+    model = title.get("model") if isinstance(title, dict) else None
+    return tuple(model.split(",")) if model else ()
 
 
 def run_id_time(run_id) -> datetime | None:
