@@ -1,0 +1,82 @@
+[
+  {
+    "query": "open a new claude code session in a separate terminal tab for D:\\repos\\example\\billing-service, I want to keep this one going and work on the migration over there",
+    "should_trigger": true
+  },
+  {
+    "query": "can you spin up a fresh Claude Code session in WSL at ~/repos/example-api in a new Windows Terminal tab? I'd like to be able to control it from my phone too",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to run out of context here. write up a handoff file and launch a brand new claude session that reads it and picks up where we left off",
+    "should_trigger": true
+  },
+  {
+    "query": "launch another claude in a new wt tab, folder C:\\src\\example-docs, and start it with the prompt 'stand by for instructions'",
+    "should_trigger": true
+  },
+  {
+    "query": "start a second top-level claude session next to this one in the repo's tests folder, remote-control enabled so I can drive it from the Claude app",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a separate Claude Code window running in ~/repos/example-infra on Ubuntu. Just open it, don't run anything in it",
+    "should_trigger": true
+  },
+  {
+    "query": "hand this task off to a fresh session: put the plan in handoff.md, open a new terminal tab in this directory and have claude read that file first",
+    "should_trigger": true
+  },
+  {
+    "query": "can you open a new claude session for me in a different folder? the one I started from the agent tool doesn't show up in claude --resume and I want a real one",
+    "should_trigger": true
+  },
+  {
+    "query": "spawn a new interactive claude for the example-web repo on the Windows side, pwsh tab, and name the remote control session 'web-fixes'",
+    "should_trigger": true
+  },
+  {
+    "query": "kick off a new claude code session in WSL for the GHA-bench folder with the prompt 'review the open TODOs' — it should stay interactive, not exit after one answer",
+    "should_trigger": true
+  },
+  {
+    "query": "run the unit tests for this repo in a background terminal and tell me when they finish",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I resume my last claude code session after closing the terminal?",
+    "should_trigger": false
+  },
+  {
+    "query": "spawn a subagent to search the codebase for usages of parseConfig and report back",
+    "should_trigger": false
+  },
+  {
+    "query": "open the project folder in VS Code in a new window",
+    "should_trigger": false
+  },
+  {
+    "query": "launch a new Windows Terminal tab with plain PowerShell in my Downloads folder so I can run a script myself",
+    "should_trigger": false
+  },
+  {
+    "query": "set up remote control for this current session so I can continue it from my phone",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I get my PowerShell script to run elevated from a WSL claude session? it keeps saying access is denied",
+    "should_trigger": false
+  },
+  {
+    "query": "start a dev server for the site in a new tab and keep it running while we edit templates",
+    "should_trigger": false
+  },
+  {
+    "query": "write a SessionStart hook for Claude Code that prints the git branch when a session begins",
+    "should_trigger": false
+  },
+  {
+    "query": "what does the CLAUDE_CODE_CHILD_SESSION environment variable do in the env-vars docs?",
+    "should_trigger": false
+  }
+]
