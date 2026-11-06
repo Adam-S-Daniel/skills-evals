@@ -1,0 +1,82 @@
+[
+  {
+    "query": "here's the changelog for the last 40 releases of the CLI we depend on, about 900 bullets. go through them and tell me which ones affect our repos",
+    "should_trigger": true
+  },
+  {
+    "query": "I have 600 open Dependabot alerts across 12 repos. work out which ones actually touch code we run, and split the work across parallel agents so it doesn't take all day",
+    "should_trigger": true
+  },
+  {
+    "query": "triage this 2,000 line vendor release-notes dump against our three services and flag anything that breaks our existing usage",
+    "should_trigger": true
+  },
+  {
+    "query": "I exported 350 support tickets to a CSV. figure out which ones point at bugs in our codebase, using subagents in parallel",
+    "should_trigger": true
+  },
+  {
+    "query": "go through every item in this audit report (about 120 findings) and decide which apply to our infra repo. last time the agents cited the wrong finding numbers, so I need a check on that",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to sort a backlog of 800 old GitHub issues into 'still relevant to the current code' and 'obsolete'. fan it out to subagents and make sure none get silently dropped",
+    "should_trigger": true
+  },
+  {
+    "query": "the SDK changelog has hundreds of entries. build an inventory of everywhere we use its flags and config keys first, then match changelog items against it",
+    "should_trigger": true
+  },
+  {
+    "query": "one of my triage subagents never wrote its output file. is it still running or did it die? and how do I stop the merged results from missing its chunk?",
+    "should_trigger": true
+  },
+  {
+    "query": "split this big list of release-note bullets into chunks, give each to a parallel agent, and merge the TSV results into one file I can verify",
+    "should_trigger": true
+  },
+  {
+    "query": "we got a 500-item security scanner report for the monorepo. go item by item with parallel agents and tell me which findings are real for our code",
+    "should_trigger": true
+  },
+  {
+    "query": "review this one Dependabot PR bumping lodash from 4.17.20 to 4.17.21 and tell me if it is safe to merge",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize the release notes for v2.3.0 of this library, it's about 15 bullets",
+    "should_trigger": false
+  },
+  {
+    "query": "read through these 8 open issues and tell me which one to fix first",
+    "should_trigger": false
+  },
+  {
+    "query": "write a script that counts how many issues in the repo carry each label",
+    "should_trigger": false
+  },
+  {
+    "query": "run the whole test suite across the repo in parallel to find which tests are flaky",
+    "should_trigger": false
+  },
+  {
+    "query": "what changed between these two versions of package.json?",
+    "should_trigger": false
+  },
+  {
+    "query": "write release notes for our own project's v1.4.0 from the merged PRs",
+    "should_trigger": false
+  },
+  {
+    "query": "explain how the Agent tool works for running subagents in Claude Code",
+    "should_trigger": false
+  },
+  {
+    "query": "fix the three failing unit tests in tests/test_parser.py",
+    "should_trigger": false
+  },
+  {
+    "query": "refactor this 400-line function into smaller functions",
+    "should_trigger": false
+  }
+]
