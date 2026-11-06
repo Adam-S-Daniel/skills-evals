@@ -24,7 +24,14 @@ one week's sanctioned push to the next):
 
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
-    run id's timestamp falls in the window, each charged its measured
+    run id's timestamp falls in the window, each invocation charged its own
+    dollars, `usage.cost_estimate.usd` times `points_per_usd`, plus
+    `per_run_overrun`. The weekly meter's delta is not used when the dollars
+    are known: it is the whole ACCOUNT's movement while the run went, so it
+    charges a run with every other thread's use, and overlapping runs are
+    charged the same movement twice (2026-11-04: 116 points booked against
+    about 23 real). Without a usable rate or dollar figure (none, non-finite,
+    negative or a bool) the charge is the old one: the measured
     `usage.meter_delta.windows.seven_day.delta` plus `per_run_overrun` (the
     meter is read as a call begins, so the last call is outside the delta),
     or `per_run_cap + per_run_overrun` when there is no measured delta (null,
@@ -300,8 +307,28 @@ def _load_summary(path: Path):
         return None
 
 
+def _own_dollars_cost(usage, limits: dict) -> float | None:
+    """The charge from an invocation's own dollars, or None when it cannot be
+    made: `usage.cost_estimate.usd` (every call of the invocation that carries
+    a dollar figure) times `points_per_usd`, plus the overrun. Needs a positive
+    finite rate and a finite non-negative, non-bool dollar figure."""
+    rate = limits.get("points_per_usd")
+    estimate = usage.get("cost_estimate") if isinstance(usage, dict) else None
+    dollars = estimate.get("usd") if isinstance(estimate, dict) else None
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
+            or not math.isfinite(rate) or rate <= 0:
+        return None
+    if isinstance(dollars, bool) or not isinstance(dollars, (int, float)) \
+            or not math.isfinite(dollars) or dollars < 0:
+        return None
+    return float(dollars) * rate + limits["per_run_overrun"]
+
+
 def _invocation_cost(usage, limits: dict) -> float:
     """One run_eval invocation's charge from its run-level `usage` block."""
+    own = _own_dollars_cost(usage, limits)
+    if own is not None:
+        return own
     reserve = budget_file.run_reservation(limits)
     delta = usage.get("meter_delta") if isinstance(usage, dict) else None
     windows = delta.get("windows") if isinstance(delta, dict) else None

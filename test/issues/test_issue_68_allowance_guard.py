@@ -112,8 +112,8 @@ class BudgetFileTests(unittest.TestCase):
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 1.00,
                           "stop_when_account_above": 0.95,
-                          "per_run_cap": 0.01, "per_run_overrun": 0.0018,
-                          "points_per_usd": 0.00214})
+                          "per_run_cap": 0.01, "per_run_overrun": 0.0005,
+                          "points_per_usd": 0.0005})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -616,6 +616,65 @@ class GuardTests(unittest.TestCase):
         state = self.spent()
         self.assertEqual(state["runs"], 1)
         self.assertAlmostEqual(state["spent"], 0.025, places=12)
+
+    # A run is charged its own dollars when it has them: the meter delta is the
+    # whole account's movement while the run went (2026-11-04).
+    PRICED = {**LIMITS, "points_per_usd": 0.0005}
+
+    def priced_usage(self, dollars, delta=0.30):
+        block = usage_block(delta)
+        block["cost_estimate"] = {"usd": dollars}
+        return block
+
+    def test_a_run_with_dollars_is_charged_them_not_the_meter_delta(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill",
+                     self.priced_usage(10.0, delta=0.30))
+        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                              since=NOW - guard.WINDOW)
+        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+
+    def test_a_run_whose_dollars_cannot_be_used_keeps_the_meter_charge(self):
+        cases = {"no cost_estimate": None, "nan": float("nan"),
+                 "infinity": float("inf"), "bool": True, "negative": -1.0,
+                 "string": "4.0"}
+        for name, dollars in cases.items():
+            with self.subTest(case=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                run = self.run_dir("20261019T100000Z")
+                block = usage_block(0.02)
+                if dollars is not None:
+                    block["cost_estimate"] = {"usd": dollars}
+                self.summary(run, "k/20261019T100000Z/with_skill", block)
+                state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                                      since=NOW - guard.WINDOW)
+                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+
+    def test_no_usable_rate_keeps_the_meter_charge(self):
+        for name, rate in {"absent": None, "zero": 0, "bool": True,
+                           "nan": float("nan")}.items():
+            with self.subTest(rate=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                run = self.run_dir("20261019T100000Z")
+                self.summary(run, "k/20261019T100000Z/with_skill",
+                             self.priced_usage(10.0, delta=0.02))
+                limits = dict(LIMITS)
+                if rate is not None:
+                    limits["points_per_usd"] = rate
+                state = guard.account(self.tree, limits, NOW, (0, 0),
+                                      since=NOW - guard.WINDOW)
+                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+
+    def test_priced_summaries_of_one_invocation_are_counted_once(self):
+        run = self.run_dir("20261019T100000Z")
+        for rel in ("with_skill", "with_skill/trial-1", "without_skill/trial-2"):
+            block = self.priced_usage(10.0)
+            block["measured"]["started_at"] = rel  # differs per summary
+            self.summary(run, f"k/20261019T100000Z/{rel}", block)
+        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                              since=NOW - guard.WINDOW)
+        self.assertEqual(state["runs"], 1)
+        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
 
     def test_two_invocations_in_one_run_are_each_charged(self):
         run = self.run_dir("20261019T100000Z")
