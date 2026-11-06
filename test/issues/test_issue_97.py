@@ -990,6 +990,78 @@ class TestIssue97(unittest.TestCase):
             os.environ.pop("CLAUDE_CODE_REMOTE", None)
             self.assertNotIn("CLAUDE_CODE_REMOTE", guidance.agent_env(**kwargs))
 
+    def test_sealed_passthrough_is_exactly_the_oauth_token_name(self):
+        # Same floor as HOSTED_PASSTHROUGH: a name added here reaches every
+        # guidance arm in a sealed container.
+        self.assertEqual(guidance.SEALED_PASSTHROUGH, ("CLAUDE_CODE_OAUTH_TOKEN",))
+
+    def _sealed_env(self, seal, **extra):
+        env = {"PATH": os.environ.get("PATH", "/usr/bin"),
+               "SKILLS_EVALS_IN_CONTAINER": "1", "EVAL_SEAL": seal}
+        if seal == "proxy":
+            env["ANTHROPIC_BASE_URL"] = "http://skills-evals-1-ab12cd34-credproxy:8080"
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = "dummy-not-a-token"
+        else:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = "example-token-value"
+        env.update(extra)
+        return env
+
+    def _arm_env(self, ambient, dockerenv):
+        scratch = Path(tempfile.mkdtemp(prefix="sealed-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            return guidance.agent_env(
+                workspace=scratch / "ws", home=scratch / "home",
+                tmpdir=scratch / "tmp", config_dir=scratch / "config",
+                dockerenv=dockerenv)
+
+    def _dockerenv_files(self):
+        tmp = Path(tempfile.mkdtemp(prefix="dockerenv-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        present = tmp / ".dockerenv"
+        present.write_text("", encoding="utf-8")
+        return present, tmp / "absent"
+
+    def test_oauth_token_reaches_the_arm_in_each_seal(self):
+        present, _ = self._dockerenv_files()
+        for seal, value in (("proxy", "dummy-not-a-token"),
+                            ("allowlist", "example-token-value")):
+            with self.subTest(seal=seal):
+                env = self._arm_env(self._sealed_env(seal), present)
+                self.assertEqual(env["CLAUDE_CODE_OAUTH_TOKEN"], value)
+        proxy = self._arm_env(self._sealed_env("proxy"), present)
+        self.assertEqual(proxy["ANTHROPIC_BASE_URL"],
+                         "http://skills-evals-1-ab12cd34-credproxy:8080",
+                         "the proxy seal's base URL already passes by the ANTHROPIC_ prefix")
+
+    def test_oauth_token_stays_out_when_any_part_of_the_seal_is_missing(self):
+        present, missing = self._dockerenv_files()
+        for seal in ("proxy", "allowlist"):
+            cases = {"no dockerenv": (self._sealed_env(seal), missing)}
+            no_flag = self._sealed_env(seal)
+            del no_flag["SKILLS_EVALS_IN_CONTAINER"]
+            cases["no container flag"] = (no_flag, present)
+            no_seal = self._sealed_env(seal)
+            del no_seal["EVAL_SEAL"]
+            cases["no EVAL_SEAL"] = (no_seal, present)
+            for label, (ambient, dockerenv) in cases.items():
+                with self.subTest(seal=seal, case=label):
+                    env = self._arm_env(ambient, dockerenv)
+                    self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", env)
+
+    def test_no_other_claude_name_passes_in_a_seal(self):
+        present, _ = self._dockerenv_files()
+        others = {"CLAUDE_CODE_ENTRYPOINT": "remote", "CLAUDE_CODE_REMOTE_SESSION_ID": "s",
+                  "CLAUDE_SESSION_INGRESS_TOKEN_FILE": "/example/token",
+                  "CLAUDE_CODE_USE_BEDROCK": "1", "CLAUDE_CODE_OAUTH_TOKEN_FILE": "/example/t",
+                  "CLAUDE_BIN": "/example/claude", "CLAUDE_CODE_SSE_PORT": "1"}
+        for seal in ("proxy", "allowlist"):
+            with self.subTest(seal=seal):
+                env = self._arm_env(self._sealed_env(seal, **others), present)
+                self.assertEqual(
+                    sorted(name for name in env if name.startswith("CLAUDE_")),
+                    ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"])
+
     # ------------------------------------------------------------------
     # Items 3-6 — a whole guidance run through the fake CLI
     # ------------------------------------------------------------------

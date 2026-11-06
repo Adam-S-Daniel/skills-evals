@@ -19,8 +19,11 @@ an arm's scratch user profile and takes the subject out of it, or adds it:
   when it does not.
 
 Nothing here launches a model or reads a credential. In-place runs are
-cloud-only (ADR 0012, "Decisions on the build"): `require_hosted` refuses a
-local run with `in_place_local_unsupported`, and no credential adapter exists.
+cloud-only (ADR 0012, "Decisions on the build") with one addition:
+`require_hosted` refuses any other run with `in_place_local_unsupported`,
+and no credential adapter exists. The addition is a sealed eval container
+started by scripts/container_eval.sh (`sealed.sealed_container`), where the
+nested CLI authenticates through the container's own seal.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ import yaml
 
 import context
 import guidance
+import sealed
 
 PAIRINGS = ("in_place", "isolation")
 # Part 2 builds in-place pairs; the default switch is part 4.
@@ -81,22 +85,37 @@ def check_pairing(value) -> str:
 
 
 def hosted(environ: Mapping[str, str]) -> bool:
-    """Whether this process runs inside a hosted Claude Code session."""
+    """Whether this process runs inside a hosted Claude Code session. A sealed
+    eval container is not one; `require_hosted` accepts both."""
     entrypoint = environ.get("CLAUDE_CODE_ENTRYPOINT", "")
     return bool(environ.get(_HOSTED_SESSION)) or entrypoint.startswith(_HOSTED_ENTRYPOINTS)
 
 
-def require_hosted(environ: Mapping[str, str]) -> None:
-    """In-place arms run in a scratch profile with no login in it. In the
-    routine the nested CLI still authenticates (ADR 0010); locally nothing
-    would, and copying a credential in is deferred to its own review."""
-    if not hosted(environ):
-        raise DeliveryError(
-            "in_place_local_unsupported",
-            "an in-place pair runs only in the hosted eval routine, where the "
-            "nested CLI authenticates with no credential in reach; a local "
-            "credential adapter is not built (ADR 0012). Run --pairing isolation "
-            "locally")
+def require_hosted(environ: Mapping[str, str],
+                   dockerenv: Path = sealed.DOCKERENV) -> None:
+    """In-place arms run in a scratch profile with no login in it. Two places
+    can still authenticate the nested CLI there, and nothing else is accepted:
+
+    - the hosted eval routine (ADR 0010), whose host proxy holds the
+      credential;
+    - a sealed eval container (`sealed.sealed_container`, started by
+      scripts/container_eval.sh), whose proxy or egress-allowlist seal holds
+      or limits the credential. `dockerenv` is the file whose existence says
+      "this is a container"; tests point it at a temporary file.
+
+    Anywhere else nothing would authenticate, and copying a credential in is
+    deferred to its own review. A process that merely sets one container
+    variable is neither: `sealed_container` needs the whole seal, so this
+    fails closed to the refusal."""
+    if hosted(environ) or sealed.sealed_container(environ, dockerenv) is not None:
+        return
+    raise DeliveryError(
+        "in_place_local_unsupported",
+        "an in-place pair runs only in the hosted eval routine, where the "
+        "nested CLI authenticates with no credential in reach, or in a sealed "
+        "eval container started by scripts/container_eval.sh; a local "
+        "credential adapter is not built (ADR 0012). Run --pairing isolation "
+        "locally")
 
 
 def _sha256(raw: bytes) -> str:

@@ -8422,8 +8422,9 @@ def main() -> int:
         print("configuration error: subject qualifiers/candidates require an in-place pair; "
               "pass --pairing in_place")
         return 2
-    # Cloud-only (ADR 0012, "Decisions on the build"): an in-place arm's
-    # scratch profile holds no login, and no local credential adapter exists.
+    # Hosted routine or sealed eval container only (ADR 0012, "Decisions on
+    # the build"): an in-place arm's scratch profile holds no login, and no
+    # local credential adapter exists.
     if args.pairing == "in_place":
         try:
             delivery.require_hosted(os.environ)

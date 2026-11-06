@@ -107,6 +107,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_canary  # noqa: E402  — run_leg is the probe the guard reuses
+import sealed  # noqa: E402  — which seal, if any, this process runs inside
 
 MODES = ("none", "stub", "section", "full", "full-minus-section")
 
@@ -198,7 +199,8 @@ GUARD_DISALLOWED_TOOLS = "Read,Glob,Grep,Bash,WebFetch,WebSearch,Task"
 # sets explicitly. An allowlist, never `{**os.environ, ...}`: arms.py measured
 # 16 vs 35 loaded skills between a scrubbed and an ambient environment, and an
 # arm that inherits the operator's own CLAUDE_* settings is not measuring the
-# guidance.
+# guidance. The only CLAUDE_* names that pass are the two flags below, each
+# under its own condition.
 PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "SHELL", "USER", "NODE_PATH")
 
 # Test seam, exactly as harness/propagation/init_probe.py has one: the
@@ -217,6 +219,18 @@ EXTRA_PASSTHROUGH = ()
 # answer). It is a mode flag, not a credential, and outside a hosted session
 # it is absent and nothing changes.
 HOSTED_PASSTHROUGH = ("CLAUDE_CODE_REMOTE",)
+
+# Forwarded only inside a sealed eval container (`sealed.sealed_container()`
+# is not None: scripts/container_eval.sh built the container, harness/sealed.py
+# checks every condition). There the CLI authenticates with this name, and the
+# arm's allowlist would otherwise drop it (only ANTHROPIC_* passes by prefix,
+# which already carries the proxy seal's ANTHROPIC_BASE_URL). Under the proxy
+# seal its value is the dummy, and the credential-proxy sidecar replaces the
+# Authorization header; under the allowlist seal it is the token the container
+# was given, and an egress sidecar limits where it can be sent. Outside a
+# sealed container it is not forwarded and nothing changes. One name, no
+# pattern: no other CLAUDE_* name passes.
+SEALED_PASSTHROUGH = ("CLAUDE_CODE_OAUTH_TOKEN",)
 
 
 class GuidanceError(ValueError):
@@ -900,13 +914,19 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
 
 
 def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
-              env_spec: dict | None = None) -> dict:
+              env_spec: dict | None = None,
+              dockerenv: Path = sealed.DOCKERENV) -> dict:
     """The COMPLETE environment an arm's CLI child gets. Built from nothing.
 
     PATH (and a few locale/shell names) by allowlist, HOME/TMPDIR/
     CLAUDE_CONFIG_DIR set explicitly, every ANTHROPIC_* variable passed
     through (eval.yml exports ANTHROPIC_AUTH_TOKEN step-locally and the CLI
-    must still see it), then the fixture's own `env:` block.
+    must still see it), then the fixture's own `env:` block. In a sealed eval
+    container (`sealed.sealed_container(os.environ, dockerenv)` is not None)
+    `CLAUDE_CODE_OAUTH_TOKEN` also passes when set (SEALED_PASSTHROUGH): the
+    dummy under the proxy seal, the container's token under the allowlist
+    seal. `dockerenv` is the container-marker file the seal check tests for;
+    tests point it at a temporary file.
 
     `$VAR` in a fixture's `env:` expands against THIS environment, not the
     ambient one — expanding against `os.environ` would let a fixture reach
@@ -919,6 +939,9 @@ def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
            if name in os.environ}
     env.update({name: value for name, value in os.environ.items()
                 if name.startswith("ANTHROPIC_")})
+    if sealed.sealed_container(os.environ, dockerenv) is not None:
+        env.update({name: os.environ[name] for name in SEALED_PASSTHROUGH
+                    if name in os.environ})
     env["HOME"] = str(home)
     env["TMPDIR"] = str(tmpdir)
     env["CLAUDE_CONFIG_DIR"] = str(config_dir)

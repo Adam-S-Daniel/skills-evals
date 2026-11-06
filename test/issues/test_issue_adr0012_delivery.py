@@ -1039,6 +1039,73 @@ class ArmDeliveryTests(Base):
         self.refused("in_place_local_unsupported", lambda: delivery.require_hosted({}))
 
 
+class RequireHostedSealTests(unittest.TestCase):
+    """`require_hosted` also accepts a sealed eval container (harness/sealed.py)
+    and fails closed to the old refusal whenever the whole seal is not there."""
+
+    PROXY_URL = "http://skills-evals-1-ab12cd34-credproxy:8080"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dockerenv = Path(tmp.name) / ".dockerenv"
+        self.dockerenv.write_text("", encoding="utf-8")
+        self.missing = Path(tmp.name) / "absent"
+
+    def proxy_env(self, **extra):
+        return {"SKILLS_EVALS_IN_CONTAINER": "1", "EVAL_SEAL": "proxy",
+                "ANTHROPIC_BASE_URL": self.PROXY_URL,
+                "CLAUDE_CODE_OAUTH_TOKEN": "dummy-not-a-token", **extra}
+
+    def allowlist_env(self, **extra):
+        return {"SKILLS_EVALS_IN_CONTAINER": "1", "EVAL_SEAL": "allowlist",
+                "CLAUDE_CODE_OAUTH_TOKEN": "example-token-value", **extra}
+
+    def refused(self, environ, dockerenv=None):
+        with self.assertRaises(delivery.DeliveryError) as caught:
+            delivery.require_hosted(environ, dockerenv or self.dockerenv)
+        self.assertEqual(caught.exception.code, "in_place_local_unsupported")
+
+    def test_each_seal_is_accepted(self):
+        for environ in (self.proxy_env(), self.allowlist_env()):
+            with self.subTest(seal=environ["EVAL_SEAL"]):
+                self.assertIsNone(delivery.require_hosted(environ, self.dockerenv))
+                self.assertFalse(delivery.hosted(environ),
+                                 "a sealed container is accepted, but it is not a hosted session")
+
+    def test_each_seal_is_refused_without_the_container_marker(self):
+        for environ in (self.proxy_env(), self.allowlist_env()):
+            with self.subTest(seal=environ["EVAL_SEAL"]):
+                self.refused(environ, self.missing)
+
+    def test_each_seal_is_refused_without_the_container_flag(self):
+        for environ in (self.proxy_env(), self.allowlist_env()):
+            with self.subTest(seal=environ["EVAL_SEAL"]):
+                del environ["SKILLS_EVALS_IN_CONTAINER"]
+                self.refused(environ)
+
+    def test_each_seal_is_refused_without_the_seal_name(self):
+        for environ in (self.proxy_env(), self.allowlist_env()):
+            with self.subTest(seal=environ["EVAL_SEAL"]):
+                del environ["EVAL_SEAL"]
+                self.refused(environ)
+
+    def test_a_seal_whose_own_condition_fails_is_refused(self):
+        self.refused(self.proxy_env(CLAUDE_CODE_OAUTH_TOKEN="example-token-value"))
+        self.refused(self.allowlist_env(ANTHROPIC_BASE_URL=self.PROXY_URL))
+
+    def test_the_refusal_names_both_places_an_in_place_pair_runs(self):
+        with self.assertRaises(delivery.DeliveryError) as caught:
+            delivery.require_hosted({}, self.missing)
+        message = str(caught.exception)
+        self.assertIn("hosted eval routine", message)
+        self.assertIn("sealed eval container started by scripts/container_eval.sh", message)
+
+    def test_the_hosted_session_is_still_accepted_without_a_container(self):
+        self.assertIsNone(delivery.require_hosted(
+            {"CLAUDE_CODE_REMOTE_SESSION_ID": "s"}, self.missing))
+
+
 class RealHookTests(Base):
     def test_the_real_hook_delivers_identical_blocks_to_both_arms(self):
         hook = (ROOT / ".claude/hooks/fleet-memory.sh").read_bytes()
