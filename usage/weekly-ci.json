@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-05T14:59:07Z",
+  "generated_at": "2026-11-06T14:56:20Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-14T00:00:00Z",
-      "to": "2026-11-05T14:59:07Z",
+      "to": "2026-11-06T14:56:20Z",
       "repos_scanned": 23
     }
   ],
@@ -4140,7 +4140,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 62,
+      "invocations": 65,
       "sessions": null,
       "blocked": 2,
       "overridden": 2,
@@ -4176,7 +4176,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 101,
+      "invocations": 115,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4212,7 +4212,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 33,
+      "invocations": 34,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4284,10 +4284,10 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 308,
+      "invocations": 317,
       "sessions": null,
-      "blocked": 4,
-      "overridden": 4,
+      "blocked": 7,
+      "overridden": 7,
       "outcome": null
     },
     {
@@ -4364,6 +4364,18 @@
     },
     {
       "week": "2026-11-02",
+      "kind": "hook",
+      "name": "pr-tldr",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "surface": "ci",
+      "invocations": 0,
+      "sessions": null,
+      "blocked": 3,
+      "overridden": 3,
+      "outcome": null
+    },
+    {
+      "week": "2026-11-02",
       "kind": "repo",
       "name": "Adam-S-Daniel/_agent-guidance",
       "repo": "Adam-S-Daniel/_agent-guidance",
@@ -4373,12 +4385,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 48,
-        "prs_merged": 49,
+        "prs_opened": 50,
+        "prs_merged": 50,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 44,
-        "ci_red_after": 4
+        "agent_prs_merged": 45,
+        "ci_red_after": 5
       }
     },
     {
@@ -4430,8 +4442,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 93,
-        "prs_merged": 80,
+        "prs_opened": 107,
+        "prs_merged": 94,
         "prs_closed_unmerged": 14,
         "prs_reverted": 0,
         "agent_prs_merged": 2,
@@ -4487,11 +4499,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 26,
-        "prs_merged": 27,
+        "prs_opened": 27,
+        "prs_merged": 28,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 10,
+        "agent_prs_merged": 11,
         "ci_red_after": 0
       }
     },
@@ -4601,11 +4613,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 162,
-        "prs_merged": 152,
+        "prs_opened": 167,
+        "prs_merged": 157,
         "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 146,
+        "agent_prs_merged": 151,
         "ci_red_after": 25
       }
     },
@@ -4725,6 +4737,27 @@
     }
   ],
   "red_runs": [
+    {
+      "week": "2026-11-02",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "created_at": "2026-11-06T12:23:55Z",
+      "conclusion": "failure",
+      "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217351548"
+    },
+    {
+      "week": "2026-11-02",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "created_at": "2026-11-06T12:23:51Z",
+      "conclusion": "failure",
+      "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217343464"
+    },
+    {
+      "week": "2026-11-02",
+      "repo": "Adam-S-Daniel/skills-evals",
+      "created_at": "2026-11-06T12:23:47Z",
+      "conclusion": "failure",
+      "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217335675"
+    },
     {
       "week": "2026-11-02",
       "repo": "Adam-S-Daniel/skills-evals",
