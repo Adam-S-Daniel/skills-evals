@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-06T16:32:48Z",
+  "fetched_at": "2026-11-06T16:57:01Z",
   "issues": [
    {
     "created_at": "2026-11-03T18:20:37Z",
@@ -670,6 +670,16 @@
    }
   ],
   "pulls": [
+   {
+    "created_at": "2026-11-06T16:47:41Z",
+    "merged_at": null,
+    "number": 973,
+    "repo": "Adam-S-Daniel/cms-platform",
+    "state": "open",
+    "title": "Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:48:56Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/973"
+   },
    {
     "created_at": "2026-11-06T16:24:58Z",
     "merged_at": "2026-11-06T16:32:04Z",
@@ -7589,16 +7599,6 @@
     "title": "Pin PyYAML via requirements.txt",
     "updated_at": "2026-10-23T16:58:12Z",
     "url": "https://github.com/Adam-S-Daniel/repo-settings/pull/84"
-   },
-   {
-    "created_at": "2026-10-23T16:48:35Z",
-    "merged_at": "2026-10-23T16:51:23Z",
-    "number": 869,
-    "repo": "Adam-S-Daniel/cms-platform",
-    "state": "merged",
-    "title": "chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-10-23T16:51:25Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/869"
    }
   ],
   "repos": [
@@ -7625,6 +7625,150 @@
    "jodidaniel/squarespacetemp"
   ],
   "runs": [
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:56:58Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42257081708,
+    "state": "completed",
+    "title": "scheduled \u2014 */5 * * * *",
+    "updated_at": "2026-11-06T16:57:07Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42257081708",
+    "workflow": "scheduled \u2014 */5 * * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677278,
+    "state": "completed",
+    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:51:54Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677278",
+    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677334,
+    "state": "completed",
+    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:49:46Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677334",
+    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:47:43Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255673494,
+    "state": "completed",
+    "title": "PR #973",
+    "updated_at": "2026-11-06T16:49:02Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255673494",
+    "workflow": "PR #973"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677272,
+    "state": "completed",
+    "title": "PR #973 opened \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:47:59Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677272",
+    "workflow": "PR #973 opened \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677321,
+    "state": "completed",
+    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:47:58Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677321",
+    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677294,
+    "state": "completed",
+    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:47:57Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677294",
+    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-06T16:47:44Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255677298,
+    "state": "completed",
+    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
+    "updated_at": "2026-11-06T16:47:45Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677298",
+    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:46:12Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42255444557,
+    "state": "completed",
+    "title": "scheduled \u2014 17 9 * * *",
+    "updated_at": "2026-11-06T16:46:46Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255444557",
+    "workflow": "scheduled \u2014 17 9 * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:32:08Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42253275665,
+    "state": "completed",
+    "title": "Merge pull request #788 from Adam-S-Daniel/agent/issue-705-finding-un\u2026",
+    "updated_at": "2026-11-06T16:37:55Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253275665",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:35:11Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42253762596,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-06T16:35:49Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253762596",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-06T16:32:07Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42253272692,
+    "state": "completed",
+    "title": "Push on main",
+    "updated_at": "2026-11-06T16:34:42Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253272692",
+    "workflow": "Push on main"
+   },
    {
     "conclusion": "success",
     "created_at": "2026-11-06T16:31:25Z",
@@ -7672,30 +7816,6 @@
     "updated_at": "2026-11-06T16:32:18Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253275673",
     "workflow": "agent-checks"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-06T16:32:07Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42253272692,
-    "state": "in_progress",
-    "title": "Push on main",
-    "updated_at": "2026-11-06T16:32:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253272692",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-06T16:32:08Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42253275665,
-    "state": "in_progress",
-    "title": "Merge pull request #788 from Adam-S-Daniel/agent/issue-705-finding-un\u2026",
-    "updated_at": "2026-11-06T16:32:12Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42253275665",
-    "workflow": "CI"
    },
    {
     "conclusion": "success",
@@ -9871,18 +9991,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-06T12:23:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42217335612,
-    "state": "completed",
-    "title": "Add trigger eval set for debug-github-workflows (#701)",
-    "updated_at": "2026-11-06T12:29:15Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217335612",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-06T12:24:05Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -10155,18 +10263,6 @@
     "title": "Add trigger eval set for fan-out-triage (#703)",
     "updated_at": "2026-11-06T12:24:03Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217343464",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "failure",
-    "created_at": "2026-11-06T12:23:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42217335675,
-    "state": "completed",
-    "title": "Add trigger eval set for debug-github-workflows (#701)",
-    "updated_at": "2026-11-06T12:24:01Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42217335675",
     "workflow": "agent-checks"
    },
    {
@@ -10600,18 +10696,6 @@
     "updated_at": "2026-11-05T21:50:33Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42116243908",
     "workflow": "reap PR #4675 (closed)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-05T21:42:41Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42115091172,
-    "state": "completed",
-    "title": "PR #4675 \u2014 delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-05T21:43:44Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42115091172",
-    "workflow": "PR #4675 \u2014 delete: published entry via Decap (auto-merge)"
    },
    {
     "conclusion": "success",
@@ -15928,102 +16012,6 @@
     "updated_at": "2026-11-04T14:26:58Z",
     "url": "https://github.com/Adam-S-Daniel/acsi-kit/actions/runs/41847534882",
     "workflow": "Re-sync from sources"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:45:51Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41841074878,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-04T13:49:55Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41841074878",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:45:51Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41841074518,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-04T13:48:02Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41841074518",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:45:51Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41841075017,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-04T13:47:50Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41841075017",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:45:51Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41841075477,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-04T13:46:11Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41841075477",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:45:51Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41841075022,
-    "state": "completed",
-    "title": "push \u2014 main",
-    "updated_at": "2026-11-04T13:46:03Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41841075022",
-    "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:43:01Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41840635954,
-    "state": "completed",
-    "title": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)",
-    "updated_at": "2026-11-04T13:44:45Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41840635954",
-    "workflow": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-04T13:43:01Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41840635959,
-    "state": "completed",
-    "title": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)",
-    "updated_at": "2026-11-04T13:43:11Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41840635959",
-    "workflow": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-04T13:43:01Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 41840636046,
-    "state": "completed",
-    "title": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)",
-    "updated_at": "2026-11-04T13:43:02Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/41840636046",
-    "workflow": "PR #959 \u2014 Promote two CI facts from memory into CI-INVARIANTS (#952)"
    },
    {
     "conclusion": "success",
@@ -27676,57 +27664,9 @@
     "updated_at": "2026-10-23T17:45:17Z",
     "url": "https://github.com/Adam-S-Daniel/scratch-jules-001/actions/runs/39997573977",
     "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-10-23T16:49:01Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/scratch-claude-001",
-    "run_id": 39989903353,
-    "state": "completed",
-    "title": "chore: deliver the skills-bootstrap SessionStart hook",
-    "updated_at": "2026-10-23T16:50:16Z",
-    "url": "https://github.com/Adam-S-Daniel/scratch-claude-001/actions/runs/39989903353",
-    "workflow": "Deploy to GitHub Pages"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-10-23T16:49:39Z",
-    "event": "push",
-    "repo": "jodidaniel/squarespacetemp",
-    "run_id": 39989989888,
-    "state": "completed",
-    "title": "chore: deliver the skills-bootstrap SessionStart hook",
-    "updated_at": "2026-10-23T16:50:02Z",
-    "url": "https://github.com/jodidaniel/squarespacetemp/actions/runs/39989989888",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-10-23T16:49:35Z",
-    "event": "push",
-    "repo": "jodidaniel/scratch-claude-002",
-    "run_id": 39989981224,
-    "state": "completed",
-    "title": "chore: deliver the skills-bootstrap SessionStart hook",
-    "updated_at": "2026-10-23T16:50:02Z",
-    "url": "https://github.com/jodidaniel/scratch-claude-002/actions/runs/39989981224",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-10-23T16:49:05Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/scratch-jules-001",
-    "run_id": 39989910867,
-    "state": "completed",
-    "title": "chore: deliver the skills-bootstrap SessionStart hook",
-    "updated_at": "2026-10-23T16:49:47Z",
-    "url": "https://github.com/Adam-S-Daniel/scratch-jules-001/actions/runs/39989910867",
-    "workflow": "agent-checks"
    }
   ],
-  "since": "2026-10-23T16:32:48Z"
+  "since": "2026-10-23T16:57:01Z"
  },
  "agent_made": {
   "items": [
@@ -45102,7 +45042,7 @@
     "without_pass_rate": null
    }
   ],
-  "generated_at": "2026-11-06T16:32:24Z",
+  "generated_at": "2026-11-06T16:56:36Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -45288,7 +45228,7 @@
    "requests_open": 15
   }
  },
- "generated_at": "2026-11-06T16:31:16Z",
+ "generated_at": "2026-11-06T16:35:02Z",
  "guidance": {
   "removed": [
    {
@@ -71092,8 +71032,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "23675f696dd5941246830cc3e6fbcdadec180f21",
-  "results_commit": "b3dd21636dd85c1d214bb9adcf7f4d52fb61b2e4"
+  "repository_commit": "1dd8eea38f5b034106c870e36583f18216af7525",
+  "results_commit": "e44a02d672f592f467b908b201df35eb3726c14b"
  },
  "spend": {
   "generated_at": "2026-11-06T16:30:49Z",
