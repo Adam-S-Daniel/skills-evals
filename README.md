@@ -87,6 +87,7 @@ evals/
     secret-name/           # a workflow reads a secret name the repository does not have
   add-from-address/  # trigger eval set only (trigger lane)
   compare-pdfpairs/  # trigger eval set only (trigger lane)
+  launch-top-level-claude-session/  # trigger eval set only (trigger lane)
   fastmail/  # trigger eval set only (trigger lane)
   ci-job-performance/      # Class B: speed up a slow CI job from recorded timings
     browser-cache/         # a Playwright browser cache that slows the firefox leg it was meant to speed up
