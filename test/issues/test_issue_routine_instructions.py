@@ -6,10 +6,11 @@ docs/routine/eval-runner-instructions.md at origin/main, so changes land as
 pull requests. These tests keep the stub pointing at a file that exists, keep
 it a stub, and keep every mode reachable from the file it points to.
 
-An eval fire read the whole 31 KB file for the few lines it needed. Each other
-mode's section is now its own file under docs/routine/modes/, which the main
-file names by path and tells the routine to read from the same commit, in that
-mode only. These tests hold each mode file to its section.
+An eval fire read the whole 31 KB file for the few lines it needed. Its steps
+are now scripts/routine_eval.py, and each other mode's section is its own file
+under docs/routine/modes/, which the main file names by path and tells the
+routine to read from the same commit, in that mode only. So the main file stays
+short, and these tests hold each mode file to its section.
 """
 import re
 import unittest
@@ -80,6 +81,22 @@ class InstructionsTests(unittest.TestCase):
         improve = (ROOT / MODES_REL / "improve.md").read_text(encoding="utf-8")
         self.assertIn("g.refused_env_names(os.environ)", improve)
         self.assertIn("2a40fd2e7c52207aa903bd33fc4c65716126966e", improve)
+
+    def test_the_eval_steps_are_the_script(self):
+        text = INSTRUCTIONS.read_text(encoding="utf-8")
+        steps = text[text.index("\nEVAL STEPS:"):text.index("\nSCAFFOLD MODE is ")]
+        self.assertIn("`git checkout --quiet --detach <INSTRUCTIONS_SHA> && "
+                      "python3 scripts/routine_eval.py --payload <that file>`", steps)
+        self.assertIn("timeout of 2700000 ms", steps)
+        self.assertIn("Write the fire text, unchanged, to a new file outside every checkout",
+                      steps)
+        self.assertIn("do not run it again", steps)
+        self.assertIn('"instructions: <INSTRUCTIONS_SHA>"', steps)
+        self.assertTrue((ROOT / "scripts" / "routine_eval.py").is_file())
+
+    def test_an_eval_fire_reads_a_short_file(self):
+        # Every fire reads the whole main file; only the other modes read more.
+        self.assertLess(len(INSTRUCTIONS.read_bytes()), 8000)
 
     def test_the_instructions_files_are_plain_text_not_wrapped_fences(self):
         # The routine follows each whole file, so each holds instructions only.
