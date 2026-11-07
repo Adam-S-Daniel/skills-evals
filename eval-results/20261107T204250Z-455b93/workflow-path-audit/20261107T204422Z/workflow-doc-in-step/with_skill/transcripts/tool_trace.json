@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MCNJDtfzWd4G9NpFGxb6Jt",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MCNJDtfzWd4G9NpFGxb6Jt",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NXzmoTaD3WpBVEnuxvgzZb",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | head -50 && for f in .github/workflows/*; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 198,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NXzmoTaD3WpBVEnuxvgzZb",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n8a4a842 initial commit\n./.idea\n./src/util.js\n./src/index.js\n./.bashrc\n./.gitconfig\n./.github/rulesets/main.json\n./.github/workflows/nightly-sweep.yml\n./.github/w...",
+      "output_chars": 2303,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QREJLU6WiESPiVy1EXjU7s",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; echo; cat package.json mkdocs.yml; cat bin/gh | head -30; ls .gh/replay; PATH=$PWD/bin:$PATH gh api repos/example-org/example-service/rules/branches/main",
+      "input_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QREJLU6WiESPiVy1EXjU7s",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 3255,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LNLxy7q97ZsKKHD5WV8T26",
+      "name": "Bash",
+      "input": "git branch --show-current && git worktree add .claude/worktrees/ci-path-filters -b ci/salient-path-triggers && git -C .claude/worktrees/ci-path-filters log --oneline origin/main..HEAD 2>&1; git remote...",
+      "input_chars": 249,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LNLxy7q97ZsKKHD5WV8T26",
+      "is_error": false,
+      "output": "master\nPreparing worktree (new branch 'ci/salient-path-triggers')\nfatal: could not create leading directories of '.claude/worktrees/ci-path-filters/.git': Read-only file system\npyyaml ok",
+      "output_chars": 186,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011DiQUehLu83tPCn8LENfTX",
+      "name": "Bash",
+      "input": "git branch -D ci/salient-path-triggers 2><path>; WT=\"$TMPDIR/ci-path-filters\"; git worktree add \"$WT\" -b ci/salient-path-triggers && echo \"$WT\" && git -C \"$WT\" status --short && git remote -v | head",
+      "input_chars": 201,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011DiQUehLu83tPCn8LENfTX",
+      "is_error": false,
+      "output": "Deleted branch ci/salient-path-triggers (was 8a4a842).\nPreparing worktree (new branch 'ci/salient-path-triggers')\nHEAD is now at 8a4a842 initial commit\n<path>",
+      "output_chars": 211,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ab6trryYindErysWAeLS2M",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01URvubKAmvbcGSsyy19FAz5",
+      "name": "Bash",
+      "input": "cd <path> && git branch --show-current && cat .github/workflows/docs-site.yml && grep -n 'yml' AGENTS.md",
+      "input_chars": 157,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01URvubKAmvbcGSsyy19FAz5",
+      "is_error": false,
+      "output": "ci/salient-path-triggers\nname: Docs site\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  build-docs:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - uses: actions/setup-python@83679a892e2d...",
+      "output_chars": 721,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ry4iW7mepuJNsZQLwXKT3v",
+      "name": "Bash",
+      "input": "cd <path> && cat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\non:\n  # No paths filter on pull_request: the unit-tests check must always report,\n  # so the job gates itself on the changed files i...",
+      "input_chars": 5938,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ry4iW7mepuJNsZQLwXKT3v",
+      "is_error": false,
+      "output": "---A\nsrc/index.js tests=y docs=n\ntest/util.test.js tests=y docs=n\npackage.json tests=y docs=n\npackage-lock.json tests=y docs=n\n.github/workflows/tests.yml tests=y docs=n\ndocs/guide.md tests=n docs=y\nREADME.md tests=n docs=n\nmkdocs.yml tests=n docs=y\nAGENTS.md tests=n docs=n\n.github/workflows/docs-si...",
+      "output_chars": 1142,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01D28LxvhdEbvUgiZo7crHHw",
+      "name": "Bash",
+      "input": "cd <path> && npm test 2>&1 | head -25; git stash -q && npm test ><path> 2>&1; echo \"baseline exit=$?\"; git stash pop -q; git status --short",
+      "input_chars": 195,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01D28LxvhdEbvUgiZo7crHHw",
+      "is_error": false,
+      "output": "> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n#     at defaultResolveImpl (node:internal/modules/cjs/load...",
+      "output_chars": 1088,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014D2222SbWEm4TAxgBSE8BN",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All three file edits are written to the spec, and A and B pass. C (`npm test`) fails, and it fails the same way on the unmodified tree.\\n\\nFiles changed in <path> (branch ci/salient-path-...",
+      "input_chars": 1834,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014D2222SbWEm4TAxgBSE8BN",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ab6trryYindErysWAeLS2M",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a52a60e4ce51d8a9c\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a52a60e4ce51d8a9c (use SendMessage with to: 'a52a60e4ce51d8a9c', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SNxF425MtHM3zyKwZJpv3P",
+      "name": "Bash",
+      "input": "git ls-files | head -30; echo ---; ls test; npm test 2>&1 | tail -8; echo \"exit=${PIPESTATUS[0]}\"; echo ---; git -C \"$TMPDIR/ci-path-filters\" diff",
+      "input_chars": 146,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SNxF425MtHM3zyKwZJpv3P",
+      "is_error": false,
+      "output": ".editorconfig\n.gh/replay/api/repos/example-org/example-service/rules/branches/main.json\n.gh/replay/api/repos/example-org/example-service/rulesets.json\n.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json\n.gh/replay/auth-status.txt\n.gh/replay/repo-view.json\n.gh/replay/ruleset-list.j...",
+      "output_chars": 6069,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016xN8RWFjdauywcPkRoLeaC",
+      "name": "Bash",
+      "input": "node --version; npm test 2>&1 | grep -m3 -iE 'error|cannot'; node --test test/*.test.js 2>&1 | grep -E '^# (tests|pass|fail)'",
+      "input_chars": 125,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016xN8RWFjdauywcPkRoLeaC",
+      "is_error": false,
+      "output": "v22.23.4\n# Error: Cannot find module '<path>'\n  error: 'test failed'\n# tests 2\n# pass 2\n# fail 0\n<sandbox_violations>\ndeny network-outbound registry.npmjs.org:443 (host is not on the allow list)\n</sandbox_violations>",
+      "output_chars": 248,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
