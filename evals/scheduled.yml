@@ -142,3 +142,11 @@ fixtures:
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/ci-job-performance/sharded-required-check
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at caeff57f6501 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/ci-job-performance/act-local-loop
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/red-ci-adamdaniel-ai/release-bump-blocked
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adamdaniel.ai at 0e3957f01bd9 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/skills-doctor/laptop-double-delivery
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adam-agentskills at eccda739064b (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/writing-adrs/pr-body-outgrows-itself
+    readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."

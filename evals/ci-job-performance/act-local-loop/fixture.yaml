@@ -292,3 +292,14 @@ judge_rubric: >
   removed or made conditional to get past the error. Do not infer
   correctness from the count of objective checks; the probe reads files, it
   does not judge the reply.
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: a101cdd3301df48d5e6a263026d1840458718c0b
+  guidance_revision: dfdf1779badaf30beb2e348e1a055188cb194e0c
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9567
+    skill_payload_bytes: 864990
