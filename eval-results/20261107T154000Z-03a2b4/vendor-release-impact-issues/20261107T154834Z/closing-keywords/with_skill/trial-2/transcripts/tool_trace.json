@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X8bGRa4XdPSUSGoZBLwZvS",
+      "name": "Bash",
+      "input": "git status --short && ls -R . | grep -v '^./.git' | head -50 && cat docs/vendor-tracking.md",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Di9AfceYjvDmyxcNMcmnD",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X8bGRa4XdPSUSGoZBLwZvS",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n# ExampleCLI release reviews\n\n|...",
+      "output_chars": 407,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Di9AfceYjvDmyxcNMcmnD",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011BB7RbNJKk6W6nNaGayJmu",
+      "name": "Bash",
+      "input": "cat README.md hooks/warm-cache.sh .gitmodules; python3 -c \"\nimport json;d=json.load(open('vendor/releases.json'));print(json.dumps(d,indent=1)[:3000])\"; wc -c vendor/*; git log --oneline | head",
+      "input_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011BB7RbNJKk6W6nNaGayJmu",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n#!<path> bash\n# Warms the dependency ca...",
+      "output_chars": 827,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Fan3ud28rgtqkBEQhXMHNr",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; ls -a .example-cli 2>&1; git ls-files; find . -path ./.git -prune -o -name '*.json' -print | head",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Fan3ud28rgtqkBEQhXMHNr",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 654,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CyDWLSCgaYnv34oYreoFT1",
+      "name": "Bash",
+      "input": "cat .example-cli/settings.json",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CyDWLSCgaYnv34oYreoFT1",
+      "is_error": false,
+      "output": "{\n  \"telemetryOptOut\": true,\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/warm-cache.sh\",\n            \"timeout\": 20\n          }\n        ]\n      }\n    ]\n  }\n}",
+      "output_chars": 289,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W8YPQfPsqmeKyGFG9vM6M6",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re,sys\nsrc=open('vendor/RELEASES.md').read()\nb=[l[2:] for l in src.splitlines() if l.startswith('- ')]\nq={1:b[0],2:b[1]}  # 4.4.0/1 hooks timeout...",
+      "input_chars": 3563,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W8YPQfPsqmeKyGFG9vM6M6",
+      "is_error": false,
+      "output": "# ExampleCLI 4.4.0 hooks honor `timeout`: SessionStart cache warm-up has a 20s timeout and takes about a minute\n\nFound in the ExampleCLI 4.4.0 release review (tracking PR: see the `docs/vendor-tracking.md` row for 4.4.0). Not yet verified against this repo.\n\n## ExampleCLI changes\n\n4.4.0 (published 2...",
+      "output_chars": 502,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H5nBYkNk31DpDRFuFH2qoo",
+      "name": "Bash",
+      "input": "sed -i 's/^# ExampleCLI 4.4.0 hooks honor `timeout`.*/# ExampleCLI 4.4.0 hooks honor `timeout`: warm-cache SessionStart hook has 20s, needs about a minute/; s/^# ExampleCLI 4.4.0 rejects unknown top-l...",
+      "input_chars": 2013,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H5nBYkNk31DpDRFuFH2qoo",
+      "is_error": false,
+      "output": "47\n111\n0\n49\n114\nissues/01-session-start-hook-timeout.md:38:<sub>\ud83e\udd16 Written by Claude Code on behalf of @Adam-S-Daniel</sub>\nissues/02-unknown-config-keys-rejected.md:<redacted> Written by Claude Code on behalf of @Adam-S-Daniel</sub>\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4....",
+      "output_chars": 401,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VczX53mZxCN8rkorJoG6MX",
+      "name": "Bash",
+      "input": "sed -i 's/^i1=f\"\"\"# .*/i1=f\"\"\"# ExampleCLI 4.4.0 hooks honor `timeout`: warm-cache SessionStart hook has 20s, needs about a minute/; s/^i2=f\"\"\"# .*/i2=f\"\"\"# ExampleCLI 4.4.0 rejects unknown top-level ...",
+      "input_chars": 395,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VczX53mZxCN8rkorJoG6MX",
+      "is_error": false,
+      "output": "101\n# ExampleCLI 4.4.0 hooks honor `timeout`: warm-cache SessionStart hook has 20s, needs about a minute\n95\n# ExampleCLI 4.4.0 rejects unknown top-level config keys: check telemetryOptOut and hooks here\n1",
+      "output_chars": 204,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

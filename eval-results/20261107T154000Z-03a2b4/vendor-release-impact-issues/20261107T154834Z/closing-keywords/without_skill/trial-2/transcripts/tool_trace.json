@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016gciHBqtyvPd1qLXAzGbFS",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 141,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016gciHBqtyvPd1qLXAzGbFS",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.m...",
+      "output_chars": 596,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QWHJtxQ7MDpY4xTJCatp5t",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -80; cat README.md .example-cli/settings.json hooks/warm-cache.sh; git log --oneline | head",
+      "input_chars": 147,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QWHJtxQ7MDpY4xTJCatp5t",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1479,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X4ChFrp8zEj7pD9dyRJTmR",
+      "name": "Bash",
+      "input": "mkdir -p issues && \necho '| 4.4.0 | 2026-11-07 | 2 filed |' >> docs/vendor-tracking.md &&\ncat > issues/01-session-start-hook-timeout.md <<'EOF'\n# ExampleCLI 4.4.0 enforces SessionStart hook timeouts: ...",
+      "input_chars": 4090,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X4ChFrp8zEj7pD9dyRJTmR",
+      "is_error": false,
+      "output": "|---|---|---|\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-07 | 2 filed |\n M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md",
+      "output_chars": 183,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

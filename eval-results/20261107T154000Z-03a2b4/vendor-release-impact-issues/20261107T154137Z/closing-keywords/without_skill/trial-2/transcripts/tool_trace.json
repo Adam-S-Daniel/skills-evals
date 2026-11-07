@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016sQunU4vvqejqj2n9QwZQW",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016sQunU4vvqejqj2n9QwZQW",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nef5e965 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc...",
+      "output_chars": 434,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CQbB3oP3rF5Tq6h4o5s4kv",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md docs/vendor-tracking.md vendor/RELEASES.md vendor/releases.json .example-cli/settings.json hooks/warm-cache.sh; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CQbB3oP3rF5Tq6h4o5s4kv",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n=== AGENTS.md\n# AGENTS.md...",
+      "output_chars": 1957,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QnBScx9CjASYvi16hgC7gA",
+      "name": "Bash",
+      "input": "cat .gitmodules .mcp.json; ls -la .idea .vscode; grep -rn -- \"--config\\|statusLine\\|status line\\|telemetry\" --exclude-dir=.git . | grep -v '^./vendor'",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QnBScx9CjASYvi16hgC7gA",
+      "is_error": false,
+      "output": "cat: .gitmodules: Permission denied\ncat: .mcp.json: Permission denied\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:55 .idea\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:55 .vscode\ngrep: --exclude-dir=.git: No such file or directory\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitco...",
+      "output_chars": 722,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0163BLZ7BniFnM2zTLjCUFVJ",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat >> docs/vendor-tracking.md <<'EOF'\n| 4.4.0 | 2026-11-07 | 2 filed |\nEOF\ncat > issues/01-sessionstart-hook-timeout-enforced.md <<'EOF'\n# ExampleCLI 4.4.0 enforces SessionStart ho...",
+      "input_chars": 4635,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0163BLZ7BniFnM2zTLjCUFVJ",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md\ndiff --git a/docs/vendor-tracking.md b/docs/vendor-tracking.md\nindex b3e31e7..6dcd9a1 100644\n--- a/docs/vendor-tracking.md\n+++ b/docs/vendor-tracking.md\n@@ -4,3 +4,4 @@\n |---|---|---|\n | 4.2.0 | 2026-07-15 | 2 filed |\n | 4.3.0...",
+      "output_chars": 356,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HeS8Lvpqa9dt4mKZ8dXjbc",
+      "name": "Bash",
+      "input": "grep -niE '\\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\\b' pr-body.md commit-message.txt issues/*.md; echo \"rc=$?\"",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HeS8Lvpqa9dt4mKZ8dXjbc",
+      "is_error": false,
+      "output": "pr-body.md:16:The issues are filed separately and are not closed by this PR; each closes once its checks are done.\ncommit-message.txt:6:Both are tracked as separate issues; the Windows --config fix and the\nissues/01-sessionstart-hook-timeout-enforced.md:9:- [ ] Decide the fix: raise `timeout` in `.e...",
+      "output_chars": 505,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

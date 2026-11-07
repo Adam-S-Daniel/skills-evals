@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ExYEtZruH12Nx6LJMP2co6",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 165,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ExYEtZruH12Nx6LJMP2co6",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n311bf6d initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.prof...",
+      "output_chars": 619,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KLdkj6jdjCnNmhZLcSNzXR",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat README.md hooks/warm-cache.sh .example-cli/settings.json; echo ----; git show --stat HEAD | head -30",
+      "input_chars": 176,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KLdkj6jdjCnNmhZLcSNzXR",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1943,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016G9Zw6HV69BNFgU2w9Trf2",
+      "name": "Bash",
+      "input": "grep -rn -- \"--config\\|telemetry\\|statusLine\\|status\" --exclude-dir=.git . ; cat .gitmodules .mcp.json; ls -la .idea .vscode",
+      "input_chars": 124,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016G9Zw6HV69BNFgU2w9Trf2",
+      "is_error": false,
+      "output": "grep: --exclude-dir=.git: No such file or directory\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\n./.example-cli/settings.json:2:  \"telemetryOptOut\": true,\n./.git/hooks/pre-applypatch.sample:6:# The hook...",
+      "output_chars": 2383,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TgcTixrBUTniyaCrSf1Di7",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-sessionstart-hook-timeout.md <<'EOF'\n# ExampleCLI 4.4.0 enforces the 20-second SessionStart timeout, which kills hooks/warm-cache.sh on a cold cache\n\nExampleCLI 4.4....",
+      "input_chars": 2720,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TgcTixrBUTniyaCrSf1Di7",
+      "is_error": false,
+      "output": "diff --git a/docs/vendor-tracking.md b/docs/vendor-tracking.md\nindex b3e31e7..6dcd9a1 100644\n--- a/docs/vendor-tracking.md\n+++ b/docs/vendor-tracking.md\n@@ -4,3 +4,4 @@\n |---|---|---|\n | 4.2.0 | 2026-07-15 | 2 filed |\n | 4.3.0 | 2026-08-26 | none |\n+| 4.4.0 | 2026-11-07 | 2 filed |",
+      "output_chars": 282,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VrqtDwRSQpvsHZA7zttkVR",
+      "name": "Bash",
+      "input": "cat > pr-body.md <<'EOF'\n## TLDR\n\nRecords the review of ExampleCLI 4.4.0 against this repository in `docs/vendor-tracking.md`. Two of the release's four changes affect us, and each gets its own issue;...",
+      "input_chars": 2539,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VrqtDwRSQpvsHZA7zttkVR",
+      "is_error": false,
+      "output": "pr-body.md:3:Records the review of ExampleCLI 4.4.0 against this repository in `docs/vendor-tracking.md`. Two of the release's four changes affect us, and each gets its own issue; those issues stay open until their checks are done, so this PR does not close them.\ncommit-message.txt:6:are tracked in ...",
+      "output_chars": 1994,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

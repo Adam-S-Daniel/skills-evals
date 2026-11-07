@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WSNZhUCS1KeyVLRitDNh5n",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WSNZhUCS1KeyVLRitDNh5n",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nf899609 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc...",
+      "output_chars": 434,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SDsNsLMUHVAc79CLLdMbeB",
+      "name": "Bash",
+      "input": "for f in README.md docs/vendor-tracking.md vendor/RELEASES.md vendor/releases.json hooks/warm-cache.sh .example-cli/settings.json; do echo \"=== $f\"; cat \"$f\"; done; ls -la .idea .vscode; file .idea .v...",
+      "input_chars": 205,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SDsNsLMUHVAc79CLLdMbeB",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n=== docs/vendor-tracking....",
+      "output_chars": 1902,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xue1MTWmj9UQWp4knaMqYy",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat >> docs/vendor-tracking.md <<'EOF'\n| 4.4.0 | 2026-11-07 | 2 filed |\nEOF\ncat > issues/01-sessionstart-hook-timeout-enforced.md <<'EOF'\n# ExampleCLI 4.4.0 enforces the 20-second S...",
+      "input_chars": 5558,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xue1MTWmj9UQWp4knaMqYy",
+      "is_error": false,
+      "output": "diff --git a/docs/vendor-tracking.md b/docs/vendor-tracking.md\nindex b3e31e7..6dcd9a1 100644\n--- a/docs/vendor-tracking.md\n+++ b/docs/vendor-tracking.md\n@@ -4,3 +4,4 @@\n |---|---|---|\n | 4.2.0 | 2026-07-15 | 2 filed |\n | 4.3.0 | 2026-08-26 | none |\n+| 4.4.0 | 2026-11-07 | 2 filed |\nno closing keywor...",
+      "output_chars": 302,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
