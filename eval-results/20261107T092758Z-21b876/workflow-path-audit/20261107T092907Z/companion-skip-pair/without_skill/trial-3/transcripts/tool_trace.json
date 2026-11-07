@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K8fFxBPJBpGUNs5iLbDCmw",
+      "name": "Bash",
+      "input": "ls; ls .github/workflows; git ls-files | head -100",
+      "input_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K8fFxBPJBpGUNs5iLbDCmw",
+      "is_error": false,
+      "output": "README.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml\n.editorconfig\n.gh/replay/api/repos/example-org/example-service/rules/branches/main.json\n.gh/replay/api/repos/example-org/example-service/rulesets.json\n.gh/replay/api...",
+      "output_chars": 784,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019yJ4bgoWS4DEpwTDbqa1Vp",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat .github/rulesets/main.json; cat package.json mkdocs.yml",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019yJ4bgoWS4DEpwTDbqa1Vp",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 3384,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NRt7qQq8qBAxD1Z1SsM7WX",
+      "name": "Bash",
+      "input": "cat test/util.test.js src/*.js | head -60; cat docs/*.md; cat scripts/sweep-stale.sh | head -20; git status --short",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NRt7qQq8qBAxD1Z1SsM7WX",
+      "is_error": false,
+      "output": "\"use strict\";\n\nconst assert = require(\"node:assert\");\nconst { test } = require(\"node:test\");\nconst { greeting } = require(\"../src/util\");\n\ntest(\"root path gets the generic greeting\", () => {\n  assert.strictEqual(greeting(\"<path>\"), \"hello\\n\");\n});\n\ntest(\"a named path is echoed back\", () => {\n  asser...",
+      "output_chars": 1810,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
