@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T17:18:09Z",
+  "fetched_at": "2026-11-07T17:21:38Z",
   "issues": [
    {
     "created_at": "2026-11-07T17:11:44Z",
@@ -599,24 +599,24 @@
   ],
   "pulls": [
    {
-    "created_at": "2026-11-07T16:59:44Z",
-    "merged_at": null,
-    "number": 980,
-    "repo": "Adam-S-Daniel/cms-platform",
-    "state": "open",
-    "title": "Encode every Liquid output for where it prints, and enforce it in a hook and CI",
-    "updated_at": "2026-11-07T17:18:01Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/980"
-   },
-   {
     "created_at": "2026-11-07T17:16:49Z",
     "merged_at": null,
     "number": 481,
     "repo": "jodidaniel/jodidaniel.com",
     "state": "open",
     "title": "Encode every remaining Liquid output for where it prints",
-    "updated_at": "2026-11-07T17:17:27Z",
+    "updated_at": "2026-11-07T17:21:43Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/pull/481"
+   },
+   {
+    "created_at": "2026-11-07T16:59:44Z",
+    "merged_at": null,
+    "number": 980,
+    "repo": "Adam-S-Daniel/cms-platform",
+    "state": "open",
+    "title": "Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:36Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/pull/980"
    },
    {
     "created_at": "2026-11-07T17:15:13Z",
@@ -7375,6 +7375,294 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-07T17:21:11Z",
+    "event": "schedule",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42395884121,
+    "state": "completed",
+    "title": "scheduled \u2014 0 12 * * *",
+    "updated_at": "2026-11-07T17:22:16Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395884121",
+    "workflow": "scheduled \u2014 0 12 * * *"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:16:53Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42395518738,
+    "state": "completed",
+    "title": "PR #481 \u2014 Encode every remaining Liquid output for where it prints",
+    "updated_at": "2026-11-07T17:22:01Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518738",
+    "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395852786,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-07T17:21:49Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395852786",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:17:22Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395559947,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:21:27Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395559947",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395852858,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-07T17:21:13Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395852858",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:16Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395805885,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/guidance/turn-lessons-into-checks/recurring-debug-flag claude-opus-5-5,claude-sonnet-5-5",
+    "updated_at": "2026-11-07T17:21:01Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395805885",
+    "workflow": "Fire eval routine: eval evals/guidance/turn-lessons-into-checks/recurring-debug-flag claude-opus-5-5"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663805,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:21:00Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663805",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395852719,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-07T17:20:59Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395852719",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395852733,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-07T17:20:57Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395852733",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:20:49Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395852674,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T17:20:50Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395852674",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-07T17:17:13Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395547576,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T17:20:50Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395547576",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:27Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395822951,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-07T17:20:47Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395822951",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:20:18Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42395808445,
+    "state": "completed",
+    "title": "Eval results 20261107T171652Z-a18950",
+    "updated_at": "2026-11-07T17:20:25Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395808445",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:18:33Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395660275,
+    "state": "completed",
+    "title": "PR #980",
+    "updated_at": "2026-11-07T17:19:54Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395660275",
+    "workflow": "PR #980"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:16:53Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42395518945,
+    "state": "completed",
+    "title": "PR #481 \u2014 Encode every remaining Liquid output for where it prints",
+    "updated_at": "2026-11-07T17:19:48Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518945",
+    "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:15:16Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42395381640,
+    "state": "completed",
+    "title": null,
+    "updated_at": "2026-11-07T17:19:14Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395381640",
+    "workflow": null
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:15:08Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395369360,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:19:02Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395369360",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:12:31Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42395162139,
+    "state": "completed",
+    "title": "PR #4697 \u2014 Encode every Liquid output for where it prints",
+    "updated_at": "2026-11-07T17:19:01Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395162139",
+    "workflow": "PR #4697 \u2014 Encode every Liquid output for where it prints"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:17:22Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395560002,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:19:00Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395560002",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663769,
+    "state": "completed",
+    "title": "PR #980 synchronize \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:51Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663769",
+    "workflow": "PR #980 synchronize \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and C"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663766,
+    "state": "in_progress",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:47Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663766",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663778,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:46Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663778",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663820,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:44Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663820",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-07T17:18:35Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42395663863,
+    "state": "completed",
+    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
+    "updated_at": "2026-11-07T17:18:36Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395663863",
+    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-07T17:17:19Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -7470,18 +7758,6 @@
     "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:16:53Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42395518945,
-    "state": "in_progress",
-    "title": "PR #481 \u2014 Encode every remaining Liquid output for where it prints",
-    "updated_at": "2026-11-07T17:17:43Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518945",
-    "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T17:17:14Z",
     "event": "workflow_run",
@@ -7516,18 +7792,6 @@
     "updated_at": "2026-11-07T17:17:34Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395547624",
     "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:17:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42395559947,
-    "state": "in_progress",
-    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
-    "updated_at": "2026-11-07T17:17:33Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395559947",
-    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
    },
    {
     "conclusion": "success",
@@ -7566,18 +7830,6 @@
     "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:16:53Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42395518738,
-    "state": "in_progress",
-    "title": "PR #481 \u2014 Encode every remaining Liquid output for where it prints",
-    "updated_at": "2026-11-07T17:17:31Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518738",
-    "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T17:16:41Z",
     "event": "workflow_dispatch",
@@ -7600,18 +7852,6 @@
     "updated_at": "2026-11-07T17:17:29Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518869",
     "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:17:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42395560002,
-    "state": "in_progress",
-    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
-    "updated_at": "2026-11-07T17:17:27Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395560002",
-    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
    },
    {
     "conclusion": "skipped",
@@ -7660,18 +7900,6 @@
     "updated_at": "2026-11-07T17:17:21Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395547661",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:17:13Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395547576,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T17:17:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395547576",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -7938,18 +8166,6 @@
     "workflow": null
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:15:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42395381640,
-    "state": "in_progress",
-    "title": null,
-    "updated_at": "2026-11-07T17:15:55Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395381640",
-    "workflow": null
-   },
-   {
     "conclusion": "cancelled",
     "created_at": "2026-11-07T17:15:50Z",
     "event": "workflow_run",
@@ -8116,18 +8332,6 @@
     "updated_at": "2026-11-07T17:15:17Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395381721",
     "workflow": null
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:15:08Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42395369360,
-    "state": "in_progress",
-    "title": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI",
-    "updated_at": "2026-11-07T17:15:12Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42395369360",
-    "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
    },
    {
     "conclusion": "skipped",
@@ -8403,18 +8607,6 @@
     "title": "PR #4697 \u2014 Encode every Liquid output for where it prints",
     "updated_at": "2026-11-07T17:12:41Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395162309",
-    "workflow": "PR #4697 \u2014 Encode every Liquid output for where it prints"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:12:31Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42395162139,
-    "state": "in_progress",
-    "title": "PR #4697 \u2014 Encode every Liquid output for where it prints",
-    "updated_at": "2026-11-07T17:12:35Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395162139",
     "workflow": "PR #4697 \u2014 Encode every Liquid output for where it prints"
    },
    {
@@ -9318,18 +9510,6 @@
     "workflow": "Follow drafted-skill fixtures"
    },
    {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-07T16:52:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393490717,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T16:54:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393490717",
-    "workflow": "Weekly routine evals"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T16:53:52Z",
     "event": "workflow_run",
@@ -9412,90 +9592,6 @@
     "updated_at": "2026-11-07T16:53:50Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393571732",
     "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393490751,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-07T16:53:48Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393490751",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393490839,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-07T16:53:06Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393490839",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393490772,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-07T16:52:53Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393490772",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393490666,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-07T16:52:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393490666",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:24Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393465586,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-07T16:52:40Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393465586",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:52:16Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393454324,
-    "state": "completed",
-    "title": "Eval results 20261107T163016Z-ef96c2",
-    "updated_at": "2026-11-07T16:52:22Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393454324",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:51:58Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42393429543,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-07T16:52:10Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42393429543",
-    "workflow": "Follow drafted-skill fixtures"
    },
    {
     "conclusion": "success",
@@ -11127,18 +11223,6 @@
     "title": "PR #478 \u2014 Add Jodi's media-discovery config",
     "updated_at": "2026-11-07T16:12:31Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389983487",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979828,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:12:31Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979828",
     "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
    },
    {
@@ -14011,18 +14095,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-06T17:08:15Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42258833546,
-    "state": "completed",
-    "title": "PR #973",
-    "updated_at": "2026-11-06T17:09:39Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42258833546",
-    "workflow": "PR #973"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-06T17:08:18Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -14067,78 +14139,6 @@
     "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
     "updated_at": "2026-11-06T17:08:28Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42258840570",
-    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677278,
-    "state": "completed",
-    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:51:54Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677278",
-    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677334,
-    "state": "completed",
-    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:49:46Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677334",
-    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677272,
-    "state": "completed",
-    "title": "PR #973 opened \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:47:59Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677272",
-    "workflow": "PR #973 opened \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "failure",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677321,
-    "state": "completed",
-    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:47:58Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677321",
-    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677294,
-    "state": "completed",
-    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:47:57Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677294",
-    "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-06T16:47:44Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42255677298,
-    "state": "completed",
-    "title": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft",
-    "updated_at": "2026-11-06T16:47:45Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42255677298",
     "workflow": "PR #973 \u2014 Add email-to-draft: a mailed post becomes a Decap draft"
    },
    {
@@ -27318,7 +27318,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T17:18:09Z"
+  "since": "2026-10-24T17:21:38Z"
  },
  "agent_made": {
   "items": [
@@ -28051,7 +28051,7 @@
     "created": "2026-08-25T22:06:40Z",
     "id": "git-push-does-not-mean-commit-exists",
     "impact": {
-     "current_text_runs": 0,
+     "current_text_runs": 2,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -29330,6 +29330,28 @@
    }
   ],
   "latest": [
+   {
+    "checks": 2,
+    "fired_at": "2026-11-07T17:13:15Z",
+    "fixture": "guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T171315Z-6b0b16",
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
+   {
+    "checks": 2,
+    "fired_at": "2026-11-07T17:13:15Z",
+    "fixture": "guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+    "model": "claude-opus-5-5",
+    "run_id": "20261107T171315Z-6b0b16",
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
    {
     "checks": 2,
     "fired_at": "2026-11-07T17:09:41Z",
@@ -31219,6 +31241,50 @@
    "tied": 50
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.319",
+    "cost_usd": 0.1963509,
+    "fired_at": "2026-11-07T17:13:15Z",
+    "fixture": "guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T171315Z-6b0b16/guidance/git-push-does-not-mean-commit-exists/20261107T171527Z/report.md",
+    "run_id": "20261107T171315Z-6b0b16",
+    "skill": "guidance/git-push-does-not-mean-commit-exists",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_judge": null,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.319",
+    "cost_usd": 0.4759274,
+    "fired_at": "2026-11-07T17:13:15Z",
+    "fixture": "guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": null,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T171315Z-6b0b16/guidance/git-push-does-not-mean-commit-exists/20261107T171407Z/report.md",
+    "run_id": "20261107T171315Z-6b0b16",
+    "skill": "guidance/git-push-does-not-mean-commit-exists",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.0,
+    "with_skill": 0,
+    "without_judge": null,
+    "without_share": 0.0,
+    "without_skill": 0
+   },
    {
     "account_week_after": null,
     "checks": 2,
@@ -50913,7 +50979,7 @@
     "without_pass_rate": 0.8194444444444444
    }
   ],
-  "generated_at": "2026-11-07T17:17:50Z",
+  "generated_at": "2026-11-07T17:21:07Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -50980,7 +51046,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-07T17:16:42Z",
+ "generated_at": "2026-11-07T17:20:03Z",
  "guidance": {
   "removed": [
    {
@@ -56128,7 +56194,7 @@
      "no_help": null,
      "no_help_pairs": null
     },
-    "current_text_runs": 0,
+    "current_text_runs": 2,
     "heading": "A successful `git push` does not mean your commit exists",
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
@@ -56138,6 +56204,52 @@
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-07T17:15:27Z",
+      "cli_version": "2.1.319",
+      "fixture": "hook-refused-commit",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.0944154,
+        "judge_mean": 8.3,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.10193550000000001,
+        "judge_mean": 7.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T171315Z-6b0b16/guidance/git-push-does-not-mean-commit-exists/20261107T171527Z/report.md"
+     },
+     {
+      "at": "2026-11-07T17:14:07Z",
+      "cli_version": "2.1.319",
+      "fixture": "hook-refused-commit",
+      "model": "claude-opus-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.251569,
+        "judge_mean": 8.7,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 0,
+        "checks_total": 2,
+        "cost_usd": 0.2243584,
+        "judge_mean": 6.7,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T171315Z-6b0b16/guidance/git-push-does-not-mean-commit-exists/20261107T171407Z/report.md"
+     },
      {
       "at": "2026-11-03T06:09:14Z",
       "cli_version": "2.1.317",
@@ -62343,7 +62455,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-07T17:11:59Z",
+ "newest_run": "2026-11-07T17:15:27Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -82202,7 +82314,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "351e7fb8230eec5f429031eeed4f81ba7cf2cc3e",
-  "results_commit": "b8d9b95fc47a5c2be059481c252bfb008e58b1ee"
+  "results_commit": "e51f77eb10ffc89da8a15b4e3efbb6ca62990571"
  },
  "spend": {
   "generated_at": "2026-11-07T16:31:09Z",
