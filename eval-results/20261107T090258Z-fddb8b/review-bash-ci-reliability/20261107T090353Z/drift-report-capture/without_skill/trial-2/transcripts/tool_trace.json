@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019vpvuzaSxTYGKjU9QfJAur",
+      "name": "Bash",
+      "input": "git ls-files | grep -Ei '\\.github/|\\.gitlab-ci|Jenkinsfile|\\.circleci|\\.sh$|Makefile|ci' | head -50",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019vpvuzaSxTYGKjU9QfJAur",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nscripts/check-drift.sh",
+      "output_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013NpaSXn9CaUEnZrHqTGEHK",
+      "name": "Bash",
+      "input": "cat -A .github/workflows/drift.yml | head -0; cat .github/workflows/drift.yml; echo ------; cat scripts/check-drift.sh; ls -la scripts",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013NpaSXn9CaUEnZrHqTGEHK",
+      "is_error": false,
+      "output": "name: Config drift\n\non:\n  pull_request:\n  schedule:\n    - cron: \"17 6 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  drift:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Compare deployed configs with t...",
+      "output_chars": 1346,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TpMZ6LvLeVjpVzmK3xjoTu",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace('''checked=0\ndrifted=0\n\nfor''','''checked=0\ndrifted=0\n\nshopt -s nullglob\ntemplates=(templates/*.conf)\nif [[ ${#templates[@]} -...",
+      "input_chars": 1221,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TpMZ6LvLeVjpVzmK3xjoTu",
+      "is_error": false,
+      "output": "DRIFT: deploy/x.conf (owner: unassigned)\n--- templates/x.conf\t2026-11-07 09:04:44.991167827 +0000\n+++ deploy/x.conf\t2026-11-07 09:04:44.991167827 +0000\n@@ -1 +1 @@\n-a=1\n+a=2\ndrift check: 1 checked, 1 drifted\nrc=1\nShell cwd was reset to <path>",
+      "output_chars": 259,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
