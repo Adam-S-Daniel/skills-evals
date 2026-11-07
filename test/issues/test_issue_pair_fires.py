@@ -149,14 +149,14 @@ class TitleTests(unittest.TestCase):
             [fire(1, SKILL_FIXTURE, started, PAIR, conclusion=None, status="in_progress")],
             NOW), 1)
 
-    def test_a_pair_fire_is_in_flight_for_forty_minutes(self):
+    def test_a_pair_fire_is_in_flight_for_two_flights(self):
         # Its two run_eval commands run one after the other.
         def count(model, minutes):
             return plan_week.in_flight(
                 [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=minutes), model)], NOW)
-        self.assertEqual(plan_week.EVAL_FLIGHT, timedelta(minutes=20))
-        self.assertEqual((count(PAIR, 39), count(PAIR, 40)), (1, 0))
-        self.assertEqual((count(A, 19), count(A, 20)), (1, 0))
+        self.assertEqual(plan_week.EVAL_FLIGHT, timedelta(minutes=10))
+        self.assertEqual((count(PAIR, 19), count(PAIR, 20)), (1, 0))
+        self.assertEqual((count(A, 9), count(A, 10)), (1, 0))
 
     def test_the_guard_holds_a_pair_fire_in_full_until_its_deadline(self):
         # A pair fire with no results may still be running its second model
