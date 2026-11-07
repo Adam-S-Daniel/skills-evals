@@ -687,7 +687,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 60")
+        self.assertEqual(steps[order[3]]["run"], "sleep 200")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share

@@ -36,7 +36,7 @@ name: Weekly routine evals
 #   dispatch job is skipped.
 # * Dispatch: one leg at a time (`max-parallel: 1`). Each leg waits until
 #   fewer than MAX_IN_FLIGHT fires are in flight (`plan_week.py wait-slot`), fires,
-#   then waits 60 seconds before the next leg (the routine's fire limit).
+#   then waits 200 seconds before the next leg (the routine's fire limit).
 #   All legs share 25 minutes of waiting from the plan; a leg that finds the
 #   cap still full after that skips its fire and ends green, and the next
 #   re-plan (an ingest or the watchdog) plans the cell again.
@@ -530,10 +530,14 @@ jobs:
             echo "::error::Routine eval dispatch failed"
             exit 1
           fi
-      # The routine's fire limit: about one fire a minute.
+      # The routine's fire limit. Measured 2026-11-07: about 18 fires an hour
+      # held for 14 hours (2026-11-03) never drew a 429, while one a minute
+      # drew 429s after about 52 fires in 98 minutes (2026-11-07, and 59 in
+      # 97 on 2026-10-26), so the API refills about 20 fires an hour from a
+      # small burst. 200 seconds is 18 an hour.
       - name: Space the next fire
         if: steps.slot.outputs.open == 'true'
-        run: sleep 60
+        run: sleep 200
 
   # Arms the re-plan timer (routine-eval-watchdog.yml) at every sweep's end,
   # whatever the plan or dispatch concluded: a fire that never pushes results
