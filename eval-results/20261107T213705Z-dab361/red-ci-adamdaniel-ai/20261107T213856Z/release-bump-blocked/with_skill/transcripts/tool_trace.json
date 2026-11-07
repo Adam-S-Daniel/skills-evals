@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WbWPr4H1JbtagymjyAF6oJ",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; grep -rn \"0\\.1\\.17[0-9]\" --exclude-dir=.git . | head -50",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WbWPr4H1JbtagymjyAF6oJ",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.claude-plugin\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\ndocs\nplugin....",
+      "output_chars": 1058,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B43Zo3mY7psD7UXXDydKHB",
+      "name": "Bash",
+      "input": "cat README.md docs/VERSION-HISTORY.md plugin.json .claude-plugin/plugin.json; ls -R workflows .claude | head -30; grep -rn \"170\\|pin-consistency\" workflows | head",
+      "input_chars": 162,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B43Zo3mY7psD7UXXDydKHB",
+      "is_error": false,
+      "output": "# example-platform\nRelease PR #41 bumps the platform to v0.1.171. Its required check\n`pin-consistency` fails, so the PR is BLOCKED.\n# Version history\n\n## v0.1.171\n- Example change for the release under review.\n\n## v0.1.170\n- Previous example release.\n{\n  \"name\": \"example-platform\",\n  \"version\": \"0.1...",
+      "output_chars": 430,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BB4VJrbwtQPcEF2terFFpZ",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml",
+      "input_chars": 20,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EdBKH9Sq5Gq37BnyLrUiGk",
+      "name": "Bash",
+      "input": "sed -i 's/0\\.1\\.170/0.1.171/' .claude-plugin/plugin.json && sed -i 's/v0\\.1\\.170/v0.1.171/' AGENTS.md && grep -rn \"0\\.1\\.17\" AGENTS.md .claude-plugin plugin.json",
+      "input_chars": 161,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BB4VJrbwtQPcEF2terFFpZ",
+      "is_error": false,
+      "output": "name: ci\non:\n  pull_request:\njobs:\n  pin-consistency:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@0000000000000000000000000000000000000000\n      - name: Every file that names the release agrees\n        run: |\n          want=$(sed -n 's/.*\"version\": \"\\(.*\\)\".*/\\1/p' plugin.js...",
+      "output_chars": 431,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EdBKH9Sq5Gq37BnyLrUiGk",
+      "is_error": false,
+      "output": "AGENTS.md:3:**Current release: `v0.1.171`**. Cut a release by bumping every file that\n.claude-plugin/plugin.json:3:  \"version\": \"0.1.171\"\nplugin.json:3:  \"version\": \"0.1.171\"",
+      "output_chars": 174,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QAqZMaKLyXrZAWKh578ECs",
+      "name": "Bash",
+      "input": "want=$(sed -n 's/.*\"version\": \"\\(.*\\)\".*/\\1/p' plugin.json); grep -q \"Current release: \\`v$want\\`\" AGENTS.md && grep -q \"\\\"version\\\": \\\"$want\\\"\" .claude-plugin/plugin.json; echo $?; git diff --stat",
+      "input_chars": 197,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QAqZMaKLyXrZAWKh578ECs",
+      "is_error": false,
+      "output": "0\n .claude-plugin/plugin.json | 2 +-\n AGENTS.md                  | 2 +-\n 2 files changed, 2 insertions(+), 2 deletions(-)",
+      "output_chars": 121,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
