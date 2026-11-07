@@ -37,6 +37,7 @@ PIP_PINS=(
   tree-sitter-bash==0.25.1
   pytest==9.1.1
   pytest-xdist==3.8.0
+  jsonschema==4.26.0
 )
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -101,7 +102,7 @@ fi
 if [ "$#" -eq 1 ]; then
   case "$1" in
     --print-pins) printf '%s\n' "${PIP_PINS[@]}"; exit 0 ;;
-    --print-npm-dirs) echo evals/browser-testing/seed; real_work_dirs npm; exit 0 ;;
+    --print-npm-dirs) echo evals/browser-testing/seed; echo explorer; real_work_dirs npm; exit 0 ;;
     --print-bundler-dirs) real_work_dirs bundler; exit 0 ;;
     --print-git-pin) printf '%s\n' "$GIT_MIN" "$GIT_PIN" "$GIT_PIN_SHA256"; exit 0 ;;
     --check-git)
@@ -121,7 +122,7 @@ if ! python3 -m pip install "${PIP_PINS[@]}"; then
 fi
 
 npm_dirs="$(real_work_dirs npm)"
-for dir in evals/browser-testing/seed $npm_dirs; do
+for dir in evals/browser-testing/seed explorer $npm_dirs; do
   (cd "$REPO_ROOT/$dir" && npm ci --ignore-scripts --no-audit --no-fund)
 done
 

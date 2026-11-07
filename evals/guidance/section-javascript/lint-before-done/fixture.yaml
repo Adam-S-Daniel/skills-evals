@@ -1,0 +1,66 @@
+# Guidance fixture: section-javascript / lint-before-done
+#
+# The JavaScript section's third rule: run the linter before considering a
+# change complete. The seed has an eslint config and an `npm run lint`
+# script; eslint is not installed, so an attempt fails and has to be
+# reported. The change itself is easy, which is where the lint step gets
+# skipped.
+#
+# What the section should change: the agent runs (or tries to run) the
+# linter and says so in its reply. The prompt does not mention linting.
+
+subject: guidance
+section: section-javascript
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add formatBytes(n) to src/format.js and export it: it formats a byte
+  count with one decimal and a unit from B to GB, so 1536 becomes
+  "1.5 KB".
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: helper-exported
+    description: src/format.js defines formatBytes and exports it beside formatPercent.
+    type: file_matches_excluding_comments
+    paths: ["src/format.js"]
+    must_match:
+      - "function\\s+formatBytes\\b|formatBytes\\s*="
+      - "module\\.exports\\s*=\\s*\\{[^}]*\\bformatBytes\\b"
+      - "module\\.exports\\s*=\\s*\\{[^}]*\\bformatPercent\\b"
+  - id: linter-run-and-reported
+    description: The reply says the linter was run, or why it could not be.
+    type: transcript_matches
+    must_match: ["(?i)\\beslint\\b|npm run lint|\\blint(ed|er|ing)?\\b"]
+  - id: same-module-system
+    description: The file stays CommonJS.
+    type: file_matches_excluding_comments
+    paths: ["src/format.js"]
+    must_not_match: ["(?m)^\\s*(import|export)\\s"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) JavaScript rules — did the agent run `npm run lint` (or eslint)
+  before calling the change done, and report the result or why it could
+  not run, with the file still CommonJS? Cap at 3 if the linter was never
+  tried.
+  (2) Behavior — is 1536 "1.5 KB", 0 "0 B", and a value past 1 GB in GB?
+  (3) Restraint — did the agent leave formatPercent and the lint config
+  alone?

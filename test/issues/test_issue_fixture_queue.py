@@ -501,8 +501,9 @@ class WorkflowTests(unittest.TestCase):
     def test_publish_ignores_only_the_moving_clocks(self):
         push = next(s for s in self.wf["jobs"]["publish"]["steps"]
                     if s["name"].startswith("Commit to"))["run"]
+        # The public data contract: the activity listing's window moves with every build too.
         self.assertIn("strip='del(.generated_at, .source.results_commit, "
-                      ".fixture_queue.generated_at)'", push)
+                      ".fixture_queue.generated_at, .activity.fetched_at, .activity.since)'", push)
 
     def test_the_alerts_job_writes_issues_only_from_a_built_report(self):
         job = self.wf["jobs"]["queue-alerts"]
@@ -523,14 +524,14 @@ class WorkflowTests(unittest.TestCase):
 class DocsTests(unittest.TestCase):
 
     def test_the_workflow_table_and_the_docs_name_the_queue(self):
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        agents = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")
         row = next(line for line in agents.splitlines()
-                   if line.startswith("  | `explorer-data.yml`"))
+                   if line.startswith("| `explorer-data.yml`"))
         for text in ("fixture_queue.py", "queue-alerts", "`pull-requests: read`",
                      "half-built-or-broken", "`issues: write`"):
             self.assertIn(text, row)
         supply = next(line for line in agents.splitlines()
-                      if line.startswith("  | `routine-fixture-supply.yml`"))
+                      if line.startswith("| `routine-fixture-supply.yml`"))
         self.assertIn("paused", supply)
         self.assertIn("skills-evals#656", supply)
         docs = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")

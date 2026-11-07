@@ -9,7 +9,11 @@
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
                    [--fire-runs FILE] [--fixture-queue FILE]
                    [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
-                   [--lesson-issues FILE]
+                   [--lesson-issues FILE] [--public-repos FILE] [--activity FILE]
+                   [--agent-checks DIR] [--hook-policy FILE] [--export-policy FILE]
+                   [--lesson-funnel FILE] [--source-repository OWNER/REPO]
+  explorer_data.py --subjects private --registry PRIVATE_NAME=PATH
+                   --results-tree DIR --roster ... --out FILE (not latest.json)
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -96,6 +100,15 @@ moves nothing; no name, title or run id is published. None is unknown (no
 readable fire file, or a `fetched_at` out of bounds), never 0. The per-cell
 alert waits for #570.
 
+`agent_made` (Adam, 2026-11-04) is scripts/agent_made.py's block: for each
+fleet check, skill and guidance section this document lists, the commit that
+created it (a `Captures:` trailer, else its first appearance in the
+`--guidance` or `--registry` checkout's full history), whether an agent, a
+loop App or a person made it, whether that was after the guidance told
+agents to capture lessons, and its impact copied from this document. Null in
+private mode or without `--guidance`; a subject whose checkout is missing or
+shallow has origin null.
+
 `fixture_queue` (Adam, 2026-11-03) is scripts/fixture_queue.py's report,
 `--fixture-queue`, carried as is: the fixture requests the weekly sweep
 filed, the pull requests answering them, the fixtures they added (real fleet
@@ -146,6 +159,48 @@ when neither the proposals directory nor the issues file is readable; with
 only the issues, its `date`, `items` and `left_out` are None (unknown, not
 empty). `finish` holds every item and issue to its keys.
 
+THE PUBLIC DATA CONTRACT (2026-11-04) makes this document the single public data contract
+of the Evals Explorer and the project dashboard, still `schema_version` 1:
+the change only adds fields, so a reader of the earlier document keeps
+working. `explorer/schema.json`
+describes all of it, and `main` validates the document against it after
+`finish` and before writing (no jsonschema: nothing is written). The new
+sections are built in scripts/explorer_public.py, each from public inputs
+only: `evals` (the dashboard's scored runs and summaries,
+scripts/eval_facts.py, for listed subjects only), `hooks` (the git hook
+check catalog, its weekly use with non-public repositories folded into one
+bucket, and a verdict from evals/hook-policy.yml), `lesson_funnel` (lessons
+by outcome), `activity` (pull requests, open issues and workflow runs in the
+fleet owners' public repositories, `--activity`, named only when
+`--public-repos` reads them `private: false`) and `spend` (weekly totals,
+only with evals/public-export.yml `include_spend: true`). `finish` also
+refuses any session, thread, message or trigger id anywhere, a repository in
+`activity` or `hooks` that is not on the visibility list, and any row of a
+new section with a field outside its key set.
+
+PRIVATE MODE (`--subjects private`, 2026-11-04) builds the same schema for a
+private registry's own dashboard, run inside that private repository on its
+own results branch (adam-agentskills-private's explorer-private.yml writes
+`explorer/private.json` there); its output must never be published. The
+default, `--subjects public`, is the public document above, unchanged. In
+private mode:
+
+  * Every `--registry` must name a registry harness/registries.yml marks
+    `private: true`, and at least one is required; `--out` may not be named
+    `latest.json`. Either refusal exits 2 and writes nothing.
+  * The subjects are those registries' skills, read from their checkouts
+    (scripts/eval_coverage.py `enumerate_skills`, `count_fixtures` and
+    `build_census`, `private_census`); no `coverage/latest.json` is read, and
+    `plan_week.private_skills` is not subtracted, so `evals` covers them.
+  * The public-only inputs (`--context-repo`, `--fire-runs`, `--fixture-queue`,
+    `--lessons`, `--lesson-records`, `--lesson-issues`, `--draft-prs`,
+    `--public-repos`, `--activity`, `--agent-checks`, `--lesson-funnel`) are
+    refused, and `hooks`, `activity`, `lessons`, `lesson_funnel`,
+    `fixture_queue`, `fires_without_results` and `spend` are null.
+  * `source.repository` comes from `--source-repository` (the default,
+    Adam-S-Daniel/skills-evals, is the public document's).
+  * `finish` and `validate` still run.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
 ran, except that a section's section-alone results (the `section` mode,
@@ -177,8 +232,12 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import agent_made  # noqa: E402
 import compute_gates  # noqa: E402
 import draft_new_skill  # noqa: E402
+import eval_coverage  # noqa: E402
+import eval_facts  # noqa: E402
+import explorer_public  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import improve_outcomes  # noqa: E402
@@ -186,12 +245,20 @@ import lesson_evidence  # noqa: E402
 import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
+import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 import timeweeks  # noqa: E402  (harness/)
 
 SCHEMA_VERSION = 1
+#: `source.repository` unless `--source-repository` names another.
+DEFAULT_SOURCE_REPOSITORY = "Adam-S-Daniel/skills-evals"
+#: Inputs only the public document reads; private mode refuses each.
+PUBLIC_ONLY_FLAGS = ("context_repo", "fire_runs", "fixture_queue", "lessons", "lesson_records",
+                     "lesson_issues", "draft_prs", "public_repos", "activity", "agent_checks",
+                     "lesson_funnel")
+SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
 MODE_NAMES = {("in_situ", "with"): "full", ("in_situ", "without"): "full_minus_section",
@@ -398,6 +465,44 @@ def public_census(census: dict) -> tuple[dict, dict]:
     publication = census.get("publication")
     as_of = publication.get("as_of") if isinstance(publication, dict) else None
     return rows, {"as_of": as_of, **totals}
+
+
+def private_registry_names() -> frozenset:
+    """The registries harness/registries.yml marks `private: true`."""
+    return frozenset(e["name"] for e in run_eval._load_registries_config()
+                     if e.get("private") is True)
+
+
+def private_census(registry_flags: list[str], evals_dir: Path) -> tuple[dict, dict]:
+    """Private mode's subjects, in `public_census`' shape: ({skill: census
+    row} over the `--registry` checkouts, which must all be private
+    registries, the totals over them). Read from the checkouts with
+    scripts/eval_coverage.py's own enumeration and fixture count, so no
+    `coverage/latest.json` is needed; a skill with no fixture is a `gap` (the
+    operator-held private skip file is not read here). ValueError when a
+    registry is not private or none is given."""
+    flagged = compute_gates.flag_registries(registry_flags)
+    if not registry_flags or not flagged:
+        raise ValueError("--subjects private needs a --registry NAME=PATH naming a private "
+                         "registry checkout")
+    if set(flagged) - private_registry_names():
+        raise ValueError("--subjects private takes private registries only")
+    if len(flagged) != len(registry_flags):
+        raise ValueError("a --registry checkout given with --subjects private is not a directory")
+    every = run_eval.resolve_registries(registry_flags, None, REPO_ROOT, None)
+    try:
+        fixtures = eval_coverage.count_fixtures(evals_dir, every)
+        census = eval_coverage.build_census(flagged, fixtures, {})
+    except eval_coverage.CensusRefusal as exc:
+        raise ValueError(f"the private census refused: {exc}") from exc
+    rows: dict = {}
+    totals = {"covered": 0, "skipped": 0, "gap": 0, "total": 0}
+    for registry in census["registries"]:
+        for key in totals:
+            totals[key] += registry["counts"][key]
+        for row in registry["skills"]:
+            rows.setdefault(row["skill"], {**row, "registry": registry["name"]})
+    return rows, {"as_of": None, **totals}
 
 
 def load_manifest(path: Path | None) -> list:
@@ -1178,9 +1283,11 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
     eval, not bare, a model: a model-less fire is skipped as the planner skips
     it), it concluded `success`, its target is in `scope` (`fire_scope`), it
     started inside the window and at least plan_week.FIRE_RESULT_WINDOW
-    before `now`. Each counted fire is delivered (`_delivered` within the
-    window after its start), rejected (results arrived, `_arrived`, but none
-    validated) or without results. Only times and counts are published;
+    before `now`. A pair fire (`m1,m2`, plan_week's PAIR FIRES) counts once
+    per model, as the planner judges each of its cells. Each counted fire is
+    delivered (`_delivered` within the window after its start), rejected
+    (results arrived, `_arrived`, but none validated) or without results.
+    Only times and counts are published;
     dropped rows are counted to stderr by reason, never by title."""
     if fires is None:
         return None
@@ -1212,7 +1319,9 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
             dropped[reason] = dropped.get(reason, 0) + 1
             continue
         seen.add(run["id"])
-        counted.append((start.astimezone(timezone.utc), scope[title["target"]], title["model"]))
+        # A pair fire (plan_week, PAIR FIRES) is a fire of each model's cell.
+        counted += [(start.astimezone(timezone.utc), scope[title["target"]], model)
+                    for model in improve_outcomes.title_models(title)]
     for reason, n in sorted(dropped.items()):
         print(f"explorer_data: fire rows dropped ({reason}): {n}", file=sys.stderr)
     without, rejected = [], 0
@@ -1594,7 +1703,12 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           fire_runs: dict | None = None, wall_clock: datetime | None = None,
           fixture_queue: dict | None = None, lessons: Path | None = None,
           draft_prs: dict | None = None, lesson_records: Path | None = None,
-          lesson_issues: list | None = None) -> dict:
+          lesson_issues: list | None = None, visible_repos: frozenset | None = None,
+          activity: Path | None = None, agent_checks_dir: Path | None = None,
+          hook_policy: dict | None = None, spend: bool = False,
+          lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None,
+          private_subjects: tuple | None = None,
+          source_repository: str = DEFAULT_SOURCE_REPOSITORY) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
@@ -1602,12 +1716,27 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     is the proposals directory and `draft_prs` `load_draft_prs`' result,
     which `build_lessons` turns into `lessons`, with each item's sources and
     signals counted from the records directory `lesson_records`, and
-    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`."""
+    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`.
+
+    The contract's added sections (scripts/explorer_public.py): `visible_repos` is the fleet
+    owners' GitHub visibility list (None: unknown, so no repository is named
+    in `hooks` and `activity` is None); `activity` the `--activity` file;
+    `agent_checks_dir` _agent-guidance's templates/agent-checks/;
+    `hook_policy` evals/hook-policy.yml; `spend` evals/public-export.yml's
+    `include_spend`; `lesson_funnel` the `--lesson-funnel` file and
+    `lesson_issues_path` the raw `--lesson-issues` file it shares.
+
+    `private_subjects` is `private_census`' result, for PRIVATE MODE: the
+    subjects come from it instead of the results tree's census, no private
+    skill is subtracted, and the public-only sections are None.
+    `source_repository` is `source.repository`."""
+    private = private_subjects is not None
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
     index = compute_gates.build_index(tree, evals_dir, compact)
-    census_rows, coverage = public_census(load_census(tree))
+    census_rows, coverage = (private_subjects if private
+                             else public_census(load_census(tree)))
     roster = yaml.safe_load(roster_path.read_text(encoding="utf-8"))
     by_skill, by_section = skill_runs(index), guidance_runs(index)
     now = plan_week._stamp_time(compact)
@@ -1709,17 +1838,33 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         public = public_registries.get(name)
         if public is not None:
             public_slugs |= repo_slugs(name) | repo_slugs(public["repo"])
-    lesson_doc = build_lessons(
-        lessons, {s["name"] for s in skills} - plan_week.private_skills(evals_dir),
-        public_slugs, {r["id"] for r in (manifest or [])}, draft_prs,
-        lesson_origins(lesson_records), lesson_issues)
+    listed_skills = {s["name"] for s in skills}
+    if not private:
+        listed_skills -= plan_week.private_skills(evals_dir)
+    evals_doc = explorer_public.build_evals(tree, gates.RESULTS_BLOB, listed_skills,
+                                            {s["id"] for s in sections}, spend and not private)
+    if private:
+        # The public-only sections: unknown here, never read.
+        lesson_doc = hooks = funnel = activity_doc = fixture_queue = fires = None
+        spend = False
+    else:
+        lesson_doc = build_lessons(
+            lessons, listed_skills, public_slugs, {r["id"] for r in (manifest or [])},
+            draft_prs, lesson_origins(lesson_records), lesson_issues)
+        hooks = explorer_public.build_hooks(
+            tree, now, agent_checks_dir, context_repos, visible_repos,
+            hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
+        funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path,
+                                                     draft_prs, memory_issue, proposal_issue)
+        activity_doc = explorer_public.build_activity(activity, visible_repos, now,
+                                                      wall_clock or datetime.now(timezone.utc))
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": iso(compact),
         "newest_run": max(stamps, default=None),
-        "source": {"repository": "Adam-S-Daniel/skills-evals",
+        "source": {"repository": source_repository,
                    "repository_commit": repository_commit, "results_commit": results_commit},
         "roster": {"arms": [{"model": a["id"], "reason": a.get("reason")}
                             for a in roster["arms"]],
@@ -1733,15 +1878,22 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
-        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window}
+        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window,
+        "evals": evals_doc, "hooks": hooks, "lesson_funnel": funnel, "activity": activity_doc,
+        "spend": explorer_public.build_spend(tree, spend)}
 
 
-def finish(doc: dict) -> str:
-    """The document as text, or Refused: the last gate before it is public."""
+def finish(doc: dict, public_repos: frozenset | None = None) -> str:
+    """The document as text, or Refused: the last gate before it is public.
+    `public_repos` is the visibility list the document was built with: every
+    repository `activity` or `hooks` names must be on it (`hooks` may also say
+    explorer_public.PRIVATE_BUCKET or null)."""
     text = json.dumps(doc, indent=1, sort_keys=True, allow_nan=False) + "\n"
     for forbidden in ("cse_", "session_"):
         if forbidden in text:
             raise Refused(f"the document contains {forbidden!r}")
+    if explorer_public.FORBIDDEN_ID_RE.search(text):
+        raise Refused("the document contains a session, thread, message or trigger id")
     if "@" in _URL_RE.sub("", text):
         raise Refused("the document contains an '@' outside a URL")
     if _DIGEST_RE.search(text):
@@ -1800,7 +1952,98 @@ def finish(doc: dict) -> str:
             if draft is not None and (not isinstance(draft, dict)
                                       or set(draft) != {"number", "state", "url"}):
                 raise Refused("a lesson's draft carries a field it may not publish")
+    _finish_contract(doc, public_repos or frozenset())
     return text
+
+
+def _strings(value):
+    """Every string in `value`, keys included (a number's digits are not a
+    hex run)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def _exact(rows, keys, what: str) -> None:
+    if not isinstance(rows, list) or not all(isinstance(r, dict) and set(r) == set(keys)
+                                             for r in rows):
+        raise Refused(f"{what} carries a field it may not publish")
+
+
+def _finish_contract(doc: dict, public: frozenset) -> None:
+    """`finish`'s checks of the contract's added sections (scripts/explorer_public.py)."""
+    pub = explorer_public
+    evals = doc.get("evals")
+    if evals is not None:
+        _exact(evals.get("runs"), pub.RUN_KEYS, "an eval run")
+        _exact(evals.get("bare_runs"), pub.BARE_KEYS, "a bare run")
+        _exact(evals.get("latest"), eval_facts.LATEST_KEYS, "a latest eval row")
+        if any(_LONG_HEX_RE.search(v) for v in _strings(evals)):
+            raise Refused("an eval row carries a hex run longer than 12")
+    hooks = doc.get("hooks")
+    if hooks is not None:
+        rows = [c for c in hooks.get("checks") or []]
+        _exact(rows, ("name", "where", "repo", "source_url", "use", "window_totals", "verdict",
+                      "verdict_reason", "overrides_measured"), "a hook check")
+        cells = [u for c in rows for u in c["use"] or []]
+        cells += [u for surface in (hooks.get("totals") or {}).values() for u in surface]
+        _exact(cells, ("week", "surface", "repo", "invocations", "blocked", "overridden"),
+               "a hook use row")
+        for repo in [c["repo"] for c in rows] + [u["repo"] for u in cells]:
+            if repo is not None and repo not in public and repo != pub.PRIVATE_BUCKET:
+                raise Refused("a hook row names a repository that is not public")
+            if repo == pub.PRIVATE_BUCKET and not hooks.get("private_repos_shown"):
+                raise Refused("the private repos bucket is shown below its minimum")
+    activity = doc.get("activity")
+    if activity is not None:
+        if not public:
+            raise Refused("activity without a visibility list")
+        for key, keys, url in (("pulls", pub.PR_KEYS, "https://github.com/{repo}/pull/{number}"),
+                               ("issues", pub.ISSUE_KEYS, "https://github.com/{repo}/issues/{number}"),
+                               ("runs", pub.RUN_ACTIVITY_KEYS,
+                                "https://github.com/{repo}/actions/runs/{run_id}")):
+            _exact(activity.get(key), keys, f"an activity {key[:-1]}")
+            for row in activity[key]:
+                if row["repo"] not in public:
+                    raise Refused("activity names a repository that is not public")
+                if row["url"] != url.format(**row):
+                    raise Refused("an activity URL is not the one built for its row")
+        if not set(activity.get("repos") or []) <= public:
+            raise Refused("activity names a repository that is not public")
+    spend = doc.get("spend")
+    if spend is not None:
+        if set(spend) != {"generated_at", "weeks"}:
+            raise Refused("spend carries a field it may not publish")
+        _exact(spend["weeks"], pub.SPEND_WEEK_KEYS, "a spend week")
+    funnel = doc.get("lesson_funnel")
+    if funnel is not None:
+        counts = [v for k, v in funnel.items() if k in pub.OUTCOMES] + [
+            v for c in (funnel.get("by_source") or {}).values() for v in c.values()]
+        if set(funnel) != {*pub.OUTCOMES, "by_source", "sources_missing"} \
+                or not all(type(v) is int for v in counts):
+            raise Refused("the lesson funnel carries a field it may not publish")
+
+
+def validate(doc: dict) -> None:
+    """Refused unless `doc` validates against explorer/schema.json. Fails
+    closed: without jsonschema nothing is written."""
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise Refused("jsonschema is not installed, so the document cannot be validated") from exc
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc),
+                    key=lambda e: list(e.absolute_path))
+    if errors:
+        where = "/".join(map(str, errors[0].absolute_path)) or "(root)"
+        raise Refused(f"the document does not match explorer/schema.json at {where}: "
+                      f"{errors[0].validator} ({len(errors)} errors)")
 
 
 def context_drift_report(argv: list[str]) -> int:
@@ -1870,6 +2113,27 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--draft-prs", type=Path, metavar="FILE",
                         help="[{head, number, state, merged}] of adam-agentskills' pull "
                              "requests, for each new-skill lesson's draft")
+    parser.add_argument("--public-repos", type=Path, metavar="FILE",
+                        help="{repos: [{full_name, private}]}: the fleet owners' repositories "
+                             "as GitHub lists them; absent is unknown (no repository named)")
+    parser.add_argument("--activity", type=Path, metavar="FILE",
+                        help="{fetched_at, pulls, issues, runs} of the public repositories; "
+                             "absent or unreadable is unknown")
+    parser.add_argument("--agent-checks", type=Path, metavar="DIR",
+                        help="_agent-guidance's templates/agent-checks/, for the hook catalog")
+    parser.add_argument("--hook-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "hook-policy.yml")
+    parser.add_argument("--export-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "public-export.yml",
+                        help="include_spend: whether `spend` is published")
+    parser.add_argument("--lesson-funnel", type=Path, metavar="FILE",
+                        help="{hook_proposals: [issue rows], lesson_check_prs: [{head, number, "
+                             "state, merged}]}; absent is unknown")
+    parser.add_argument("--subjects", choices=("public", "private"), default="public",
+                        help="private: PRIVATE MODE, the --registry private registries' skills "
+                             "(never published)")
+    parser.add_argument("--source-repository", default=DEFAULT_SOURCE_REPOSITORY,
+                        metavar="OWNER/REPO", help="the document's source.repository")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -1878,6 +2142,17 @@ def main(argv: list[str] | None = None) -> int:
         for sha in (args.repository_commit, args.results_commit):
             if not SHA_RE.fullmatch(sha):
                 raise ValueError("a commit is not a 40-character lowercase hex sha")
+        private_subjects = None
+        if args.subjects == "private":
+            if args.out.name == "latest.json":
+                raise ValueError("--subjects private may not write latest.json, the public "
+                                 "document's name")
+            given = [f"--{f.replace('_', '-')}" for f in PUBLIC_ONLY_FLAGS
+                     if getattr(args, f) is not None]
+            if given:
+                raise ValueError(f"--subjects private does not read {', '.join(given)}")
+            private_subjects = private_census(args.registry or [], args.evals_dir)
+        public_repos = explorer_public.load_public_repos(args.public_repos)
         issues = (json.loads(args.regression_issues.read_text(encoding="utf-8"))
                   if args.regression_issues else {})
         if isinstance(issues, list):  # raw `gh issue list --json url,body`
@@ -1892,8 +2167,23 @@ def main(argv: list[str] | None = None) -> int:
                     load_fire_runs(args.fire_runs), datetime.now(timezone.utc),
                     load_fixture_queue(args.fixture_queue), args.lessons,
                     load_draft_prs(args.draft_prs), args.lesson_records,
-                    load_lesson_issues(args.lesson_issues))
-        text = finish(doc)
+                    load_lesson_issues(args.lesson_issues), public_repos, args.activity,
+                    args.agent_checks,
+                    explorer_public.load_policy(args.hook_policy,
+                                                explorer_public.HOOK_POLICY_DEFAULTS),
+                    explorer_public.include_spend(args.export_policy),
+                    args.lesson_funnel, args.lesson_issues, private_subjects,
+                    args.source_repository)
+        # The agent-made checks, skills and sections (_agent-guidance#451);
+        # public mode only, since it dates subjects from public history.
+        doc["agent_made"] = (
+            agent_made.build(doc, args.guidance,
+                             {n: e["path"] for n, e in
+                              compute_gates.flag_registries(args.registry).items()},
+                             load_manifest(args.guidance_manifest))
+            if args.guidance is not None and private_subjects is None else None)
+        text = finish(doc, public_repos)
+        validate(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)
         return 2

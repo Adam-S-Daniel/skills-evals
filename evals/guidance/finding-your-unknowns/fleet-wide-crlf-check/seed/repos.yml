@@ -1,0 +1,5 @@
+repos:
+  - example-org/web-shop
+  - example-org/billing-api
+  - example-org/ops-scripts
+  - example-org/agent-guidance

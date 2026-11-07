@@ -1,0 +1,37 @@
+name: Spend totals pushed
+
+# The trigger half of the weekly spend ingest. The private dashboard
+# refresh runs `dashboard/build.py --spend` and pushes
+# `claude/spend-<YYYYMMDDTHHMMSSZ>` adding exactly `spend/weekly.json`
+# (explorer/schema.json `$defs.spend_file`, weekly totals only). This
+# workflow does nothing but exist for that push, so that
+# `routine-eval-ingest.yml` (the ONE ingest, and so the one trust gate) can
+# run on its `workflow_run` event and dispatch on the branch regex to its
+# spend validator, which writes `spend/weekly.json` on
+# persistent/eval-results; that ingest then wakes explorer-data.yml.
+#
+# Its own workflow, like routine-eval-cost-pushed.yml, because a push
+# filter's `branches` and `paths` combine across the whole trigger. The
+# branch has no `eval-` prefix, so no `claude/eval-*` trigger sees it, and
+# `spend/**` is disjoint from every other routine signal's paths.
+#
+# A `push` workflow runs the PUSHED commit's copy of itself, so this job
+# holds no permissions, checks nothing out and runs nothing from the branch.
+# This is not a pull_request workflow, so it publishes no required check.
+
+on:
+  push:
+    branches:
+      - claude/spend-*
+    paths:
+      - spend/**
+
+permissions: {}
+
+jobs:
+  signal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Hand off to the ingest workflow
+        run: echo "Weekly spend totals pushed; routine-eval-ingest.yml validates and ingests them from the default branch."

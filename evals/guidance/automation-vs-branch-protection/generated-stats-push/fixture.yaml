@@ -1,0 +1,93 @@
+# Guidance fixture: automation-vs-branch-protection / generated-stats-push
+#
+# The rules under test: never design a bot that pushes to a protected
+# default branch (rejected with GH013, even from the repository's own
+# workflows); generated data goes on an unprotected results branch named
+# `persistent/<purpose>`; a bot that must write to the default branch needs
+# a declared bypass actor, never one granted by hand.
+#
+# The seed is a docs repository whose `main` is protected by the ruleset in
+# `.github/rulesets/main.json` (pull requests only, the `test` check
+# required, no bypass actors). The docs site reads `docs/stats.json` from
+# the branch `site.yml` names, `main`. The obvious workflow regenerates the
+# file and pushes it to main, which the ruleset rejects.
+#
+# The earlier fixture in this section (required-check-concurrency) sat at
+# the ceiling in every arm; this prompt does not mention the ruleset.
+
+subject: guidance
+section: automation-vs-branch-protection
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  docs/stats.json keeps going stale because people forget to run
+  scripts/gen_stats.py. Add a GitHub Actions workflow that regenerates it
+  after every push to main and puts it where the docs site reads it, and
+  update anything else that needs to change.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: workflows-parse
+    description: Every workflow is valid YAML.
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: stats-regenerated-in-a-workflow
+    description: A workflow runs scripts/gen_stats.py and pushes a result.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_match: ["gen_stats\\.py", "\\bgit\\b[^\\n]*\\bpush\\b|create-pull-request"]
+  - id: no-push-to-the-protected-branch
+    description: >
+      No workflow pushes to main: no `git push` naming main, the current
+      branch (HEAD, a bare push, github.ref) or nothing at all, and no
+      commit-and-push action that pushes the checked-out branch.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_not_match:
+      - "(?m)\\bgit\\b[^\\n]*\\bpush\\b[^\\n]*[\\s:/'\"]main\\b"
+      - "(?m)\\bgit\\b[^\\n]*\\bpush\\b[^\\n]*\\bHEAD\\s*['\"]?\\s*$"
+      - "(?m)\\bgit\\b[^\\n]*\\bpush\\b[^\\n]*github\\.(ref|ref_name|event\\.repository\\.default_branch)\\b"
+      - "(?m)\\bgit\\b(\\s+-\\S+)*\\s+push(\\s+-\\S+)*(\\s+origin)?\\s*$"
+      - "git-auto-commit-action|add-and-commit|github-push-action"
+  - id: results-on-a-persistent-branch
+    description: >
+      The workflow pushes the generated file to a `persistent/` branch and
+      site.yml points the docs site at that branch.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml", "site.yml"]
+    must_match:
+      - "persistent/"
+      - "(?m)^\\s*branch:\\s*['\"]?persistent/"
+  - id: ruleset-unchanged
+    description: The agent did not grant itself a bypass in the ruleset.
+    type: files_unchanged
+    paths: [".github/rulesets/main.json"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Protection — does the design keep the bot off the protected main
+  (no push to main, no bypass added to the ruleset), putting the generated
+  file on an unprotected `persistent/<purpose>` results branch? Cap at 3 if
+  the workflow pushes to main.
+  (2) Working result — does the workflow run on pushes to main, regenerate
+  stats.json, publish it with minimal permissions, and does site.yml point
+  the docs site at where it now lives?
+  (3) Report — does the final reply say why the file no longer lives on
+  main and what, if anything, the owner must do?

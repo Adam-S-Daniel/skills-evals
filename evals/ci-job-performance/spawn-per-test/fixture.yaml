@@ -1,0 +1,372 @@
+# Eval fixture: ci-job-performance (spawn-per-test)
+# Measures SKILL.md's "Workers: CPU-bound suites don't get faster from more
+# of them" and its "Measure first" rule, on the case the skill's own example
+# comes from: a lint suite whose cost is a fresh interpreter per test. The
+# seed is a small private repository, sitelint, a house-style linter for a
+# marketing site. Its `lint-tests` job (a required check) runs a standard
+# library unittest suite of 172 tests, and 168 of them each start
+# `python -m sitelint --json <page>` to read one rule's lines off one of the
+# twelve pages, so the suite starts the same twelve linter processes again
+# and again. Timed locally it is CPU-bound (user + sys CPU close to wall
+# clock at one process) and nearly all of that CPU is interpreter startup.
+# The prompt relays a teammate's suggestion to add workers (pytest-xdist
+# `-n 8`) or a four-job matrix. The skill's answer: a private repository's
+# runner has 2 vCPUs, so eight workers oversubscribe it, and a CPU-bound
+# suite's lever is less CPU work, not more workers: run the linter once per
+# page (or call `sitelint.lint_file` in process) and assert every rule
+# against that one result, keeping the command-line contract tests.
+#
+# Rebuilt from real work: cms-platform's node-unit-lints lane, where a
+# measured 2 -> 4 worker change moved a CPU-bound lint step only a few
+# seconds and the real gain came from starting fewer processes (cms-platform
+# PR 609, "Reduce repeated process starts", under issue 462). Every name,
+# page and number here is invented.
+#
+# What the objective column decides, with one probe program (the YAML
+# anchor below) run under `python3 -I` in modes. It copies the workspace to
+# a temporary directory, so nothing it does touches the arm's tree, and runs
+# the suite there with the standard library's unittest loader in a child
+# interpreter: `suite-passes-with-every-test` needs a clean result with at
+# least the seed's 172 tests run (skips and expected failures do not count);
+# `linter-started-at-most-once-per-page` inserts a line after the docstring
+# of the copy's sitelint/__main__.py that records each process running it,
+# and counts the processes other than the test runner itself: at most 24
+# (twelve pages, the four command-line tests, and headroom), where the seed
+# starts 172; `tests-still-catch-a-broken-rule` disables the missing-alt rule
+# in the copy and needs the suite to fail, so a suite that replays recorded
+# output instead of running the linter fails it. Two more modes parse every
+# workflow under .github/workflows/ with PyYAML (never a regex over YAML):
+# `required-check-still-runs-the-suite` needs a non-matrix job publishing
+# `lint-tests` that runs the tests, and `no-oversubscribed-workers` fails a
+# worker or process count above 2 on any test command (`-n`,
+# `--numprocesses`, `-j`, `--jobs`, `--workers`, `--parallel`; `auto` and
+# `logical` resolve to the runner's own count and pass). The linter, the
+# pages and the README are guarded byte for byte. It does not decide whether
+# the reply's measurement is right or whether its reasoning about workers is
+# sound; those are the judge's.
+#
+# Known limits: a test that starts the linter some other way than running
+# the sitelint module as a program (`python -c "import sitelint; ..."`) is
+# not counted; the suite must stay runnable by the standard library's
+# unittest loader from `tests/`, which the README states; and a worker count
+# set through an environment variable or a config file is not read.
+#
+# No `context:` block: an isolation pair (ADR 0012) until
+# scripts/contextualize_fixtures.py gives it one; evals/unscheduled.yml
+# lists it with that reason. Roster inheritance supplies both the arms and
+# the judge (ADR 0013).
+skill: ci-job-performance
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: real-work
+  source: https://github.com/Adam-S-Daniel/cms-platform/pull/609
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/742
+
+judge:
+  weights:
+    correctness: 0.6
+    restraint: 0.2
+    explanation: 0.2
+
+prompt: >
+  `lint-tests` is the slowest required check in this private repository:
+  its "Run the tests" step took 38s, 44s and 41s on the last three pull
+  requests, and the rest of the job takes about 12s. A teammate suggests
+  switching to pytest-xdist with `-n 8`, or splitting the tests across a
+  four-job matrix. Make the check faster, without dropping or weakening any
+  test, and tell us what you measured.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  # All five probe checks share one program and differ in the mode they
+  # pass it. Run with `python3 -I`, so nothing in the workspace can stand in
+  # for a module the probe imports; exit 1 is a failed claim, 2 an
+  # undecidable workspace, 3 a missing PyYAML.
+  - id: suite-passes-with-every-test
+    description: The suite passes under the standard library's unittest loader with at least the seed's 172 tests run
+    type: command_succeeds
+    timeout_s: 60
+    argv:
+      - python3
+      - -I
+      - -c
+      - &spawn_probe |
+        import ast, glob, json, os, re, shlex, shutil, subprocess, sys, tempfile
+
+        SEED_TESTS = 172
+        MAX_STARTS = 24
+        RUNNER = (
+            "import json, os, sys, unittest\n"
+            "sys.path.insert(0, os.getcwd())\n"
+            "suite = unittest.defaultTestLoader.discover('tests')\n"
+            "with open(os.devnull, 'w') as sink:\n"
+            "    r = unittest.TextTestRunner(stream=sink, verbosity=0).run(suite)\n"
+            "print(json.dumps({'run': r.testsRun, 'skipped': len(r.skipped),\n"
+            "                  'expected': len(r.expectedFailures),\n"
+            "                  'ok': r.wasSuccessful(),\n"
+            "                  'errors': len(r.errors), 'failures': len(r.failures),\n"
+            "                  'loader_errors': len(unittest.defaultTestLoader.errors)}))\n"
+        )
+        RULE_LINE = "        if \"alt\" not in attrs:\n"
+
+
+        class Undecidable(Exception):
+            pass
+
+
+        def copy_workspace():
+            scratch = tempfile.mkdtemp(prefix="probe-")
+            target = os.path.join(scratch, "ws")
+            shutil.copytree(".", target, symlinks=True,
+                            ignore=shutil.ignore_patterns(".git", "__pycache__"))
+            return scratch, target
+
+
+        def instrument(target, log):
+            path = os.path.join(target, "sitelint", "__main__.py")
+            if not os.path.isfile(path):
+                raise Undecidable("sitelint/__main__.py is missing")
+            with open(path, encoding="utf-8") as handle:
+                source = handle.read()
+            tree = ast.parse(source)
+            after = 0
+            if tree.body and isinstance(tree.body[0], ast.Expr) \
+                    and isinstance(getattr(tree.body[0], "value", None), ast.Constant) \
+                    and isinstance(tree.body[0].value.value, str):
+                after = tree.body[0].end_lineno
+            lines = source.splitlines(keepends=True)
+            hook = ("import os as _o_\n"
+                    "with open(%r, 'a', encoding='utf-8') as _f_:\n"
+                    "    _f_.write('%%d\\n' %% _o_.getpid())\n" % log)
+            lines.insert(after, hook)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("".join(lines))
+
+
+        def run_suite(target):
+            env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": target,
+                   "PYTHONDONTWRITEBYTECODE": "1", "LC_ALL": "C.UTF-8"}
+            proc = subprocess.Popen([sys.executable, "-c", RUNNER], cwd=target, env=env,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            out, err = proc.communicate(timeout=50)
+            last = out.strip().splitlines()[-1] if out.strip() else ""
+            try:
+                result = json.loads(last)
+            except ValueError:
+                print("probe: the suite printed no result", file=sys.stderr)
+                result = None
+            return proc.pid, result
+
+
+        def counted(result):
+            return result["run"] - result["skipped"] - result["expected"]
+
+
+        def passes(result):
+            return (result is not None and result["ok"] and not result["loader_errors"]
+                    and counted(result) >= SEED_TESTS)
+
+
+        def workflows():
+            try:
+                import yaml
+            except ImportError:
+                print("probe: PyYAML is not importable", file=sys.stderr)
+                sys.exit(3)
+            docs = []
+            for path in sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml")):
+                with open(path, encoding="utf-8") as handle:
+                    try:
+                        docs.append(yaml.safe_load(handle))
+                    except yaml.YAMLError:
+                        raise Undecidable(f"{path} does not parse")
+            return [d for d in docs if isinstance(d, dict) and isinstance(d.get("jobs"), dict)]
+
+
+        def runs(job):
+            steps = job.get("steps") if isinstance(job.get("steps"), list) else []
+            return [str(s.get("run")) for s in steps if isinstance(s, dict) and s.get("run") is not None]
+
+
+        def words(run):
+            for line in run.splitlines():
+                try:
+                    yield shlex.split(line, comments=True)
+                except ValueError:
+                    yield line.split()
+
+
+        def runs_tests(run):
+            return any(("unittest" in ws or "pytest" in ws
+                        or any(w.rsplit("/", 1)[-1] in ("pytest", "py.test") for w in ws))
+                       for ws in words(run))
+
+
+        WORKER_FLAGS = ("-n", "--numprocesses", "-j", "--jobs", "--workers", "--parallel")
+
+
+        def worker_counts(run):
+            for ws in words(run):
+                for i, w in enumerate(ws):
+                    value = None
+                    for flag in WORKER_FLAGS:
+                        if w == flag and i + 1 < len(ws):
+                            value = ws[i + 1]
+                        elif w.startswith(flag + "=") and flag.startswith("--"):
+                            value = w.split("=", 1)[1]
+                        elif flag in ("-n", "-j") and w.startswith(flag) and w[2:].isdigit():
+                            value = w[2:]
+                    if value is not None:
+                        yield value
+
+
+        def main(mode):
+            if mode in ("suite", "starts", "mutation"):
+                scratch, target = copy_workspace()
+                try:
+                    if mode == "suite":
+                        _, result = run_suite(target)
+                        print(f"probe: {result}", file=sys.stderr)
+                        return 0 if passes(result) else 1
+                    if mode == "starts":
+                        log = os.path.join(scratch, "starts.log")
+                        open(log, "w").close()
+                        instrument(target, log)
+                        pid, result = run_suite(target)
+                        if not passes(result):
+                            print(f"probe: the suite does not pass: {result}", file=sys.stderr)
+                            return 1
+                        with open(log, encoding="utf-8") as handle:
+                            pids = [p for p in handle.read().split() if p != str(pid)]
+                        print(f"probe: {len(pids)} linter processes", file=sys.stderr)
+                        return 0 if len(pids) <= MAX_STARTS else 1
+                    rules = os.path.join(target, "sitelint", "rules.py")
+                    with open(rules, encoding="utf-8") as handle:
+                        source = handle.read()
+                    if source.count(RULE_LINE) != 1:
+                        raise Undecidable("the missing-alt rule is not where the seed has it")
+                    with open(rules, "w", encoding="utf-8") as handle:
+                        handle.write(source.replace(RULE_LINE, "        if False:\n"))
+                    _, result = run_suite(target)
+                    print(f"probe: with missing-alt disabled: {result}", file=sys.stderr)
+                    return 0 if result is not None and not result["ok"] else 1
+                finally:
+                    shutil.rmtree(scratch, ignore_errors=True)
+            docs = workflows()
+            jobs = [(k, j) for d in docs for k, j in d["jobs"].items() if isinstance(j, dict)]
+            if mode == "check-name":
+                for key, job in jobs:
+                    name = job.get("name", key)
+                    if name != "lint-tests" or job.get("strategy", {}) and \
+                            isinstance(job.get("strategy"), dict) and job["strategy"].get("matrix"):
+                        continue
+                    if any(runs_tests(r) for r in runs(job)):
+                        return 0
+                return 1
+            if mode == "workers":
+                for key, job in jobs:
+                    for run in runs(job):
+                        for value in worker_counts(run):
+                            if value.lower() in ("auto", "logical"):
+                                continue
+                            if not value.isdigit() or int(value) > 2:
+                                print(f"probe: job {key} asks for {value!r} workers", file=sys.stderr)
+                                return 1
+                return 0
+            return 2
+
+
+        if __name__ == "__main__":
+            try:
+                sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else ""))
+            except (Undecidable, OSError, SyntaxError, subprocess.TimeoutExpired, RecursionError) as exc:
+                print(f"probe: undecidable: {type(exc).__name__}: {exc}", file=sys.stderr)
+                sys.exit(2)
+      - suite
+
+  - id: linter-started-at-most-once-per-page
+    description: A passing suite starts the sitelint command line at most 24 times (the seed starts it 172 times, once per test)
+    type: command_succeeds
+    timeout_s: 60
+    argv: [python3, -I, -c, *spawn_probe, starts]
+
+  # A guard against a suite that stops running the linter: replayed or
+  # hard-coded output passes the two checks above and fails this one.
+  - id: tests-still-catch-a-broken-rule
+    description: With the missing-alt rule disabled in a copy of the linter, the suite fails
+    type: command_succeeds
+    timeout_s: 60
+    argv: [python3, -I, -c, *spawn_probe, mutation]
+
+  - id: required-check-still-runs-the-suite
+    description: A non-matrix job publishing `lint-tests` still runs the tests
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *spawn_probe, check-name]
+
+  - id: no-oversubscribed-workers
+    description: No test command asks for more than 2 workers or processes on the private repository's 2-vCPU runner
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *spawn_probe, workers]
+
+  - id: linter-and-pages-unchanged
+    description: The linter, the pages and the README are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - "README.md"
+      - "sitelint/*.py"
+      - "pages/*.html"
+
+judge_rubric: >
+  Score correctness, restraint and explanation from 0 to 10, with a
+  one-sentence rationale each. The seed's suite runs 172 tests, and 168 of
+  them each start `python -m sitelint --json <page>` on one of twelve pages
+  to read one rule's lines, so it starts the linter 172 times where twelve
+  runs (or in-process calls to `sitelint.lint_file`) give the same answers.
+  Timed locally (for example with `/usr/bin/time` or the shell's `time`),
+  user plus system CPU is close to wall clock at one process: the suite is
+  CPU-bound, and the CPU is interpreter startup. This is a private
+  repository, whose GitHub-hosted runner has 2 vCPUs, so `-n 8` asks for
+  four times the cores there are, and more workers cannot buy back CPU work;
+  a four-job matrix re-pays the job's fixed setup cost (about 12s) on every
+  shard to split a step this size. A complete answer runs the linter once
+  per page (cached per page or per test class, or in process) and asserts
+  every rule against that result, keeps the command-line contract tests
+  (exit codes, output shapes), keeps the `lint-tests` check, and does not
+  raise the worker count past the runner's cores.
+  (1) Correctness: cap at 4 if suite-passes-with-every-test,
+  linter-started-at-most-once-per-page or tests-still-catch-a-broken-rule
+  fails, or if the reply's diagnosis rests on worker counts or sharding
+  rather than on what the suite spends its CPU on. Cap at 6 if
+  no-oversubscribed-workers fails. Adding pytest-xdist at 2 workers
+  or `auto` on top of the fix is acceptable but not required.
+  (2) Explanation: grade how clearly the reply reports what it measured
+  (wall clock, user and system CPU, process count, before and after, with
+  how many runs), says why the suite is CPU-bound and why workers or a
+  matrix would not fix that on a 2-vCPU runner, and is honest that a local
+  timing does not equal the CI step's duration.
+  (3) Restraint: the change stays in the tests (and the workflow, if
+  touched); the linter, the pages and the README are unchanged; no test is
+  dropped, skipped or weakened. Cap restraint at 3 if
+  linter-and-pages-unchanged or required-check-still-runs-the-suite fails,
+  or if a test was removed or its assertion loosened. Do not infer
+  correctness from the count of objective checks: the probe counts process
+  starts and runs the suite; it does not judge the reply.
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: caeff57f6501a71306fd8ca65027450da71e354e
+  guidance_revision: 062f6d0acde090e6f05c2d21efab9426122973ff
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9567
+    skill_payload_bytes: 864990

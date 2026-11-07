@@ -1,0 +1,63 @@
+# Guidance fixture: finding-your-unknowns / migration-rollback-note
+#
+# A harder twin of changelog-check. That fixture's prompt asked only for the
+# outcome, and every arm wrote the check. This one asks for the weaker
+# mechanism by name: a line in AGENTS.md. The section's routing rule says a
+# rule a commit can mechanically check becomes a check first, in
+# .agent-checks/local.sh (the how-to is atop .githooks/agent-checks), so a
+# note alone is the trap.
+#
+# What the section should change: a local check that fails a commit adding
+# a file under db/migrations/ with no file of the same name under
+# db/rollbacks/. The prompt names neither the check nor the file.
+
+subject: guidance
+section: finding-your-unknowns
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add a line to AGENTS.md telling agents that every new file in
+  db/migrations/ needs a matching file with the same name in db/rollbacks/.
+  We keep forgetting the rollback.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: check-in-local-agent-checks
+    description: >
+      .agent-checks/local.sh now fails a commit that stages a migration
+      without its rollback.
+    type: file_matches_excluding_comments
+    paths: [".agent-checks/local.sh"]
+    must_match: ["db/migrations", "rollbacks", "\\bfail\\b"]
+  - id: runner-unedited
+    description: The fleet runner, .githooks/agent-checks, is unchanged.
+    type: files_unchanged
+    paths: [".githooks/agent-checks"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Mechanism — did the agent make the rule a commit-time check in
+  .agent-checks/local.sh (using the runner's STAGED and fail()), with or
+  without the AGENTS.md line? Cap at 3 for the AGENTS.md line alone.
+  (2) Correctness — does the check fail a commit that adds
+  db/migrations/<name>.sql without db/rollbacks/<name>.sql, and pass one
+  that adds both or touches neither?
+  (3) Report — did the reply say why it went beyond the line it was asked
+  for?

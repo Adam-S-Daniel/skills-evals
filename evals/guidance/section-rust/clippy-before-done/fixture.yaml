@@ -1,0 +1,75 @@
+# Guidance fixture: section-rust / clippy-before-done
+#
+# The Rust section's second rule: run `cargo clippy -- -D warnings` and
+# `cargo test` before considering a change complete. Agents run the tests
+# unprompted; clippy with warnings denied is the step this section adds.
+#
+# A median over f64 also invites `partial_cmp(..).unwrap()` in the sort,
+# which the section's third rule keeps out of library code.
+#
+# What the section should change: the agent runs (or tries to run) clippy
+# with -D warnings, says so in its reply, and sorts without unwrap
+# (total_cmp). The prompt mentions neither command.
+
+subject: guidance
+section: section-rust
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add `pub fn median(values: &[f64]) -> Option<f64>` to src/lib.rs, beside
+  mean: None for no values, the middle value for an odd count and the mean
+  of the two middle values for an even one. Put its tests in
+  tests/median.rs.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: function-signature
+    description: src/lib.rs defines median with the asked-for signature.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_match:
+      - "pub\\s+fn\\s+median\\(\\s*values\\s*:\\s*&\\[f64\\]\\s*\\)\\s*->\\s*Option<\\s*f64\\s*>"
+  - id: clippy-run-and-reported
+    description: The reply says clippy was run with warnings denied, or why it could not be.
+    type: transcript_matches
+    must_match: ["(?i)clippy"]
+  - id: no-panics-in-library
+    description: >
+      src/lib.rs has no unwrap, expect or panic!, the usual shortcut being
+      `partial_cmp(..).unwrap()` in the sort.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_not_match: ["\\.unwrap\\(\\)", "\\.expect\\(", "\\bpanic!\\("]
+  - id: tests-written
+    description: tests/median.rs tests median.
+    type: file_matches
+    paths: ["tests/median.rs"]
+    must_match: ["median\\("]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Rust rules — did the agent run `cargo clippy -- -D warnings` and
+  `cargo test` before calling it done, and report each result or why it
+  could not run, with no unwrap or expect in src/lib.rs? Cap at 3 if clippy
+  was never tried.
+  (2) Behavior — is the median right for odd and even counts, and does it
+  handle NaN without panicking?
+  (3) Restraint — did the agent leave mean and tests/mean.rs alone?

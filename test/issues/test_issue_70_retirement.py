@@ -149,14 +149,15 @@ def flat_cell(n=FLAT_DECIDES, **kw):
 class PolicyTests(unittest.TestCase):
 
     def test_committed_policy_loads_with_its_numbers(self):
-        # 2026-11-03 (Adam's decision pending; the statistics review and the
-        # threshold sweep): keep at 80% across the subject's cells, no
-        # benefit at 90% under 0.15, a 40-pair cap, removals as proposals.
+        # 2026-11-03 (the statistics review and the threshold sweep): keep
+        # at 80% across the subject's cells, no benefit at 90% under 0.15, a
+        # 40-pair cap; removals automatic again once withdrawal was hardened
+        # (PR #740, #645).
         self.assertEqual(POLICY, {
             "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.80,
             "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 40,
             "max_runs_high_cell": 20, "floor_fraction": 0.10,
-            "retirement_mode": "proposal"})
+            "retirement_mode": "auto"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -1405,7 +1406,7 @@ class ComputeGatesTests(unittest.TestCase):
         entry = doc["skills"]["flat"]["cells"][0]["runs"]["with"][0]
         self.assertEqual(entry["run"]["billing"], "api")
         self.assertTrue((self.tree / entry["report"]["path"]).is_file())
-        self.assertEqual(doc["retirement_mode"], "proposal")
+        self.assertEqual(doc["retirement_mode"], "auto")
         self.assertNotIn("previous", doc)
 
     def in_place_fixture(self, skill):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import io
 import json
 from pathlib import Path
 import sys
@@ -521,6 +522,68 @@ class AutomationTests(unittest.TestCase):
         writes = [path for method, path, _ in api.calls if method == "PUT"]
         self.assertEqual(writes, [f"/repos/{gaps.REPO}/contents/coverage/42.json"])
         self.assertFalse(any(method == "POST" for method, _, _ in api.calls))
+
+    def test_a_409_from_a_concurrent_push_is_retried_with_a_fresh_read(self):
+        # Run 41866904451: regression-publish pushed persistent/eval-results
+        # as the first coverage PUT ran, and the refusal ended the job red.
+        census, sources = world(public_gaps=1)
+
+        class RacedOnce(FakeGitHub):
+            refused = False
+
+            def request(self, method, path, payload=None, *, missing_ok=False):
+                if method == "PUT" and not self.refused:
+                    self.refused = True
+                    self.calls.append((method, path, payload))
+                    raise gaps.GapError("GitHub PUT request failed with HTTP 409", 409)
+                return super().request(method, path, payload, missing_ok=missing_ok)
+
+        api, waits = RacedOnce(), []
+        with mock.patch.object(gaps, "_sleep", waits.append):
+            gaps.automate(api, census, sources, "42", "a" * 40,
+                          write=True, as_of="2026-10-08T00:00:00Z")
+        puts = [path for method, path, _ in api.calls if method == "PUT"]
+        first = f"/repos/{gaps.REPO}/contents/coverage/42.json"
+        self.assertEqual(puts[:2], [first, first])
+        self.assertEqual(waits, [2])
+        gets = [path for method, path, _ in api.calls
+                if method == "GET" and path.startswith(first)]
+        self.assertEqual(len(gets), 2, "the retry re-reads the file's sha")
+
+    def test_other_put_failures_and_a_lasting_409_are_not_retried_forever(self):
+        census, sources = world(public_gaps=1)
+        for status, expected_puts in ((422, 1), (409, gaps.PUT_ATTEMPTS)):
+            class Refused(FakeGitHub):
+                def request(self, method, path, payload=None, *, missing_ok=False):
+                    if method == "PUT":
+                        self.calls.append((method, path, payload))
+                        raise gaps.GapError(f"GitHub PUT request failed with HTTP {status}",
+                                            status)
+                    return super().request(method, path, payload, missing_ok=missing_ok)
+
+            api = Refused()
+            with self.subTest(status=status), mock.patch.object(gaps, "_sleep", lambda s: None):
+                with self.assertRaises(gaps.GapError):
+                    gaps.automate(api, census, sources, "42", "a" * 40,
+                                  write=True, as_of="2026-10-08T00:00:00Z")
+                self.assertEqual(sum(1 for m, _, _ in api.calls if m == "PUT"), expected_puts)
+
+    def test_the_refusal_names_a_gap_reason_but_never_other_exception_text(self):
+        err = io.StringIO()
+        with mock.patch.object(gaps, "automate",
+                               side_effect=gaps.GapError("GitHub PUT request failed with HTTP 409", 409)), \
+                mock.patch.object(sys, "stderr", err), \
+                mock.patch.object(Path, "read_text", lambda self, **k: "{}"):
+            self.assertEqual(gaps.main(["automate", "--artifact", "x", "--run-id", "1",
+                                        "--main-sha", "a" * 40]), 2)
+        self.assertIn("HTTP 409", err.getvalue())
+        err = io.StringIO()
+        with mock.patch.object(gaps, "automate", side_effect=KeyError("private-skill-name")), \
+                mock.patch.object(sys, "stderr", err), \
+                mock.patch.object(Path, "read_text", lambda self, **k: "{}"):
+            self.assertEqual(gaps.main(["automate", "--artifact", "x", "--run-id", "1",
+                                        "--main-sha", "a" * 40]), 2)
+        self.assertNotIn("private-skill-name", err.getvalue())
 
     def test_existing_branch_requires_matching_draft_marker(self):
         census, sources = world()

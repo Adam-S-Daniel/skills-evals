@@ -21,7 +21,8 @@
 #      for content once on a public branch there. A failed clone leaves those
 #      rows `unknown:unverified-commit` and the summary says
 #      "registry: not read", never which one or why;
-#   2. shallow-clone the persistent/eval-results branch, copy in usage/latest.json
+#   2. with the persistent/eval-results branch (shallow-cloned before step 1,
+#      so the census can read its coverage/latest.json), copy in usage/latest.json
 #      (models) and usage/weekly-local.json (skill invocations), after
 #      skill_usage.check_public passes on the weekly file (a full digest, a
 #      commit, a fork's name or a private skill's name refuses the publish);
@@ -134,6 +135,15 @@ elif [ "$found" = 2 ]; then
   private_fetch=missing
 fi
 
+# The results branch, cloned BEFORE the census so the census can read the
+# published coverage census in it (`--coverage-census`: a public registry's
+# skill with no fixture yet is still a publishable name); step 2 reuses it.
+git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$BRANCH" "$URL" "$tmp/results" >/dev/null 2>&1 \
+  || { echo "usage census: could not clone the $BRANCH branch" >&2; exit 1; }
+coverage="$tmp/results/coverage/latest.json"
+coverage_args=()
+[ -f "$coverage" ] && coverage_args=(--coverage-census "$coverage")
+
 is_wsl=0
 if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; then
   is_wsl=1
@@ -172,6 +182,7 @@ else
   fi
 fi
 census_args+=(--hook-logs "$hook_logs")
+census_args+=("${coverage_args[@]+"${coverage_args[@]}"}")
 if [ -n "${CENSUS_NOW:-}" ]; then census_args+=(--now "$CENSUS_NOW"); fi
 if [ "$private_fetch" = cloned ]; then census_args+=(--cloud-guidance "$tmp/private"); fi
 # #562: the loaded copies need the store's record of each use; a branch that
@@ -234,9 +245,6 @@ PY
   if [ "$unread" = 1 ] || [ "$applied" = unread ]; then registry_note="registry: not read"; fi
 fi
 
-git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$BRANCH" "$URL" "$tmp/results" >/dev/null 2>&1 \
-  || { echo "usage census: could not clone the $BRANCH branch" >&2; exit 1; }
-
 # A failed fetch of the private branch: carry the previous public file's cloud
 # guidance rows and local and cloud skill-digest rows, each with its source,
 # into this run's file (skill_usage.carry), so the publish below goes ahead
@@ -265,7 +273,7 @@ fi
 # The last gate on the public weekly file (#562): nothing is staged when it
 # fails, and the line names no value.
 "$PY" - "$tmp/src/harness" "$tmp/src/scripts" "$tmp/usage/weekly-local.json" "$tmp/src" \
-  >/dev/null 2>&1 <<'PY' || { echo "usage census: refusing to publish (check_public)" >&2; exit 1; }
+  "$coverage" >/dev/null 2>&1 <<'PY' || { echo "usage census: refusing to publish (check_public)" >&2; exit 1; }
 import json, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
@@ -273,7 +281,7 @@ sys.path.insert(0, sys.argv[2])
 import model_usage_census
 import skill_usage
 doc = json.load(open(sys.argv[3], encoding="utf-8"))
-allowlist = model_usage_census.skill_allowlist(Path(sys.argv[4]))
+allowlist = model_usage_census.skill_allowlist(Path(sys.argv[4]), Path(sys.argv[5]))
 public = set(model_usage_census.public_registries().values())
 sys.exit(1 if skill_usage.check_public(doc, allowlist, public) else 0)
 PY
