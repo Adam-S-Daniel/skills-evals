@@ -283,13 +283,22 @@ def _repo(repo: str) -> str:
     return repo
 
 
-def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get) -> list:
-    """Every run of routine-eval-fire.yml created at or after `since`, any
-    status, up to MAX_PAGES pages of 100 (more is an error, fail closed)."""
+#: fetch_fire_runs: a window this short that still fills MAX_PAGES is an
+#: error (fail closed) rather than split again.
+MIN_SPLIT = timedelta(minutes=10)
+
+
+def _fetch_window(repo: str, token: str, start: datetime, end: datetime | None, get):
+    """The fire runs created in [start, end] (end None: no upper bound), or
+    None when the window fills MAX_PAGES pages: the filtered runs API
+    returns at most 1,000 results per query, so a full window may be
+    truncated and must be split, never trusted."""
+    created = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    created = (created + ".." + end.strftime("%Y-%m-%dT%H:%M:%SZ")) if end else ">=" + created
     rows = []
     for page in range(1, MAX_PAGES + 1):
         query = urllib.parse.urlencode({
-            "created": ">=" + since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "created": created,
             "event": "workflow_dispatch", "per_page": "100", "page": str(page)})
         doc = get(f"/repos/{_repo(repo)}/actions/workflows/{FIRE_WORKFLOW}/runs?{query}", token)
         found = doc.get("workflow_runs") if isinstance(doc, dict) else None
@@ -298,7 +307,41 @@ def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get) -> l
         rows.extend(found)
         if len(found) < 100:
             return rows
-    raise EvidenceError(f"more than {MAX_PAGES * 100} fire runs in the window")
+    return None
+
+
+def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get,
+                    until: datetime | None = None) -> list:
+    """Every run of routine-eval-fire.yml created at or after `since`, any
+    status. A window that fills MAX_PAGES pages of 100 is split in two by
+    creation time and each half read again, since the API stops at 1,000
+    results per query (2026-11-07: a night of fires passed 1,000 in the
+    planner's window and every plan failed); one still full at MIN_SPLIT
+    is an error (fail closed). Runs on a shared boundary are kept once."""
+    end = until or datetime.now(timezone.utc)
+    rows, seen = [], set()
+    pending = [(since, end, True)]
+    while pending:
+        start, stop, last = pending.pop()
+        found = _fetch_window(repo, token, start, None if last else stop, get)
+        if found is None:
+            if stop - start <= MIN_SPLIT:
+                raise EvidenceError(
+                    f"more than {MAX_PAGES * 100} fire runs in a "
+                    f"{int(MIN_SPLIT.total_seconds() // 60)}-minute window")
+            mid = start + (stop - start) / 2
+            # Older half last, so it is read first (a stack).
+            pending.append((mid, stop, last))
+            pending.append((start, mid, False))
+            continue
+        for row in found:
+            key = row.get("id") if isinstance(row, dict) else None
+            if key is not None and key in seen:
+                continue
+            if key is not None:
+                seen.add(key)
+            rows.append(row)
+    return rows
 
 
 def fetch_improve_branches(repo: str, token: str, get=github_get,
