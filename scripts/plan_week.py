@@ -638,6 +638,10 @@ PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: p50 3.5 and p90 17 minutes per model (471 runs). Restore 3 and 20 minutes
 #: with evals/budget.yml's restore after that reset.
 MAX_IN_FLIGHT = 20
+#: plan --max-fires: the most cells one sweep may plan. 60 lets a sweep
+#: pick both models' cells of a fixture so they pair (PAIR FIRES); the
+#: dispatch matrix's limit is 256 legs.
+MAX_FIRES_CAP = 60
 EVAL_FLIGHT = timedelta(minutes=10)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
@@ -4076,8 +4080,8 @@ def main(argv: list | None = None) -> int:
                 with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
                     out.write(f"dispatch={'true' if go else 'false'}\n")
             return 0
-        if not 1 <= args.max_fires <= 30:
-            raise PlanError("the fire cap must be 1 to 30")
+        if not 1 <= args.max_fires <= MAX_FIRES_CAP:
+            raise PlanError(f"the fire cap must be 1 to {MAX_FIRES_CAP}")
         now = _utcnow()
         plan = build_plan(gather(args, now), now, args.max_fires)
     except (PlanError, outcomes_mod.EvidenceError, guard.GuardError,
