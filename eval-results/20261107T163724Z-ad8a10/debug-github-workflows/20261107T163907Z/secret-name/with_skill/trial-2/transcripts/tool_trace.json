@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ESVvsomRVnk8z4GnjrFv1r",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -la && ls .github/workflows; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 114,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ESVvsomRVnk8z4GnjrFv1r",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n17ffb08 initial commit\ntotal 40\ndrwxr-xr-x 8 root root 4096 Nov  7 16:39 .\ndrwx------ 6 root root 4096 Nov  7 16:39 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:42 ....",
+      "output_chars": 1227,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FT5sy6MTP2krAYDGpFm43r",
+      "name": "Bash",
+      "input": "cat README.md CHANGES.md; for f in .github/workflows/* scripts/* bin/*; do echo \"=== $f\"; cat \"$f\"; done; find .gh .claude -type f | head -50",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FT5sy6MTP2krAYDGpFm43r",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Example docs\n\nThe documentation site for the example tool. Publishing a release runs the\n`Release notes` workflow, which renders the release's notes from\n`CHANGES.md` and writes them onto the release; ...",
+      "output_chars": 2191,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SafjF8YBACBfAhaaaWq1HS",
+      "name": "Bash",
+      "input": "wc -l bin/*; ls bin; head -80 bin/gh; find .gh .claude -type f | head -50",
+      "input_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SafjF8YBACBfAhaaaWq1HS",
+      "is_error": false,
+      "output": "1237 bin/gh\ngh\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with ...",
+      "output_chars": 5468,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TLyHFL76JkFjPSWFthrguk",
+      "name": "Bash",
+      "input": "cd <path> && for f in run-view-43001.log run-view-43002.log secret-list.txt auth-status.txt run-list.json api/repos/example-org/example-docs/actions/secrets.json api/repos/example-org/example-docs/che...",
+      "input_chars": 362,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TLyHFL76JkFjPSWFthrguk",
+      "is_error": false,
+      "output": "=== run-view-43001.log\nnotes\tPublish release notes\t2026-01-02T16:00:05Z ##[group]Run python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-02T16:00:05Z python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-02T16:00:05Z gh release edit \"...",
+      "output_chars": 5593,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BgMP59cS6vvTtco3NHTH2S",
+      "name": "Agent",
+      "input": "Fix secret name in workflow",
+      "input_chars": 27,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FhCVyJQ5cz2rWcTT2zXcyz",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FhCVyJQ5cz2rWcTT2zXcyz",
+      "is_error": false,
+      "output": "1\tname: Release notes\n2\t\n3\ton:\n4\t  release:\n5\t    types: [published]\n6\t\n7\tpermissions:\n8\t  contents: read\n9\t\n10\tjobs:\n11\t  notes:\n12\t    runs-on: ubuntu-latest\n13\t    steps:\n14\t      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n15\t      - name: Publish release notes\n16\t        e...",
+      "output_chars": 705,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y1KZTRpMa6aNZ7TSidR31j",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y1KZTRpMa6aNZ7TSidR31j",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 175,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HTXeDoyynuTRVBNYyke6Nt",
+      "name": "Bash",
+      "input": "cd <path> && git diff --stat && ! grep -rn 'RELEASE_NOTES_TOKEN' .github && grep -c 'secrets.RELEASE_NOTES_PAT' .github/workflows/release-notes.yml; echo \"exit=$?\"",
+      "input_chars": 190,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HTXeDoyynuTRVBNYyke6Nt",
+      "is_error": false,
+      "output": " .github/workflows/release-notes.yml | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\n1\nexit=0",
+      "output_chars": 99,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PkEVfELhqvkCry3oEWUies",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Changed line 19 of <path> from `GH_TOKEN: <redacted> secrets.RELEASE_NOTES_TOKEN }}` to `GH_TOKEN: <redacted> secrets.RELEASE_NOTES_PAT }}`. Indentation and all other lines are unchanged....",
+      "input_chars": 739,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PkEVfELhqvkCry3oEWUies",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BgMP59cS6vvTtco3NHTH2S",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a7b6a03103f8d8c44\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a7b6a03103f8d8c44 (use SendMessage with to: 'a7b6a03103f8d8c44', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016HvgeYWaoySCdySANzrv4H",
+      "name": "Bash",
+      "input": "cd <path> && git diff; git status --short | grep -v '^??'",
+      "input_chars": 84,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016HvgeYWaoySCdySANzrv4H",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/release-notes.yml b/.github/workflows/release-notes.yml\nindex 432b29c..3023809 100644\n--- a/.github/workflows/release-notes.yml\n+++ b/.github/workflows/release-notes.yml\n@@ -16,7 +16,7 @@ jobs:\n         env:\n           # The release bot's token, not GITHUB_TOKEN: <reda...",
+      "output_chars": 659,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MNMV6BeuWhuJm2uEGG2KkJ",
+      "name": "Bash",
+      "input": "for t in v1.3.0 v1.4.0; do echo \"--- $t\"; python3 scripts/render_notes.py $t; echo \"exit=$?\"; done",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MNMV6BeuWhuJm2uEGG2KkJ",
+      "is_error": false,
+      "output": "--- v1.3.0\n- Add dark mode to the generated site.\nexit=0\n--- v1.4.0\n- Add the `export` command.\n- Keep empty sections out of generated pages.\nexit=0",
+      "output_chars": 148,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
