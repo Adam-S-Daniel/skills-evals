@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QkTWgxpJRhYYXxnrBcG9rV",
+      "name": "Bash",
+      "input": "git status --short; git branch --show-current; git remote -v; grep -n \"recieve\" docs/usage.md",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QkTWgxpJRhYYXxnrBcG9rV",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\ngrep: docs/usage.md: No such file or directory",
+      "output_chars": 204,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tp928GBXHgU5Kt3KdyyHgp",
+      "name": "Bash",
+      "input": "git remote -v; git log --oneline -3; find . -name usage.md -not -path './node_modules/*' 2><path> | head; grep -rIl \"recieve\" . 2><path> | head",
+      "input_chars": 149,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tp928GBXHgU5Kt3KdyyHgp",
+      "is_error": false,
+      "output": "385857a seed\n./repo/docs/usage.md\n./repo/docs/usage.md",
+      "output_chars": 54,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XZLEPjU4XV6wd8Ery1ZA5e",
+      "name": "Bash",
+      "input": "cd repo && git rev-parse --show-toplevel; git status --short | head; git branch -a; git remote -v; grep -n \"recieve\" docs/usage.md",
+      "input_chars": 130,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XZLEPjU4XV6wd8Ery1ZA5e",
+      "is_error": false,
+      "output": "<path>\n?? ../.bash_profile\n?? ../.bashrc\n?? ../.gitconfig\n?? ../.gitmodules\n?? ../.idea\n?? ../.mcp.json\n?? ../.profile\n?? ../.ripgreprc\n?? ../.vscode\n?? ../.zprofile\n* master\n7:Call `widgets.receive(event)` for each event you recieve from the queue.",
+      "output_chars": 291,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QFnMAczdWJVMnsdjDUMPAk",
+      "name": "Bash",
+      "input": "cd <path> && git checkout -q -b fix-recieve-typo && sed -i 's/recieve from/receive from/' repo/docs/usage.md && git diff --stat && git add repo/docs/usage.md && git commit -q -m \"Fix 'receive' typo in...",
+      "input_chars": 423,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QFnMAczdWJVMnsdjDUMPAk",
+      "is_error": false,
+      "output": " repo/docs/usage.md | 2 +-\n 1 file changed, 1 insertion(+), 1 deletion(-)\ndc87e65 Fix 'receive' typo in usage docs\n385857a seed\n\nPlease make sure you have the correct access rights\nand the repository exists.",
+      "output_chars": 207,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

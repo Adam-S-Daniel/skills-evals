@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SfdaeaP6hX26Hyr96Whhnr",
+      "name": "Bash",
+      "input": "git status --short && git branch --show-current && git remote -v && grep -n \"recieve\" -r . --exclude-dir=.git; git config user.email; git log --oneline -3",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SfdaeaP6hX26Hyr96Whhnr",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ri...",
+      "output_chars": 657,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019BdK3Z4NLBn3jiXQYEGBYt",
+      "name": "Bash",
+      "input": "cd <path> && git status --short && git branch --show-current && git remote -v && git log --oneline -3 && git config user.email; git branch -a",
+      "input_chars": 188,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019BdK3Z4NLBn3jiXQYEGBYt",
+      "is_error": false,
+      "output": "?? ../.bash_profile\n?? ../.bashrc\n?? ../.gitconfig\n?? ../.gitmodules\n?? ../.idea\n?? ../.mcp.json\n?? ../.profile\n?? ../.ripgreprc\n?? ../.vscode\n?? ../.zprofile\n?? ../.zshrc\nmaster\n5319581 seed\n* master",
+      "output_chars": 200,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GimX72R3gZZHv4vW7KgDx6",
+      "name": "Bash",
+      "input": "git rev-parse --show-toplevel; git remote; ls -la; which gh; gh repo view example-org/widgets --json name,defaultBranchRef 2>&1 | head -5",
+      "input_chars": 137,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GimX72R3gZZHv4vW7KgDx6",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 5 root root 4096 Nov  7 17:10 .\ndrwxr-xr-x 6 root root 4096 Nov  7 17:10 ..\ndrwxr-xr-x 3 root root 4096 Nov  7 17:10 .claude\n-rw-r--r-- 1 root root   19 Nov  7 17:10 .gitignore\n-rw-r--r-- 1 root root  129 Nov  7 17:10 README.md\ndrwxr-xr-x 2 root root 4096 Nov  7 17:10 docs...",
+      "output_chars": 521,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JZCxF5APtCgzG57SM1nUbX",
+      "name": "Bash",
+      "input": "git checkout -b fix/usage-receive-typo && sed -i 's/you recieve from/you receive from/' docs/usage.md && git diff && git add docs/usage.md && git -c user.email=\"${GIT_AUTHOR_EMAIL:<redacted> config us...",
+      "input_chars": 384,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JZCxF5APtCgzG57SM1nUbX",
+      "is_error": false,
+      "output": "Switched to a new branch 'fix/usage-receive-typo'\ndiff --git a/repo/docs/usage.md b/repo/docs/usage.md\nindex 34a26f7..7fc2b4c 100644\n--- a/repo/docs/usage.md\n+++ b/repo/docs/usage.md\n@@ -4,7 +4,7 @@ Widgets batch events before they are sent upstream.\n \n ## Receiving events\n \n-Call `widgets.receive(e...",
+      "output_chars": 545,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015uyRvPL117wuZe8QZYGir9",
+      "name": "Bash",
+      "input": "git log -1 --format='%ae'; git push -u origin fix/usage-receive-typo 2>&1; echo \"exit=$?\"",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015uyRvPL117wuZe8QZYGir9",
+      "is_error": false,
+      "output": "<redacted>\nfatal: 'origin' does not appear to be a git repository\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\nexit=128",
+      "output_chars": 206,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
