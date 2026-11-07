@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012H5rzsWQDoTQa3wQ1bdS98",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:ci-job-performance",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012H5rzsWQDoTQa3wQ1bdS98",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:ci-job-performance",
+      "output_chars": 56,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FgUm7yKBH1WXJBDvxVpY68",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; git log --oneline | head -5",
+      "input_chars": 58,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FgUm7yKBH1WXJBDvxVpY68",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 1353,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SuqRvKtspgXgxFhVc8eVf6",
+      "name": "Bash",
+      "input": "cd <path>; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30 --json databaseId,conclusion,createdAt,headBranch,event 2>&1 | head -50",
+      "input_chars": 183,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SuqRvKtspgXgxFhVc8eVf6",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 1498,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013y4Tq8NJ3fKJoXtnx2fMo6",
+      "name": "Bash",
+      "input": "cd <path>; R=example-org/example-repo; gh run list --repo $R --workflow e2e.yml --limit 30 --json databaseId --jq '.[].databaseId' > $TMPDIR/ids; wc -l $TMPDIR/ids\nfor id in $(cat $TMPDIR/ids); do gh ...",
+      "input_chars": 670,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013y4Tq8NJ3fKJoXtnx2fMo6",
+      "is_error": true,
+      "output": "Exit code 1\n146 <path>\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh...",
+      "output_chars": 7763,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012QQBXJ2guJgvTU9PSjFLNh",
+      "name": "Bash",
+      "input": "cd <path>; R=example-org/example-repo; head -5 $TMPDIR/ids; gh run view 72004 --repo $R --json jobs 2>&1 | head -60",
+      "input_chars": 142,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012QQBXJ2guJgvTU9PSjFLNh",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-22T17:19:24Z\",\n  \"databaseId\": 72004,\n  \"displayTitle\": \"Rename the docs nav entry\",\n  \"event\": \"push\",\n  \"headBranch\": \"main\",\n  \"headSh...",
+      "output_chars": 2030,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011mwKUuiK88kHWGoEJgrzdg",
+      "name": "Bash",
+      "input": "cd <path>; R=example-org/example-repo\nids=$(jq -r '.[].databaseId' $TMPDIR/ids); echo $ids | wc -w\nfor id in $ids; do gh run view $id --repo $R --json jobs 2><path> | jq -r --arg id $id '.jobs[] | . a...",
+      "input_chars": 633,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011mwKUuiK88kHWGoEJgrzdg",
+      "is_error": false,
+      "output": "8\n24 <path>\n72004\te2e (chromium)\tsuccess\tRestore_browse:5 Install_browse:25 Install_browse:skip Run_Playwright:44 Post_Restore_b:1\t93\n72004\te2e (firefox)\tsuccess\tRestore_browse:6 Install_browse:25 Install_browse:skip Run_Playwright:51 Post_Restore_b:0\t99\n72004\te2e (webkit)\tsuccess\tRestore_browse:6 I...",
+      "output_chars": 1504,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015xbJNQucZWYXeN7VjViL9K",
+      "name": "Bash",
+      "input": "cd <path>; tail -12 $TMPDIR/out.tsv; jq -r '.[]|\"\\(.databaseId) \\(.createdAt) \\(.event)\"' $TMPDIR/ids",
+      "input_chars": 128,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015xbJNQucZWYXeN7VjViL9K",
+      "is_error": false,
+      "output": "71004\te2e (chromium)\tsuccess\tInstall_browse:20 Install_browse:12 Run_Playwright:45\t93\n71004\te2e (firefox)\tsuccess\tInstall_browse:22 Install_browse:4 Run_Playwright:53\t98\n71004\te2e (webkit)\tsuccess\tInstall_browse:20 Install_browse:6 Run_Playwright:51\t97\n71003\te2e (chromium)\tsuccess\tInstall_browse:17 ...",
+      "output_chars": 1269,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018cemjYAxi5YqcusKHJxCR6",
+      "name": "Bash",
+      "input": "cd $TMPDIR; awk -F'\\t' '{split($1,a,\"\");br=$2; pre=($1<72000)?\"before\":\"after\"; n[br\" \"pre]++; t[br\" \"pre]+=$5} END{for(k in n)printf \"%s n=%d mean=%.1f\\n\",k,n[k],t[k]/n[k]}' out.tsv | sort",
+      "input_chars": 189,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018cemjYAxi5YqcusKHJxCR6",
+      "is_error": false,
+      "output": "e2e (chromium) after n=4 mean=97.0\ne2e (chromium) before n=4 mean=90.2\ne2e (firefox) after n=4 mean=102.5\ne2e (firefox) before n=4 mean=101.2\ne2e (webkit) after n=4 mean=94.5\ne2e (webkit) before n=4 mean=95.0\nShell cwd was reset to <path>",
+      "output_chars": 265,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H3abcf6vXU7SAjc5ZQNsV9",
+      "name": "Bash",
+      "input": "cd <path>; python3 - <<'E'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"      - name: Restore browser cache\n        id: browser-cache\n\"\"\",\"\"\"      # Only chromium: its ~10s download b...",
+      "input_chars": 693,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H3abcf6vXU7SAjc5ZQNsV9",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 6 +++++-\n 1 file changed, 5 insertions(+), 1 deletion(-)\ne2e/package-lock.json",
+      "output_chars": 107,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

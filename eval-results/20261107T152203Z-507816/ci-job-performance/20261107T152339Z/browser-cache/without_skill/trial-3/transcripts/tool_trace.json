@@ -1,0 +1,249 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SF3VyBixYpLZqDUY9ezwr6",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -la && cat .github/workflows/e2e.yml; ls .github/workflows",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SF3VyBixYpLZqDUY9ezwr6",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nadf12d4 initial commit\ntotal 36\ndrwxr-xr-x 8 root root 4096 Nov  7 15:30 .\ndrwx------ 6 root root 4096 Nov  7 15:30 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 05:08 ....",
+      "output_chars": 2483,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011UECHiYFmz5gXwYpqVuQAa",
+      "name": "Bash",
+      "input": "cat README.md; ls bin e2e .gh -R | head -50; cat e2e/package.json; which gh; gh --version",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011UECHiYFmz5gXwYpqVuQAa",
+      "is_error": false,
+      "output": "# Example site\n\nThe marketing site for example.com. The end-to-end tests live in `e2e/` and\nrun on every push and pull request through the `e2e` workflow, once per\nbrowser (Chromium, Firefox and WebKit).\n\nRun them locally with:\n\n```bash\ncd e2e\nnpm ci\nnpx playwright install --with-deps\nnpx playwright...",
+      "output_chars": 1360,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JrDHffai9yHu6dkaGM8TBD",
+      "name": "Bash",
+      "input": "gh run list -R example-org/example-repo --workflow e2e.yml -L 20; echo; gh cache list -R example-org/example-repo",
+      "input_chars": 113,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014ZXEWrmkjBkBDkE96SCGvC",
+      "name": "Bash",
+      "input": "gh run view 72001 -R example-org/example-repo --json jobs --jq '.jobs[] | \"\\(.databaseId) \\(.name) \\(.conclusion) \\(.startedAt) \\(.completedAt)\\n\" + ([.steps[] | \"   \\(.name): \\(.conclusion) \\(.starte...",
+      "input_chars": 237,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JrDHffai9yHu6dkaGM8TBD",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 5544,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014ZXEWrmkjBkBDkE96SCGvC",
+      "is_error": false,
+      "output": "{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-19T10:05:41Z\",\n  \"databaseId\": 72001,\n  \"displayTitle\": \"ci: cache Playwright browsers in e2e\",\n  \"event\": \"push\",\n  \"headBranch\": \"main\",\n  \"headSha\": \"4d9c2f74d9c2f74d9c2f74d9c2f74d9c2f74d9c2\",\n  \"name\": \"e2e\",\n  \"number\": 1021,\n...",
+      "output_chars": 10153,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jw4BA5vZUjFTG6t1CPsVeg",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs | jq -r --arg r $r '.jobs[] | . as $j | [$r, (.name|capture(\"\\\\((?<b>.*)\\\\)\").b), ((...",
+      "input_chars": 689,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jw4BA5vZUjFTG6t1CPsVeg",
+      "is_error": true,
+      "output": "Exit code 127\n<path>: line 1: column: command not found",
+      "output_chars": 58,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KmNaMQAAkivSTNiBckAXtn",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --json jobs | jq -r --arg r $r '.jobs[] | [$r, (.name|capture(\"\\\\((?<b>.*)\\\\)\").b), \"total=\\((.c...",
+      "input_chars": 681,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KmNaMQAAkivSTNiBckAXtn",
+      "is_error": false,
+      "output": "71001 chromium total=93 npm=8 deps=24 inst=11 test=42\n71001 firefox total=97 npm=13 deps=20 inst=5 test=51\n71001 webkit total=94 npm=10 deps=17 inst=7 test=52\n71002 chromium total=93 npm=10 deps=19 inst=10 test=44\n71002 firefox total=105 npm=9 deps=26 inst=4 test=58\n71002 webkit total=98 npm=9 deps=...",
+      "output_chars": 1505,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TLppifdftb4YKYBugfbHgH",
+      "name": "Bash",
+      "input": "gh run view 71004 -R example-org/example-repo --log | grep -iE 'install browser|download|playwright build|cache|restore|ms-playwright|size|Received|Cache hit|Saved|chrom|firefox|webkit' | head -60",
+      "input_chars": 196,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TGY8omYMRynMireh42Fqho",
+      "name": "Bash",
+      "input": "gh run view 72001 -R example-org/example-repo --log | grep -iE 'browser cache|Install browser|download|cache|restore|ms-playwright|Received|Saved|size' | head -60; echo ======; gh run view 72004 -R ex...",
+      "input_chars": 339,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TLppifdftb4YKYBugfbHgH",
+      "is_error": false,
+      "output": "e2e (chromium)\tSet up job\t2026-10-15T16:27:24.2084390Z Current runner version: '2.329.0'\ne2e (chromium)\tSet up job\t2026-10-15T16:27:24.2184390Z ##[group]Runner Image Provisioner\ne2e (chromium)\tSet up job\t2026-10-15T16:27:24.2184390Z Hosted Compute Agent\ne2e (chromium)\tSet up job\t2026-10-15T16:27:24....",
+      "output_chars": 7126,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TGY8omYMRynMireh42Fqho",
+      "is_error": false,
+      "output": "e2e (chromium)\tSet up job\t2026-10-19T10:05:45.1754090Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'\ne2e (chromium)\tSet up job\t2026-10-19T10:05:45.3754090Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'\ne2e (chromium)...",
+      "output_chars": 15788,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X8TLdHD2HQpQmYbsu7eBht",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r -R example-org/example-repo --log > $TMPDIR/log.$r; done; python3 -I - $TMPDIR <<'EOF'\nimport sys,re,datetime,glob,collectio...",
+      "input_chars": 1256,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X8TLdHD2HQpQmYbsu7eBht",
+      "is_error": false,
+      "output": "===== chromium\n71001 Install browser 10.83\n      |\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0| 100% of 167.3 MiB\n      Chromium 141.0.7390.37 (playwright build v1194) downloaded to <path>\n      |\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0\u25a0...",
+      "output_chars": 10344,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Sh5mbiwqbbSCfUDLBUc6wx",
+      "name": "Bash",
+      "input": "find .gh/replay/api -type f | head -40; ls e2e; grep -n -A3 '\"node_modules/@playwright/test\"\\|\"node_modules/playwright\"' e2e/package-lock.json 2><path> | head",
+      "input_chars": 161,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Sh5mbiwqbbSCfUDLBUc6wx",
+      "is_error": false,
+      "output": ".gh/replay/api/repos/example-org/example-repo/actions/jobs/810033/logs.txt\n.gh/replay/api/repos/example-org/example-repo/actions/jobs/820031/logs.txt\n.gh/replay/api/repos/example-org/example-repo/actions/jobs/810043/logs.txt\n.gh/replay/api/repos/example-org/example-repo/actions/jobs/820041/logs.txt\n...",
+      "output_chars": 3390,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PLpXGhANjbLFkJNYUFUJys",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YLGFYhV8DzJ3XTd35YDp3R",
+      "name": "Bash",
+      "input": "python3 -I -c \"import yaml,sys; d=yaml.safe_load(open('.github/workflows/e2e.yml')); [print(s.get('name'), '| if:', s.get('if')) for s in d['jobs']['e2e']['steps']]\"; echo \"yaml exit=$?\"; which action...",
+      "input_chars": 261,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PLpXGhANjbLFkJNYUFUJys",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 99,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YLGFYhV8DzJ3XTd35YDp3R",
+      "is_error": false,
+      "output": "None | if: None\nNone | if: None\nInstall dependencies | if: None\nRestore browser cache | if: matrix.browser == 'chromium'\nInstall browser OS dependencies | if: None\nInstall browser | if: steps.browser-cache.outputs.cache-hit != 'true'\nRun Playwright tests | if: None\nyaml exit=0\n .github/workflows/e2e...",
+      "output_chars": 370,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3dwzYaKvgNWBXe2edv3S1",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:ci-job-performance",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3dwzYaKvgNWBXe2edv3S1",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:ci-job-performance",
+      "output_chars": 56,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WDN97g3Urrgu7Lb58bBKcY",
+      "name": "Bash",
+      "input": "git status --short && ls -la && cat .github/workflows/e2e.yml && ls .github/workflows",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WDN97g3Urrgu7Lb58bBKcY",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 36\ndrwxr-xr-x 8 root root 4096 Nov  7 15:25 .\ndrwx------ 6 root root 4096 Nov  7 15:24 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 05:08 .bash_profile\ncrw-rw-rw-...",
+      "output_chars": 2460,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RPVKpwuFshpvGLRWkD3uYX",
+      "name": "Bash",
+      "input": "cat README.md; ls bin e2e .gh; git log --oneline | head; cat e2e/package.json; which gh; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30 2>&1 | head -40",
+      "input_chars": 178,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RPVKpwuFshpvGLRWkD3uYX",
+      "is_error": false,
+      "output": "# Example site\n\nThe marketing site for example.com. The end-to-end tests live in `e2e/` and\nrun on every push and pull request through the `e2e` workflow, once per\nbrowser (Chromium, Firefox and WebKit).\n\nRun them locally with:\n\n```bash\ncd e2e\nnpm ci\nnpx playwright install --with-deps\nnpx playwright...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KMdoXKRQM8rorpRpAUU7AA",
+      "name": "Bash",
+      "input": "gh run list --repo example-org/example-repo --workflow e2e.yml --limit 50 --json databaseId,displayTitle,createdAt,updatedAt,conclusion,headSha --jq '.[] | \"\\(.databaseId) \\(.createdAt) \\(.conclusion)...",
+      "input_chars": 272,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KMdoXKRQM8rorpRpAUU7AA",
+      "is_error": false,
+      "output": "[\n  {\n    \"attempt\": 1,\n    \"conclusion\": \"success\",\n    \"createdAt\": \"2026-10-22T17:19:24Z\",\n    \"databaseId\": 72004,\n    \"displayTitle\": \"Rename the docs nav entry\",\n    \"event\": \"push\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"f15d38ef15d38ef15d38ef15d38ef15d38ef15d3\",\n    \"name\": \"e2e\",\n    \"nu...",
+      "output_chars": 4504,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KfYu1h3TXXUi3W52ZJTEDa",
+      "name": "Bash",
+      "input": "find .gh -type f | head -50; head -60 bin/gh",
+      "input_chars": 44,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KfYu1h3TXXUi3W52ZJTEDa",
+      "is_error": false,
+      "output": ".gh/replay/auth-status.txt\n.gh/replay/run-view-72001.log\n.gh/replay/run-view-71004.json\n.gh/replay/run-view-72002.log\n.gh/replay/run-view-72002.json\n.gh/replay/run-view-72001.json\n.gh/replay/api/repos/example-org/example-repo/actions/jobs/810033/logs.txt\n.gh/replay/api/repos/example-org/example-repo...",
+      "output_chars": 7041,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R3J4LCtyoi3jS4EQs1QFtJ",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== run $r\"; gh api repos/example-org/example-repo/actions/runs/$r/jobs | jq -r '.jobs[] | \"\\(.id) \\(.name) total=\\((.completed_at|fro...",
+      "input_chars": 334,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R3J4LCtyoi3jS4EQs1QFtJ",
+      "is_error": false,
+      "output": "== run 71001\n810011 e2e (chromium) total=93s | Set up job=2; Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955=2; Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903=4; Install dependencies=8; Install browser OS dependencies=24; Install browser=11; Run Playwright tests=42; Po...",
+      "output_chars": 9622,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NG8zPaHwFd9NfMXwiXnKp5",
+      "name": "Bash",
+      "input": "gh cache list --repo example-org/example-repo 2>&1 | head -30; for j in 820041 820042 820043 820011; do echo \"== job $j\"; gh api repos/example-org/example-repo/actions/jobs/$j/logs > $TMPDIR/$j.log; g...",
+      "input_chars": 365,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NG8zPaHwFd9NfMXwiXnKp5",
+      "is_error": false,
+      "output": "[\n  {\n    \"id\": 3301,\n    \"key\": \"playwright-Linux-chromium-5d1f0c8a9b3e47d2a6c1e0f98b7a6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b\",\n    \"ref\": \"refs/heads/main\",\n    \"sizeInBytes\": 287519539,\n    \"createdAt\": \"2026-10-19T10:07:24Z\",\n    \"lastAccessedAt\": \"2026-10-22T17:20:01Z\"\n  },\n  {\n    \"id\": 3302,\n  ...",
+      "output_chars": 8999,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TCCxSvTajNu36P5PCrSmuz",
+      "name": "Bash",
+      "input": "grep -n -A3 '\"node_modules/@playwright/test\"' e2e/package-lock.json; grep -n -A2 '\"node_modules/playwright-core\"' e2e/package-lock.json; cat e2e/playwright.config.ts | head -40; which actionlint pytho...",
+      "input_chars": 244,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TCCxSvTajNu36P5PCrSmuz",
+      "is_error": false,
+      "output": "14:    \"node_modules/@playwright/test\": {\n15-      \"version\": \"1.56.1\",\n16-      \"resolved\": \"https://registry.example.com/@playwright/test/-/test-1.56.1.tgz\",\n17-      \"dev\": true,\n61:    \"node_modules/playwright-core\": {\n62-      \"version\": \"1.56.1\",\n63-      \"resolved\": \"https://registry.example....",
+      "output_chars": 869,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RXJCSjDn5RNfdxRsDTCq1v",
+      "name": "Agent",
+      "input": "Edit e2e.yml cache steps",
+      "input_chars": 24,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EpAgojtgXNiGFZLdV11NT6",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EpAgojtgXNiGFZLdV11NT6",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    name: e2e (${{ matrix.browser }})\n14\t    runs-on: ubuntu-latest\n15\t    timeout-minutes: 20\n16\t    strategy:\n17\t      fail-fast: false\n18\t      matrix:\n19\t       ...",
+      "output_chars": 1463,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Fys4ptX3ffjgfLKRPym3ws",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Fys4ptX3ffjgfLKRPym3ws",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 165,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012fzSZ8wAjDGbKwJd5RtZcB",
+      "name": "Bash",
+      "input": "git -C <path> diff; echo \"---\"; python3 -c \"import yaml,sys; d=yaml.safe_load(open('<path>')); s=[x for x in d['jobs']['e2e']['steps'] if x.get('id')=='browser-cache'][0]; assert s['if']==\\\"matrix.bro...",
+      "input_chars": 604,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012fzSZ8wAjDGbKwJd5RtZcB",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/e2e.yml b/.github/workflows/e2e.yml\nindex b90594a..4bc8391 100644\n--- a/.github/workflows/e2e.yml\n+++ b/.github/workflows/e2e.yml\n@@ -31,12 +31,17 @@ jobs:\n           cache-dependency-path: e2e/package-lock.json\n       - name: Install dependencies\n         run: npm ci\n...",
+      "output_chars": 1220,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cg3evubd2k79GxrkpZunjm",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Edited one file: <path> Nothing committed, pushed, or sent to GitHub, and no network or gh use.\\n\\nChanges made to the \\\"Restore browser cache\\\" step (actions/cache SHA pin unchanged):\\n1...",
+      "input_chars": 2301,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cg3evubd2k79GxrkpZunjm",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RXJCSjDn5RNfdxRsDTCq1v",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"aa2b519721f45d642\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: aa2b519721f45d642 (use SendMessage with to: 'aa2b519721f45d642', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DmsmrGCBJLDah2REUmvgw7",
+      "name": "Bash",
+      "input": "git diff --stat && sed -n 30,52p .github/workflows/e2e.yml",
+      "input_chars": 58,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DmsmrGCBJLDah2REUmvgw7",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 9 +++++++--\n 1 file changed, 7 insertions(+), 2 deletions(-)\n          cache: npm\n          cache-dependency-path: e2e/package-lock.json\n      - name: Install dependencies\n        run: npm ci\n      # Measured over runs 71001-72004: a cache hit restores in ~5-6s and\n     ...",
+      "output_chars": 1161,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
