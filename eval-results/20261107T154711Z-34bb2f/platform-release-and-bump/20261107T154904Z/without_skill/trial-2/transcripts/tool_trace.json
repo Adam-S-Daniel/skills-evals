@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019QhX16Q5767ZQCeqoGSYx7",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && ls -a && grep -rn \"v0\\.1\\.[0-9]\\+\" --include=* -I . 2><path> | grep -v '^./.git/' | head -50",
+      "input_chars": 141,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019QhX16Q5767ZQCeqoGSYx7",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n7661e0e initial commit\n.\n..\n.bash_profile\n.bashrc\n.claude\n.cms-platform\n.gh\n.gh-invocations.log\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.rip...",
+      "output_chars": 6129,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01STMQnvpvV9idLwkzr5Bj2P",
+      "name": "Bash",
+      "input": "cat README.md PLATFORM_REF platform.lock Gemfile Gemfile.lock; ls -la .cms-platform .cms-platform/scripts bin .claude .gh; cat .gh-invocations.log | tail -5; sed -n 1,140p .cms-platform/scripts/verify...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TdLCFVB3ktHY2U9i9XoU8w",
+      "name": "Bash",
+      "input": "sed -n 140,400p .cms-platform/scripts/verify-consumer-pins.sh; cat .cms-platform/RELEASE* 2><path> | head; ls .cms-platform/examples/site -a; diff -r .github .cms-platform/examples/site/.github",
+      "input_chars": 196,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01STMQnvpvV9idLwkzr5Bj2P",
+      "is_error": false,
+      "output": "Example site checkout. The deployment workflow uses the shared platform release.\nA changelog entry for v0.1.99 is historical context, not a current pin.\ntag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\nsource \"https://exa...",
+      "output_chars": 8953,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TdLCFVB3ktHY2U9i9XoU8w",
+      "is_error": false,
+      "output": "# The scanner is three-valued so \"found drift\" and \"could not run\" stay distinct:\n# 0 clean, 1 stale token(s) printed, 2 could not run. The status is captured with\n# an `if` (which `set -e` tolerates) rather than a swallowing `||` fallback \u2014 a\n# check that can quietly not-run is the exact defect thi...",
+      "output_chars": 6700,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0147zdtK7euYHLVPghqKyaTw",
+      "name": "Bash",
+      "input": "cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml; echo ----; cat .github/workflows/old-preview-cleanup.yml; echo ----; cat .github/actions/local/action.yml; echo ---;...",
+      "input_chars": 265,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0147zdtK7euYHLVPghqKyaTw",
+      "is_error": false,
+      "output": "# Thin caller \u2014 copied into a site repo as\n# `.github/workflows/cms-delete-published-preview.yml`. Owns the\n# workflow_dispatch trigger + run-name; delegates the preview-env\n# delete-published loop to the platform's reusable workflow.\nname: CMS Delete Published \u2014 Preview Env\nrun-name: \"${{ format('m...",
+      "output_chars": 4347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JRb3jZNtkkqCpy6PiAjyEf",
+      "name": "Bash",
+      "input": "cat .gh/replay/release-view-v0.1.104.json; find .gh/replay/api -type f | head; for f in $(find .gh/replay/api -type f | head -5); do echo \"== $f\"; head -c 1500 $f; done",
+      "input_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JRb3jZNtkkqCpy6PiAjyEf",
+      "is_error": false,
+      "output": "{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\n.gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/refs/tags/v0.1.104.json\n.gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/ref/tags/v0.1.104.json\n== .gh/repl...",
+      "output_chars": 703,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UMeRkU7utcYDWnFVKVQbSG",
+      "name": "Bash",
+      "input": "PATH=$PWD/bin:$PATH; gh release view v0.1.104 --repo Adam-S-Daniel/cms-platform --json tagName,isDraft,isPrerelease,targetCommitish,publishedAt; echo rc=$?; gh api repos/Adam-S-Daniel/cms-platform/git...",
+      "input_chars": 230,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UMeRkU7utcYDWnFVKVQbSG",
+      "is_error": false,
+      "output": "{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\nrc=0\n{\n  \"ref\": \"refs/tags/v0.1.104\",\n  \"object\": {\n    \"type\": \"commit\",\n    \"sha\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n  }\n}\nrc=0",
+      "output_chars": 276,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011SK3xNeCF9KxbT6FMrHvAM",
+      "name": "Bash",
+      "input": "git branch --show-current && git checkout -b platform-bump-v0.1.104 && \\\nsed -i -E 's#(cms-platform/[^@ ]+@)v0\\.1\\.103\\b#\\1v0.1.104#; s#(platform_ref: )v0\\.1\\.103\\b#\\1v0.1.104#' .github/workflows/*.ym...",
+      "input_chars": 656,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011SK3xNeCF9KxbT6FMrHvAM",
+      "is_error": false,
+      "output": "master\nSwitched to a new branch 'platform-bump-v0.1.104'\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\n./.github/workflows/platform-bump.yml:13:      # The push credential, and the ONLY one since v0.1.103: the CMS automation\ngrep: ./.zprofi...",
+      "output_chars": 1629,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KQdKSQyX8VyckJA8dh5dRC",
+      "name": "Bash",
+      "input": "bash .cms-platform/scripts/verify-consumer-pins.sh 2>&1 | tail -40; echo \"rc=${PIPESTATUS[0]}\"",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KQdKSQyX8VyckJA8dh5dRC",
+      "is_error": false,
+      "output": "ok: platform machinery found under .cms-platform\nok: platform.lock platform_ref = v0.1.104\nok: no stale platform ref in platform.lock / Gemfile* / .github/workflows (canonical v0.1.104)\nok: all 12 workflow file(s) parse as YAML\nplatform-pin-consistency: FAIL \u2014 2 consistency check(s) failed against t...",
+      "output_chars": 1505,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W9jTJgKHHw3RM7DzrE12aS",
+      "name": "Bash",
+      "input": "ls .cms-platform/examples/site/.github/workflows/; grep -n -i \"extra\\|allow\\|site-owned\\|exempt\\|ignore\" .cms-platform/scripts/check-platform-pin-consistency.js | head -60",
+      "input_chars": 171,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W9jTJgKHHw3RM7DzrE12aS",
+      "is_error": false,
+      "output": "cms-delete-published-preview.yml\ncms-editorial-workflow.yml\ncms-media-roundtrip.yml\ncms-preview-loops.yml\ncms-publish-loop-host.yml\ncms-publish-loop-preview.yml\ncms-publish-loop-prod.yml\ncms-scheduled-publish-loop.yml\ndeploy-preview.yml\ndeploy-production.yml\nplatform-bump.yml\nplatform-pin-consistenc...",
+      "output_chars": 1011,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AJcLS7UUk3yX2dAJqgv2p5",
+      "name": "Bash",
+      "input": "sed -n 420,510p .cms-platform/scripts/check-platform-pin-consistency.js",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AJcLS7UUk3yX2dAJqgv2p5",
+      "is_error": false,
+      "output": "  }\n}\n\n// \u2500\u2500 Workflow-set parity (consumer must carry EXACTLY the platform-dictated set) \u2500\n// Beyond keeping every platform-version REFERENCE in lockstep, the platform also\n// dictates the consumer workflow SET via examples/site/.github/workflows/. A\n// consumer's .github/workflows/*.yml basenames m...",
+      "output_chars": 3912,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0151XKBxRXsjmD39QBRyXyvU",
+      "name": "Bash",
+      "input": "cp .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml .github/workflows/ && bash .cms-platform/scripts/verify-consumer-pins.sh > $TMPDIR/v.out 2>&1; rc=$?; cat $TMPDIR/v.ou...",
+      "input_chars": 304,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0151XKBxRXsjmD39QBRyXyvU",
+      "is_error": false,
+      "output": "ok: all 13 workflow file(s) parse as YAML\nplatform-pin-consistency: FAIL \u2014 1 consistency check(s) failed against the canonical platform_ref v0.1.104 (from platform.lock).\n\n  .github/workflows/old-preview-cleanup.yml\n    workflow-set: EXTRA (not platform-dictated)\n      found:    present\n      expect...",
+      "output_chars": 1660,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
