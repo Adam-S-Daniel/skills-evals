@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017zpfw25mC44m4trELuTSkt",
+      "name": "Bash",
+      "input": "cd <path>; git ls-files | head -100; ls vendor; wc -c vendor/*",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017zpfw25mC44m4trELuTSkt",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nRELEASES.md\nreleases.json\n1565 vendor/RELEASES.md\n 620 vendor/releases.json\n2185 total",
+      "output_chars": 221,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015JnPq5UTXghVYLMmPAMr6H",
+      "name": "Bash",
+      "input": "cd <path>; cat vendor/RELEASES.md vendor/releases.json .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh",
+      "input_chars": 166,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015JnPq5UTXghVYLMmPAMr6H",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3741,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gr5aX21rXL5CREyG1wTzmw",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-session-start-hook-fork-source.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions (ExampleCLI v4.2.0)\n\n## TLDR\n\nExampleCLI v4.2.0 reports sou...",
+      "input_chars": 2647,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gr5aX21rXL5CREyG1wTzmw",
+      "is_error": false,
+      "output": "01-session-start-hook-fork-source.md\n02-synced-skill-names-prefixed.md",
+      "output_chars": 70,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

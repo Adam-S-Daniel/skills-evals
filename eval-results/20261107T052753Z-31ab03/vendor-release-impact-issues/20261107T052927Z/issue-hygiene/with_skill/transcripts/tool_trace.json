@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Wmt2jPzD9vxo6eQ6ZWLEFD",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Wmt2jPzD9vxo6eQ6ZWLEFD",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ECKbMB6YT77wLUkPTDA1q7",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor",
+      "input_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ECKbMB6YT77wLUkPTDA1q7",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 8 root root 4096 Nov  7 05:29 ..\n-rw-r--r-- 1 root root 1565 Nov  7 04:20 RELEASES.md\n-rw-r--r-- 1 roo...",
+      "output_chars": 338,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017iS7HpvMNB4LMBXpG6opZ1",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh; git log --oneline | head",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017iS7HpvMNB4LMBXpG6opZ1",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3764,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WP6Ld7oXikLRHfnT3YX22v",
+      "name": "Bash",
+      "input": "mkdir -p issues $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport re, json, sys\nws = sys.argv[1]\nmd = open(f\"{ws}<path>\").read()\ntimes = json.load(open(f\"{ws}<path>\"))[\"example-cli\"]\nrel = {}\nfor...",
+      "input_chars": 4462,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WP6Ld7oXikLRHfnT3YX22v",
+      "is_error": false,
+      "output": "rc=0\n# ExampleCLI 4.2.0 hooks report source \"fork\": session hooks match startup|resume\n\nFound in the review of `vendor/RELEASES.md` (group: session-start hook source). Not yet verified against this repo.\n\n## ExampleCLI changes\n\n> Session-start hooks now report source `\"fork\"` for forked sessions ins...",
+      "output_chars": 3968,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016xF9UWJriTKuam7zhtcRzZ",
+      "name": "Bash",
+      "input": "sed -i 's/ (released {{4.1.0}}), which predates the change, so/, which predates the change, so/; s/including CI at the 4.1.0 pin/including CI at the {{4.1.0}} pin/' $TMPDIR/gen/gen.py && python3 -I $T...",
+      "input_chars": 317,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016xF9UWJriTKuam7zhtcRzZ",
+      "is_error": false,
+      "output": "issues/01-fork-source-session-start-hook.md:1:# ExampleCLI 4.2.0 hooks report source \"fork\": session hooks match startup|resume\nissues/01-fork-source-session-start-hook.md:16:- `.github/workflows/ci.yml` installs `example-cli@4.1.0`, which predates the change, so CI itself would not show the new beh...",
+      "output_chars": 1386,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
