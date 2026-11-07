@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014PQSVhStRXFro7F7WkR8hy",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && wc -l notes/acme-2.x.md && ls triage 2>&1",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014PQSVhStRXFro7F7WkR8hy",
+      "is_error": true,
+      "output": "Exit code 2\nREADME.md\nacme.toml\nci/pipeline.yml\ndocs/runbook.md\nnotes/acme-2.x.md\nscripts/deploy.sh\nsrc/plugins/lint.js\n26 notes/acme-2.x.md\nls: cannot access 'triage': No such file or directory",
+      "output_chars": 194,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GPepcwenZKbecefeVVtZ87",
+      "name": "Bash",
+      "input": "cat -n notes/acme-2.x.md; for f in README.md acme.toml ci/pipeline.yml docs/runbook.md scripts/deploy.sh src/plugins/lint.js; do echo \"=== $f\"; cat -n $f; done",
+      "input_chars": 159,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GPepcwenZKbecefeVVtZ87",
+      "is_error": false,
+      "output": "     1\t# acme 2.x release notes\n     2\t\n     3\t- [R-01] `acme.hooks.postBuild` now receives a build context object instead of the config.\n     4\t- [R-02] Added `acme cache prune` to remove unused cache entries.\n     5\t- [R-03] `acme build` now reports the build target in its summary line.\n     6\t- [...",
+      "output_chars": 2651,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R2VrcoQcf8GHdX2bFALh5i",
+      "name": "Bash",
+      "input": "mkdir -p triage && git ls-files | grep -i lock; \ngrep -rnE 'acme|legacy_resolver|ACME_' --exclude-dir=.git --exclude-dir=triage --exclude=acme-2.x.md . > triage/usage-grep.txt; cat triage/usage-grep.t...",
+      "input_chars": 3331,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R2VrcoQcf8GHdX2bFALh5i",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 954,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
