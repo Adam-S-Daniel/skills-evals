@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015YT3e18jeiTggHaw7QBjTG",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; ls -la; ls tools scripts .github/workflows; cat scripts/*.sh; cat .github/workflows/ci.yml; head -50 tools/*",
+      "input_chars": 137,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015YT3e18jeiTggHaw7QBjTG",
+      "is_error": false,
+      "output": "b0cf366 initial commit\ntotal 36\ndrwxr-xr-x 8 root root 4096 Nov  7 23:21 .\ndrwx------ 6 root root 4096 Nov  7 23:21 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 12:10 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 12:10 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 23:21 .claude\ndrwxr-xr-x 9 root root 4096 ...",
+      "output_chars": 3768,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AJNSRNYmxKXSKiLSUeMkLr",
+      "name": "Bash",
+      "input": "cat > scripts/install-act.sh <<'EOF'\n#!<path>\n# Installs a pinned nektos/act into <path> so `scripts/local-ci.sh` can run.\n# Pin: newest release older than 7 days on 2026-11-07 (v0.2.90, 2026-11-05, i...",
+      "input_chars": 1535,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AJNSRNYmxKXSKiLSUeMkLr",
+      "is_error": true,
+      "output": "Exit code 1\nok",
+      "output_chars": 14,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
