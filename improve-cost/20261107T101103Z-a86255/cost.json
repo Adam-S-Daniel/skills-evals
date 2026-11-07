@@ -1,0 +1,41 @@
+{
+ "schema_version": 1,
+ "run_id": "20261107T101103Z-a86255",
+ "mode": "improve",
+ "target": "rename-pdfs",
+ "exit_code": 1,
+ "outcome": "rejected",
+ "stage_reached": "none",
+ "trial_summaries": 0,
+ "agent_calls": 0,
+ "judge_calls": 0,
+ "agent_usd": 0,
+ "judge_usd": 0,
+ "guard_usd": 0,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 0,
+   "usd": 0
+  },
+  "candidate": {
+   "trials": 0,
+   "usd": 0
+  }
+ },
+ "proposal": null,
+ "trigger_calls": 121,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": null
+ },
+ "busy_seconds": null,
+ "span_seconds": null,
+ "snapshots": 0,
+ "omitted": 0,
+ "first": null,
+ "last": null,
+ "delta": null,
+ "delta_reason": "fewer_than_two_snapshots",
+ "ended_at": "2026-11-07T10:22:56.582592Z"
+}
