@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KvxvggWKYrLQK64BNV16rL",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100 && wc -l $(find vendor -type f)",
+      "input_chars": 134,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KvxvggWKYrLQK64BNV16rL",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nd55476a initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./...",
+      "output_chars": 499,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Eggd9FDUPajSrxfCo5FvGm",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json AGENTS.md; do echo \"=== $f\"; cat -n \"$f\"; done",
+      "input_chars": 180,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Eggd9FDUPajSrxfCo5FvGm",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n     1\t# ExampleCLI release notes\n     2\t\n     3\t## v4.3.0\n     4\t\n     5\t[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n     6\t\n     7\t- The CLI now prints `[example-cli:unrecognized_model...",
+      "output_chars": 4739,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UfPb5Wyf5MFjMBv86KAsLm",
+      "name": "Bash",
+      "input": "cat .gitmodules .mcp.json 2><path> | head -40; ls -la .idea .vscode",
+      "input_chars": 70,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UfPb5Wyf5MFjMBv86KAsLm",
+      "is_error": false,
+      "output": "crw-rw-rw- 1 root root 1, 3 Nov  7 04:42 .idea\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:42 .vscode",
+      "output_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U9gABnqEDTuXrJTtsBTp5T",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-fork-source.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions (ExampleCLI 4.2.0 reports source \"fork\")\n\n## Summary\n\n[Examp...",
+      "input_chars": 3956,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U9gABnqEDTuXrJTtsBTp5T",
+      "is_error": false,
+      "output": "01-session-start-hook-misses-fork-source.md\n02-readme-synced-skill-invocation-name.md\n==> issues/01-session-start-hook-misses-fork-source.md <==\n# SessionStart hook no longer fires for forked sessions (ExampleCLI 4.2.0 reports source \"fork\")\n\n==> issues/02-readme-synced-skill-invocation-name.md <==\n...",
+      "output_chars": 404,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
