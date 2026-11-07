@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -89,13 +90,17 @@ REVIEWED = ["evals/embeddable-tool-pages",
 PROMOTED_NOTE = "Promoted automatically"
 
 
-def bare_trials():
-    """scripts/plan_week.py's literal `BARE_TRIALS`, read from its AST so
-    this module imports no harness code."""
+def plan_week_literal(name):
+    """scripts/plan_week.py's literal `name`, read from its AST so this
+    module imports no harness code."""
     tree = ast.parse((ROOT / "scripts" / "plan_week.py").read_text(encoding="utf-8"))
     (value,) = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
-                and [getattr(t, "id", None) for t in node.targets] == ["BARE_TRIALS"]]
+                and [getattr(t, "id", None) for t in node.targets] == [name]]
     return value
+
+
+def bare_trials():
+    return plan_week_literal("BARE_TRIALS")
 
 
 def scheduled_rows():
@@ -679,6 +684,10 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
                       plan_step["run"])
         self.assertIn("--max-fires 60", plan_step["run"])
+        # The planner refuses a cap above MAX_FIRES_CAP, which failed every
+        # plan when the flag was raised alone (2026-11-07).
+        cap = int(re.search(r"--max-fires (\d+)", plan_step["run"]).group(1))
+        self.assertTrue(1 <= cap <= plan_week_literal("MAX_FIRES_CAP"), cap)
         self.assertEqual(plan_step["env"], {"GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
         names = [s["name"] for s in steps]
