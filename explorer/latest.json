@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T11:57:38Z",
+  "fetched_at": "2026-11-07T12:00:51Z",
   "issues": [
    {
     "created_at": "2026-11-03T22:19:10Z",
@@ -7367,6 +7367,42 @@
   ],
   "runs": [
    {
+    "conclusion": null,
+    "created_at": "2026-11-07T12:01:14Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42370618910,
+    "state": "in_progress",
+    "title": "Fire eval routine: eval evals/red-ci-adamdaniel-ai/paths-required claude-sonnet-5-5",
+    "updated_at": "2026-11-07T12:01:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370618910",
+    "workflow": "Fire eval routine: eval evals/red-ci-adamdaniel-ai/paths-required claude-sonnet-5-5"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T11:57:43Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42370364660,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-07T11:58:49Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370364660",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T11:57:37Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42370358132,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/github-actions-repo-settings/drift-diagnosis claude-sonnet-5-5",
+    "updated_at": "2026-11-07T11:58:17Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370358132",
+    "workflow": "Fire eval routine: eval evals/github-actions-repo-settings/drift-diagnosis claude-sonnet-5-5"
+   },
+   {
     "conclusion": "success",
     "created_at": "2026-11-07T11:57:43Z",
     "event": "workflow_run",
@@ -7407,18 +7443,6 @@
     "created_at": "2026-11-07T11:57:43Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42370364660,
-    "state": "in_progress",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-07T11:57:47Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370364660",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T11:57:43Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 42370364620,
     "state": "pending",
     "title": "Weekly routine evals",
@@ -7437,18 +7461,6 @@
     "updated_at": "2026-11-07T11:57:44Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370122243",
     "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T11:57:37Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42370358132,
-    "state": "in_progress",
-    "title": "Fire eval routine: eval evals/github-actions-repo-settings/drift-diagnosis claude-sonnet-5-5",
-    "updated_at": "2026-11-07T11:57:41Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42370358132",
-    "workflow": "Fire eval routine: eval evals/github-actions-repo-settings/drift-diagnosis claude-sonnet-5-5"
    },
    {
     "conclusion": "success",
@@ -8517,18 +8529,6 @@
     "updated_at": "2026-11-07T11:34:37Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42368750391",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T11:34:08Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42368724896,
-    "state": "completed",
-    "title": "Merge pull request #819 from Adam-S-Daniel/claude/project-thread-3gmg\u2026",
-    "updated_at": "2026-11-07T11:34:34Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42368724896",
-    "workflow": "Propagation"
    },
    {
     "conclusion": "success",
@@ -27335,7 +27335,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T11:57:38Z"
+  "since": "2026-10-24T12:00:51Z"
  },
  "agent_made": {
   "items": [
@@ -28881,7 +28881,7 @@
     "fired_at": "2026-10-28T06:53:53Z",
     "fixture": "embeddable-tool-pages",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-07T08:02:07Z",
+    "paired_at": "2026-11-07T11:54:13Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261028T065353Z-1f1f13/embeddable-tool-pages/20261028T065441Z/report.md",
     "run_id": "20261028T065353Z-1f1f13",
     "skill": "embeddable-tool-pages",
@@ -28955,6 +28955,17 @@
    }
   ],
   "latest": [
+   {
+    "checks": 7.0,
+    "fired_at": "2026-11-07T11:54:13Z",
+    "fixture": "embeddable-tool-pages",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T115413Z-422629",
+    "with_share": 1.0,
+    "with_skill": 7.0,
+    "without_share": 0.8571428571428571,
+    "without_skill": 6.0
+   },
    {
     "checks": 7.0,
     "fired_at": "2026-11-07T11:50:36Z",
@@ -29328,17 +29339,6 @@
     "with_skill": 5,
     "without_share": 0.3333333333333333,
     "without_skill": 3
-   },
-   {
-    "checks": 7,
-    "fired_at": "2026-11-07T08:02:07Z",
-    "fixture": "embeddable-tool-pages",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261107T080207Z-aa2831",
-    "with_share": 1.0,
-    "with_skill": 7,
-    "without_share": 0.8571428571428571,
-    "without_skill": 6
    },
    {
     "checks": 9,
@@ -30448,6 +30448,28 @@
    "tied": 51
   },
   "runs": [
+   {
+    "account_week_after": 42.0,
+    "checks": 7.0,
+    "cli": "2.1.319",
+    "cost_usd": 0.4706816,
+    "fired_at": "2026-11-07T11:54:13Z",
+    "fixture": "embeddable-tool-pages",
+    "gain": 1.0,
+    "judge": "skipped: checks decided",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T115413Z-422629/embeddable-tool-pages/20261107T115543Z/report.md",
+    "run_id": "20261107T115413Z-422629",
+    "skill": "embeddable-tool-pages",
+    "trials": 2,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 7.0,
+    "without_judge": null,
+    "without_share": 0.8571428571428571,
+    "without_skill": 6.0
+   },
    {
     "account_week_after": 42.0,
     "checks": 7.0,
@@ -47303,24 +47325,24 @@
   ],
   "summary": [
    {
-    "helped": 394,
+    "helped": 395,
     "hurt": 79,
-    "lift": 0.12834986000541013,
+    "lift": 0.12836970580958512,
     "model": "All",
-    "runs": 730,
+    "runs": 731,
     "tied": 257,
-    "with_avg": 0.8529898149995473,
-    "without_avg": 0.7246399549941371
+    "with_avg": 0.8531909233237613,
+    "without_avg": 0.7248212175141762
    },
    {
-    "helped": 276,
+    "helped": 277,
     "hurt": 56,
-    "lift": 0.1378352895237976,
+    "lift": 0.1378453938564602,
     "model": "claude-sonnet-5-5",
-    "runs": 496,
+    "runs": 497,
     "tied": 164,
-    "with_avg": 0.8427188410847154,
-    "without_avg": 0.7048835515609179
+    "with_avg": 0.8430353021690519,
+    "without_avg": 0.7051899083125918
    },
    {
     "helped": 111,
@@ -47467,7 +47489,7 @@
     "without_pass_rate": null
    }
   ],
-  "generated_at": "2026-11-07T11:57:20Z",
+  "generated_at": "2026-11-07T12:00:31Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -47550,7 +47572,7 @@
    "requests_open": 2
   }
  },
- "generated_at": "2026-11-07T11:56:17Z",
+ "generated_at": "2026-11-07T11:59:24Z",
  "guidance": {
   "removed": [
    {
@@ -57975,7 +57997,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-07T11:52:14Z",
+ "newest_run": "2026-11-07T11:55:43Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -63130,19 +63152,19 @@
      },
      {
       "gain": 14.3,
-      "high": 37.5,
-      "low": -16.6,
+      "high": 35.3,
+      "low": -13.7,
       "model": "claude-sonnet-5-5",
-      "pairs": 8,
+      "pairs": 9,
       "status": "open",
       "task": null,
       "votes": true
      }
     ],
-    "helps": 0.2400280108642896,
+    "helps": 0.32660709823418077,
     "keep_family": 2,
-    "keep_pairs": 8,
-    "max_pairs": 8,
+    "keep_pairs": 9,
+    "max_pairs": 9,
     "no_help": 0.0,
     "no_help_pairs": 1
    },
@@ -63158,7 +63180,7 @@
      "to": "2026-11-07"
     }
    },
-   "current_text_runs": 9,
+   "current_text_runs": 10,
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
    "name": "embeddable-tool-pages",
    "next_test": {
@@ -63169,6 +63191,27 @@
    },
    "registry": "adamdaniel.ai",
    "runs": [
+    {
+     "at": "2026-11-07T11:55:43Z",
+     "cli_version": "2.1.319",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T115413Z-422629/embeddable-tool-pages/20261107T115543Z/report.md",
+     "with": {
+      "checks_passed": 14,
+      "checks_total": 14,
+      "cost_usd": 0.2615414,
+      "judge_mean": null,
+      "trials": 2
+     },
+     "without": {
+      "checks_passed": 12,
+      "checks_total": 14,
+      "cost_usd": 0.2091402,
+      "judge_mean": null,
+      "trials": 2
+     }
+    },
     {
      "at": "2026-11-07T08:03:36Z",
      "cli_version": "2.1.319",
@@ -75723,7 +75766,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "735da625309146ff1b179831deb1fc17f4b9bba2",
-  "results_commit": "a9bd3f6faac7fc78426df17a73aa3e68bd85c42b"
+  "results_commit": "85ba62b54615147cc16b7b08c6eefe306b9c9bad"
  },
  "spend": {
   "generated_at": "2026-11-07T10:31:57Z",
