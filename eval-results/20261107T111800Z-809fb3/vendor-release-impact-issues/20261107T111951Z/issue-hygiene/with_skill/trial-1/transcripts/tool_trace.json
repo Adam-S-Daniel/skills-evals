@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UYFLbBMZU95QiCxvv6eVxU",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UYFLbBMZU95QiCxvv6eVxU",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vkw2yumFQ3UCVePEmEoUFe",
+      "name": "Bash",
+      "input": "ls -la && ls -R vendor | head -50 && git log --oneline | head",
+      "input_chars": 61,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vkw2yumFQ3UCVePEmEoUFe",
+      "is_error": false,
+      "output": "total 40\ndrwxr-xr-x 8 root root 4096 Nov  7 11:20 .\ndrwx------ 7 root root 4096 Nov  7 11:19 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:48 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:48 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 11:20 .claude\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .example-c...",
+      "output_chars": 1104,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013fSJZVUoWLAt4Kz4nV4UKH",
+      "name": "Bash",
+      "input": "cat README.md; wc -c vendor/*; cat vendor/RELEASES.md; head -c 1500 vendor/releases.json; ls -la .example-cli .github/* hooks .claude; cat .gitmodules 2>&1 | head -3",
+      "input_chars": 165,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013fSJZVUoWLAt4Kz4nV4UKH",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-start.sh`) match...",
+      "output_chars": 3557,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016nArzKxbwVchPVPEuNSk9z",
+      "name": "Bash",
+      "input": "cat .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh; grep -rn \"model\\|synced\\|review-checklist\" --exclude-dir=.git --exclude-dir=vendor . 2><path> | head -20",
+      "input_chars": 187,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016nArzKxbwVchPVPEuNSk9z",
+      "is_error": false,
+      "output": "{\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/session-start.sh\"\n          }\n        ]\n      }\n    ]\n  }\n}\nname: CI\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\nj...",
+      "output_chars": 1019,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CGHXqbYXPoAjA5s7K9dtMn",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re,json,sys\nsrc=open('vendor/RELEASES.md').read()\nrel=json.load(open('vendor/releases.json'))['example-cli']\nbul={}\nfor sec in re.split(r'^## v',...",
+      "input_chars": 4907,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CGHXqbYXPoAjA5s7K9dtMn",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 hooks report source \"fork\": session-start matcher is startup|resume\n\nFound in a review of the ExampleCLI release notes in `vendor/` against this repo. Not yet verified against this repo.\n\n## ExampleCLI changes\n\n> Session-start hooks now report source `\"fork\"` for forked sessions i...",
+      "output_chars": 3065,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
