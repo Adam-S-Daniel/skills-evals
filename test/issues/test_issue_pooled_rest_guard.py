@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 ISSUES = Path(__file__).resolve().parent
 ROOT = ISSUES.parent.parent
@@ -41,6 +43,7 @@ TOP = [(100, 100, 100)] * 40
 #: Both arms at the floor.
 ZERO = [(0, 0, 0)] * 10
 OLDER = "rest-older"
+NOW = datetime(2026, 11, 7, 12, 0, 0, tzinfo=timezone.utc)
 
 
 def verdict(runs, policy=POOLED, models=("model-a",), expect=EXPECT):
@@ -205,6 +208,98 @@ class KeepTests(unittest.TestCase):
                                                [r for r in runs if r["role"] == "without"])[0])
         self.assertEqual(cell["rest_guard"]["pooled_keep_at"],
                          gates.first_crossing(gates.keep_wealth(ds), half))
+
+
+class StaleKeepTests(unittest.TestCase):
+    """THE STALE KEEP (the pooled adversarial round 2): a keep the pooled test
+    made is not final; the guarded removal deciding later overrides it. A
+    keep the current-rest test made stays final, ordered against the
+    removal's stopping time as under `current`."""
+
+    def stale(self, current_pairs):
+        # Ten pairs gaining 0.4 beside an older rest, then a current rest
+        # where the section gains nothing.
+        return strat(OLD, GAIN, LOSS) + strat(MAIN, (FLAT * 2)[:current_pairs],
+                                              (FLAT * 2)[:current_pairs], start=20)
+
+    def test_a_pooled_keep_is_provisional_until_the_removal_decides(self):
+        cell = cell_of(self.stale(20))
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertIs(cell["rest_guard"]["keep_final"], False)
+        self.assertIsNone(cell["rest_guard"]["current_keep_at"])
+        self.assertIn("not final", cell["reason"])
+
+    def test_the_guarded_removal_overrides_an_earlier_pooled_keep(self):
+        runs = self.stale(40)
+        v = verdict(runs)
+        cell = v["cells"][0]
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertNotEqual(v["verdict"], "keep")
+        guard = cell["rest_guard"]
+        # The pooled keep came first; the removal decided later, on the full
+        # guard (pair floor, the current share at its level, CLI versions).
+        self.assertLess(guard["pooled_keep_at"], cell["remove_decided_at"])
+        self.assertIsNotNone(guard["remove_share_at"])
+        self.assertIs(guard["keep_final"], False)
+        # `current` reads only the current rest, which never helped: it
+        # removes too.
+        self.assertEqual(cell_of(runs, CURRENT)["class"], "no-benefit")
+
+    def test_older_gains_cannot_hold_the_removal_off_for_good(self):
+        # Forty pairs gaining 0.4 beside an older rest starve the pooled
+        # remove test's bets, so the guarded removal never decides; the
+        # current rest's own remove test, in the removal evidence, does
+        # (the pooled adversarial round 2's target: removed as `current`
+        # removes it).
+        runs = strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT * 2, FLAT * 2, start=40)
+        cell = cell_of(runs)
+        guard = cell["rest_guard"]
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertIsNone(cell["remove_decided_at"])
+        self.assertIsNone(guard["remove_share_at"])
+        self.assertIsNotNone(guard["current_remove_at"])
+        self.assertLess(guard["pooled_keep_at"], guard["override_decided_at"])
+        self.assertIn("a pooled keep is not final", cell["reason"])
+        self.assertEqual(cell_of(runs, CURRENT)["class"], "no-benefit")
+
+    def test_the_override_needs_the_pair_floor(self):
+        # The same older gains with five current pairs: the pooled keep has
+        # not counted yet and no removal can decide.
+        runs = strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT[:5], FLAT[:5], start=40)
+        cell = cell_of(runs)
+        self.assertEqual(cell["class"], "insufficient", cell["reason"])
+        self.assertIsNone(cell["rest_guard"]["override_decided_at"])
+
+    def test_a_planner_cell_reads_a_provisional_keep(self):
+        self.assertTrue(plan_week.provisional_keep(cell_of(self.stale(20))))
+        final = cell_of(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40))
+        self.assertFalse(plan_week.provisional_keep(final))
+        self.assertFalse(plan_week.provisional_keep(cell_of(strat(MAIN, GAIN, LOSS), CURRENT)))
+        self.assertFalse(plan_week.provisional_keep(None))
+
+    def test_a_current_rest_keep_stays_final_against_a_later_removal(self):
+        # Seven pairs gaining 0.4, then 33 gaining nothing, all beside the
+        # current rest: the current-rest keep crosses at pair 7, the removal
+        # decides at 39, and the earlier keep stands, as under `current`.
+        policy = {**POOLED, "benefit_confidence": 0.6}
+        runs = strat(MAIN, GAIN[:7] + (FLAT * 2)[:33], LOSS[:7] + (FLAT * 2)[:33])
+        cell = cell_of(runs, policy)
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        guard = cell["rest_guard"]
+        self.assertIsNotNone(cell["remove_decided_at"])
+        self.assertLessEqual(guard["current_keep_at"], cell["remove_decided_at"])
+        self.assertIs(guard["keep_final"], True)
+
+    def test_a_current_rest_keep_is_final(self):
+        cell = cell_of(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40))
+        self.assertEqual(cell["class"], "benefit", cell["reason"])
+        self.assertIs(cell["rest_guard"]["keep_final"], True)
+        self.assertNotIn("not final", cell["reason"])
+
+    def test_current_has_no_keep_final_field(self):
+        cell = cell_of(strat(MAIN, GAIN, LOSS), CURRENT)
+        self.assertEqual(cell["class"], "benefit")
+        self.assertIsNone(cell.get("rest_guard"))
 
 
 class RemovalGuardTests(unittest.TestCase):
@@ -489,6 +584,67 @@ class PlannerTests(unittest.TestCase):
         cell = self.planner_cell(cell_of(strat(OLD, FLAT * 2, FLAT * 2)))
         self.assertEqual(plan_week.subject_cost([cell], {"model-a": 1.0}, 10.0, cap=40), 10.0)
 
+    def ctx(self, cells):
+        return {"cells": cells, "model_weights": {"model-a": 1.0}, "removal_prs": [],
+                "guidance_policy": POOLED, "policy": TEST_POLICY, "reservation": 1.0,
+                "overrun": 1.0, "points_per_usd": None, "lessons": [], "skills": {},
+                "batch": None}
+
+    def kept_cell(self, gate_cell):
+        cell = self.planner_cell(gate_cell)
+        cell.update(verdict="keep", in_situ_verdict="keep",
+                    provisional_keep=plan_week.provisional_keep(gate_cell))
+        return cell
+
+    def bands_of(self, cells):
+        bands, _work = plan_week.eval_items(self.ctx(cells), NOW)
+        return {band: [(i["fixture"], i["model"]) for i in items]
+                for band, items in bands.items() if items}
+
+    def test_a_pooled_keep_is_fired_until_the_current_window_is_full(self):
+        # The round 2 override needs current-rest pairs, so a provisional
+        # keep is fired (no re-check due) while its window has room.
+        cell = self.kept_cell(cell_of(StaleKeepTests().stale(20)))
+        self.assertTrue(cell["provisional_keep"])
+        self.assertEqual(self.bands_of([cell]), {"recheck": [(cell["fixture"], "model-a")]})
+        # At the cap the window is frozen: no fire.
+        self.assertEqual(self.bands_of([{**cell, "at_cap": True}]), {})
+
+    def test_the_plans_cells_carry_the_provisional_keep(self):
+        # eval_cells_and_outages, on the committed evals/ and a gates
+        # document whose one cell keeps on a pooled keep alone.
+        section = "anything-you-name-gets-its-link"
+        fixture = f"evals/guidance/{section}/handoff"
+        real = plan_week.schedule.scheduled_fixtures
+
+        def scheduled(path, committed):
+            return [f for f in real(path, committed) if f != fixture] + [fixture]
+
+        for gate, want in ((cell_of(StaleKeepTests().stale(20)), True),
+                           (cell_of(strat(MAIN, GAIN, LOSS)), False)):
+            doc = {"roster_models": ["model-a"], "skills": {}, "guidance": {section: {
+                "verdict": "keep",
+                "cells": [{**gate, "fixture": "handoff", "model": "model-a"}]}}}
+            with self.subTest(want=want), \
+                    mock.patch.object(plan_week.schedule, "scheduled_fixtures", scheduled):
+                cells, _, _ = plan_week.eval_cells_and_outages(ROOT / "evals", doc, [], NOW)
+                mine = [c for c in cells if c["fixture"] == fixture]
+                self.assertEqual([(c["class"], c["provisional_keep"]) for c in mine],
+                                 [("benefit", want)])
+
+    def test_a_final_keep_is_not_fired_before_its_recheck(self):
+        gate = cell_of(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40))
+        cell = self.kept_cell(gate)
+        self.assertFalse(cell["provisional_keep"])
+        self.assertEqual(self.bands_of([cell]), {})
+
+    def test_a_final_keep_on_another_cell_stops_the_provisional_fires(self):
+        provisional = self.kept_cell(cell_of(StaleKeepTests().stale(20)))
+        final = self.kept_cell(cell_of(strat(OLD, LOSS * 4, FLAT * 2)
+                                       + strat(MAIN, GAIN, LOSS, start=40)))
+        final.update(model="model-b", fixture="evals/guidance/sec/fx2")
+        self.assertEqual(self.bands_of([provisional, final]), {})
+
     def test_the_rest_policy_of_a_verdict_document(self):
         self.assertEqual(plan_week.rest_policy_of({}), "current")
         self.assertEqual(plan_week.rest_policy_of({"guidance_policy": POOLED}),
@@ -512,6 +668,19 @@ class SimulationTests(unittest.TestCase):
         self.assertLessEqual(rates["current"], target)
         self.assertGreater(rates["pooled, no guard"], target)
         self.assertGreater(rates["pooled, light guard"], target)
+
+    def test_a_stale_keep_is_removed_and_a_margin_keep_is_not(self):
+        # The pooled adversarial round 2: older gains of 0.30, then a current
+        # rest with no gain (removed about as often as under `current`) or
+        # one that helps by exactly the margin (removed under the level).
+        import simulate_rest_guard as sim
+        policy = gates.load_gate_policy()["guidance"]
+        stale = sim.at_cap(sim.random.Random(20261107), 60, policy, 40, 0.30, 0.0, 0.55)
+        self.assertGreaterEqual(stale["pooled-with-current-guard"]["no-benefit"], 0.8)
+        margin = sim.at_cap(sim.random.Random(20261107), 60, policy, 40, 0.30,
+                            policy["objective_margin"], 0.55)
+        self.assertLessEqual(margin["pooled-with-current-guard"]["no-benefit"],
+                             1 - policy["retire_confidence"])
 
     def test_no_cell_is_stuck_at_the_current_rests_cap(self):
         # Round 1's blocker: older-rest harm or no gain, a current rest that

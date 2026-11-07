@@ -72,11 +72,14 @@
 #     equal weight in one betting sequence, a pair formed only within one
 #     rest. Two keep tests at half the keep alpha each: the pooled one,
 #     counted once the current rest has `rest_guard_min_pairs` pairs, and
-#     one over the current rest alone. Every decision toward removal is
+#     one over the current rest alone. A pooled keep is not final: a
+#     removal that decides later on the current rest's evidence overrides
+#     it (a current-rest keep is final). Every decision toward removal is
 #     guarded by the current rest (the rest on main): a no-benefit or harm
 #     decision needs at least `rest_guard_min_pairs` (6) pairs beside it,
-#     spanning `min_cli_versions`, and the current rest's own share of the
-#     test's wealth at the retire level on its own; the ceiling, no-harm,
+#     spanning `min_cli_versions`, and the current rest's own evidence (its
+#     share of the test's wealth, averaged for the remove test with its own
+#     remove test) at the retire level on its own; the ceiling, no-harm,
 #     high-cell and floor rules and the `max_runs_per_cell` cap read the
 #     current rest only (each rest's window caps at that count). `current`
 #     is the rule of 2026-11-03, runs beside the current rest only; set it

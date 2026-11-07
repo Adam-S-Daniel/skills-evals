@@ -2667,7 +2667,8 @@ favored removal, so from then only runs beside the current rest (the `rest`
 digest on main) counted, and an edit elsewhere in the guidance started a
 section's evidence over. Since 2026-11-07 the guidance block's `rest_policy`
 (`pooled-with-current-guard`) pools every rest's pairs at equal weight, and
-every removal needs the current rest's own evidence (`current` restores the
+every removal needs the current rest's own evidence, which also overrides a
+keep made on the pooled pairs alone (`current` restores the
 2026-11-03 rule; ADR 0014, "Pooled-rest addendum (2026-11-07)"). The in-situ
 verdict decides. The one change: a
 section whose in-situ verdict is `retire` but which shows `benefit` alone in

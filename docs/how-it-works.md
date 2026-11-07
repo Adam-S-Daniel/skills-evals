@@ -1253,7 +1253,8 @@ guidance each ran beside. From 2026-11-03 only the runs beside the current
 rest decided (#557's weighting across older rests favored removal), so an
 edit elsewhere in the guidance started the evidence over; since 2026-11-07
 (`rest_policy: pooled-with-current-guard`) every rest's pairs count at equal
-weight, and a removal still needs the current rest's own evidence (ADR 0014,
+weight, a removal still needs the current rest's own evidence, and a keep made
+on the pooled pairs alone gives way to such a removal (ADR 0014,
 "Pooled-rest addendum (2026-11-07)"). A section is `retire` by the skills' rule above, with the guidance
 block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
