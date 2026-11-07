@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "skill": "fan-out-triage",
+  "timestamp": "20261107T093621Z",
+  "mode": "trim",
+  "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+  "registry": {
+    "name": "adam-agentskills",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills",
+    "sha": "1434f6275008641111cf8f88c506e0cb54382b37",
+    "skill_md": "plugins/adam-coding-anywhere/skills/fan-out-triage/SKILL.md"
+  },
+  "models": {
+    "arm": "claude-sonnet-5-5",
+    "proposal": "claude-fable-5-1"
+  },
+  "trials": 3,
+  "no_judge": true,
+  "description": {
+    "original": "Triage a large list of items (release-note bullets, issues, alerts, findings; dozens to thousands) against one or more repos by fanning the work out to parallel subagents, without letting ID drift or a thin inventory corrupt the result. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially if you are about to split the list across agents. Not for a list you can read in one sitting, or for reviewing one dependency bump.",
+    "candidate": "Triage a large list of items (release notes, issues, alerts, findings; dozens to thousands) against one or more repos with parallel subagents, guarding against ID drift and a thin inventory. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially before splitting across agents. Not for a list readable in one sitting or one dependency bump."
+  },
+  "trim": {
+    "max_chars": 400,
+    "original_chars": 480,
+    "candidate_chars": 397,
+    "rule": "aggregate-noninferior-per-fixture-drop-1",
+    "tolerance_checks": 0,
+    "fixture_drop_checks": 1,
+    "baseline": {
+      "keyword-lookalikes": {
+        "passed": 21,
+        "total": 21
+      },
+      "shifted-draft": {
+        "passed": 11,
+        "total": 15
+      },
+      "single-file": {
+        "passed": 18,
+        "total": 18
+      },
+      "three-files": {
+        "passed": 19,
+        "total": 21
+      }
+    },
+    "candidate": {
+      "keyword-lookalikes": {
+        "passed": 21,
+        "total": 21
+      },
+      "shifted-draft": {
+        "passed": 15,
+        "total": 15
+      },
+      "single-file": {
+        "passed": 17,
+        "total": 18
+      },
+      "three-files": {
+        "passed": 20,
+        "total": 21
+      }
+    }
+  },
+  "files": {
+    "patch": "/tmp/tmp.StNk6DjQBU/improvements/fan-out-triage/20261107T093621Z.patch",
+    "pr_body": "/tmp/tmp.StNk6DjQBU/improvements/fan-out-triage/20261107T093621Z.pr-body.md",
+    "record": "/tmp/tmp.StNk6DjQBU/improvements/fan-out-triage/20261107T093621Z.json"
+  },
+  "runs": {
+    "baseline": "/tmp/tmp.StNk6DjQBU/runs/baseline/fan-out-triage/20261107T093621Z",
+    "candidate": "/tmp/tmp.StNk6DjQBU/runs/candidate/fan-out-triage/20261107T093621Z"
+  },
+  "status": "accepted",
+  "reasons": [
+    "objective checks passed over all fixtures 69/75 -> 73/75",
+    "no worse in aggregate, and no fixture lost more than 1 check(s)"
+  ],
+  "decision": "accepted"
+}
