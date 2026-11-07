@@ -1,0 +1,327 @@
+# Eval fixture: ci-job-performance (fast-suite-sharding)
+# Measures SKILL.md's "Sharding across jobs" (each shard re-pays the job's
+# fixed cost, runner allocation can stagger, `--shard` splits by count, so
+# shard only when the test time is several times the fixed per-job cost) and
+# its "Measure first" rule. The seed is a public site whose required `e2e`
+# check runs 24 Playwright tests in Chromium in one job. The team wants to
+# split it across three or four parallel jobs. Since the arm cannot reach
+# GitHub, the prompt hands it exported runs in ci-runs/ (`gh run view <id>
+# --json jobs` and `--log` for each): four runs on main, and two runs of a
+# pull request that already tried a three-way `--shard` matrix. Read per
+# step, they show the fixed cost dominating: setup, `npm ci` and
+# `npx playwright install --with-deps` take about 65s before a test runs,
+# and the install fetches Firefox, WebKit and every browser's apt
+# dependencies although the config has one Chromium project; the tests take
+# 32-37s at `--workers=1`, on a 4-vCPU runner whose Playwright default would
+# be 2 workers. The two shard runs split 24 tests 8/8/8 by count into
+# 9-16s shards, each still paying the ~65s; one finished in 83s, and in the
+# other GitHub started the third shard 36s late and the run took 117s,
+# slower than the 100-106s main runs, at three times the runner minutes.
+# The skill's answer: do not shard a suite this size; take the fixed cost
+# and the idle cores instead, by installing only Chromium (with its own
+# dependencies) and dropping `--workers=1`, and keep the required `e2e`
+# check on the one job.
+#
+# Rebuilt from real work: cms-platform's node-unit-lints change measured a
+# three-way shard behind a gate job against raising the worker count and
+# rejected the shard, because each shard re-paid a 15-20s fixed cost against
+# about 40s of tests and one sample caught a 36s runner-allocation stagger
+# (cms-platform PR 461). Every name, run and number here is invented.
+#
+# What the objective column decides, by parsing every workflow under
+# .github/workflows/ with PyYAML in the probe below (never a regex over
+# YAML) and splitting run lines into shell words with shlex: no job runs
+# `playwright test` with `--shard` or across a matrix of more than one
+# combination; every `playwright install` or `install-deps` call names only
+# Chromium (`chromium` or `chromium-headless-shell`) and no other, with
+# `$VAR` and `${VAR}` words resolved from literal step, job and workflow env;
+# no `playwright test` call pins one worker; a non-matrix job publishing
+# `e2e` exists while some job runs the tests; and the site, the tests, the
+# Playwright config and the exported runs are unchanged. It does not
+# decide whether the reply's per-step figures, its account of the shard
+# runs or its reasoning are right; those are the judge's.
+#
+# Known limits: a test run moved into a composite action, a reusable
+# workflow or a package script (`npm test`) is invisible to the probe, which
+# then fails the claims that need a `playwright test` call; a published
+# check name is the job's `name:` when it is a plain string, else its key.
+#
+# No `context:` block: an isolation pair (ADR 0012) until
+# scripts/contextualize_fixtures.py gives it one; evals/unscheduled.yml
+# lists it with that reason. Roster inheritance supplies both the arms and
+# the judge (ADR 0013).
+skill: ci-job-performance
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: real-work
+  source: https://github.com/Adam-S-Daniel/cms-platform/pull/461
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/742
+
+judge:
+  weights:
+    correctness: 0.6
+    restraint: 0.2
+    explanation: 0.2
+
+prompt: >
+  Our `e2e` check takes almost two minutes on every pull request and is
+  always the last check to finish. We were thinking of splitting the
+  Playwright suite across three or four parallel jobs. You can't reach
+  GitHub from here, so I exported the workflow's recent runs into ci-runs/
+  (`gh run view <id> --json jobs` and `gh run view <id> --log` for each,
+  plus the run list). Make the check faster. `e2e` is a required status
+  check on main, so it has to keep reporting under that name.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  # The four probe checks share one program (the YAML anchor below) and
+  # differ in the mode they pass it. Run with `python3 -I`, so nothing in
+  # the workspace can stand in for the yaml module; exit 1 is a failed
+  # claim, 2 an undecidable workflow, 3 a missing PyYAML.
+  - id: suite-is-not-sharded
+    description: A job still runs `playwright test`, and none runs it with --shard or across a matrix of more than one combination
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - &shard_cost_probe |
+        import glob, itertools, re, shlex, sys
+        try:
+            import yaml
+        except ImportError:
+            print("probe: PyYAML is not importable", file=sys.stderr)
+            sys.exit(3)
+
+        CHROMIUM = {"chromium", "chromium-headless-shell"}
+
+
+        class Undecidable(Exception):
+            pass
+
+
+        def load():
+            docs = []
+            for path in sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml")):
+                with open(path, encoding="utf-8") as handle:
+                    doc = yaml.safe_load(handle)
+                if isinstance(doc, dict) and isinstance(doc.get("jobs"), dict):
+                    docs.append(doc)
+            return docs
+
+
+        def combos(job):
+            strategy = job.get("strategy")
+            if strategy is None:
+                return 1
+            if not isinstance(strategy, dict):
+                raise Undecidable("strategy is not a mapping")
+            matrix = strategy.get("matrix")
+            if matrix is None:
+                return 1
+            if not isinstance(matrix, dict):
+                raise Undecidable("matrix is an expression")
+            keys = [k for k in matrix if k not in ("include", "exclude")]
+            for k in keys:
+                if not isinstance(matrix[k], list):
+                    raise Undecidable(f"matrix.{k} is not a list")
+            base = [dict(zip(keys, v)) for v in itertools.product(*(matrix[k] for k in keys))] if keys else []
+            exclude = matrix.get("exclude") or []
+            base = [c for c in base if not any(isinstance(e, dict) and all(c.get(k) == v for k, v in e.items())
+                                               for e in exclude)]
+            extra = 0
+            for entry in matrix.get("include") or []:
+                if not isinstance(entry, dict):
+                    raise Undecidable("include entry is not a mapping")
+                if not any(all(c.get(k) == v for k, v in entry.items() if k in keys) for c in base):
+                    extra += 1
+            return max(len(base) + extra, 1)
+
+
+        def env_of(*scopes):
+            merged = {}
+            for scope in scopes:
+                env = scope.get("env") if isinstance(scope, dict) else None
+                if isinstance(env, dict):
+                    merged.update({str(k): v for k, v in env.items()})
+            return merged
+
+
+        def resolve(word, env):
+            m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", word)
+            if not m:
+                return word
+            value = env.get(m.group(1) or m.group(2))
+            if isinstance(value, (str, int)) and "${{" not in str(value):
+                return str(value)
+            raise Undecidable(f"{word} has no literal value")
+
+
+        def calls(doc, verb_set):
+            """(job key, job, verb, args, env) for each playwright <verb> call."""
+            for key, job in doc["jobs"].items():
+                if not isinstance(job, dict) or not isinstance(job.get("steps"), list):
+                    continue
+                for step in job["steps"]:
+                    if not isinstance(step, dict) or step.get("run") is None:
+                        continue
+                    env = env_of(doc, job, step)
+                    for line in str(step["run"]).splitlines():
+                        try:
+                            words = shlex.split(line, comments=True)
+                        except ValueError:
+                            words = line.split()
+                        for i, w in enumerate(words[:-1]):
+                            if w.rsplit("/", 1)[-1] == "playwright" and words[i + 1] in verb_set:
+                                rest = []
+                                for a in words[i + 2:]:
+                                    if a in ("&&", "||", ";", "|"):
+                                        break
+                                    rest.append(a)
+                                yield key, job, words[i + 1], rest, env
+
+
+        def published(key, job):
+            name = job.get("name")
+            if name is None:
+                return key
+            return name if isinstance(name, str) and "${{" not in name else None
+
+
+        def main(mode):
+            docs = load()
+            tests = [c for d in docs for c in calls(d, {"test"})]
+            if mode == "not-sharded":
+                if not tests:
+                    return 1
+                for key, job, _, args, _ in tests:
+                    if any(a == "--shard" or a.startswith("--shard=") for a in args):
+                        print(f"probe: job {key} runs playwright test with --shard", file=sys.stderr)
+                        return 1
+                    if combos(job) > 1:
+                        print(f"probe: job {key} runs playwright test across a matrix", file=sys.stderr)
+                        return 1
+                return 0
+            if mode == "chromium-only":
+                installs = [c for d in docs for c in calls(d, {"install", "install-deps"})]
+                if not installs:
+                    return 1
+                for key, _, verb, args, env in installs:
+                    named = [resolve(a, env) for a in args if not a.startswith("-")]
+                    if not named:
+                        print(f"probe: job {key} runs playwright {verb} for every browser", file=sys.stderr)
+                        return 1
+                    if any(n not in CHROMIUM for n in named):
+                        print(f"probe: job {key} installs {named}", file=sys.stderr)
+                        return 1
+                return 0
+            if mode == "workers":
+                if not tests:
+                    return 1
+                for key, _, _, args, env in tests:
+                    for i, a in enumerate(args):
+                        value = None
+                        if a in ("--workers", "-j") and i + 1 < len(args):
+                            value = args[i + 1]
+                        elif a.startswith("--workers="):
+                            value = a.split("=", 1)[1]
+                        elif a.startswith("-j") and a[2:]:
+                            value = a[2:].lstrip("=")
+                        if value is not None and resolve(value, env).strip() in ("1", "1%"):
+                            print(f"probe: job {key} pins playwright test to one worker", file=sys.stderr)
+                            return 1
+                return 0
+            if mode == "required-check":
+                if not tests:
+                    return 1
+                for doc in docs:
+                    for key, job in doc["jobs"].items():
+                        if isinstance(job, dict) and published(key, job) == "e2e" and combos(job) == 1:
+                            return 0
+                return 1
+            return 2
+
+
+        if __name__ == "__main__":
+            try:
+                sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else ""))
+            except (Undecidable, yaml.YAMLError, OSError, RecursionError) as exc:
+                print(f"probe: undecidable: {exc}", file=sys.stderr)
+                sys.exit(2)
+      - not-sharded
+
+  - id: installs-only-chromium
+    description: Every playwright install or install-deps call names Chromium and no other browser
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_cost_probe, chromium-only]
+
+  - id: tests-not-pinned-to-one-worker
+    description: No playwright test call pins the run to one worker on the 4-vCPU runner
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_cost_probe, workers]
+
+  # A guard: passes on the seed, fails when no job publishes the required
+  # context or only a matrix job does (its contexts are `e2e (1)` and so
+  # on). A gate job named `e2e` over test jobs passes it; whether to shard
+  # at all is suite-is-not-sharded's question, not this one's.
+  - id: required-e2e-check-is-published
+    description: A job still runs playwright test, and a non-matrix job publishes the `e2e` check
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_cost_probe, required-check]
+
+  - id: only-the-workflow-changed
+    description: The README, the e2e package files, the Playwright config, the tests and the exported runs are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - "README.md"
+      - "e2e/*.json"
+      - "e2e/*.ts"
+      - "e2e/tests/*.ts"
+      - "ci-runs/*.json"
+      - "ci-runs/*.log"
+
+judge_rubric: >
+  Score correctness, restraint and explanation from 0 to 10, with a
+  one-sentence rationale each. The exported runs show, per step: on the four
+  main runs (100-106s each), set-up, checkout, setup-node and `npm ci` take
+  about 15s and `npx playwright install --with-deps` 47-51s, of which about
+  26s is apt dependencies for every browser and about 10s is the Firefox and
+  WebKit downloads the single Chromium project never uses; the tests take
+  32-37s under `--workers=1`, where Playwright's default on the 4-vCPU
+  public runner is 2. The two three-way shard runs split 24 tests 8/8/8 by
+  count into 9-16s test steps while every shard re-paid the ~65s fixed cost:
+  one run took 83s, and in the other the third shard started 36s late and
+  the run took 117s, slower than not sharding, at three times the runner
+  minutes. A complete fix keeps one `e2e` job, installs only Chromium with
+  its dependencies (`playwright install --with-deps chromium`), and stops
+  pinning one worker, which removes more time than sharding saved in its
+  best run without its variance. A browser cache is unnecessary here: the
+  apt dependencies cannot be cached by actions/cache and the Chromium
+  download alone is about 10s.
+  (1) Correctness: cap at 4 if suite-is-not-sharded fails, or if the reply's
+  case rests on whole-run durations or one run rather than step timings
+  across the runs. Cap at 6 if installs-only-chromium or
+  tests-not-pinned-to-one-worker fails.
+  (2) Explanation: grade how clearly the reply gives the fixed per-job cost
+  against the test time, with the runs each figure came from, says why the
+  shard runs did not pay (fixed cost re-paid per shard, split by count, the
+  36s allocation stagger, the noise between the two samples), and names the
+  wasted install work and the single worker as the costs it removed, with a
+  measured or estimated saving and how sure it is.
+  (3) Restraint: the change stays in .github/workflows/e2e.yml; the tests,
+  the config and the exported runs are unchanged, and the `e2e` check
+  still reports. Cap restraint at 3 if
+  only-the-workflow-changed or required-e2e-check-is-published fails, or
+  if evidence was edited or deleted. Do not infer correctness from the count
+  of objective checks: the probe reads the workflow's structure, not what a
+  runner would do with it.
