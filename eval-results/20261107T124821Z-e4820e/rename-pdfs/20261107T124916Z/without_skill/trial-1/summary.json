@@ -1,0 +1,390 @@
+{
+  "skill": "rename-pdfs",
+  "arm": "without_skill",
+  "timestamp": "20261107T124916Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.08486210000000001,
+    "num_turns": 5,
+    "duration_ms": 24069,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 11454,
+      "cache_read_input_tokens": 177961,
+      "output_tokens": 2123,
+      "output_tokens_details": {
+        "thinking_tokens": 531
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 11454,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 329,
+          "cache_read_input_tokens": 38858,
+          "cache_creation_input_tokens": 586,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 586
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "inbox-renamed-per-convention",
+      "passed": false,
+      "detail": "missing: 20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf, 20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf, 20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf, 20260303-Bill-Example Utilities Ltd-Account 9002.pdf; unexpected: 20260131-Statement-Example Utilities Ltd-Jan 2026 Account.pdf, 20260214-Invoice-Example Utilities Ltd-Water Service Jan 2026.pdf, 20260303-Bill-Example Utilities Ltd-Electric Service Feb 2026.pdf, Scan_20260306_071455.pdf"
+    },
+    {
+      "id": "inbox-content-preserved",
+      "passed": true,
+      "detail": "content preserved by digest (6 file(s))"
+    },
+    {
+      "id": "statement-date-ranged",
+      "passed": false,
+      "detail": "inbox/20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf: not found"
+    },
+    {
+      "id": "invoice-dated-from-body",
+      "passed": false,
+      "detail": "inbox/20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf: not found"
+    },
+    {
+      "id": "receipt-left-alone",
+      "passed": true,
+      "detail": "inbox/20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf: digest matches"
+    },
+    {
+      "id": "image-only-scan-left-alone",
+      "passed": true,
+      "detail": "inbox/Scan_20260118_161230.pdf: digest matches"
+    },
+    {
+      "id": "duplicate-bills-disambiguated",
+      "passed": false,
+      "detail": "inbox/20260303-Bill-Example Utilities Ltd-Account 9002.pdf: not found; inbox/20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf: not found"
+    },
+    {
+      "id": "nothing-outside-inbox",
+      "passed": true,
+      "detail": "./ matches the expected listing (1 entries)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "convention_fidelity",
+        "score": 2,
+        "rationale": "The agent correctly left the already-conventional 20251215 receipt alone and formatted the invoice and bill names properly, but it named the period statement with a single endpoint (20260131) instead of the 20260101-20260131 range form; it also left the duplicate without a disambiguated name, so the final inbox/ listing cannot match inbox-renamed-per-convention and the cap of 3 applies."
+      },
+      {
+        "name": "date_priority",
+        "score": 4,
+        "rationale": "The invoice correctly got February 14, 2026 from the body rather than the scanner filename's March 1, but the statement period '1 Jan 2026 to 31 Jan 2026' was collapsed to just its end date rather than the range form, and the agent never explicitly said it chose a body date over the filename or mtime date (it only noted 'date taken from the document')."
+      },
+      {
+        "name": "restraint",
+        "score": 5,
+        "rationale": "The agent left the image-only scan and the conventional file untouched and overwrote nothing, but it did not resolve the duplicate-bill collision with a disambiguator; it left that file unrenamed and deferred to the user, even though the user said to proceed automatically."
+      }
+    ],
+    "overall": 3.2
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 2123,
+      "cache_read_input_tokens": 177961,
+      "cache_creation_input_tokens": 11454,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "e61b9f5fbcc6be5eb05ef3af7e6f3bed79302132be375f159874a60fd7b1874f",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T124821Z-e4820e",
+    "session_id": "cse_01SphsQAsXFS461scHP6VTdq",
+    "harness_commit": "241c0802ec8ff495ae5f4e83af521f68b2a71437",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T12:49:16Z",
+    "ended_at": "2026-11-07T12:51:16Z",
+    "meter": {
+      "snapshot_count": 9,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T12:49:21.744Z",
+      "to_at": "2026-11-07T12:51:16.259Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.43,
+          "to": 0.43,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQAsXFS461scHP6VTdq",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.4002913,
+      "agent_usd": 0.2816113,
+      "judge_usd": 0.11868000000000001,
+      "guard_usd": 0,
+      "metered_usd": 0.35945930000000004,
+      "last_agent_call_usd": 0.0113592,
+      "calls_with_cost": 9,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T12:49:17Z",
+      "ended_at": "2026-11-07T12:49:52Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T12:49:17Z",
+          "ended_at": "2026-11-07T12:49:35Z",
+          "duration_ms": 18409,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 1,
+          "started_at": "2026-11-07T12:49:35Z",
+          "ended_at": "2026-11-07T12:49:44Z",
+          "duration_ms": 8585,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T12:49:44Z",
+          "ended_at": "2026-11-07T12:49:52Z",
+          "duration_ms": 8230,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T12:49:21.744Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.43,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T12:49:39.843Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 1
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.43,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T12:49:52.107Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.43,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 2,
+        "duration_ms": 26994,
+        "num_turns": 5,
+        "cost_usd": 0.08486210000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 2123,
+            "cache_read_input_tokens": 177961,
+            "cache_creation_input_tokens": 11454,
+            "cost_usd": 0.08486210000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 11454
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 8230,
+        "num_turns": 1,
+        "cost_usd": 0.03954,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 673,
+            "cache_read_input_tokens": 1520,
+            "cache_creation_input_tokens": 3221,
+            "cost_usd": 0.03954
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3221
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
