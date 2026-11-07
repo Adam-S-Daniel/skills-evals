@@ -1,0 +1,6 @@
+# catthehacker/ubuntu runner images as listed on 2026-11-07.
+# Each line: tag, pushed date, manifest digest.
+act-latest         floating (rebuilt on every push)
+act-24.04-20261104 2026-11-04  sha256:3f9a1c7e2b8d4650a1e7c93b5d20f48a6c1b9e7d3a5f20814b6c7d9e0a1f2b3c
+act-24.04-20261028 2026-10-28  sha256:9b2e6d4a1c8f37e05d9a4b6c2e1f8073a5c9d1e4b7f2a60386d5c1e9f0a4b7d2
+act-24.04-20261007 2026-10-07  sha256:c41d8e7f2a6b0953e1d7c4a8b2f60e95d3a1c7b4e8f20916a5d3c7e1b9f4a8d6
