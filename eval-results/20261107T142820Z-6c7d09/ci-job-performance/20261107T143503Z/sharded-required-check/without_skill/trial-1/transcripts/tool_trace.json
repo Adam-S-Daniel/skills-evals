@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S4bate7LztfKpq9sirjoWA",
+      "name": "Bash",
+      "input": "ls .github/workflows .github/rulesets; cat .github/rulesets/main.json; cat .github/workflows/e2e*; cat playwright.config.* | head -40",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S4bate7LztfKpq9sirjoWA",
+      "is_error": false,
+      "output": ".github/rulesets:\nmain.json\n\n.github/workflows:\ne2e.yml\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"deletion\" },\n    { \"type\": \"non_fast_forward\" },\n    {\n   ...",
+      "output_chars": 1231,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P5dmKK9GRxCz8g8W9jrNVe",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"jobs:\n  e2e:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n\"\"\",\"\"\"jobs:\n  shard:\n    name: e2e-shard (${{ matrix.sh...",
+      "input_chars": 1199,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P5dmKK9GRxCz8g8W9jrNVe",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 26 ++++++++++++++++++++++++--\n 1 file changed, 24 insertions(+), 2 deletions(-)\nok",
+      "output_chars": 111,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

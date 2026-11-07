@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A3rHU8WVReZKs3dJGwpa11",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./.git -prune -o -type f -print | grep -v node_modules | head -50 && cat .github/workflows/*.yml && cat .github/rulesets/main.json && cat AGE...",
+      "input_chars": 268,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A3rHU8WVReZKs3dJGwpa11",
+      "is_error": true,
+      "output": "Exit code 1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n0f31e95 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.github/rulesets/main.json\n./.github/workflows/e2e.yml\n./.zprofile\n./README.md\n./.ripgreprc\n....",
+      "output_chars": 1697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A4tZEapgg3XnhGukwWvMKx",
+      "name": "Bash",
+      "input": "cat README.md e2e/playwright.config.ts e2e/package.json; git check-ignore -v .bashrc; cat .gitignore 2><path>; ls e2e",
+      "input_chars": 120,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A4tZEapgg3XnhGukwWvMKx",
+      "is_error": false,
+      "output": "# Example site\n\nThe marketing site for example.com. The end-to-end tests live in `e2e/` and\nrun on every push and pull request through the `e2e` workflow, once per\nbrowser (Chromium, Firefox and WebKit).\n\nRun them locally with:\n\n```bash\ncd e2e\nnpm ci\nnpx playwright install --with-deps\nnpx playwright...",
+      "output_chars": 1041,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V5dTC4fSuEEnLvBCuDd6Y3",
+      "name": "Agent",
+      "input": "Write sharded e2e workflow",
+      "input_chars": 26,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YQnEYrTH18C63LZ8bYocAA",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YQnEYrTH18C63LZ8bYocAA",
+      "is_error": false,
+      "output": "1\tname: e2e\n2\t\n3\ton:\n4\t  pull_request:\n5\t  push:\n6\t    branches: [main]\n7\t\n8\tpermissions:\n9\t  contents: read\n10\t\n11\tjobs:\n12\t  e2e:\n13\t    runs-on: ubuntu-latest\n14\t    timeout-minutes: 30\n15\t    defaults:\n16\t      run:\n17\t        working-directory: e2e\n18\t    steps:\n19\t      - uses: actions/checkou...",
+      "output_chars": 772,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019BzDsjLfZtzithWeJRX58G",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019BzDsjLfZtzithWeJRX58G",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 165,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SGRxbRFCEd1mAwuLrF86FX",
+      "name": "Bash",
+      "input": "python3 -c \"import yaml,sys; d=yaml.safe_load(open('<path>')); print(sorted(d['jobs']))\"",
+      "input_chars": 141,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SGRxbRFCEd1mAwuLrF86FX",
+      "is_error": false,
+      "output": "['e2e', 'shard']",
+      "output_chars": 16,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y5TqMPBmGo8HoUJVKFs7Zs",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Overwrote <path> with the exact content between the BEGIN/END markers (single trailing newline). No other file was touched; no git commands were run, and nothing was committed or pushed.\\...",
+      "input_chars": 516,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y5TqMPBmGo8HoUJVKFs7Zs",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V5dTC4fSuEEnLvBCuDd6Y3",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a8026c6dff9c82015\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a8026c6dff9c82015 (use SendMessage with to: 'a8026c6dff9c82015', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jq8kq2uWNZVtdicwvcKKiY",
+      "name": "Bash",
+      "input": "git status --short .github && git diff && (command -v actionlint && actionlint .github/workflows/e2e.yml; echo \"actionlint exit: $?\")",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jq8kq2uWNZVtdicwvcKKiY",
+      "is_error": false,
+      "output": " M .github/workflows/e2e.yml\ndiff --git a/.github/workflows/e2e.yml b/.github/workflows/e2e.yml\nindex fcd514c..081ca59 100644\n--- a/.github/workflows/e2e.yml\n+++ b/.github/workflows/e2e.yml\n@@ -9,9 +9,14 @@ permissions:\n   contents: read\n \n jobs:\n-  e2e:\n+  shard:\n+    name: e2e shard ${{ matrix.sha...",
+      "output_chars": 1411,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TxEMpWvvYbP7zBANn4B9q1",
+      "name": "Bash",
+      "input": "cd <path> && timeout 120 npm ci --no-audit --no-fund ><path> 2>&1; echo \"npm ci: $?\"; for s in 1 2 3; do npx playwright test --list --shard=$s/3 2>&1 | tail -1; done; npx playwright test --list 2>&1 |...",
+      "input_chars": 242,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TxEMpWvvYbP7zBANn4B9q1",
+      "is_error": false,
+      "output": "npm ci: 1\n}\n}\n}\n}\n<sandbox_violations>\ndeny network-outbound registry.npmjs.org:443 (host is not on the allow list)\ndeny network-outbound registry.example.com:443 (host is not on the allow list)\ndeny network-outbound registry.example.com:443 (host is not on the allow list)\ndeny network-outbound regi...",
+      "output_chars": 374,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TTb4Mf6sM9is1DQ3aPGDJ3",
+      "name": "Bash",
+      "input": "cd <path> && ls e2e; git status --short e2e .github",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TTb4Mf6sM9is1DQ3aPGDJ3",
+      "is_error": false,
+      "output": "package-lock.json\npackage.json\nplaywright.config.ts\ntests\n M .github/workflows/e2e.yml",
+      "output_chars": 86,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
