@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EuR1zwSTYFsJY4FUxGwCri",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EuR1zwSTYFsJY4FUxGwCri",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TnNAC3HJ1tvMKuR9LJ5Peo",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TnNAC3HJ1tvMKuR9LJ5Peo",
+      "is_error": false,
+      "output": "c309fa4 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018MgCx2GCmjLDteWg5NcfPh",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; for f in hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json README.md .mcp.json .gitmodules .ripgreprc ....",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018MgCx2GCmjLDteWg5NcfPh",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 4384,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JGqgazwLtG2f3h2uBvmJs3",
+      "name": "Bash",
+      "input": "grep -rniI -e skill -e model -e plugin -e verbose -e ripgrep -e watch --exclude-dir=.git --exclude-dir=vendor . 2><path>; ls issues 2>&1; git status --short",
+      "input_chars": 159,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JGqgazwLtG2f3h2uBvmJs3",
+      "is_error": false,
+      "output": "./README.md:10:ExampleCLI's plugin resolver used to crash intermittently on cold start\n./README.md:13:## Synced skills\n./README.md:15:Invoke a synced skill by its bare name, e.g. `<path>`, from any\n./AGENTS.md:3:- Skill directory names never change.\nls: cannot access 'issues': No such file or direct...",
+      "output_chars": 453,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DhtEkhVHkCcdFcEenBXQ4i",
+      "name": "Bash",
+      "input": "mkdir -p $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport json, re, sys, pathlib\nws = pathlib.Path(sys.argv[1])\nsrc = (ws/\"vendor/RELEASES.md\").read_text()\ntimes = {k: v[\"published_at\"] for k, v...",
+      "input_chars": 6333,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DhtEkhVHkCcdFcEenBXQ4i",
+      "is_error": false,
+      "output": "wrote 01-session-start-fork-source.md quotes: [('4.2.0/1', 'Session-start hooks now report source `\"')]\nwrote 02-synced-skills-prefixed-names.md quotes: [('4.2.0/3', 'Synced skills are now named `synced:<nam')]\n# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher startup|resume misses...",
+      "output_chars": 4647,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

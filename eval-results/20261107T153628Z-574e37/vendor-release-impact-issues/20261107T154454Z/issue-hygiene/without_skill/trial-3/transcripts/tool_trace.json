@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WxKsfVnePvUGvLsoXELpi4",
+      "name": "Bash",
+      "input": "cd <path>; git ls-files | head -100; ls -R vendor | head -50",
+      "input_chars": 87,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WxKsfVnePvUGvLsoXELpi4",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nvendor:\nRELEASES.md\nreleases.json",
+      "output_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L8ALhmZqHjZEY42xiPWBEb",
+      "name": "Bash",
+      "input": "cd <path>; wc -c vendor/*; cat vendor/RELEASES.md; cat .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh",
+      "input_chars": 166,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L8ALhmZqHjZEY42xiPWBEb",
+      "is_error": false,
+      "output": "1565 vendor/RELEASES.md\n 620 vendor/releases.json\n2185 total\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: ...",
+      "output_chars": 3182,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018NvneqQBvdxiZdAGfZA79s",
+      "name": "Bash",
+      "input": "cd <path>; cat vendor/releases.json",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018NvneqQBvdxiZdAGfZA79s",
+      "is_error": false,
+      "output": "{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n    },\n    \"4.2.0\": {\n      \"published_at\": \"2026-07-14T09:47Z\",\n      \"created_at\": \"20...",
+      "output_chars": 619,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dow8uGgaU3d7MaTLEnt3LF",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-session-start-hook-fork-source.md <<'EOF'\n# SessionStart hook matcher `startup|resume` will skip forked sessions on ExampleCLI 4.2.0+\n\n## Summary\n\nExampleCLI...",
+      "input_chars": 2832,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dow8uGgaU3d7MaTLEnt3LF",
+      "is_error": false,
+      "output": "01-session-start-hook-fork-source.md\n02-synced-skills-renamed-readme.md",
+      "output_chars": 71,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
