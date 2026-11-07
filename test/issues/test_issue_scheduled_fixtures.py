@@ -702,7 +702,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 200")
+        self.assertEqual(steps[order[3]]["run"], "sleep 400")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share
@@ -776,7 +776,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                 "example.com/sample", "--ref", "main", "--raw-field",
                                 "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
                                 "--raw-field", "model=claude-opus-5-5",
-                                "--raw-field", "arms=both", "--raw-field", "trials=3"])
+                                "--raw-field", "arms=both", "--raw-field", "trials=1"])
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

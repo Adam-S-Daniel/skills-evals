@@ -2471,9 +2471,10 @@ def pair_fires(chosen: list, roster: list | None) -> list:
 #: Until the 2026-11-09 17:00 UTC reset only (Adam, 2026-11-07: use the
 #: week's remaining allowance under the routine's fire limit): every single
 #: `both`-arms eval fire on a skill fixture also runs the fixture's other
-#: roster model (`pair_every_fire`), whether or not that cell is due. Set
-#: False after that reset.
-PAIR_EVERY_FIRE = True
+#: roster model (`pair_every_fire`), whether or not that cell is due.
+#: False since 2026-11-07 17:51 UTC: Adam asked to slow evals down, and the
+#: added cells were the lowest-value spend (not due, not planned).
+PAIR_EVERY_FIRE = False
 
 
 def pair_every_fire(legs: list, roster: list | None) -> list:

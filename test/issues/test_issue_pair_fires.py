@@ -406,7 +406,7 @@ class PairFiresUnitTests(unittest.TestCase):
 
 
 class PairEveryFireTests(unittest.TestCase):
-    """PAIR_EVERY_FIRE, until the 2026-11-09 17:00 UTC reset."""
+    """PAIR_EVERY_FIRE (off since 2026-11-07 17:51 UTC; the switch is kept)."""
 
     item = staticmethod(PairFiresUnitTests.item)
 
@@ -427,6 +427,7 @@ class PairEveryFireTests(unittest.TestCase):
         self.assertEqual(plan_week.pair_every_fire([self.item(A)], [A]), [self.item(A)])
         self.assertEqual(plan_week.pair_every_fire([self.item(A)], None), [self.item(A)])
 
+    @mock.patch.object(plan_week, "PAIR_EVERY_FIRE", True)
     def test_the_planner_pairs_a_lone_cell(self):
         case = PlannerPairTests("test_a_lone_cell_stays_a_single_leg")
         case.setUp()
