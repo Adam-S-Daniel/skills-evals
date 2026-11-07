@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018ZtCtg5z1vgC98BksGf2tN",
+      "name": "Bash",
+      "input": "pwd; ls -la; git remote -v; git log --oneline -5; ls <path> 2>&1 | head",
+      "input_chars": 75,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017oyWC8eqFMn5Pq89RCy3CL",
+      "name": "ToolSearch",
+      "input": "select:ListConnectors",
+      "input_chars": 21,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017oyWC8eqFMn5Pq89RCy3CL",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018ZtCtg5z1vgC98BksGf2tN",
+      "is_error": false,
+      "output": "<path>\ntotal 36\ndrwxr-xr-x 7 root root 4096 Nov  7 07:46 .\ndrwx------ 6 root root 4096 Nov  7 07:46 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:15 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:15 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 07:46 .claude\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .gh...",
+      "output_chars": 1049,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vi3WCs9yShfNhShmss6ajY",
+      "name": "Bash",
+      "input": "cat README.md platform.lock; ls bin .github/* .gh; cat .mcp.json 2>&1 | head -20; gh auth status 2>&1 | head",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HA6Jeqz4RjgwnaAK7Ejydk",
+      "name": "ListConnectors",
+      "input": "{}",
+      "input_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vi3WCs9yShfNhShmss6ajY",
+      "is_error": false,
+      "output": "# example-site\n\nA Decap-CMS site built on `example-org/cms-platform`, pinned by\n`platform.lock`. Editors publish through `<path>`; the editorial workflow\nopens a `cms/<collection>/<slug>` pull request, and the publish loops in\n`.github/workflows/` exercise that chain end to end against production.\n\n...",
+      "output_chars": 1093,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HA6Jeqz4RjgwnaAK7Ejydk",
+      "is_error": true,
+      "output": "Connector registry is unavailable right now; please try again.",
+      "output_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NCYTMpcfuKB6iB13ks4i3M",
+      "name": "Bash",
+      "input": "cat bin/gh | head -30; ls -R .gh | head; cat .github/workflows/cms-publish-loop-prod.yml",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CXuUd8vQjngsP2efZJ5Bks",
+      "name": "Bash",
+      "input": "gh pr list --repo example-org/example-site --state open --json number,title,headRefName,labels,url 2>&1 | head -50",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NCYTMpcfuKB6iB13ks4i3M",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 2941,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CXuUd8vQjngsP2efZJ5Bks",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 412,\n    \"title\": \"Create Post \u201cSpring release notes\u201d\",\n    \"headRefName\": \"cms/posts/spring-release-notes\",\n    \"baseRefName\": \"main\",\n    \"mergeStateStatus\": \"BLOCKED\",\n    \"isDraft\": false,\n    \"createdAt\": \"2026-08-30T09:14:22Z\",\n    \"updatedAt\": \"2026-08-30T09:41:07Z\",\n    \"...",
+      "output_chars": 1435,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DBZQKfudxP2aRS8LYdtW2g",
+      "name": "Bash",
+      "input": "cd .gh/replay; find . -type f | head -50; for n in 412 418 421; do echo \"== $n\"; cat pr-checks-$n.json; done",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DBZQKfudxP2aRS8LYdtW2g",
+      "is_error": false,
+      "output": "./auth-status.txt\n./pr-checks-418.json\n./run-view-4468900033.log\n./ruleset-list.json\n./api/repos/example-org/example-site/rulesets/1837402.json\n./api/repos/example-org/example-site/pulls/412.json\n./api/repos/example-org/example-site/pulls/421.json\n./api/repos/example-org/example-site/pulls/418.json\n...",
+      "output_chars": 12863,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QXR8bN25M4LCBgNYHpFBX2",
+      "name": "Bash",
+      "input": "cd <path>; cat run-list.json run-view-4471182930.json; echo ----; tail -60 run-view-4471182930.log; echo ----; cat run-watch-4471182930.txt | tail -20",
+      "input_chars": 188,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KA4gxybJTCJTYX9M42qMLK",
+      "name": "Bash",
+      "input": "cd <path>; tail -60 run-view-4468900033.log; cat run-view-4468900033.json | head -40",
+      "input_chars": 122,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KA4gxybJTCJTYX9M42qMLK",
+      "is_error": false,
+      "output": "e2e\tSet up job\t2026-08-30T09:15:12.1042117Z Current runner version: '2.331.0'\ne2e\tSet up job\t2026-08-30T09:15:12.1050338Z Job name: 'e2e / project (chromium-desktop-1080)'\ne2e\tSet up job\t2026-08-30T09:15:12.1058812Z Triggered by: pull_request on refs/pull/412/merge\ne2e\tCheckout merge commit\t2026-08-...",
+      "output_chars": 2992,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QXR8bN25M4LCBgNYHpFBX2",
+      "is_error": false,
+      "output": "[\n  { \"databaseId\": 4471182930, \"workflowName\": \"CMS Publish Loop \u2014 Prod Mutation Playground\",\n    \"displayTitle\": \"manual \u2014 @cms-bot\", \"headBranch\": \"main\", \"event\": \"workflow_dispatch\",\n    \"status\": \"completed\", \"conclusion\": \"failure\",\n    \"createdAt\": \"2026-09-02T05:41:02Z\", \"updatedAt\": \"2026-...",
+      "output_chars": 9318,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016JuuPN4HqXWSSwxzJcKHfn",
+      "name": "Bash",
+      "input": "cd <path>; cat pr-view-418.json; cat ruleset-view-1837402.json; cat api/repos/example-org/example-site/branches/main/protection.json api/repos/example-org/example-site/rules/branches/main.json; cat ap...",
+      "input_chars": 296,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016tfKoEuwdKEQGX2ZhxJraR",
+      "name": "Bash",
+      "input": "cd <path>; for f in commits/*/check-runs.json; do echo \"== $f\"; python3 -c \"\nimport json,sys\nd=json.load(open('$f'))\nfor c in d.get('check_runs',d): print(c.get('name'),c.get('status'),c.get('conclusi...",
+      "input_chars": 389,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016JuuPN4HqXWSSwxzJcKHfn",
+      "is_error": false,
+      "output": "{\n  \"number\": 418,\n  \"title\": \"Update Post \u201cCanary post\u201d\",\n  \"headRefName\": \"cms/e2e/canary-post\",\n  \"headRefOid\": \"5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d\",\n  \"baseRefName\": \"main\",\n  \"baseRefOid\": \"9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35\",\n  \"mergeStateStatus\": \"BLOCKED\",\n  \"mergeable\": \"MERGEAB...",
+      "output_chars": 7168,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016tfKoEuwdKEQGX2ZhxJraR",
+      "is_error": false,
+      "output": "== commits/5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d/check-runs.json\nvalidate-content completed success \ne2e / project (chromium-desktop-1080) completed success \ne2e / project (chromium-desktop-3k) completed success \ne2e / project (chromium-mobile) completed success \ne2e / project (chromium-desktop-1...",
+      "output_chars": 2635,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GAoZjGdWtE9beHoRy1u2uM",
+      "name": "Bash",
+      "input": "cd <path>; grep -rn \"content-schema\\|parity\" .github/ | head; grep -n \"^name:\\|^  [a-z-]*:$\" .github/workflows/*.yml | head -30; cd .gh/replay; cat workflow-list.json; python3 -c \"\nimport json\nfor n i...",
+      "input_chars": 474,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GAoZjGdWtE9beHoRy1u2uM",
+      "is_error": false,
+      "output": ".github/workflows/cms-publish-loop-prod.yml:5:name: CMS Publish Loop \u2014 Prod Mutation Playground\n.github/workflows/cms-publish-loop-prod.yml:12:  push:\n.github/workflows/cms-publish-loop-prod.yml:21:  schedule:\n.github/workflows/cms-publish-loop-prod.yml:31:  prod-loop:\n.github/workflows/deploy-previ...",
+      "output_chars": 2776,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
