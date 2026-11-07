@@ -1014,8 +1014,14 @@ def _level(block, field: str) -> float:
 def retire_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to no-benefit, as a share of the decision
     level: its objective's no-help confidence (the remove test's level so
-    far). The judge does not vote (harness/gates.py, 2026-11-03), so it is
-    not read. An absent value is 0."""
+    far), or for a pooled in-situ cell (`rest_guard`) the level its removal
+    evidence reached (`remove_evidence_confidence`), which is what decides
+    its removal (the pooled adversarial round 3's m3). The judge does not
+    vote (harness/gates.py, 2026-11-03), so it is not read. An absent value
+    is 0."""
+    guard = cell.get("rest_guard")
+    if isinstance(guard, dict):
+        return _level(guard, "remove_evidence_confidence") / level
     return _level(cell.get("objective"), "no_help_confidence") / level
 
 
@@ -3123,6 +3129,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 arms = {role: (cell or {}).get(role) for role in ("with", "without")}
                 cells[-1].update({
                     "objective": (cell or {}).get("objective"),
+                    # A pooled cell's guard, whose removal evidence is its
+                    # retire progress (`retire_progress`).
+                    "rest_guard": (cell or {}).get("rest_guard"),
                     "judge": (cell or {}).get("judge"),
                     "judge_carried": bool((cell or {}).get("judge_carried")),
                     "reason": (cell or {}).get("reason"),

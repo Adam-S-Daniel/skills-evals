@@ -28,12 +28,14 @@ The target is at most 1 - `retire_confidence` (0.10).
 
 AT THE CAP (`at_cap`, CAP_CASES). How cells end once the current rest's
 window is full, under `current` and the committed rule: the share that
-keep, that are removed, and that are STUCK (`insufficient` at the cap, which
+keep, that are removed, that end `no-clear-effect` (a proposed removal),
+and that are STUCK (`insufficient` at the cap, which
 no more runs can move; the pooled adversarial round 1's blocker). The cases
 are a section that helps today after older rests that showed no gain or
 harm, and a STALE KEEP: one that helped beside an older rest and no longer
-does. A pooled keep is not final (the pooled adversarial round 2): the
-guarded removal deciding later overrides it, so the stale keep is removed.
+does. A pooled keep is not final (the pooled adversarial rounds 2 and 3):
+a removal on the current rest's evidence overrides it, and it lapses at the
+current rest's cap, so the stale keep is removed or proposed.
 For the committed rule it also reports the share of cells that held a
 pooled keep alone at some pair, and the current-rest pairs fired for them
 meanwhile (the planner fires such a cell until the current rest's own keep
@@ -102,11 +104,15 @@ def make_pairs(rng, n_old, n_current, base, old_effect, effect):
 
 
 def guarded(pairs, keys, policy):
-    """(class, current pairs at the removal or None) under the committed rule."""
+    """(class, current pairs at the removal or None) under the committed rule.
+    Every removal is a decided remove or harm test (`remove_decided_at`,
+    which since round 3's m5 also covers a removal over a pooled keep, or
+    `harm_decided_at`), whichever came first."""
     cell = gates._classify(pairs, policy, 1, None,
                            {"keys": keys, "current": CURRENT,
                             "min_pairs": policy["rest_guard_min_pairs"]})
-    at = cell.get("remove_decided_at") if cell["class"] == "no-benefit" else None
+    at = min([n for n in (cell.get("remove_decided_at"), cell.get("harm_decided_at"))
+              if n is not None], default=None) if cell["class"] == "no-benefit" else None
     return cell["class"], (sum(k == CURRENT for k in keys[:at]) if at else None)
 
 
@@ -175,11 +181,16 @@ def at_cap(rng, sims, policy, n_old, old_effect, effect, base):
     extra = [provisional_fires(c, policy, n_old) for c in out["pooled-with-current-guard"]]
     got = {name: {"benefit": sum(c["class"] == "benefit" for c in cells) / sims,
                   "no-benefit": sum(c["class"] == "no-benefit" for c in cells) / sims,
+                  "no-clear-effect": sum(c["class"] == "no-clear-effect" for c in cells) / sims,
                   "stuck": sum(c["class"] == "insufficient" and c["at_cap"]
                                for c in cells) / sims}
            for name, cells in out.items()}
     held = [n for n in extra if n is not None]
     got["pooled-with-current-guard"].update(
+        # Round 3's M1: a pooled keep never stands at the cap (it lapses).
+        kept_provisionally=sum(c["class"] == "benefit" and c["at_cap"]
+                               and c["rest_guard"]["keep_final"] is False
+                               for c in out["pooled-with-current-guard"]) / sims,
         provisional=len(held) / sims,
         fires_while_provisional=statistics.mean(held) if held else 0.0)
     return got
@@ -198,8 +209,7 @@ def provisional_fires(cell, policy, n_old):
     current = guard["current_keep_at"]
     if current is not None and current <= start:
         return None  # the current-rest keep came first: final from the start
-    removed = min([n for n in (cell.get("remove_decided_at"), guard["override_decided_at"])
-                   if n is not None], default=None)
+    removed = cell.get("remove_decided_at")
     if removed is not None and removed <= start:
         return None  # the removal decided first: never kept
     end = min(n for n in (current, removed, n_old + policy["max_runs_per_cell"])
@@ -216,6 +226,7 @@ CAP_CASES = (
     # gains, and the section still helps by exactly the margin today.
     ("helps today by the margin, older rest gained 0.30", 40, 0.30, 0.15),
     ("no gain today, older rest gained 0.30 (stale keep)", 40, 0.30, 0.0),
+    ("gains 0.05 today, older rest gained 0.30 (stale keep)", 40, 0.30, 0.05),
 )
 
 
@@ -261,7 +272,8 @@ def main(argv=None) -> int:
         for name, got in at_cap(rng, sims, policy, n_old, old_effect, gain,
                                 args.base).items():
             print(f"    {name:28s} benefit {got['benefit']:.3f}, no-benefit "
-                  f"{got['no-benefit']:.3f}, stuck {got['stuck']:.3f}"
+                  f"{got['no-benefit']:.3f}, no-clear-effect {got['no-clear-effect']:.3f}, "
+                  f"stuck {got['stuck']:.3f}"
                   + (f"; a pooled keep alone {got['provisional']:.3f}, fired "
                      f"{got['fires_while_provisional']:.1f} current pairs meanwhile"
                      if "provisional" in got else ""))

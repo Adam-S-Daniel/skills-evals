@@ -73,9 +73,10 @@
 #     rest. Two keep tests at half the keep alpha each: the pooled one,
 #     counted once the current rest has `rest_guard_min_pairs` pairs, and
 #     one over the current rest alone. A pooled keep is not final: a
-#     removal that decides later on the current rest's evidence overrides
-#     it (a current-rest keep is final). Every decision toward removal is
-#     guarded by the current rest (the rest on main): a no-benefit or harm
+#     removal on the current rest's evidence overrides it, and it lapses at
+#     the current rest's cap (a current-rest keep is final). Every decision
+#     toward removal is guarded by the current rest (the rest on main): a
+#     no-benefit or harm
 #     decision needs at least `rest_guard_min_pairs` (6) pairs beside it,
 #     spanning `min_cli_versions`, and the current rest's own evidence (its
 #     share of the test's wealth, averaged for the remove test with its own

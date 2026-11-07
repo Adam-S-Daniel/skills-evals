@@ -1416,12 +1416,31 @@ def current_text_runs(verdict: dict, alone: bool = True) -> int:
     return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
 
 
+#: The objective keep routes `subject_confidence` reads: the cell's keep
+#: test, and a pooled in-situ cell's keep test over the current rest alone
+#: (harness/gates.py, THE POOLED KEEP; each pooled route's p is already
+#: doubled, so `1 - m x min p` reads the cell's level either way).
+KEEP_ROUTES = ("objective", "objective-current-rest")
+
+
+def no_help_level(cell: dict) -> float:
+    """A cell's no-help level: its objective's `no_help_confidence`, or for a
+    pooled in-situ cell (`rest_guard`) the level its removal evidence
+    reached, which is what decides its removal (the pooled adversarial
+    round 3's m4). 0 when absent."""
+    guard = cell.get("rest_guard")
+    if isinstance(guard, dict):
+        return guard.get("remove_evidence_confidence", 0.0)
+    return (cell.get("objective") or {}).get("no_help_confidence", 0.0)
+
+
 def subject_confidence(verdict: dict) -> dict:
     """How sure the gate is, as levels in [0, 1) of its betting tests
     (harness/gates.py, THE BOUNDS): `helps`, the subject's keep level, 1 - m
-    x the smallest objective keep-test p over its cells (m its keep family,
-    `keep_family`; 1 without one), and `no_help`, the lowest no-help level
-    over its cells with headroom (the cells that vote on removal: neither
+    x the smallest objective keep-test p over its cells and routes
+    (`KEEP_ROUTES`; m its keep family, `keep_family`; 1 without one), and
+    `no_help`, the lowest no-help level (`no_help_level`) over its cells
+    with headroom (the cells that vote on removal: neither
     parked, `gates.PARKED_CLASSES`, nor `cannot-discriminate`; a cell with no objective figure
     gives 0). The judge does not vote, so it is not read. Both None while no
     cell has an objective figure. The keep and remove rules compare these
@@ -1454,11 +1473,11 @@ def subject_confidence(verdict: dict) -> dict:
     family = verdict.get("keep_family")
     family = family if isinstance(family, int) and family >= 1 else 1
     tests = [(t["p"], c) for c in cells for t in (c.get("keep_tests") or [])
-             if isinstance(t, dict) and t.get("route") == "objective"
+             if isinstance(t, dict) and t.get("route") in KEEP_ROUTES
              and isinstance(t.get("p"), (int, float))]
     voting = [c for c in cells if c.get("class") not in gates.PARKED_CLASSES
               and c.get("class") != "cannot-discriminate"]
-    levels = [((c.get("objective") or {}).get("no_help_confidence", 0.0), c) for c in voting]
+    levels = [(no_help_level(c), c) for c in voting]
     keep_p, keep_cell = min(tests, key=lambda t: t[0]) if tests else (None, None)
     weakest = min(levels, key=lambda t: t[0]) if levels else (None, None)
     all_pairs = [n for n in map(pairs_of, figured) if n is not None]

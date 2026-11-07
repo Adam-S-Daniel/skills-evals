@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ISSUES))
 
 import gates  # noqa: E402
+import explorer_data  # noqa: E402
 import plan_week  # noqa: E402
 from test_issue_70_retirement import FLAT, GAIN, LOSS, TEST_POLICY  # noqa: E402
 from test_issue_557_stratified_verdict import CEILING, EXPECT, MAIN, OLD, stratum  # noqa: E402
@@ -230,16 +231,19 @@ class StaleKeepTests(unittest.TestCase):
         self.assertIn("not final", cell["reason"])
 
     def test_the_guarded_removal_overrides_an_earlier_pooled_keep(self):
-        runs = self.stale(40)
+        # Thirty current pairs, under the cap, so the override, not the
+        # lapse at the cap, ends the keep.
+        runs = self.stale(30)
         v = verdict(runs)
         cell = v["cells"][0]
         self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertFalse(cell["at_cap"])
         self.assertNotEqual(v["verdict"], "keep")
         guard = cell["rest_guard"]
-        # The pooled keep came first; the removal decided later, on the full
-        # guard (pair floor, the current share at its level, CLI versions).
+        # The pooled keep came first; the removal decided later, on the
+        # guard (pair floor, the current rest's evidence, CLI versions).
         self.assertLess(guard["pooled_keep_at"], cell["remove_decided_at"])
-        self.assertIsNotNone(guard["remove_share_at"])
+        self.assertIsNotNone(guard["remove_evidence_at"])
         self.assertIs(guard["keep_final"], False)
         # `current` reads only the current rest, which never helped: it
         # removes too.
@@ -255,10 +259,10 @@ class StaleKeepTests(unittest.TestCase):
         cell = cell_of(runs)
         guard = cell["rest_guard"]
         self.assertEqual(cell["class"], "no-benefit", cell["reason"])
-        self.assertIsNone(cell["remove_decided_at"])
         self.assertIsNone(guard["remove_share_at"])
+        self.assertIsNone(guard["pooled_remove_at"])
         self.assertIsNotNone(guard["current_remove_at"])
-        self.assertLess(guard["pooled_keep_at"], guard["override_decided_at"])
+        self.assertLess(guard["pooled_keep_at"], cell["remove_decided_at"])
         self.assertIn("a pooled keep is not final", cell["reason"])
         self.assertEqual(cell_of(runs, CURRENT)["class"], "no-benefit")
 
@@ -268,7 +272,7 @@ class StaleKeepTests(unittest.TestCase):
         runs = strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT[:5], FLAT[:5], start=40)
         cell = cell_of(runs)
         self.assertEqual(cell["class"], "insufficient", cell["reason"])
-        self.assertIsNone(cell["rest_guard"]["override_decided_at"])
+        self.assertIsNone(cell["remove_decided_at"])
 
     def test_a_planner_cell_reads_a_provisional_keep(self):
         self.assertTrue(plan_week.provisional_keep(cell_of(self.stale(20))))
@@ -276,6 +280,79 @@ class StaleKeepTests(unittest.TestCase):
         self.assertFalse(plan_week.provisional_keep(final))
         self.assertFalse(plan_week.provisional_keep(cell_of(strat(MAIN, GAIN, LOSS), CURRENT)))
         self.assertFalse(plan_week.provisional_keep(None))
+
+    def noisy(self, current_pairs, single_cli=False):
+        # Forty older pairs gaining 0.4, then a current rest whose gain
+        # swings between +0.4 and -0.3: neither keep test nor the removal
+        # decides within its window.
+        current = strat(MAIN, [(100, 100, 100), (30, 30, 30)] * 20,
+                        [(60, 60, 60)] * 40, start=40)
+        current = [r for r in current if r["timestamp"] in
+                   {x["timestamp"] for x in current[:current_pairs]}]
+        if single_cli:
+            for run in current:
+                run["cli_versions"] = ["1.0.0 (Claude Code)"]
+        return strat(OLD, GAIN * 4, LOSS * 4) + current, current
+
+    def test_a_pooled_keep_lapses_at_the_current_rests_cap(self):
+        # Round 3's M1: before the cap the pooled keep stands (and is
+        # fired); at the cap no more pairs can test it, so the cell ends on
+        # the current rest's own rules, as `current` ends it.
+        runs, _ = self.noisy(20)
+        cell = cell_of(runs)
+        self.assertEqual((cell["class"], cell["at_cap"]), ("benefit", False), cell["reason"])
+        self.assertIs(cell["rest_guard"]["keep_final"], False)
+        runs, current = self.noisy(40)
+        cell = cell_of(runs)
+        self.assertTrue(cell["at_cap"])
+        self.assertEqual(cell["class"], "no-clear-effect", cell["reason"])
+        self.assertIn("lapsed at the current rest's cap", cell["reason"])
+        self.assertIsNotNone(cell["rest_guard"]["pooled_keep_at"])
+        self.assertEqual(cell_of(current, CURRENT)["class"], "no-clear-effect")
+
+    def test_a_lapsed_keep_on_one_cli_version_is_insufficient_at_the_cap(self):
+        # As under `current`: one CLI version beside the current rest cannot
+        # propose a removal, so the cell is `insufficient` at its cap (a
+        # `cell-at-cap` item), never a silent keep.
+        runs, current = self.noisy(40, single_cli=True)
+        cell = cell_of(runs)
+        self.assertEqual((cell["class"], cell["at_cap"]), ("insufficient", True),
+                         cell["reason"])
+        self.assertIn("lapsed at the current rest's cap", cell["reason"])
+        self.assertEqual(cell_of(current, CURRENT)["class"], "insufficient")
+
+    def test_a_current_keep_after_the_removal_does_not_stand(self):
+        # Round 3's m1 (the reviewer's M4): twenty pairs gaining nothing,
+        # then twenty gaining 0.4. The removal decides at pair 18 and the
+        # current-rest keep crosses later, so the removal stands, as under
+        # `current`; with an older rest's gains too, the pooled keep came
+        # first and does not stand either.
+        runs = strat(MAIN, (FLAT * 2)[:20] + (GAIN * 4)[:20],
+                     (FLAT * 2)[:20] + (LOSS * 4)[:20])
+        cell = cell_of(runs)
+        guard = cell["rest_guard"]
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertLess(cell["remove_decided_at"], guard["current_keep_at"])
+        self.assertIs(guard["keep_final"], False)
+        self.assertEqual(cell_of(runs, CURRENT)["class"], "no-benefit")
+        runs = strat(OLD, GAIN, LOSS) + strat(MAIN, (FLAT * 2)[:22] + (GAIN * 4)[:18],
+                                              (FLAT * 2)[:22] + (LOSS * 4)[:18], start=20)
+        cell = cell_of(runs)
+        guard = cell["rest_guard"]
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertLess(guard["pooled_keep_at"], cell["remove_decided_at"])
+        self.assertLess(cell["remove_decided_at"], guard["current_keep_at"])
+
+    def test_a_pooled_keep_crossing_after_the_removal_does_not_stand(self):
+        # Round 3's m1 (the reviewer's M3): the removal decides before the
+        # pooled keep test crosses at all; the later crossing does not undo
+        # it.
+        runs = strat(OLD, FLAT[:10], FLAT[:10]) + strat(
+            MAIN, (FLAT * 2)[:20] + (GAIN * 4)[:20], (FLAT * 2)[:20] + (LOSS * 4)[:20],
+            start=20)
+        cell = cell_of(runs)
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertLess(cell["remove_decided_at"], cell["rest_guard"]["pooled_keep_at"])
 
     def test_a_current_rest_keep_stays_final_against_a_later_removal(self):
         # Seven pairs gaining 0.4, then 33 gaining nothing, all beside the
@@ -316,11 +393,13 @@ class RemovalGuardTests(unittest.TestCase):
         self.assertIsNone(cell["remove_decided_at"])
         self.assertIsNone(cell["rest_guard"]["remove_share_at"])
 
-    def test_the_pooled_wealth_must_reach_its_level_too(self):
+    def test_the_removal_decides_on_the_current_rests_evidence_alone(self):
         # Older pairs that first win and then lose leave the pooled wealth
-        # below its level after the current rest's share reaches its own:
-        # the removal waits for both (the pooled adversarial round 1's M10).
-        # Four old pairs with no gain, two gaining 0.8, then main's no gain.
+        # below its level when the current rest's removal evidence reaches
+        # its own. Round 3's m5: the removal no longer waits for the pooled
+        # wealth (round 1's M10 rule), since the evidence alone carries the
+        # level. Four old pairs with no gain, two gaining 0.8, then main's
+        # no gain.
         runs = (strat(OLD, FLAT[:4] + [(100, 100, 100)] * 2,
                       FLAT[:4] + [(20, 20, 20)] * 2)
                 + strat(MAIN, FLAT * 2, FLAT * 2, start=6))
@@ -329,13 +408,14 @@ class RemovalGuardTests(unittest.TestCase):
         ds = gates.differences(gates.pair_runs([r for r in runs if r["role"] == "with"],
                                                [r for r in runs if r["role"] == "without"])[0])
         wealth = gates.remove_wealth(ds, POOLED["objective_margin"])
-        share_at = cell["rest_guard"]["remove_share_at"]
-        self.assertIsNotNone(share_at)
-        self.assertLess(wealth[share_at - 1], threshold)
+        guard = cell["rest_guard"]
         decided = cell["remove_decided_at"]
-        self.assertIsNotNone(decided, cell["reason"])
-        self.assertGreater(decided, share_at)
-        self.assertGreaterEqual(wealth[decided - 1], threshold)
+        self.assertEqual(cell["class"], "no-benefit", cell["reason"])
+        self.assertEqual(decided, guard["remove_evidence_at"])
+        self.assertLess(wealth[decided - 1], threshold)
+        self.assertGreater(guard["pooled_remove_at"], decided)
+        self.assertGreaterEqual(guard["remove_evidence_confidence"],
+                                POOLED["retire_confidence"])
 
     def test_the_guard_blocks_a_removal_with_too_few_current_pairs(self):
         # Twenty old pairs and eighteen beside main, all with identical arms:
@@ -580,6 +660,41 @@ class PlannerTests(unittest.TestCase):
         self.assertTrue(plan_week.leans_to_removal(cell, ctx))
         self.assertEqual(plan_week.fire_arms(cell, ctx), "both")
 
+    def test_retire_progress_reads_the_removal_evidence(self):
+        # Round 3's m3: a pooled cell's progress toward removal is the level
+        # its removal evidence reached, what decides it, not the pooled
+        # remove test's. Forty older pairs gaining 0.4 hold the pooled level
+        # at 0 while the current rest's evidence passes the retire level.
+        runs = strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT * 2, FLAT * 2, start=40)
+        gate_cell = cell_of(runs)
+        cell = {**self.planner_cell(gate_cell), "rest_guard": gate_cell["rest_guard"]}
+        level = POOLED["retire_confidence"]
+        self.assertLess(gate_cell["objective"]["no_help_confidence"], 0.5)
+        self.assertEqual(plan_week.retire_progress(cell, level),
+                         gate_cell["rest_guard"]["remove_evidence_confidence"] / level)
+        self.assertGreaterEqual(plan_week.retire_progress(cell, level), 1.0)
+        # A cell without a guard (skills, `current`) reads its objective.
+        plain = cell_of(strat(MAIN, FLAT * 2, FLAT * 2), CURRENT)
+        self.assertEqual(plan_week.retire_progress({"objective": plain["objective"]}, level),
+                         plain["objective"]["no_help_confidence"] / level)
+
+    def test_the_explorer_reads_the_keep_routes_and_the_removal_evidence(self):
+        # Round 3's m4: `helps` takes the best keep route, the current-rest
+        # one included, and `no_help` a pooled cell's removal evidence.
+        kept = verdict(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40))
+        cell = kept["cells"][0]
+        best = min(t["p"] for t in cell["keep_tests"])
+        self.assertLess(best, cell["keep_tests"][0]["p"])
+        got = explorer_data.subject_confidence(kept)
+        self.assertAlmostEqual(got["helps"], max(0.0, 1 - best))
+        removed = verdict(strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT * 2, FLAT * 2,
+                                                                start=40))
+        got = explorer_data.subject_confidence(removed)
+        self.assertEqual(got["no_help"],
+                         removed["cells"][0]["rest_guard"]["remove_evidence_confidence"])
+        self.assertGreater(got["no_help"],
+                           removed["cells"][0]["objective"]["no_help_confidence"])
+
     def test_the_cost_to_a_verdict_counts_the_current_rests_pairs(self):
         cell = self.planner_cell(cell_of(strat(OLD, FLAT * 2, FLAT * 2)))
         self.assertEqual(plan_week.subject_cost([cell], {"model-a": 1.0}, 10.0, cap=40), 10.0)
@@ -681,6 +796,9 @@ class SimulationTests(unittest.TestCase):
                             policy["objective_margin"], 0.55)
         self.assertLessEqual(margin["pooled-with-current-guard"]["no-benefit"],
                              1 - policy["retire_confidence"])
+        # Round 3's M1: none keeps on a pooled keep at the cap.
+        for got in (stale, margin):
+            self.assertEqual(got["pooled-with-current-guard"]["kept_provisionally"], 0.0)
 
     def test_no_cell_is_stuck_at_the_current_rests_cap(self):
         # Round 1's blocker: older-rest harm or no gain, a current rest that
