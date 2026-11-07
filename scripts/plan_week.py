@@ -2470,17 +2470,15 @@ def pair_fires(chosen: list, roster: list | None) -> list:
 
 #: Until the 2026-11-09 17:00 UTC reset only (Adam, 2026-11-07: use the
 #: week's remaining allowance under the routine's fire limit): every single
-#: `both`-arms or `in-situ` eval fire also runs the fixture's other roster
-#: model (`pair_every_fire`), whether or not that cell is due. Guidance
-#: fires joined on 2026-11-07 once the planner put them first (#814), since
-#: the fire limit, not the allowance, was binding. Set False after that
-#: reset.
+#: `both`-arms eval fire on a skill fixture also runs the fixture's other
+#: roster model (`pair_every_fire`), whether or not that cell is due. Set
+#: False after that reset.
 PAIR_EVERY_FIRE = True
 
 
 def pair_every_fire(legs: list, roster: list | None) -> list:
-    """PAIR_EVERY_FIRE: each single `both`-arms or `in-situ` eval leg (a
-    skill or a guidance fixture) whose model is on `roster` made a pair fire
+    """PAIR_EVERY_FIRE: each single `both`-arms eval leg on a skill fixture
+    (not under evals/guidance/) whose model is on `roster` made a pair fire
     on the roster's first two models, in roster order. Its cost is
     unchanged: the added cell was not planned, so nothing reserved it, and
     the per-fire guard and the account stop still bound what it spends.
@@ -2491,9 +2489,9 @@ def pair_every_fire(legs: list, roster: list | None) -> list:
     pair = list(roster[:2])
     out = []
     for leg in legs:
-        if (leg["mode"] == "eval" and leg.get("arms") in ("both", "in-situ")
+        if (leg["mode"] == "eval" and leg.get("arms") == "both"
                 and leg["model"] in pair and "," not in leg["model"]
-                and leg.get("fixture")
+                and leg.get("fixture") and not leg["fixture"].startswith("evals/guidance/")
                 and all(PAIR_MODEL_RE.fullmatch(m) for m in pair)):
             leg = {**leg, "model": ",".join(pair),
                    "cells": [{"model": leg["model"], "band": leg["band"], "cost": leg["cost"]}]}
