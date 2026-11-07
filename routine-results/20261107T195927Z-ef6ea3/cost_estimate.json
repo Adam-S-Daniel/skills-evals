@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "run_id": "20261107T195927Z-ef6ea3",
+  "calibration": {
+    "invocations": 765,
+    "meter_points": 1.330000000000001,
+    "metered_usd": 491.54896443000007,
+    "points_per_usd": 0.002705732482911989,
+    "basis": "weekly meter points (usage.meter_delta seven_day, no overrun added) over the dollars of the calls that delta spans (cost_estimate.metered_usd), summed over every run_eval invocation of the runs ingested before this one that measured both"
+  },
+  "usd": 4.3525927,
+  "points": 0.011776951453275597,
+  "invocations": [
+    {
+      "usd": 3.3759181,
+      "agent_usd": 2.5257055999999998,
+      "judge_usd": 0.8502125,
+      "guard_usd": 0,
+      "metered_usd": 3.23330935,
+      "last_agent_call_usd": 0.3712866,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": 0.002705732482911989,
+      "points": 0.009134331262820523,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {}
+    },
+    {
+      "usd": 0.9766746000000001,
+      "agent_usd": 0.9766746000000001,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": 0.8457103,
+      "last_agent_call_usd": 0.1309643,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": 0.002705732482911989,
+      "points": 0.0026426201904550736,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {}
+    }
+  ]
+}
