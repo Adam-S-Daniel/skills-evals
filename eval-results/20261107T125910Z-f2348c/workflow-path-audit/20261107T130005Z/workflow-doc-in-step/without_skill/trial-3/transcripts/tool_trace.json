@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0185XSoVe7TsoUpCgcUNUcdJ",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0185XSoVe7TsoUpCgcUNUcdJ",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RH7SGD11LXgvasvRw9zLAW",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json; cat test/util.test.js | head -20",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RH7SGD11LXgvasvRw9zLAW",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 993,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TjY6b9V7Akdzww8spTp4iE",
+      "name": "Bash",
+      "input": "grep -ril \"status_check\\|required_status\" .gh .github; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json | head -40",
+      "input_chars": 143,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TjY6b9V7Akdzww8spTp4iE",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id\": 4410273\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id...",
+      "output_chars": 588,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VGy44Mq9oYKsGE9SdLwRiT",
+      "name": "Bash",
+      "input": "cd <path> && python3 - <<'E'\ndef sub(f, paths):\n    s=open(f).read()\n    block=\"on:\\n  pull_request:\\n    paths:\\n\"+\"\".join(f\"      - \\\"{p}\\\"\\n\" for p in paths)+\"  push:\\n    branches: [main]\\n    pat...",
+      "input_chars": 615,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VGy44Mq9oYKsGE9SdLwRiT",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml |  8 ++++++++\n .github/workflows/tests.yml     | 12 ++++++++++++\n 2 files changed, 20 insertions(+)",
+      "output_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Buu9ytC8GsreHq5WhXxCyA",
+      "name": "Bash",
+      "input": "cd <path> && python3 - <<'E'\ns=open(\"AGENTS.md\").read()\ns=s.replace(\"| `tests.yml` | pull_request, push to main | all paths |\",\"| `tests.yml` | pull_request, push to main | `src/**`, `test/**`, `packa...",
+      "input_chars": 509,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Buu9ytC8GsreHq5WhXxCyA",
+      "is_error": false,
+      "output": "-| `tests.yml` | pull_request, push to main | all paths |\n-| `docs-site.yml` | pull_request, push to main | all paths |\n+| `tests.yml` | pull_request, push to main | `src/**`, `test/**`, `package.json`, `package-lock.json`, the workflow file |\n+| `docs-site.yml` | pull_request, push to main | `docs/...",
+      "output_chars": 338,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

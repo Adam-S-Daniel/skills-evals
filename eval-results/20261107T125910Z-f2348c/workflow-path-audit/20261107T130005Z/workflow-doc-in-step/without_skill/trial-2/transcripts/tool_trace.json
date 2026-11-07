@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SaKVbutk3QB66oJJJj4DkJ",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git ls-files | head -100",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SaKVbutk3QB66oJJJj4DkJ",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HA6dBxdMrn661UhEgEH1F3",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json package.json mkdocs.yml; cat .gitmodules; ls test scripts bin",
+      "input_chars": 92,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HA6dBxdMrn661UhEgEH1F3",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 853,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PXSdtv9E9sLkFNcXxGPmJ9",
+      "name": "Bash",
+      "input": "grep -rl required_status_checks .gh .github; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json | head -50",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PXSdtv9E9sLkFNcXxGPmJ9",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id\": 4410273\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-service\",\n    \"ruleset_id...",
+      "output_chars": 588,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QVCuUYMeqEFm9Ab2rM4QaG",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\ndef sub(f, paths):\n    s=open(f).read()\n    new=\"on:\\n  pull_request:\\n    paths: &p\\n\"+\"\".join(f\"      - \\\"{p}\\\"\\n\" for p in paths)\n    new=new.replace(\" &p\",\"\")\n    new+=\" ...",
+      "input_chars": 620,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QVCuUYMeqEFm9Ab2rM4QaG",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/docs-site.yml b/.github/workflows/docs-site.yml\nindex cd2c4cc..869c209 100644\n--- a/.github/workflows/docs-site.yml\n+++ b/.github/workflows/docs-site.yml\n@@ -2,8 +2,16 @@ name: Docs site\n \n on:\n   pull_request:\n+    paths:\n+      - \"docs/**\"\n+      - \"mkdocs.yml\"\n+    ...",
+      "output_chars": 1067,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
