@@ -465,6 +465,18 @@ await test('explorer/dist/artifact/index.html is a fresh, self-contained build',
   ok(html.includes('latest.json') && !html.includes('{{') && !html.includes('__BUNDLE__'), 'the noscript names latest.json; no template marker left');
 });
 
+await test('a subject page shows its discarded runs, their cost and top reasons, and nothing when unknown', () => {
+  const skill = (d) => doc({ skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [], discarded_runs: d }] });
+  const page = (d) => textOf(renderRoute(skill(d), { name: 'skills', id: 'demo-skill' }, {}));
+  const text = page({ total: 9, cost_usd: 1.23456, cost_unknown: 1, by_reason: {
+    over_cap: { runs: 2, cost_usd: 0.2, cost_unknown: 0 }, fixture_changed: { runs: 5, cost_usd: 1, cost_unknown: 1 },
+    unpaired: { runs: 1, cost_usd: 0.03456, cost_unknown: 0 }, duplicate: { runs: 1, cost_usd: 0, cost_unknown: 0 } } });
+  ok(text.includes('Discarded runs: 9 runs not counted toward this decision, $1.23 (1 with no recorded cost)'), text);
+  ok(text.includes('Most often: fixture changed (5), past the run cap (2), duplicate copy (1)'), text);
+  ok(!text.includes('no partner arm'), 'three reasons at most');
+  for (const d of [null, { total: 0, cost_usd: 0, cost_unknown: 0, by_reason: {} }]) ok(!page(d).includes('Discarded runs'), JSON.stringify(d));
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);

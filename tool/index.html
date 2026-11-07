@@ -673,6 +673,29 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       colTrials: "Trials",
       useHeading: "Real-work use",
       copiesHeading: "Loaded copies",
+      discarded: (n, cost, unknown, top) => "Discarded runs: " + n + (n === 1 ? " run" : " runs") + " not counted toward this decision, " + cost + (unknown ? " (" + unknown + " with no recorded cost)" : "") + (top ? ". Most often: " + top : "") + ".",
+      discardedReasons: {
+        invalid_run: "did not validate",
+        after_as_of: "after this build",
+        duplicate: "duplicate copy",
+        bare_run: "bare run, reported apart",
+        verdict_raised: "decision failed to compute",
+        fixture_off_main: "fixture no longer scheduled",
+        model_off_roster: "model off the roster",
+        content_unknown: "content on main unknown",
+        fixture_changed: "fixture changed",
+        subject_changed: "text changed",
+        context_unknown: "no context recorded",
+        hooked_run: "ran with fleet hooks",
+        rest_changed: "rest of the guidance changed",
+        context_unmatched: "different context",
+        no_check_results: "no check results",
+        no_scored_trials: "no scored trial",
+        unpaired: "no partner arm",
+        over_cap: "past the run cap",
+        no_objective_score: "no objective score",
+        cannot_discriminate: "fixture looks broken"
+      },
       colCopy: "Copy",
       colSurface: "Where",
       colVsMain: "Against main",
@@ -1694,6 +1717,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (st.level === "none" && typeof st.covered_by === "string") return h("p", { class: "meta" }, STRINGS.stakesNone(clean(st.reason), clean(st.covered_by)));
     return null;
   }
+  function discardedLine(d) {
+    if (!d || typeof d !== "object" || !Number.isInteger(d.total) || d.total <= 0) return null;
+    const usd4 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
+    const rows = Object.entries(d.by_reason && typeof d.by_reason === "object" ? d.by_reason : {}).filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0).sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([k, r]) => (Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k)) + " (" + r.runs + ")");
+    const unknown = Number.isInteger(d.cost_unknown) ? d.cost_unknown : 0;
+    return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd4, unknown, rows.join(", ")));
+  }
   function usageLine(u, window2, refMs) {
     if (!u || typeof u.invocations !== "number" || !window2) return null;
     return h("p", { class: "meta" }, STRINGS.used(u.invocations, fmtUtcDay(parseTime(window2.from), refMs), fmtUtcDay(parseTime(window2.to), refMs)));
@@ -2437,6 +2467,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h("h3", null, STRINGS.verdictHeading),
         verdictLine(raw.verdict) || h("p", { class: "meta" }, STRINGS.verdict.insufficient),
         raw.verdict_reason ? h("p", { class: "meta" }, clean(raw.verdict_reason)) : null,
+        discardedLine(raw.discarded_runs),
         h("p", { class: "sent" }, clean(it.sentence)),
         guidance && hasAlone(it.pooled) ? h("p", { class: "meta" }, STRINGS.aloneShown) : null
       ),
