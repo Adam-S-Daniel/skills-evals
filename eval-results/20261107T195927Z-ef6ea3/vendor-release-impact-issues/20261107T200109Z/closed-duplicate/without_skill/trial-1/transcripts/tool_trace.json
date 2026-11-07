@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015fK2MGqVcQ4LJziz8e5FLD",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100; wc -l vendor/* 2><path>",
+      "input_chars": 140,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015fK2MGqVcQ4LJziz8e5FLD",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nfd87abd initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGEN...",
+      "output_chars": 753,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DZBH3kpFTM6mM5Ynxfvj9G",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md AGENTS.md .example-cli/settings.json hooks/session-start.sh .gitmodules .mcp.json; do echo \"=== $f\"; cat \"$f\"; done; ls -la .idea .vscode",
+      "input_chars": 196,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DZBH3kpFTM6mM5Ynxfvj9G",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced...",
+      "output_chars": 2037,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JgVo5Frfiwhy89ZfWMJgwE",
+      "name": "Bash",
+      "input": "cat bin/gh | head -60; echo ===; cat .gh/replay/auth-status.txt; echo; cat .gh/replay/issue-list.json; echo; cat .gh/replay/issue-view-57.json; echo; cat .gh/replay/api/repos/example-org/example-repo/...",
+      "input_chars": 223,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JgVo5Frfiwhy89ZfWMJgwE",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 6733,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C1THD8TGduCJkgLmKMQF5H",
+      "name": "Bash",
+      "input": "grep -rIn --exclude-dir=.git --exclude-dir=.gh -iE 'synced|skill|4\\.[0-9]\\.[0-9]|example-cli|NO_PROXY|proxy|windows|theme|color' . 2><path> | grep -v '^./bin/gh'; echo ===; PATH=$PWD/bin:$PATH gh issu...",
+      "input_chars": 326,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C1THD8TGduCJkgLmKMQF5H",
+      "is_error": false,
+      "output": "./hooks/session-start.sh:2:# Runs on every SessionStart event matched by .example-cli/settings.json's\n./hooks/session-start.sh:6:echo \"session-start: source=${EXAMPLE_CLI_SOURCE:-unknown}\" >> .example-cli/session-start.log\n./README.md:3:Uses [ExampleCLI](https://github.com/example-vendor/example-cli...",
+      "output_chars": 2159,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DjEfkX7dEhA6nBgu18mWAt",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skill-names.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: README tells users to invoke `<path>`\n\nFound in the ExampleCLI 4.2.0 review....",
+      "input_chars": 3876,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DjEfkX7dEhA6nBgu18mWAt",
+      "is_error": false,
+      "output": "01-synced-skill-names.md",
+      "output_chars": 24,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

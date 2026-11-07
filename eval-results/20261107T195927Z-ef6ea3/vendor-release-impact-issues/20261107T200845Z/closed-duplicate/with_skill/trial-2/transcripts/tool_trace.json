@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FVvTQqRjvNcbnhBVzW2YSg",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013zomXgtL9Pi1CT1p7sv3S5",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor",
+      "input_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FVvTQqRjvNcbnhBVzW2YSg",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013zomXgtL9Pi1CT1p7sv3S5",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 593,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Zpd6e5k8Fkh5Q1Js4p2QF",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/auth-status.txt",
+      "input_chars": 199,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Zpd6e5k8Fkh5Q1Js4p2QF",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.7KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2238,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UATydobLBe93a39Y8M8ry1",
+      "name": "Bash",
+      "input": "cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/auth-status.txt; cat .gh/replay/api/repos/example-org/example-repo/issues/57/comments.json | head -50; git status --short; gh is...",
+      "input_chars": 278,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UATydobLBe93a39Y8M8ry1",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/example-re...",
+      "output_chars": 4613,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L765RdkgryR5yv3qNGwcMv",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed.md <<'EOF'\n# ExampleCLI 4.2.0 synced skills renamed to synced:NAME: README invokes them by bare name\n\nFound in the ExampleCLI 4.2.0 release rev...",
+      "input_chars": 3642,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L765RdkgryR5yv3qNGwcMv",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

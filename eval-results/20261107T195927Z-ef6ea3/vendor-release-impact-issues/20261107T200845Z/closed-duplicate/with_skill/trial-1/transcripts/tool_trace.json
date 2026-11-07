@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WtqXQ4s9nzTTtT36jvWGYL",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SZEEqAtzgJexvoCP9PcAud",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor",
+      "input_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WtqXQ4s9nzTTtT36jvWGYL",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SZEEqAtzgJexvoCP9PcAud",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 593,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LNbYCjyBHFN4oQzkXp5K2v",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json; echo ----; cat .example-cli/settings.json README.md hooks/session-start.sh bin/gh; echo ----; cat .gh/replay/issue-list.json .gh/replay/auth-status.txt; ca...",
+      "input_chars": 259,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LNbYCjyBHFN4oQzkXp5K2v",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now repo...",
+      "output_chars": 2241,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TAmbvbxAKRMVsgBPuVmpj9",
+      "name": "Bash",
+      "input": "export GH_REPLAY_DIR=$PWD/.gh/replay; which gh; head -c 1500 .gh/replay/issue-list.json; echo; head -c 3000 .gh/replay/issue-view-57.json; echo; cat .gh/replay/api/repos/example-org/example-repo/issue...",
+      "input_chars": 291,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TAmbvbxAKRMVsgBPuVmpj9",
+      "is_error": false,
+      "output": "<path>\n[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/exa...",
+      "output_chars": 2981,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018TaBsWWXSwPV4MZEdAMcbq",
+      "name": "Bash",
+      "input": "mkdir -p issues && mkdir -p $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport re, sys, json\nws = sys.argv[1]\nlines = open(ws + \"<path>\").read().split(\"\\n\")\nbullets, cur = [], None\nfor l in lines:...",
+      "input_chars": 2560,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018TaBsWWXSwPV4MZEdAMcbq",
+      "is_error": false,
+      "output": "ExampleCLI 4.2.0 synced skills renamed synced:NAME: README invokes /review-checklist bare 89\nrc=0\n# ExampleCLI 4.2.0 synced skills renamed synced:NAME: README invokes /review-checklist bare\n\nFound in the ExampleCLI 4.2.0 release-notes review (`review.md`). Not yet verified against this repo.\n\n## Exa...",
+      "output_chars": 516,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AU3BVNyFix6o1m5JeW8Yj9",
+      "name": "Bash",
+      "input": "cat > review.md <<'EOF'\n# ExampleCLI 4.2.0 review for example-org/example-repo\n\nSource: `vendor/RELEASES.md` (v4.2.0 published 2026-07-14T09:47Z per `vendor/releases.json` `published_at`).\nSearched th...",
+      "input_chars": 2111,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AU3BVNyFix6o1m5JeW8Yj9",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? issues/\n?? review.md",
+      "output_chars": 162,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

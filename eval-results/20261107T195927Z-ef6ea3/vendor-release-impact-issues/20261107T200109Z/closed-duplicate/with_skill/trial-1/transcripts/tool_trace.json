@@ -1,0 +1,210 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QkPtePwuPEaafAkW2ndHcK",
+      "name": "Bash",
+      "input": "git status --short | head; ls -la; find . -path ./.git -prune -o -type f -print | head -100; wc -l vendor/* 2><path>",
+      "input_chars": 119,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HMpwc6bGKfyuXQdEJYYh9F",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QkPtePwuPEaafAkW2ndHcK",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ntotal 44\ndrwxr-xr-x 9 root root 4096 Nov  7 20:01 .\ndrwx------ 6 root root 4096 Nov  7 20:01 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:42 .bash_profile\ncrw-rw-rw- 1 root ro...",
+      "output_chars": 1819,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HMpwc6bGKfyuXQdEJYYh9F",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018X2xYzvFiKZf71GSSSc42J",
+      "name": "Bash",
+      "input": "for f in README.md vendor/RELEASES.md vendor/releases.json hooks/session-start.sh .example-cli/settings.json bin/gh .gh/replay/auth-status.txt .gh/replay/issue-list.json .gh/replay/issue-view-57.json ...",
+      "input_chars": 492,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018X2xYzvFiKZf71GSSSc42J",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (60.9KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment; see `.example-cli/settings.json` for the hook configuration.\n\nWe register a `SessionS...",
+      "output_chars": 2226,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R6PZRVNsNTLbouhimGvpGc",
+      "name": "Bash",
+      "input": "f=<path>; wc -c .gh/replay/*.json .gh/replay/api/repos/example-org/example-repo/*.json .gh/replay/api/repos/example-org/example-repo/issues/57*; sed -n '<path>' $f | head -80; cat .gh/replay/auth-stat...",
+      "input_chars": 383,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R6PZRVNsNTLbouhimGvpGc",
+      "is_error": true,
+      "output": "Permission to use Bash with command f=<path>; wc -c .gh/replay/*.json .gh/replay/api/repos/example-org/example-repo/*.json .gh/replay/api/repos/example-org/example-repo/issues/57*; sed -n '<path>' $f has been denied.",
+      "output_chars": 393,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011Szk51MVs6QvEDs8FtzWNn",
+      "name": "Bash",
+      "input": "wc -c .gh/replay/*.json .gh/replay/api/repos/example-org/example-repo/*.json; ls -R .gh/replay/api/repos/example-org/example-repo/issues; head -60 bin/gh; cat .gh/replay/auth-status.txt",
+      "input_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011Szk51MVs6QvEDs8FtzWNn",
+      "is_error": false,
+      "output": "1447 .gh/replay/issue-list.json\n1170 .gh/replay/issue-view-57.json\n1483 .gh/replay/api/repos/example-org/example-repo/issues.json\n4100 total\n.gh/replay/api/repos/example-org/example-repo/issues:\n57\n57.json\n\n.gh/replay/api/repos/example-org/example-repo/issues/57:\ncomments.json\n#!<path> python3\n\"\"\"Of...",
+      "output_chars": 4091,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019Kfwxd1zuxd9guj2Sb9M8N",
+      "name": "Bash",
+      "input": "cat .gh/replay/issue-list.json; echo; cat .gh/replay/issue-view-57.json; echo; cat .gh/replay/api/repos/example-org/example-repo/issues.json; echo; cat .gh/replay/api/repos/example-org/example-repo/is...",
+      "input_chars": 287,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019Kfwxd1zuxd9guj2Sb9M8N",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/example-re...",
+      "output_chars": 4398,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CBVgcNFZAYn6kDhVxxrtKR",
+      "name": "Bash",
+      "input": "git ls-files; git log --oneline | head; grep -rniE 'proxy|windows|network drive|color|colour|theme|contrast|synced|skill|update' --exclude-dir=.git --exclude-dir=.gh --exclude=gh . 2><path>; gh issue ...",
+      "input_chars": 400,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CBVgcNFZAYn6kDhVxxrtKR",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 1781,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UJZ3bQq6G71z1R3yMfQQm4",
+      "name": "Bash",
+      "input": "mkdir -p \"$TMPDIR/gen\" issues && cat > \"$TMPDIR/gen/gen.py\" <<'EOF'\nimport json, re, sys\nws = sys.argv[1]\nsrc = open(f\"{ws}<path>\").read()\nrel = json.load(open(f\"{ws}<path>\"))[\"example-cli\"]\n# Extract...",
+      "input_chars": 3588,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UJZ3bQq6G71z1R3yMfQQm4",
+      "is_error": false,
+      "output": "4.2.0/1 | Session-start hooks now report source `\"fork\"` for forked sessions instead of `\"resume\"`.\n4.2.0/2 | Synced skills are now named `synced:NAME` instead of `NAME`.\n4.2.0/3 | Terminal color palette tweaks for high-contrast themes.\n4.2.0/4 | Fixed a Windows path-handling bug affecting network d...",
+      "output_chars": 2326,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0174tQJmvZarakh975q9gZUq",
+      "name": "Bash",
+      "input": "sed -i 's|^lead = \"Found in the ExampleCLI 4.2.0 release|lead = \"Found in the ExampleCLI {{4.2.0}} release|; s|^lint(why); lint(check)|lint(lead); lint(why); lint(check)|; s|^{lead}$|{stamp(lead)}|' \"...",
+      "input_chars": 311,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0174tQJmvZarakh975q9gZUq",
+      "is_error": false,
+      "output": "Found in the ExampleCLI 4.2.0 [2026-07-14T09:47Z] release-notes review (see `review.md`). Not yet verified against this repo.\n- `README.md` (\"Synced skills\" section) tells readers to invoke a synced skill by its bare name, e.g. `<path>`. If 4.2.0 names synced skills `synced:NAME`, that example may n...",
+      "output_chars": 528,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011r44GaUz3aPNZicjG3oG1W",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011r44GaUz3aPNZicjG3oG1W",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 139,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

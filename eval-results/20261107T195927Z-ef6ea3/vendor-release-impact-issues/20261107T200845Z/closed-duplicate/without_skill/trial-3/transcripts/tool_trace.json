@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GzKMFYr44SkHmHcmj2vF9Z",
+      "name": "Bash",
+      "input": "cd <path>; git ls-files | head -100; ls vendor; wc -c vendor/*",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GzKMFYr44SkHmHcmj2vF9Z",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EHuPdZNmkW2k8s3PGDJweY",
+      "name": "Bash",
+      "input": "cd <path>; cat vendor/*; cat README.md .example-cli/settings.json hooks/session-start.sh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json; cat bin/gh | head -30",
+      "input_chars": 200,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EHuPdZNmkW2k8s3PGDJweY",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced skills are now named `...",
+      "output_chars": 6095,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018ZBEQiLzBNFzw3CQHmtvrd",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-readme-synced-skill-names.md <<'EOF'\n# README: synced skills are invoked as `synced:NAME` since ExampleCLI 4.2.0\n\nFound in the ExampleCLI 4.2.0 review.\n\n## E...",
+      "input_chars": 2632,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018ZBEQiLzBNFzw3CQHmtvrd",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
