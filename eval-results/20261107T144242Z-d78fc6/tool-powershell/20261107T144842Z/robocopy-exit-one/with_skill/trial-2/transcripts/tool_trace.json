@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Goc9LWFAR2pBZJ45E6EX7w",
+      "name": "Bash",
+      "input": "ls -R . | head -50 && cat README.md && cat scripts/mirror-exports.ps1 && cat bin/pwsh",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Goc9LWFAR2pBZJ45E6EX7w",
+      "is_error": false,
+      "output": ".:\nREADME.md\nbin\nscripts\n\n./bin:\npwsh\n\n./scripts:\nmirror-exports.ps1\n# export-mirror\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/mirror-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. `scripts/mirror-exports.ps1`\nmirrors it into `<path>` with r...",
+      "output_chars": 1653,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SufDuZUioLyMtKEjhWPW5D",
+      "name": "Bash",
+      "input": "cat >> scripts/mirror-exports.ps1 <<'EOF'\n\n# robocopy exit codes are a bitmask: 0-7 are success (1 = files copied,\n# 2 = extra files, 4 = mismatches); 8 or higher means a real failure.\nif ($LASTEXITCO...",
+      "input_chars": 393,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SufDuZUioLyMtKEjhWPW5D",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0\n M scripts/mirror-exports.ps1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .pwsh-invocations.log\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc",
+      "output_chars": 217,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
