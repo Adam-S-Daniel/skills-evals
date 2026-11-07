@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013Yo9z5YhtqZ2SyvDVFUndv",
+      "name": "Bash",
+      "input": "git log --oneline -3 && ls .github/workflows && grep -n \"timeout\\|concurrency\\|cancel\\|^name\\|^  [a-z-]*:$\\|paths\" .github/workflows/*.yml | head -80",
+      "input_chars": 149,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013Yo9z5YhtqZ2SyvDVFUndv",
+      "is_error": true,
+      "output": "Exit code 2\n23b2151 initial commit\nls: cannot access '.github/workflows': No such file or directory",
+      "output_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FA16Sv3Urc4r7X3aaFdvD8",
+      "name": "Bash",
+      "input": "git ls-files | head -50; ls -a",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FA16Sv3Urc4r7X3aaFdvD8",
+      "is_error": false,
+      "output": "README.md\nworkflows/ci.yml\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\nworkflows",
+      "output_chars": 170,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MQUN1e5PMrS1vKDGM64Rp3",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml README.md",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MQUN1e5PMrS1vKDGM64Rp3",
+      "is_error": false,
+      "output": "name: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo \"slow end-to-end suite\"\n# example-site\n`test` is the required status check. Its end-to-end suite sometimes passes the\n10 minute wall and the check then shows `cancelled`, which ...",
+      "output_chars": 317,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018w2hcy2XedSMAzeDfURBMb",
+      "name": "Bash",
+      "input": "cat > workflows/ci.yml <<'EOF'\nname: CI\non:\n  pull_request:\njobs:\n  test:\n    runs-on: ubuntu-latest\n    # Backstop only. A job-level timeout reports the check as `cancelled`,\n    # which blocks the m...",
+      "input_chars": 507,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018w2hcy2XedSMAzeDfURBMb",
+      "is_error": false,
+      "output": " workflows/ci.yml | 7 ++++++-\n 1 file changed, 6 insertions(+), 1 deletion(-)",
+      "output_chars": 77,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
