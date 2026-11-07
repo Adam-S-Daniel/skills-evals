@@ -66,6 +66,15 @@ need and `<!-- skills-evals:needs-trigger-set:<skill> -->` for a trigger set. On
   trigger set no longer listed,       close-issue when the trigger lane judged
   open issue                          that skill (`subjects.triggers`), by the
                                       same rule
+  fleet-worker issue whose body       refresh-body: the instructions went
+  differs from today's rendering      stale (the 2026-11-03 `origin:` line
+                                      the fixture gate requires reached only
+                                      new issues, so the worker followed the
+                                      old text and its pull requests never
+                                      merged). A changed run link alone is no
+                                      difference; an issue labeled
+                                      `agent-working` (a worker is mid-task)
+                                      or without a `labels` list is left as is
   open fleet-worker issue without     add-label (beside whichever of the above
   its kind label                      applies)
 
@@ -409,6 +418,14 @@ def judged_subjects(items: dict) -> tuple:
             set(subjects.get("triggers", [])))
 
 
+def _stable(body: str) -> str:
+    """The body without its workflow-run line and trailing blank lines, so a
+    new run link or trailing whitespace alone is no change."""
+    lines = [line.rstrip() for line in body.splitlines()
+             if not line.startswith(RUN_PREFIX)]
+    return "\n".join(lines).rstrip()
+
+
 def plan(items: dict, issues: list, run_url: str | None) -> list:
     if not isinstance(items, dict) or not isinstance(items.get("work"), list) \
             or not isinstance(items.get("routine_down"), bool):
@@ -428,6 +445,15 @@ def plan(items: dict, issues: list, run_url: str | None) -> list:
             title, body = body_of(item, key, run_url)
             action.update(action="create-issue", reason="no open issue",
                           title=title, body=body)
+        elif kind in READY_KINDS:
+            title, body = body_of(item, key, run_url)
+            if _stable(body) != _stable(found["body"]):
+                labels = found.get("labels")
+                if labels is None or "agent-working" in labels:
+                    action["reason"] = "a worker is on it"
+                else:
+                    action.update(action="refresh-body", body=body,
+                                  reason="the issue's instructions are out of date")
         actions.append(action)
 
     for (kind, key), found in sorted(existing.items()):
@@ -474,6 +500,8 @@ def commands(action: dict) -> list:
                  *label, "--body-file", "-"]]
     if action["action"] == "add-label":
         return [["gh", "issue", "edit", issue, "-R", EVALS_REPO, "--add-label", action["kind"]]]
+    if action["action"] == "refresh-body":
+        return [["gh", "issue", "edit", issue, "-R", EVALS_REPO, "--body-file", "-"]]
     if action["action"] == "close-issue":
         return [["gh", "issue", "comment", issue, "-R", EVALS_REPO, "--body-file", "-"],
                 ["gh", "issue", "close", issue, "-R", EVALS_REPO, "--reason", "completed"]]
