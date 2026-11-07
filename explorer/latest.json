@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T17:51:31Z",
+  "fetched_at": "2026-11-07T17:55:30Z",
   "issues": [
    {
     "created_at": "2026-11-03T16:21:28Z",
@@ -553,6 +553,16 @@
    }
   ],
   "pulls": [
+   {
+    "created_at": "2026-11-07T17:55:40Z",
+    "merged_at": null,
+    "number": 482,
+    "repo": "jodidaniel/jodidaniel.com",
+    "state": "open",
+    "title": "Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:55:54Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/pull/482"
+   },
    {
     "created_at": "2026-11-07T17:49:21Z",
     "merged_at": null,
@@ -7330,6 +7340,354 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-07T17:55:47Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398708457,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:18Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398708457",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705026,
+    "state": "in_progress",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:17Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705026",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704968,
+    "state": "queued",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:14Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704968",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705007,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:14Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705007",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704997,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:14Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704997",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704948,
+    "state": "in_progress",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:13Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704948",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:56:12Z",
+    "event": "workflow_run",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398740336,
+    "state": "queued",
+    "title": "chained \u2014 after PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173 #657",
+    "updated_at": "2026-11-07T17:56:12Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398740336",
+    "workflow": "chained \u2014 after PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173 #657"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705030,
+    "state": "in_progress",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:12Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705030",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705143,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:10Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705143",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704914,
+    "state": "queued",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:09Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704914",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705011,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:56:01Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705011",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704894,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:55:58Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704894",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398704976,
+    "state": "completed",
+    "title": "Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:55:57Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398704976",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:42Z",
+    "event": "dynamic",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398702174,
+    "state": "in_progress",
+    "title": "PR #482",
+    "updated_at": "2026-11-07T17:55:47Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398702174",
+    "workflow": "PR #482"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705008,
+    "state": "completed",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:55:46Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705008",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:55:45Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398705145,
+    "state": "queued",
+    "title": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173",
+    "updated_at": "2026-11-07T17:55:45Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398705145",
+    "workflow": "PR #482 \u2014 Update the media-discovery caller's setup notes for v0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:55:15Z",
+    "event": "schedule",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42398663745,
+    "state": "completed",
+    "title": "Editorial label audit",
+    "updated_at": "2026-11-07T17:55:30Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42398663745",
+    "workflow": "Editorial label audit"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:54:57Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42398638580,
+    "state": "completed",
+    "title": "Editorial label audit",
+    "updated_at": "2026-11-07T17:55:11Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42398638580",
+    "workflow": "Editorial label audit"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:54:15Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398582870,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/consumer-repo-provisioning claude-opus-5-5,claude-sonnet-5-5",
+    "updated_at": "2026-11-07T17:54:54Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398582870",
+    "workflow": "Fire eval routine: eval evals/consumer-repo-provisioning claude-opus-5-5,claude-sonnet-5-5"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:53:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398508142,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-07T17:54:16Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398508142",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:53:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398508132,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-07T17:53:41Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398508132",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:53:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398508119,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-07T17:53:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398508119",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:53:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398508122,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-07T17:53:27Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398508122",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T17:53:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398508138,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T17:53:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398508138",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-07T17:49:52Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398226671,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T17:53:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398226671",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:52:58Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398481573,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-07T17:53:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398481573",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:49:25Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42398190714,
+    "state": "completed",
+    "title": "PR #4701 \u2014 Update E2E Canary \u201ccanary-post\u201d",
+    "updated_at": "2026-11-07T17:53:07Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42398190714",
+    "workflow": "PR #4701 \u2014 Update E2E Canary \u201ccanary-post\u201d"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:52:49Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42398470047,
+    "state": "completed",
+    "title": "Eval results 20261107T175053Z-e64f66",
+    "updated_at": "2026-11-07T17:52:55Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398470047",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T17:49:02Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42398159008,
+    "state": "completed",
+    "title": "PR #979 \u2014 Release v0.1.173",
+    "updated_at": "2026-11-07T17:52:35Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42398159008",
+    "workflow": "PR #979 \u2014 Release v0.1.173"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-07T17:50:42Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -7509,18 +7867,6 @@
     "workflow": "PR #4701 \u2014 Update E2E Canary \u201ccanary-post\u201d"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:49:52Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42398226671,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T17:49:53Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398226671",
-    "workflow": "Weekly routine evals"
-   },
-   {
     "conclusion": "cancelled",
     "created_at": "2026-11-07T17:45:51Z",
     "event": "workflow_run",
@@ -7555,18 +7901,6 @@
     "updated_at": "2026-11-07T17:49:50Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42398201235",
     "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:49:25Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42398190714,
-    "state": "in_progress",
-    "title": "PR #4701 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-07T17:49:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42398190714",
-    "workflow": "PR #4701 \u2014 Update E2E Canary \u201ccanary-post\u201d"
    },
    {
     "conclusion": "success",
@@ -7722,18 +8056,6 @@
     "title": "PR #979 \u2014 Release v0.1.173",
     "updated_at": "2026-11-07T17:49:13Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42398159013",
-    "workflow": "PR #979 \u2014 Release v0.1.173"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T17:49:02Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42398159008,
-    "state": "in_progress",
-    "title": "PR #979 \u2014 Release v0.1.173",
-    "updated_at": "2026-11-07T17:49:13Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42398159008",
     "workflow": "PR #979 \u2014 Release v0.1.173"
    },
    {
@@ -9634,18 +9956,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T17:16:41Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395501823,
-    "state": "completed",
-    "title": "Fire eval routine: eval evals/guidance/github-404-means-not-authorized/private-repo-404 claude-opus-5-5,claude-sonnet-5-5",
-    "updated_at": "2026-11-07T17:17:31Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395501823",
-    "workflow": "Fire eval routine: eval evals/guidance/github-404-means-not-authorized/private-repo-404 claude-opus-"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T17:16:53Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
@@ -9703,18 +10013,6 @@
     "updated_at": "2026-11-07T17:17:21Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395547661",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-07T17:13:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395245859,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T17:17:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395245859",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "success",
@@ -9799,18 +10097,6 @@
     "updated_at": "2026-11-07T17:17:01Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42395518819",
     "workflow": "PR #481 \u2014 Encode every remaining Liquid output for where it prints"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:16:44Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395506447,
-    "state": "completed",
-    "title": "Eval results 20261107T171315Z-6b0b16",
-    "updated_at": "2026-11-07T17:16:52Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395506447",
-    "workflow": "Routine eval results pushed"
    },
    {
     "conclusion": "success",
@@ -10113,18 +10399,6 @@
     "workflow": "PR #980 \u2014 Encode every Liquid output for where it prints, and enforce it in a hook and CI"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:13:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395245805,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-07T17:14:46Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395245805",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
     "conclusion": null,
     "created_at": "2026-11-07T17:14:13Z",
     "event": "schedule",
@@ -10135,66 +10409,6 @@
     "updated_at": "2026-11-07T17:14:29Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395296304",
     "workflow": "scheduled \u2014 0 12 * * *"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:13:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395245838,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-07T17:13:54Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395245838",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:13:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395245811,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-07T17:13:44Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395245811",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:13:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395245797,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-07T17:13:43Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395245797",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:13:16Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42395220326,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-07T17:13:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42395220326",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T17:12:58Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42395197507,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4697 \u2014 Encode every Liquid output for where it prints #16012",
-    "updated_at": "2026-11-07T17:13:25Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42395197507",
-    "workflow": "chained \u2014 after PR #4697 \u2014 Encode every Liquid output for where it prints #16012"
    },
    {
     "conclusion": "success",
@@ -11422,18 +11636,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979816,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:14:20Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979816",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T16:09:22Z",
     "event": "push",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -11467,18 +11669,6 @@
     "updated_at": "2026-11-07T16:13:25Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003509",
     "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:09Z",
-    "event": "dynamic",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390000885,
-    "state": "completed",
-    "title": "PR #479",
-    "updated_at": "2026-11-07T16:13:20Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390000885",
-    "workflow": "PR #479"
    },
    {
     "conclusion": "success",
@@ -11542,42 +11732,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003638,
-    "state": "completed",
-    "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:51Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003638",
-    "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003675,
-    "state": "completed",
-    "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:51Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003675",
-    "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003594,
-    "state": "completed",
-    "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:47Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003594",
-    "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T16:11:42Z",
     "event": "workflow_run",
     "repo": "jodidaniel/jodidaniel.com",
@@ -11593,108 +11747,12 @@
     "created_at": "2026-11-07T16:11:11Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003538,
-    "state": "completed",
-    "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:32Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003538",
-    "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:57Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389983487,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:12:31Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389983487",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979790,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:12:27Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979790",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979788,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:12:27Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979788",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003521,
-    "state": "completed",
-    "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:08Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003521",
-    "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42390003579,
-    "state": "completed",
-    "title": "Release candidate: cms-platform v0.1.172 (do not merge)",
-    "updated_at": "2026-11-07T16:12:04Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003579",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979805,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:12:01Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979805",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:11:11Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
     "run_id": 42390003490,
     "state": "completed",
     "title": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)",
     "updated_at": "2026-11-07T16:11:57Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42390003490",
     "workflow": "PR #479 \u2014 Release candidate: cms-platform v0.1.172 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979820,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:11:55Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979820",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
    },
    {
     "conclusion": "success",
@@ -11710,18 +11768,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979792,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:11:52Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979792",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T16:09:22Z",
     "event": "push",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -11731,18 +11777,6 @@
     "updated_at": "2026-11-07T16:11:35Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42389848245",
     "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979872,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:11:16Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979872",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
    },
    {
     "conclusion": "skipped",
@@ -11769,18 +11803,6 @@
     "workflow": "Push on main"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979799,
-    "state": "completed",
-    "title": "Prepare for media discovery: escape entry fields, add Jodi's config",
-    "updated_at": "2026-11-07T16:11:07Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979799",
-    "workflow": "Secrets scan"
-   },
-   {
     "conclusion": "skipped",
     "created_at": "2026-11-07T16:10:55Z",
     "event": "workflow_run",
@@ -11791,18 +11813,6 @@
     "updated_at": "2026-11-07T16:10:56Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/42389981074",
     "workflow": "Vendor changelog merge"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-07T16:10:54Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42389979904,
-    "state": "completed",
-    "title": "PR #478 \u2014 Add Jodi's media-discovery config",
-    "updated_at": "2026-11-07T16:10:55Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42389979904",
-    "workflow": "PR #478 \u2014 Add Jodi's media-discovery config"
    },
    {
     "conclusion": "success",
@@ -27273,7 +27283,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T17:51:31Z"
+  "since": "2026-10-24T17:55:30Z"
  },
  "agent_made": {
   "items": [
@@ -28214,7 +28224,7 @@
     "created": "2026-10-04T21:13:42Z",
     "id": "test-that-can-signal-kills-every-session",
     "impact": {
-     "current_text_runs": 2,
+     "current_text_runs": 3,
      "verdict": "insufficient"
     },
     "kind": "section",
@@ -29285,6 +29295,17 @@
    }
   ],
   "latest": [
+   {
+    "checks": 2,
+    "fired_at": "2026-11-07T17:50:53Z",
+    "fixture": "guidance/test-that-can-signal-kills-every-session/stop-worker",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T175053Z-e64f66",
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_share": 0.5,
+    "without_skill": 1
+   },
    {
     "checks": 2,
     "fired_at": "2026-11-07T17:47:25Z",
@@ -30530,17 +30551,6 @@
    },
    {
     "checks": 2,
-    "fired_at": "2026-11-07T14:14:04Z",
-    "fixture": "guidance/test-that-can-signal-kills-every-session/stop-worker",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261107T141404Z-af1017",
-    "with_share": 1.0,
-    "with_skill": 2,
-    "without_share": 0.5,
-    "without_skill": 1
-   },
-   {
-    "checks": 2,
     "fired_at": "2026-11-07T14:10:34Z",
     "fixture": "guidance/security/search-query",
     "model": "claude-opus-5-5",
@@ -31284,6 +31294,28 @@
    "tied": 50
   },
   "runs": [
+   {
+    "account_week_after": null,
+    "checks": 2,
+    "cli": "2.1.319",
+    "cost_usd": 0.22106309999999998,
+    "fired_at": "2026-11-07T17:50:53Z",
+    "fixture": "guidance/test-that-can-signal-kills-every-session/stop-worker",
+    "gain": 1,
+    "judge": "skipped: checks decided",
+    "meter_points": null,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T175053Z-e64f66/guidance/test-that-can-signal-kills-every-session/20261107T175157Z/report.md",
+    "run_id": "20261107T175053Z-e64f66",
+    "skill": "guidance/test-that-can-signal-kills-every-session",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 2,
+    "without_judge": null,
+    "without_share": 0.5,
+    "without_skill": 1
+   },
    {
     "account_week_after": null,
     "checks": 2,
@@ -51286,7 +51318,7 @@
     "without_pass_rate": 0.8194444444444444
    }
   ],
-  "generated_at": "2026-11-07T17:51:00Z",
+  "generated_at": "2026-11-07T17:54:57Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -51362,7 +51394,7 @@
    "requests_open": 1
   }
  },
- "generated_at": "2026-11-07T17:49:54Z",
+ "generated_at": "2026-11-07T17:53:52Z",
  "guidance": {
   "removed": [
    {
@@ -53175,7 +53207,7 @@
     "next_test": {
      "band": "focus",
      "due": null,
-     "position": 4,
+     "position": 5,
      "scheduled": true
     },
     "runs": [
@@ -57456,7 +57488,7 @@
     "next_test": {
      "band": "focus",
      "due": null,
-     "position": 2,
+     "position": 3,
      "scheduled": true
     },
     "runs": [
@@ -57849,7 +57881,7 @@
     "next_test": {
      "band": "focus",
      "due": null,
-     "position": 3,
+     "position": 4,
      "scheduled": true
     },
     "runs": [
@@ -58223,7 +58255,7 @@
        "high": 100.0,
        "low": -100.0,
        "model": "claude-sonnet-5-5",
-       "pairs": 1,
+       "pairs": 2,
        "status": "open",
        "task": "stop-worker",
        "votes": true
@@ -58231,21 +58263,44 @@
      ],
      "helps": 0.0,
      "keep_family": 2,
-     "keep_pairs": 1,
-     "max_pairs": 1,
+     "keep_pairs": 2,
+     "max_pairs": 2,
      "no_help": 0.0,
      "no_help_pairs": 1
     },
-    "current_text_runs": 2,
+    "current_text_runs": 3,
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
      "band": "focus",
      "due": null,
-     "position": 5,
+     "position": 2,
      "scheduled": true
     },
     "runs": [
+     {
+      "at": "2026-11-07T17:51:57Z",
+      "cli_version": "2.1.319",
+      "fixture": "stop-worker",
+      "model": "claude-sonnet-5-5",
+      "modes": {
+       "full": {
+        "checks_passed": 2,
+        "checks_total": 2,
+        "cost_usd": 0.1184461,
+        "judge_mean": null,
+        "trials": 1
+       },
+       "full_minus_section": {
+        "checks_passed": 1,
+        "checks_total": 2,
+        "cost_usd": 0.10261699999999999,
+        "judge_mean": null,
+        "trials": 1
+       }
+      },
+      "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T175053Z-e64f66/guidance/test-that-can-signal-kills-every-session/20261107T175157Z/report.md"
+     },
      {
       "at": "2026-11-07T14:18:15Z",
       "cli_version": "2.1.319",
@@ -63132,7 +63187,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-07T17:48:28Z",
+ "newest_run": "2026-11-07T17:51:57Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -82991,7 +83046,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "351e7fb8230eec5f429031eeed4f81ba7cf2cc3e",
-  "results_commit": "4548dcb0bd778605a90e3108f62b4006f045a392"
+  "results_commit": "124e064249bdf32d509753dceb5d61b7a01b2b66"
  },
  "spend": {
   "generated_at": "2026-11-07T16:31:09Z",
