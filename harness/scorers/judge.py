@@ -42,6 +42,7 @@ if _HARNESS_DIR not in sys.path:
 from cli_json import (failed_run_detail, normalize_cli_result,  # noqa: E402
                       rate_limit_events)
 
+_ERROR_REPR_MAX = 2000
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
 
@@ -93,7 +94,12 @@ def _extract_json(text: str) -> dict:
             return json.loads(candidate)
         except json.JSONDecodeError:
             continue
-    raise ValueError(f"could not parse judge output as JSON: {text!r}")
+    # The message lands in the summary's judge.error, which ingest caps at 4096
+    # characters; keep it well under that rather than quoting the whole output.
+    shown = repr(text)
+    if len(shown) > _ERROR_REPR_MAX:
+        shown = shown[:_ERROR_REPR_MAX] + f" [truncated: {len(shown)} chars]"
+    raise ValueError(f"could not parse judge output as JSON: {shown}")
 
 
 def _weighted_overall(dimensions: list, weights: dict) -> float:
