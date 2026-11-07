@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XtcJSmdhQKLg3sCXmv5dnu",
+      "name": "Bash",
+      "input": "cd <path>; git ls-files | head -100; ls -la vendor; wc -c vendor/*; cat vendor/releases.json | head -60",
+      "input_chars": 130,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XtcJSmdhQKLg3sCXmv5dnu",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 9 root root 4096 Nov  7 15:39 ..\n-rw-r--r-- 1 root root 1092 Nov  7 04:20 RELEASES.md...",
+      "output_chars": 898,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RbUda21cV3XTntRqN5VwaV",
+      "name": "Bash",
+      "input": "cd <path>; cat vendor/RELEASES.md README.md .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh scripts/check.sh",
+      "input_chars": 162,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RbUda21cV3XTntRqN5VwaV",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 or earlier that test fo...",
+      "output_chars": 2462,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GASRZNg2oNiMntzq6ZoB2i",
+      "name": "Bash",
+      "input": "cd <path>; mkdir -p issues\ncat > issues/01-session-start-matcher-fork.md <<'EOF'\n# SessionStart hook matcher misses forked sessions (ExampleCLI 4.2.0)\n\n## TLDR\n\nSince ExampleCLI 4.2.0 (published 2026-...",
+      "input_chars": 2794,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GASRZNg2oNiMntzq6ZoB2i",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

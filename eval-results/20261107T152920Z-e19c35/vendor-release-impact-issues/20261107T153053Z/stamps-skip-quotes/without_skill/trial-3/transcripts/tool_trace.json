@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3ANFfH1zgAqZxjJKLcUD7",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100 && wc -c vendor/*",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3ANFfH1zgAqZxjJKLcUD7",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./scripts/ch...",
+      "output_chars": 495,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MAAmksmhpZ6xkxSbZngvo4",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md AGENTS.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json scripts/check.sh; do echo \"=== $f\"; cat \"$f\"; done; git ...",
+      "input_chars": 220,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MAAmksmhpZ6xkxSbZngvo4",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 3239,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016jbr8bvig5k9mYH5NA32Jz",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-check-sh-exit-2-config-errors.md <<'EOF'\n# check.sh misses configuration errors under ExampleCLI 4.3.0 (published 2026-08-25T02:16Z), which exits 2 instead of 1\n\nExa...",
+      "input_chars": 4059,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016jbr8bvig5k9mYH5NA32Jz",
+      "is_error": false,
+      "output": "01-check-sh-exit-2-config-errors.md\n02-session-start-hook-skips-forked-sessions.md\nissues/01-check-sh-exit-2-config-errors.md:20:4.1.0 or later,\" so contributors running a ne\nissues/01-check-sh-exit-2-config-errors.md:24:4.3.0 and test only for 2.",
+      "output_chars": 247,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B5rWmRzdtoqeVYVx22Vc61",
+      "name": "Bash",
+      "input": "sed -i 's/but the README says \"4.1.0 or later,\"<path>\"4.1.0 or later\" (that version was published 2026-06-02T14:03Z),/; s/raise the minimum to 4.3.0 and test only for 2/raise the minimum to 4.3.0 (pub...",
+      "input_chars": 454,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B5rWmRzdtoqeVYVx22Vc61",
+      "is_error": false,
+      "output": "v4.3.0)) changed `example-cli check`\n4.1.0 or later\" (that version was p\nv4.2.0)) made session-start hooks re\nissues/01-check-sh-exit-2-config-errors.md:6\nissues/02-session-start-hook-skips-forked-sessions.md:6",
+      "output_chars": 210,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

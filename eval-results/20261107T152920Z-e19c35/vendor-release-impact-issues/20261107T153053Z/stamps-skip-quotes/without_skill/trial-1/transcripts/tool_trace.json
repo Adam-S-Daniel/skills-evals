@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dey4rNnY1zqGzRKkA8U2mr",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100 && wc -c vendor/* 2><path>",
+      "input_chars": 108,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dey4rNnY1zqGzRKkA8U2mr",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./scripts/ch...",
+      "output_chars": 495,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GVymY2osZ8vtxf6oBxnQBd",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md AGENTS.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json scripts/check.sh; do echo \"=== $f\"; cat \"$f\"; done; git ...",
+      "input_chars": 220,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GVymY2osZ8vtxf6oBxnQBd",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 3239,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011fx4nd7apCKy1VzPosbQeF",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-skips-forked-sessions.md <<'EOF'\n# SessionStart hook does not fire for forked sessions on ExampleCLI v4.2.0 and later\n\n## What changed upstream\n\n[...",
+      "input_chars": 4927,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011fx4nd7apCKy1VzPosbQeF",
+      "is_error": false,
+      "output": "issues/01-session-start-hook-skips-forked-sessions.md:1:v4.2.0\nissues/01-session-start-hook-skips-forked-sessions.md:5:v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0) (published 2026-07-14T09:47Z)\nissues/01-session-start-hook-skips-forked-sessions.md:5:v4.1.0](https://gith...",
+      "output_chars": 2089,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3eE39Wr6sYGKetpipvfSk",
+      "name": "Bash",
+      "input": "sed -i '1s/.*/# SessionStart hook does not fire for forked sessions on ExampleCLI v4.2.0 (published 2026-07-14T09:47Z) and later/' issues/01-*.md && sed -i '1s/.*/# scripts\\/check.sh no longer explain...",
+      "input_chars": 332,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3eE39Wr6sYGKetpipvfSk",
+      "is_error": false,
+      "output": "==> issues/01-session-start-hook-skips-forked-sessions.md <==\n# SessionStart hook does not fire for forked sessions on ExampleCLI v4.2.0 (published 2026-07-14T09:47Z) and later\n\n==> issues/02-check-sh-misses-config-error-exit-2.md <==\n# scripts/check.sh no longer explains configuration errors on Exa...",
+      "output_chars": 363,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
