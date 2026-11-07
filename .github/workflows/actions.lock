@@ -39,6 +39,10 @@ workflows:
         - 'actions/create-github-app-token@v3.3.0'
         - 'actions/setup-python@v7.1.0'
     '.github/workflows/fixture-pr-seen.yml': []
+    '.github/workflows/guidance-merge-window.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.3.0'
+        - 'actions/setup-python@v7.1.0'
     '.github/workflows/loop-pr-refresh.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
