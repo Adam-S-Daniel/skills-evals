@@ -758,6 +758,12 @@ def fire(args, runner, clock, wall, sleep, python, err) -> tuple[list[str], str]
 
     for run in runs:
         lines += run_lines(run, fixture)
+    if pushed != "none":
+        # Pushed and verified, and the report has read its summaries: the
+        # files left out (raw.json) stay unpushed by design, and an untracked
+        # results tree would only draw the session's stop hook into an extra
+        # turn about uncommitted files.
+        shutil.rmtree(results, ignore_errors=True)
     lines += [f"note: {note}" for note in steps.notes]
     lines.append(f"branch pushed: {pushed}")
     lines += [f"error: {line}" if not line.startswith("  ") else line for line in errors]
