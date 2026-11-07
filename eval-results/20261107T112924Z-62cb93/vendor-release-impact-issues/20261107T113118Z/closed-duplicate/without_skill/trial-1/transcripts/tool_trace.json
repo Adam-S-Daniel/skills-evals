@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0173cHTe2PqnC9nCBg7j75hp",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && wc -c vendor/*",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0173cHTe2PqnC9nCBg7j75hp",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lqruka8ihSwmzphi6SDggs",
+      "name": "Bash",
+      "input": "cat vendor/*; cat .example-cli/settings.json README.md hooks/session-start.sh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json; cat bin/gh | head -30",
+      "input_chars": 162,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lqruka8ihSwmzphi6SDggs",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced skills are now named `...",
+      "output_chars": 6095,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EtAt4omLhtnc5PTrYd9Fwx",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: README tells people to use the bare name\n\nFound in the ExampleCLI 4.2.0 r...",
+      "input_chars": 3198,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EtAt4omLhtnc5PTrYd9Fwx",
+      "is_error": false,
+      "output": "01-synced-skills-renamed.md",
+      "output_chars": 27,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
