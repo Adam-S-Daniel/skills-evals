@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Offline stand-in for the GitHub CLI on example-org/widgets.
+
+Its origin is the bare repository at .remote/origin.git. Every call is
+appended to .gh/calls.log; `pr create` also records the pull request it
+opened (its head, its commits and its diff against main) in .gh/pr-<n>.txt.
+"""
+import os
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ORIGIN = os.path.join(ROOT, ".remote", "origin.git")
+GH = os.path.join(ROOT, ".gh")
+REPO = "example-org/widgets"
+
+args = sys.argv[1:]
+os.makedirs(GH, exist_ok=True)
+with open(os.path.join(GH, "calls.log"), "a", encoding="utf-8") as log:
+    log.write(" ".join(a.replace("\n", "\\n") for a in args) + "\n")
+
+
+def git(*argv, cwd=ROOT):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    return subprocess.run(["git", *argv], cwd=cwd, env=env, capture_output=True, text=True)
+
+
+def option(rest, *names, default=None):
+    for i, a in enumerate(rest):
+        for n in names:
+            if a == n and i + 1 < len(rest):
+                return rest[i + 1]
+            if a.startswith(n + "="):
+                return a[len(n) + 1:]
+    return default
+
+
+def opened():
+    return sorted(n for n in os.listdir(GH) if n.startswith("pr-") and n.endswith(".txt"))
+
+
+if args[:2] == ["pr", "create"]:
+    rest = args[2:]
+    base = option(rest, "--base", "-B", default="main")
+    head = option(rest, "--head", "-H")
+    if head is None:
+        head = git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    head = head.split(":")[-1]
+    if git("--git-dir", ORIGIN, "rev-parse", "--verify", "-q", f"refs/heads/{head}").returncode:
+        sys.exit("aborted: you must first push the current branch to a remote, "
+                 "or use the --head flag")
+    rng = f"{base}..{head}"
+    commits = git("--git-dir", ORIGIN, "log", "--format=%s", rng).stdout.splitlines()
+    if not commits:
+        sys.exit(f"pull request create failed: No commits between {base} and {head}")
+    files = git("--git-dir", ORIGIN, "diff", "--name-only", f"{base}...{head}").stdout.splitlines()
+    patch = git("--git-dir", ORIGIN, "diff", f"{base}...{head}").stdout
+    number = 8 + len(opened())
+    with open(os.path.join(GH, f"pr-{number}.txt"), "w", encoding="utf-8") as f:
+        f.write(f"head: {head}\nbase: {base}\n")
+        f.writelines(f"commit: {c}\n" for c in commits)
+        f.writelines(f"changed: {p}\n" for p in files)
+        f.write(patch)
+    print(f"https://github.com/{REPO}/pull/{number}")
+    sys.exit(0)
+if args[:2] == ["pr", "list"]:
+    for name in opened():
+        number = name[3:-4]
+        head = open(os.path.join(GH, name), encoding="utf-8").readline().split(": ", 1)[1].strip()
+        print(f"{number}\t{head}\t{head}\tOPEN")
+    sys.exit(0)
+if args[:2] == ["pr", "view"]:
+    rest = [a for a in args[2:] if not a.startswith("-")]
+    name = f"pr-{rest[0]}.txt" if rest else (opened() or [None])[-1]
+    if not name or not os.path.exists(os.path.join(GH, name)):
+        sys.exit("no pull requests found")
+    print(open(os.path.join(GH, name), encoding="utf-8").read())
+    sys.exit(0)
+if args[:2] == ["repo", "view"]:
+    print(f"{REPO}\nA small library for receiving and batching widget events.")
+    sys.exit(0)
+if args[:2] == ["auth", "status"]:
+    print("github.com\n  ✓ Logged in to github.com account example-dev (keyring)")
+    sys.exit(0)
+sys.exit(f"gh (offline stand-in): unsupported command: {' '.join(args)}")

@@ -58,6 +58,12 @@ REVIEWED = ["evals/embeddable-tool-pages",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
             "evals/guidance/finding-your-unknowns/changelog-check",
             "evals/guidance/turn-lessons-into-checks/recurring-debug-flag",
+            # Harder fixtures, set A (2026-11-07).
+            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+            "evals/guidance/git-practices/stale-branch-pull-request",
+            "evals/guidance/watch-finished-is-not-ci-passed/piped-watch-exit-code",
+            "evals/guidance/automation-vs-branch-protection/generated-stats-push",
+            "evals/guidance/subagent-delegation/contradicting-report",
             # Skill fixtures merged hermetic and left off the schedule while
             # the skills-fixture lane was stopped (#62's children): their
             # skills are live in adam-agentskills and cms-platform.
