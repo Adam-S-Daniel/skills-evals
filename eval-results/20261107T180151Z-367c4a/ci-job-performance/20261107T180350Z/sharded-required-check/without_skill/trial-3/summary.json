@@ -1,0 +1,407 @@
+{
+  "skill": "ci-job-performance",
+  "arm": "without_skill",
+  "timestamp": "20261107T180350Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.21493359999999997,
+    "num_turns": 6,
+    "duration_ms": 44657,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 13833,
+      "cache_read_input_tokens": 209608,
+      "output_tokens": 3115,
+      "output_tokens_details": {
+        "thinking_tokens": 760
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 13833,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 784,
+          "cache_read_input_tokens": 38756,
+          "cache_creation_input_tokens": 309,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 309
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "suite-is-sharded-three-ways-without-fail-fast",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "required-e2e-check-is-published-by-a-gate",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "gate-cannot-be-cancelled",
+      "passed": false,
+      "detail": "command_nonzero exit=1 network=isolated stdout_bytes=0 stderr_bytes=40 output=suppressed"
+    },
+    {
+      "id": "no-matrix-value-in-a-run-body",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "only-the-workflow-changed",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json, README.md, e2e/package-lock.json, e2e/package.json, e2e/playwright.config.ts, e2e/tests/about.spec.ts, e2e/tests/contact.spec.ts, e2e/tests/home.spec.ts, e2e/tests/pricing.spec.ts, e2e/tests/sitemap.spec.ts)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 4,
+        "rationale": "The gate publishes the required `e2e` context, uses `needs`/`if: always()`, requires `success` (so skipped or cancelled shards fail), shards run with `fail-fast: false` and pass the matrix value via `env:`, but the gate carries `timeout-minutes: 5`, which violates the gate-cannot-be-cancelled requirement and caps the score."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "Only `.github/workflows/e2e.yml` changed, the ruleset was left alone, nothing was committed or pushed, and the agent explicitly declined to add an out-of-scope test."
+      },
+      {
+        "name": "explanation",
+        "score": 8,
+        "rationale": "Clearly explains why the matrix would leave the `e2e` context unpublished, what the gate does and why `if: always()` matters, and sets expectations about per-file splitting, uneven shards, repeated setup cost and higher runner minutes, though it omits the explicit rule that sharding only pays when test time is several times the fixed cost."
+      }
+    ],
+    "overall": 5.800000000000001
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 3115,
+      "cache_read_input_tokens": 209608,
+      "cache_creation_input_tokens": 13833,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "sharded-required-check",
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "7405db1339299dfa27ada03ee5887b665d21a1deebe9e93d11b579941b00fa4d",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/cms-platform",
+    "revision": "caeff57f6501a71306fd8ca65027450da71e354e",
+    "digest": "c3add9589f7afddd927726339688c3db393587a25a56c9ca9aaf9af1b0754553",
+    "lock_digest": "7d643de6b4cddb2a0059dcf91693f06579c723f824a71caecee27d282ab88e0d",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "27eb4652c62074c464730b4f17cbd5bda2d3b902",
+        "digest": "10c3a45309543c34ae208bee1c473d76b0395975cf2e0ebce737a05675bef53f",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "bf26219194119286090609392b11b59ca7bbcccac4e72db338280de0ea9464e9"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "867b8a00ed40f43f3f0ce206c3c2091a826cfc8fb10a73a40ed0c04df55f8fda"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "062f6d0acde090e6f05c2d21efab9426122973ff",
+      "digest": "faa1a9c06f89e1a2520a89606e9be013c90b13b2740d056017be8ca7b648976c",
+      "bytes": 26233,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 26233,
+      "skill_catalog_bytes": 7653,
+      "skill_payload_bytes": 691992
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "ci-job-performance",
+    "action": "removed",
+    "deployed_digest": "626243e258879e440f2973af362808534445492feb44e609368db2468945c3f3",
+    "tested_digest": "626243e258879e440f2973af362808534445492feb44e609368db2468945c3f3",
+    "bytes": 12598,
+    "subject_source": "main",
+    "subject_revision": "eccda739064bdf92f1b0d5e3018a911d54b0ae78"
+  },
+  "arm_context": {
+    "skills": 11,
+    "skills_digest": "3845f2ec8ffaed061d04b0723663c45194a9c2171d6a18b2263b02b6ac38eb9a",
+    "others_digest": "3845f2ec8ffaed061d04b0723663c45194a9c2171d6a18b2263b02b6ac38eb9a",
+    "guidance_bytes": 26233,
+    "guidance_digest": "faa1a9c06f89e1a2520a89606e9be013c90b13b2740d056017be8ca7b648976c",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T180151Z-367c4a",
+    "session_id": "cse_01SphsQDTsHxBgFwJPFbSwRq",
+    "harness_commit": "351e7fb8230eec5f429031eeed4f81ba7cf2cc3e",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T18:03:50Z",
+    "ended_at": "2026-11-07T18:11:58Z",
+    "meter": {
+      "snapshot_count": 12,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T18:03:56.401Z",
+      "to_at": "2026-11-07T18:11:58.652Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.59,
+          "to": 0.59,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQDTsHxBgFwJPFbSwRq",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 2.5161936,
+      "agent_usd": 1.6814810999999998,
+      "judge_usd": 0.8347125,
+      "guard_usd": 0,
+      "metered_usd": 2.3724148499999997,
+      "last_agent_call_usd": 0.21493359999999997,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T18:09:13Z",
+      "ended_at": "2026-11-07T18:11:58Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T18:09:13Z",
+          "ended_at": "2026-11-07T18:09:59Z",
+          "duration_ms": 45823,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T18:11:38Z",
+          "ended_at": "2026-11-07T18:11:58Z",
+          "duration_ms": 20632,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T18:09:18.884Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.59,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T18:11:58.652Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.59,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.03,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 45823,
+        "num_turns": 6,
+        "cost_usd": 0.21493359999999997,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 3115,
+            "cache_read_input_tokens": 209608,
+            "cache_creation_input_tokens": 13833,
+            "cost_usd": 0.21493359999999997
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13833
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 20632,
+        "num_turns": 1,
+        "cost_usd": 0.14377875,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 2,
+            "output_tokens": 1450,
+            "cache_read_input_tokens": 3355,
+            "cache_creation_input_tokens": 3521,
+            "cost_usd": 0.14377875
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3521
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
