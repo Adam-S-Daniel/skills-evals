@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017fHh7RGPtgGGLnBKJijona",
+      "name": "ToolSearch",
+      "input": "github pull request check status",
+      "input_chars": 32,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017fHh7RGPtgGGLnBKJijona",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
