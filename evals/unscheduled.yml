@@ -64,3 +64,5 @@ fixtures:
     reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
   - path: evals/ci-job-performance/act-local-loop
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/red-ci-adamdaniel-ai/release-bump-blocked
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
