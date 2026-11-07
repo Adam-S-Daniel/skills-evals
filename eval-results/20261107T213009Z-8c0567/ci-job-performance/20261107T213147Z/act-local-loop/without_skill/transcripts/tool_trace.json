@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UHXavVZ19dCg3VwP99Tp7r",
+      "name": "Bash",
+      "input": "git status --short | head; ls -la . scripts tools .github/workflows; cat scripts/*.sh; cat .github/workflows/ci.yml; ls tools | head -50",
+      "input_chars": 136,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UHXavVZ19dCg3VwP99Tp7r",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.:\ntotal 36\ndrwxr-xr-x 8 root root 4096 Nov  7 21:32 .\ndrwx------ 6 root root 4096 Nov  7 21:32 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:48 .bash_profile\ncrw-rw-rw- 1 root...",
+      "output_chars": 3302,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AgyLztPQnxSjqgybu7GBMe",
+      "name": "Bash",
+      "input": "cat tools/*; cat README.md; ls pages; git log --oneline | head",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AgyLztPQnxSjqgybu7GBMe",
+      "is_error": false,
+      "output": "# nektos/act releases as listed on 2026-11-07 (mirror: example.com/act/releases).\n# Each line: version, published date, tarball URL, sha256 of the linux x86_64 tarball.\nv0.2.90  2026-11-05  https://example.com/act/releases/download/v0.2.90/act_Linux_x86_64.tar.gz  71c0e5b9a3d84f2166b0c8e4a9d7f13520b...",
+      "output_chars": 1610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WE2JxiGoCpyyGhn5pxUA9D",
+      "name": "Bash",
+      "input": "cat > scripts/install-act.sh <<'EOF'\n#!<path>\n# Installs a pinned nektos/act into <path> so `scripts/local-ci.sh` can run.\n# Pin: v0.2.89 (published 2026-10-28, the newest release at least 7 days old ...",
+      "input_chars": 1830,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WE2JxiGoCpyyGhn5pxUA9D",
+      "is_error": false,
+      "output": "<path>\n M scripts/install-act.sh\n M scripts/local-ci.sh\n?? dist/",
+      "output_chars": 73,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YcEV229zXNvWD6izqaNLac",
+      "name": "Bash",
+      "input": "rm -rf dist && HOME=$TMPDIR/h sh scripts/install-act.sh 2>&1 | tail -5; docker ps 2>&1 | head -2",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YcEV229zXNvWD6izqaNLac",
+      "is_error": false,
+      "output": "curl: (22) The requested URL returned error: 403\npermission denied while trying to connect to the docker API at unix:///var/run/docker.sock\n<sandbox_violations>\ndeny network-outbound example.com:443 (host is not on the allow list)\n</sandbox_violations>",
+      "output_chars": 252,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
