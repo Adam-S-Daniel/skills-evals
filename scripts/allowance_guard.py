@@ -24,7 +24,14 @@ one week's sanctioned push to the next):
 
   * spent: every ingested routine run on `persistent/eval-results`
     (`routine-results/<run id>/`, scripts/ingest_routine_results.py) whose
-    run id's timestamp falls in the window, each charged its measured
+    run id's timestamp falls in the window, each invocation charged its own
+    dollars, `usage.cost_estimate.usd` times `points_per_usd`, plus
+    `per_run_overrun`. The weekly meter's delta is not used when the dollars
+    are known: it is the whole ACCOUNT's movement while the run went, so it
+    charges a run with every other thread's use, and overlapping runs are
+    charged the same movement twice (2026-11-04: 116 points booked against
+    about 23 real). Without a usable rate or dollar figure (none, non-finite,
+    negative or a bool) the charge is the old one: the measured
     `usage.meter_delta.windows.seven_day.delta` plus `per_run_overrun` (the
     meter is read as a call begins, so the last call is outside the delta),
     or `per_run_cap + per_run_overrun` when there is no measured delta (null,
@@ -32,12 +39,13 @@ one week's sanctioned push to the next):
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
   * pending: successful runs of routine-eval-fire.yml in the window that
-    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (45
+    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (90
     minutes) is reserved at `per_run_cap + per_run_overrun`; an older one is
     charged `per_run_overrun` only for the rest of the week. A routine run
     finishes within minutes (healthy runs take 4-12, ingest a few more) and
-    the routine's own prompt stops an eval or scaffold run at 30 minutes, so
-    a fire with no results 45 minutes later failed or never started (or is a
+    the routine stops each run_eval command 40 minutes after it starts, two
+    of them in a pair fire, so a fire with no results 90 minutes later
+    failed or never started (or is a
     scaffold or improve run, which never lands in routine-results/), and the
     in-run stops (`per_run_cap`,
     `stop_when_account_above` in harness/run_eval.py) still bound what it
@@ -119,9 +127,9 @@ Fires without results (2026-11-01): the bound still charged every eval fire
 without an ingested run, so 15 fires that had stopped hours before the 84%
 reading held 7.5 points it already held, and three fires were refused 3
 points under the 95% stop. A fire that started `PENDING_FULL_HOLD` or more
-before the reading has finished inside it (a routine run stops at 30
-minutes), so when the fires' start times are known the bound charges only
-the fires after that cut that no ingested run accounts for: a recent one the
+before the reading has finished inside it (an eval fire, a pair fire's two
+runs included, has stopped by then), so when the fires' start times are
+known the bound charges only the fires after that cut that no ingested run accounts for: a recent one the
 full reservation, an older one the overrun. An ingested run inside the
 reading whose summaries say it had ended by then (`usage.ended_at`) has no
 call after it, so it is not charged the overrun either (2026-11-01 13:54
@@ -157,6 +165,13 @@ run is charged its own measured delta. So a bare fire is held, checked and
 charged as one run, exactly as an eval fire of both arms, never as two.
 Its title (`Fire eval routine: eval bare <fixture> <model>`) is not an
 improve title, so it is never charged `improve_charge`.
+
+Pair fires (scripts/plan_week.py, PAIR FIRES): one eval fire may run a
+fixture on two models (`model: m1,m2`, title `... <fixture> m1,m2`), two
+run_eval invocations in sequence under one run id. It is still one fire:
+counted, held and matched to its one ingested run directory as any eval
+fire, so while pending it is reserved once. Once ingested, `run_cost` sums
+its two invocations' run-level blocks, so each is charged on its own.
 
 Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
@@ -204,6 +219,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 
 import budget as budget_file  # noqa: E402
 import improve_outcomes  # noqa: E402
+import routine_deadlines  # noqa: E402
 
 #: The routine run id the fire workflow generates (routine-eval-fire.yml's
 #: validate step), and the directory ingest names after it.
@@ -227,9 +243,12 @@ MANUAL_RESETS = (datetime(2026, 11, 4, 18, 15, tzinfo=timezone.utc),)
 #: allowance Adam had left; healthy runs land within about 15 minutes. It was
 #: 2 hours until 2026-10-27, when three fires that failed at startup held
 #: about 31 points against a 30-point cap while measured use was about 5, and
-#: blocked every fire for two hours. The routine stops an eval or scaffold run
-#: at 30 minutes, so 45 minutes covers that limit plus the push and ingest.
-PENDING_FULL_HOLD = timedelta(minutes=45)
+#: blocked every fire for two hours. It was 45 minutes until 2026-11-07, when
+#: an eval fire's stop became 40 minutes per model
+#: (scripts/routine_deadlines.py): a pair fire still running its second model
+#: past 45 minutes was charged the overrun alone. It is now the latest a pair
+#: fire can deliver.
+PENDING_FULL_HOLD = routine_deadlines.deadline("eval", 2)
 #: ingest_routine_results.SIZE_CAPS["summary.json"]: a bigger file was never
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024
@@ -300,8 +319,28 @@ def _load_summary(path: Path):
         return None
 
 
+def _own_dollars_cost(usage, limits: dict) -> float | None:
+    """The charge from an invocation's own dollars, or None when it cannot be
+    made: `usage.cost_estimate.usd` (every call of the invocation that carries
+    a dollar figure) times `points_per_usd`, plus the overrun. Needs a positive
+    finite rate and a finite non-negative, non-bool dollar figure."""
+    rate = limits.get("points_per_usd")
+    estimate = usage.get("cost_estimate") if isinstance(usage, dict) else None
+    dollars = estimate.get("usd") if isinstance(estimate, dict) else None
+    if isinstance(rate, bool) or not isinstance(rate, (int, float)) \
+            or not math.isfinite(rate) or rate <= 0:
+        return None
+    if isinstance(dollars, bool) or not isinstance(dollars, (int, float)) \
+            or not math.isfinite(dollars) or dollars < 0:
+        return None
+    return float(dollars) * rate + limits["per_run_overrun"]
+
+
 def _invocation_cost(usage, limits: dict) -> float:
     """One run_eval invocation's charge from its run-level `usage` block."""
+    own = _own_dollars_cost(usage, limits)
+    if own is not None:
+        return own
     reserve = budget_file.run_reservation(limits)
     delta = usage.get("meter_delta") if isinstance(usage, dict) else None
     windows = delta.get("windows") if isinstance(delta, dict) else None

@@ -41,26 +41,27 @@ weekly_cap: 1.00
 # also cause; `points_per_usd` ended that.
 per_run_cap: 0.01
 
-# Added to every run's measured spend: the meter is read as each call
-# begins, so the run's last call (agent or judge) is never inside the
-# measured delta. Set to the 95th percentile of each run's largest single
-# call (Adam, 2026-11-01: "Use p95 now and in the future"); recalculate with
-# `python3 scripts/run_costs.py --results-tree <persistent/eval-results>`,
-# which prints the value to use. Over 258 metered runs, at 0.220 points per
-# dollar of agent, judge and guard calls, that call was 0.180 points at p95
-# (0.311 at most). Was 0.5 points, then 0.2.
-per_run_overrun: 0.0018
+# Added to every run's charge. The routine session that ran the eval has a
+# cost no summary records: about $0.67 per fire (12 fires measured), which is
+# about 0.0003 at the rate below. It also covers each run's last call (agent
+# or judge), which the meter delta never includes: 0.180 points at p95 over
+# 258 metered runs (Adam, 2026-11-01: "Use p95 now and in the future";
+# 0.311 at most). Was 0.5 points, then 0.2, then 0.18.
+per_run_overrun: 0.0005
 
-# The allowance one dollar of the CLI's own reported call cost uses: 0.214
-# points per dollar over 288 metered runs (2026-11-03, `python3
-# scripts/run_costs.py --results-tree <persistent/eval-results>`, which prints
-# the value to use). With it, `per_run_cap` is charged the run's own calls'
-# dollars at this rate, not the account meter: the meter reads whole points
-# and moves with Adam's own use, so on 2026-11-03, with the account ticking a
-# point every 25 minutes, one run in six lost its second arm to a tick that
-# was not its own. A run with any call of unknown cost falls back to the
-# meter. Recalculate with the same script.
-points_per_usd: 0.00214
+# The allowance one dollar of API-equivalent spend uses: $20 per point, the
+# low end of the rate measured on 2026-11-04 (about $24 per point, range $20
+# to $35), so charges err high. scripts/allowance_guard.py charges each run
+# `usage.cost_estimate.usd` times this plus `per_run_overrun`, not the
+# account meter's movement: the meter is the whole account's, so it charged
+# each run with every other thread's use and booked 116 points of eval spend
+# against about 23 real in the week to 2026-11-04. A run with no usable
+# dollar figure falls back to the meter. `per_run_cap` is charged the same way
+# (harness/run_eval.py), so the in-run stop and the weekly cap now share a
+# rate. Before 2026-11-04 it was 0.214 points per dollar over 288 metered
+# runs (2026-11-03, `python3 scripts/run_costs.py --results-tree
+# <persistent/eval-results>`), which is $4.67 per point.
+points_per_usd: 0.0005
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of

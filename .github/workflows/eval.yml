@@ -1887,11 +1887,12 @@ jobs:
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           echo "preflight model: $model"
-          # The judge's isolation (harness/scorers/judge.py JUDGE_ISOLATION_FLAGS
-          # plus auto-memory off), so the preflight proves the same launch.
+          # The judge's isolation (harness/scorers/judge.py JUDGE_ISOLATION_FLAGS,
+          # `--tools ""` last, plus auto-memory off), so the preflight proves
+          # the same launch.
           out=$(CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 timeout 120 claude -p 'Reply with exactly: ok' \
             --model "$model" --output-format json \
-            --setting-sources "" --strict-mcp-config --no-session-persistence 2>&1)
+            --setting-sources "" --strict-mcp-config --no-session-persistence --tools "" 2>&1)
           rc=$?
           echo "preflight exit: $rc"
           printf '%s\n' "$out" | tail -c 4000
@@ -1901,7 +1902,7 @@ jobs:
             echo "preflight model: $model"
             out=$(CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 timeout 120 claude -p 'Reply with exactly: ok' \
               --model "$model" --output-format json \
-              --setting-sources "" --strict-mcp-config --no-session-persistence 2>&1)
+              --setting-sources "" --strict-mcp-config --no-session-persistence --tools "" 2>&1)
             rc=$?
             echo "preflight exit: $rc"
             printf '%s\n' "$out" | tail -c 4000

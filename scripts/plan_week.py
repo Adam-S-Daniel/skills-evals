@@ -16,7 +16,8 @@ stays in scripts/propose_skill_edit.py.
 
 WHAT IS MEASURED. Eval fires are cells, (fixture, roster arm model), of the
 reviewed fixtures in evals/scheduled.yml only (ADR 0008): every fire is one
-routine-eval-fire.yml dispatch in eval mode with that `model`, both arms
+routine-eval-fire.yml dispatch in eval mode with that `model` (or with a
+fixture's two model cells at once, PAIR FIRES), both arms
 (for a guidance cell not leaning toward removal, its in-situ pair alone:
 THE ALONE PAIR, at FOCUS_VERDICTS), one trial. A cell's evidence is scripts/compute_gates.py's verdict document,
 computed here over the results tree, so the cells are pooled exactly as the
@@ -122,9 +123,9 @@ THE BANDS (rule D), in order:
   "no run after two fires", whatever the cause. A cell whose verdict
   document lacks `newest_on_model` or `run_stamps_on_model` counts none and
   joins no window (fail safe). Safety cells are exempt. Every band, safety included, skips a cell with a
-  PENDING fire: one younger than PENDING_WINDOW (the routine's 30-minute
-  eval stop plus 10 minutes), successful or still running, with no run on
-  the cell since it started; past that the fire cannot deliver, so the
+  PENDING fire: one younger than its `pending_window` (the routine's
+  40-minute eval stop per model plus 10 minutes), successful or still
+  running, with no run on the cell since it started; past that the fire cannot deliver, so the
   cell is planned again, a lost fire re-fired within the hour. THE CIRCUIT BREAKER
   (#583): the routine is down from the start of an outage fire until a
   paired eval fire on a known cell delivers (or, for the breaker only,
@@ -408,6 +409,28 @@ trigger-only improve leg and "false" otherwise, and `trim_description`, the
 same for a description trim) and `count=`. The log and job summary carry numbers and
 public skill names only.
 
+PAIR FIRES. A routine session costs about $0.67 of its own on every fire,
+counted nowhere, so one fire runs a fixture on two models when it can
+(`pair_fires`, after the allocation): two chosen eval fires on one fixture
+with the same `arms` (so the same trials) on two roster models become ONE
+leg whose `model` is "m1,m2", in roster order (ctx["roster_models"]; a
+hand-built ctx without it pairs nothing). Its `cost` is the two cells'
+sum, its `band` the earlier cell's, and its `cells` lists each model with
+its own band and cost. A lone cell, an improve or guidance-improve fire,
+a probe and the refresh fire stay single legs. `--max-fires` caps cells,
+so pairing only ever shortens the matrix, and wait-slot still counts
+fires. The fire workflow sends the pair as `models: [m1, m2]`; the
+routine runs run_eval once per model, in that order, into one run id. Each
+run gets its own 40 minutes, so a pending pair fire holds its cells for
+`routine_deadlines.deadline("eval", 2)`, 90 minutes, and counts in flight
+for twice EVAL_FLIGHT (`fire_models`). Its
+run title, `... <fixture> m1,m2`, holds a cell of each model: every
+reader here expands it per model (`improve_outcomes.title_models`), so a
+pending pair fire holds both cells and its two runs are judged each on
+its own model. `validate-fire` checks each model as it checks one, and
+the pair as the fire workflow does (two distinct ids, each matching
+PAIR_MODEL_RE).
+
 FIRE CHECK. `guidance-headroom SECTION` is routine-eval-fire.yml's check
 before a guidance-improve fire: the same rule A headroom over the same
 pooled in-situ `full` runs (`guidance_contexts`), so a fire dispatched by
@@ -487,9 +510,10 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
-#: How long a fire with no run yet holds its cell (`pending`): the routine's
-#: own eval-mode stop plus a margin (scripts/routine_deadlines.py), after
-#: which the fire cannot deliver, so the cell is planned again. Adam,
+#: How long a one-model fire with no run yet holds its cell (`pending`): the
+#: routine's own eval-mode stop plus a margin (scripts/routine_deadlines.py),
+#: after which the fire cannot deliver, so the cell is planned again. The
+#: stop is per model, so a pair fire holds for `pending_window` of two. Adam,
 #: 2026-11-03: a lost fire must not wait FIRE_RESULT_WINDOW, two hours, for
 #: someone to notice it. The fire itself is still classified only at
 #: FIRE_RESULT_WINDOW, so the outage windows and PROBE_WAIT keep their
@@ -597,12 +621,18 @@ GUIDANCE_FIXTURE_RE = re.compile(r"guidance/[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
 USE_WINDOW_DAYS = 28
 #: Trials of a bare fire's one arm (routine-eval-weekly.yml sends them).
 BARE_TRIALS = 3
+#: An eval leg's one model id: the fire workflow's own shape check.
+MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+#: PAIR FIRES: each id of a pair fire, the routine payload contract's
+#: pattern, which routine-eval-fire.yml checks too before it fires a pair.
+PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: wait-slot: at most this many fires in flight, each counted in flight this
 #: long after it started (an eval run takes 4 to 12 minutes, an improve run
-#: a few hours), polled once a minute. 6 for the allowance week ending
-#: 2026-11-09 17:00 UTC only (Adam, 2026-11-03: spend the rest of the week's
-#: allowance as fast as possible before his manual reset); restore to 3 with
-#: evals/budget.yml's restore after that reset.
+#: a few hours; a pair fire EVAL_FLIGHT per model), polled once a minute. 6
+#: for the allowance week ending 2026-11-09 17:00 UTC only (Adam, 2026-11-03:
+#: spend the rest of the week's allowance as fast as possible before his
+#: manual reset); restore to 3 with evals/budget.yml's restore after that
+#: reset.
 MAX_IN_FLIGHT = 6
 EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
@@ -695,6 +725,19 @@ def _stamp_time(stamp) -> datetime | None:
         return datetime.strptime(stamp, STAMP).replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return None
+
+
+def fire_models(title: dict | None) -> int:
+    """How many run_eval commands a fire of this parsed run title runs, one
+    after the other: two for a pair fire (PAIR FIRES), else one."""
+    return max(1, len(outcomes_mod.title_models(title)))
+
+
+def pending_window(title: dict | None) -> timedelta:
+    """How long an eval fire of this run title with no run yet holds its
+    cells: PENDING_WINDOW for one model, the routine's per-model stop twice
+    over plus the margin for a pair fire."""
+    return routine_deadlines.deadline("eval", fire_models(title))
 
 
 # ---------------------------------------------------------------------------
@@ -1249,6 +1292,53 @@ def addition_histories(registries: dict, guidance: Path | None) -> dict:
     return out
 
 
+def _number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and math.isfinite(value) and value >= 0
+
+
+def _invocation_usd(directory: Path) -> float | None:
+    """The dollars of the run_eval invocation that wrote one run directory
+    (`routine-results/<run id>/<key>/<timestamp>`): each distinct run-level
+    `usage` block's `cost_estimate.usd`, summed as ingest's `estimate` sums
+    them; None when a summary there is unreadable or lacks one."""
+    if directory.is_symlink() or not directory.is_dir():
+        return None
+    blocks = {}
+    for path in guard._summary_paths(directory):
+        summary = guard._load_summary(path)
+        usage = summary.get("usage") if isinstance(summary, dict) else None
+        estimate = usage.get("cost_estimate") if isinstance(usage, dict) else None
+        usd = estimate.get("usd") if isinstance(estimate, dict) else None
+        if not _number(usd):
+            return None
+        level = {key: value for key, value in usage.items() if key != "measured"}
+        blocks[json.dumps(level, sort_keys=True)] = float(usd)
+    return sum(blocks.values()) if blocks else None
+
+
+def model_shares(tree: Path, dir_models: dict, doc: dict) -> dict | None:
+    """PAIR FIRES: {model: its share of a routine run's points} for a run
+    holding more than one model, or None when that cannot be told. Each run
+    directory (one run_eval invocation) must hold one model, and its share
+    is its dollars (`_invocation_usd`) over the estimate's `usd`, which the
+    directories' dollars must add up to: the estimate's points are those
+    dollars times one rate, so the split is exact."""
+    total = doc.get("usd")
+    if not _number(total) or total <= 0:
+        return None
+    usd: dict = {}
+    for path, models in sorted(dir_models.items()):
+        spent = _invocation_usd(tree / path)
+        if len(models) != 1 or spent is None:
+            return None
+        (model,) = models
+        usd[model] = usd.get(model, 0.0) + spent
+    if not math.isclose(sum(usd.values()), total, rel_tol=1e-9, abs_tol=1e-12):
+        return None
+    return {model: value / total for model, value in usd.items()}
+
+
 def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> dict:
     """{roster model: mean allowance fraction per observation}: over the
     routine runs of the last `window` whose cost_estimate.json carries
@@ -1261,14 +1351,19 @@ def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> d
     fire's `alone` pair is read for contrast, not counted in its cell, so
     only its `in_situ` pair is an observation. Judge and guard calls are in a
     run's points, so they are in the mean. A model with no such run is
-    absent."""
+    absent. A pair fire's run (PAIR FIRES) holds two models, one per run
+    directory: its points are split by `model_shares`, and each model gets
+    its share over its own directories' observations; a run that cannot be
+    split (one directory holding two models, say) is left out."""
     runs: dict = {}
     for record in records:
         parts = str(record.get("path", "")).split("/")
         if parts[0] != guard.DEST_ROOT or len(parts) < 2:
             continue
-        entry = runs.setdefault(parts[1], {"models": set(), "roles": {}, "newest": None})
+        entry = runs.setdefault(parts[1], {"models": set(), "roles": {}, "dirs": {},
+                                           "newest": None})
         entry["models"].add(record.get("model"))
+        entry["dirs"].setdefault(record["path"], set()).add(record.get("model"))
         if record.get("pair") in (None, "in_situ"):
             entry["roles"].setdefault(record["path"], set()).add(record.get("role"))
         at = _stamp_time(record.get("timestamp"))
@@ -1277,8 +1372,10 @@ def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> d
     points: dict = {}
     observations: dict = {}
     for run_id, entry in sorted(runs.items()):
-        count = sum(1 for roles in entry["roles"].values() if {"with", "without"} <= roles)
-        if len(entry["models"]) != 1 or None in entry["models"] or count <= 0 \
+        paired = {path: 1 for path, roles in entry["roles"].items()
+                  if {"with", "without"} <= roles}
+        count = sum(paired.values())
+        if None in entry["models"] or count <= 0 \
                 or entry["newest"] is None or not now - window <= entry["newest"] <= now:
             continue
         try:
@@ -1287,12 +1384,21 @@ def pair_costs(records: list, tree: Path, now: datetime, window: timedelta) -> d
         except (OSError, ValueError, UnicodeDecodeError, RecursionError):
             continue
         cost = doc.get("points") if isinstance(doc, dict) else None
-        if not isinstance(cost, (int, float)) or isinstance(cost, bool) \
-                or not math.isfinite(cost) or cost < 0:
+        if not _number(cost):
             continue
-        (model,) = entry["models"]
-        points[model] = points.get(model, 0.0) + cost
-        observations[model] = observations.get(model, 0) + count
+        if len(entry["models"]) == 1:
+            shares = {next(iter(entry["models"])): 1.0}
+        else:
+            shares = model_shares(tree, entry["dirs"], doc)
+            if shares is None:
+                continue
+        for model, share in sorted(shares.items()):
+            seen = sum(paired.get(path, 0) for path, models in entry["dirs"].items()
+                       if model in models)
+            if seen <= 0:
+                continue
+            points[model] = points.get(model, 0.0) + cost * share
+            observations[model] = observations.get(model, 0) + seen
     return {model: points[model] / observations[model] for model in points}
 
 
@@ -2303,6 +2409,37 @@ def probe_items(bands: dict, ctx: dict) -> list | None:
     return [item for _, item in ranked]
 
 
+def pair_fires(chosen: list, roster: list | None) -> list:
+    """PAIR FIRES: `chosen` with each two eval fires that share a fixture and
+    `arms` on two distinct models of `roster` made one fire, placed where
+    the first of them was. Its `model` is "m1,m2" in roster order, its
+    `cost` their sum, its `band` and `order` the first's, and its `cells`
+    each model's band and cost. A group of more than two pairs its first
+    two by roster order and leaves the rest single; any other fire, and
+    every fire when `roster` is None, is kept as it is."""
+    if not roster:
+        return list(chosen)
+    rank = {model: index for index, model in enumerate(roster)}
+    groups: dict = {}  # (fixture, arms) -> positions in `chosen`, in order
+    for position, item in enumerate(chosen):
+        if item["mode"] == "eval" and item["model"] in rank \
+                and PAIR_MODEL_RE.fullmatch(item["model"]):
+            groups.setdefault((item["fixture"], item["arms"]), []).append(position)
+    out = list(chosen)
+    for positions in groups.values():
+        pair = sorted(positions, key=lambda p: rank[chosen[p]["model"]])[:2]
+        if len(pair) < 2 or chosen[pair[0]]["model"] == chosen[pair[1]]["model"]:
+            continue
+        cells = [chosen[p] for p in pair]
+        first = min(pair)
+        out[first] = {**chosen[first], "model": ",".join(c["model"] for c in cells),
+                      "cost": sum(c["cost"] for c in cells),
+                      "cells": [{"model": c["model"], "band": c["band"], "cost": c["cost"]}
+                                for c in cells]}
+        out[max(pair)] = None
+    return [item for item in out if item is not None]
+
+
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure. While
     ctx["routine_down"] (#583) it holds improve and bare fires and plans at
@@ -2372,8 +2509,11 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
             bands[item["band"]].remove(item)
     # Improve fires last: a long improve run in flight never holds up evals.
     chosen.sort(key=lambda i: i["mode"] in IMPROVE_MODES)
+    # PAIR FIRES: one fire for a fixture's two model cells.
+    legs = pair_fires(chosen, ctx.get("roster_models"))
     fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
               "fixture": i["fixture"],
+              # Per fixture, never per model: a pair's two cells share it.
               "eval_key": i["fixture"][len("evals/"):] if i["fixture"] else "",
               "model": i["model"], "skill": i["skill"], "section": i.get("section") or "",
               "holdout": i["holdout"],
@@ -2381,8 +2521,9 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
               "trigger_only": "true" if i.get("trigger_only") else "false",
               "trim_description": "true" if i.get("trim_description") else "false",
               "change_type": i["change_type"] or "measure", "cost": i["cost"],
-              "value": i.get("value")}
-             for slot, i in enumerate(chosen)]
+              "value": i.get("value"),
+              **({"cells": i["cells"]} if "cells" in i else {})}
+             for slot, i in enumerate(legs)]
     return {"schema_version": 1, "generated_at": _iso(now), "room": ctx["room"],
             "reservation": ctx["reservation"], "improve_charge": ctx["improve_charge"],
             # The circuit breaker's state, for the step summary (#583):
@@ -2737,11 +2878,11 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
       * `down_fires`: the candidates that are down fires, in neither count
         above.
       * `pending`: a successful or still running non-bare eval fire that
-        started after the bound and less than PENDING_WINDOW ago, so its
-        run may still land. On an unknown cell any such fire is pending:
-        holding a cell for at most PENDING_WINDOW is cheaper than a second
-        fire. Past PENDING_WINDOW the routine has stopped, so the cell is
-        planned again.
+        started after the bound and less than its `pending_window` ago
+        (PENDING_WINDOW, longer for a pair fire), so its run may still
+        land. On an unknown cell any such fire is pending: holding a cell
+        for at most that window is cheaper than a second fire. Past it the
+        routine has stopped, so the cell is planned again.
       * `pending_since`: the start of the newest fire started after the
         bound and less than FIRE_RESULT_WINDOW ago, else None; one younger
         than PROBE_WAIT holds the next probe (`probe_blocked`).
@@ -2763,26 +2904,32 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
     finished: dict = {}
     young: dict = {}
+    held: dict = {}  # (cell, start): how long that young fire holds the cell
     latest: dict = {}  # each cell's newest successful or running fire, any arms, any age
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
         started = outcomes_mod.parse_time(run.get("run_started_at") or run.get("created_at"))
         if not (title and title["mode"] == "eval" and title["model"] and started):
             continue
-        key = (title["target"], title["model"])
         running = run.get("status") not in (None, "completed")
-        if running or run.get("conclusion") == "success":
-            latest[key] = max(latest.get(key, started), started)
-        # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
-        if title["bare"]:
-            continue
-        if now - started < FIRE_RESULT_WINDOW:
+        # A pair fire (PAIR FIRES) is a fire of each of its two cells: each
+        # is young, pending, delivered or empty on its own model's runs.
+        for model in outcomes_mod.title_models(title):
+            key = (title["target"], model)
             if running or run.get("conclusion") == "success":
-                young.setdefault(key, []).append(started)
-        elif run.get("conclusion") == "success" \
-                and now - started <= RETRY_AFTER + OUTAGE_GAP \
-                and started >= EMPTY_FIRES_SINCE:
-            finished.setdefault(key, []).append(started)
+                latest[key] = max(latest.get(key, started), started)
+            # A bare fire runs one arm, never the cell's pair: neither empty nor pending.
+            if title["bare"]:
+                continue
+            if now - started < FIRE_RESULT_WINDOW:
+                if running or run.get("conclusion") == "success":
+                    young.setdefault(key, []).append(started)
+                    held[key, started] = max(held.get((key, started), PENDING_WINDOW),
+                                             pending_window(title))
+            elif run.get("conclusion") == "success" \
+                    and now - started <= RETRY_AFTER + OUTAGE_GAP \
+                    and started >= EMPTY_FIRES_SINCE:
+                finished.setdefault(key, []).append(started)
     table = stakes_mod.load(evals_dir / "stakes.yml", evals_dir)
     cells = []
     fires: list = []  # (start, state, cell index) of every classified fire
@@ -2874,7 +3021,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                     "reason": (cell or {}).get("reason"),
                     **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
                        for role, arm in arms.items()}})
-    # A fire past PENDING_WINDOW is lost when the routine has delivered a run
+    # A fire past its pending window is lost when the routine has delivered a run
     # of any cell since it started: the routine is up, so this fire alone
     # failed, and its cell is planned again now. With no delivery since,
     # the routine may be down, so the cell keeps holding for
@@ -2883,7 +3030,8 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     landed_any = [r for cell_landed in all_landed for r in cell_landed]
     for cell in cells:
         waiting = cell.pop("waiting")
-        cell["pending"] = any(now - t < PENDING_WINDOW
+        key = (cell["fixture"], cell["model"])
+        cell["pending"] = any(now - t < held[key, t]
                               or not any(r > t for r in landed_any)
                               for t in waiting)
     # Second pass, once every fire is classified: judge each empty fire on
@@ -2987,7 +3135,8 @@ def bare_cells(evals_dir: Path, gates_doc: dict, fire_runs: list) -> list:
         if title and title["bare"] and title["model"] \
                 and (run.get("conclusion") == "success"
                      or run.get("status") not in (None, "completed")):
-            fired.add((title["target"], title["model"]))
+            # A bare pair fire (PAIR FIRES) covers both of its models.
+            fired.update((title["target"], model) for model in outcomes_mod.title_models(title))
     out = []
     for fixture in scheduled:
         subject, skill = _fixture_subject(evals_dir, fixture)
@@ -3429,6 +3578,8 @@ def gather(args, now: datetime) -> dict:
             "refresh": guard.fits(state) < 1 and guard.refresh(state),
             "points_per_usd": points_per_usd(args.results_tree, gates_doc, limits),
             "model_weights": model_weights(args.results_tree, gates_doc["roster_models"]),
+            # PAIR FIRES: a pair's models, in this order.
+            "roster_models": list(gates_doc["roster_models"]),
             "removal_prs": removal,
             "gate_verdicts": gate_verdicts(gates_doc),
             # The guidance focus's inputs (`guidance_focus`): its decision
@@ -3579,7 +3730,8 @@ def summary_lines(plan: dict) -> list:
 
 def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
     """Refuse a matrix leg that is not a fire this repository would plan:
-    eval mode on a scheduled, committed fixture and a roster arm, its arms
+    eval mode on a scheduled, committed fixture and a roster arm, or a pair
+    of two distinct roster arms "m1,m2" (PAIR FIRES), its arms
     both, in-situ on a guidance fixture (THE ALONE PAIR), or bare on a
     fixture that runs in place; improve mode on a skill
     improve_gate.py fire-check accepts, with a holdout and no arms, or, with
@@ -3620,10 +3772,16 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
         scheduled = schedule.scheduled_fixtures(root / "evals" / "scheduled.yml", committed)
         if fixture in committed and fixture not in scheduled:
             raise PlanStale("the eval leg's fixture was unscheduled after the plan")
+        # PAIR FIRES: "m1,m2" is two distinct ids, each in the payload
+        # contract's pattern, and each checked below as a lone model is.
+        models = model.split(",")
+        pair_ok = len(models) == 1 or (len(models) == 2 and models[0] != models[1]
+                                       and all(PAIR_MODEL_RE.fullmatch(m) for m in models))
         if fixture not in scheduled or schedule.validate_fixture(fixture, committed) != key \
-                or skill or holdout or arms not in (*PAIRED_ARMS, "bare") \
-                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", model) \
-                or not roster_arm.is_arm(model, root / "evals" / "roster.yml"):
+                or skill or holdout or arms not in (*PAIRED_ARMS, "bare") or not pair_ok \
+                or not all(MODEL_RE.fullmatch(m)
+                           and roster_arm.is_arm(m, root / "evals" / "roster.yml")
+                           for m in models):
             raise PlanError("the eval leg is not a scheduled fixture on a roster arm")
         if arms == "bare" and not schedule.declares_context(root / fixture):
             raise PlanError("the bare leg's fixture does not run in place")
@@ -3672,7 +3830,10 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
 
 
 def in_flight(runs: list, now: datetime) -> int:
-    """Fire runs still running, or started within their mode's flight time."""
+    """Fire runs still running, or started within their mode's flight time.
+    A pair fire (PAIR FIRES) is one run, so it counts once: the cap counts
+    fires, not cells. It runs its models one after the other, so it is in
+    flight for EVAL_FLIGHT per model."""
     count = 0
     for run in runs:
         if not isinstance(run, dict):
@@ -3684,7 +3845,8 @@ def in_flight(runs: list, now: datetime) -> int:
         if started is None or run.get("conclusion") != "success":
             continue
         title = outcomes_mod.parse_title(run.get("display_title"))
-        flight = IMPROVE_FLIGHT if title and title["mode"] in IMPROVE_MODES else EVAL_FLIGHT
+        flight = (IMPROVE_FLIGHT if title and title["mode"] in IMPROVE_MODES
+                  else EVAL_FLIGHT * fire_models(title))
         if now - started < flight:
             count += 1
     return count

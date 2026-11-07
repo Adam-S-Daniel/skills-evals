@@ -42,14 +42,31 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(self.prompt_limits(), routine_deadlines.MODE_LIMITS)
 
     def test_each_deadline_is_its_limit_plus_the_margin(self):
-        expected = {"eval": 40, "scaffold": 40, "improve": 100,
+        expected = {"eval": 50, "scaffold": 40, "improve": 100,
                     "guidance-improve": 100, "draft": 70}
         self.assertEqual({mode: routine_deadlines.deadline(mode)
                           for mode in routine_deadlines.MODE_LIMITS},
                          {mode: timedelta(minutes=m) for mode, m in expected.items()})
 
+    def test_an_eval_fire_gets_its_limit_per_model(self):
+        # A pair fire runs run_eval once per model, in sequence, each with
+        # its own 40-minute stop.
+        self.assertEqual(routine_deadlines.deadline("eval", 1), timedelta(minutes=50))
+        self.assertEqual(routine_deadlines.deadline("eval", 2), timedelta(minutes=90))
+        sentence = re.search(r"Limits: (.*?)\n", PROMPT.read_text(encoding="utf-8")).group(1)
+        self.assertIn("and stop after 40 minutes per model (80 for a two-model fire)", sentence)
+        # Every other mode is one model's, as before.
+        for mode, minutes in {"scaffold": 40, "improve": 100, "guidance-improve": 100,
+                              "draft": 70}.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(routine_deadlines.deadline(mode), timedelta(minutes=minutes))
+
     def test_the_planner_holds_a_cell_for_the_eval_deadline(self):
         self.assertEqual(plan_week.PENDING_WINDOW, routine_deadlines.deadline("eval"))
+        title = {"mode": "eval", "target": SKILL_FIXTURE, "model": MODEL}
+        self.assertEqual(plan_week.pending_window(title), routine_deadlines.deadline("eval"))
+        self.assertEqual(plan_week.pending_window({**title, "model": f"{MODEL},claude-x"}),
+                         routine_deadlines.deadline("eval", 2))
         # The outage rule still judges a fire at two hours (#583).
         self.assertEqual(plan_week.FIRE_RESULT_WINDOW, timedelta(hours=2))
 
@@ -57,7 +74,7 @@ class DeadlineTests(unittest.TestCase):
 class LostFireTests(unittest.TestCase):
     """The a4fd19 shape: one fire lost while the routine delivered others."""
 
-    STARTED = NOW - timedelta(minutes=45)
+    STARTED = NOW - routine_deadlines.deadline("eval") - timedelta(minutes=5)
 
     def doc(self, other_runs):
         def row(fixture, runs):
@@ -78,8 +95,9 @@ class LostFireTests(unittest.TestCase):
         self.assertFalse(self.cell(delivered, lost)["pending"])
 
     def test_before_its_deadline_it_still_holds(self):
-        lost = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=35))]
-        delivered = self.doc([stamp(NOW - timedelta(minutes=30))])
+        started = NOW - routine_deadlines.deadline("eval") + timedelta(minutes=5)
+        lost = [fire(1, SKILL_FIXTURE, started)]
+        delivered = self.doc([stamp(started + timedelta(minutes=5))])
         self.assertTrue(self.cell(delivered, lost)["pending"])
 
     def test_with_no_delivery_since_it_holds_as_in_an_outage(self):

@@ -2394,7 +2394,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 | Spawn | Flags beyond its own |
 |---|---|
 | arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox, read-deny and agent-config-deny JSON>`, `--disallowedTools WebFetch,WebSearch` and `--no-chrome` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
-| judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
+| judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`, `--tools ""` (`judge.JUDGE_ISOLATION_FLAGS`) |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
 
@@ -2407,6 +2407,12 @@ arm, one past the CLI's 200-character truncation, and one inside a guidance
 arm's own scratch are never touched. The judge's empty setting source means
 the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
 fleet-memory SessionStart hook: that is the isolation, not a regression.
+The judge reads text the agent under test wrote, so it also gets no tool
+(`--tools ""`; CLI 2.1.318's init event then lists `tools: []`) and an
+environment without GitHub, cloud-provider or SSH-agent credentials
+(`judge.drop_foreign_credentials`; ANTHROPIC_*, CLAUDE_*, proxy and CA
+variables stay, since it logs in through them): an injection in an arm's
+output finds no tool to act through and no GitHub or cloud token to spend.
 What none of this stops: managed settings, the CLI's bundled skills and
 writes to `~/.claude.json`. An arm's own reads of the real HOME are fenced
 in separately (below).
