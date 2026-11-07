@@ -1,0 +1,44 @@
+# acme 3.7 release notes
+
+## 3.7.0
+
+- [A37-01] Fixed `acme outdated` printing ANSI colors into a pipe.
+- [A37-02] Added `--max-age` to `acme init`.
+- [A37-03] Fixed `acme completion` reporting exit code 0 after an interrupt.
+- [A37-04] `acme graph` is now faster when hundreds of workspaces are present.
+- [A37-05] Fixed `acme ship --sign` hanging when the signing agent is slow to start.
+- [A37-06] Added `--since` to `acme completion`.
+- [A37-07] Added `--max-age` to `acme link`.
+- [A37-08] Fixed `acme graph` reading the parent workspace config in a monorepo.
+- [A37-09] Fixed `acme doctor` rejecting a project path that is a symlink.
+- [A37-10] Fixed `acme why` printing ANSI colors into a pipe.
+- [A37-11] `acme audit` is now faster when hundreds of workspaces are present.
+- [A37-12] `acme test` is now lighter on memory for big graphs.
+- [A37-13] Added `--format=table` to `acme audit`.
+- [A37-14] `acme info` now prints a one-line summary at the end.
+- [A37-15] Fixed `acme info` losing output when the terminal is resized.
+- [A37-16] `acme doctor` is now faster when hundreds of workspaces are present.
+- [A37-17] `acme fmt` is now faster when hundreds of workspaces are present.
+- [A37-18] Documented shell completion setup.
+- [A37-19] Fixed `acme config set` printing each warning twice in verbose mode.
+- [A37-20] Fixed `acme list` losing output when the terminal is resized.
+- [A37-21] `acme ship --sign` now requires `--key-id`; signing without one exits with status 2.
+- [A37-22] `acme ship --channel` now lists the available channels when the name is unknown.
+- [A37-23] Fixed `acme fmt` reading the parent workspace config in a monorepo.
+- [A37-24] Added `--include-dev` to `acme init`.
+- [A37-25] `acme list` is now about 20% faster on large projects.
+- [A37-26] Added `--quiet` to `acme audit`.
+- [A37-27] `acme run` is now up to three times faster on a cold start.
+- [A37-28] Fixed `acme run` ignoring the `NO_COLOR` variable.
+- [A37-29] Documented the workspace layout rules.
+- [A37-30] Fixed `acme link` hanging when stdin is closed.
+- [A37-31] Added `--since` to `acme why`.
+- [A37-32] Fixed `acme completion` hanging when stdin is closed.
+- [A37-33] `acme fmt` now prints a one-line summary at the end.
+- [A37-34] `[cache] max_size` now accepts `GB` and `MB` suffixes.
+- [A37-35] Fixed `acme info` crashing on paths that contain spaces on Windows.
+- [A37-36] Fixed `acme list` crashing on paths that contain spaces on Windows.
+- [A37-37] Added `--depth` to `acme graph`.
+- [A37-38] Added `--cwd` to `acme exec`.
+- [A37-39] Fixed `acme config set` printing ANSI colors into a pipe.
+- [A37-40] Fixed `acme graph` sorting names with uppercase letters last.

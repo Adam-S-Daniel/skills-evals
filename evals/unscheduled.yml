@@ -66,6 +66,7 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/tool-powershell/robocopy-exit-one
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/fan-out-triage/indirect-surfaces
   - path: evals/workflow-path-audit/required-by-unseen-ruleset
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/workflow-path-audit/required-gate-salience
