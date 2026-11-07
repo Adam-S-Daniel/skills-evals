@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SjT412RGTbnvG1ZyroSDFR",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SjT412RGTbnvG1ZyroSDFR",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Pj6ryaPPmi4uWXQwwwVehH",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json package.json; cat mkdocs.yml; git status --short",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Pj6ryaPPmi4uWXQwwwVehH",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 903,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XYRJfho9tfy1vJEjRhtohG",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\ndef detect(pattern):\n    return f'''      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # Detect salient changes here...",
+      "input_chars": 1936,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XYRJfho9tfy1vJEjRhtohG",
+      "is_error": false,
+      "output": "name: Tests\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      # Detect salient changes here r...",
+      "output_chars": 1253,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LA127LLnnhYdxhbob2L6EQ",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='AGENTS.md'\ns=open(p).read()\ns=s.replace(\"| `tests.yml` | pull_request, push to main | all paths |\",\"| `tests.yml` | pull_request, push to main | `src/**`, `test/**`, `package.json...",
+      "input_chars": 903,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LA127LLnnhYdxhbob2L6EQ",
+      "is_error": false,
+      "output": "ok\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 51.540019\n .github/workflows/docs-site.yml | 18 ++++++++++++++++++\n .github/workflows/tests.yml     | 18 ++++++++++++++++++\n AGENTS.md                       |  8 ++++++--\n 3 files changed, 42 insertions(+), 2 deletions(-)\n<sandbox_violatio...",
+      "output_chars": 402,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N2DQ3nzSrkcN2WGHVQmdPx",
+      "name": "Bash",
+      "input": "git stash -q && npm test 2>&1 | grep -E \"^# (pass|fail)|not ok\" ; git stash pop -q && git status --short | head -3",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N2DQ3nzSrkcN2WGHVQmdPx",
+      "is_error": false,
+      "output": "not ok 1 - test\n# pass 0\n# fail 1\n M .github/workflows/docs-site.yml\n M .github/workflows/tests.yml\n M AGENTS.md\n<sandbox_violations>\ndeny network-outbound registry.npmjs.org:443 (host is not on the allow list)\n</sandbox_violations>",
+      "output_chars": 232,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

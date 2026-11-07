@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019L6k1X2gUjRtp4aSqScVSK",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:workflow-path-audit",
+      "input_chars": 40,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019L6k1X2gUjRtp4aSqScVSK",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:workflow-path-audit",
+      "output_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RXYimdjJqTDS1rvPNgWU8E",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | head -50 && for f in .github/workflows/*; do echo \"=== $f\"; cat \"$f\"; done; ...",
+      "input_chars": 239,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RXYimdjJqTDS1rvPNgWU8E",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nc1eafa3 initial commit\n./.idea\n./src/util.js\n./src/index.js\n./.bashrc\n./.gitconfig\n./.github/rulesets/main.json\n./.github/workflows/nightly-sweep.yml\n./.github/w...",
+      "output_chars": 2611,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CNXJb4PX2fQvNm5pJ7Xc68",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; echo; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json; echo; cat .gh/replay/ruleset-list.json; echo; ls test src docs scripts; cat .editor...",
+      "input_chars": 227,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CNXJb4PX2fQvNm5pJ7Xc68",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 1610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011Es3SnJvgNdJU3sJoSGYbg",
+      "name": "Bash",
+      "input": "PATH=$PWD/bin:$PATH gh api repos/example-org/example-service/rules/branches/main 2>&1 | grep -c required_status_checks; diff <(python3 -c 'import json,sys;d=json.load(open(\".github/rulesets/main.json\"...",
+      "input_chars": 446,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011Es3SnJvgNdJU3sJoSGYbg",
+      "is_error": false,
+      "output": "0\nlive-matches-checked-in",
+      "output_chars": 25,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KmcrM95btBv8BqA2Wh1jMD",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\ndef patch(path, paths):\n    s=open(path).read()\n    block=\"\\n\".join(f\"      - \\\"{p}\\\"\" for p in paths)\n    old=\"on:\\n  pull_request:\\n  push:\\n    branches: [main]\\n\"\n    a...",
+      "input_chars": 585,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KmcrM95btBv8BqA2Wh1jMD",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/docs-site.yml b/.github/workflows/docs-site.yml\nindex cd2c4cc..869c209 100644\n--- a/.github/workflows/docs-site.yml\n+++ b/.github/workflows/docs-site.yml\n@@ -2,8 +2,16 @@ name: Docs site\n \n on:\n   pull_request:\n+    paths:\n+      - \"docs/**\"\n+      - \"mkdocs.yml\"\n+    ...",
+      "output_chars": 1011,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013FKiS1MxdwffsvTRkF6CUB",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np=\"AGENTS.md\"; s=open(p).read()\ns=s.replace(\"| `tests.yml` | pull_request, push to main | all paths |\",\n \"| `tests.yml` | pull_request, push to main | `src/**`, `test/**`, `package*....",
+      "input_chars": 1229,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013FKiS1MxdwffsvTRkF6CUB",
+      "is_error": false,
+      "output": "diff --git a/AGENTS.md b/AGENTS.md\nindex e8be8cd..33c2118 100644\n--- a/AGENTS.md\n+++ b/AGENTS.md\n@@ -11,10 +11,15 @@ Notes for anyone, human or agent, changing this repository.\n \n | Workflow | Triggers | Salient paths |\n |---|---|---|\n-| `tests.yml` | pull_request, push to main | all paths |\n-| `doc...",
+      "output_chars": 1394,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019s344tEJkorQmyTt5KBUxk",
+      "name": "Bash",
+      "input": "npm test 2>&1 | head -30; git stash -q && npm test ><path> 2>&1; echo \"baseline exit: $?\"; git stash pop -q && git status --short | grep -v '^??'",
+      "input_chars": 148,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019s344tEJkorQmyTt5KBUxk",
+      "is_error": false,
+      "output": "> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n#     at defaultResolveImpl (node:internal/modules/cjs/load...",
+      "output_chars": 1202,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013B4Ghk4zASRyDidFdYPqxN",
+      "name": "Bash",
+      "input": "node --test test/util.test.js 2>&1 | grep -E '^# (tests|pass|fail)'; echo \"exit: ${PIPESTATUS[0]}\"",
+      "input_chars": 98,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013B4Ghk4zASRyDidFdYPqxN",
+      "is_error": false,
+      "output": "# tests 2\n# pass 2\n# fail 0\nexit: 0",
+      "output_chars": 35,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

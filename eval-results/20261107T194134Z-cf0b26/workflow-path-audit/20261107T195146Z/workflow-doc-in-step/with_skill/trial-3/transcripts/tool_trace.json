@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017UMkxYoaGxP9tRPgEsTEL6",
+      "name": "Bash",
+      "input": "ls -a . .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017UMkxYoaGxP9tRPgEsTEL6",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\n\n.github/workflows:\n.\n..\ndocs-site.yml\nnightly-sweep.yml\nte...",
+      "output_chars": 2165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VK5Tc8ym2XacjE2o4XdWds",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json package.json mkdocs.yml; cat .gh/replay/ruleset-view-4410273.json | head -60",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VK5Tc8ym2XacjE2o4XdWds",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 1312,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014StQEb7a6wjoCZLrBCLoLr",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\ndef sub(f,paths):\n    s=open(f).read()\n    blk=\"on:\\n  pull_request:\\n    paths: &paths\\n\"+\"\".join(f\"      - \\\"{p}\\\"\\n\" for p in paths)\n    new=\"on:\\n  pull_request:\\n    pat...",
+      "input_chars": 1270,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014StQEb7a6wjoCZLrBCLoLr",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml |  8 ++++++++\n .github/workflows/tests.yml     | 12 ++++++++++++\n AGENTS.md                       |  4 ++--\n 3 files changed, 22 insertions(+), 2 deletions(-)\nok",
+      "output_chars": 194,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

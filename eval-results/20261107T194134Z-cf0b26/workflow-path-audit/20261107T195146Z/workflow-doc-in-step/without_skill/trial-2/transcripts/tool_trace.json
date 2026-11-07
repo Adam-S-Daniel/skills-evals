@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YYTav9KfmU2fLuGxUa4oBc",
+      "name": "Bash",
+      "input": "ls -a . .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YYTav9KfmU2fLuGxUa4oBc",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\n\n.github/workflows:\n.\n..\ndocs-site.yml\nnightly-sweep.yml\nte...",
+      "output_chars": 2165,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EsqLgyZP3BpuGYAj6np2sY",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json; cat .gitmodules",
+      "input_chars": 65,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EsqLgyZP3BpuGYAj6np2sY",
+      "is_error": true,
+      "output": "Exit code 1\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n ...",
+      "output_chars": 689,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hos4gKC4x4LxuDA568KH45",
+      "name": "Bash",
+      "input": "cat .gh/replay/ruleset-view-4410273.json .gh/replay/api/repos/example-org/example-service/rules/branches/main.json | grep -n -i -B2 -A8 \"status_checks\\|context\"",
+      "input_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hos4gKC4x4LxuDA568KH45",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gqb3T41zHKr7WbR4V1EzrB",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\ndef sub(f,paths):\n    s=open(f).read()\n    blk=\"on:\\n  pull_request:\\n\"+paths+\"  push:\\n    branches: [main]\\n\"+paths\n    s=s.replace(\"on:\\n  pull_request:\\n  push:\\n    bran...",
+      "input_chars": 1068,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gqb3T41zHKr7WbR4V1EzrB",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml |  8 ++++++++\n .github/workflows/tests.yml     | 12 ++++++++++++\n AGENTS.md                       |  4 ++--\n 3 files changed, 22 insertions(+), 2 deletions(-)\nname: Tests\n\non:\n  pull_request:\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"package.json\"\n      ...",
+      "output_chars": 725,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AHqFjUWPVFVUh4Py5pBejd",
+      "name": "Bash",
+      "input": "npm test 2>&1 | grep -B3 -A12 \"not ok\" | head -30; git stash -q; npm test 2>&1 | grep -c \"^not ok\"; git stash pop -q",
+      "input_chars": 116,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AHqFjUWPVFVUh4Py5pBejd",
+      "is_error": false,
+      "output": "# }\n# Node.js v22.23.4\n# Subtest: test\nnot ok 1 - test\n  ---\n  duration_ms: 41.448189\n  type: 'test'\n  location: '<path>'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n# tests 1\n1\n<sandbox_violations>\ndeny network-outbound reg...",
+      "output_chars": 409,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
