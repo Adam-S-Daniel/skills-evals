@@ -418,16 +418,10 @@ class PairEveryFireTests(unittest.TestCase):
                 self.assertEqual(leg["cells"], [{"model": model, "band": "missing",
                                                  "cost": 0.05}])
 
-    def test_a_single_guidance_leg_gains_the_other_model(self):
-        for arms in ("in-situ", "both"):
-            with self.subTest(arms=arms):
-                (leg,) = plan_week.pair_every_fire(
-                    [self.item(B, GUIDANCE_FIXTURE, arms=arms, cost=0.1)], [A, B])
-                self.assertEqual((leg["model"], leg["arms"], leg["cost"]), (PAIR, arms, 0.1))
-
     def test_other_legs_are_kept(self):
         legs = [self.item(PAIR), self.item(A, arms="bare"),
-                self.item(A, GUIDANCE_FIXTURE, arms="bare"),
+                self.item(A, GUIDANCE_FIXTURE, arms="both"),
+                self.item(A, GUIDANCE_FIXTURE, arms="in-situ"),
                 self.item("", mode="improve", arms=""), self.item("claude-other-1")]
         self.assertEqual(plan_week.pair_every_fire(legs, [A, B]), legs)
         self.assertEqual(plan_week.pair_every_fire([self.item(A)], [A]), [self.item(A)])
