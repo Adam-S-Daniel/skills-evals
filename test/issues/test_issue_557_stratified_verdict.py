@@ -11,6 +11,11 @@ that rule, errored trials (which do not block a guidance removal), ceiling
 parking and the shorten-or-merge twist. With the judge reported but not
 voting, a skipped or missing judge figure no longer blocks anything.
 
+Since 2026-11-07 that rule is `rest_policy: current` in the guidance block
+of evals/gate-policy.yml, kept so the gate can be switched back; the tests
+here run under it, and pin that it reproduces the old outputs. The default,
+`pooled-with-current-guard`, is tested in test_issue_pooled_rest_guard.py.
+
 Skills and the alone pair keep their own tests (test_issue_70_retirement.py,
 test_issue_124_guidance_gates.py).
 
@@ -52,8 +57,13 @@ def stratum(rest, with_patterns, without_patterns, judges=(FLAT_JUDGE, FLAT_JUDG
     return runs
 
 
-def verdict(runs, models=("model-a",), expect=EXPECT):
-    return gates.guidance_verdict({"runs": runs}, list(models), "sec", TEST_POLICY, expect)
+#: This module pins the 2026-11-03 rule, which `rest_policy: current` keeps
+#: (the pooled rule of 2026-11-07 is test_issue_pooled_rest_guard.py's).
+CURRENT_POLICY = {**TEST_POLICY, "rest_policy": "current"}
+
+
+def verdict(runs, models=("model-a",), expect=EXPECT, policy=CURRENT_POLICY):
+    return gates.guidance_verdict({"runs": runs}, list(models), "sec", policy, expect)
 
 
 class PoolingTests(unittest.TestCase):
@@ -61,7 +71,8 @@ class PoolingTests(unittest.TestCase):
     def test_cells_hold_only_the_current_rest_and_their_own_key(self):
         runs = (stratum(OLD, FLAT[:4], FLAT[:4]) + stratum(MAIN, FLAT[:3], FLAT[:3], start=4)
                 + stratum(OLD, FLAT[:2], FLAT[:2], model="model-b"))
-        cells = gates.pool_cells(runs, "sec", ["model-a", "model-b"], EXPECT, strata=True)
+        cells = gates.pool_cells(runs, "sec", ["model-a", "model-b"], EXPECT, strata=True,
+                                 rest_policy="current")
         a, b = cells[("fx", "model-a")], cells[("fx", "model-b")]
         self.assertEqual(list(a["strata"]), [MAIN])
         self.assertEqual((len(a["with"]), len(a["without"])), (3, 3))
@@ -77,7 +88,8 @@ class PoolingTests(unittest.TestCase):
         runs = stratum(MAIN, FLAT[:2], FLAT[:2])
         for run in runs[:1]:
             run["tested_digest"] = "t0"  # an older section text
-        cells = gates.pool_cells(runs, "sec", ["model-a"], EXPECT, strata=True)
+        cells = gates.pool_cells(runs, "sec", ["model-a"], EXPECT, strata=True,
+                                 rest_policy="current")
         self.assertEqual(len(cells[("fx", "model-a")]["with"]), 1)
 
     def test_without_the_section_on_main_the_key_is_incomplete(self):

@@ -2660,12 +2660,17 @@ machinery (paired fires, a betting confidence sequence checked after every
 pair, the same classes) twice per section: the in-situ pair (`full` vs
 `full-minus-section`) and the alone pair (`section` vs `none`), classified by
 each arm's `mode`, never its name. A run pools when its `section` digest is
-the section's extent on main and its fixture digest matches. In situ, only
-runs beside the current rest of the guidance (the `rest` digest on main)
-count. From #546 and #557 to 2026-11-03, runs beside older rests were
+the section's extent on main and its fixture digest matches. In situ, from
+#546 and #557 to 2026-11-03, runs beside older rests of the guidance were
 weighted in as strata; that day's statistics review found the weighting
-favored removal, so older strata are ignored and an edit elsewhere in the
-guidance starts a section's evidence over. The in-situ verdict decides. The one change: a
+favored removal, so from then only runs beside the current rest (the `rest`
+digest on main) counted, and an edit elsewhere in the guidance started a
+section's evidence over. Since 2026-11-07 the guidance block's `rest_policy`
+(`pooled-with-current-guard`) pools every rest's pairs at equal weight, and
+every removal needs the current rest's own evidence, which also overrides a
+keep made on the pooled pairs alone (`current` restores the
+2026-11-03 rule; ADR 0014, "Pooled-rest addendum (2026-11-07)"). The in-situ
+verdict decides. The one change: a
 section whose in-situ verdict is `retire` but which shows `benefit` alone in
 any cell gets **`shorten-or-merge`**, since the rest of the guidance covers
 what it teaches. That verdict never removes anything. Because the alone pair

@@ -1437,9 +1437,11 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
     fixture-broken), each cell's model's measured mean cost per observation
     (the dearest measured model for one with none) times the observations
     it still needs: min(`pairs_per_cell`, `cap` - the gate's own count of
-    its observations, `pairs`), at least 0. `cap` is the gate policy's
-    `max_runs_per_cell` (None: no cap). None when no model's cost is
-    measured."""
+    its observations toward the cap, `current_rest_pairs` for a pooled
+    in-situ guidance cell (its older rests' pairs do not fill the current
+    rest's window) and `pairs` otherwise), at least 0. `cap` is the gate
+    policy's `max_runs_per_cell` (None: no cap). None when no model's cost
+    is measured."""
     if not costs:
         return None
     dearest = max(costs.values())
@@ -1449,7 +1451,9 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
             continue
         remaining = pairs_per_cell
         if cap is not None:
-            done = cell.get("pairs")
+            done = cell.get("current_rest_pairs")
+            if done is None:
+                done = cell.get("pairs")
             done = done if isinstance(done, int) and not isinstance(done, bool) else 0
             remaining = min(remaining, cap - done)
         total += costs.get(cell["model"], dearest) * max(0.0, remaining)
@@ -1713,6 +1717,14 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     count, not an issue), and a decided cell at the cap is not re-checked
     (round 3's m5).
 
+    A PROVISIONAL KEEP (`provisional_keep`: a pooled in-situ cell kept by
+    the pooled keep test alone, which a later removal on the current rest's
+    evidence overrides; harness/gates.py, THE STALE KEEP) is fired in the
+    recheck band whether or not its re-check is due, ahead of the due ones,
+    until the current rest's own keep crosses or the cell is `at_cap`, so
+    the override gets its pairs; not when another cell of its section has a
+    final keep, which keeps the section whatever this cell does.
+
     CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
     allocation): in the missing, near, focus and guidance-rest bands a cell
     plans no fire while its subject's cell of the same fixture on a cheaper
@@ -1737,6 +1749,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     _focus, focused = guidance_focus(ctx)
     held = cheaper_first(ctx["cells"], costs)
     members = batch_members(ctx)
+    final_kept = {c["section"] for c in ctx["cells"]
+                  if c.get("section") and c["class"] == "benefit"
+                  and not c.get("provisional_keep")}
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
@@ -1786,6 +1801,17 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # Round 3's m5: a decided cell at the cap is not re-checked; a
             # new pair cannot enter its frozen window.
             band, order = None, None
+        elif cell.get("provisional_keep") and cell.get("section") not in final_kept:
+            # The pooled adversarial round 2: a pooled keep is not final (a
+            # later guarded removal overrides it), so it is fired, re-check
+            # or not, until the current rest's own keep test crosses or its
+            # window is full (`at_cap`, above). Otherwise the override would
+            # never get the current-rest pairs it needs. A section with a
+            # final keep on another cell is kept whatever this cell does.
+            # Ahead of the band's due re-checks (their order is (rank, time)).
+            band = "recheck"
+            order = (rank, -math.inf, cell.get("current_rest_pairs") or 0, price,
+                     -item["weight"])
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -2873,6 +2899,15 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
     return verdicts
 
 
+def provisional_keep(gate_cell: dict | None) -> bool:
+    """Whether a gates cell keeps on a pooled keep alone, which is not final
+    (harness/gates.py, THE STALE KEEP): `eval_items` fires it until the
+    current rest's own keep crosses or its window is full."""
+    gate_cell = gate_cell or {}
+    return gate_cell.get("class") == "benefit" \
+        and (gate_cell.get("rest_guard") or {}).get("keep_final") is False
+
+
 def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                            now: datetime, routine_git: str | None = None) -> tuple:
     """(cells, outages, routine down). One cell per scheduled fixture x
@@ -3058,6 +3093,13 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "in_situ_verdict": verdict.get("in_situ_verdict"),
                 # Gates' pair count and reason (`cheaper_first`, `_blocking`).
                 "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
+                # A pooled in-situ cell's pairs beside the current rest, the
+                # ones its cap and its removal guard count (`subject_cost`).
+                "current_rest_pairs": (cell or {}).get("current_rest_pairs"),
+                # A pooled keep that is not final (gates' THE STALE KEEP):
+                # it is fired until the current rest's own keep crosses or
+                # its window is full (`eval_items`).
+                "provisional_keep": provisional_keep(cell),
                 "at_cap": (cell or {}).get("at_cap") is True,
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
@@ -3263,6 +3305,16 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
     return out
 
 
+def rest_policy_of(gates_doc: dict) -> str:
+    """The `rest_policy` the verdict document's guidance cells were pooled
+    by (its `guidance_policy`, harness/gates.py REST_POLICIES). A document
+    without one predates the key (2026-11-07), so its cells were pooled by
+    `current`."""
+    policy = gates_doc.get("guidance_policy")
+    value = policy.get("rest_policy") if isinstance(policy, dict) else None
+    return value if value in ("current", "pooled-with-current-guard") else "current"
+
+
 def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
                       guidance_dir: Path | None, records: list = (), prs: list = (),
                       removals: list = (), on_hold: list = (),
@@ -3304,10 +3356,10 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
-        # Pooled as the gate pools in-situ cells: the current-content runs
-        # beside the rest of the guidance on main (2026-11-03; older rests
-        # are ignored), so the improve evidence counts the same runs the
-        # section's verdict does.
+        # Pooled as the gate pools in-situ cells, by the verdict document's
+        # `rest_policy` (`rest_policy_of`): the current-content runs beside
+        # every rest, or beside the rest on main only, so the improve
+        # evidence counts the same runs the section's verdict does.
         try:
             expected = compute_gates.expected_guidance(evals_dir, section, guidance_dir)
         except ValueError:
@@ -3316,7 +3368,7 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
             # skill path does, never a traceback or an opaque error.
             raise PlanError(SCHEDULE_FILES_MALFORMED) from None
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"], expected,
-                                 strata=True)
+                                 strata=True, rest_policy=rest_policy_of(gates_doc))
         try:
             row = proposer.load_row(guidance_dir, section)
         except proposer.Refusal:
