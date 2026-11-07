@@ -678,7 +678,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
         self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
                       plan_step["run"])
-        self.assertIn("--max-fires 30", plan_step["run"])
+        self.assertIn("--max-fires 60", plan_step["run"])
         self.assertEqual(plan_step["env"], {"GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
         names = [s["name"] for s in steps]

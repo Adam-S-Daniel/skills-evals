@@ -627,15 +627,16 @@ MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: pattern, which routine-eval-fire.yml checks too before it fires a pair.
 PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: wait-slot: at most this many fires in flight, each counted in flight this
-#: long per model after it started, polled once a minute. 10 and 10 minutes
+#: long per model after it started, polled once a minute. 20 and 10 minutes
 #: for the allowance week ending 2026-11-09 17:00 UTC only (Adam,
 #: 2026-11-07: run enough in parallel to use the week's remaining allowance):
 #: at 6 and 20 minutes the first slim sweep found every slot held by fires
 #: that had finished in about 5 minutes, which capped it near 9 fires an
-#: hour. A routine eval run takes p50 3.5 and p90 17 minutes per model
-#: (471 runs). Restore 3 and 20 minutes with evals/budget.yml's restore after
-#: that reset.
-MAX_IN_FLIGHT = 10
+#: hour, and at 10 a pair fire (20 minutes) would cap pairs at one every two
+#: minutes, under the routine's one fire a minute. A routine eval run takes
+#: p50 3.5 and p90 17 minutes per model (471 runs). Restore 3 and 20 minutes
+#: with evals/budget.yml's restore after that reset.
+MAX_IN_FLIGHT = 20
 EVAL_FLIGHT = timedelta(minutes=10)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60

@@ -256,7 +256,7 @@ jobs:
             private+=(--lessons "$GITHUB_WORKSPACE/private-lessons/lessons/proposals")
           fi
           python3 scripts/plan_week.py plan --results-tree eval-results-branch \
-            --as-of "$as_of" --max-fires 30 \
+            --as-of "$as_of" --max-fires 60 \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
