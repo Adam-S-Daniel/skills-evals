@@ -74,3 +74,14 @@ judge_rubric: >
   Cap at 3 if it changed the source, the destination or the copy flags.
   (3) Fix: is the change the smallest one that makes 0-7 exit 0 and 8 and up
   exit nonzero, with the reply naming the cause and nothing else changed?
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 83aa8e87a1ad6d40768785c238a0413f9bb908fc
+  guidance_revision: 49eeaf39bd5503994fe17fe2b874b2d5daee5a9f
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9977
+    skill_payload_bytes: 871484

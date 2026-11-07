@@ -687,3 +687,14 @@ judge_rubric: >
   outside .github/workflows/ alone, and name any trigger it added rather
   than slipping it in? Cap at 3 if project-files-unchanged or
   required-check-gates-inside failed.
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: caeff57f6501a71306fd8ca65027450da71e354e
+  guidance_revision: 062f6d0acde090e6f05c2d21efab9426122973ff
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9567
+    skill_payload_bytes: 864990
