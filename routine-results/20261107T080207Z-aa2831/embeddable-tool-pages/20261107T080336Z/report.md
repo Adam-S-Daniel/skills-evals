@@ -1,0 +1,13 @@
+# Eval report: embeddable-tool-pages
+
+- Prompt: Publish seed/new-tool as a Tools page at /tools/unit-converter/ and embed it in the post _posts/2026-01-01-example.md below the intro.
+- Timestamp: 20261107T080336Z
+- Run: billing subscription, runner routine, location cloud, id 20261107T080207Z-aa2831; started 2026-11-07T08:03:36Z, ended 2026-11-07T08:04:25Z
+- Account meter (account-wide, so anything else the account ran is in it; read as each agent, judge or guard call starts, so the 1 call(s) from the last reading on are not in it): seven_day 0.36 to 0.36, from 2 snapshots
+- Estimated cost (an estimate from the CLI's own per-call dollar figures, not a meter reading): $0.25 over 2 call(s); agent $0.25, judge $0.00, guard $0.00; last agent call $0.11
+- Harness: Claude Code `2.1.319 (Claude Code)`; models used: with_skill=claude-sonnet-5-5; without_skill=claude-sonnet-5-5
+
+| Arm | Objective | Judge overall | Cost (USD) | Turns | Duration (ms) | Error |
+| --- | --- | --- | --- | --- | --- | --- |
+| with_skill | 7/7 | skipped (objective-decided) | 0.1377 | 6 | 15738 |  |
+| without_skill | 6/7 | skipped (objective-decided) | 0.1099 | 7 | 29784 |  |
