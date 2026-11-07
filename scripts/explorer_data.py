@@ -1448,8 +1448,9 @@ def subject_confidence(verdict: dict) -> dict:
 
     The page also draws how far each level is from its line, so four more
     keys carry the evidence behind them (each an int, or None when absent):
-    `keep_pairs`, the objective pair count (a pooled in-situ cell's
-    `current_rest_pairs`) of the cell `helps` comes from (the
+    `keep_pairs`, the objective pair count (a pooled in-situ cell's usable
+    current-rest pairs, `rest_guard.usable_current_rest_pairs`, the count
+    its chart row shows) of the cell `helps` comes from (the
     one with the smallest objective keep p); `no_help_pairs`, the pair count
     of the voting cell `no_help` comes from (the lowest no-help level);
     `max_pairs`, the largest objective pair count over figured cells (progress
@@ -1472,7 +1473,9 @@ def subject_confidence(verdict: dict) -> dict:
         # its cap and its guard count (the pooled adversarial round 4's
         # m(b)), not every rest's pairs.
         if isinstance(cell.get("rest_guard"), dict):
-            n = cell.get("current_rest_pairs")
+            # The usable ones (the round 5 review's m4), the same count as
+            # the gain chart's row (`rest_guard.current_objective`).
+            n = cell["rest_guard"].get("usable_current_rest_pairs")
         else:
             n = (cell.get("objective") or {}).get("pairs")
         return n if isinstance(n, int) and not isinstance(n, bool) else None
@@ -1519,8 +1522,10 @@ def confidence_cell(cell: dict) -> dict | None:
     (`rest_guard.current_objective`, None with no current-rest pair), as
     its pace and confidence do, never the pooled block."""
     objective = cell["objective"]
-    if cell.get("rest_guard") is not None:
-        objective = cell["rest_guard"].get("current_objective") or {}
+    guard = cell.get("rest_guard")
+    if guard is not None:
+        current = guard.get("current_objective") if isinstance(guard, dict) else None
+        objective = current if isinstance(current, dict) else {}
     numbers = [objective.get(k) for k in ("delta", "benefit_lower", "retire_upper")]
     pairs = objective.get("pairs")
     model = cell.get("model")

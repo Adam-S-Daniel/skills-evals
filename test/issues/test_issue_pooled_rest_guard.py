@@ -641,6 +641,28 @@ class RoundFourTests(unittest.TestCase):
                 self.assertIsNone(pooled["rest_guard"])
                 self.assertEqual({k: v for k, v in pooled.items() if k not in extra}, current)
 
+    def test_older_pairs_with_no_run_mean_leave_one_rest(self):
+        # The round 5 review's m2: older pairs with no objective figure add
+        # nothing to pool, so the cell is still a one-rest `current` cell.
+        import simulate_rest_guard as sim
+        policy = gates.load_gate_policy()["guidance"]
+        rng = sim.random.Random(11)
+        extra = {"rest_policy", "current_rest_pairs", "rests", "rest_guard"}
+        for i in range(40):
+            pairs, keys = sim.make_pairs(rng, 5, rng.choice((12, 25, 40)), 0.55, 0.0,
+                                         rng.choice((0.0, 0.10, 0.25)))
+            for w, _o in pairs[:5]:
+                w["numbers"]["run_mean"] = None
+            with self.subTest(i=i):
+                pooled = gates._classify(pairs, policy, 1, None,
+                                         {"keys": keys, "current": sim.CURRENT,
+                                          "min_pairs": policy["rest_guard_min_pairs"]})
+                current = gates._classify(pairs[5:], policy, 1, None)
+                self.assertIsNone(pooled["rest_guard"])
+                self.assertEqual(pooled["class"], current["class"])
+                self.assertEqual(pooled["objective"], current["objective"])
+                self.assertEqual(pooled["keep_tests"], current["keep_tests"])
+
     def test_harm_today_is_removed_after_older_gains(self):
         # Forty older pairs gaining 0.4, then a current rest where the
         # section costs 0.35 from a without arm at 0.95: `current` removes
@@ -684,6 +706,9 @@ class RoundFourTests(unittest.TestCase):
         cell = out["cells"][0]
         self.assertEqual((cell["class"], cell["class_before_pause"]), ("paused", "benefit"))
         self.assertNotEqual(out["verdict"], "keep")
+        # The round 5 review's m1: its pooled route is no keep evidence.
+        self.assertEqual([t["p"] for t in cell["keep_tests"]], [1.0, 1.0])
+        self.assertEqual(explorer_data.subject_confidence(out)["helps"], 0.0)
         final = verdict(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40),
                         expect=paused)
         self.assertTrue(final["cells"][0]["rest_guard"]["keep_final"])
@@ -786,7 +811,8 @@ class PlannerTests(unittest.TestCase):
         got = explorer_data.subject_confidence(kept)
         self.assertAlmostEqual(got["helps"], max(0.0, 1 - best))
         # Round 4's m(b): its pace counts the current rest's pairs.
-        self.assertEqual(got["keep_pairs"], cell["current_rest_pairs"])
+        self.assertEqual(got["keep_pairs"], cell["rest_guard"]["usable_current_rest_pairs"])
+        self.assertEqual(got["keep_pairs"], got["cells"][0]["pairs"])
         self.assertNotEqual(cell["current_rest_pairs"], cell["objective"]["pairs"])
         removed = verdict(strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT * 2, FLAT * 2,
                                                                 start=40))
@@ -808,6 +834,28 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(row["high"], round(current["retire_upper"] * 100, 1) + 0.0)
         self.assertNotEqual(row["gain"],
                             round(removed["cells"][0]["objective"]["delta"] * 100, 1))
+
+    def test_the_explorer_charts_only_current_rest_figures(self):
+        # The round 5 review's m3 and m4: a pooled cell with no current-rest
+        # figure gives no chart row (never the pooled block), a malformed
+        # guard gives none either, and the row's pairs and the pace both
+        # count the usable current-rest pairs.
+        removed = verdict(strat(OLD, GAIN * 4, LOSS * 4) + strat(MAIN, FLAT * 2, FLAT * 2,
+                                                                start=40))
+        cell = removed["cells"][0]
+        self.assertIsNotNone(explorer_data.confidence_cell(cell))
+        for guard in ({**cell["rest_guard"], "current_objective": None},
+                      {**cell["rest_guard"], "current_objective": "bad"}, "bad"):
+            with self.subTest(guard=str(guard)[:20]):
+                self.assertIsNone(explorer_data.confidence_cell({**cell, "rest_guard": guard}))
+        guard = {**cell["rest_guard"], "usable_current_rest_pairs": 30,
+                 "current_objective": {**cell["rest_guard"]["current_objective"],
+                                       "pairs": 30}}
+        got = explorer_data.subject_confidence({**removed, "cells": [{**cell,
+                                                                     "rest_guard": guard}]})
+        self.assertNotEqual(cell["current_rest_pairs"], 30)
+        self.assertEqual((got["cells"][0]["pairs"], got["max_pairs"], got["no_help_pairs"]),
+                         (30, 30, 30))
 
     def test_the_cost_to_a_verdict_counts_the_current_rests_pairs(self):
         cell = self.planner_cell(cell_of(strat(OLD, FLAT * 2, FLAT * 2)))

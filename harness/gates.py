@@ -1072,13 +1072,6 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         out.update(rest_policy="pooled-with-current-guard",
                    current_rest_pairs=len(current_window),
                    rests=len(set(rest["keys"])), rest_guard=None)
-        if all(is_current):
-            # ONE REST (the pooled adversarial round 4's M2): with no older
-            # pair in the window, pooling has nothing to add, and two keep
-            # routes would split the keep alpha over the same test. The cell
-            # is classified exactly as a `current` cell (`rest_guard` stays
-            # null, every keep is final).
-            rest = None
 
     def done(cls, reason):
         return {**out, "class": cls, "reason": reason}
@@ -1102,6 +1095,14 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None:
             usable.append((w, o))
             usable_current.append(c)
+    if rest is not None and all(usable_current):
+        # ONE REST (the pooled adversarial round 4's M2): with no older
+        # USABLE pair in the window (the round 5 review's m2: an older pair
+        # with no run mean adds nothing), pooling has nothing to add, and
+        # two keep routes would split the keep alpha over the same test. The
+        # cell is classified exactly as a `current` cell (`rest_guard` stays
+        # null, every keep is final).
+        rest = None
     ds = differences(usable)
     if not ds:
         return done("insufficient", "no run with objective checks on an arm")
@@ -1719,6 +1720,13 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             # votes nor frees an automatic removal. A provisional pooled keep
             # (`keep_final` False) is undecided too (the round 4 review): a
             # paused fixture gets no current-rest runs to confirm it.
+            if provisional:
+                # The round 5 review's m1: a parked provisional keep is no
+                # keep evidence, so its pooled route reports p = 1, as an
+                # overridden or lapsed one does.
+                cell = {**cell, "keep_tests": [
+                    {**t, "p": 1.0} if t.get("route") == "objective" else t
+                    for t in cell["keep_tests"]]}
             cell = {**cell, "class": "paused", "class_before_pause": cell["class"],
                     "reason": f"paused by the eval scope pass ({paused}) and no longer "
                               f"fired; before the pause it was {cell['class']}: "

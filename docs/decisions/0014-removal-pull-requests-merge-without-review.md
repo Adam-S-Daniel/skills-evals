@@ -1646,3 +1646,18 @@ introduced, and three minor ones.
   older rests and none today showed +20.
 - **The harm waiting reason** now names the harm evidence that decides,
   matching the no-benefit text.
+
+### Pooled-rest adversarial round 6 (2026-11-07)
+
+The round 5 review found four minor problems.
+
+- A paused provisional keep's pooled route now reports p = 1, like the
+  override and lapse paths. Before, the explorer still read the keep's level
+  from it.
+- A cell counts as having one rest when it has no older USABLE pair. An
+  older pair with no run mean adds nothing to pool. Before, 85 of 400 such
+  cells differed from `current`; now none do.
+- The explorer's gain chart row, `keep_pairs`, `no_help_pairs` and
+  `max_pairs` all count a pooled cell's usable current-rest pairs. A pooled
+  cell with no current-rest figure, or a malformed guard, gives no chart
+  row; the chart never falls back to the pooled block.
