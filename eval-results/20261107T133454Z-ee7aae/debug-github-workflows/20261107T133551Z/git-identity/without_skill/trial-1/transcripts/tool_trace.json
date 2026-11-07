@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EYgUhdXHPndco6J4Xgivwe",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls -R | grep -v node_modules | head -50; cat test/run-tests.sh; ls .github/workflows 2><path> && cat .github/workflows/*",
+      "input_chars": 149,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EYgUhdXHPndco6J4Xgivwe",
+      "is_error": false,
+      "output": "eb4b73a initial commit\n.:\nREADME.md\nbin\nsrc\ntest\n\n./bin:\ngh\n\n./src:\nchangelog.py\n\n./test:\nrun-tests.sh\ntest_changelog.py\n#!<path> bash\n# Build a scratch repository with a known history, then run the unit tests\n# against it.\nset -euo pipefail\n\nroot=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\necho \"Testing ch...",
+      "output_chars": 1108,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019Chg6yobqgPhycz9Xv9PRV",
+      "name": "Bash",
+      "input": "cat README.md bin/gh src/changelog.py test/test_changelog.py; git status",
+      "input_chars": 72,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019Chg6yobqgPhycz9Xv9PRV",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.2KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Example changelog\n\nTurns a repository's conventional commit subjects (`feat: ...`, `fix: ...`)\ninto the sections of a release changelog.\n\nRun the tests from the repository root:\n\n```bash\nbash test/run-...",
+      "output_chars": 2204,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013hxm4NLjjDzK55rFFm8erv",
+      "name": "Bash",
+      "input": "cat src/changelog.py test/test_changelog.py; git status; git config user.email; echo $GH_REPLAY_DIR; which gh",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013hxm4NLjjDzK55rFFm8erv",
+      "is_error": false,
+      "output": "\"\"\"Group a repository's conventional commit subjects into changelog sections.\"\"\"\n\nimport subprocess\n\nSECTIONS = {\"feat\": \"Features\", \"fix\": \"Fixes\"}\n\n\ndef subjects(repo):\n    \"\"\"Commit subjects of `repo`, oldest first.\"\"\"\n    result = subprocess.run([\"git\", \"-C\", repo, \"log\", \"--reverse\", \"--format=...",
+      "output_chars": 1659,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XGjHR3ar28bp49g9DLZ3zv",
+      "name": "Bash",
+      "input": "gh run list --branch main 2>&1 | head; ",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XGjHR3ar28bp49g9DLZ3zv",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 52001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"4f2a9c1e5b7d3f8a0c6e2b4d9f1a3c5e7b9d0f2a\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",",
+      "output_chars": 236,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F8g9vvSBvrsvoMqB5WrPzs",
+      "name": "Bash",
+      "input": "gh run view 52001 --log-failed 2>&1 | tail -40",
+      "input_chars": 46,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F8g9vvSBvrsvoMqB5WrPzs",
+      "is_error": false,
+      "output": "test\tRun tests\t2026-01-09T10:00:05Z Run bash test/run-tests.sh\ntest\tRun tests\t2026-01-09T10:00:05Z Testing changelog at 4f2a9c1\ntest\tRun tests\t2026-01-09T10:00:05Z Building a scratch repository for the changelog tests\ntest\tRun tests\t2026-01-09T10:00:05Z ##[error]Process completed with exit code 128.",
+      "output_chars": 300,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PF4Q8MizWy4eVNBEhKMFzc",
+      "name": "Bash",
+      "input": "HOME=$TMPDIR/nohome GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=<path> bash test/run-tests.sh; echo exit=$?",
+      "input_chars": 106,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PF4Q8MizWy4eVNBEhKMFzc",
+      "is_error": false,
+      "output": "Testing changelog at eb4b73a\nBuilding a scratch repository for the changelog tests\nexit=128",
+      "output_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FiJZGLHvAJuGfYPCw8jh67",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='test/run-tests.sh'\ns=open(p).read()\ns=s.replace('''git init --quiet \"$repo\"\ncommit() {\n  git -C \"$repo\" commit --quiet --allow-empty -m \"$1\" > <path> 2>&1\n}''','''git init --quiet...",
+      "input_chars": 726,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FiJZGLHvAJuGfYPCw8jh67",
+      "is_error": false,
+      "output": "Testing changelog at eb4b73a\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.004s\n\nOK\nexit=0\nTesting changelog at eb4b73a\nBuilding a scratch repository for the changelog tests\nerror: Debug: Namespace set t...",
+      "output_chars": 2027,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JGkUXCWz9L6x4Zm6x7jgFN",
+      "name": "Bash",
+      "input": "sed -i 's|^git -C \"\\$repo\" config user.email.*|&\\ngit -C \"$repo\" config commit.gpgsign false|; s|^# own instead of relying on the developer.s <path> own identity, with signing off, instead of relying ...",
+      "input_chars": 524,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JGkUXCWz9L6x4Zm6x7jgFN",
+      "is_error": false,
+      "output": "echo \"Building a scratch repository for the changelog tests\"\ngit init --quiet \"$repo\"\n# CI runners have no global git identity, so give the scratch repository its\n# own identity, with signing off, instead of relying on the developer's\n# <path>\ngit -C \"$repo\" config user.name \"Changelog Tests\"\ngit -C...",
+      "output_chars": 903,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
