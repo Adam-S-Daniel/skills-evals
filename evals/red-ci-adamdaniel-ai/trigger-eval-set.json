@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I pushed my branch to adamdaniel.ai and the PR shows 'e2e / e2e' as cancelled but no step failed. is that a real failure or what? merge button is greyed out",
+    "should_trigger": true
+  },
+  {
+    "query": "write a new GitHub Actions workflow that builds my Jekyll site and deploys it to S3 on every push to main",
+    "should_trigger": false
+  },
+  {
+    "query": "PR #412 on our cms-platform site is stuck BLOCKED, every check I can see is green but branch protection says a required status is expected. how do I find out which one never reported?",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I cut a new cms-platform release and bump platform_ref in both consumer sites?",
+    "should_trigger": false
+  },
+  {
+    "query": "the deploy job on my PR fails at 'Set up job' with zero step output. the repo is a Jekyll site on the cms-platform stack. what's going on",
+    "should_trigger": true
+  },
+  {
+    "query": "my Playwright test for the admin page is flaky on webkit only, retries sometimes pass. how do I debug the flake?",
+    "should_trigger": false
+  },
+  {
+    "query": "just pushed a fix to the jodidaniel.com repo. gh pr checks looks fine but I don't trust it - can you go through every check run and status on the head sha and tell me what's actually red or missing?",
+    "should_trigger": true
+  },
+  {
+    "query": "the Decap CMS editorial workflow dialog keeps saying it's adding labels to 3 entries and never finishes. how do I stop it?",
+    "should_trigger": false
+  },
+  {
+    "query": "our required lint workflow has on.pull_request.paths set and now PRs that only touch docs are blocked forever waiting for it. how should I restructure it so the check still reports?",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a ruleset on my new repo that requires pull requests and pins actions to full SHAs",
+    "should_trigger": false
+  },
+  {
+    "query": "I added a concurrency group to the required test job and now it keeps ending up cancelled after I add a label to the PR. the merge is blocked. help me fix the workflow",
+    "should_trigger": true
+  },
+  {
+    "query": "my Python unit tests fail locally with an ImportError after I upgraded pandas. help me fix the test",
+    "should_trigger": false
+  },
+  {
+    "query": "my release bump PR on the site repo is BLOCKED. I changed the manifest version and platform.lock but one check is still red. what did I probably miss?",
+    "should_trigger": true
+  },
+  {
+    "query": "explain the difference between pull_request and pull_request_target triggers in GitHub Actions",
+    "should_trigger": false
+  },
+  {
+    "query": "the required check timed out at 30 minutes and GitHub shows it as cancelled, so the merge is blocked. how do I stop a timeout wall from blocking the PR?",
+    "should_trigger": true
+  },
+  {
+    "query": "our nightly Docker build on GitLab CI is red because the runner ran out of disk. how do I clean it up?",
+    "should_trigger": false
+  },
+  {
+    "query": "CI went red after my push to the adamdaniel.ai repo and I can't tell if it's the stub e2e or the real one that passed. how do I check the real run actually finished?",
+    "should_trigger": true
+  },
+  {
+    "query": "make the e2e job faster: it takes 14 minutes and I want to shard it and cache the browsers",
+    "should_trigger": false
+  },
+  {
+    "query": "after pushing, a workflow in our Jekyll site repo fails because an action is referenced by tag instead of a full commit SHA and the repo policy rejects it. fix the pin and make sure the new head goes green",
+    "should_trigger": true
+  },
+  {
+    "query": "write a script that polls a workflow run until it completes and prints the final conclusion",
+    "should_trigger": false
+  }
+]

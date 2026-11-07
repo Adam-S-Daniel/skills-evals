@@ -41,39 +41,49 @@ skips:
     skill: sync-cc-settings-between-wsl-and-windows
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds: fails criterion 1 (no recorded local use
+      since 2026-09-14) and criterion 3 (needs Windows PowerShell 7 and the WSL
+      UNC share, which a fixture cannot fake cheaply)
   - registry: adam-agentskills
     skill: migrate-claude-memory
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds on criterion 1 only: one recorded local use
+      since 2026-09-14 (week of 2026-09-21). Its surface is Bash over
+      ~/.claude/projects, which a fake HOME can stand in for, so reopen it if
+      use grows
   - registry: adam-agentskills
     skill: compare-pdfpairs
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-05, holds on criterion 1 only: no recorded local use
+      since 2026-09-14. Its surface (PowerShell 7 and poppler over a folder of
+      PDFs) can be faked in a container, so reopen it if it is used
   - registry: adam-agentskills
     skill: ocr-pdfs
     decision: defer
     reason: >-
-      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
-      than the churn justifies today
+      rechecked 2026-11-06, holds on criterion 1 only: no recorded local use
+      since 2026-09-14. The machine-bound reason no longer fits: the skill
+      calls the OCRmyPDF CLI directly, which a container can run, so reopen
+      it if it is used
   - registry: adam-agentskills
     skill: fastmail
     decision: defer
     reason: >-
-      credentialed live service; a fixture may not carry real accounts, and a
-      faked Fastmail is a harness project of its own
+      rechecked 2026-11-06, holds: fails criterion 3 (credentialed live
+      service; a fixture may not carry real accounts, and a faked Fastmail is
+      a harness project of its own) and criterion 1 (one recorded local use
+      since 2026-09-14, in the week of 2026-09-14)
   - registry: adam-agentskills
     skill: add-from-address
     decision: skip
     reason: >-
-      dispatches a workflow in the fastmail-actions repository that edits a
-      real Fastmail account's sending identities with a real API token; a
-      hermetic fixture cannot exercise it
+      rechecked 2026-11-06, holds: fails criterion 3 (it dispatches a
+      workflow in the fastmail-actions repository that edits a real Fastmail
+      account's sending identities with a real API token; a hermetic fixture
+      cannot exercise it) and criterion 1 (no recorded local use since
+      2026-09-14)
   - registry: adam-agentskills
     skill: add-received-from-addresses
     decision: skip

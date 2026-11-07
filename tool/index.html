@@ -269,6 +269,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "working-in-these-repos": "For any project: leave paused work alone, fix only what was asked, test every change, and use American spelling.",
       "anything-you-name-gets-its-link": "Whenever Claude mentions something you might want to open, it gives the link right there, so you never have to go looking.",
       "finding-your-unknowns": "Say what is unclear before starting, flag surprises while working, and write lasting lessons down where the next person will find them.",
+      "turn-lessons-into-checks": "When a mistake or a hard-won procedure could happen again, Claude records it as an automatic check, a skill or a guidance note before finishing.",
       "workstation-layout": "Where project folders live on " + whose + " computers, so Claude looks in the right place.",
       "security": "Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.",
       "data-exposure-in-ci": "Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.",
@@ -717,6 +718,20 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       loopPrsNote: "Pull requests the loop opened in public repos: new skills, edits and removals.",
       loopPrsNone: "No loop pull requests in this build.",
       impactUseWeeks: "Git hook runs and blocks by week",
+      agentMade: "Made by agents",
+      agentMadeNote: (since) => 'Git hook checks, skills and guidance sections, by who made them: an agent, an automated loop or a person. "After the rule" counts agent-made items from ' + since + " on, when the guidance began telling agents to capture lessons this way. Impact is from this page's other data.",
+      agentMadeKinds: { check: "Git hook checks", skill: "Skills", section: "Guidance sections" },
+      agentMadeKind: { check: "Check", skill: "Skill", section: "Section" },
+      colTotal: "Total",
+      colByAgents: "By agents",
+      colByLoop: "By the loop",
+      colByPeople: "By people",
+      colAfterRule: "After the rule",
+      colAgentImpact: "Impact of agent-made",
+      colMade: "Made",
+      colImpact: "Impact",
+      agentMadeImpact: { check: (runs, blocked) => runs + " runs, " + blocked + " blocked", skill: (uses) => uses + " uses", section: () => "" },
+      agentMadeVerdicts: (list) => list ? "verdicts: " + list : "no verdicts yet",
       impactUseSkills: "Real-work use by skill",
       impactUseSkillsNote: (from, to) => "Uses from " + from + " to " + to + ". Guidance has no direct use signal; its effect shows only in test results.",
       impactUseChecks: "Real-work use by git hook check",
@@ -2619,6 +2634,55 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ], s.weeks)
     ];
   }
+  var KIND_ROUTE = { check: "hooks", skill: "skills", section: "guidance" };
+  function agentMadeRows(doc) {
+    const a = doc && doc.agent_made;
+    if (!a || !a.summary || !Array.isArray(a.items)) return null;
+    const kinds = ["check", "skill", "section"].filter((k) => a.summary[k]).map((k) => {
+      const s = a.summary[k];
+      const verdicts = Object.keys(s.agent_verdicts || {}).filter((v) => v !== "none").sort().map((v) => v + " " + s.agent_verdicts[v]).join(", ");
+      const use = k === "check" ? STRINGS.agentMadeImpact.check(fmtCount(s.agent_runs || 0), fmtCount(s.agent_blocked || 0)) : k === "skill" ? STRINGS.agentMadeImpact.skill(fmtCount(s.agent_invocations || 0)) : "";
+      return {
+        kind: k,
+        total: s.total,
+        agent: s.by_origin.agent,
+        loop: s.by_origin.loop,
+        person: s.by_origin.person,
+        afterRule: s.agent_under_rule,
+        impact: [use, STRINGS.agentMadeVerdicts(verdicts)].filter(Boolean).join("; ")
+      };
+    });
+    const items = a.items.filter((i) => i && i.origin === "agent").sort((x, y) => x.created < y.created ? 1 : x.created > y.created ? -1 : x.id < y.id ? -1 : 1);
+    return { since: a.rule_since, kinds, items };
+  }
+  function itemImpact(i) {
+    const m = i.impact || {};
+    const use = i.kind === "check" ? STRINGS.agentMadeImpact.check(fmtCount(m.runs || 0), fmtCount(m.blocked || 0)) : i.kind === "skill" ? STRINGS.agentMadeImpact.skill(fmtCount(m.invocations || 0)) : "";
+    return [use, m.verdict ? clean(m.verdict) : null].filter(Boolean).join("; ") || STRINGS.noValue;
+  }
+  function agentMadeView(doc, refMs) {
+    const r = agentMadeRows(doc);
+    if (!r) return null;
+    return [
+      h("p", { class: "note" }, STRINGS.agentMadeNote(r.since ? fmtUtcDay(parseTime(r.since), refMs) : STRINGS.unknown)),
+      table([
+        { label: STRINGS.colKind, sort: (k) => k.kind, cell: (k) => STRINGS.agentMadeKinds[k.kind] },
+        { label: STRINGS.colTotal, num: true, sort: (k) => k.total, cell: (k) => fmtCount(k.total) },
+        { label: STRINGS.colByAgents, num: true, sort: (k) => k.agent, cell: (k) => fmtCount(k.agent) },
+        { label: STRINGS.colAfterRule, num: true, sort: (k) => k.afterRule, cell: (k) => fmtCount(k.afterRule) },
+        { label: STRINGS.colByLoop, num: true, sort: (k) => k.loop, cell: (k) => fmtCount(k.loop) },
+        { label: STRINGS.colByPeople, num: true, sort: (k) => k.person, cell: (k) => fmtCount(k.person) },
+        { label: STRINGS.colAgentImpact, sort: (k) => k.impact, cell: (k) => k.impact }
+      ], r.kinds),
+      r.items.length ? table([
+        { label: STRINGS.colKind, sort: (i) => i.kind, cell: (i) => STRINGS.agentMadeKind[i.kind] },
+        { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE[i.kind], i.id), clean(i.id)) },
+        { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtUtcDay(parseTime(i.created), refMs) },
+        { label: STRINGS.colAfterRule, sort: (i) => i.under_rule ? 1 : 0, cell: (i) => i.under_rule ? "✓" : "" },
+        { label: STRINGS.colImpact, sort: (i) => itemImpact(i), cell: (i) => itemImpact(i) }
+      ], r.items, { tall: true }) : null
+    ];
+  }
   function impactView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
     const ext = ctx && ctx.ext;
@@ -2627,6 +2691,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "div",
       null,
       srcLine(STRINGS.srcDoc, refMs),
+      panel(STRINGS.agentMade, agentMadeView(doc, refMs)),
       panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
       // The private usage table covers both lists, private repos included.
       covers("use") ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))],

@@ -60,11 +60,13 @@ FIRE_WORKFLOW = "routine-eval-fire.yml"
 #: an improve fire with `trigger_only: true` (skills-evals#662) or ` trim`
 #: for one with `trim_description: true` (skills-evals#687; never both), then
 #: the one target input of that mode (fixture, candidate, skill or section),
-#: then the model when one was given.
+#: then the model when one was given: one id, or an eval fire's pair of two
+#: distinct ids joined by a comma (`m1,m2`, one fire running both models).
 TITLE_RE = re.compile(r"Fire eval routine: (?P<mode>eval|scaffold|improve|guidance-improve)"
                       r"(?P<bare> bare)?(?P<trigger> trigger)?(?P<trim> trim)? "
                       r"(?P<target>[A-Za-z0-9][A-Za-z0-9/_.-]{0,255})"
-                      r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}))? ?")
+                      r"(?: (?P<model>[A-Za-z0-9][A-Za-z0-9._-]{0,127}"
+                      r"(?:,[A-Za-z0-9][A-Za-z0-9._-]{0,127})?))? ?")
 SKILL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 #: A guidance section id the fire workflow accepts (its `section` input).
 SECTION_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
@@ -119,7 +121,13 @@ def parse_title(title) -> dict | None:
     is True for an improve fire with `trim_description: true`: only a
     shorter description, measured on the fixtures (skills-evals#687). A
     skill named `bare`, `trigger` or `trim` is still a target: the regex
-    tries a flag only when a target follows it."""
+    tries a flag only when a target follows it.
+
+    `model` is the title's model text as rendered: one id, or for a pair
+    fire (one eval fire running two models in sequence) the two ids joined
+    by a comma. A pair outside eval mode, or of one id twice, is None: the
+    workflow refuses both. Read the ids with `title_models`, never by
+    keying on `model`."""
     match = TITLE_RE.fullmatch(title) if isinstance(title, str) else None
     if match is None:
         return None
@@ -129,8 +137,21 @@ def parse_title(title) -> dict | None:
     if (bare and match["mode"] != "eval") \
             or ((trigger or trim) and match["mode"] != "improve") or (trigger and trim):
         return None
-    return {"mode": match["mode"], "target": match["target"], "model": match["model"],
+    model = match["model"]
+    if model is not None and "," in model:
+        first, second = model.split(",")
+        if match["mode"] != "eval" or first == second:
+            return None
+    return {"mode": match["mode"], "target": match["target"], "model": model,
             "bare": bare, "trigger": trigger, "trim": trim}
+
+
+def title_models(title: dict | None) -> tuple:
+    """The model ids of a parsed title (`parse_title`), in its order: one,
+    two for a pair fire, or none. A pair fire holds a cell of each, so a
+    reader keyed per (fixture, model) cell counts it once for each id."""
+    model = title.get("model") if isinstance(title, dict) else None
+    return tuple(model.split(",")) if model else ()
 
 
 def run_id_time(run_id) -> datetime | None:
@@ -262,13 +283,22 @@ def _repo(repo: str) -> str:
     return repo
 
 
-def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get) -> list:
-    """Every run of routine-eval-fire.yml created at or after `since`, any
-    status, up to MAX_PAGES pages of 100 (more is an error, fail closed)."""
+#: fetch_fire_runs: a window this short that still fills MAX_PAGES is an
+#: error (fail closed) rather than split again.
+MIN_SPLIT = timedelta(minutes=10)
+
+
+def _fetch_window(repo: str, token: str, start: datetime, end: datetime | None, get):
+    """The fire runs created in [start, end] (end None: no upper bound), or
+    None when the window fills MAX_PAGES pages: the filtered runs API
+    returns at most 1,000 results per query, so a full window may be
+    truncated and must be split, never trusted."""
+    created = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    created = (created + ".." + end.strftime("%Y-%m-%dT%H:%M:%SZ")) if end else ">=" + created
     rows = []
     for page in range(1, MAX_PAGES + 1):
         query = urllib.parse.urlencode({
-            "created": ">=" + since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "created": created,
             "event": "workflow_dispatch", "per_page": "100", "page": str(page)})
         doc = get(f"/repos/{_repo(repo)}/actions/workflows/{FIRE_WORKFLOW}/runs?{query}", token)
         found = doc.get("workflow_runs") if isinstance(doc, dict) else None
@@ -277,7 +307,41 @@ def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get) -> l
         rows.extend(found)
         if len(found) < 100:
             return rows
-    raise EvidenceError(f"more than {MAX_PAGES * 100} fire runs in the window")
+    return None
+
+
+def fetch_fire_runs(repo: str, token: str, since: datetime, get=github_get,
+                    until: datetime | None = None) -> list:
+    """Every run of routine-eval-fire.yml created at or after `since`, any
+    status. A window that fills MAX_PAGES pages of 100 is split in two by
+    creation time and each half read again, since the API stops at 1,000
+    results per query (2026-11-07: a night of fires passed 1,000 in the
+    planner's window and every plan failed); one still full at MIN_SPLIT
+    is an error (fail closed). Runs on a shared boundary are kept once."""
+    end = until or datetime.now(timezone.utc)
+    rows, seen = [], set()
+    pending = [(since, end, True)]
+    while pending:
+        start, stop, last = pending.pop()
+        found = _fetch_window(repo, token, start, None if last else stop, get)
+        if found is None:
+            if stop - start <= MIN_SPLIT:
+                raise EvidenceError(
+                    f"more than {MAX_PAGES * 100} fire runs in a "
+                    f"{int(MIN_SPLIT.total_seconds() // 60)}-minute window")
+            mid = start + (stop - start) / 2
+            # Older half last, so it is read first (a stack).
+            pending.append((mid, stop, last))
+            pending.append((start, mid, False))
+            continue
+        for row in found:
+            key = row.get("id") if isinstance(row, dict) else None
+            if key is not None and key in seen:
+                continue
+            if key is not None:
+                seen.add(key)
+            rows.append(row)
+    return rows
 
 
 def fetch_improve_branches(repo: str, token: str, get=github_get,

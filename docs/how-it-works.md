@@ -135,8 +135,8 @@ weekly allowance):
 |---|---|---|
 | `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
-| `per_run_overrun` | 0.0018 | added to every run: its last call is never measured. The 95th percentile of each run's largest single call (Adam, 2026-11-01, standing rule; `scripts/run_costs.py` prints the value; was 0.005, then 0.002) |
-| `points_per_usd` | 0.00214 | the allowance one dollar of the CLI's reported call cost uses (`scripts/run_costs.py` prints it), so `per_run_cap` is charged the run's own spend (2026-11-03) |
+| `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
+| `points_per_usd` | 0.0005 | the allowance one dollar of the CLI's reported call cost uses: $20 per point, the low end of the rate measured on 2026-11-04 (about $24, range $20 to $35), so charges err high. `per_run_cap` and the weekly total both charge a run its own spend at this rate (was 0.00214, fitted to the account meter's movement, which other use inflated; 2026-11-06) |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 
 Three layers enforce it:
@@ -158,14 +158,18 @@ Three layers enforce it:
    `routine-eval-fire.yml` before the fire, in every mode). It adds up the
    account's current allowance week, from its last weekly reset
    (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
-   saving does not move it; a rolling seven days until 2026-10-26): each ingested run on `persistent/eval-results` at its
-   measured weekly delta plus the overrun (or the full reservation,
-   `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
-   fire without results: at the full reservation when it is under 2 hours
+   saving does not move it; a rolling seven days until 2026-10-26; a manual reset the owner pressed, listed in `MANUAL_RESETS`, starts it at that instant for the rest of its week): each ingested run on `persistent/eval-results` at its
+   own dollars (`usage.cost_estimate.usd` times `points_per_usd`) plus the
+   overrun; at its measured weekly delta plus the overrun when it has no
+   dollar figure (the delta is the whole account's movement, so it charged
+   each run every other thread's use: 116 points booked against about 23 real
+   in the week to 2026-11-04); or at the full reservation,
+   `per_run_cap + per_run_overrun`, when neither is known, plus every successful
+   fire without results: at the full reservation when it is under 90 minutes
    old, and at the overrun alone after that (a routine run finishes within
-   minutes, so a fire with no results two hours later failed or never
-   started). An improve fire (or a guidance-improve fire) never lands
-   results, so it is charged its own
+   minutes and a pair fire's two runs stop 40 minutes each, so a fire with no
+   results 90 minutes later failed or never started). An improve fire (or a
+   guidance-improve fire) never lands results, so it is charged its own
    cost for the whole week: eight eval fires at their measured mean
    (eight full reservations until anything is measured; twelve until
    2026-11-02, when the account meter around improve fires measured 2.3 to
@@ -476,6 +480,21 @@ titled `Fire eval routine: eval bare <fixture> <model>`. The allowance guard
 holds it as one run, like any eval fire; the plan reserves it as one arm
 (the cell's cost per arm trial, times three).
 
+**Pair fires.** A routine session costs about $0.67 of its own on every fire,
+and nothing counts it, so when one sweep plans a fixture's cells on two
+roster models with the same arms, it sends them as one fire with
+`model: m1,m2`, in roster order (`scripts/plan_week.py`, PAIR FIRES). The
+fire workflow checks each id as it checks one and sends `models: [m1, m2]`;
+the routine runs the harness once per model, in that order, under one run id
+and one results branch, and each summary keeps its own model. The run is
+titled `Fire eval routine: eval <fixture> m1,m2`, which the planner and the
+explorer read as a fire of each model's cell. Each invocation is stopped 40
+minutes after it starts, so the planner holds a pending pair fire's cells for
+90 minutes (a one-model fire's for 50) and counts it in flight for twice a
+one-model fire's 20 minutes. The allowance guard reserves it
+as one fire and, once its run is ingested, charges each of its two
+invocations.
+
 A skill is paused while an improve pull request is open, an attempt is in
 flight, an open `on-hold` issue names it, for 14 days after a rejection, and
 after three rejections in a row until the skill, a fixture or the roster
@@ -502,7 +521,9 @@ or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
 `routine-outage`) are listed in the plan, not fired; each carries a
-`change_type`. A skill run
+`change_type`. A guidance section whose `eval-coverage.yml` row is `gap`
+(tracked, no fixture yet) gets `needs-fixtures` with zero fixtures, so its
+first fixture is asked for before any headroom can be measured. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such

@@ -1,0 +1,82 @@
+[
+  {
+    "query": "find the email aliases I actually use in fastmail and add them as From identities",
+    "should_trigger": true
+  },
+  {
+    "query": "add billing@example.com as a fastmail sending identity",
+    "should_trigger": false
+  },
+  {
+    "query": "which aliases have I been getting mail through? add any that aren't sending identities yet, dry run first",
+    "should_trigger": true
+  },
+  {
+    "query": "let me send as team@example.net from fastmail",
+    "should_trigger": false
+  },
+  {
+    "query": "scan my fastmail for X-Delivered-To addresses I correspond through and set them up as From addresses",
+    "should_trigger": true
+  },
+  {
+    "query": "add a from address for press@example.org, dry run first",
+    "should_trigger": false
+  },
+  {
+    "query": "I've got a catch-all on example.com and have been replying from random aliases. add the ones I really use as identities",
+    "should_trigger": true
+  },
+  {
+    "query": "find all the newsletters I'm subscribed to in fastmail and list the senders",
+    "should_trigger": false
+  },
+  {
+    "query": "run the add-received-from-addresses workflow in whatif mode and tell me what it would add",
+    "should_trigger": true
+  },
+  {
+    "query": "unsubscribe me from every mailing list that emailed me to an alias this month",
+    "should_trigger": false
+  },
+  {
+    "query": "I keep having to type the From address by hand when replying to mail sent to my aliases. can you add the aliases I actually correspond with as identities?",
+    "should_trigger": true
+  },
+  {
+    "query": "how many emails are in my fastmail inbox right now?",
+    "should_trigger": false
+  },
+  {
+    "query": "work out which of my fastmail aliases have two-way conversations and add them as sending identities",
+    "should_trigger": true
+  },
+  {
+    "query": "show me which email addresses have sent me the most mail this year",
+    "should_trigger": false
+  },
+  {
+    "query": "discover the aliases people write to me at and make them all selectable in the From dropdown, skipping newsletter-only ones",
+    "should_trigger": true
+  },
+  {
+    "query": "set up a catch-all alias for example.com in fastmail",
+    "should_trigger": false
+  },
+  {
+    "query": "audit my fastmail delivered-to addresses against my existing identities and add the missing ones I've replied from",
+    "should_trigger": true
+  },
+  {
+    "query": "why is mail sent to my alias landing in spam? check the fastmail spam settings",
+    "should_trigger": false
+  },
+  {
+    "query": "add From addresses for all the aliases I use",
+    "should_trigger": true
+  },
+  {
+    "query": "export a list of all my gmail aliases and the contacts I've emailed from each",
+    "should_trigger": false
+  }
+]

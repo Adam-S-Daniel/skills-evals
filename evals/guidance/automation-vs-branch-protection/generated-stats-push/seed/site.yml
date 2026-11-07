@@ -1,0 +1,7 @@
+# Configuration for the docs site (docs.example.com), which this repository
+# does not build: the site fetches the files below from GitHub at render
+# time, from any branch of example-org/widgets.
+title: widgets
+stats_source:
+  branch: main
+  path: docs/stats.json

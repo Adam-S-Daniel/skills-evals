@@ -19,6 +19,7 @@ import { makeExt, attentionRows, capUse, routineHealth } from '../src/private/vi
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
+import { agentMadeRows } from '../src/views/impact.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
@@ -207,6 +208,34 @@ await test('every route renders with the private overlays and every dataset empt
   for (const name of ['summary', 'needs', 'hooks', 'skills', 'guidance', 'removed', 'method', 'loop', 'impact', 'ops']) {
     ok(textOf(renderRoute(doc(), { name, id: null }, { ext })).length > 0, name);
   }
+});
+
+// --- made by agents (agent_made, _agent-guidance#451) ---------------------------------------
+const amRow = (o) => ({ total: 0, by_origin: { agent: 0, loop: 0, person: 0, unknown: 0 }, agent_under_rule: 0, agent_verdicts: {}, ...o });
+const amDoc = () => doc({ agent_made: {
+  rule_since: '2026-10-26T14:40:02Z',
+  items: [
+    { kind: 'check', id: 'demo-check', origin: 'agent', created: '2026-10-30T00:00:00Z', commit: 'aaaaaaaaaaaa', method: 'trailer', under_rule: true, impact: { runs: 12, blocked: 3, verdict: 'blocks' } },
+    { kind: 'skill', id: 'demo-skill', origin: 'agent', created: '2026-09-24T00:00:00Z', commit: 'bbbbbbbbbbbb', method: 'first-add', under_rule: false, impact: { invocations: 5, verdict: 'keep' } },
+    { kind: 'section', id: 'demo-section', origin: 'person', created: '2026-08-01T00:00:00Z', commit: 'cccccccccccc', method: 'first-appearance', under_rule: false, impact: { verdict: null, current_text_runs: 0 } }],
+  summary: {
+    check: amRow({ total: 1, by_origin: { agent: 1, loop: 0, person: 0, unknown: 0 }, agent_under_rule: 1, agent_verdicts: { blocks: 1 }, agent_runs: 12, agent_blocked: 3 }),
+    skill: amRow({ total: 1, by_origin: { agent: 1, loop: 0, person: 0, unknown: 0 }, agent_verdicts: { keep: 1 }, agent_invocations: 5 }),
+    section: amRow({ total: 1, by_origin: { agent: 0, loop: 0, person: 1, unknown: 0 } }) } } });
+await test('made by agents: absent is not reported', () => {
+  for (const d of [doc(), doc({ agent_made: null })]) eq(agentMadeRows(d), null);
+  ok(!textOf(renderRoute(doc(), { name: 'impact', id: null }, {})).includes(STRINGS.agentMade), 'no panel without the block');
+});
+await test('made by agents: counts by kind, agent items newest first, linked to their pages', () => {
+  const r = agentMadeRows(amDoc());
+  eq(r.kinds.map((k) => [k.kind, k.total, k.agent, k.afterRule].join(':')).join(','), 'check:1:1:1,skill:1:1:0,section:1:0:0');
+  eq(r.kinds[0].impact, '12 runs, 3 blocked; verdicts: blocks 1');
+  eq(r.items.map((i) => i.id).join(','), 'demo-check,demo-skill');
+  const node = renderRoute(amDoc(), { name: 'impact', id: null }, {});
+  ok(textOf(node).includes(STRINGS.agentMade), 'panel shown');
+  const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  ok(hrefs.includes('#/hooks/demo-check') && hrefs.includes('#/skills/demo-skill'), hrefs.join(' '));
+  ok(!hrefs.includes('#/guidance/demo-section'), 'person-made items are counted, not listed');
 });
 
 // --- fixture requests (ported from dashboard/build.py's fixture_queue) ----------------------

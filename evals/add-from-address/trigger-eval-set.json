@@ -1,0 +1,82 @@
+[
+  {
+    "query": "i want to be able to send email as billing@example.com from my fastmail account, can you add it as a from address",
+    "should_trigger": true
+  },
+  {
+    "query": "look through my fastmail mail and work out which aliases I actually get mail through, then add them as From identities",
+    "should_trigger": false
+  },
+  {
+    "query": "add support@example.net as a sending identity on fastmail. do a dry run first so i can see what it would do",
+    "should_trigger": true
+  },
+  {
+    "query": "which of my email aliases do I correspond through? add whichever ones I'm missing as sending identities",
+    "should_trigger": false
+  },
+  {
+    "query": "let me send as team-updates@example.com in fastmail",
+    "should_trigger": true
+  },
+  {
+    "query": "search my fastmail inbox for the thread from the accountant about the 2025 filing",
+    "should_trigger": false
+  },
+  {
+    "query": "I just set up a new alias, hello@example.org, on my domain. add it as a From identity so I can reply from it",
+    "should_trigger": true
+  },
+  {
+    "query": "draft a reply in fastmail to the landlord's last message and send it",
+    "should_trigger": false
+  },
+  {
+    "query": "can you add these two addresses as fastmail sending identities: orders@example.com and returns@example.com? preview before you change anything",
+    "should_trigger": true
+  },
+  {
+    "query": "how do I set up a custom domain with fastmail so I can receive mail at example.com?",
+    "should_trigger": false
+  },
+  {
+    "query": "fastmail won't let me pick press@example.net in the From dropdown. add it as an identity please",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new secret called FASTMAIL_API_TOKEN to the fastmail-actions repo with gh secret set",
+    "should_trigger": false
+  },
+  {
+    "query": "use the fastmail-actions workflow to add jobs@example.com to my From addresses, whatif mode first",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new email address to my Gmail account so I can send as it",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a From address of invoices@example.org on my fastmail account, please trigger the add-from-address workflow",
+    "should_trigger": true
+  },
+  {
+    "query": "write a GitHub Actions workflow that calls the JMAP API to list my mailbox folders",
+    "should_trigger": false
+  },
+  {
+    "query": "add newsletter@example.com to my fastmail identities, then tell me when the report email lands",
+    "should_trigger": true
+  },
+  {
+    "query": "delete the old sending identity old-name@example.com from my fastmail account",
+    "should_trigger": false
+  },
+  {
+    "query": "set me up to send mail as ceo-office@example.net from fastmail",
+    "should_trigger": true
+  },
+  {
+    "query": "create a mail rule in fastmail that files anything from example.net into a folder",
+    "should_trigger": false
+  }
+]
