@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NoxsVqbdSVAFwzoDjAzcUa",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NoxsVqbdSVAFwzoDjAzcUa",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019gXNXwYhManT2m2e36w716",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100; wc -c vendor/* 2><path>",
+      "input_chars": 110,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019gXNXwYhManT2m2e36w716",
+      "is_error": false,
+      "output": "788a268 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gh/replay/auth-status.txt\n./.gh/replay/issue-lis...",
+      "output_chars": 624,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PYDL1XpWZHRDVhJdBbjPB2",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md AGENTS.md hooks/session-start.sh .example-cli/settings.json .mcp.json .gitmodules bin/gh .gh/replay/issue-list.json .gh/replay/issue-view-57....",
+      "input_chars": 363,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PYDL1XpWZHRDVhJdBbjPB2",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Ses...",
+      "output_chars": 2243,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DSKgLXLQGJQrfT9fAJG7Yk",
+      "name": "Bash",
+      "input": "head -c 3000 bin/gh; echo; for f in .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/api/repos/example-org/example-repo/issues/57/comments.json .gh/replay/auth-status.txt; do echo \"...",
+      "input_chars": 371,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DSKgLXLQGJQrfT9fAJG7Yk",
+      "is_error": true,
+      "output": "Exit code 1\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no ...",
+      "output_chars": 6576,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012wCDGVtoVuY9ju9iNq26jj",
+      "name": "Bash",
+      "input": "which gh; gh issue list --repo example-org/example-repo --state all --search \"synced\" 2>&1 | head; gh issue list --repo example-org/example-repo --state all --limit 100 --json number,title,state 2>&1 ...",
+      "input_chars": 362,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012wCDGVtoVuY9ju9iNq26jj",
+      "is_error": false,
+      "output": "<path>\n[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n  ...",
+      "output_chars": 1589,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KiiUvrpGsBi4WnZEMRJ1vD",
+      "name": "Bash",
+      "input": "mkdir -p \"$TMPDIR/gen\" && cat > \"$TMPDIR/gen/gen.py\" <<'EOF'\nimport json, re, sys\nroot = sys.argv[1]\nmd = open(f\"{root}<path>\").read()\nrel = json.load(open(f\"{root}<path>\"))[\"example-cli\"]\n# extract b...",
+      "input_chars": 4204,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KiiUvrpGsBi4WnZEMRJ1vD",
+      "is_error": false,
+      "output": "4.2.0/1 | Session-start hooks now report source `\"fork\"` for forked sessions instead of `\"resume\"`.\n4.2.0/2 | Synced skills are now named `synced:NAME` instead of `NAME`.\n4.2.0/3 | Terminal color palette tweaks for high-contrast themes.\n4.2.0/4 | Fixed a Windows path-handling bug affecting network d...",
+      "output_chars": 2420,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016fF2VyQGmYdjLcQcP4xYC7",
+      "name": "Bash",
+      "input": "cd \"$TMPDIR/gen\" && python3 - <<'EOF'\nimport re\np=\"gen.py\"; s=open(p).read()\ns=s.replace('prose = issue[\"why\"] + \"\\\\n\" + issue[\"check\"]','prose = issue[\"lead\"] + \"\\\\n\" + issue[\"why\"] + \"\\\\n\" + issue[\"...",
+      "input_chars": 673,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016fF2VyQGmYdjLcQcP4xYC7",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 synced skills renamed synced:NAME: README says invoke by bare name\n\nFound in the ExampleCLI 4.2.0 [2026-07-14T09:47Z] release-notes review. Not yet verified against this repo.\n\n## ExampleCLI change(s)\n\n> Synced skills are now named `synced:NAME` instead of `NAME`.\n>\n> \u2014 [v4.2.0](h...",
+      "output_chars": 988,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017EadeAmQ15mDRASCFV5kho",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 43,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017EadeAmQ15mDRASCFV5kho",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 139,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

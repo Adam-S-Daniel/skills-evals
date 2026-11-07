@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MF5JxxXFohTPEJL9t1vNhS",
+      "name": "Bash",
+      "input": "git log --oneline | head -5 && find . -path ./.git -prune -o -type f -print | head -100 && wc -l vendor/* 2><path>",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MF5JxxXFohTPEJL9t1vNhS",
+      "is_error": false,
+      "output": "6479a99 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gh/replay/auth-status.txt\n./.gh/replay/issue-lis...",
+      "output_chars": 624,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XGRENM2bEGKcivGDhuuNRH",
+      "name": "Bash",
+      "input": "for f in vendor/* README.md .example-cli/settings.json hooks/session-start.sh .mcp.json .gitmodules .ripgreprc .idea .vscode; do echo \"=== $f\"; cat \"$f\"; done; echo; ls -la .idea .vscode",
+      "input_chars": 186,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XGRENM2bEGKcivGDhuuNRH",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced...",
+      "output_chars": 2107,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0192p246zfDRf7m3wxCJn8Hx",
+      "name": "Bash",
+      "input": "cat bin/gh | head -40; gh auth status; gh issue list --repo example-org/example-repo --state all --limit 100 --json number,title,state,labels; gh issue view 57 --repo example-org/example-repo --json n...",
+      "input_chars": 238,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0192p246zfDRf7m3wxCJn8Hx",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 5173,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017u4ACn8je5bJnPmtJMezxX",
+      "name": "Bash",
+      "input": "gh issue view 61 --repo example-org/example-repo --json body,comments 2>&1 | head; gh issue view 44 --repo example-org/example-repo --json body 2>&1 | head; grep -rn \"synced\\|review-checklist\\|skill\" ...",
+      "input_chars": 250,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017u4ACn8je5bJnPmtJMezxX",
+      "is_error": true,
+      "output": "Exit code 2\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\n./README.md:9:## Synced skills\n./README.md:11:Invoke a synced skill by its bare name, e.g. `<path>`, from any\n./vendor/RELEASES.md:9:- Synced skills are now named `synced:NAME` instead of `NAME`.",
+      "output_chars": 268,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FCoXwW5Ey5JDbKUrkiaFN1",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skill-rename.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: README still says to invoke `<path>`\n\nFound in the ExampleCLI 4.2.0 release...",
+      "input_chars": 4341,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FCoXwW5Ey5JDbKUrkiaFN1",
+      "is_error": false,
+      "output": "01-synced-skill-rename.md",
+      "output_chars": 25,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
