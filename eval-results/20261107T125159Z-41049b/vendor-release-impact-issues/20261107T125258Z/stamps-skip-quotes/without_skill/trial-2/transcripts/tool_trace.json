@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019nf325kW1aWWP3QFjLKcCD",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -R vendor | head -50 && cat vendor/releases.json | head -60",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019nf325kW1aWWP3QFjLKcCD",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\nvendor:\nRELEASES.md\nreleases.json\n{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:...",
+      "output_chars": 667,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017H9w6WgfviyA4em1Kem1Cc",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md README.md .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh scripts/check.sh",
+      "input_chars": 124,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017H9w6WgfviyA4em1Kem1Cc",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 or earlier that test fo...",
+      "output_chars": 2462,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U98z8nyZJQ8mpj5GXPEc3h",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-check-sh-exit-code-2.md <<'EOF'\n# scripts/check.sh misses configuration errors: `example-cli check` exits 2 since v4.3.0\n\nExampleCLI v4.3.0 (published 2026-08-25T02:...",
+      "input_chars": 2657,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U98z8nyZJQ8mpj5GXPEc3h",
+      "is_error": false,
+      "output": "01-check-sh-exit-code-2.md\n02-session-start-hook-fork-matcher.md",
+      "output_chars": 64,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
