@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0146tq1CqvD5sVY81Xz2wyqy",
+      "name": "Bash",
+      "input": "cd <path>; git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 111,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0146tq1CqvD5sVY81Xz2wyqy",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/release-notes/SKILL.md\n./...",
+      "output_chars": 464,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011dD34A6xUb6Lusm8b2AsqS",
+      "name": "Bash",
+      "input": "cd <path>; for f in README.md session/skills/.skills-bootstrap-installed.json session/skills/release-notes/SKILL.md session/skills/writing-adrs/SKILL.md repo/skills.lock repo/dot-claude/skills/release...",
+      "input_chars": 336,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011dD34A6xUb6Lusm8b2AsqS",
+      "is_error": false,
+      "output": "=== README.md\n# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the...",
+      "output_chars": 3385,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U85ETuYRn8ucB1g7hVbBuL",
+      "name": "Bash",
+      "input": "cd <path>; ls -la --time-style=full-iso session/skills session/skills/* repo repo/dot-claude/skills/release-notes; git show --stat HEAD | head -30",
+      "input_chars": 163,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U85ETuYRn8ucB1g7hVbBuL",
+      "is_error": false,
+      "output": "repo:\ntotal 16\ndrwxr-xr-x 3 root root 4096 2026-11-07 04:20:57.944322462 +0000 .\ndrwxr-xr-x 6 root root 4096 2026-11-07 13:41:32.276601775 +0000 ..\ndrwxr-xr-x 3 root root 4096 2026-11-07 04:20:57.944322462 +0000 dot-claude\n-rw-r--r-- 1 root root  353 2026-11-07 04:20:57.944322462 +0000 skills.lock\n\n...",
+      "output_chars": 2032,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Wsv42ELHsV4N7kMpVAnUZT",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 35,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Wsv42ELHsV4N7kMpVAnUZT",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 131,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
