@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014CuHhxQdWhdFUHaSg9kQc3",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; cat AGENTS.md 2><path> | head -50",
+      "input_chars": 85,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014CuHhxQdWhdFUHaSg9kQc3",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nls: cannot access '.github/workflows': No such file or directory",
+      "output_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ADKncU8AQnK9f3tQfKwaU8",
+      "name": "Bash",
+      "input": "git ls-files | head -50; find . -name \"*.yml\" -not -path \"./.git/*\" | head -20",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ADKncU8AQnK9f3tQfKwaU8",
+      "is_error": false,
+      "output": "README.md\nsite/index.html\nworkflows/ci.yml\n./workflows/ci.yml",
+      "output_chars": 61,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LRHedQYdPZLegBNhK8hDp9",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml README.md; git log --oneline | head",
+      "input_chars": 56,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LRHedQYdPZLegBNhK8hDp9",
+      "is_error": false,
+      "output": "name: CI\non:\n  pull_request:\n    paths:\n      - \"site/**\"\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"build and test the site\"\n# example-site\n`test` is a required status check. A docs-only PR sits BLOCKED forever with\n\"Expected - Waiting for status to be reported\".\n12aaba9...",
+      "output_chars": 315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DD7Lre6DYgeSw6VW4r16eg",
+      "name": "Bash",
+      "input": "cat > workflows/ci.yml <<'EOF'\nname: CI\n# `test` is a required check, so this workflow must always report. A trigger\n# `paths:` filter would leave docs-only PRs waiting forever; instead the job\n# alwa...",
+      "input_chars": 1178,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DD7Lre6DYgeSw6VW4r16eg",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
