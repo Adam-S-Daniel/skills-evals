@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GhXzAoFqQaLGb57ew3MEf1",
+      "name": "Bash",
+      "input": "ls -la && git remote -v && git log --oneline | head",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GhXzAoFqQaLGb57ew3MEf1",
+      "is_error": false,
+      "output": "total 32\ndrwxr-xr-x 6 root root 4096 Nov  7 05:49 .\ndrwx------ 6 root root 4096 Nov  7 05:49 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 05:49 .claude\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .gh\ndrwxr-...",
+      "output_chars": 970,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XXXJhbH8jLqhDWLNCNPFaG",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; ls -la bin .gh .claude; cat bin/*",
+      "input_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XXXJhbH8jLqhDWLNCNPFaG",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (54.5KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2203,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FUHurb6hXbW7yoKKPNiFq2",
+      "name": "Bash",
+      "input": "find .gh -type f | head -50; sed -n 1,80p bin/gh | head -120; echo $GH_REPLAY_DIR; which gh",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FUHurb6hXbW7yoKKPNiFq2",
+      "is_error": false,
+      "output": ".gh/replay/api/repos/example-org/service-alpha.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7201.json\n.gh/replay/api/repos/example-org/service-alpha/actions/permissions/fork-pr-contributor-approval.json\n.gh/replay/api/...",
+      "output_chars": 5441,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018v26k3JLwM6mkGza3kx8UD",
+      "name": "Bash",
+      "input": "cd <path> && for f in service-alpha/actions/permissions.json service-alpha/actions/permissions/fork-pr-contributor-approval.json service-alpha/rulesets.json service-alpha/rulesets/7201.json service-al...",
+      "input_chars": 559,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018v26k3JLwM6mkGza3kx8UD",
+      "is_error": false,
+      "output": "=== service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== service-alpha/actions/permissions/fork-pr-contributor-approval.json\n{\n  \"approval_policy\": \"all_external_contributors\"\n}\n\n=== service-alpha/rulesets.json\n[\n  {\n    \"enfo...",
+      "output_chars": 3694,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
