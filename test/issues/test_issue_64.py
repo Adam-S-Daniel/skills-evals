@@ -575,10 +575,11 @@ class RepoFiles(unittest.TestCase):
         # The reason must say that, not claim coverage or a tracker.
         doc = yaml.safe_load(COMMITTED_NON_COVERAGE.read_text(encoding="utf-8"))
         row = next(r for r in doc["skips"] if r["skill"] == "test-canary")
-        self.assertEqual(
-            row["reason"], "internal canary; carries no guidance; no probe "
+        # A scope recheck may prefix a dated verdict; the claim itself stays.
+        self.assertTrue(row["reason"].endswith(
+            "internal canary; carries no guidance; no probe "
             "asserts its delivery (not built, untracked; closed issue #17 "
-            "built other propagation arms)")
+            "built other propagation arms)"), row["reason"])
 
     def test_the_committed_evals_tree_and_skip_file_load_through_the_script(self):
         w = World(self)
