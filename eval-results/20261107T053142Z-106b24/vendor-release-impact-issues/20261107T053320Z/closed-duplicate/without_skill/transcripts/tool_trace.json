@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013CctskWHYUdcL2Fx935wTN",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; ls -la; ls vendor; find . -path ./.git -prune -o -type f -print | head -100; wc -c vendor/*",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013CctskWHYUdcL2Fx935wTN",
+      "is_error": false,
+      "output": "8655d0b initial commit\ntotal 44\ndrwxr-xr-x 9 root root 4096 Nov  7 05:34 .\ndrwx------ 6 root root 4096 Nov  7 05:33 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:15 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:15 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 05:34 .claude\ndrwxr-xr-x 2 root root 4096 ...",
+      "output_chars": 1739,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SbEPuGrr8sjAtgdbxvhQJX",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md; echo ----; cat hooks/session-start.sh .example-cli/settings.json; echo ----; cat bin/gh | head -40; cat .gh/replay/auth-status.txt .gh/replay/iss...",
+      "input_chars": 212,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SbEPuGrr8sjAtgdbxvhQJX",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced skills are now named `...",
+      "output_chars": 5670,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WM3VdfkwBqzpHrCqK9sXum",
+      "name": "Bash",
+      "input": "cd <path> && cat issue-view-57.json api/repos/example-org/example-repo/issues/57.json api/repos/example-org/example-repo/issues/57/comments.json; head -c 600 api/repos/example-org/example-repo/issues....",
+      "input_chars": 353,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WM3VdfkwBqzpHrCqK9sXum",
+      "is_error": false,
+      "output": "{\n  \"number\": 57,\n  \"title\": \"ExampleCLI 4.2.0 hooks report source \\\"fork\\\": SessionStart matcher is startup|resume\",\n  \"state\": \"CLOSED\",\n  \"stateReason\": \"NOT_PLANNED\",\n  \"closedAt\": \"2026-07-21T16:40:00Z\",\n  \"body\": \"Found in the ExampleCLI 4.2.0 review. Not yet verified against this repo.\\n\\n## ...",
+      "output_chars": 2996,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014rStoDyGEequPAYuoETCqV",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-readme-synced-skill-prefix.md <<'EOF'\n# README: synced skills are invoked as `<path>` since ExampleCLI 4.2.0\n\nFound in the ExampleCLI 4.2.0 review. Verified against ...",
+      "input_chars": 3784,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014rStoDyGEequPAYuoETCqV",
+      "is_error": false,
+      "output": "01-readme-synced-skill-prefix.md",
+      "output_chars": 32,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
