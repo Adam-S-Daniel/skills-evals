@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015H1Ag2jgDzJwjkkkRvJ42Q",
+      "name": "Bash",
+      "input": "git ls-files | grep -Ei '\\.github/|\\.gitlab-ci|Jenkinsfile|\\.circleci|ci/|scripts/|\\.sh$' | head -50",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015H1Ag2jgDzJwjkkkRvJ42Q",
+      "is_error": false,
+      "output": ".github/workflows/test.yml\nscripts/slugify.sh\ntest/run-tests.sh",
+      "output_chars": 63,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KSFXBUb3s5dw14qrH2WPUK",
+      "name": "Bash",
+      "input": "for f in .github/workflows/test.yml scripts/slugify.sh test/run-tests.sh; do echo \"=== $f\"; cat -A $f | sed 's/\\$$//' ; done",
+      "input_chars": 124,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KSFXBUb3s5dw14qrH2WPUK",
+      "is_error": false,
+      "output": "=== .github/workflows/test.yml\nname: Tests\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run the shell tests\n        run: bash...",
+      "output_chars": 2403,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0133SVuNbwpjn8PziUquc771",
+      "name": "Bash",
+      "input": "bash test/run-tests.sh; echo \"exit=$?\"; ls test/golden README.md; grep -n Usage README.md",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0133SVuNbwpjn8PziUquc771",
+      "is_error": false,
+      "output": "PASS: basic\nPASS: readme-usage\nPASS: punctuation\nPASS: golden-path\nPASS: trims-edges\nResults: 5 passed, 0 failed\nexit=0\nREADME.md\n\ntest/golden:\ngolden-path.txt\n5:Usage: bash scripts/slugify.sh <title...>",
+      "output_chars": 203,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014pSte7ZFs4UohktDp172GL",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='test/run-tests.sh'\ns=open(p).read()\ns=s.replace('''    local name=$1 file=$2 pattern=$3 line\n    line=$(grep -n -- \"$pattern\" \"$file\" | head -1 | cut -d: -f1)\n    if [[ -n \"$line\" ]...",
+      "input_chars": 1588,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014pSte7ZFs4UohktDp172GL",
+      "is_error": false,
+      "output": "PASS: basic\nPASS: readme-usage\nPASS: punctuation\nPASS: golden-path\nPASS: trims-edges\nResults: 5 passed, 0 failed\nexit=0\ncp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>': Operation...",
+      "output_chars": 1161,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PcGoo2cCkQzqR4kpnqW6ne",
+      "name": "Bash",
+      "input": "git status --short; d=$TMPDIR/t2; mkdir -p $d && cp -r scripts test README.md $d/ && cd $d && sed -i 's/^Usage/Nope/' README.md && echo x > test/golden/golden-path.txt && sed -i 's/\"hello-world\"<path>...",
+      "input_chars": 263,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PcGoo2cCkQzqR4kpnqW6ne",
+      "is_error": false,
+      "output": " M .github/workflows/test.yml\n M test/run-tests.sh\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nFAIL: basic -- expected 'nope', got 'hello-world'\nFAIL: readme-usage -- no line matching '^Usage: bash scripts...",
+      "output_chars": 560,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
