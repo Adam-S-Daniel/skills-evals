@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EL9kF9p1FrgWeBtpxXps1Z",
+      "name": "Bash",
+      "input": "pwd; ls -la; git status --short | head; git log --oneline -3; git remote -v; git branch --show-current; ls .claude 2>&1 | head; ls skills.lock AGENTS.md CLAUDE.md 2>&1; ls <path> 2>&1 | head -20",
+      "input_chars": 198,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JwCHFSih4VZtLtwHpEU3NE",
+      "name": "ToolSearch",
+      "input": "select:ListConnectors,ListSkills,ListPlugins",
+      "input_chars": 44,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JwCHFSih4VZtLtwHpEU3NE",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EL9kF9p1FrgWeBtpxXps1Z",
+      "is_error": false,
+      "output": "<path>\ntotal 24\ndrwxr-xr-x 6 root root 4096 Nov  7 17:30 .\ndrwx------ 6 root root 4096 Nov  7 17:30 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 03:52 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 03:52 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 17:30 .claude\ndrwxr-xr-x 9 root root 4096 Nov  7 17:30 .gi...",
+      "output_chars": 1228,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014bho3iUQBPo1GAq8Kb1uSd",
+      "name": "ListConnectors",
+      "input": "{}",
+      "input_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tj5ZPLiyB9BceF1ymSjmAK",
+      "name": "ListSkills",
+      "input": "{}",
+      "input_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NKbdV8jWWkqQ4yKfwJvw5k",
+      "name": "ListPlugins",
+      "input": "{}",
+      "input_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014bho3iUQBPo1GAq8Kb1uSd",
+      "is_error": true,
+      "output": "Connector registry is unavailable right now; please try again.",
+      "output_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tj5ZPLiyB9BceF1ymSjmAK",
+      "is_error": true,
+      "output": "Unable to get organization UUID",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NKbdV8jWWkqQ4yKfwJvw5k",
+      "is_error": true,
+      "output": "Unable to get organization UUID",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R2toZ1Cv7k2uT6R5FpvhxD",
+      "name": "Bash",
+      "input": "ls -R .claude | head -30; cat .mcp.json 2>&1 | head -20; ls -la repo-a repo-b; ls <path> <path> 2>&1 | head; git -C repo-a remote -v 2>&1 | head -3",
+      "input_chars": 152,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R2toZ1Cv7k2uT6R5FpvhxD",
+      "is_error": false,
+      "output": ".claude:\ncat: .mcp.json: Permission denied\nrepo-a:\ntotal 20\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 6 root root 4096 Nov  7 17:30 ..\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .claude\n-rw-r--r-- 1 root root   71 Nov  7 04:20 README.md\n-rw-r--r-- 1 root root  135 Nov  7 04:20 skills.lock\n...",
+      "output_chars": 585,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015c1iNdL2v7KMDnw8GvRGPD",
+      "name": "Bash",
+      "input": "cd repo-a; cat README.md skills.lock; ls -R .claude; cat ../repo-b/README.md",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015c1iNdL2v7KMDnw8GvRGPD",
+      "is_error": false,
+      "output": "# repo-a\n\nThe service. Its skills.lock pins the skill bundles it uses.\n# Skill bundles this repository uses, pinned by digest.\nwriting-adrs: 3f1c9a0d7e2b4c6a8f0e1d2c3b4a5968778695a4b3c2d1e0f9a8b7c6d5e4f3a2\n.claude:\nhooks\n\n.claude/hooks:\nskills-bootstrap.sh\n# repo-b\n\nThe deploy scripts.",
+      "output_chars": 286,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X8XhMakWS6VZLwyGHTEtWi",
+      "name": "Bash",
+      "input": "cat .claude/hooks/skills-bootstrap.sh; git -C .. ls-files | head",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X8XhMakWS6VZLwyGHTEtWi",
+      "is_error": false,
+      "output": "#!<path> bash\n# SessionStart hook: installs the bundles pinned in skills.lock, digest-verified.\nset -euo pipefail\necho \"skills: installed 1 bundle from skills.lock\"\nrepo-a/.claude/hooks/skills-bootstrap.sh\nrepo-a/README.md\nrepo-a/skills.lock\nrepo-b/README.md",
+      "output_chars": 264,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
