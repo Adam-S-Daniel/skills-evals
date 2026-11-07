@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DECPzDpWsKNGhih1WG64ve",
+      "name": "Skill",
+      "input": "cms-platform:consumer-repo-provisioning",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DECPzDpWsKNGhih1WG64ve",
+      "is_error": false,
+      "output": "Launching skill: cms-platform:consumer-repo-provisioning",
+      "output_chars": 56,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hsf7q51r7VCTB4Ste1vPoU",
+      "name": "Bash",
+      "input": "ls -la && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hsf7q51r7VCTB4Ste1vPoU",
+      "is_error": false,
+      "output": "total 36\ndrwxr-xr-x 7 root root 4096 Nov  7 10:40 .\ndrwx------ 6 root root 4096 Nov  7 10:40 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:29 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:29 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 10:40 .claude\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .gh\ndrwxr-...",
+      "output_chars": 1466,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015seVuTRaQsQDZmwBm2G1Dh",
+      "name": "Bash",
+      "input": "cat README.md platform.lock .github/workflows/cms-automerge-nudge.yml; echo ---; cat .gh/replay/api/repos/example-org/example-site/actions/secrets.json; echo ---; cat .gh/replay/api/repos/example-org/...",
+      "input_chars": 376,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015seVuTRaQsQDZmwBm2G1Dh",
+      "is_error": false,
+      "output": "# Example site\n\nProduction: https://example.com\nPreview: https://preview.example.net\n\nThe repository uses the platform reusable workflows.\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: f3920c6e099c0386829bb5c64343d238de964d2e\nname: cms-automerge-nudge\non:\n  schedule:\n    - cron: '*/15 * * ...",
+      "output_chars": 1668,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
