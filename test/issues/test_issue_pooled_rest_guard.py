@@ -657,11 +657,37 @@ class RoundFourTests(unittest.TestCase):
                                 POOLED["retire_confidence"])
         self.assertEqual(cell_of(current, CURRENT)["class"], "no-benefit")
 
+    def test_harm_awaiting_a_second_cli_version_names_the_harm_evidence(self):
+        # The round 4 review's minor 4: the harm decision reads the harm
+        # evidence, so its awaiting reason says so.
+        current = strat(MAIN, [(60, 60, 60)] * 20, [(95, 95, 95)] * 20, start=10)
+        for run in current:
+            run["cli_versions"] = ["1.0.0 (Claude Code)"]
+        cell = cell_of(strat(OLD, [(80, 80, 80)] * 10, [(80, 80, 80)] * 10) + current)
+        self.assertEqual(cell["class"], "insufficient", cell["reason"])
+        self.assertIn(f"harm on the numbers (at pair {cell['rest_guard']['harm_evidence_at']} "
+                      "the current rest's harm evidence reached its level)", cell["reason"])
+
     def test_the_harm_evidence_needs_the_pair_floor(self):
         current = strat(MAIN, [(60, 60, 60)] * 5, [(95, 95, 95)] * 5, start=40)
         cell = cell_of(strat(OLD, [(100, 100, 100)] * 40, [(60, 60, 60)] * 40) + current)
         self.assertIsNone(cell["harm_decided_at"])
         self.assertNotEqual(cell["class"], "no-benefit")
+
+
+    def test_a_scope_pause_parks_a_provisional_keep(self):
+        # The round 4 review's minor 2: a paused fixture gets no current-rest
+        # runs, so a provisional pooled keep can never be confirmed; it is
+        # parked like any other undecided cell. A final keep stays a keep.
+        paused = {k: {**v, "scope_paused": "no-use"} for k, v in EXPECT.items()}
+        out = verdict(StaleKeepTests().stale(20), expect=paused)
+        cell = out["cells"][0]
+        self.assertEqual((cell["class"], cell["class_before_pause"]), ("paused", "benefit"))
+        self.assertNotEqual(out["verdict"], "keep")
+        final = verdict(strat(OLD, LOSS * 4, FLAT * 2) + strat(MAIN, GAIN, LOSS, start=40),
+                        expect=paused)
+        self.assertTrue(final["cells"][0]["rest_guard"]["keep_final"])
+        self.assertEqual((final["cells"][0]["class"], final["verdict"]), ("benefit", "keep"))
 
 
 class CurrentReproducesTheOldRuleTests(unittest.TestCase):
@@ -772,6 +798,16 @@ class PlannerTests(unittest.TestCase):
                          removed["cells"][0]["rest_guard"]["remove_evidence_confidence"])
         self.assertGreater(got["no_help"],
                            removed["cells"][0]["objective"]["no_help_confidence"])
+        # The round 4 review's minor 3: the gain chart shows the current
+        # rest's own figures, not the pooled block (here +20 points pooled,
+        # 0 today).
+        row = got["cells"][0]
+        current = removed["cells"][0]["rest_guard"]["current_objective"]
+        self.assertEqual((row["pairs"], row["gain"]), (40, 0.0))
+        self.assertEqual(row["low"], round(current["benefit_lower"] * 100, 1) + 0.0)
+        self.assertEqual(row["high"], round(current["retire_upper"] * 100, 1) + 0.0)
+        self.assertNotEqual(row["gain"],
+                            round(removed["cells"][0]["objective"]["delta"] * 100, 1))
 
     def test_the_cost_to_a_verdict_counts_the_current_rests_pairs(self):
         cell = self.planner_cell(cell_of(strat(OLD, FLAT * 2, FLAT * 2)))
@@ -851,6 +887,30 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(len(chosen), 20)
         self.assertIn((provisional["fixture"], "focus"),
                       [(c["fixture"], c["band"]) for c in chosen])
+
+    def test_a_pooled_keep_is_fired_while_a_batch_leaves_its_section_out(self):
+        # The round 4 review's M1: once a batch is active, focus and
+        # guidance-rest take only member cells, and a section a blocking
+        # sibling (insufficient at the cap) keeps out of the batch would
+        # strand its provisional keep. A provisional keep is exempt.
+        provisional = self.kept_cell(cell_of(StaleKeepTests().stale(20)))
+        blocked = self.planner_cell(cell_of(strat(MAIN, FLAT[:3], FLAT[:3])))
+        blocked.update({"fixture": "evals/guidance/sec/fx2", "verdict": "keep",
+                        "in_situ_verdict": "keep", "at_cap": True, "class": "insufficient"})
+        self.assertTrue(plan_week._blocking(blocked))
+        ctx = self.ctx([provisional, blocked])
+        self.assertEqual(plan_week.batch_subjects(ctx)[("guidance", "sec")]["status"], "blocked")
+        ctx["batch"] = {"record": {"members": [{"kind": "guidance", "subject": "other"}]}}
+        bands, _ = plan_week.eval_items(ctx, NOW)
+        fired = [(i["fixture"], band) for band, items in bands.items() for i in items]
+        self.assertIn((provisional["fixture"], "guidance-rest"), fired)
+        # A non-provisional undecided cell of a non-member section stays out.
+        undecided = {**provisional, "provisional_keep": False, "verdict": None,
+                     "in_situ_verdict": None, "class": "insufficient", "at_cap": False}
+        ctx = self.ctx([undecided, blocked])
+        ctx["batch"] = {"record": {"members": [{"kind": "guidance", "subject": "other"}]}}
+        bands, _ = plan_week.eval_items(ctx, NOW)
+        self.assertEqual([i for items in bands.values() for i in items], [])
 
     def test_a_section_with_a_final_keep_is_not_open(self):
         provisional = self.kept_cell(cell_of(StaleKeepTests().stale(20)))

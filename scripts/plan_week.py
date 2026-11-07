@@ -1801,6 +1801,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         newest = _stamp_time(cell["newest"])
         kept = cell.get("verdict") == "keep"
         due = newest is not None and now - newest >= recheck_after(cell)
+        provisional = False
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
         elif cell["class"] in PARKED_CLASSES:
@@ -1845,6 +1846,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # band starved it. A section with a final keep on another cell
             # is kept whatever this cell does.
             band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
+            provisional = True
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -1865,8 +1867,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
-        if members is not None and band in BATCH_BANDS and subject not in members:
-            continue  # THE BATCH: measured once its subject joins one
+        if members is not None and band in BATCH_BANDS and subject not in members \
+                and not provisional:
+            # THE BATCH: measured once its subject joins one. A provisional
+            # pooled keep is exempt (round 4 review): it is a verdict already
+            # reached that only the current rest's own runs can confirm or
+            # undo, as the recheck band fired it before round 4, and a
+            # section a blocking sibling keeps out of the batch must not
+            # strand it.
+            continue
         if band in CHEAPER_FIRST_BANDS and id(cell) in held:
             continue  # its cheaper model's cell of the same fixture goes first
         if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:

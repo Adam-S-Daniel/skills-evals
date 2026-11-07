@@ -1622,3 +1622,27 @@ the keep, harm and planner paths, are fixed with tests:
   each round 4 fix reverted, the tie mutant, and the planner and explorer
   readers. Round 3's harm-path mutant is gone with the pooled-wealth
   condition it mutated.
+
+### Pooled-rest adversarial round 5 (2026-11-07)
+
+The round 4 review found one major problem, which round 4 itself
+introduced, and three minor ones.
+
+- **A batch stranded a provisional keep.** Round 4 moved provisional keeps
+  from the recheck band to focus or guidance-rest, and both are batch
+  bands. Once a batch is active, a section that a blocking sibling keeps
+  out of it (for example, a cell that is insufficient at its cap on one
+  CLI version) never fired its provisional keep. Its `keep` held forever.
+  Provisional keeps are now exempt from the batch filter, as they were in
+  the recheck band. A test covers an active batch with a blocking sibling.
+- **A scope pause kept a provisional keep.** A paused fixture gets no
+  current-rest runs, so nothing can confirm its keep. A `benefit` cell
+  whose `rest_guard.keep_final` is false is now parked as `paused`, like
+  any other undecided class. A final keep still keeps.
+- **The explorer charted the pooled block.** A pooled cell's gain chart now
+  shows the current rest's own figures: gain, keep bound, remove bound and
+  pairs. Those come from `rest_guard.current_objective`, which uses the
+  current keep route's alpha. Before, a cell that gained 20 points on
+  older rests and none today showed +20.
+- **The harm waiting reason** now names the harm evidence that decides,
+  matching the no-benefit text.

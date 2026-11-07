@@ -234,7 +234,9 @@ marks it `scope_paused` with the pause's rule, from compute_gates) stays in
 the verdict (round 3's C1: dropping its cells let the subject's other cells
 remove a subject it helped, automatically). Each of its cells keeps its
 class when that is `benefit` (a keep it earned before the pause still
-keeps: the keep test held its level at whatever pair it stopped) or
+keeps: the keep test held its level at whatever pair it stopped; not a
+provisional pooled keep, whose `rest_guard.keep_final` is false, since no
+current-rest run can now confirm it) or
 `no-benefit` (round 4's M1: a harm or no-benefit decided at its stopping
 time is evidence at the gate's level, so it votes; the pause reads only a
 pooled sample of the without arm and must not hide it), and is otherwise
@@ -385,7 +387,8 @@ own remove test's and the removal evidence's crossings, `current_remove_at`
 and `remove_evidence_at`; and `remove_evidence_confidence`, the level the
 evidence reached, which the planner and the explorer read for the cell's
 no-help level; `harm_evidence_at` and `harm_evidence_confidence`, the same
-for the harm evidence). `no_help_confidence`, `harm_confidence`,
+for the harm evidence; and `current_objective`, the current rest's own
+`sequence_block`, which the explorer charts). `no_help_confidence`, `harm_confidence`,
 `remove_share_at` and `harm_share_at` still report the shares alone.
 
 THE BET PRIOR (`bet_prior`). Each test's running estimate starts from
@@ -1204,8 +1207,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         if rest is not None:
             found = versions(len(usable), current_only=True)
             crossing = ("the current rest's removal evidence reached its level"
-                        if what == "no benefit" else "the pooled test and the current "
-                        "rest's own share of it both reached their level")
+                        if what == "no benefit" else
+                        "the current rest's harm evidence reached its level")
             return done("insufficient", f"{what} on the numbers (at pair {crossed} "
                         f"{crossing}), but the current-rest guard has not held at one pair: it "
                         f"needs at least {rest['min_pairs']} pairs beside the current rest "
@@ -1309,6 +1312,13 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             "pooled_remove_at": objective["remove_at"],
             "pooled_harm_at": first_crossing(harm_pooled, remove_alpha),
             "pooled_keep_at": objective["keep_at"], "current_keep_at": current_keep,
+            # The current rest's own figures (the round 4 review's minor 3:
+            # scripts/explorer_data.py charts these, not the pooled block),
+            # its keep bound at the current route's alpha; None with no
+            # usable current-rest pair. Its pairs count the current rest's.
+            "current_objective": sequence_block(current_ds, margin, route_alpha,
+                                                remove_alpha, bet_prior)
+            if current_ds else None,
             # The round 2 fields: the current rest's own remove test's and the
             # removal evidence's (the mean of the two) first crossings.
             "current_remove_at": first_crossing(
@@ -1697,14 +1707,18 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata, rest=guard)
         paused = (expected.get(fixture) or {}).get("scope_paused")
-        if paused and cell["class"] not in PAUSE_KEEPS_CLASS:
+        provisional = cell["class"] == "benefit" and \
+            (cell.get("rest_guard") or {}).get("keep_final") is False
+        if paused and (cell["class"] not in PAUSE_KEEPS_CLASS or provisional):
             # Round 3's C1: the eval scope pass stopped firing this fixture.
             # Dropping its cells let the others remove a subject it helped,
             # so they stay, parked: a keep they earned before the pause
             # still keeps, a decided `no-benefit` still votes (round 4's
             # M1: the pause reads only the pooled without arm, so parking
             # it hid a decided harm of any size), and anything else neither
-            # votes nor frees an automatic removal.
+            # votes nor frees an automatic removal. A provisional pooled keep
+            # (`keep_final` False) is undecided too (the round 4 review): a
+            # paused fixture gets no current-rest runs to confirm it.
             cell = {**cell, "class": "paused", "class_before_pause": cell["class"],
                     "reason": f"paused by the eval scope pass ({paused}) and no longer "
                               f"fired; before the pause it was {cell['class']}: "

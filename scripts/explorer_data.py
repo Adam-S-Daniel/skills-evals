@@ -1514,8 +1514,13 @@ def confidence_cell(cell: dict) -> dict | None:
     test's lower end, `high` the remove test's upper end, each in percentage
     points of checks passed, clamped to [-100, 100] and rounded to one
     decimal only here; `votes` whether the cell votes on removal (neither
-    parked nor `cannot-discriminate`); `status` from CELL_STATUS."""
+    parked nor `cannot-discriminate`); `status` from CELL_STATUS. A pooled
+    cell (`rest_guard`) charts its current rest's own figures
+    (`rest_guard.current_objective`, None with no current-rest pair), as
+    its pace and confidence do, never the pooled block."""
     objective = cell["objective"]
+    if cell.get("rest_guard") is not None:
+        objective = cell["rest_guard"].get("current_objective") or {}
     numbers = [objective.get(k) for k in ("delta", "benefit_lower", "retire_upper")]
     pairs = objective.get("pairs")
     model = cell.get("model")
