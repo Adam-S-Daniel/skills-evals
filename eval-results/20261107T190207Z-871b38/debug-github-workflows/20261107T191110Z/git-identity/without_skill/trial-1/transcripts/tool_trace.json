@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VzBvHtDTiYjvfBijVJwRr1",
+      "name": "Bash",
+      "input": "git status --short | head; ls; cat test/run-tests.sh; ls .github/workflows; git log --oneline | head",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VzBvHtDTiYjvfBijVJwRr1",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\nbin\nsrc\ntest\n#!<path> bash\n# Build a scratch repository with a known history, then run the unit tests\n# against it.\nset -euo pipefail\n\nroot=\"$(cd \"$(dirname \"$0\"...",
+      "output_chars": 866,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LTLNxw9qdpLprMby7ioGdS",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; ls test bin src; bash test/run-tests.sh 2>&1 | tail -20",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LTLNxw9qdpLprMby7ioGdS",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run tests\n        run: bash test/run-tests.sh\nbin:...",
+      "output_chars": 443,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LVpaAkqxhU6fvCusx3ijCb",
+      "name": "Bash",
+      "input": "bash test/run-tests.sh; echo \"exit=$?\"; cat bin/gh | head -20; cat src/changelog.py; cat test/test_changelog.py; git config --global -l",
+      "input_chars": 135,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LVpaAkqxhU6fvCusx3ijCb",
+      "is_error": true,
+      "output": "Exit code 128\nTesting changelog at 02b13c0\nBuilding a scratch repository for the changelog tests\nexit=128\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replay...",
+      "output_chars": 2702,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U6hkRGuyKCCZDT49JdKN5b",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='test/run-tests.sh'\ns=open(p).read()\ns=s.replace('''  git -C \"$repo\" commit --quiet --allow-empty -m \"$1\" > <path> 2>&1''','''  # Supply an identity: CI runners have no global user.n...",
+      "input_chars": 538,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U6hkRGuyKCCZDT49JdKN5b",
+      "is_error": false,
+      "output": "Testing changelog at 02b13c0\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK\nexit=0",
+      "output_chars": 187,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014HHyNgwNLFSbtUxKh7pjcz",
+      "name": "Bash",
+      "input": "export GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_SYSTEM=<path>; git stash -q -- test/run-tests.sh; bash test/run-tests.sh; echo \"before-fix exit=$?\"; git stash pop -q; git diff --stat",
+      "input_chars": 183,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014HHyNgwNLFSbtUxKh7pjcz",
+      "is_error": false,
+      "output": "Testing changelog at 02b13c0\nBuilding a scratch repository for the changelog tests\nbefore-fix exit=128\n test/run-tests.sh | 4 +++-\n 1 file changed, 3 insertions(+), 1 deletion(-)",
+      "output_chars": 178,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
