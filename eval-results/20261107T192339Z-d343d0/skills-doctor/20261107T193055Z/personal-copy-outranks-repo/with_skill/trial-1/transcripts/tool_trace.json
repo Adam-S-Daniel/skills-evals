@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Dyfoaad3wYjxBgtqQxNCX2",
+      "name": "Bash",
+      "input": "pwd; ls -la; git log --oneline | head; find . -path ./.git -prune -o -iname '*release-notes*' -print",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Dyfoaad3wYjxBgtqQxNCX2",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  7 19:30 .\ndrwx------ 6 root root 4096 Nov  7 19:30 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 19:30 .claude\ndrwxr-xr-x 9 root root 4096 Nov  7 19:30 .gi...",
+      "output_chars": 1020,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S3KdALyTrFdSPZqj5JtGnE",
+      "name": "Bash",
+      "input": "cat README.md; find . -path ./.git -prune -o -type f -print | grep -v '^./.git/' | head -100; ls -laR .claude | head -30",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S3KdALyTrFdSPZqj5JtGnE",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QdFUdC3KfxfSuAS5ZjbN8k",
+      "name": "Bash",
+      "input": "cd session/skills; cat .skills-bootstrap-installed.json; echo ----; cat release-notes/SKILL.md; echo ----; cat ../../repo/skills.lock; echo ----; cat ../../repo/dot-claude/skills/release-notes/SKILL.m...",
+      "input_chars": 279,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QdFUdC3KfxfSuAS5ZjbN8k",
+      "is_error": false,
+      "output": "{\n  \"version\": 1,\n  \"installed\": [\n    {\n      \"name\": \"writing-adrs\",\n      \"registry\": \"https://github.com/Adam-S-Daniel/adam-agentskills.git\",\n      \"bundle\": \"adam-anything-anywhere\",\n      \"digest\": \"e8cd86670c8590eac5c490595ca8ba695ac0b623f36266bda4d31d64ad87b89c\"\n    }\n  ]\n}\n----\n---\nname: re...",
+      "output_chars": 2329,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MT2Wb6cfxG7yR8n7HMKANb",
+      "name": "Bash",
+      "input": "cat > <path> <<'EOF'\n# Why release-notes ignores the PR 214 change\n\nWinning copy: session/skills/release-notes/SKILL.md\nSource: Not installed by the skills bootstrap and not from the registry. It was ...",
+      "input_chars": 2180,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MT2Wb6cfxG7yR8n7HMKANb",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
