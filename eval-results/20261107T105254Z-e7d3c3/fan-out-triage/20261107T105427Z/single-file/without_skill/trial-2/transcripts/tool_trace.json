@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GB82fnguTfCR1DhccVWzrX",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && wc -l notes/acme-2.x.md && ls triage 2>&1",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FDe8K12h8Kn6zf211tbMmZ",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FDe8K12h8Kn6zf211tbMmZ",
+      "is_error": false,
+      "output": "1\t# acme 2.x release notes\n2\t\n3\t- [R-01] `acme.hooks.postBuild` now receives a build context object instead of the config.\n4\t- [R-02] Added `acme cache prune` to remove unused cache entries.\n5\t- [R-03] `acme build` now reports the build target in its summary line.\n6\t- [R-04] Fixed a typo in the Fren...",
+      "output_chars": 1733,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GB82fnguTfCR1DhccVWzrX",
+      "is_error": true,
+      "output": "Exit code 2\nREADME.md\nacme.toml\nci/pipeline.yml\ndocs/runbook.md\nnotes/acme-2.x.md\nscripts/deploy.sh\nsrc/plugins/lint.js\n26 notes/acme-2.x.md\nls: cannot access 'triage': No such file or directory",
+      "output_chars": 194,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HwDcgdeLs4PZTVr3BW8WGZ",
+      "name": "Bash",
+      "input": "for f in README.md acme.toml ci/pipeline.yml docs/runbook.md scripts/deploy.sh src/plugins/lint.js; do echo \"=== $f\"; cat -n $f; done",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HwDcgdeLs4PZTVr3BW8WGZ",
+      "is_error": false,
+      "output": "=== README.md\n     1\t# Storefront\n     2\t\n     3\tA small storefront built with the acme toolchain.\n=== acme.toml\n     1\t[build]\n     2\ttarget = \"node18\"\n     3\tlegacy_resolver = true\n=== ci/pipeline.yml\n     1\tstages: [build, test]\n     2\tbuild:\n     3\t  script:\n     4\t    - acme install --ci\n     5...",
+      "output_chars": 808,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015wdt6ejn3zCXgHGtxKvj7R",
+      "name": "Bash",
+      "input": "mkdir -p triage && {\nfor p in 'postBuild' 'preBuild' 'legacy_resolver' 'acme login' 'acme publish' 'acme install' 'acme build' 'acme list' 'acme watch' 'acme init' 'acme doctor' 'acme cache' 'ACME_' '...",
+      "input_chars": 479,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015wdt6ejn3zCXgHGtxKvj7R",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 7745,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y4sLXrcbL7L9gExdyG2LYQ",
+      "name": "Bash",
+      "input": "{ echo \"# git grep over tracked files only (excluding notes/ and triage/); lockfile check last\"; for p in postBuild preBuild legacy_resolver 'acme login' 'acme publish' 'acme install' 'acme build' 'ac...",
+      "input_chars": 2588,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y4sLXrcbL7L9gExdyG2LYQ",
+      "is_error": false,
+      "output": "<path>: line 45: column: command not found\n25 triage/results.tsv\n# git grep over tracked files only (excluding notes/ and triage/); lockfile check last\n## postBuild\n(no match)\n## preBuild\nsrc/plugins/lint.js:2:  acme.hooks.preBuild((config) => {",
+      "output_chars": 248,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

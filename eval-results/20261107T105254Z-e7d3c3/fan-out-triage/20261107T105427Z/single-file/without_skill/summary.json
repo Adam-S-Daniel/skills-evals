@@ -1,0 +1,439 @@
+{
+  "skill": "fan-out-triage",
+  "arm": "without_skill",
+  "timestamp": "20261107T105427Z",
+  "error": null,
+  "agent": null,
+  "objective_checks": null,
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 20,
+      "output_tokens": 6111,
+      "cache_read_input_tokens": 342947,
+      "cache_creation_input_tokens": 31176,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "single-file",
+  "fixture_digest": "7f3a41dbe6ba226dc11c8eea06fa3b3f85f07b5ad412d09d9c43e4f011c0d574",
+  "n": 2,
+  "errors": 0,
+  "scored": 2,
+  "trial_errors": [],
+  "aggregate": {
+    "objective": {
+      "n": 2,
+      "passed": 2,
+      "total": 12,
+      "mean_passed": 1.0,
+      "mean_total": 6.0,
+      "checks": [
+        {
+          "id": "inventory-cites-real-lines",
+          "n": 2,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "results-follow-the-contract",
+          "n": 2,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "ids-match-their-source-text",
+          "n": 2,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "affected-items-found-and-decoys-not-strong",
+          "n": 2,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "read-count-is-the-item-count",
+          "n": 2,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "repo-and-notes-untouched",
+          "n": 2,
+          "passed": 2,
+          "pass_rate": 1.0
+        }
+      ]
+    },
+    "judge": {
+      "status": "skipped",
+      "reason": "objective-decided",
+      "n": 0,
+      "errors": 0,
+      "overall": null,
+      "dimensions": []
+    },
+    "cost_usd": {
+      "n": 2,
+      "mean": 0.11007435,
+      "min": 0.102551,
+      "max": 0.1175977,
+      "sum": 0.2201487
+    },
+    "cost_unknown_trials": 0,
+    "efficiency": {
+      "cost_usd": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 0.11007435,
+        "median": 0.11007435,
+        "min": 0.102551,
+        "max": 0.1175977,
+        "sum": 0.2201487
+      },
+      "num_turns": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 6.0,
+        "median": 6.0,
+        "min": 6,
+        "max": 6,
+        "sum": 12
+      },
+      "duration_ms": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 29409.5,
+        "median": 29409.5,
+        "min": 28991,
+        "max": 29828,
+        "sum": 58819
+      },
+      "input_tokens": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 10.0,
+        "median": 10.0,
+        "min": 10,
+        "max": 10,
+        "sum": 20
+      },
+      "output_tokens": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 3055.5,
+        "median": 3055.5,
+        "min": 2983,
+        "max": 3128,
+        "sum": 6111
+      },
+      "cache_creation_input_tokens": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 15588.0,
+        "median": 15588.0,
+        "min": 13929,
+        "max": 17247,
+        "sum": 31176
+      },
+      "cache_read_input_tokens": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 171473.5,
+        "median": 171473.5,
+        "min": 169850,
+        "max": 173097,
+        "sum": 342947
+      },
+      "tool_errors": {
+        "n": 2,
+        "n_missing": 0,
+        "mean": 0.5,
+        "median": 0.5,
+        "min": 0,
+        "max": 1,
+        "sum": 1
+      }
+    },
+    "model_tokens": {
+      "claude-sonnet-5-5": {
+        "input_tokens": {
+          "n": 2,
+          "n_missing": 0,
+          "mean": 10.0,
+          "median": 10.0,
+          "min": 10,
+          "max": 10,
+          "sum": 20
+        },
+        "output_tokens": {
+          "n": 2,
+          "n_missing": 0,
+          "mean": 3055.5,
+          "median": 3055.5,
+          "min": 2983,
+          "max": 3128,
+          "sum": 6111
+        },
+        "cache_read_input_tokens": {
+          "n": 2,
+          "n_missing": 0,
+          "mean": 171473.5,
+          "median": 171473.5,
+          "min": 169850,
+          "max": 173097,
+          "sum": 342947
+        },
+        "cache_creation_input_tokens": {
+          "n": 2,
+          "n_missing": 0,
+          "mean": 15588.0,
+          "median": 15588.0,
+          "min": 13929,
+          "max": 17247,
+          "sum": 31176
+        }
+      }
+    },
+    "cross_model": {
+      "model": "claude-sonnet-5-5",
+      "threshold": 0.5,
+      "n": 2,
+      "n_unknown": 0,
+      "flagged_trials": 0,
+      "other_share": 0.0,
+      "flagged": false
+    }
+  },
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/cms-platform",
+    "revision": "7cf559388b9ea4b65966dd51a4e3d692cc083b78",
+    "digest": "cd618bcd2b0c2eb6bed25171319cd43fff41e329cb3124506b8ca3ab579641c9",
+    "lock_digest": "e7c0f476b067e7c51c7f350ddc59a4b80bd7daeaf98b9bb39d160f3b8a1e125f",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "570544a88f7499f38538cb61fbec91935a657b53",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 7447,
+      "skill_payload_bytes": 688780
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "fan-out-triage",
+    "action": "removed",
+    "deployed_digest": "533e43578831e94c7b443aa1fa6c6a5108e4a4392e640e055edacab65c367a56",
+    "tested_digest": "fa2be3d544133f9ddbb4f801807365fed66dbf9885650985c5b2e8337cf19af7",
+    "bytes": 8808,
+    "subject_source": "main",
+    "subject_revision": "eccda739064bdf92f1b0d5e3018a911d54b0ae78"
+  },
+  "arm_context": {
+    "skills": 10,
+    "skills_digest": "4835ea0a53d12e2b90d900546890e8e665f623dd90fff63b5b1493cdf22d8262",
+    "others_digest": "4835ea0a53d12e2b90d900546890e8e665f623dd90fff63b5b1493cdf22d8262",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T105254Z-e7d3c3",
+    "session_id": "cse_01SphsQCM1kuTU9wEjWEHmJA",
+    "harness_commit": "350baa729f83d552d23895fcddc64f8c3dc35c01",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T10:54:27Z",
+    "ended_at": "2026-11-07T10:56:46Z",
+    "meter": {
+      "snapshot_count": 5,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T10:54:31.732Z",
+      "to_at": "2026-11-07T10:56:19.511Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.4,
+          "to": 0.41,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQCM1kuTU9wEjWEHmJA",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.49620660000000005,
+      "agent_usd": 0.49620660000000005,
+      "judge_usd": 0,
+      "guard_usd": 0,
+      "metered_usd": 0.3786089,
+      "last_agent_call_usd": 0.1175977,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "arm",
+      "calls": null,
+      "meter": null,
+      "started_at": "2026-11-07T10:55:43Z",
+      "ended_at": "2026-11-07T10:56:46Z",
+      "agent": {
+        "calls": 2,
+        "duration_ms": 61450,
+        "num_turns": 12,
+        "cost_usd": 0.2201487,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 20,
+            "output_tokens": 6111,
+            "cache_read_input_tokens": 342947,
+            "cache_creation_input_tokens": 31176,
+            "cost_usd": 0.2201487
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 31176
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {
+        "calls": "listed in each trial's own summary",
+        "meter": "listed in each trial's own summary"
+      }
+    }
+  }
+}
