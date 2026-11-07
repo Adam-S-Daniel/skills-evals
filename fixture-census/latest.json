@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
     "context_declared": 61,
-    "context_missing": 48,
+    "context_missing": 70,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 109
+    "total": 131
   },
-  "generated_at": "2026-11-06T13:12:20Z",
+  "generated_at": "2026-11-07T11:55:02Z",
   "include_private_names": false,
   "problems": [],
   "registries": [
@@ -41,7 +41,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "ci-job-performance",
@@ -65,7 +65,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "fan-out-triage",
@@ -113,7 +113,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 6,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "workflow-path-audit",
@@ -145,7 +145,7 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "tool-powershell",
@@ -162,7 +162,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "dispatches a workflow in the fastmail-actions repository that edits a real Fastmail account's sending identities with a real API token; a hermetic fixture cannot exercise it",
+          "reason": "rechecked 2026-11-06, holds: fails criterion 3 (it dispatches a workflow in the fastmail-actions repository that edits a real Fastmail account's sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded local use since 2026-09-14)",
           "registry": "adam-agentskills",
           "skill": "add-from-address",
           "status": "skipped"
@@ -186,7 +186,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own",
+          "reason": "rechecked 2026-11-06, holds: fails criterion 3 (credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own) and criterion 1 (one recorded local use since 2026-09-14, in the week of 2026-09-14)",
           "registry": "adam-agentskills",
           "skill": "fastmail",
           "status": "skipped"
@@ -194,7 +194,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today",
+          "reason": "rechecked 2026-11-06, holds on criterion 1 only: no recorded local use since 2026-09-14. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used",
           "registry": "adam-agentskills",
           "skill": "ocr-pdfs",
           "status": "skipped"
