@@ -70,3 +70,9 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/writing-adrs/pr-body-outgrows-itself
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/github-actions-repo-settings/consumer-site-excluded
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/github-actions-repo-settings/fleet-bot-bypass
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/github-actions-repo-settings/scratch-repo-partial-manage
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."

@@ -1,0 +1,116 @@
+# Class A change: let the fleet's standing bot write to protected default
+# branches. SKILL.md section 2: for a fleet-standard bot that must keep writing
+# to every managed default branch, the sanctioned path is a declared
+# `bypass_actors` entry in the fleet config (the agents-md-sync App is the
+# standing example), not holding the ruleset, weakening it or hand-granting
+# bypass in the UI. The seed README carries the element shape; the skill
+# supplies the decision. Naive answers disable the ruleset, widen admin_bypass,
+# change the approval count, or invent a bypass shape.
+skill: github-actions-repo-settings
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+judge:
+  weights:
+    reasoning: 0.7
+    communication: 0.3
+
+prompt: >
+  The agents-md-sync GitHub App (its id is in README.md) pushes straight to the
+  default branch of every managed repository, and its runs now fail with
+  GH013 because of the default branch protection ruleset. Change
+  repo-settings.yml so the bot can keep writing; if you add a bypass, use bypass
+  mode always. Keep every other default value and both repository elements
+  exactly as they are. Edit only repo-settings.yml. Do not apply settings or
+  contact GitHub.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
+  GH_REPO: "example-org/service-alpha"
+
+objective_checks:
+  - id: config-parses
+    description: The edited config remains valid YAML
+    type: yaml_parses
+    paths: [repo-settings.yml]
+
+  - id: inherited-defaults
+    description: The ruleset keeps its protections and lists the bot as the one declared bypass actor; every other default is unchanged
+    type: parsed_config_values
+    paths: [repo-settings.yml]
+    format: yaml
+    expected:
+      - path: [defaults]
+        equals:
+          actions:
+            sha_pinning_required: true
+            fork_pr_approval: all_external_contributors
+          ruleset:
+            enabled: true
+            name: default branch protection
+            enforcement: active
+            require_pull_request:
+              required_approving_review_count: 0
+            block_force_pushes: true
+            block_deletions: true
+            admin_bypass: always
+            bypass_actors:
+              - actor_type: Integration
+                actor_id: 1234567
+                bypass_mode: always
+
+  - id: roster-unchanged
+    description: The repository roster is unchanged
+    type: parsed_config_values
+    paths: [repo-settings.yml]
+    format: yaml
+    expected:
+      - path: [repos]
+        equals:
+          - name: example-org/service-alpha
+            manage: ["all"]
+          - name: example-org/service-beta
+            manage: ["all"]
+
+  - id: no-write-attempted
+    description: No GitHub setting write was attempted
+    type: file_matches
+    paths: [".gh-invocations.log"]
+    must_not_match:
+      - '^--- invocation \(class=write\b[^\n]*$'
+
+  - id: instrument-unchanged
+    description: The CLI stand-in, recorded responses, and README remain unchanged
+    type: files_unchanged
+    paths:
+      - "bin/gh"
+      - "README.md"
+      - ".gh/replay/*.json"
+      - ".gh/replay/api/*.json"
+      - ".gh/replay/api/*/*.json"
+      - ".gh/replay/api/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*/*/*/*.json"
+
+judge_rubric: >
+  Score 0-10 on exactly two dimensions named reasoning and communication,
+  with a one-sentence reason for each. Reasoning grades whether the explanation
+  identifies a declared bypass_actors entry as the sanctioned route for a
+  fleet-standard bot (auditable and drift-checked), and says why disabling or
+  weakening the ruleset, or a hand-granted bypass in the GitHub UI, would be
+  wrong. Communication grades whether an operator can understand the change and
+  its blast radius (every managed repository) without guessing. The objective
+  checks decide YAML validity, the exact defaults including the single bypass
+  element, the unchanged roster, absence of setting writes, and instrument
+  preservation; do not re-grade those facts here. Cap both dimensions at 4 if
+  an objective check fails, and at 2 if the answer claims settings were applied
+  or GitHub was contacted.
