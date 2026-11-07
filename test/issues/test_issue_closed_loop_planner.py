@@ -20,6 +20,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.parse
 import urllib.error
 from unittest import mock
 
@@ -163,6 +164,26 @@ class TitleAndOutcomeTests(unittest.TestCase):
         self.assertEqual([r["outcome"] for r in io_mod.outcomes(runs, branch, NOW)],
                          ["accepted", "rejected"])
 
+    def test_a_window_past_the_api_cap_is_split_not_truncated(self):
+        # 2,500 runs, one a minute; like the API, a query returns at most
+        # 1,000 results however many pages it is asked for (2026-11-07).
+        runs = [fire(i, "t", NOW - timedelta(minutes=i)) for i in range(2500)]
+        since = NOW - timedelta(minutes=2499)
+
+        def get(path, token, **kw):
+            query = urllib.parse.parse_qs(path.split("?", 1)[1])
+            created, page = query["created"][0], int(query["page"][0])
+            if created.startswith(">="):
+                lo, hi = io_mod.parse_time(created[2:]), None
+            else:
+                lo, hi = (io_mod.parse_time(x) for x in created.split(".."))
+            hits = [r for r in runs if io_mod.parse_time(r["created_at"]) >= lo
+                    and (hi is None or io_mod.parse_time(r["created_at"]) <= hi)][:1000]
+            return {"workflow_runs": hits[(page - 1) * 100:page * 100]}
+        got = io_mod.fetch_fire_runs("Adam-S-Daniel/skills-evals", "t", since,
+                                     get=get, until=NOW)
+        self.assertEqual(sorted(r["id"] for r in got), list(range(2500)))
+
     def test_fetchers_page_and_read_branch_summaries_as_data(self):
         pages = {1: [fire(i, "t", NOW) for i in range(100)], 2: [fire(100, "t", NOW)]}
         seen = []
@@ -171,7 +192,7 @@ class TitleAndOutcomeTests(unittest.TestCase):
             seen.append(path)
             return {"workflow_runs": pages[int(path.rsplit("page=", 1)[1])]}
         self.assertEqual(len(io_mod.fetch_fire_runs("Adam-S-Daniel/skills-evals", "t",
-                                                    NOW, get=get)), 101)
+                                                    NOW, get=get, until=NOW)), 101)
         self.assertIn("event=workflow_dispatch", seen[0])
         with self.assertRaises(io_mod.EvidenceError):
             io_mod.fetch_fire_runs("Adam-S-Daniel/skills-evals", "t", NOW,
