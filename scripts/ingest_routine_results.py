@@ -1130,12 +1130,13 @@ def _capped(detail: str) -> str:
 
 
 def cap_summary_details(doc) -> bool:
-    """Cut every over-cap objective check `detail` and `error.detail` string
-    in a summary to MAX_STRING, in place; True when one was cut. A harness
-    from before the cap wrote them whole, and that one long string (a
-    passing `files_unchanged` naming every file, 2026-11-03) rejected the
-    whole paid run. Only these two fields are cut, and only strings: a
-    wrong type is still check_summary's to refuse."""
+    """Cut every over-cap objective check `detail`, `error.detail` and
+    `judge.error` string in a summary to MAX_STRING, in place; True when one
+    was cut. A harness from before the cap wrote them whole, and that one long
+    string (a passing `files_unchanged` naming every file, 2026-11-03; a judge
+    parse error quoting 5000+ chars of the judge's raw output, 2026-11-07)
+    rejected the whole paid run. Only these three fields are cut, and only
+    strings: a wrong type is still check_summary's to refuse."""
     if not isinstance(doc, dict):
         return False
     holders = [doc.get("error")]
@@ -1147,6 +1148,11 @@ def cap_summary_details(doc) -> bool:
                 and len(holder["detail"]) > MAX_STRING:
             holder["detail"] = _capped(holder["detail"])
             cut = True
+    judge = doc.get("judge")
+    if isinstance(judge, dict) and isinstance(judge.get("error"), str) \
+            and len(judge["error"]) > MAX_STRING:
+        judge["error"] = _capped(judge["error"])
+        cut = True
     return cut
 
 

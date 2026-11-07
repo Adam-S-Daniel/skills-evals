@@ -68,6 +68,7 @@ import cli_json  # noqa: E402
 import improve_cost  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
+from scorers import judge as judge_scorer  # noqa: E402
 from scorers.bash_ast import parse_bash  # noqa: E402
 
 RUN_ID = "20261006T194256Z-f944ea"
@@ -275,6 +276,44 @@ class AcceptTests(GitCase):
         rest = {k: v for k, v in got.items() if k not in ("objective_checks", "error")}
         self.assertEqual(rest, {k: v for k, v in doc.items()
                                 if k not in ("objective_checks", "error")})
+
+    def test_an_over_cap_judge_error_is_cut_on_ingest_not_rejected(self):
+        # 2026-11-07: a judge parse error embedded 5000+ chars of the judge's
+        # raw output in judge.error, and the paid run was rejected whole.
+        files = good_files()
+        name = next(n for n in files if n.endswith("with_skill/summary.json"))
+        doc = summary(judge={"error": "x" * 5000})
+        files[name] = json.dumps(doc, indent=2).encode()
+        sha = self.commit(files)
+        out = self.tmp / "staged"
+        self.validate(expect=sha, out=out)
+        (staged,) = [p for p in out.rglob("summary.json") if "with_skill" in str(p)]
+        got = json.loads(staged.read_text(encoding="utf-8"))
+        self.assertEqual(len(got["judge"]["error"]), ingest.MAX_STRING)
+        self.assertTrue(got["judge"]["error"].endswith(" [truncated: 5000 chars]"))
+
+    def test_cap_summary_details_cuts_judge_error_and_passes_check_summary(self):
+        doc = summary(judge={"error": "x" * 5000})
+        self.assertTrue(ingest.cap_summary_details(doc))
+        self.assertEqual(len(doc["judge"]["error"]), ingest.MAX_STRING)
+        self.assertTrue(doc["judge"]["error"].endswith(" [truncated: 5000 chars]"))
+        parts = {"arm": doc["arm"], "timestamp": doc["timestamp"],
+                 "fixture": doc.get("fixture"), "key": doc["skill"],
+                 "trial": doc.get("trial")}
+        ingest.check_summary(doc, "summary.json", parts)
+
+    def test_a_short_judge_error_is_left_unchanged(self):
+        doc = summary(judge={"error": "could not parse judge output as JSON: 'x'"})
+        before = json.loads(json.dumps(doc))
+        self.assertFalse(ingest.cap_summary_details(doc))
+        self.assertEqual(doc, before)
+
+    def test_an_unparseable_judge_output_error_stays_under_the_ingest_cap(self):
+        with self.assertRaises(ValueError) as caught:
+            judge_scorer._extract_json("z" * 10000)
+        message = str(caught.exception)
+        self.assertLess(len(message), ingest.MAX_STRING)
+        self.assertIn(" [truncated: 10002 chars]", message)
 
     def test_an_at_cap_detail_is_staged_byte_for_byte(self):
         files = good_files()
