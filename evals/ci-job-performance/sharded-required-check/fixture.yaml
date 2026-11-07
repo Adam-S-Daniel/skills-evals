@@ -1,0 +1,236 @@
+# Eval fixture: ci-job-performance (sharded-required-check)
+# Measures SKILL.md's "Sharding across jobs" and "Keeping a required check
+# green across shards". The seed is a small site whose single `e2e` job runs
+# the whole Playwright suite in one place, and whose ruleset requires the
+# status check named `e2e`. The task asks to split the suite across three
+# shards. The trap: a matrix job renames its contexts to `e2e (1)`, `e2e (2)`
+# and so on, so a naive split leaves the required `e2e` context unpublished
+# and every merge blocked. The skill's answer: keep the required context on a
+# gate job named `e2e` that needs every shard, runs under `if: always()` and
+# fails unless every shard succeeded; give the gate no concurrency group and
+# no timeout-minutes; run the shards with fail-fast off; and read matrix
+# values through env rather than interpolating them into a run body.
+#
+# What the objective column decides, by parsing the workflow with PyYAML in
+# the probe below (never a regex over YAML): a shard job exists that runs
+# `playwright test --shard` over a matrix of at least three shards with
+# fail-fast off; a gate job whose published check name is exactly `e2e` has no
+# matrix, needs every shard job, runs under `always()`, reads the shards'
+# results, and carries no concurrency group (job or workflow) and no
+# timeout-minutes; no run body interpolates a matrix value; and the ruleset,
+# the tests and the package files are unchanged. It does not decide whether
+# the reply is right to expect a gain from sharding a suite this size, or
+# whether the shard count is reasoned; those are the judge's.
+#
+# Known limits: the probe reads the workflow files only, so a job moved into a
+# reusable workflow is invisible to it, and a published check name is the
+# job's `name:` when it has a plain-string one, else its key.
+skill: ci-job-performance
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+judge:
+  weights:
+    correctness: 0.6
+    restraint: 0.2
+    explanation: 0.2
+
+prompt: >
+  Our e2e workflow takes about nine minutes on every pull request. Split the
+  Playwright suite across three parallel jobs so it finishes sooner. The
+  `e2e` check is required on main by .github/rulesets/main.json, and pull
+  requests must still be able to merge once the tests pass. Edit the
+  workflow only; do not change the ruleset or the tests.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  # The four probe checks share one program (the YAML anchor below) and
+  # differ in the mode they pass it. Run with `python3 -I`, so nothing in the
+  # workspace can stand in for the yaml module; exit 1 is a failed claim, 3 a
+  # missing PyYAML.
+  - id: suite-is-sharded-three-ways-without-fail-fast
+    description: A job runs `playwright test --shard` over a matrix of at least three shards with fail-fast off
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - &shard_probe |
+        import glob, sys
+        try:
+            import yaml
+        except ImportError:
+            print("probe: PyYAML is not importable", file=sys.stderr)
+            sys.exit(3)
+
+        mode = sys.argv[1]
+        jobs = {}
+        top_concurrency = False
+        for path in sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml")):
+            try:
+                doc = yaml.safe_load(open(path, encoding="utf-8"))
+            except Exception as exc:
+                print(f"probe: cannot parse {path}: {type(exc).__name__}", file=sys.stderr)
+                sys.exit(1)
+            if not isinstance(doc, dict) or not isinstance(doc.get("jobs"), dict):
+                continue
+            if "concurrency" in doc:
+                top_concurrency = True
+            for key, job in doc["jobs"].items():
+                if isinstance(job, dict):
+                    jobs[key] = job
+
+
+        def runs(job):
+            steps = job.get("steps")
+            return [s["run"] for s in steps if isinstance(s, dict) and isinstance(s.get("run"), str)] if isinstance(steps, list) else []
+
+
+        def matrix_size(job):
+            matrix = (job.get("strategy") or {}).get("matrix") if isinstance(job.get("strategy"), dict) else None
+            if not isinstance(matrix, dict):
+                return 0
+            size = 1
+            for k, v in matrix.items():
+                if k in ("include", "exclude"):
+                    continue
+                if isinstance(v, list):
+                    size *= len(v)
+            extra = matrix.get("include")
+            if isinstance(extra, list):
+                size = (size if size > 1 else 0) + len(extra)
+            return size
+
+
+        def is_shard(job):
+            return any("playwright test" in r and "--shard" in r for r in runs(job))
+
+
+        def published(key, job):
+            name = job.get("name")
+            return name if isinstance(name, str) and "${{" not in name else (key if name is None else None)
+
+
+        shards = {k: j for k, j in jobs.items() if is_shard(j)}
+
+        def fail(msg):
+            print("probe: " + msg, file=sys.stderr)
+            sys.exit(1)
+
+        if mode == "shards":
+            if not shards:
+                fail("no job runs `playwright test --shard`")
+            if not any(matrix_size(j) >= 3 for j in shards.values()):
+                fail("no shard job has a matrix of at least three shards")
+            for k, j in shards.items():
+                ff = (j.get("strategy") or {}).get("fail-fast")
+                if ff is not False and str(ff).lower() != "false":
+                    fail(f"shard job {k} does not turn fail-fast off")
+        elif mode == "gate":
+            if not shards:
+                fail("no shard job to gate")
+            gates = [(k, j) for k, j in jobs.items() if published(k, j) == "e2e" and not matrix_size(j)]
+            if not gates:
+                fail("no non-matrix job publishes the check name `e2e`")
+            for k, j in shards.items():
+                if published(k, j) == "e2e":
+                    fail("a shard job publishes the required name `e2e`")
+            ok = False
+            for k, j in gates:
+                needs = j.get("needs")
+                needs = [needs] if isinstance(needs, str) else (needs if isinstance(needs, list) else [])
+                if not all(s in needs for s in shards):
+                    continue
+                cond = j.get("if")
+                if not (isinstance(cond, str) and "always()" in cond):
+                    continue
+                text = "\n".join(runs(j))
+                for s in j.get("steps") or []:
+                    if isinstance(s, dict):
+                        text += "\n" + str(s.get("if", "")) + "\n" + str(s.get("env", ""))
+                if "needs" not in text or ("result" not in text and "toJSON(needs)" not in text):
+                    continue
+                ok = True
+            if not ok:
+                fail("the `e2e` gate must need every shard, run under always(), and read the shards' results")
+        elif mode == "gate-uncancellable":
+            gates = [(k, j) for k, j in jobs.items() if published(k, j) == "e2e" and not matrix_size(j)]
+            if not gates:
+                fail("no non-matrix job publishes the check name `e2e`")
+            if top_concurrency:
+                fail("a workflow-level concurrency group can cancel the required check")
+            for k, j in gates:
+                if "concurrency" in j:
+                    fail(f"gate job {k} has a concurrency group")
+                if "timeout-minutes" in j:
+                    fail(f"gate job {k} has timeout-minutes")
+        elif mode == "no-matrix-in-run":
+            for k, j in jobs.items():
+                for r in runs(j):
+                    if "${{" in r and "matrix." in r:
+                        fail(f"job {k} interpolates a matrix value into a run body")
+        else:
+            fail("unknown mode")
+      - shards
+
+  - id: required-e2e-check-is-published-by-a-gate
+    description: A non-matrix job named `e2e` needs every shard, runs under always() and reads the shards' results, and no shard job publishes `e2e`
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_probe, gate]
+
+  - id: gate-cannot-be-cancelled
+    description: The gate job has no concurrency group and no timeout-minutes, and the workflow has no concurrency group
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_probe, gate-uncancellable]
+
+  - id: no-matrix-value-in-a-run-body
+    description: No run body interpolates a matrix expression; values reach the shell through env
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *shard_probe, no-matrix-in-run]
+
+  - id: only-the-workflow-changed
+    description: The ruleset, README, e2e package files, Playwright config and tests are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - ".github/rulesets/main.json"
+      - "README.md"
+      - "e2e/*.json"
+      - "e2e/*.ts"
+      - "e2e/tests/*.ts"
+
+judge_rubric: >
+  Score correctness, restraint and explanation from 0 to 10, with a
+  one-sentence rationale each. The skill's guidance: a matrix job publishes
+  contexts such as `e2e (1)`, not `e2e`, so sharding a job that carries a
+  required check leaves the required context unpublished and blocks every
+  merge. A complete fix puts the required `e2e` context on a gate job that
+  needs every shard (`needs: [shards]`, `if: always()`) and fails unless
+  every needed shard's result is `success`; gives the gate no concurrency
+  group and no timeout-minutes; runs the shards with `fail-fast: false`; and
+  passes matrix values through a job-level `env:` instead of interpolating
+  them into a run body. It also notes that each shard re-pays the job's fixed
+  cost (checkout, setup-node, npm ci, browser install, roughly 15-20s or
+  more), that `--shard=i/N` splits by test count rather than duration, and
+  that sharding pays only when the unsharded test time is several times that
+  fixed cost.
+  (1) Correctness: cap at 4 if required-e2e-check-is-published-by-a-gate or
+  gate-cannot-be-cancelled fails, or if the reply claims the original
+  `e2e` required check still works after the split without the gate. Also
+  cap at 4 if the gate treats a skipped or cancelled shard as passing.
+  (2) Explanation: grade how clearly the reply says why the required
+  context would otherwise go missing, what the gate does, and what to
+  expect from three shards (the per-shard fixed cost, count-based
+  splitting, uneven shard times) instead of promising a threefold speedup.
+  (3) Restraint: the change stays in the workflow file. Cap restraint at 3
+  if only-the-workflow-changed fails, or if the agent edits the ruleset to
+  rename the required check, or changes remote state. Do not infer
+  correctness from the count of objective checks: the probe reads the
+  workflow's structure, not what a runner would do with it.
