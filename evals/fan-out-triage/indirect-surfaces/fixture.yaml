@@ -1149,3 +1149,14 @@ objective_checks:
 
 judge_rubric: >
   Score 0-10 on each dimension with a one-sentence rationale. (1) triage-discipline - did the agent build a dependency inventory with real file:line references before judging items, including uses reached indirectly (a binary name in a variable, an env var name built from a prefix, a flag inside an npm script, a vendored plugin) and the pinned version, split the 240 items into per-file chunks, keep one row per item in a fixed ID-first format, verify IDs against the source text, and judge each item against the upgrade window from the pin to 3.8.0? Cap at 4 if it never checked its IDs or never looked past a keyword grep. (2) restraint - did it avoid changing the repo's own files and notes and avoid flagging items that only share a keyword with the repo or fall outside the upgrade window? Cap at 4 if it edited a source file.
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: caeff57f6501a71306fd8ca65027450da71e354e
+  guidance_revision: 062f6d0acde090e6f05c2d21efab9426122973ff
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9567
+    skill_payload_bytes: 864990
