@@ -770,7 +770,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                 "example.com/sample", "--ref", "main", "--raw-field",
                                 "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
                                 "--raw-field", "model=claude-opus-5-5",
-                                "--raw-field", "arms=both", "--raw-field", "trials=2"])
+                                "--raw-field", "arms=both", "--raw-field", "trials=3"])
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
