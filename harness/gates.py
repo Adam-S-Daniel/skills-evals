@@ -469,6 +469,8 @@ INFRASTRUCTURE_ERRORS = ("scorer_unavailable", "scorer_sandbox_unavailable",
 INFRASTRUCTURE_DETAIL_PREFIX = "scorer_sandbox_unavailable exit="
 #: Why a run with a scored trial that has no check result does not count.
 NO_CHECKS_REASON = "a trial without objective checks on a fixture that has them"
+#: Why a run with too few scored or agent-errored trials does not count.
+FEW_TRIALS_REASON = f"fewer than {MIN_TRIALS_PER_RUN} scored or errored trials"
 #: Fixtures moved from the flat `evals/<skill>/` into a named subdirectory
 #: with their content unchanged (#422, #427): {(skill, old name, "" for
 #: flat): new name}. A run recorded under the old name pools with the new
@@ -899,7 +901,7 @@ def run_numbers(trials: list, judge_unconditional: bool, check_ids=(),
                                          if not t.get("errored")):
         skip = NO_CHECKS_REASON
     elif len(scored) < MIN_TRIALS_PER_RUN:
-        skip = f"fewer than {MIN_TRIALS_PER_RUN} scored or errored trials"
+        skip = FEW_TRIALS_REASON
     else:
         skip = None
     rates = [sum(t["checks"].values()) / len(t["checks"]) for t in scored if t["checks"]]
@@ -1446,21 +1448,13 @@ def run_key(run: dict) -> str:
     return f"{run['path']}#{run['fixture'] or ''}#{run['role']}"
 
 
-def classify_cell(with_runs: list, without_runs: list, policy: dict,
-                  judge_carried: bool = False, family: int = 1, bet_prior=None,
-                  errored_blocks: bool = True, rest: dict | None = None) -> dict:
-    """A cell's class over all its counted runs (module docstring), paired
-    by `pair_runs`. `bet_prior` is a learned prior, None (neutral), or a
-    function of the cell's first pair's timestamp returning either.
-    `errored_blocks` (skills; not in-situ guidance) keeps a cell with an
-    agent-errored trial from `no-benefit` and `no-clear-effect`, so it never
-    leads to a removal, automatic or proposed (the review's m4).
-
-    `rest` (an in-situ guidance cell under `pooled-with-current-guard`):
-    {"current": the rest on main, "min_pairs": `rest_guard_min_pairs`}. Runs
-    pair only within one rest (one `pair_key`), never across two, and the
-    pairs of every rest are ordered together for `_classify`."""
-    prime(with_runs + without_runs)
+def _cell_pairs(with_runs: list, without_runs: list, rest: dict | None) -> tuple:
+    """(skipped, pairs, unpaired, rest_info) of one primed cell: the count of
+    runs not counted by their skip reason, the cell's pairs in order, every
+    counted run left without a partner, and `_classify`'s `rest` (None, or
+    `rest` with each pair's `pair_key`). `classify_cell` and `cell_discards`
+    both read it, so the runs a cell decides on and the runs it reports
+    discarded come from one place."""
     counted, skipped = [], {}
     for runs in (with_runs, without_runs):
         keep = []
@@ -1483,6 +1477,207 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
             unpaired += lone
         pairs.sort(key=lambda p: _order(p[0]))
         rest_info = {**rest, "keys": [w.get("pair_key") for w, _ in pairs]}
+    return skipped, pairs, unpaired, rest_info
+
+
+# ---------------------------------------------------------------------------
+# Discarded runs (Adam, 2026-11-07).
+#
+# Every recorded arm run of a subject either counts toward its current
+# verdict or is DISCARDED for one reason, a stable slug the explorer and the
+# dashboard key on. A run counts when it sits in a pair inside its cell's
+# window (`_classify`: the first `max_runs_per_cell` pairs, per rest when
+# pooled) with a run mean on both arms, in a cell the verdict reads (not
+# `cannot-discriminate`). The first reason that applies, in this order, is
+# the run's:
+#
+#   Read by scripts/compute_gates.py `build_index`, before any cell:
+#     invalid_run          the arm run does not validate (`skipped` names how)
+#     after_as_of          stamped after the evaluation's --as-of
+#     duplicate            a copy of an arm run already read (DUPLICATES)
+#     bare_run             a bare isolation without arm (BARE RUNS), reported
+#                          apart and never pooled
+#     verdict_raised       the subject's verdict raised, so none of its runs
+#                          was read
+#   Pooling (`pool_cells`, `pool_discard`):
+#     fixture_off_main     its fixture is not one of the subject's fixtures on
+#                          main (removed, renamed, draft or unscheduled)
+#     model_off_roster     its arm model is not on the current roster
+#     content_unknown      main's content key is unknown (no registry or
+#                          guidance checkout copy, no rest digest): the cell
+#                          is `insufficient` on an incomplete key
+#     fixture_changed      its fixture digest is not the fixture's on main
+#     subject_changed      a with arm whose tested digest is not the skill's
+#                          (or the section extent's) on main
+#     context_unknown      it records no arm context or pair key
+#     hooked_run           in-situ guidance: it ran with a fleet hook set,
+#                          which main's key does not have
+#     rest_changed         in-situ guidance under `rest_policy: current`: it
+#                          ran beside an older rest of the guidance
+#     context_unmatched    its arm context or pair key is not the one the
+#                          cell chose jointly (`_joint_context`)
+#   Inside a cell (`cell_discards`):
+#     no_check_results     a scored trial without check results on a fixture
+#                          that has checks (NO_CHECKS_REASON)
+#     no_scored_trials     fewer than MIN_TRIALS_PER_RUN scored or
+#                          agent-errored trials (every trial an
+#                          infrastructure error; FEW_TRIALS_REASON)
+#     unpaired             no counted partner arm of its fire (within one rest
+#                          when pooled)
+#     over_cap             its pair falls after the cell's window
+#                          (`max_runs_per_cell` pairs, per rest when pooled)
+#     no_objective_score   its pair lacks a run mean on an arm (judge-only)
+#     cannot_discriminate  its cell is `cannot-discriminate`, which the
+#                          verdict leaves out
+#
+# Not a discard: an agent-errored or infrastructure-errored TRIAL inside a
+# counted run, a judge figure the verdict does not read, `min_cli_versions`
+# (it delays a decision, it drops no run), a parked or scope-paused cell (it
+# still counts), and the one-retirement-per-evaluation rule.
+#
+# A run's cost is the sum of its trials' `agent.cost_usd` (what each cell's
+# `cost_usd` sums); a run with any trial lacking one adds to `cost_unknown`,
+# and its known trials still add to `cost_usd`, which is then a floor.
+
+DISCARD_REASONS = (
+    "invalid_run", "after_as_of", "duplicate", "bare_run", "verdict_raised",
+    "fixture_off_main", "model_off_roster", "content_unknown", "fixture_changed",
+    "subject_changed", "context_unknown", "hooked_run", "rest_changed",
+    "context_unmatched", "no_check_results", "no_scored_trials", "unpaired",
+    "over_cap", "no_objective_score", "cannot_discriminate")
+#: The run skip reasons of `run_numbers`, by slug.
+SKIP_REASON_SLUGS = {NO_CHECKS_REASON: "no_check_results",
+                     FEW_TRIALS_REASON: "no_scored_trials"}
+
+
+def run_cost(trials: list) -> tuple:
+    """(dollars, cost unknown) of one arm run from its trial records (or
+    any mappings with `cost_usd`): the sum of the known costs, and whether
+    any trial, or the sum, is not a finite number from 0 up."""
+    costs = [t.get("cost_usd") for t in trials if isinstance(t, dict)]
+    known = [c for c in costs if _is_number(c) and c >= 0]
+    total = _finite_sum(known)
+    if total is None:
+        return 0.0, True
+    return total, not trials or len(known) < len(trials)
+
+
+def discard_entry(run: dict, reason: str) -> tuple:
+    """(reason, dollars, cost unknown) for one discarded validated run."""
+    if reason not in DISCARD_REASONS:
+        raise ValueError(f"unknown discard reason {reason!r}")
+    return (reason, *run_cost(run.get("trials") or []))
+
+
+def discard_summary(entries) -> dict:
+    """{"total", "cost_usd", "cost_unknown", "by_reason": {slug: {"runs",
+    "cost_usd", "cost_unknown"}}} of (reason, dollars, unknown) entries, at
+    full precision (`math.fsum`; None only if the sum overflows)."""
+    entries = list(entries)
+
+    def block(rows):
+        return {"cost_usd": _finite_sum([d for _, d, _ in rows]),
+                "cost_unknown": sum(1 for *_, u in rows if u)}
+    by_reason = {}
+    for slug in sorted({e[0] for e in entries}):
+        rows = [e for e in entries if e[0] == slug]
+        by_reason[slug] = {"runs": len(rows), **block(rows)}
+    return {"total": len(entries), **block(entries), "by_reason": by_reason}
+
+
+def merge_discards(*summaries) -> dict:
+    """One `discard_summary` of several (None skipped): counts add, dollars
+    add by `math.fsum`."""
+    rows: dict = {}
+    for summary in summaries:
+        for slug, row in ((summary or {}).get("by_reason") or {}).items():
+            rows.setdefault(slug, []).append(row)
+    by_reason = {slug: {"runs": sum(r["runs"] for r in got),
+                        "cost_usd": _finite_sum([r["cost_usd"] for r in got]),
+                        "cost_unknown": sum(r["cost_unknown"] for r in got)}
+                 for slug, got in sorted(rows.items())}
+    return {"total": sum(r["runs"] for r in by_reason.values()),
+            "cost_usd": _finite_sum([r["cost_usd"] for r in by_reason.values()]),
+            "cost_unknown": sum(r["cost_unknown"] for r in by_reason.values()),
+            "by_reason": by_reason}
+
+
+def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
+                  rest: dict | None = None) -> list:
+    """(run, reason) for every run of one classified cell that does not
+    count toward the verdict (DISCARDED RUNS, "Inside a cell"), read from
+    `_cell_pairs` and `_classify`'s own window. `cls` is the cell's class;
+    `rest` is `classify_cell`'s."""
+    prime(with_runs + without_runs)
+    _skipped, pairs, unpaired, rest_info = _cell_pairs(with_runs, without_runs, rest)
+    cap = policy["max_runs_per_cell"]
+    if rest_info is None:
+        window = pairs[:cap]
+    else:
+        window, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap)
+    in_window = {id(r) for pair in window for r in pair}
+    scored = {id(r) for w, o in window for r in (w, o)
+              if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None}
+    lone = {id(r) for r in unpaired}
+    out = []
+    for run in sorted(with_runs + without_runs, key=_order):
+        reason = run["numbers"]["skip_reason"]
+        if reason is not None:
+            out.append((run, SKIP_REASON_SLUGS.get(reason, "no_scored_trials")))
+        elif id(run) in lone:
+            out.append((run, "unpaired"))
+        elif id(run) not in in_window:
+            out.append((run, "over_cap"))
+        elif id(run) not in scored:
+            out.append((run, "no_objective_score"))
+        elif cls == "cannot-discriminate":
+            out.append((run, "cannot_discriminate"))
+    return out
+
+
+def pool_discard(run: dict, skill: str, models: list, expected: dict, strata: bool,
+                 rest_policy: str) -> str:
+    """Why `pool_cells` left `run` (a run of `skill`) out of every cell:
+    the first DISCARDED RUNS pooling reason that applies."""
+    fixture = pooled_fixture(run, skill, expected)
+    if fixture not in expected:
+        return "fixture_off_main"
+    if run["model"] not in models:
+        return "model_off_roster"
+    main = expected[fixture]
+    tested, fdig = main.get("tested_digest"), main.get("fixture_digest")
+    if fdig is None or tested is None or (strata and main.get("rest_digest") is None):
+        return "content_unknown"
+    if run["fixture_digest"] != fdig:
+        return "fixture_changed"
+    if run["role"] == "with" and run["tested_digest"] != tested:
+        return "subject_changed"
+    if not run.get("pair_key") or (not strata and not run.get("arm_context_digest")):
+        return "context_unknown"
+    if strata:
+        if run.get("fleet_hooks_digest") is not None:
+            return "hooked_run"
+        if rest_policy == "current" and run["pair_key"] != main["rest_digest"]:
+            return "rest_changed"
+    return "context_unmatched"
+
+
+def classify_cell(with_runs: list, without_runs: list, policy: dict,
+                  judge_carried: bool = False, family: int = 1, bet_prior=None,
+                  errored_blocks: bool = True, rest: dict | None = None) -> dict:
+    """A cell's class over all its counted runs (module docstring), paired
+    by `pair_runs`. `bet_prior` is a learned prior, None (neutral), or a
+    function of the cell's first pair's timestamp returning either.
+    `errored_blocks` (skills; not in-situ guidance) keeps a cell with an
+    agent-errored trial from `no-benefit` and `no-clear-effect`, so it never
+    leads to a removal, automatic or proposed (the review's m4).
+
+    `rest` (an in-situ guidance cell under `pooled-with-current-guard`):
+    {"current": the rest on main, "min_pairs": `rest_guard_min_pairs`}. Runs
+    pair only within one rest (one `pair_key`), never across two, and the
+    pairs of every rest are ordered together for `_classify`."""
+    prime(with_runs + without_runs)
+    skipped, pairs, unpaired, rest_info = _cell_pairs(with_runs, without_runs, rest)
     if callable(bet_prior):
         bet_prior = bet_prior(pairs[0][0]["timestamp"]) if pairs else None
     full = _classify(pairs, policy, family, bet_prior, rest_info)
@@ -1686,20 +1881,23 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     m = len(expected) * max(1, len(models)) if family and expected else 1
     rest_policy = policy.get("rest_policy", DEFAULT_REST_POLICY) if strata else "current"
     pooled = rest_policy != "current"
-    cells, used = [], set()
-    for (fixture, model), pool in sorted(pool_cells(index.get("runs", []), skill,
+    cells, used, discards, pooled_ids = [], set(), [], set()
+    all_runs = index.get("runs", [])
+    for (fixture, model), pool in sorted(pool_cells(all_runs, skill,
                                                     models, expected, strata,
                                                     rest_policy).items()):
         arms = {"with": pool["with"], "without": pool["without"]}
         runs = arms["with"] + arms["without"]
         prime(runs)
         used.update(run_key(r) for r in runs)
+        pooled_ids.update(id(r) for r in runs)
         missing = sorted(k for k, v in pool["key"].items() if v is None)
         if not pool["on_model"]:
             cell = {"class": "missing", "reason": "no run on this model"}
         elif missing:
             cell = {"class": "insufficient",
                     "reason": f"pooling key incomplete: {', '.join(missing)}"}
+            discards += [discard_entry(r, "content_unknown") for r in runs]
         else:
             carried = any(r["judge_carried"] for r in runs)
             guard = {"current": pool["key"]["rest_digest"],
@@ -1707,6 +1905,8 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                                              DEFAULT_REST_GUARD_MIN_PAIRS)} if pooled else None
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata, rest=guard)
+            discards += [discard_entry(r, why) for r, why in cell_discards(
+                arms["with"], arms["without"], policy, cell["class"], guard)]
         paused = (expected.get(fixture) or {}).get("scope_paused")
         provisional = cell["class"] == "benefit" and \
             (cell.get("rest_guard") or {}).get("keep_final") is False
@@ -1741,7 +1941,13 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                                                  for r in runs),
                       "runs": {role: [_run_entry(r) for r in sorted(arms[role], key=_order)]
                                for role in arms}})
-    out = {"cells": cells, "runs_used": sorted(used)}
+    discards += [discard_entry(r, pool_discard(r, skill, models, expected, strata,
+                                               rest_policy))
+                 for r in sorted(all_runs, key=_order)
+                 if r["skill"] == skill and id(r) not in pooled_ids]
+    # DISCARDED RUNS: every run of the subject given that does not count.
+    out = {"cells": cells, "runs_used": sorted(used),
+           "discarded_runs": discard_summary(discards)}
     out.update(_verdict(cells, bool(expected)))
     if family and expected:
         out.update(keep_family=m, keep_alpha=1 - policy["benefit_confidence"])
@@ -1992,4 +2198,6 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],
                       "cells": alone["cells"]},
             "runs_used": sorted(set(in_situ["runs_used"]) | set(alone["runs_used"])),
+            "discarded_runs": merge_discards(in_situ.get("discarded_runs"),
+                                             alone.get("discarded_runs")),
             **{k: in_situ[k] for k in ("keep_family", "keep_alpha") if k in in_situ}}

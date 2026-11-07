@@ -38,6 +38,14 @@ more than what it carries:
     `source` are outside that scope). It also holds each `confidence.cells`
     row to exactly CONFIDENCE_CELL_KEYS.
 
+Each skill and section also carries `discarded_runs` (Adam, 2026-11-07):
+the recorded arm runs its current verdict does not count, as
+{"total", "cost_usd", "cost_unknown", "by_reason": {slug: {"runs",
+"cost_usd", "cost_unknown"}}} (harness/gates.py, DISCARDED RUNS, names the
+slugs), null without a verdict; the document's `discarded_runs` sums them
+over the listed skills, sections and `all`. Counts, agent dollars at full
+precision and fixed slugs only: never a path, session or title.
+
 Each skill and section also carries `confidence` (the levels its gate
 bounds reach, and per cell the gain measured so far and the range it likely
 falls in, `subject_confidence`; a cell's `task` is its fixture name, which
@@ -1740,6 +1748,30 @@ def skill_copies(name: str, repo: str, digests: dict, history: tuple | None,
             "loaded": loaded, "alert": alert}, alerts
 
 
+def discarded_runs(verdict: dict) -> dict | None:
+    """A subject's `discarded_runs` (harness/gates.py, DISCARDED RUNS): the
+    recorded arm runs its current verdict does not count, by reason, with
+    their agent cost. Counts, dollars and the fixed reason slugs only; None
+    without a verdict (unknown, not zero)."""
+    found = verdict.get("discarded_runs") if isinstance(verdict, dict) else None
+    if not isinstance(found, dict):
+        return None
+    rows = {slug: {k: row[k] for k in ("runs", "cost_usd", "cost_unknown")}
+            for slug, row in (found.get("by_reason") or {}).items()
+            if slug in gates.DISCARD_REASONS}
+    return gates.merge_discards({"by_reason": rows})
+
+
+def fleet_discards(skills: list, sections: list) -> dict:
+    """The document's `discarded_runs`: `discarded_runs` summed over the
+    listed skills, the listed sections, and both (`all`). A subject with
+    none (null) adds nothing."""
+    of_skills = gates.merge_discards(*(s["discarded_runs"] for s in skills))
+    of_sections = gates.merge_discards(*(s["discarded_runs"] for s in sections))
+    return {"all": gates.merge_discards(of_skills, of_sections),
+            "skills": of_skills, "guidance": of_sections}
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
@@ -1830,6 +1862,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "usage": None if usage_window is None
                        else {"invocations": counts.get(name, 0)},
                        "copies": copies,
+                       "discarded_runs": discarded_runs(verdict),
                        "runs": by_skill.get(name, [])})
 
     renumber(skills)
@@ -1852,6 +1885,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "confidence": subject_confidence(verdict),
             "next_test": queue.get(("guidance", row["id"]), unqueued),
             "stakes": stakes_of("guidance", row["id"]),
+            "discarded_runs": discarded_runs(verdict),
             "runs": runs if alone else without_alone(runs)})
 
     renumber(sections)
@@ -1920,6 +1954,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                    "max_runs_per_cell": policy.get("max_runs_per_cell")},
         "skills": skills, "removed_skills": removed_skills(registries),
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
+        "discarded_runs": fleet_discards(skills, sections),
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
         "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window,

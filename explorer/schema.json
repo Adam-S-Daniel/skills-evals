@@ -364,6 +364,27 @@
      "type": "null"
     }
    ]
+  },
+  "discarded_runs": {
+   "description": "discarded_runs summed over the listed skills, sections and both.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "all",
+    "skills",
+    "guidance"
+   ],
+   "properties": {
+    "all": {
+     "$ref": "#/$defs/discarded_runs"
+    },
+    "skills": {
+     "$ref": "#/$defs/discarded_runs"
+    },
+    "guidance": {
+     "$ref": "#/$defs/discarded_runs"
+    }
+   }
   }
  },
  "required": [
@@ -371,6 +392,7 @@
   "alerts",
   "context_drift_unknown",
   "coverage",
+  "discarded_runs",
   "evals",
   "fires_without_results",
   "fixture_queue",
@@ -2556,6 +2578,16 @@
      "items": {
       "$ref": "#/$defs/guidance_run"
      }
+    },
+    "discarded_runs": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/discarded_runs"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -2563,6 +2595,7 @@
     "bytes",
     "confidence",
     "current_text_runs",
+    "discarded_runs",
     "heading",
     "id",
     "next_test",
@@ -2699,6 +2732,16 @@
      "items": {
       "$ref": "#/$defs/skill_run"
      }
+    },
+    "discarded_runs": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/discarded_runs"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -2707,6 +2750,7 @@
     "copies",
     "current_text_runs",
     "description",
+    "discarded_runs",
     "name",
     "next_test",
     "registry",
@@ -3312,6 +3356,90 @@
         }
        }
       }
+     }
+    }
+   }
+  },
+  "discard_row": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "runs",
+    "cost_usd",
+    "cost_unknown"
+   ],
+   "properties": {
+    "runs": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "cost_usd": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "cost_unknown": {
+     "type": "integer",
+     "minimum": 0
+    }
+   }
+  },
+  "discarded_runs": {
+   "description": "Recorded arm runs a subject's current verdict does not count, by reason (harness/gates.py, DISCARDED RUNS), with their agent cost in US dollars at full precision; cost_usd is a floor when cost_unknown is above 0.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "total",
+    "cost_usd",
+    "cost_unknown",
+    "by_reason"
+   ],
+   "properties": {
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "cost_usd": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "cost_unknown": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "by_reason": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "invalid_run",
+       "after_as_of",
+       "duplicate",
+       "bare_run",
+       "verdict_raised",
+       "fixture_off_main",
+       "model_off_roster",
+       "content_unknown",
+       "fixture_changed",
+       "subject_changed",
+       "context_unknown",
+       "hooked_run",
+       "rest_changed",
+       "context_unmatched",
+       "no_check_results",
+       "no_scored_trials",
+       "unpaired",
+       "over_cap",
+       "no_objective_score",
+       "cannot_discriminate"
+      ]
+     },
+     "additionalProperties": {
+      "$ref": "#/$defs/discard_row"
      }
     }
    }

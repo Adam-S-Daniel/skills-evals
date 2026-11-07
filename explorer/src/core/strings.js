@@ -330,6 +330,18 @@ function buildStrings(you) {
   colBare: 'Bare', colPaired: 'Paired run', colTrials: 'Trials',
   useHeading: 'Real-work use',
   copiesHeading: 'Loaded copies',
+  discarded: (n, cost, unknown, top) => 'Discarded runs: ' + n + (n === 1 ? ' run' : ' runs') + ' not counted toward this decision, ' + cost
+    + (unknown ? ' (' + unknown + ' with no recorded cost)' : '') + (top ? '. Most often: ' + top : '') + '.',
+  discardedReasons: {
+    invalid_run: 'did not validate', after_as_of: 'after this build', duplicate: 'duplicate copy',
+    bare_run: 'bare run, reported apart', verdict_raised: 'decision failed to compute',
+    fixture_off_main: 'fixture no longer scheduled', model_off_roster: 'model off the roster',
+    content_unknown: 'content on main unknown', fixture_changed: 'fixture changed', subject_changed: 'text changed',
+    context_unknown: 'no context recorded', hooked_run: 'ran with fleet hooks', rest_changed: 'rest of the guidance changed',
+    context_unmatched: 'different context', no_check_results: 'no check results', no_scored_trials: 'no scored trial',
+    unpaired: 'no partner arm', over_cap: 'past the run cap', no_objective_score: 'no objective score',
+    cannot_discriminate: 'fixture looks broken'
+  },
   colCopy: 'Copy', colSurface: 'Where', colVsMain: 'Against main', colUses: 'Uses',
   vsMain: { current: 'matches main now', 'in-window': 'matched main in the window', older: 'older than main', unknown: 'unknown' },
   fixturesHeading: 'Fixtures',
