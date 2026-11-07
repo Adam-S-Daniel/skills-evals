@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PcYcTSDQN9ewQF6RmHHo1A",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PcYcTSDQN9ewQF6RmHHo1A",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ELN9wiFGp5Uv3Kmh52nH5u",
+      "name": "Bash",
+      "input": "for id in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $id\"; gh run view $id --repo example-org/example-repo --json jobs --jq '.jobs[] | \"\\(.name) \\(.startedAt) -> \\(.completedAt)\", (....",
+      "input_chars": 328,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ELN9wiFGp5Uv3Kmh52nH5u",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (73.4KB). Full output saved to: <path>\n\nPreview (first 2KB):\n== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"headBranch\": \"ma...",
+      "output_chars": 2258,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019EtAbStX6wfHLtr7yA2CMZ",
+      "name": "Bash",
+      "input": "cd $TMPDIR; for id in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $id --repo example-org/example-repo --json jobs > r$id.json 2>&1; done\npython3 -I - <<'E'\nimport json,datetime as ...",
+      "input_chars": 819,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019EtAbStX6wfHLtr7yA2CMZ",
+      "is_error": false,
+      "output": "== 71001\ne2e (chromium) 93 s | Install dependencies=8s ; Install browser OS dependencies=24s ; Install browser=11s ; Run Playwright tests=42s\ne2e (firefox) 97 s | Install dependencies=13s ; Install browser OS dependencies=20s ; Install browser=5s ; Run Playwright tests=51s\ne2e (webkit) 94 s | Instal...",
+      "output_chars": 4007,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ExEimV611b9cXBPHnoJ9GT",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Bg3ZQ1YXm1TUfA8oTjXuds",
+      "name": "Bash",
+      "input": "git diff --stat; python3 -I -c \"import yaml;yaml.safe_load(open('.github/workflows/e2e.yml'));print('yaml ok')\"",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ExEimV611b9cXBPHnoJ9GT",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 99,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Bg3ZQ1YXm1TUfA8oTjXuds",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 5 +++++\n 1 file changed, 5 insertions(+)\nyaml ok",
+      "output_chars": 77,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
