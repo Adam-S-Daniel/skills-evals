@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G5NxayKdEEr1tunTMDPjoC",
+      "name": "Bash",
+      "input": "git log --oneline | head -3; ls; ls .github/workflows; cat AGENTS.md 2><path> | head -60",
+      "input_chars": 91,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G5NxayKdEEr1tunTMDPjoC",
+      "is_error": false,
+      "output": "c622824 initial commit\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml",
+      "output_chars": 157,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VUTsX5UKcb2jannNA5fzqC",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat package.json; git ls-files | grep -v '^test/\\|^src/' | head -50; ls src test",
+      "input_chars": 142,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VUTsX5UKcb2jannNA5fzqC",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 3210,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HzYSeVYNfPMPWyRuVH2cMv",
+      "name": "Bash",
+      "input": "cat mkdocs.yml .github/rulesets/main.json; grep -n \"require\\|import\\|readFile\\|\\.\\./\" src/*.js test/*.js; grep -rn \"include\\|snippet\\|\\.\\./\" docs mkdocs.yml | head; cat .editorconfig",
+      "input_chars": 182,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HzYSeVYNfPMPWyRuVH2cMv",
+      "is_error": false,
+      "output": "site_name: Example Service\nsite_url: https://docs.example.com/\ndocs_dir: docs\n\nnav:\n  - Home: index.md\n  - Guide: guide.md\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": [...",
+      "output_chars": 1272,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

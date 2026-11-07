@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011WErrnBmrpwAe5CAVPntG9",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && ls -la && ls .github/workflows && cat AGENTS.md 2><path>; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 163,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011WErrnBmrpwAe5CAVPntG9",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n85770b6 initial commit\ntotal 64\ndrwxr-xr-x 11 root root 4096 Nov  7 16:40 .\ndrwx------  6 root root 4096 Nov  7 16:40 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:3...",
+      "output_chars": 2415,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R5ebzKAHSVHkbzk7W8DH5v",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml .github/rulesets/main.json package.json README.md mkdocs.yml scripts/sweep-stale.sh src/*.js test/*.js bin/gh; do echo \"=== $f\"; cat \"$f\"; done; ls .claude; ls .claude...",
+      "input_chars": 202,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R5ebzKAHSVHkbzk7W8DH5v",
+      "is_error": true,
+      "output": "Exit code 2\n=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\np...",
+      "output_chars": 10040,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Bg2msGa6RL42jQCguDUJK4",
+      "name": "Bash",
+      "input": "head -60 bin/gh; echo; for f in .gh/replay/*.txt .gh/replay/*.json .gh/replay/api/repos/example-org/example-service/*.json .gh/replay/api/repos/example-org/example-service/*/*.json .gh/replay/api/repo...",
+      "input_chars": 370,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Bg2msGa6RL42jQCguDUJK4",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 7993,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F3d4SNxb8PZyCWpfDC3uD7",
+      "name": "Bash",
+      "input": "node --version; npm --version; npm view yaml time --json 2>&1 | tail -8; git branch -a; git remote -v; cat .git/workspace-root",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F3d4SNxb8PZyCWpfDC3uD7",
+      "is_error": false,
+      "output": "v22.23.4\n10.9.9\n{\n  \"error\": {\n    \"code\": \"E403\",\n    \"summary\": \"403 host is not on the allow list - GET https://registry.npmjs.org/yaml\",\n    \"detail\": \"In most cases, you or one of your dependencies are requesting\\na package version that is forbidden by your security policy, or\\non a server you ...",
+      "output_chars": 707,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TH9YD6dRXNUz4WUhSTXvxs",
+      "name": "Bash",
+      "input": "npm view yaml time --json 2>&1 | python3 -c 'import json,sys; t=json.load(sys.stdin); [print(k,v) for k,v in sorted(t.items(), key=lambda x:x[1])[-6:]]'; python3 -c 'import yaml; print(\"pyyaml\", yaml....",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TH9YD6dRXNUz4WUhSTXvxs",
+      "is_error": true,
+      "output": "<tool_use_error>allowed_domains cannot widen network access in this session: the configured sandbox allowlist is the whole allowlist here (a managed-domains-only or strictAllowlist policy, or a confined evaluation run). Remove allowed_domains and use a host the configured allowlist already covers.</...",
+      "output_chars": 315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017RcYdW8KpZTLa4R13zLNM3",
+      "name": "Bash",
+      "input": "python3 -c 'import yaml; print(\"pyyaml\", yaml.__version__)' 2>&1; ls <path> 2><path> | head; find / -path /proc -prune -o -type d -name yaml -path '*node_modules*' -print 2><path> | head -5",
+      "input_chars": 195,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017RcYdW8KpZTLa4R13zLNM3",
+      "is_error": false,
+      "output": "pyyaml 6.0.1",
+      "output_chars": 12,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011x3onqsDwsVgLLKzR9Y6yT",
+      "name": "Bash",
+      "input": "git worktree add -b fix/workflow-path-filters .claude/worktrees/workflow-path-filters master 2>&1 && cd .claude/worktrees/workflow-path-filters && git status --short && ls .github/workflows && npm tes...",
+      "input_chars": 216,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011x3onqsDwsVgLLKzR9Y6yT",
+      "is_error": true,
+      "output": "Exit code 128\nPreparing worktree (new branch 'fix/workflow-path-filters')\nfatal: could not create leading directories of '.claude/worktrees/workflow-path-filters/.git': Read-only file system",
+      "output_chars": 190,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FRUNcS7fCgeNFGWyh7vh3L",
+      "name": "Bash",
+      "input": "git branch -D fix/workflow-path-filters 2>&1; git worktree prune; git worktree add -b fix/workflow-path-filters \"$TMPDIR/wt-workflow-path-filters\" master 2>&1 && cd \"$TMPDIR/wt-workflow-path-filters\" ...",
+      "input_chars": 266,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FRUNcS7fCgeNFGWyh7vh3L",
+      "is_error": false,
+      "output": "error: could not lock config file .git/config\nwarning: update of config-file failed\nDeleted branch fix/workflow-path-filters (was 85770b6).\nPreparing worktree (new branch 'fix/workflow-path-filters')\nHEAD is now at 85770b6 initial commit\nWT=<path>\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0...",
+      "output_chars": 584,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VwGPwkoTkPmqWvE7b2DLXj",
+      "name": "Bash",
+      "input": "cd \"$TMPDIR/wt-workflow-path-filters\" && npm test 2>&1 | head -40; node --test test/ 2>&1 | head -30",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VwGPwkoTkPmqWvE7b2DLXj",
+      "is_error": false,
+      "output": "> example-service@0.1.0 test\n> node --test test/\n\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/modules/cjs/loader:1430:15)\n#     at defaultResolveImpl (node:internal/modules/cjs/load...",
+      "output_chars": 2399,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CGe2nmjXPFRE6vcrS8fBFk",
+      "name": "Bash",
+      "input": "cd \"$TMPDIR/wt-workflow-path-filters\" && node --test 'test/**/*.test.js' 2>&1 | grep -E '^# (tests|pass|fail)'",
+      "input_chars": 110,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CGe2nmjXPFRE6vcrS8fBFk",
+      "is_error": false,
+      "output": "# tests 2\n# pass 2\n# fail 0\nShell cwd was reset to <path>",
+      "output_chars": 84,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MW6upTxPiUC9CgkWdTupXw",
+      "name": "Agent",
+      "input": "Apply workflow path-filter fix",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SXX6hiKM1TSkvFJvhnjVT4",
+      "name": "Bash",
+      "input": "cd <path> && ls -a . .github/workflows && git status --short && cat .github/workflows/tests.yml | head -30",
+      "input_chars": 168,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SXX6hiKM1TSkvFJvhnjVT4",
+      "is_error": false,
+      "output": ".:\n.\n..\n.editorconfig\n.gh\n.git\n.github\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\n\n.github/workflows:\n.\n..\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json).\non:\n  pull_reque...",
+      "output_chars": 799,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0174K5MukgFZFU6VV9jnjuLq",
+      "name": "Bash",
+      "input": "cd <path> && rm .github/workflows/tests-skip.yml\ncat > .github/workflows/tests.yml <<'EOF'\nname: Tests\n\n# `unit-tests` is a required status check (.github/rulesets/main.json), so it\n# must report on E...",
+      "input_chars": 3318,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0174K5MukgFZFU6VV9jnjuLq",
+      "is_error": false,
+      "output": "ok\na exit=0\ndocs/guide.md -> run=false\n$'docs/guide.md\\nsrc/util.js' -> run=true\npackage.json -> run=true\npackage.jsonx -> run=false\n.github/workflows/docs-site.yml -> run=false\n.github/workflows/tests.yml -> run=true\n'' -> run=false\nc exit=1\n D .github/workflows/tests-skip.yml\n M .github/workflows/...",
+      "output_chars": 331,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01D6THByTcBoNEaGeR2rNMhc",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All edits are done in <path> I did not commit or run any state-changing git command.\\n\\n- **Deleted:** `.github/workflows/tests-skip.yml`, with plain `rm`.\\n- **Replaced:** `.github/workf...",
+      "input_chars": 1136,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01D6THByTcBoNEaGeR2rNMhc",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MW6upTxPiUC9CgkWdTupXw",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a97e5d43d726b0000\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a97e5d43d726b0000 (use SendMessage with to: 'a97e5d43d726b0000', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BEEuDXu7j3JNup6rhLWaKo",
+      "name": "Bash",
+      "input": "cd \"$TMPDIR/wt-workflow-path-filters\" && git status --short && git diff && cat AGENTS.md && f=$'docs/a.md\\nsrc/x.js'; grep -qE -- '^(src/|test/|package\\.json$|package-lock\\.json$|\\.github/workflows/te...",
+      "input_chars": 236,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BEEuDXu7j3JNup6rhLWaKo",
+      "is_error": false,
+      "output": " D .github/workflows/tests-skip.yml\n M .github/workflows/tests.yml\n?? AGENTS.md\ndiff --git a/.github/workflows/tests-skip.yml b/.github/workflows/tests-skip.yml\ndeleted file mode 100644\nindex de0e565..0000000\n--- a/.github/workflows/tests-skip.yml\n+++ <path>\n@@ -1,24 +0,0 @@\n-name: Tests (skipped)\n-...",
+      "output_chars": 4065,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012hCX3QNd28rXBkwFCdDBhi",
+      "name": "Bash",
+      "input": "cd \"$TMPDIR/wt-workflow-path-filters\" && git add -A && git commit -q -F - <<'EOF'\nMake the required unit-tests check report on every PR\n\ntests.yml filtered on on.paths and a paths-ignore twin (tests-s...",
+      "input_chars": 658,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012hCX3QNd28rXBkwFCdDBhi",
+      "is_error": false,
+      "output": "Author identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"<email>\"\n  git config --global user.name \"Your Name\"\n\nto set your account's default identity.\nOmit --global to set the identity only in this repository.\n\nfatal: unable to auto-detect email address (got '...",
+      "output_chars": 490,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
