@@ -1,15 +1,4 @@
 {
- "bare_runs": {
-  "description": "Bare baseline test runs (no skills, guidance or memory), one per test and model, beside the newest paired run of the same test and model. Built by Claude from the routine-results folder of skills-evals' persistent/eval-results branch.",
-  "schedule": "Refreshed by Claude on request",
-  "source": {
-   "kind": "file",
-   "name": "bare_runs.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Bare baseline runs"
- },
  "budget": {
   "description": "The weekly cap, per-run cap and stop line for automatic tests, copied from skills-evals evals/budget.yml on main. Saved as a file because the GitHub connector returns only a short status line to the page, not the file's text.",
   "request": {
@@ -107,24 +96,6 @@
   "staleAfterHours": 24,
   "title": "Test allowance snapshot"
  },
- "eval_dirs": {
-  "description": "The folders in skills-evals evals/ on main, one per skill test. Reads the Adam-S-Daniel/skills-evals repository through GitHub.",
-  "source": {
-   "args": {
-    "fields": [
-     "name",
-     "type"
-    ],
-    "owner": "Adam-S-Daniel",
-    "path": "evals",
-    "repo": "skills-evals"
-   },
-   "connector": "github-mcp",
-   "kind": "query",
-   "tool": "get_file_contents"
-  },
-  "title": "Test folders on main"
- },
  "eval_ingests": {
   "description": "The newest commits on skills-evals' results branch, one per finished test run. Reads the persistent/eval-results branch history.",
   "source": {
@@ -145,17 +116,6 @@
   },
   "title": "Latest saved test runs"
  },
- "eval_runs": {
-  "description": "Every scored routine test run since Oct 20: share of checks passed with and without the skill, judge rating, list-price cost and allowance points. Built by Claude from the routine-results folder of skills-evals' persistent/eval-results branch.",
-  "schedule": "Refreshed by Claude on request",
-  "source": {
-   "kind": "file",
-   "name": "eval_runs.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Test results snapshot"
- },
  "gate": {
   "description": "The two conditions you set on Oct 24 before anything new got built; both met by Oct 28.",
   "schedule": "Updated by Claude on request",
@@ -166,28 +126,6 @@
   },
   "staleAfterHours": 72,
   "title": "Build gate"
- },
- "fixture_requests": {
-  "description": "Each request the loop made for new or harder fixtures, followed to its pull requests and the fixtures that ran: subject, kind, state, age, latest PR, fixtures (and how many came from real work), runs and cost. Built from the explorer data's fixture_queue.",
-  "schedule": "Refreshed by Claude every 2 hours from the explorer data on the results branch",
-  "source": {
-   "kind": "file",
-   "name": "fixture_requests.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 6,
-  "title": "Fixture requests"
- },
- "fixture_queue_summary": {
-  "description": "One row of totals for the Fixture requests panel: requests open and closed, PRs merged, fixtures from real work and invented, runs, cost and findings. Built with the request rows.",
-  "schedule": "Refreshed by Claude every 2 hours from the explorer data on the results branch",
-  "source": {
-   "kind": "file",
-   "name": "fixture_queue_summary.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 6,
-  "title": "Fixture requests, summary"
  },
  "half_built_issues": {
   "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
@@ -370,17 +308,6 @@
   "staleAfterHours": 48,
   "title": "Project threads"
  },
- "usage_digests": {
-  "description": "Weekly skill uses by which copy of the skill each session loaded: the first 12 characters of the copy's digest, or why it is unknown, per public registry. Concatenated by Claude from skills-evals persistent/eval-results usage/weekly-*.json (schema 1), skill-digest rows. Empty until the first file with them lands.",
-  "schedule": "Updated by Claude on every refresh",
-  "source": {
-   "kind": "file",
-   "name": "usage_digests.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Loaded skill copies, weekly"
- },
  "usage_rows": {
   "description": "Weekly counts of skill uses and git hook check runs, blocks and bypasses, per repo and place, with PR outcomes where CI reports them. Concatenated by Claude from skills-evals persistent/eval-results usage/weekly-*.json (schema 1). Empty until the first file lands.",
   "schedule": "Updated by Claude on every refresh",
@@ -413,5 +340,27 @@
   },
   "staleAfterHours": 48,
   "title": "Waiting on you"
+ },
+ "explorer": {
+  "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public skill, guidance section, git check, test run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
+  "schedule": "Updated by Claude every 2 hours and on every merged PR",
+  "source": {
+   "kind": "file",
+   "name": "explorer.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 30,
+  "title": "Evals document"
+ },
+ "explorer_private": {
+  "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and runs in with a Private badge; until it is uploaded the page shows public subjects only.",
+  "schedule": "Updated by Claude with the evals document when a private-skill results file exists",
+  "source": {
+   "kind": "file",
+   "name": "explorer_private.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 192,
+  "title": "Private-skill results (optional)"
  }
 }

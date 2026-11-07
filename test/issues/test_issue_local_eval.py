@@ -1190,13 +1190,13 @@ class TestLocalEval(unittest.TestCase):
         proc = self._run(str(skill_dir), "--trials", "2", "--no-judge",
                          "--registry", f"adam-agentskills={registry}")
         aggregate = self._assert_clean(
-            proc, 2, ["bootstrap", "existing-convention", "supersede",
-                      "why-no-comment-trail"])
+            proc, 2, ["bootstrap", "existing-convention", "pr-body-outgrows-itself",
+                      "supersede", "why-no-comment-trail"])
         self.assertNotIn("arms", aggregate, "several fixtures: no single `arms`")
         self.assertEqual(
             [f["name"] for f in self._json("manifest.json")["fixtures"]],
-            ["bootstrap", "existing-convention", "supersede",
-             "why-no-comment-trail"])
+            ["bootstrap", "existing-convention", "pr-body-outgrows-itself",
+             "supersede", "why-no-comment-trail"])
 
     def test_fixture_selects_one_nested_fixture_of_a_skill_directory(self):
         skill_dir = REPO_ROOT / "evals" / "writing-adrs"

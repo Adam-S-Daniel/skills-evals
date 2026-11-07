@@ -101,6 +101,10 @@ workflows:
         - 'actions/setup-python@v7.1.0'
     '.github/workflows/routine-scaffold-pushed.yml': []
     '.github/workflows/scheduled-run-health.yml': []
+    '.github/workflows/site-freshness.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/create-github-app-token@v3.3.0'
+        - 'actions/setup-python@v7.1.0'
     '.github/workflows/site-preview.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
@@ -116,6 +120,7 @@ workflows:
     '.github/workflows/skills-lock-bump-dispatch.yml':
         - 'actions/checkout@v7.0.1'
         - 'actions/create-github-app-token@v3.3.0'
+    '.github/workflows/spend-pushed.yml': []
 dependencies:
     'actions/checkout@v7.0.1':
         ref: 'v7.0.1'

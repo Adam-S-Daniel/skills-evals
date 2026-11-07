@@ -1,0 +1,56 @@
+<style>
+/* The dashboard host's design tokens, with the public palette as fallback,
+   so the page follows the host's light and dark themes. */
+#ex-root, #ex-tip {
+  --page: var(--color-bg, #FDFBF7);
+  --surface: var(--color-panel, #FFFFFF);
+  --ink: var(--color-fg, #3D3A34);
+  --ink-2: var(--color-fg-muted, #5A564E);
+  --muted: var(--color-fg-muted, #6B675E);
+  --axis: var(--cds-chart-axis, #8A8478);
+  --grid: var(--cds-chart-grid, #EDE8DD);
+  --base: var(--color-border-line, #E4DFD4);
+  --ring: var(--color-border-line, #E4DFD4);
+  --s1: var(--cds-chart-1, #4A6B8F);
+  --s2: var(--cds-chart-2, #B06A4F);
+  --s3: var(--cds-chart-3, #54805C);
+  --good: var(--color-ok, #54805C);
+  --good-ink: var(--color-ok, #3F6646);
+  --warning: var(--color-warn, #9A6F33);
+  --critical: var(--color-bad, #B06A4F);
+  --link: var(--cds-chart-1, #4A6B8F);
+  --chip-bg: var(--color-bg, #F3EFE6);
+  --hover: var(--color-bg, #F7F4EC);
+  --ex-font: 15px/1.5 var(--font-anthropic-sans, Helvetica, Arial, sans-serif);
+  --ex-font-family: var(--font-anthropic-sans, Helvetica, Arial, sans-serif);
+  --ex-serif: var(--font-anthropic-serif, Georgia, "Times New Roman", serif);
+}
+@media (prefers-color-scheme: dark) {
+  #ex-root, #ex-tip {
+    --page: var(--color-bg, #1E1C19); --surface: var(--color-panel, #272420); --ink: var(--color-fg, #EDE8DD);
+    --ink-2: var(--color-fg-muted, #CFC8BA); --muted: var(--color-fg-muted, #A9A294); --grid: var(--cds-chart-grid, #36322C);
+    --base: var(--color-border-line, #45403A); --ring: var(--color-border-line, #3A362F); --s1: var(--cds-chart-1, #7F9FC2);
+    --s2: var(--cds-chart-2, #D08B70); --s3: var(--cds-chart-3, #7FAA86); --good: var(--color-ok, #7FAA86); --good-ink: var(--color-ok, #9CC4A2);
+    --warning: var(--color-warn, #C99B5C); --critical: var(--color-bad, #D08B70); --link: var(--cds-chart-1, #9DB8D6);
+    --chip-bg: var(--color-bg, #322E28); --hover: var(--color-bg, #2E2A25);
+  }
+}
+/* The host's page color behind the whole window, outside the column and below
+   short pages; the palette above is defined only inside #ex-root. */
+html, body { background: var(--color-bg, #FDFBF7); }
+@media (prefers-color-scheme: dark) { html, body { background: var(--color-bg, #1E1C19); } }
+html { min-height: 100%; }
+body { min-height: 100vh; }
+#ex-root { background: var(--page); min-height: 100vh; }
+/*__CSS__*/
+</style>
+<div id="ex-root" class="ex">
+  <div id="ex-app">
+    <h1>Self-improvement project</h1>
+    <p id="loading">Loading the dashboard.</p>
+  </div>
+</div>
+<div class="ex-tip" id="ex-tip" role="tooltip" hidden></div>
+<script>
+/*__BUNDLE__*/
+</script>

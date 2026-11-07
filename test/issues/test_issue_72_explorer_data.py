@@ -156,12 +156,16 @@ class ShapeAndMathTests(unittest.TestCase):
     def test_top_level_keys_and_types(self):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
-        self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
-                                     "coverage", "fires_without_results",
+        # The public data contract adds evals, hooks, lesson_funnel, activity and
+        # spend, keeping schema_version 1
+        # (test_issue_public_data_contract.py covers them).
+        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_unknown",
+                                     "coverage", "evals", "fires_without_results",
                                      "fixture_queue", "generated_at",
-                                     "guidance", "lessons", "newest_run", "policy", "removed_skills",
+                                     "guidance", "hooks", "lesson_funnel", "lessons",
+                                     "newest_run", "policy", "removed_skills",
                                      "roster", "schema_version",
-                                     "skills", "source", "usage"])
+                                     "skills", "source", "spend", "usage"])
         self.assertIsNone(d["usage"])
         # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
         # #555's: no fire file either, so the summary is unknown.
@@ -905,7 +909,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
                                                 "issues": "read", "pull-requests": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
-        self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish", "queue-alerts"])
+        self.assertEqual(sorted(self.doc["jobs"]), ["build", "check-site", "publish", "queue-alerts"])
+        # The site freshness check's cron rarely fires, so this workflow
+        # dispatches it; that job holds `actions: write` and nothing else.
+        self.assertEqual(self.doc["jobs"]["check-site"]["permissions"], {"actions": "write"})
+        self.assertEqual(self.doc["jobs"]["check-site"]["needs"], "publish")
         self.assertEqual(self.doc["jobs"]["queue-alerts"]["permissions"],
                          {"contents": "read", "issues": "write"})
         self.assertEqual(publish["needs"], "build")

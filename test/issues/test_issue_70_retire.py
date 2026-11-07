@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from contextlib import redirect_stderr
 from pathlib import Path
 
@@ -195,17 +196,25 @@ class FakeGitHub:
         self.calls.append((list(args), stdin))
         if args[:2] == ["api", "--paginate"] and "/pulls?" in args[2]:
             prs = self.closed if "state=closed" in args[2] else self.prs
-            return "".join(json.dumps(p) + "\n" for p in prs)
+            # The listing never carries `closed_by`: only the issue read does.
+            return "".join(json.dumps({k: v for k, v in p.items() if k != "closed_by"}) + "\n"
+                           for p in prs)
         if args[:2] == ["pr", "view"]:
             return self.merge_method + "\n"
+        if args[0] == "api" and "/issues/" in args[1]:
+            # Who closed a closed pull request (retire_skill.with_closer).
+            n = int(args[1].rsplit("/", 1)[1])
+            return next((p.get("closed_by") or "" for p in self.closed
+                         if p.get("number") == n), "") + "\n"
         if args[:2] == ["api", "--paginate"] and "/issues?" in args[2]:
             return "".join(json.dumps(i) + "\n" for i in self.issues)
         if args[:2] == ["pr", "create"]:
             return "https://github.com/Adam-S-Daniel/adam-agentskills/pull/999\n"
         return ""
 
-    def push(self, checkout, branch):
+    def push(self, checkout, branch, paused_heads=()):
         self.pushes.append((Path(checkout), branch))
+        self.paused_heads = list(paused_heads)
 
     def writes(self):
         return [args for args, _ in self.calls if args[0] != "api"]
@@ -319,11 +328,12 @@ class ProposalTests(Base):
         block["retirement_mode"] = "sometimes"
         return block
 
-    def test_the_committed_policy_is_proposal(self):
-        """Adam, 2026-11-03: removals are proposals until the stats fixes land."""
+    def test_the_committed_policy_is_auto(self):
+        """Adam set removals to proposals on 2026-11-03 and pre-approved
+        automatic removal once withdrawal was hardened (PR #740, #645)."""
         doc = yaml.safe_load((ROOT / "evals" / "gate-policy.yml").read_text())
-        self.assertEqual(doc["skills"]["retirement_mode"], "proposal")
-        self.assertEqual(doc["guidance"]["retirement_mode"], "proposal")
+        self.assertEqual(doc["skills"]["retirement_mode"], "auto")
+        self.assertEqual(doc["guidance"]["retirement_mode"], "auto")
 
 
 class AutoTests(Base):
@@ -1200,7 +1210,8 @@ class MutationTests(Base):
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             git(repo, "commit", "-q", "--allow-empty", "-m", "x")
             git(repo, "remote", "add", "origin", str(Path(tmp) / "missing"))
-            with self.assertRaises(retire_skill.RetireError) as caught:
+            with self.assertRaises(retire_skill.RetireError) as caught, mock.patch.object(
+                    retire_skill, "branch_exists", return_value=False):
                 retire_skill.default_push(repo, "b", "a-token")
             self.assertRegex(str(caught.exception), r"^git push exited \d+$")
             with self.assertRaises(retire_skill.RetireError) as caught:
@@ -1222,7 +1233,10 @@ class MutationTests(Base):
             # a refused commit with a "successful" push looks.
             git(repo, "commit", "-q", "--allow-empty", "-m", "y")
             git(repo, "remote", "set-url", "--push", "origin", str(other))
-            with self.assertRaises(retire_skill.RetireError) as caught:
+            # (The existence check is passed over: it reads the fetch URL,
+            # where the branch already is.)
+            with self.assertRaises(retire_skill.RetireError) as caught, mock.patch.object(
+                    retire_skill, "branch_exists", return_value=False):
                 retire_skill.default_push(repo, "retire-skill/x", "a-token")
             self.assertIn("does not hold the removal commit", str(caught.exception))
 

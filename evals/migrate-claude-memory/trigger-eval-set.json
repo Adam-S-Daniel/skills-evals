@@ -1,0 +1,82 @@
+[
+  {
+    "query": "i've got a pile of folders under ~/.claude/projects/ from old checkouts. can you list which memory stores are still tied to a directory that exists and which ones look orphaned? don't delete anything yet",
+    "should_trigger": true
+  },
+  {
+    "query": "clean up my claude memory — I moved a bunch of repos around last month and I'm pretty sure there are stale memory dirs left behind",
+    "should_trigger": true
+  },
+  {
+    "query": "inventory my claude code auto-memory stores: decoded project paths, file counts, sizes, and when each was last touched",
+    "should_trigger": true
+  },
+  {
+    "query": "I use the same repo on WSL and under D:\\repos on Windows and my notes from one don't show up in the other. is that because the memory stores are keyed by path? show me what's on this machine",
+    "should_trigger": true
+  },
+  {
+    "query": "which ~/.claude/projects/*/memory folders are orphaned? I want to review them by hand before I rm -rf anything",
+    "should_trigger": true
+  },
+  {
+    "query": "my ~/.claude directory is huge. find out how much of it is per-project memory and which of those projects no longer exist on disk",
+    "should_trigger": true
+  },
+  {
+    "query": "there's a memory dir named -home-me-repos-oldthing but I deleted that repo. is it safe to remove? check whether the decoded path still resolves",
+    "should_trigger": true
+  },
+  {
+    "query": "audit the auto-memory folders on this laptop and flag any where the path can't be decoded safely so I don't delete the wrong one",
+    "should_trigger": true
+  },
+  {
+    "query": "before I wipe this machine I want to know what auto-memory exists under ~/.claude/projects and which repos it belongs to, so I can move the useful facts into AGENTS.md",
+    "should_trigger": true
+  },
+  {
+    "query": "orphaned memory stores — find them. read-only please, just point at candidates",
+    "should_trigger": true
+  },
+  {
+    "query": "add a rule to my CLAUDE.md that says always run the linter before committing",
+    "should_trigger": false
+  },
+  {
+    "query": "what does the /memory command in Claude Code do and how do I turn auto-memory off for one project?",
+    "should_trigger": false
+  },
+  {
+    "query": "clean up my merged git branches, there are like 60 of them locally",
+    "should_trigger": false
+  },
+  {
+    "query": "my node_modules folders are eating disk space across all my repos. find and list the biggest ones",
+    "should_trigger": false
+  },
+  {
+    "query": "clear out ~/.cache and old docker images, the disk is at 95%",
+    "should_trigger": false
+  },
+  {
+    "query": "write a CLAUDE.md for this repo describing the build and test commands",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize what you remember about my preferences from earlier in this conversation",
+    "should_trigger": false
+  },
+  {
+    "query": "back up my entire home directory to an external drive with rsync",
+    "should_trigger": false
+  },
+  {
+    "query": "find duplicate photos in ~/Pictures and tell me which to delete",
+    "should_trigger": false
+  },
+  {
+    "query": "set up a SessionStart hook that prints the git branch when a session begins",
+    "should_trigger": false
+  }
+]

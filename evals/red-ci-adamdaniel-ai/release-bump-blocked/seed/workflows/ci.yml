@@ -1,0 +1,13 @@
+name: ci
+on:
+  pull_request:
+jobs:
+  pin-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - name: Every file that names the release agrees
+        run: |
+          want=$(sed -n 's/.*"version": "\(.*\)".*/\1/p' plugin.json)
+          grep -q "Current release: \`v$want\`" AGENTS.md
+          grep -q "\"version\": \"$want\"" .claude-plugin/plugin.json

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "installed": [
+    {
+      "name": "writing-adrs",
+      "registry": "https://github.com/Adam-S-Daniel/adam-agentskills.git",
+      "bundle": "adam-anything-anywhere",
+      "digest": "5f9179dea6c1b868ec63ee8522b6e9adfde3809fb87430d3424e305338ac40a1"
+    },
+    {
+      "name": "debug-github-workflows",
+      "registry": "https://github.com/Adam-S-Daniel/adam-agentskills.git",
+      "bundle": "adam-coding-anywhere",
+      "digest": "ed287e83e05359b206cbd0871d4dbac1e4a17749b3c65164a7b535b295cc20dc"
+    }
+  ]
+}

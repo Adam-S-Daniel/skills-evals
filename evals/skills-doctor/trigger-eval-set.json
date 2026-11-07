@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I expected the workflow-path-audit skill to show up in this session but it isn't in my skill list. can you figure out why it didn't load?",
+    "should_trigger": true
+  },
+  {
+    "query": "write me a new skill that checks whether a PR touched the changelog, with a SKILL.md and a trigger description",
+    "should_trigger": false
+  },
+  {
+    "query": "the session-start line says 'skills: DEGRADED — no skills.lock found'. what exactly did I get and what's missing compared to what the repo declares?",
+    "should_trigger": true
+  },
+  {
+    "query": "my skill's description is too long and Claude never picks it. rewrite the description so it triggers on 'summarize this PDF'",
+    "should_trigger": false
+  },
+  {
+    "query": "which skills do I actually have right now in this cloud session, and which registry and bundle did each one come from?",
+    "should_trigger": true
+  },
+  {
+    "query": "install the adam-coding-anywhere plugin from the marketplace on this machine and enable it",
+    "should_trigger": false
+  },
+  {
+    "query": "I have a skill in .claude/skills/ in this repo with the same name as one from the registry. is mine silently overriding the registry one, or the other way round?",
+    "should_trigger": true
+  },
+  {
+    "query": "update skills.lock to the newest commit of the registry and regenerate the sha256 for each skill",
+    "should_trigger": false
+  },
+  {
+    "query": "is my registry stale? skills.lock pins a commit but I think the marketplace clone on this machine is behind. diff the two for me, don't change anything",
+    "should_trigger": true
+  },
+  {
+    "query": "why is my SessionStart hook for fetching secrets not running? the settings.json looks right to me",
+    "should_trigger": false
+  },
+  {
+    "query": "audit my skills: compare what skills.lock expects against ~/.claude/skills and what `claude plugin list` shows, and tell me what's missing",
+    "should_trigger": true
+  },
+  {
+    "query": "delete the stale copies in ~/.claude/skills and re-sync them from the repo so everything matches",
+    "should_trigger": false
+  },
+  {
+    "query": "a skill I know is in the bundle won't trigger on any of my prompts. is it even installed here, or did the bootstrap hook skip it?",
+    "should_trigger": true
+  },
+  {
+    "query": "what's the difference between a Claude Code skill, a slash command and a subagent?",
+    "should_trigger": false
+  },
+  {
+    "query": "skills doctor — I just opened a new web session and I want to know whether the skills-bootstrap hook installed everything in the lockfile",
+    "should_trigger": true
+  },
+  {
+    "query": "list the files in this repo's .claude directory and explain what each one does",
+    "should_trigger": false
+  },
+  {
+    "query": "some of my installed skills reference scripts under their own directory and I think a few of those payload files never made it. can you check for dangling references without fixing them?",
+    "should_trigger": true
+  },
+  {
+    "query": "my pytest suite is failing in CI with ModuleNotFoundError for yaml. why is that dependency missing?",
+    "should_trigger": false
+  },
+  {
+    "query": "did the bootstrap hook install this skill or was it already on disk before the session started? I need to know where it came from",
+    "should_trigger": true
+  },
+  {
+    "query": "add a new entry to the plugin.json for the bundle and bump its version",
+    "should_trigger": false
+  }
+]

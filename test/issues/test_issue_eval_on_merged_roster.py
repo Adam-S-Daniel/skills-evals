@@ -263,9 +263,10 @@ class TestTheJobGraph(_Scripts):
             if perms.get("contents") != "write" or name == "roster-pr":
                 continue
             with self.subTest(job=name):
-                self.assertIn("roster-wait", _ancestors(self.jobs, name),
-                              f"`{name}` holds contents: write and could run "
-                              "beside an armed roster pull request")
+                before = name in _ancestors(self.jobs, "roster-pr")
+                self.assertTrue(before or "roster-wait" in _ancestors(self.jobs, name),
+                                f"`{name}` holds contents: write and could run "
+                                "beside an armed roster pull request")
         # Nothing depends on `publish`, and `roster-pr` depends on no job
         # that runs after it.
         # (Except `failure-watch`, which only reports on every job's result.)

@@ -1,0 +1,3320 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/Adam-S-Daniel/skills-evals/blob/main/explorer/schema.json",
+ "title": "Evals Explorer public data (explorer/latest.json)",
+ "description": "The single public data contract behind the Evals Explorer and the project dashboard, written by scripts/explorer_data.py. It is schema_version 1: the contract only added fields to the earlier document. Every field comes from a public input; null means unknown, never zero or empty. scripts/explorer_data.py validates its output against this schema, after `finish`, before writing.",
+ "type": "object",
+ "properties": {
+  "schema_version": {
+   "const": 1
+  },
+  "generated_at": {
+   "type": "string",
+   "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+  },
+  "newest_run": {
+   "anyOf": [
+    {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "source": {
+   "type": "object",
+   "properties": {
+    "repository": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+    },
+    "repository_commit": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{40}$"
+    },
+    "results_commit": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{40}$"
+    }
+   },
+   "required": [
+    "repository",
+    "repository_commit",
+    "results_commit"
+   ],
+   "additionalProperties": false
+  },
+  "roster": {
+   "type": "object",
+   "properties": {
+    "arms": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "model": {
+        "type": "string"
+       },
+       "reason": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "model",
+       "reason"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "judge": {
+     "type": "object",
+     "properties": {
+      "model": {
+       "type": "string"
+      },
+      "reason": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "required": [
+      "model",
+      "reason"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "arms",
+    "judge"
+   ],
+   "additionalProperties": false
+  },
+  "policy": {
+   "type": "object",
+   "properties": {
+    "benefit_confidence": {
+     "type": "number"
+    },
+    "retire_confidence": {
+     "type": "number"
+    },
+    "min_cli_versions": {
+     "type": "integer"
+    },
+    "objective_margin": {
+     "type": "number"
+    },
+    "max_runs_per_cell": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "benefit_confidence",
+    "max_runs_per_cell",
+    "min_cli_versions",
+    "objective_margin",
+    "retire_confidence"
+   ],
+   "additionalProperties": false
+  },
+  "skills": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/skill"
+   }
+  },
+  "removed_skills": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/removed_skill"
+   }
+  },
+  "guidance": {
+   "type": "object",
+   "properties": {
+    "sections": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/section"
+     }
+    },
+    "removed": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/removed_section"
+     }
+    }
+   },
+   "required": [
+    "removed",
+    "sections"
+   ],
+   "additionalProperties": false
+  },
+  "coverage": {
+   "type": "object",
+   "properties": {
+    "as_of": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "covered": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "gap": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "as_of",
+    "covered",
+    "gap",
+    "skipped",
+    "total"
+   ],
+   "additionalProperties": false
+  },
+  "alerts": {
+   "type": "array",
+   "items": {
+    "$ref": "#/$defs/alert"
+   }
+  },
+  "context_drift_unknown": {
+   "type": "integer",
+   "minimum": 0
+  },
+  "fires_without_results": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/fires"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "fixture_queue": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/fixture_queue"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "lessons": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/lessons"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "usage": {
+   "anyOf": [
+    {
+     "type": "object",
+     "properties": {
+      "from": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "to": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "sessions_scanned": {
+       "anyOf": [
+        {
+         "type": "integer"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "surface": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "required": [
+      "from",
+      "sessions_scanned",
+      "surface",
+      "to"
+     ],
+     "additionalProperties": false
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "evals": {
+   "$ref": "#/$defs/evals"
+  },
+  "hooks": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/hooks"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "lesson_funnel": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/lesson_funnel"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "activity": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/activity"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "spend": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/spend"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "agent_made": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/agent_made"
+    },
+    {
+     "type": "null"
+    }
+   ]
+  }
+ },
+ "required": [
+  "activity",
+  "alerts",
+  "context_drift_unknown",
+  "coverage",
+  "evals",
+  "fires_without_results",
+  "fixture_queue",
+  "generated_at",
+  "guidance",
+  "hooks",
+  "lesson_funnel",
+  "lessons",
+  "newest_run",
+  "policy",
+  "removed_skills",
+  "roster",
+  "schema_version",
+  "skills",
+  "source",
+  "spend",
+  "usage"
+ ],
+ "additionalProperties": false,
+ "$defs": {
+  "activity": {
+   "type": "object",
+   "properties": {
+    "fetched_at": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "since": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "repos": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+     }
+    },
+    "pulls": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+       },
+       "number": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "title": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "state": {
+        "enum": [
+         "open",
+         "merged"
+        ]
+       },
+       "created_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "updated_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "merged_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "url": {
+        "type": "string",
+        "pattern": "^https://github\\.com/"
+       }
+      },
+      "required": [
+       "created_at",
+       "merged_at",
+       "number",
+       "repo",
+       "state",
+       "title",
+       "updated_at",
+       "url"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "issues": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+       },
+       "number": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "title": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "state": {
+        "const": "open"
+       },
+       "created_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "updated_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "url": {
+        "type": "string",
+        "pattern": "^https://github\\.com/"
+       }
+      },
+      "required": [
+       "created_at",
+       "number",
+       "repo",
+       "state",
+       "title",
+       "updated_at",
+       "url"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "runs": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "repo": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+       },
+       "run_id": {
+        "type": "integer",
+        "minimum": 1
+       },
+       "workflow": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "title": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "event": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "state": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "conclusion": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "created_at": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+       },
+       "updated_at": {
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "url": {
+        "type": "string",
+        "pattern": "^https://github\\.com/"
+       }
+      },
+      "required": [
+       "conclusion",
+       "created_at",
+       "event",
+       "repo",
+       "run_id",
+       "state",
+       "title",
+       "updated_at",
+       "url",
+       "workflow"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "fetched_at",
+    "issues",
+    "pulls",
+    "repos",
+    "runs",
+    "since"
+   ],
+   "additionalProperties": false
+  },
+  "alert": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "enum": [
+      "retire",
+      "regression",
+      "not-schedulable",
+      "context-drift",
+      "loaded-copy"
+     ]
+    },
+    "subject": {
+     "enum": [
+      "skill",
+      "guidance"
+     ]
+    },
+    "name": {
+     "type": "string"
+    },
+    "text": {
+     "type": "string"
+    },
+    "url": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^https://github\\.com/"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "fixture": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "reason": {
+     "type": "string"
+    },
+    "repository": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+    },
+    "drift_since": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "surface": {
+     "type": "string"
+    },
+    "loaded": {
+     "type": "string"
+    },
+    "main": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "kind",
+    "subject",
+    "name"
+   ],
+   "additionalProperties": false
+  },
+  "arm": {
+   "type": "object",
+   "properties": {
+    "trials": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "checks_passed": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "checks_total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "judge_mean": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cost_usd": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "checks_passed",
+    "checks_total",
+    "cost_usd",
+    "judge_mean",
+    "trials"
+   ],
+   "additionalProperties": false
+  },
+  "bare_run": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string"
+    },
+    "fired_at": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "fixture": {
+     "type": "string"
+    },
+    "skill": {
+     "type": "string"
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "trials": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "bare": {
+     "type": "number"
+    },
+    "checks": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "bare_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cost_usd": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "report_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    },
+    "paired_at": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "with_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "without_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "bare",
+    "bare_share",
+    "checks",
+    "cost_usd",
+    "fired_at",
+    "fixture",
+    "model",
+    "paired_at",
+    "report_url",
+    "run_id",
+    "skill",
+    "trials",
+    "with_share",
+    "without_share"
+   ],
+   "additionalProperties": false
+  },
+  "confidence": {
+   "type": "object",
+   "properties": {
+    "helps": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "no_help": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "keep_pairs": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "no_help_pairs": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "max_pairs": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "keep_family": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cells": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "model": {
+        "type": "string"
+       },
+       "task": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "pairs": {
+        "type": "integer"
+       },
+       "gain": {
+        "type": "number"
+       },
+       "low": {
+        "type": "number"
+       },
+       "high": {
+        "type": "number"
+       },
+       "votes": {
+        "type": "boolean"
+       },
+       "status": {
+        "enum": [
+         "keeps",
+         "removes-ready",
+         "no-room",
+         "paused",
+         "open"
+        ]
+       }
+      },
+      "required": [
+       "gain",
+       "high",
+       "low",
+       "model",
+       "pairs",
+       "status",
+       "task",
+       "votes"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "cells",
+    "helps",
+    "keep_family",
+    "keep_pairs",
+    "max_pairs",
+    "no_help",
+    "no_help_pairs"
+   ],
+   "additionalProperties": false
+  },
+  "copies": {
+   "type": "object",
+   "properties": {
+    "main": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9a-f]{12}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "window": {
+     "type": "object",
+     "properties": {
+      "from": {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "to": {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      }
+     },
+     "required": [
+      "from",
+      "to"
+     ],
+     "additionalProperties": false
+    },
+    "loaded": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "digest": {
+        "type": "string"
+       },
+       "surface": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "invocations": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "vs_main": {
+        "enum": [
+         "current",
+         "in-window",
+         "older",
+         "unknown"
+        ]
+       }
+      },
+      "required": [
+       "digest",
+       "invocations",
+       "surface",
+       "vs_main"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "alert": {
+     "type": "object",
+     "additionalProperties": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    }
+   },
+   "required": [
+    "alert",
+    "loaded",
+    "main",
+    "window"
+   ],
+   "additionalProperties": false
+  },
+  "eval_run": {
+   "type": "object",
+   "properties": {
+    "run_id": {
+     "type": "string"
+    },
+    "fired_at": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "fixture": {
+     "type": "string"
+    },
+    "skill": {
+     "type": "string"
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "trials": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "with_skill": {
+     "type": "number"
+    },
+    "without_skill": {
+     "type": "number"
+    },
+    "checks": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "gain": {
+     "type": "number"
+    },
+    "with_judge": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "without_judge": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "judge": {
+     "type": "string"
+    },
+    "with_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "without_share": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cost_usd": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "meter_points": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "account_week_after": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cli": {
+     "type": "string"
+    },
+    "report_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "account_week_after",
+    "checks",
+    "cli",
+    "cost_usd",
+    "fired_at",
+    "fixture",
+    "gain",
+    "judge",
+    "meter_points",
+    "model",
+    "report_url",
+    "run_id",
+    "skill",
+    "trials",
+    "with_judge",
+    "with_share",
+    "with_skill",
+    "without_judge",
+    "without_share",
+    "without_skill"
+   ],
+   "additionalProperties": false,
+   "description": "One scored paired run (scripts/eval_facts.py scored_runs); a guidance run's skill is guidance/<section>. meter_points and account_week_after are null unless evals/public-export.yml include_spend is true."
+  },
+  "evals": {
+   "type": "object",
+   "properties": {
+    "runs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/eval_run"
+     }
+    },
+    "latest": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "fixture": {
+        "type": "string"
+       },
+       "model": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "with_share": {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "without_share": {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "with_skill": {
+        "type": "number"
+       },
+       "without_skill": {
+        "type": "number"
+       },
+       "checks": {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "fired_at": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+       },
+       "run_id": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "checks",
+       "fired_at",
+       "fixture",
+       "model",
+       "run_id",
+       "with_share",
+       "with_skill",
+       "without_share",
+       "without_skill"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "summary": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "model": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "runs": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "helped": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "tied": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "hurt": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "with_avg": {
+        "type": "number"
+       },
+       "without_avg": {
+        "type": "number"
+       },
+       "lift": {
+        "type": "number"
+       }
+      },
+      "required": [
+       "helped",
+       "hurt",
+       "lift",
+       "model",
+       "runs",
+       "tied",
+       "with_avg",
+       "without_avg"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "latest_summary": {
+     "type": "object",
+     "properties": {
+      "tests": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "helped": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "tied": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "hurt": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "helped",
+      "hurt",
+      "tests",
+      "tied"
+     ],
+     "additionalProperties": false
+    },
+    "bare_runs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/bare_run"
+     }
+    },
+    "bare_summary": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "model": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "pairs": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "bare": {
+        "type": "number"
+       },
+       "without": {
+        "type": "number"
+       },
+       "with": {
+        "type": "number"
+       },
+       "setup_lift": {
+        "type": "number"
+       },
+       "skill_lift": {
+        "type": "number"
+       },
+       "bare_won": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "bare",
+       "bare_won",
+       "model",
+       "pairs",
+       "setup_lift",
+       "skill_lift",
+       "with",
+       "without"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "bare_runs",
+    "bare_summary",
+    "latest",
+    "latest_summary",
+    "runs",
+    "summary"
+   ],
+   "additionalProperties": false
+  },
+  "fires": {
+   "type": "object",
+   "properties": {
+    "window_days": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "since": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "without_results": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "rejected": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "sweeps": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "start": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+       },
+       "end": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+       },
+       "fires": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "end",
+       "fires",
+       "start"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "rejected",
+    "since",
+    "sweeps",
+    "window_days",
+    "without_results"
+   ],
+   "additionalProperties": false
+  },
+  "fixture_queue": {
+   "type": "object",
+   "description": "scripts/fixture_queue.py's report, carried as is; that script decides its rows",
+   "properties": {
+    "schema": {
+     "const": 1
+    },
+    "requests": {
+     "type": "array"
+    },
+    "fixtures": {
+     "type": "array"
+    },
+    "findings": {
+     "type": "array"
+    },
+    "totals": {
+     "type": "object"
+    }
+   },
+   "required": [
+    "schema",
+    "requests",
+    "fixtures",
+    "findings",
+    "totals"
+   ]
+  },
+  "guidance_run": {
+   "type": "object",
+   "properties": {
+    "fixture": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "at": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cli_version": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "modes": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "full",
+       "full_minus_section",
+       "section",
+       "none"
+      ]
+     },
+     "additionalProperties": {
+      "$ref": "#/$defs/arm"
+     }
+    },
+    "report_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "at",
+    "cli_version",
+    "fixture",
+    "model",
+    "modes",
+    "report_url"
+   ],
+   "additionalProperties": false
+  },
+  "hook_check": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "where": {
+     "enum": [
+      "fleet",
+      "repo"
+     ]
+    },
+    "repo": {
+     "anyOf": [
+      {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+        },
+        {
+         "const": "private repos"
+        }
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "source_url": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^https://github\\.com/"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "use": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/hook_use"
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "window_totals": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "invocations": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "overridden": {
+         "anyOf": [
+          {
+           "type": "integer",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "override_rate": {
+         "anyOf": [
+          {
+           "type": "number",
+           "minimum": 0
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "required": [
+        "blocked",
+        "invocations",
+        "overridden",
+        "override_rate"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict": {
+     "anyOf": [
+      {
+       "enum": [
+        "earning",
+        "never-fires",
+        "overridden-often"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict_reason": {
+     "type": "string"
+    },
+    "overrides_measured": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "name",
+    "overrides_measured",
+    "repo",
+    "source_url",
+    "use",
+    "verdict",
+    "verdict_reason",
+    "where",
+    "window_totals"
+   ],
+   "additionalProperties": false
+  },
+  "hook_use": {
+   "type": "object",
+   "properties": {
+    "week": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "surface": {
+     "enum": [
+      "local",
+      "ci"
+     ]
+    },
+    "repo": {
+     "anyOf": [
+      {
+       "anyOf": [
+        {
+         "type": "string",
+         "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+        },
+        {
+         "const": "private repos"
+        }
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "invocations": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "blocked": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "overridden": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "blocked",
+    "invocations",
+    "overridden",
+    "repo",
+    "surface",
+    "week"
+   ],
+   "additionalProperties": false
+  },
+  "hooks": {
+   "type": "object",
+   "properties": {
+    "window": {
+     "type": "object",
+     "properties": {
+      "weeks": {
+       "type": "integer",
+       "minimum": 1
+      },
+      "from": {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      "to": {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      }
+     },
+     "required": [
+      "from",
+      "to",
+      "weeks"
+     ],
+     "additionalProperties": false
+    },
+    "policy": {
+     "type": "object",
+     "properties": {
+      "max_override_rate": {
+       "type": "number",
+       "minimum": 0
+      },
+      "min_private_repos": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "max_override_rate",
+      "min_private_repos"
+     ],
+     "additionalProperties": false
+    },
+    "checks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/hook_check"
+     }
+    },
+    "totals": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "local": {
+         "type": "array",
+         "items": {
+          "$ref": "#/$defs/hook_use"
+         }
+        },
+        "ci": {
+         "type": "array",
+         "items": {
+          "$ref": "#/$defs/hook_use"
+         }
+        }
+       },
+       "required": [
+        "ci",
+        "local"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "unlisted": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "private_repos_shown": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "checks",
+    "policy",
+    "private_repos_shown",
+    "totals",
+    "unlisted",
+    "window"
+   ],
+   "additionalProperties": false
+  },
+  "lesson_funnel": {
+   "type": "object",
+   "properties": {
+    "check": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "skill": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "guidance": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "nothing": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "open": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unknown": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "by_source": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "hook-proposal",
+       "lesson-check",
+       "memory",
+       "draft-skill",
+       "skill-proposal"
+      ]
+     },
+     "additionalProperties": {
+      "type": "object",
+      "properties": {
+       "check": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "skill": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "guidance": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "nothing": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "open": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "unknown": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "check",
+       "guidance",
+       "nothing",
+       "open",
+       "skill",
+       "unknown"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "sources_missing": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "hook-proposal",
+       "lesson-check",
+       "memory",
+       "draft-skill",
+       "skill-proposal"
+      ]
+     }
+    }
+   },
+   "required": [
+    "by_source",
+    "check",
+    "guidance",
+    "nothing",
+    "open",
+    "skill",
+    "sources_missing",
+    "unknown"
+   ],
+   "additionalProperties": false
+  },
+  "lesson_issue": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "enum": [
+      "memory",
+      "proposal"
+     ]
+    },
+    "repo": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$"
+    },
+    "number": {
+     "type": "integer"
+    },
+    "state": {
+     "enum": [
+      "open",
+      "closed"
+     ]
+    },
+    "opened": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "count": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "target": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "count",
+    "number",
+    "opened",
+    "repo",
+    "source",
+    "state",
+    "target",
+    "url"
+   ],
+   "additionalProperties": false
+  },
+  "lesson_item": {
+   "type": "object",
+   "properties": {
+    "kind": {
+     "enum": [
+      "new-skill",
+      "skill-edit",
+      "guidance-edit",
+      "fixture-candidate"
+     ]
+    },
+    "subject": {
+     "type": "string"
+    },
+    "evidence_count": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "first_seen": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "last_seen": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "sources": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "enum": [
+         "wsl",
+         "windows",
+         "cloud",
+         "other"
+        ]
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "signals": {
+     "anyOf": [
+      {
+       "type": "object",
+       "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "draft": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "number": {
+         "type": "integer"
+        },
+        "state": {
+         "enum": [
+          "open",
+          "closed",
+          "merged"
+         ]
+        },
+        "url": {
+         "type": "string",
+         "pattern": "^https://github\\.com/"
+        }
+       },
+       "required": [
+        "number",
+        "state",
+        "url"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "kind",
+    "subject",
+    "evidence_count",
+    "first_seen",
+    "last_seen",
+    "sources",
+    "signals"
+   ],
+   "additionalProperties": false
+  },
+  "lessons": {
+   "type": "object",
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "items": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/lesson_item"
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "left_out": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "memory_note": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_check": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "private": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "other": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "required": [
+        "agent_check",
+        "memory_note",
+        "other",
+        "private"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "issues": {
+     "anyOf": [
+      {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/lesson_issue"
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "date",
+    "issues",
+    "items",
+    "left_out"
+   ],
+   "additionalProperties": false
+  },
+  "next_test": {
+   "type": "object",
+   "properties": {
+    "position": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "band": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "due": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "scheduled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "band",
+    "due",
+    "position",
+    "scheduled"
+   ],
+   "additionalProperties": false
+  },
+  "removed_section": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "date": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "reverse_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "date",
+    "id",
+    "reverse_url"
+   ],
+   "additionalProperties": false
+  },
+  "removed_skill": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "plugin": {
+     "type": "string"
+    },
+    "date": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "reverse_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "date",
+    "name",
+    "plugin",
+    "reverse_url"
+   ],
+   "additionalProperties": false
+  },
+  "section": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "heading": {
+     "type": "string"
+    },
+    "bytes": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "skip_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "current_text_runs": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "alone_verdict": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "confidence": {
+     "$ref": "#/$defs/confidence"
+    },
+    "next_test": {
+     "$ref": "#/$defs/next_test"
+    },
+    "stakes": {
+     "$ref": "#/$defs/stakes"
+    },
+    "runs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/guidance_run"
+     }
+    }
+   },
+   "required": [
+    "alone_verdict",
+    "bytes",
+    "confidence",
+    "current_text_runs",
+    "heading",
+    "id",
+    "next_test",
+    "runs",
+    "skip_reason",
+    "stakes",
+    "status",
+    "verdict",
+    "verdict_reason"
+   ],
+   "additionalProperties": false
+  },
+  "skill": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "registry": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "bundle": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "description": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "skip_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "verdict_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "current_text_runs": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "confidence": {
+     "$ref": "#/$defs/confidence"
+    },
+    "next_test": {
+     "$ref": "#/$defs/next_test"
+    },
+    "stakes": {
+     "$ref": "#/$defs/stakes"
+    },
+    "usage": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       },
+       "required": [
+        "invocations"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "copies": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/copies"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "runs": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/skill_run"
+     }
+    }
+   },
+   "required": [
+    "bundle",
+    "confidence",
+    "copies",
+    "current_text_runs",
+    "description",
+    "name",
+    "next_test",
+    "registry",
+    "runs",
+    "skip_reason",
+    "stakes",
+    "status",
+    "usage",
+    "verdict",
+    "verdict_reason"
+   ],
+   "additionalProperties": false
+  },
+  "skill_run": {
+   "type": "object",
+   "properties": {
+    "fixture": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "at": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cli_version": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "with": {
+     "$ref": "#/$defs/arm"
+    },
+    "without": {
+     "$ref": "#/$defs/arm"
+    },
+    "report_url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    }
+   },
+   "required": [
+    "at",
+    "cli_version",
+    "fixture",
+    "model",
+    "report_url",
+    "with",
+    "without"
+   ],
+   "additionalProperties": false
+  },
+  "spend": {
+   "type": "object",
+   "properties": {
+    "generated_at": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "weeks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/spend_week"
+     }
+    }
+   },
+   "required": [
+    "generated_at",
+    "weeks"
+   ],
+   "additionalProperties": false
+  },
+  "spend_file": {
+   "description": "The expected shape of spend/weekly.json on the results branch (written by the dashboard refresh). Not part of this document; explorer_public.build_spend copies only the spend_week keys of each week, and any other key, such as a per-session or per-thread row, is never read.",
+   "type": "object",
+   "required": [
+    "schema",
+    "weeks"
+   ],
+   "properties": {
+    "schema": {
+     "const": 1
+    },
+    "generated_at": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "plan": {
+     "type": "string"
+    },
+    "weeks": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "required": [
+       "week"
+      ],
+      "properties": {
+       "week": {
+        "description": "the Monday the week starts on",
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+       },
+       "eval_runs": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "plan_meter_points": {
+        "type": "number",
+        "minimum": 0
+       },
+       "api_usd": {
+        "type": "number",
+        "minimum": 0
+       },
+       "thread_spend_usd": {
+        "type": "number",
+        "minimum": 0
+       },
+       "cost_per_verdict": {
+        "anyOf": [
+         {
+          "type": "number",
+          "minimum": 0
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "plan": {
+        "description": "the plan name; defaults to the top-level plan",
+        "type": "string"
+       }
+      }
+     }
+    }
+   }
+  },
+  "spend_week": {
+   "type": "object",
+   "properties": {
+    "week": {
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "eval_runs": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "plan_meter_points": {
+     "anyOf": [
+      {
+       "type": "number",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "api_usd": {
+     "anyOf": [
+      {
+       "type": "number",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "thread_spend_usd": {
+     "anyOf": [
+      {
+       "type": "number",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "cost_per_verdict": {
+     "anyOf": [
+      {
+       "type": "number",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "plan": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "api_usd",
+    "cost_per_verdict",
+    "eval_runs",
+    "plan",
+    "plan_meter_points",
+    "thread_spend_usd",
+    "week"
+   ],
+   "additionalProperties": false
+  },
+  "stakes": {
+   "type": "object",
+   "properties": {
+    "level": {
+     "type": "string"
+    },
+    "reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "covered_by": {}
+   },
+   "required": [
+    "level"
+   ],
+   "additionalProperties": false
+  },
+  "agent_made": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "rule_since",
+    "items",
+    "summary"
+   ],
+   "properties": {
+    "rule_since": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+       "kind",
+       "id",
+       "origin",
+       "created",
+       "commit",
+       "method",
+       "under_rule",
+       "impact"
+      ],
+      "properties": {
+       "kind": {
+        "enum": [
+         "check",
+         "skill",
+         "section"
+        ]
+       },
+       "id": {
+        "type": "string"
+       },
+       "origin": {
+        "enum": [
+         "agent",
+         "loop",
+         "person",
+         null
+        ]
+       },
+       "created": {
+        "type": [
+         "string",
+         "null"
+        ]
+       },
+       "commit": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "pattern": "^[0-9a-f]{12}$"
+       },
+       "method": {
+        "enum": [
+         "trailer",
+         "first-add",
+         "first-appearance",
+         null
+        ]
+       },
+       "under_rule": {
+        "type": [
+         "boolean",
+         "null"
+        ]
+       },
+       "impact": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+         "runs": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "blocked": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "invocations": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "current_text_runs": {
+          "type": [
+           "integer",
+           "null"
+          ]
+         },
+         "verdict": {
+          "type": [
+           "string",
+           "null"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "summary": {
+     "type": "object",
+     "additionalProperties": false,
+     "required": [
+      "check",
+      "skill",
+      "section"
+     ],
+     "properties": {
+      "check": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      },
+      "skill": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      },
+      "section": {
+       "type": "object",
+       "additionalProperties": false,
+       "required": [
+        "total",
+        "by_origin",
+        "agent_under_rule",
+        "agent_verdicts"
+       ],
+       "properties": {
+        "total": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "by_origin": {
+         "type": "object",
+         "additionalProperties": false,
+         "required": [
+          "agent",
+          "loop",
+          "person",
+          "unknown"
+         ],
+         "properties": {
+          "agent": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "loop": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "person": {
+           "type": "integer",
+           "minimum": 0
+          },
+          "unknown": {
+           "type": "integer",
+           "minimum": 0
+          }
+         }
+        },
+        "agent_under_rule": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_verdicts": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "integer",
+          "minimum": 0
+         }
+        },
+        "agent_runs": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_blocked": {
+         "type": "integer",
+         "minimum": 0
+        },
+        "agent_invocations": {
+         "type": "integer",
+         "minimum": 0
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

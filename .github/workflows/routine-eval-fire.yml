@@ -14,11 +14,11 @@ name: Fire eval routine
 #   public log), and validated before the bearer is ever in a step's env.
 # * Two modes (Adam, 2026-10-06, scaffold mode: "New fire-workflow input
 #   (Recommended)"). `eval`, the default, sends exactly five fields: mode,
-#   run_id, fixture, arms, trials, and a sixth, `model`, only when that input
-#   is set (#68, #372 U4; see below). `scaffold` sends exactly four: mode,
-#   run_id, candidate (a miner key, OWNER__REPO__PR) and issue_snapshot, and
-#   the routine turns that one candidate into one draft real-work fixture on
-#   its own branch.
+#   run_id, fixture, arms, trials, and a sixth, `model` (`models` for a pair
+#   fire), only when that input is set (#68, #372 U4; see below).
+#   `scaffold` sends exactly four: mode, run_id, candidate (a miner key,
+#   OWNER__REPO__PR) and issue_snapshot, and the routine turns that one
+#   candidate into one draft real-work fixture on its own branch.
 #   `improve` (ADR 0005, "Routine improve mode addendum") sends exactly
 #   five: run_id, mode, skill, trials and holdout (null when empty), and
 #   the routine runs the improvement loop on that skill. `skill` must pass
@@ -100,9 +100,24 @@ name: Fire eval routine
 #   harness's own reader; the judge is not an arm. A refusal is a fixed
 #   message that never echoes the input. The payload gains `model` as its
 #   last key only then, so with it empty the payload is byte for byte what
-#   it was and the weekly caller (routine-eval-weekly.yml, which sets no
-#   model) is unaffected. The routine's saved prompt turns the payload's
+#   it was. The routine's saved prompt turns the payload's
 #   `model` into the runner's model flag; that prompt is not in this repo.
+# * A pair fire (scripts/plan_week.py, PAIR FIRES): `model` may instead be
+#   two distinct arm ids joined by a comma, `m1,m2`, in eval mode only. Each
+#   id must pass the same shape and roster checks as a lone model, and also
+#   the routine payload contract's ^claude-[a-z0-9][a-z0-9.-]{0,62}$; any
+#   other value with a comma (one id twice, a third id, an empty side) is
+#   refused with the same fixed message. The payload then carries
+#   `models: [m1, m2]` as its last key, in that order, and never `model`:
+#   the routine runs run_eval once per model, in sequence, under this one
+#   run id, into eval-results/<run id>/ on claude/eval-<run id>. The run
+#   title ends `<fixture> m1,m2`, which every title reader expands to a cell
+#   of each model (scripts/improve_outcomes.py `title_models`). Each run_eval
+#   is stopped 40 minutes after it starts, so the planner holds a pending
+#   pair fire's cells for 90 minutes (scripts/routine_deadlines.py) and
+#   counts it in flight for twice a one-model fire's time. A routine
+#   session costs about $0.67 of its own on every fire, so the weekly sweep
+#   pairs a fixture's two model cells whenever it plans both.
 # * Scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow
 #   precomputes (Recommended)"): a routine session refuses GitHub GraphQL,
 #   and an issue's body revisions have no REST read, so after validation,
@@ -166,7 +181,8 @@ name: Fire eval routine
 #   trigger-only improve fire or ` trim` for a description trim, the one
 #   target input of that
 #   mode (fixture, candidate, skill or section) and the model when one is
-#   given. It is the only place the runs API exposes a dispatch's inputs, so
+#   given (`m1,m2` for a pair fire). It is the only place the runs API
+#   exposes a dispatch's inputs, so
 #   scripts/improve_outcomes.py reads improve and guidance-improve attempts
 #   from it and scripts/allowance_guard.py charges both their own cost (G5,
 #   thresholds doc plumbing gap 2). A title is display text, never a command;
@@ -267,8 +283,9 @@ on:
       model:
         description: >-
           Eval mode only, optional (leave empty otherwise): the id of one
-          arm in evals/roster.yml, e.g. claude-opus-5-5. Empty keeps the
-          fixture's pin or the roster's first arm.
+          arm in evals/roster.yml, e.g. claude-opus-5-5, or two distinct
+          arm ids joined by a comma, run one after the other in this one
+          fire. Empty keeps the fixture's pin or the roster's first arm.
         required: false
         type: string
       arms:
@@ -554,13 +571,35 @@ jobs:
               echo "::error::input 'fixture' names no committed fixture on the default branch"
               exit 1
             fi
-            # An arm id from the committed roster, parsed as YAML. The shape
-            # check comes first so no value with a leading `-` reaches a
-            # command line; the script reads its first argument literally
-            # too, and its own refusal is the same fixed text.
+            # An arm id from the committed roster, parsed as YAML, or a pair
+            # fire's `m1,m2` (header, "A pair fire"): two distinct ids, each
+            # also in the routine payload contract's pattern, and each
+            # checked exactly as a lone id is. `${model#*,}` keeps any second
+            # comma, which the shape check refuses. The shape checks come
+            # first so no value with a leading `-` reaches a command line;
+            # the script reads its first argument literally too, and every
+            # refusal is the same fixed text.
             if [ -n "$model" ]; then
-              if ! [[ "$model" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
-                 || ! python3 scripts/roster_arm.py "$model"; then
+              case "$model" in
+                *,*) models=("${model%%,*}" "${model#*,}") ;;
+                *) models=("$model") ;;
+              esac
+              model_ok=true
+              if [ "${#models[@]}" -eq 2 ]; then
+                if [ "${models[0]}" = "${models[1]}" ] \
+                   || ! [[ "${models[0]}" =~ ^claude-[a-z0-9][a-z0-9.-]{0,62}$ ]] \
+                   || ! [[ "${models[1]}" =~ ^claude-[a-z0-9][a-z0-9.-]{0,62}$ ]]; then
+                  model_ok=false
+                fi
+              fi
+              for one in "${models[@]}"; do
+                if [ "$model_ok" = true ] \
+                   && { ! [[ "$one" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
+                        || ! python3 scripts/roster_arm.py "$one"; }; then
+                  model_ok=false
+                fi
+              done
+              if [ "$model_ok" != true ]; then
                 echo "::error::input 'model' is not an arm of the committed evals/roster.yml"
                 exit 1
               fi
@@ -725,6 +764,9 @@ jobs:
       # larger charge) would
       # take the last seven days past the weekly cap, or when the spend
       # cannot be read. The job's read-only token, never the bearer.
+      # It reserves per fire, a pair fire (`model: m1,m2`) too, though a pair
+      # holds two run_eval invocations: once its run is ingested, the guard
+      # charges each invocation's own measured cost (allowance_guard.run_cost).
       - name: Check the weekly allowance
         id: allowance
         env:
@@ -951,12 +993,26 @@ jobs:
                 '{text: ({mode: "scaffold", run_id: $run_id, candidate: $candidate,
                           issue_snapshot: $snapshot[0]} | tojson)}')" ;;
             eval)
+              # A pair fire's validated `m1,m2` goes as `models: [m1, m2]`, in
+              # that order and never beside `model`; one id as `model`; none
+              # as neither, so that payload is byte for byte what it was. A
+              # comma that is not two distinct contract ids stops here.
+              case "${MODEL:-}" in
+                *,*)
+                  if ! [[ "$MODEL" =~ ^(claude-[a-z0-9][a-z0-9.-]{0,62}),(claude-[a-z0-9][a-z0-9.-]{0,62})$ ]] \
+                     || [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then
+                    echo "::error::the model pair is not two distinct model ids; nothing was sent"
+                    exit 1
+                  fi ;;
+              esac
               body="$(jq -n -c \
                 --arg run_id "$RUN_ID" --arg fixture "$FIXTURE" \
                 --arg arms "$ARMS" --argjson trials "$TRIALS" \
                 --arg model "${MODEL:-}" \
                 '{text: ({mode: "eval", run_id: $run_id, fixture: $fixture, arms: $arms, trials: $trials}
-                         + (if $model == "" then {} else {model: $model} end) | tojson)}')" ;;
+                         + (if $model == "" then {}
+                            elif ($model | contains(",")) then {models: ($model | split(","))}
+                            else {model: $model} end) | tojson)}')" ;;
             improve)
               # Exactly five keys; an empty holdout is null, never "". A
               # trigger-only fire adds `trigger_only: true` as a sixth, last
@@ -1156,9 +1212,11 @@ jobs:
               echo
               echo "- Run id: \`${RUN_ID}\`"
               echo "- Fixture: \`${FIXTURE}\`, arms: \`${ARMS}\`, trials: \`${TRIALS}\`"
-              if [ -n "${MODEL:-}" ]; then
-                echo "- Model: \`${MODEL}\`"
-              fi
+              case "${MODEL:-}" in
+                '') ;;
+                *,*) echo "- Models: \`${MODEL}\`, one run_eval invocation each, in this order" ;;
+                *) echo "- Model: \`${MODEL}\`" ;;
+              esac
               echo "- Session: ${session_url}"
               echo "- Results branch: \`claude/eval-${RUN_ID}\`"
             } >> "$GITHUB_STEP_SUMMARY"

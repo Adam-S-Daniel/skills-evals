@@ -1,0 +1,82 @@
+[
+  {
+    "query": "go through the ExampleCLI 4.1 to 4.3 release notes and open issues in our repos for anything that touches our hooks and settings files",
+    "should_trigger": true
+  },
+  {
+    "query": "the agent CLI shipped three releases this week. read the changelog, work out which bullets affect our workflows and pins, and file one issue per group of related changes",
+    "should_trigger": true
+  },
+  {
+    "query": "can you file GitHub issues for how the new Actions runner release notes might hit our CI? quote the notes exactly with release links and publish times",
+    "should_trigger": true
+  },
+  {
+    "query": "here's the SDK changelog from 2.8 through 2.12. for each repo we own that depends on it, open a tracking issue naming the files and checks to run",
+    "should_trigger": true
+  },
+  {
+    "query": "the scheduled routine pulled the upstream library's release notes. turn the relevant bullets into impact issues, one per change group per affected repo, with the contradiction block for behavior that doesn't match the notes",
+    "should_trigger": true
+  },
+  {
+    "query": "vendor released 6.0 with a bunch of deprecations. I want issues in each repo that uses it, each with the quoted notes, the pins we have, and what to test. don't file anything until I've seen the format",
+    "should_trigger": true
+  },
+  {
+    "query": "rewrite the issues we filed yesterday about the CLI release notes. the quotes were paraphrased and the publish times are missing",
+    "should_trigger": true
+  },
+  {
+    "query": "triage this Claude Code changelog against our fleet: list which bullets touch hooks, permissions, or the settings schema, and file tracking issues for each affected repo",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a tracking PR that lists the release-impact issues and each issue should link back to it. how do I file them without the circular link problem?",
+    "should_trigger": true
+  },
+  {
+    "query": "we pin an upstream GitHub Action at v3.4. its v3.5 and v3.6 notes just landed. open an issue in each workflow repo describing what could break, with exact quotes and the files that use the pin",
+    "should_trigger": true
+  },
+  {
+    "query": "review this Dependabot PR bumping lodash from 4.17.20 to 4.17.21 and tell me if it's safe to merge",
+    "should_trigger": false
+  },
+  {
+    "query": "write the release notes for our own v2.3.0. here's the list of merged PRs since v2.2.0",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize what changed in the latest Python release for a blog post for non-technical readers",
+    "should_trigger": false
+  },
+  {
+    "query": "upgrade the aws-sdk dependency from v2 to v3 in this repo and fix the import errors that come up",
+    "should_trigger": false
+  },
+  {
+    "query": "there's a bug in our checkout flow where the discount is applied twice. write a GitHub issue with repro steps and expected behavior",
+    "should_trigger": false
+  },
+  {
+    "query": "write an ADR explaining why we chose to stay on Node 18 instead of moving to 22",
+    "should_trigger": false
+  },
+  {
+    "query": "set up Dependabot grouping so minor and patch updates for npm land in one weekly PR",
+    "should_trigger": false
+  },
+  {
+    "query": "which versions of the CLI added the --resume flag? search the changelog and tell me, I'm just curious",
+    "should_trigger": false
+  },
+  {
+    "query": "draft a GitHub issue template for bug reports with sections for environment, steps, and logs",
+    "should_trigger": false
+  },
+  {
+    "query": "compare the pricing and feature list of two vendors' CI offerings in a table so I can pick one",
+    "should_trigger": false
+  }
+]

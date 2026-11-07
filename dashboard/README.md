@@ -7,12 +7,53 @@ what waits on you. It is a claude.ai Dashboard artifact: the page
 load live through the GitHub connector. The rest are JSON snapshots that
 `build.py` writes and a refresh session uploads.
 
+## One app, three builds
+
+The page is the private build of the Evals Explorer: `explorer/src` builds
+`tool/index.html` (the public page, read from `latest.json`),
+`page/index.html` (this page, read from the `explorer` dataset) and
+`explorer/dist/artifact/index.html` (the public page as a claude.ai artifact,
+below). Never edit `page/index.html` by hand: change `explorer/src`, run
+`npm run build` in `explorer/`, and commit every page; `explorer/test/run.js`
+and `npm run check` fail when any is stale.
+
+`explorer/dist/artifact/index.html` is the public page for publishing as a
+claude.ai artifact with `latest.json` as a file beside it. An artifact's
+content security policy is `connect-src 'self' blob:`, so it cannot fetch
+`latest.json` from raw.githubusercontent.com; this build reads the relative URL
+`latest.json` from its own origin and takes no `?data=` override. It is the
+public entry with `src/adapters/artifact.js` in place of `src/adapters/web.js`
+(`explorer/build.js` swaps the import), so it shows the same public views and
+holds no private code; `explorer/test/run.js` checks that it names no
+raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
+
+| Group | Route | Private only |
+|---|---|---|
+| Summary | `#/summary` | Its waiting, routine and allowance tiles |
+| Needs you | `#/needs` | Yes: waiting on you, the half-built banner, one "Needs attention" list (half-built issues, document alerts, fires without results, fixture-queue findings), this week's allowance, routine health |
+| Hooks, skills and guidance | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/removed`, `#/method` | Use by repo on a skill's page, the roster's "why" |
+| Loop | `#/loop` | Stage table, lanes, gaps, grid, build gate, live loop PRs |
+| Impact | `#/impact` | Use across private repos, PR outcomes, red CI runs, cost and benefit |
+| Operations | `#/ops` | Routines, check-ins, the run console, live PRs and issues, ingests, cleanup, decisions, threads |
+
+Routes are the same in both builds; `?subject=guidance` and the old tab hashes
+(`#overview`, `#evals`, `#costbenefit`, ...) redirect. The public build has no
+Needs you group, says "the owner" where this page says "you", and folds checks
+in private repos into one row. Its bundle never holds private view code,
+private dataset ids or `dash` (an AST check in `explorer/test/run.js`).
+
+Each private panel reads its datasets through `explorer/src/private/` and
+hides when they are empty, loading or only a placeholder row. Where a private
+dataset covers a public panel (red CI runs, PR outcomes, cost, runs, PRs and
+issues), the private one replaces it. The optional `explorer_private` dataset
+(private-skill results, same schema) merges in with a "Private" badge.
+
 ## Layout
 
 | Path | What it is |
 |---|---|
 | `build.py` | Builds every snapshot dataset from the results branch, `evals/budget.yml`, `evals/roster.yml`, the input dumps and the config |
-| `page/index.html` | The page: layout, calcs and tables |
+| `page/index.html` | The page, generated from `explorer/src` (see above) |
 | `page/datasets.json` | Every dataset's title, description and source. Live ones are GitHub connector queries; snapshot ones are `file` sources that point at an uploaded blob |
 | `config.example/` | The owner's own lists, in invented data. Keep the real copy outside this public repo |
 | `inputs.example/` | The read dumps a refresh collects, in invented data |
@@ -51,7 +92,11 @@ prompt that tells it to.
 
    A missing optional dump builds as empty. Never paste a credential into a dump.
 3. **Build.** `python3 dashboard/build.py --results <results> --inputs <inputs> --config <config> --out <ds>`.
-   It needs PyYAML and imports `scripts/allowance_guard.py`. It refuses to write
+   Add `--spend <file>` to also write the weekly cost totals (below).
+   It needs PyYAML and imports `scripts/allowance_guard.py` and `scripts/eval_facts.py`.
+   It copies `explorer/latest.json` unchanged into the `explorer` dataset, which
+   carries every test run, lesson, fixture request and activity row the page
+   shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
 4. **Compare.** Upload only datasets that changed. Skip `eval_allowance` when
@@ -61,8 +106,10 @@ prompt that tells it to.
    ArtifactData `batch` of `update` writes on `datasets/<id>`, pinned with
    `if_version`, that sets `source: {kind: "file", url: "/_blob/<id>", name}` and
    `updated: {at, by}`.
-6. **Page changes.** Smoke-test first. Put d3@7.9.0's `dist/d3.js` in a work dir
-   (`npm pack d3@7.9.0`), then run
+6. **Page changes.** Build the page in `explorer/` (`npm ci && npm run build`).
+   Smoke-test first. Put d3@7.9.0's `dist/d3.js` in a work dir
+   (`npm pack d3@7.9.0`; the harness still loads it, though the page draws its
+   charts by hand), then run
    `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`.
    It exits non-zero on any page error. Then write the page to ArtifactData
    `files/index.html` (field `text`) with `if_version`.
@@ -80,12 +127,12 @@ and uploads `run_stream.json`.
 `ci_red_runs` lists every agent-checks CI run that failed, newest first, from the
 `red_runs` list in `usage/weekly-ci.json` (written by _agent-guidance's daily
 impact report). A public repo's run links its run page; a private repo's run keeps
-only its week. The Real-work impact tab shows it under "By week", and both "By
-repo" and "By week" carry a "Red in CI" column.
+only its week. The Impact group lists it under "Red in CI runs", and the use
+table's "By week" view carries a "Red in CI" column.
 
 ## Cost and benefit
 
-`build.py` writes two datasets for the Cost and benefit tab. A week runs Monday
+`build.py` writes two datasets for the Impact group's cost panel. A week runs Monday
 17:00 UTC to the next Monday and is labeled by its start date; the first is set by
 `COST_START`.
 
@@ -98,10 +145,19 @@ repo" and "By week" carry a "Red in CI" column.
 - `cost_benefit_summary`: cost per verdict, decision yield, real-work reach, the Dec 15 bar
   (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the points-per-dollar rate.
 
-`build.py` also writes two datasets for the Fixture requests panel on the Self-improvement loop tab, from `fixture_queue` in `results/explorer/latest.json` (all issue and PR numbers are in skills-evals):
+With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
+`spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
+`plan_meter_points`, `api_usd` and `thread_spend_usd`, with `cost_per_verdict` on
+the latest week, at full precision, and `plan` when `site.json` names one. No
+session or thread row goes in. At `spend/weekly.json` on the results branch,
+`scripts/explorer_public.py` copies it into the public document's `spend` (when
+`evals/public-export.yml` sets `include_spend`), and the public Impact group shows
+spend. No refresh step puts it there yet: until one does, the public document has
+no `spend` and its spend panel stays hidden.
 
-- `fixture_requests`: one row per request (key is the issue number): kind in plain words, state, age in days (open requests only), PR count and latest PR link, and the count, real-work count, runs and cost of the fixtures whose `request` names it. Open first, then oldest.
-- `fixture_queue_summary`: one row of the queue's totals, finding counts and a `status` of `not-reported` (no `fixture_queue` in the file, or null), `attention` (any finding) or `ok`.
+The Loop group's fixture requests come from `fixture_queue` in the `explorer`
+dataset (all issue and PR numbers are in skills-evals); no separate dataset
+carries them.
 
 Project-thread spend is attributed from `session_costs.jsonl`: the rise in a session's
 cumulative cost between two samples is spread evenly over the time between them, and cost
@@ -150,5 +206,5 @@ source holds them:
 3. Run one refresh by hand, then schedule `tasks/refresh.md` every 2 hours.
    Add `tasks/merge-relay.md` as a GitHub-triggered task on each repo whose
    merges should refresh the page.
-4. The page's notes (dated cap changes, the cleanup due date) are the owner's.
-   Edit them in `page/index.html`.
+4. The page's words are in `explorer/src/core/strings.js` (shared) and
+   `explorer/src/private/strings.js` (this page only); rebuild after editing.

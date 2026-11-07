@@ -1,0 +1,82 @@
+[
+  {
+    "query": "which of the PDFs in this folder need OCR?",
+    "should_trigger": true
+  },
+  {
+    "query": "are my PDFs searchable? I have about 300 of them in ~/Documents/archive and I don't know which are scans",
+    "should_trigger": true
+  },
+  {
+    "query": "audit these PDFs for embedded text and give me a table with a verdict for each",
+    "should_trigger": true
+  },
+  {
+    "query": "find scanned PDFs in my taxes folder — I just want a list, no OCR yet",
+    "should_trigger": true
+  },
+  {
+    "query": "inventory this directory for text extraction: how many files have a text layer, how many are image-only, how many are mixed?",
+    "should_trigger": true
+  },
+  {
+    "query": "some of my PDFs only have a text layer on a few pages, like a letterhead cover. can you tell me which ones are partial?",
+    "should_trigger": true
+  },
+  {
+    "query": "I got a CSV earlier of the ocr status of my scans. please regenerate it for the new batch of files in /mnt/d/scans",
+    "should_trigger": true
+  },
+  {
+    "query": "check whether each of these PDFs has embedded text or is just page images, and flag any you can't open",
+    "should_trigger": true
+  },
+  {
+    "query": "before I pay for an OCR service, tell me how many of my 80 PDFs are actually image scans",
+    "should_trigger": true
+  },
+  {
+    "query": "why can't I search inside some of my PDFs? check which ones have no text objects",
+    "should_trigger": true
+  },
+  {
+    "query": "OCR all of these scanned PDFs now and save them to a new folder",
+    "should_trigger": false
+  },
+  {
+    "query": "rename the PDFs in this folder to date-prefixed descriptive names",
+    "should_trigger": false
+  },
+  {
+    "query": "extract all the text from this PDF into a markdown file",
+    "should_trigger": false
+  },
+  {
+    "query": "what's in this PDF? summarize it for me",
+    "should_trigger": false
+  },
+  {
+    "query": "compare these two PDFs and tell me whether the text differs",
+    "should_trigger": false
+  },
+  {
+    "query": "password-protect this PDF and remove the metadata",
+    "should_trigger": false
+  },
+  {
+    "query": "check which of my images are larger than 5 MB",
+    "should_trigger": false
+  },
+  {
+    "query": "count the words in each of my Word documents",
+    "should_trigger": false
+  },
+  {
+    "query": "audit my git repo for files committed by mistake",
+    "should_trigger": false
+  },
+  {
+    "query": "is this PDF a valid PDF/A document? validate it against the standard",
+    "should_trigger": false
+  }
+]
