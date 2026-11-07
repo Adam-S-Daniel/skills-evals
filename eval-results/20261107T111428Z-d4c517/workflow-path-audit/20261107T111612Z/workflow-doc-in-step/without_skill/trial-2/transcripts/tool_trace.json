@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M9A5Tt7Hea56cocWr1o7LR",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git ls-files | head -50",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M9A5Tt7Hea56cocWr1o7LR",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 2137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PqcSsPvh2cLreCQ6owWAuP",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat package.json mkdocs.yml",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PqcSsPvh2cLreCQ6owWAuP",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 764,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CqYriKFmdN3jkxHKZmKiBj",
+      "name": "Bash",
+      "input": "cd <path> && cat api/repos/example-org/example-service/rulesets/4410273.json api/repos/example-org/example-service/rules/branches/main.json",
+      "input_chars": 177,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CqYriKFmdN3jkxHKZmKiBj",
+      "is_error": false,
+      "output": "{\n  \"id\": 4410273,\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"source_type\": \"Repository\",\n  \"source\": \"example-org/example-service\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n...",
+      "output_chars": 1136,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MjtMxdRQmQRfQjaA2Udidq",
+      "name": "Bash",
+      "input": "cd <path> && grep -rn \"require\\|import\\|scripts\" test src | head; cat scripts/sweep-stale.sh | head -5",
+      "input_chars": 129,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MjtMxdRQmQRfQjaA2Udidq",
+      "is_error": false,
+      "output": "test/util.test.js:3:const assert = require(\"node:assert\");\ntest/util.test.js:4:const { test } = require(\"node:test\");\ntest/util.test.js:5:const { greeting } = require(\"../src/util\");\nsrc/index.js:3:const http = require(\"node:http\");\nsrc/index.js:4:const { greeting } = require(\"./util\");\nsrc/index.js...",
+      "output_chars": 482,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012vK9Y5oMnYezfRPbb5i2dH",
+      "name": "Bash",
+      "input": "python3 - <<'E'\nimport re\ndef sub(f,paths):\n    s=open(f).read()\n    s=s.replace(\"on:\\n  pull_request:\\n  push:\\n    branches: [main]\\n\",\"on:\\n  pull_request:\\n    paths:\\n\"+\"\".join(f\"      - \\\"{p}\\\"\\...",
+      "input_chars": 1066,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012vK9Y5oMnYezfRPbb5i2dH",
+      "is_error": false,
+      "output": " .github/workflows/docs-site.yml |  8 ++++++++\n .github/workflows/tests.yml     | 12 ++++++++++++\n AGENTS.md                       |  4 ++--\n 3 files changed, 22 insertions(+), 2 deletions(-)\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/work...",
+      "output_chars": 633,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BLkbPKU24J9jjLqG11cLoC",
+      "name": "Bash",
+      "input": "npm test 2>&1 | grep -E \"^# (tests|pass|fail)\"; git diff AGENTS.md | grep '^[+-]|'",
+      "input_chars": 82,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BLkbPKU24J9jjLqG11cLoC",
+      "is_error": false,
+      "output": "# tests 1\n# pass 0\n# fail 1\n-| `tests.yml` | pull_request, push to main | all paths |\n-| `docs-site.yml` | pull_request, push to main | all paths |\n+| `tests.yml` | pull_request, push to main | `src/**`, `test/**`, `package.json`, `package-lock.json`, the workflow file |\n+| `docs-site.yml` | pull_re...",
+      "output_chars": 486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RwQtBo2R7WQNeCfJXCZ1hT",
+      "name": "Bash",
+      "input": "git stash -q && npm test 2>&1 | grep -E \"^# (tests|pass|fail)|Error\" | head; git stash pop -q && git status --short",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RwQtBo2R7WQNeCfJXCZ1hT",
+      "is_error": false,
+      "output": "# Error: Cannot find module '<path>'\n# tests 1\n# pass 0\n# fail 1\n M .github/workflows/docs-site.yml\n M .github/workflows/tests.yml\n M AGENTS.md\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n<sandbox_violatio...",
+      "output_chars": 434,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
