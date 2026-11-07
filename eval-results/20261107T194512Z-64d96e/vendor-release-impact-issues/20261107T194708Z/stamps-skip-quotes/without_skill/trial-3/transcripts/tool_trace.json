@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NLH7AhxKqgy1eiHe9bZf1D",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100; wc -c vendor/* 2><path>",
+      "input_chars": 111,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NLH7AhxKqgy1eiHe9bZf1D",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./scripts/check.sh\n./....",
+      "output_chars": 485,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P5qGVMBQfeLGSZYLRoojbm",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json scripts/check.sh AGENTS.md; do echo \"=== $f\"; cat \"$f\"; done; git ...",
+      "input_chars": 220,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P5qGVMBQfeLGSZYLRoojbm",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 3239,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SNWSyu6CeAKsKieEqgffdP",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-check-sh-exit-2-config-errors.md <<'EOF'\n# check.sh misses configuration errors on ExampleCLI 4.3.0, which exits 2 instead of 1\n\n## Summary\n\n[ExampleCLI v4.3.0](http...",
+      "input_chars": 4389,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SNWSyu6CeAKsKieEqgffdP",
+      "is_error": false,
+      "output": "issues/01-check-sh-exit-2-config-errors.md:1:4.3.0,\nissues/01-check-sh-exit-2-config-errors.md:5:4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0) (published 2026-08-25T02:16Z)\nissues/01-check-sh-exit-2-config-errors.md:16:4.2.0\nissues/01-check-sh-exit-2-config-errors.md:16:4...",
+      "output_chars": 1549,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JTKkXKadZfEzcNedMai8YH",
+      "name": "Bash",
+      "input": "cat > issues/01-check-sh-exit-2-config-errors.md <<'EOF'\n# check.sh misses configuration errors on ExampleCLI 4.3.0 (published 2026-08-25T02:16Z), which exits 2 instead of 1\n\n## Summary\n\n[ExampleCLI v...",
+      "input_chars": 4684,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JTKkXKadZfEzcNedMai8YH",
+      "is_error": false,
+      "output": "unannotated-scan exit: 0\nissues/01-check-sh-exit-2-config-errors.md:1:4.3.0 (published 2026-08-25T02:16Z)\nissues/01-check-sh-exit-2-config-errors.md:5:4.3.0) (published 2026-08-25T02:16Z)\nissues/01-check-sh-exit-2-config-errors.md:16:4.2.0 (published 2026-07-14T09:47Z)\nissues/01-check-sh-exit-2-conf...",
+      "output_chars": 1110,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

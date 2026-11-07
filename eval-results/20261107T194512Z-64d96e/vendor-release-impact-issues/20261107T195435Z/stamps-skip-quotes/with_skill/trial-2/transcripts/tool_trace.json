@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J3VCDYEabFS98D27WWVooq",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J3VCDYEabFS98D27WWVooq",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YWu42rKPpAnyLhHVJVtLhb",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && cat vendor/releases.json | head -50",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YWu42rKPpAnyLhHVJVtLhb",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\nRELEASES.md\nreleases.json\n{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n  ...",
+      "output_chars": 659,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XmT7K7iSfSjoFQPWmm4WF3",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; for f in .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh scripts/check.sh; do echo \"=== $f\"; cat $f; done",
+      "input_chars": 166,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XmT7K7iSfSjoFQPWmm4WF3",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 or earlier that test fo...",
+      "output_chars": 2584,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L4FWR6oXwJx6HwvA26aTtm",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-fork-source.md <<'EOF'\n# ExampleCLI 4.2.0 hooks report source \"fork\": session-start matcher startup|resume skips forks\nFound in a review of the vendore...",
+      "input_chars": 4808,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L4FWR6oXwJx6HwvA26aTtm",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

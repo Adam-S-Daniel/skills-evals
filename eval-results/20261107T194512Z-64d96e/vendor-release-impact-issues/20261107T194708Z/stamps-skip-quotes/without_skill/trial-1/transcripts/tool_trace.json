@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018mMSvoM4vmLk6vZuNzC9z6",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100 && wc -l $(find vendor -type f)",
+      "input_chars": 110,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018mMSvoM4vmLk6vZuNzC9z6",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./scripts/ch...",
+      "output_chars": 495,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VyQ3WNS6ZcqLJ4hsLnx2MJ",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json README.md scripts/check.sh; do echo \"=== $f\"; cat \"$f\"; done; git log --onel...",
+      "input_chars": 210,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VyQ3WNS6ZcqLJ4hsLnx2MJ",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 3137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DVJA9hM3RgZSguMFKx7H6Q",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-check-sh-exit-2-config-errors.md <<'EOF'\n# check.sh: handle ExampleCLI 4.3.0's exit code 2 for configuration errors\n\n## Summary\n\n[ExampleCLI v4.3.0](https://github.c...",
+      "input_chars": 4874,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DVJA9hM3RgZSguMFKx7H6Q",
+      "is_error": false,
+      "output": "01-check-sh-exit-2-config-errors.md\n02-session-start-matcher-fork.md\n      1 4.1.0 and 4.2.0 are still supported\n      1 4.1.0 or 4.2.0, print the configuration-error message for exit 2 too. If exit 1 means something else in 4.3.0, pick the branch by the installed `example-cli --version` rather than...",
+      "output_chars": 2056,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012P1Vdbmfxx98PS6upxpmSG",
+      "name": "Bash",
+      "input": "V1='4.1.0 (published 2026-06-02T14:03Z)'; V2='4.2.0 (published 2026-07-14T09:47Z)'; V3='4.3.0 (published 2026-08-25T02:16Z)'\ncat > issues/01-check-sh-exit-2-config-errors.md <<EOF\n# check.sh misses co...",
+      "input_chars": 5069,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012P1Vdbmfxx98PS6upxpmSG",
+      "is_error": false,
+      "output": "--- mentions lacking a publish time:\nissues/01-check-sh-exit-2-config-errors.md:5:4.3.0)\nissues/01-check-sh-exit-2-config-errors.md:21:4.1.0)\nissues/01-check-sh-exit-2-config-errors.md:22:4.1.0`,\nissues/02-session-start-matcher-fork.md:5:4.2.0)\nissues/02-session-start-matcher-fork.md:5:4.1.0)\n--- en...",
+      "output_chars": 301,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

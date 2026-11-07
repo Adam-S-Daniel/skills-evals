@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FwJad9b5rBMLhNpfR8vXRf",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100 && wc -c vendor/* ",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FwJad9b5rBMLhNpfR8vXRf",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./scripts/ch...",
+      "output_chars": 495,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JpD278vdncn7btkAmRUTcH",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md vendor/releases.json README.md .example-cli/settings.json scripts/check.sh hooks/session-start.sh .github/workflows/ci.yml; do echo \"=== $f\"; cat \"$f\"; done; git log --onel...",
+      "input_chars": 210,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JpD278vdncn7btkAmRUTcH",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 3137,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018mpWmH2mRFv5qWgnD4zJx7",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-check-sh-exit-2-config-errors.md <<'EOF'\n# scripts/check.sh misses configuration errors under ExampleCLI 4.3.0 (exit code changed from 1 to 2)\n\n## Summary\n\n[ExampleC...",
+      "input_chars": 5370,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018mpWmH2mRFv5qWgnD4zJx7",
+      "is_error": false,
+      "output": "issues/01-check-sh-exit-2-config-errors.md:1:ExampleCLI 4.3.0\nissues/01-check-sh-exit-2-config-errors.md:20:@4.1.0`\nissues/01-check-sh-exit-2-config-errors.md:20:v4.1.0\nissues/01-check-sh-exit-2-config-errors.md:20:4.1.0\nissues/01-check-sh-exit-2-config-errors.md:24:v4.3.0.\nissues/02-session-start-h...",
+      "output_chars": 554,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TQjM5DKpQjCcV6RFahGyQ9",
+      "name": "Bash",
+      "input": "sed -i \\\n -e '1s/.*/# scripts\\/check.sh misses configuration errors under ExampleCLI 4.3.0 (published 2026-08-25T02:16Z): exit code changed from 1 to 2/' \\\n -e 's/while `README.md` says \"4.1.0 or late...",
+      "input_chars": 1704,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TQjM5DKpQjCcV6RFahGyQ9",
+      "is_error": false,
+      "output": "issues/01-check-sh-exit-2-config-errors.md 20 'xample-cli@4.1.0` (v4.1.0 published 2026-06-02T14:03Z), while `RE'\nissues/01-check-sh-exit-2-config-errors.md 20 'e `README.md` says \"4.1.0 or later\" (v4.1.0 published 2026-06-02T'\nissues/01-check-sh-exit-2-config-errors.md 20 ' \"4.1.0 or later\" (v4.1.0...",
+      "output_chars": 792,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lkfv3hzsdCGR5NAKjTPARN",
+      "name": "Bash",
+      "input": "sed -i 's/confirm that on v4.1.0 before merging\\./confirm that on v4.1.0 (published 2026-06-02T14:03Z) before merging./' issues/02-session-start-hook-fork-source.md && grep -noE '[^ (]*[0-9]\\.[0-9]\\.[...",
+      "input_chars": 341,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lkfv3hzsdCGR5NAKjTPARN",
+      "is_error": false,
+      "output": "issues/01-check-sh-exit-2-config-errors.md:20:\"4.1.0 or later\"\nissues/02-session-start-hook-fork-source.md:24:\"4.1.0 or later\"\nremaining unstamped lines above (expect none)\n==> issues/01-check-sh-exit-2-config-errors.md <==\n# scripts/check.sh misses configuration errors under ExampleCLI 4.3.0 (publi...",
+      "output_chars": 543,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
