@@ -90,6 +90,7 @@ evals/
   compare-pdfpairs/  # trigger eval set only (trigger lane)
   launch-top-level-claude-session/  # trigger eval set only (trigger lane)
   fastmail/  # trigger eval set only (trigger lane)
+  add-received-from-addresses/  # trigger eval set only (trigger lane)
   ci-job-performance/      # Class B: speed up a slow CI job from recorded timings
     browser-cache/         # a Playwright browser cache that slows the firefox leg it was meant to speed up
       fixture.yaml         # gh-log timing reads, parsed-workflow probes per matrix leg, file guards, rubric
