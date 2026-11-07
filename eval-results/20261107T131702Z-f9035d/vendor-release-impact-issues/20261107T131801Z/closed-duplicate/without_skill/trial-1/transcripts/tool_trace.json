@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FUtMXE5twkkkcJtkwEZA3A",
+      "name": "Bash",
+      "input": "git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FUtMXE5twkkkcJtkwEZA3A",
+      "is_error": false,
+      "output": "e71b288 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gh/replay/auth-status.txt\n./.gh/replay/issue-lis...",
+      "output_chars": 566,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K44XYmyEZWpupTccMnamtv",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md vendor/RELEASES.md .example-cli/settings.json hooks/session-start.sh .mcp.json .gitmodules bin/gh .bashrc .gitconfig .ripgreprc .profile .zshrc .zprofile .bash_profile; do...",
+      "input_chars": 252,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K44XYmyEZWpupTccMnamtv",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment; see `.example-cli/settings.json` for the hook configuration.\n\nWe register a `SessionS...",
+      "output_chars": 2148,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RKcDt2Lkxva1zgq1cewezb",
+      "name": "Bash",
+      "input": "wc -c .bashrc .gitconfig .ripgreprc .profile .zshrc .zprofile .bash_profile bin/gh vendor/releases.json; cat vendor/releases.json | head -50; ls -la; ls -la .idea .vscode",
+      "input_chars": 170,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RKcDt2Lkxva1zgq1cewezb",
+      "is_error": false,
+      "output": "wc: .bashrc: Permission denied\nwc: .gitconfig: Permission denied\nwc: .ripgreprc: Permission denied\nwc: .profile: Permission denied\nwc: .zshrc: Permission denied\nwc: .zprofile: Permission denied\nwc: .bash_profile: Permission denied\n  54717 bin/gh\n    178 vendor/releases.json\n  54895 total\n{\n  \"exampl...",
+      "output_chars": 1673,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0129skPFu1utGoW66Ct2ue9j",
+      "name": "Bash",
+      "input": "which gh; gh issue list --repo example-org/example-repo --state all --limit 100 2>&1 | head -40; gh issue view 57 --repo example-org/example-repo --comments 2>&1 | head -80",
+      "input_chars": 172,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0129skPFu1utGoW66Ct2ue9j",
+      "is_error": false,
+      "output": "<path>\n[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/exa...",
+      "output_chars": 2186,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0143aHfzeMnCxJKUvAdrr6L7",
+      "name": "Bash",
+      "input": "gh issue list --repo example-org/example-repo --state all --limit 100 --json number,title,state,body 2>&1 | python3 -c 'import json,sys; [print(i[\"number\"],i[\"state\"],i[\"title\"],\"\\n  \",i.get(\"body\",\"\"...",
+      "input_chars": 532,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0143aHfzeMnCxJKUvAdrr6L7",
+      "is_error": true,
+      "output": "Exit code 2\n61 OPEN CI: cache the npm install of ExampleCLI \n   \n59 OPEN README: document where the session-start hook writes its log \n   \n57 CLOSED ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher is startup|resume \n   \n44 CLOSED ExampleCLI 4.1.0 plugin resolver fix: move the CI pi...",
+      "output_chars": 1121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WS9xA4BC3psuC29tBT6sVZ",
+      "name": "Bash",
+      "input": "python3 -c 'import json; [print(i[\"number\"],i[\"title\"],\"\\n\",i.get(\"body\"),\"\\n---\") for i in json.load(open(\".gh/replay/api/repos/example-org/example-repo/issues.json\"))]'; ls .gh/replay/api/repos/exam...",
+      "input_chars": 228,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WS9xA4BC3psuC29tBT6sVZ",
+      "is_error": false,
+      "output": "61 CI: cache the npm install of ExampleCLI \n None \n---\n59 README: document where the session-start hook writes its log \n None \n---\n57 ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher is startup|resume \n None \n---\n44 ExampleCLI 4.1.0 plugin resolver fix: move the CI pin to 4.1.0 \n No...",
+      "output_chars": 318,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FCvN7yFZkkHSpTvDG2AWxb",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skill-invocation-names.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to `synced:NAME`: README still says to invoke them by bare name\n\nFound in the Examp...",
+      "input_chars": 3235,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FCvN7yFZkkHSpTvDG2AWxb",
+      "is_error": false,
+      "output": "01-synced-skill-invocation-names.md",
+      "output_chars": 35,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

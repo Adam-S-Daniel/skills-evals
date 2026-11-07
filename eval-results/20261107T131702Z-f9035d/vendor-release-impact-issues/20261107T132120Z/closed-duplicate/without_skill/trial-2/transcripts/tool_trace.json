@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SvtExLjQDCJLD7UGG7gf2k",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && ls .claude 2><path>",
+      "input_chars": 63,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SvtExLjQDCJLD7UGG7gf2k",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 415,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FoSzXiSbq6uA5fSff3hTNJ",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; head -c 3000 vendor/releases.json; cat README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/auth-status.txt",
+      "input_chars": 188,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FoSzXiSbq6uA5fSff3hTNJ",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (56.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2203,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015hxpKS6rTJELzsa1PmDvPZ",
+      "name": "Bash",
+      "input": "wc -c vendor/*; cat vendor/RELEASES.md | head -50; cat .gh/replay/issue-list.json | head -c 1500; cat .gh/replay/auth-status.txt; sed -n 1,40p bin/gh",
+      "input_chars": 149,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015hxpKS6rTJELzsa1PmDvPZ",
+      "is_error": false,
+      "output": "496 vendor/RELEASES.md\n178 vendor/releases.json\n674 total\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked session...",
+      "output_chars": 4557,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X4e5fUV52ctxksd7njGN9D",
+      "name": "Bash",
+      "input": "export GH_REPLAY_DIR=$PWD/.gh/replay; bin/gh issue view 57 --comments; bin/gh issue list --state all --repo example-org/example-repo | head -30; cat .gh/replay/issue-view-57.json | head -c 2500",
+      "input_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X4e5fUV52ctxksd7njGN9D",
+      "is_error": false,
+      "output": "{\n  \"number\": 57,\n  \"title\": \"ExampleCLI 4.2.0 hooks report source \\\"fork\\\": SessionStart matcher is startup|resume\",\n  \"state\": \"CLOSED\",\n  \"stateReason\": \"NOT_PLANNED\",\n  \"closedAt\": \"2026-07-21T16:40:00Z\",\n  \"body\": \"Found in the ExampleCLI 4.2.0 review. Not yet verified against this repo.\\n\\n## ...",
+      "output_chars": 3002,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AGzBNyNZ1pbxdJ9SboTJNR",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed-readme-invocation.md <<'EOF'\n# ExampleCLI 4.2.0 renames synced skills to synced:NAME: README tells people to invoke them by bare name\n\nFound in...",
+      "input_chars": 3035,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AGzBNyNZ1pbxdJ9SboTJNR",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

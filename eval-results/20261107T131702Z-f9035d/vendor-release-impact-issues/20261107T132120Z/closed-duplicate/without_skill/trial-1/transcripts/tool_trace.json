@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011tihhTBJfdyqegM3g5fnrL",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor",
+      "input_chars": 37,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011tihhTBJfdyqegM3g5fnrL",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 415,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lh8j6G5NDVXWgk7FZFpQm1",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; head -c 3000 vendor/releases.json; cat README.md .example-cli/settings.json hooks/session-start.sh bin/gh | head -150",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lh8j6G5NDVXWgk7FZFpQm1",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now report source `\"fork\"` for forked sessions instead\n  of `\"resume\"`.\n- Synced skills are now named `...",
+      "output_chars": 7881,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q8VqRf62mTAfGzu2oCQ97p",
+      "name": "Bash",
+      "input": "gh issue list 2>&1 | head; cat .gh/replay/issue-view-57.json | head -60; cat .gh/replay/api/repos/example-org/example-repo/issues/57/comments.json | head -40; grep -rn \"synced\\|fork\\|NO_PROXY\\|proxy\" ...",
+      "input_chars": 262,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q8VqRf62mTAfGzu2oCQ97p",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n{\n  \"number\": 57,\n  \"title\": \"ExampleCLI 4.2.0 hooks report source \\\"fork\\\": SessionStart...",
+      "output_chars": 3874,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UwJzUzvxWcAWf47ZV4uWNt",
+      "name": "Bash",
+      "input": "cat .gh/replay/issue-list.json | grep -E '\"(number|title|state)\"'; git ls-files | grep -i skill; ls -a",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UwJzUzvxWcAWf47ZV4uWNt",
+      "is_error": false,
+      "output": "    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"number\": 59,\n    \"title\": \"README: document where the session-start hook writes its log\",\n    \"state\": \"OPEN\",\n    \"number\": 57,\n    \"title\": \"ExampleCLI 4.2.0 hooks report source \\\"fork\\\": SessionSta...",
+      "output_chars": 671,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015HYNDwRH8o4cPR86J4L2BS",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-readme-synced-skill-prefix.md <<'EOF'\n# README: synced skills are invoked as `synced:NAME` since ExampleCLI 4.2.0\n\nFound in the ExampleCLI 4.2.0 review.\n\n## ExampleC...",
+      "input_chars": 2627,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015HYNDwRH8o4cPR86J4L2BS",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
