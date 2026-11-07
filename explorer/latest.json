@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T14:38:57Z",
+  "fetched_at": "2026-11-07T14:43:12Z",
   "issues": [
    {
     "created_at": "2026-11-04T01:32:40Z",
@@ -7328,14 +7328,134 @@
   ],
   "runs": [
    {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:42:32Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382858296,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/tool-powershell/robocopy-exit-one claude-opus-5-5,claude-sonnet-5-5",
+    "updated_at": "2026-11-07T14:43:11Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382858296",
+    "workflow": "Fire eval routine: eval evals/tool-powershell/robocopy-exit-one claude-opus-5-5,claude-sonnet-5-5"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382807426,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-07T14:42:50Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382807426",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382807477,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-07T14:42:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382807477",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382807458,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-07T14:42:06Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382807458",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382807414,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-07T14:42:03Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382807414",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
     "conclusion": null,
+    "created_at": "2026-11-07T14:41:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382807412,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T14:41:54Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382807412",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-07T14:37:27Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382468212,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T14:41:54Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382468212",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:34Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382784660,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-07T14:41:50Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382784660",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:41:26Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382773586,
+    "state": "completed",
+    "title": "Eval results 20261107T142448Z-b8f22f",
+    "updated_at": "2026-11-07T14:41:32Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382773586",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T14:34:33Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42382241690,
+    "state": "completed",
+    "title": "Merge pull request #825 from Adam-S-Daniel/agent/issue-742-ci-job-per\u2026",
+    "updated_at": "2026-11-07T14:40:42Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382241690",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-07T14:38:58Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 42382581258,
-    "state": "in_progress",
+    "state": "completed",
     "title": "Fire eval routine: eval evals/review-bash-ci-reliability/pages-temp-repo-commit claude-opus-5-5,claude-sonnet-5-5",
-    "updated_at": "2026-11-07T14:39:03Z",
+    "updated_at": "2026-11-07T14:39:45Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382581258",
     "workflow": "Fire eval routine: eval evals/review-bash-ci-reliability/pages-temp-repo-commit claude-opus-5-5,clau"
    },
@@ -7398,18 +7518,6 @@
     "updated_at": "2026-11-07T14:37:35Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382468131",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T14:37:27Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42382468212,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T14:37:28Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382468212",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -7494,18 +7602,6 @@
     "updated_at": "2026-11-07T14:34:44Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382241950",
     "workflow": "PR #825 \u2192 site preview (closed)"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T14:34:33Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42382241690,
-    "state": "in_progress",
-    "title": "Merge pull request #825 from Adam-S-Daniel/agent/issue-742-ci-job-per\u2026",
-    "updated_at": "2026-11-07T14:34:37Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42382241690",
-    "workflow": "CI"
    },
    {
     "conclusion": "success",
@@ -8312,18 +8408,6 @@
     "workflow": "Follow drafted-skill fixtures"
    },
    {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-07T14:06:30Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42380026174,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T14:10:48Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380026174",
-    "workflow": "Weekly routine evals"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T14:10:29Z",
     "event": "workflow_run",
@@ -8388,95 +8472,11 @@
     "created_at": "2026-11-07T14:06:30Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42380026279,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-07T14:07:28Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380026279",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:06:30Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42380026138,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-07T14:06:52Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380026138",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:06:30Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 42380026152,
     "state": "completed",
     "title": "Follow drafted-skill fixtures",
     "updated_at": "2026-11-07T14:06:41Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380026152",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:06:30Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42380026137,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-07T14:06:40Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380026137",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:06:12Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42380003050,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-07T14:06:28Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42380003050",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:06:04Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42379992605,
-    "state": "completed",
-    "title": "Eval results 20261107T140322Z-02886f",
-    "updated_at": "2026-11-07T14:06:10Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42379992605",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:03:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42379802892,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-07T14:04:04Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42379802892",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T14:03:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42379802824,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-07T14:03:50Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42379802824",
     "workflow": "Follow drafted-skill fixtures"
    },
    {
@@ -27284,7 +27284,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T14:38:57Z"
+  "since": "2026-10-24T14:43:12Z"
  },
  "agent_made": {
   "items": [
@@ -29311,6 +29311,28 @@
     "without_skill": 4.0
    },
    {
+    "checks": 5.0,
+    "fired_at": "2026-11-07T14:24:48Z",
+    "fixture": "ci-job-performance/fast-suite-sharding",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T142448Z-b8f22f",
+    "with_share": 1.0,
+    "with_skill": 5.0,
+    "without_share": 0.9333333333333333,
+    "without_skill": 4.666666666666667
+   },
+   {
+    "checks": 5.0,
+    "fired_at": "2026-11-07T14:24:48Z",
+    "fixture": "ci-job-performance/fast-suite-sharding",
+    "model": "claude-opus-5-5",
+    "run_id": "20261107T142448Z-b8f22f",
+    "with_share": 0.8,
+    "with_skill": 4.0,
+    "without_share": 0.9333333333333333,
+    "without_skill": 4.666666666666667
+   },
+   {
     "checks": 6,
     "fired_at": "2026-11-07T14:21:11Z",
     "fixture": "guidance/data-exposure-in-ci/dispatch-email-input",
@@ -30841,9 +30863,9 @@
    }
   ],
   "latest_summary": {
-   "helped": 59,
-   "hurt": 8,
-   "tests": 120,
+   "helped": 60,
+   "hurt": 9,
+   "tests": 122,
    "tied": 53
   },
   "runs": [
@@ -30890,6 +30912,50 @@
     "without_judge": null,
     "without_share": 0.8,
     "without_skill": 4.0
+   },
+   {
+    "account_week_after": 46.0,
+    "checks": 5.0,
+    "cli": "2.1.319",
+    "cost_usd": 0.9090507,
+    "fired_at": "2026-11-07T14:24:48Z",
+    "fixture": "ci-job-performance/fast-suite-sharding",
+    "gain": 0.33333333333333304,
+    "judge": "skipped: checks decided",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T142448Z-b8f22f/ci-job-performance/20261107T143727Z/report.md",
+    "run_id": "20261107T142448Z-b8f22f",
+    "skill": "ci-job-performance",
+    "trials": 3,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 5.0,
+    "without_judge": null,
+    "without_share": 0.9333333333333333,
+    "without_skill": 4.666666666666667
+   },
+   {
+    "account_week_after": 46.0,
+    "checks": 5.0,
+    "cli": "2.1.319",
+    "cost_usd": 2.949658985,
+    "fired_at": "2026-11-07T14:24:48Z",
+    "fixture": "ci-job-performance/fast-suite-sharding",
+    "gain": -0.666666666666667,
+    "judge": "ran",
+    "meter_points": 1.0,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T142448Z-b8f22f/ci-job-performance/20261107T142636Z/report.md",
+    "run_id": "20261107T142448Z-b8f22f",
+    "skill": "ci-job-performance",
+    "trials": 3,
+    "with_judge": 7.8,
+    "with_share": 0.8,
+    "with_skill": 4.0,
+    "without_judge": 8.066666666666666,
+    "without_share": 0.9333333333333333,
+    "without_skill": 4.666666666666667
    },
    {
     "account_week_after": null,
@@ -48340,34 +48406,34 @@
   ],
   "summary": [
    {
-    "helped": 403,
-    "hurt": 79,
-    "lift": 0.12809540934850763,
+    "helped": 404,
+    "hurt": 80,
+    "lift": 0.1276620435963417,
     "model": "All",
-    "runs": 743,
+    "runs": 745,
     "tied": 261,
-    "with_avg": 0.8527804822113094,
-    "without_avg": 0.7246850728628018
+    "with_avg": 0.8529072460174535,
+    "without_avg": 0.7252452024211119
    },
    {
-    "helped": 284,
+    "helped": 285,
     "hurt": 56,
-    "lift": 0.13736048873844156,
+    "lift": 0.13722160107228876,
     "model": "claude-sonnet-5-5",
-    "runs": 508,
+    "runs": 509,
     "tied": 168,
-    "with_avg": 0.842628369773003,
-    "without_avg": 0.7052678810345614
+    "with_avg": 0.8429375478284588,
+    "without_avg": 0.70571594675617
    },
    {
     "helped": 112,
-    "hurt": 22,
-    "lift": 0.09997196695442274,
+    "hurt": 23,
+    "lift": 0.09893964261686633,
     "model": "claude-opus-5-5",
-    "runs": 225,
+    "runs": 226,
     "tied": 91,
-    "with_avg": 0.871265602277298,
-    "without_avg": 0.7712936353228752
+    "with_avg": 0.8709502677539471,
+    "without_avg": 0.7720106251370807
    },
    {
     "helped": 7,
@@ -48427,16 +48493,16 @@
    },
    {
     "added_at": "2026-11-07T11:08:21Z",
-    "cost_points": 0,
-    "cost_usd": 0,
+    "cost_points": 0.011522942552726808,
+    "cost_usd": 4.682472185,
     "origin_kind": "real-work",
     "path": "evals/ci-job-performance/fast-suite-sharding",
     "request": "https://github.com/Adam-S-Daniel/skills-evals/issues/742",
-    "runs": 0,
+    "runs": 2,
     "source": "https://github.com/Adam-S-Daniel/cms-platform/pull/461",
     "subject": "ci-job-performance",
-    "with_pass_rate": null,
-    "without_pass_rate": null
+    "with_pass_rate": 0.9,
+    "without_pass_rate": 0.9333333333333333
    },
    {
     "added_at": "2026-11-07T11:08:21Z",
@@ -48517,7 +48583,7 @@
     "without_pass_rate": null
    }
   ],
-  "generated_at": "2026-11-07T14:38:29Z",
+  "generated_at": "2026-11-07T14:42:47Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -48574,9 +48640,9 @@
   ],
   "schema": 1,
   "totals": {
-   "cost_points": 0,
-   "cost_usd": 0,
-   "fixture_runs": 0,
+   "cost_points": 0.011522942552726808,
+   "cost_usd": 4.682472185,
+   "fixture_runs": 2,
    "fixtures_invented": 3,
    "fixtures_real_work": 5,
    "prs_merged": 1,
@@ -48584,7 +48650,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-07T14:37:18Z",
+ "generated_at": "2026-11-07T14:41:46Z",
  "guidance": {
   "removed": [
    {
@@ -59512,7 +59578,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-07T14:35:03Z",
+ "newest_run": "2026-11-07T14:37:27Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -59856,6 +59922,16 @@
       "votes": true
      },
      {
+      "gain": -13.3,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-opus-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "fast-suite-sharding",
+      "votes": true
+     },
+     {
       "gain": 6.7,
       "high": 100.0,
       "low": -100.0,
@@ -59873,6 +59949,16 @@
       "pairs": 8,
       "status": "open",
       "task": "browser-cache",
+      "votes": true
+     },
+     {
+      "gain": 6.7,
+      "high": 100.0,
+      "low": -100.0,
+      "model": "claude-sonnet-5-5",
+      "pairs": 1,
+      "status": "open",
+      "task": "fast-suite-sharding",
       "votes": true
      },
      {
@@ -59905,7 +59991,7 @@
      "to": "2026-11-07"
     }
    },
-   "current_text_runs": 11,
+   "current_text_runs": 13,
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
    "name": "ci-job-performance",
    "next_test": {
@@ -59916,6 +60002,27 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-07T14:37:27Z",
+     "cli_version": "2.1.319",
+     "fixture": "fast-suite-sharding",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T142448Z-b8f22f/ci-job-performance/20261107T143727Z/report.md",
+     "with": {
+      "checks_passed": 15,
+      "checks_total": 15,
+      "cost_usd": 0.4853858,
+      "judge_mean": null,
+      "trials": 3
+     },
+     "without": {
+      "checks_passed": 14,
+      "checks_total": 15,
+      "cost_usd": 0.4236649,
+      "judge_mean": null,
+      "trials": 3
+     }
+    },
     {
      "at": "2026-11-07T14:35:03Z",
      "cli_version": "2.1.319",
@@ -59955,6 +60062,27 @@
       "checks_total": 15,
       "cost_usd": 0.676827415,
       "judge_mean": null,
+      "trials": 3
+     }
+    },
+    {
+     "at": "2026-11-07T14:26:36Z",
+     "cli_version": "2.1.319",
+     "fixture": "fast-suite-sharding",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T142448Z-b8f22f/ci-job-performance/20261107T142636Z/report.md",
+     "with": {
+      "checks_passed": 12,
+      "checks_total": 15,
+      "cost_usd": 1.6203813900000001,
+      "judge_mean": 7.8,
+      "trials": 3
+     },
+     "without": {
+      "checks_passed": 14,
+      "checks_total": 15,
+      "cost_usd": 1.329277595,
+      "judge_mean": 8.066666666666666,
       "trials": 3
      }
     },
@@ -77553,7 +77681,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "972c7cca5d45660890485bee07060feaf1a9d897",
-  "results_commit": "155ee720c03b6741f8292d575610da31f13f9d96"
+  "results_commit": "101e4e385d592d1f8b82dc70dccc28a19035e1c5"
  },
  "spend": {
   "generated_at": "2026-11-07T14:31:12Z",
