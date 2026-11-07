@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GQChz73XjoNyPSVhSetLQs",
+      "name": "Bash",
+      "input": "ls -la && git status --short | head && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GQChz73XjoNyPSVhSetLQs",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov  7 19:46 .\ndrwx------ 6 root root 4096 Nov  7 19:46 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 19:46 .claude\ndrwxr-xr-x 9 root root 4096 Nov  7 19:46 .git\ncrw-r...",
+      "output_chars": 1884,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014DNYZFTyr9ejSXFHHMbrCd",
+      "name": "Bash",
+      "input": "cat README.md; ls -laR .claude | head -30; cd session; cat skills.lock skills/.skills-bootstrap-installed.json skills/synced/*/manifest.json; ls -la skills skills/synced skills/synced/*; md5sum skills...",
+      "input_chars": 346,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014DNYZFTyr9ejSXFHHMbrCd",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 4172,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MEijkDyaif2UVra2eGFc9p",
+      "name": "Bash",
+      "input": "cd <path>; diff writing-adrs/SKILL.md synced/*<path>; echo ---; cat synced/*<path>; echo ---; cat synced/*<path>; sha256sum writing-adrs/SKILL.md adam-writing-style/SKILL.md; ls -la writing-adrs adam-...",
+      "input_chars": 414,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MEijkDyaif2UVra2eGFc9p",
+      "is_error": false,
+      "output": "1,17c1,12\n< ---\n< name: writing-adrs\n< description: Write a lightweight Nygard-style ADR under docs/decisions/.\n< ---\n< \n< # Writing ADRs\n< \n< One ADR per decision. Title is an imperative statement of what was decided.\n< Status is one of Proposed, Accepted, Superseded.\n< \n< ## Sections\n< \n< Context,...",
+      "output_chars": 2395,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CxJVu4f78NyNWn7zRQMckw",
+      "name": "Bash",
+      "input": "cd <path>; for s in writing-adrs adam-writing-style; do echo $s; (cd $s; tar --sort=name --mtime=@0 --owner=0 --group=0 -cf - . | sha256sum; printf 'SKILL.md\\0' | cat - SKILL.md | sha256sum; find . -t...",
+      "input_chars": 411,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CxJVu4f78NyNWn7zRQMckw",
+      "is_error": false,
+      "output": "writing-adrs\n58892b82ad5e0d83d892c5f7137da05ae4e0638de9e7baea87d6725fdbe3706c  -\n30163f31b9ba569ea8d6c7471d18e9a4d87d5dadcf9b206f6bcb163961dfdebe  -\n8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\nadam-writing-style\na106eef875b6e2c597a8f399538c321bf39b47285c99261c45a375a9f704e24a...",
+      "output_chars": 781,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RudTyGEHyoFUdL6s13FJ47",
+      "name": "Bash",
+      "input": "date -u -d @1789713628; cat > <path> <<'EOF'\n# Findings: why `writing-adrs` drops \"Alternatives considered\"\n\n## Short answer\n\nThe registry copy is being delivered correctly. A **second, older `writing...",
+      "input_chars": 4784,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RudTyGEHyoFUdL6s13FJ47",
+      "is_error": false,
+      "output": "Fri Sep 18 06:40:28 UTC 2026\n?? FINDINGS.md",
+      "output_chars": 43,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

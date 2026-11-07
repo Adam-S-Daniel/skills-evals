@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017TDquxkZkzynA82RcyAkoc",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git status --short | head",
+      "input_chars": 76,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017TDquxkZkzynA82RcyAkoc",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  7 19:45 .\ndrwx------ 6 root root 4096 Nov  7 19:45 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 19:45 .claude\ndrwxr-xr-x 9 root root 4096 Nov  7 19:45 .gi...",
+      "output_chars": 1060,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UNqLhZdAFhmGo8yiJvX7oJ",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find registry session .claude -type f | head -50",
+      "input_chars": 101,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UNqLhZdAFhmGo8yiJvX7oJ",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ng3EJ9t28N9V32PGkGLDmG",
+      "name": "Bash",
+      "input": "cd <path>; ls -laR session | head -60; for f in session/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json session/skills/synced/.bucket-*; do echo \"=== ...",
+      "input_chars": 361,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ng3EJ9t28N9V32PGkGLDmG",
+      "is_error": false,
+      "output": "session:\ntotal 16\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 6 root root 4096 Nov  7 19:46 ..\ndrwxr-xr-x 5 root root 4096 Nov  7 04:20 skills\n-rw-r--r-- 1 root root  418 Nov  7 04:20 skills.lock\n\nsession/skills:\ntotal 24\ndrwxr-xr-x 5 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 3 root root 40...",
+      "output_chars": 4480,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JW5B9scAW447JqN2pzirb8",
+      "name": "Bash",
+      "input": "cd <path>; for f in session/skills/writing-adrs/SKILL.md session/skills/synced/*<path> session/skills/synced/*<path>; do echo \"=== $f\"; cat \"$f\"; done; sha256sum session/skills/*/SKILL.md registry/plu...",
+      "input_chars": 353,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JW5B9scAW447JqN2pzirb8",
+      "is_error": false,
+      "output": "=== session/skills/writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n## Sections\n\nCon...",
+      "output_chars": 1549,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017FGF3SQsZTricocSuGJ6h7",
+      "name": "Bash",
+      "input": "date -u -d @1789713628; cd <path>; git rev-parse HEAD; ls -la . plugins plugins/adam; find . -path ./.git -prune -o -type f -print",
+      "input_chars": 166,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017FGF3SQsZTricocSuGJ6h7",
+      "is_error": false,
+      "output": "Fri Sep 18 06:40:28 UTC 2026\n08b633e360b3befb71ebef7ce618a582e7cd844e\n.:\ntotal 16\ndrwxr-xr-x 4 root root 4096 Nov  7 19:46 .\ndrwxr-xr-x 6 root root 4096 Nov  7 19:46 ..\ndrwxr-xr-x 3 root root 4096 Nov  7 19:46 .claude\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 plugins\n\nplugins:\ntotal 12\ndrwxr-xr-x 3 r...",
+      "output_chars": 671,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PBPVvRbPj6ThxyEvR4kLRy",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PBPVvRbPj6ThxyEvR4kLRy",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
