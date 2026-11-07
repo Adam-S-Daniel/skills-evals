@@ -1,0 +1,231 @@
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z Current runner version: '2.329.0'
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z ##[group]Operating System
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z Ubuntu
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z 24.04.3
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z LTS
+e2e (1/3)	Set up job	2026-10-29T11:12:43.1000000Z ##[endgroup]
+e2e (1/3)	Set up job	2026-10-29T11:12:43.4000000Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (1/3)	Set up job	2026-10-29T11:12:43.6000000Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (1/3)	Set up job	2026-10-29T11:12:43.9000000Z Complete job name: e2e (1/3)
+e2e (1/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:44.7886330Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (1/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:44.7886330Z ##[endgroup]
+e2e (1/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:44.8386330Z Syncing repository: example-org/example-site
+e2e (1/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:45.2386330Z Fetching the repository
+e2e (1/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:46.2926780Z Checking out the ref
+e2e (1/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:46.8967240Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (1/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:46.8967240Z ##[endgroup]
+e2e (1/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:47.2967240Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (1/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:49.0647680Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (1/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:50.3908010Z Cache restored successfully
+e2e (1/3)	Install dependencies	2026-10-29T11:12:51.3168350Z ##[group]Run npm ci
+e2e (1/3)	Install dependencies	2026-10-29T11:12:51.3168350Z npm ci
+e2e (1/3)	Install dependencies	2026-10-29T11:12:51.3168350Z shell: /usr/bin/bash -e {0}
+e2e (1/3)	Install dependencies	2026-10-29T11:12:51.3168350Z ##[endgroup]
+e2e (1/3)	Install dependencies	2026-10-29T11:12:57.0396790Z added 3 packages, and audited 4 packages in 5s
+e2e (1/3)	Install dependencies	2026-10-29T11:12:57.0396790Z found 0 vulnerabilities
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:57.6755500Z ##[group]Run npx playwright install --with-deps
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:57.6755500Z npx playwright install --with-deps
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:57.6755500Z shell: /usr/bin/bash -e {0}
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:57.6755500Z ##[endgroup]
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:58.5755500Z Installing dependencies...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:58.5755500Z Switching to root user to install dependencies...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:59.1755500Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:12:59.4755500Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:01.3755500Z Fetched 5,107 kB in 2s (2,553 kB/s)
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:02.6755500Z Reading package lists...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:03.8755500Z 0 upgraded, 112 newly installed, 0 to remove and 18 not upgraded.
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:03.8755500Z Need to get 148 MB of archives.
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:04.0755500Z Get:1 http://example.net/ubuntu noble/main amd64 libwoff1 amd64 1.0.2-2build1 [45.1 kB]
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:12.3517410Z Get:112 http://example.net/ubuntu noble/universe amd64 gstreamer1.0-plugins-bad amd64 1.24.2-1ubuntu4 [3,011 kB]
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:21.6624560Z Setting up libgtk-4-1:amd64 (4.14.2+ds-1ubuntu2) ...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:23.7315040Z Setting up libwpewebkit-2.0-1:amd64 (2.48.5-0ubuntu0.24.04.1) ...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:24.7660280Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:25.0660280Z Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium/1194/chromium-ubuntu-24.04.zip
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:30.7051840Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:31.0019820Z Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:31.3019820Z Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium_headless_shell/1194/chromium_headless_shell-ubuntu-24.04.zip
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:34.9234340Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:35.1140370Z Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:35.4140370Z Downloading Firefox 142.0.1 (playwright build v1495) from https://example.net/playwright/builds/firefox/1495/firefox-ubuntu-24.04.zip
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:39.4030620Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:39.6130110Z Firefox 142.0.1 (playwright build v1495) downloaded to /home/runner/.cache/ms-playwright/firefox-1495
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:39.9130110Z Downloading WebKit 26.0 (playwright build v2215) from https://example.net/playwright/builds/webkit/2215/webkit-ubuntu-24.04.zip
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:45.2629920Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:45.5445700Z WebKit 26.0 (playwright build v2215) downloaded to /home/runner/.cache/ms-playwright/webkit-2215
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:45.8445700Z Downloading FFMPEG playwright build v1011 from https://example.net/playwright/builds/ffmpeg/1011/ffmpeg-ubuntu-24.04.zip
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:46.0861060Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (1/3)	Install Playwright browsers	2026-10-29T11:13:46.0988180Z FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:46.6988170Z ##[group]Run npx playwright test --workers=1 --shard=1/3
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:46.6988170Z npx playwright test --workers=1 --shard=1/3
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:46.6988170Z shell: /usr/bin/bash -e {0}
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:46.6988170Z ##[endgroup]
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:47.7988170Z 
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:47.7988170Z Running 8 tests using 1 worker
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:48.5872760Z   ✓  1 [chromium] › tests/home.spec.ts:3:1 › home page shows the main heading (0.8s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:49.3427900Z   ✓  2 [chromium] › tests/home.spec.ts:8:1 › home page links to pricing (0.8s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:49.9476220Z   ✓  3 [chromium] › tests/home.spec.ts:13:1 › home page links to the blog (0.6s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:50.5946740Z   ✓  4 [chromium] › tests/home.spec.ts:18:1 › home page has a skip link (0.6s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:51.5218030Z   ✓  5 [chromium] › tests/pricing.spec.ts:3:1 › pricing page lists three plans (0.9s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:52.7661610Z   ✓  6 [chromium] › tests/pricing.spec.ts:8:1 › pricing page shows yearly prices (1.2s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:53.9270890Z   ✓  7 [chromium] › tests/pricing.spec.ts:13:1 › pricing page links to contact sales (1.2s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:54.7505270Z   ✓  8 [chromium] › tests/pricing.spec.ts:18:1 › pricing page marks the team plan (0.8s)
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:54.9505270Z 
+e2e (1/3)	Run Playwright tests	2026-10-29T11:13:55.0505270Z   8 passed (7.3s)
+e2e (1/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:55.2505260Z Post job cleanup.
+e2e (1/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:55.3505260Z /usr/bin/git version
+e2e (1/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:55.3505260Z git version 2.51.0
+e2e (1/3)	Complete job	2026-10-29T11:13:55.9423050Z Cleaning up orphan processes
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z Current runner version: '2.329.0'
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z ##[group]Operating System
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z Ubuntu
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z 24.04.3
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z LTS
+e2e (2/3)	Set up job	2026-10-29T11:12:43.8000000Z ##[endgroup]
+e2e (2/3)	Set up job	2026-10-29T11:12:44.1000000Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (2/3)	Set up job	2026-10-29T11:12:44.3000000Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (2/3)	Set up job	2026-10-29T11:12:44.6000000Z Complete job name: e2e (2/3)
+e2e (2/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:45.2129850Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (2/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:45.2129850Z ##[endgroup]
+e2e (2/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:45.2629850Z Syncing repository: example-org/example-site
+e2e (2/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:45.6629850Z Fetching the repository
+e2e (2/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:12:46.5471740Z Checking out the ref
+e2e (2/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:46.9813630Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (2/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:46.9813630Z ##[endgroup]
+e2e (2/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:47.3813630Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (2/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:48.9760230Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (2/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:12:50.1720180Z Cache restored successfully
+e2e (2/3)	Install dependencies	2026-10-29T11:12:50.9680130Z ##[group]Run npm ci
+e2e (2/3)	Install dependencies	2026-10-29T11:12:50.9680130Z npm ci
+e2e (2/3)	Install dependencies	2026-10-29T11:12:50.9680130Z shell: /usr/bin/bash -e {0}
+e2e (2/3)	Install dependencies	2026-10-29T11:12:50.9680130Z ##[endgroup]
+e2e (2/3)	Install dependencies	2026-10-29T11:12:56.9557630Z added 3 packages, and audited 4 packages in 5s
+e2e (2/3)	Install dependencies	2026-10-29T11:12:56.9557630Z found 0 vulnerabilities
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:57.6210690Z ##[group]Run npx playwright install --with-deps
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:57.6210690Z npx playwright install --with-deps
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:57.6210690Z shell: /usr/bin/bash -e {0}
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:57.6210690Z ##[endgroup]
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:58.5210690Z Installing dependencies...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:58.5210690Z Switching to root user to install dependencies...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:59.1210690Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:12:59.4210690Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:01.3210690Z Fetched 5,107 kB in 2s (2,553 kB/s)
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:02.6210690Z Reading package lists...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:03.8210690Z 0 upgraded, 112 newly installed, 0 to remove and 18 not upgraded.
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:03.8210690Z Need to get 148 MB of archives.
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:04.0210690Z Get:1 http://example.net/ubuntu noble/main amd64 libwoff1 amd64 1.0.2-2build1 [45.1 kB]
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:12.0153530Z Get:112 http://example.net/ubuntu noble/universe amd64 gstreamer1.0-plugins-bad amd64 1.24.2-1ubuntu4 [3,011 kB]
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:21.0089230Z Setting up libgtk-4-1:amd64 (4.14.2+ds-1ubuntu2) ...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:23.0074940Z Setting up libwpewebkit-2.0-1:amd64 (2.48.5-0ubuntu0.24.04.1) ...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:24.0067800Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:24.3067800Z Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium/1194/chromium-ubuntu-24.04.zip
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:29.8830620Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:30.1765510Z Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:30.4765510Z Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium_headless_shell/1194/chromium_headless_shell-ubuntu-24.04.zip
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:34.2697410Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:34.4693830Z Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:34.7693830Z Downloading Firefox 142.0.1 (playwright build v1495) from https://example.net/playwright/builds/firefox/1495/firefox-ubuntu-24.04.zip
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:38.3745520Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:38.5642980Z Firefox 142.0.1 (playwright build v1495) downloaded to /home/runner/.cache/ms-playwright/firefox-1495
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:38.8642980Z Downloading WebKit 26.0 (playwright build v2215) from https://example.net/playwright/builds/webkit/2215/webkit-ubuntu-24.04.zip
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:44.2883480Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:44.5738240Z WebKit 26.0 (playwright build v2215) downloaded to /home/runner/.cache/ms-playwright/webkit-2215
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:44.8738240Z Downloading FFMPEG playwright build v1011 from https://example.net/playwright/builds/ffmpeg/1011/ffmpeg-ubuntu-24.04.zip
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:45.0851220Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (2/3)	Install Playwright browsers	2026-10-29T11:13:45.0962430Z FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:45.6962400Z ##[group]Run npx playwright test --workers=1 --shard=2/3
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:45.6962400Z npx playwright test --workers=1 --shard=2/3
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:45.6962400Z shell: /usr/bin/bash -e {0}
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:45.6962400Z ##[endgroup]
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:46.7962400Z 
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:46.7962400Z Running 8 tests using 1 worker
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:48.9780360Z   ✓  1 [chromium] › tests/about.spec.ts:3:1 › about page shows the team (2.2s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:51.0276750Z   ✓  2 [chromium] › tests/about.spec.ts:8:1 › about page links to careers (2.0s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:52.3828330Z   ✓  3 [chromium] › tests/about.spec.ts:13:1 › about page has one h1 (1.4s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:53.7133180Z   ✓  4 [chromium] › tests/about.spec.ts:18:1 › about page shows the founding year (1.3s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:55.8987680Z   ✓  5 [chromium] › tests/contact.spec.ts:3:1 › contact page shows the support address (2.2s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:58.3513820Z   ✓  6 [chromium] › tests/contact.spec.ts:8:1 › contact page shows office hours (2.5s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:13:59.7259150Z   ✓  7 [chromium] › tests/contact.spec.ts:13:1 › contact page links to status (1.4s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:14:01.4031460Z   ✓  8 [chromium] › tests/contact.spec.ts:18:1 › contact page has a form label (1.7s)
+e2e (2/3)	Run Playwright tests	2026-10-29T11:14:01.6031460Z 
+e2e (2/3)	Run Playwright tests	2026-10-29T11:14:01.7031460Z   8 passed (14.9s)
+e2e (2/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:01.9031460Z Post job cleanup.
+e2e (2/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:02.0031460Z /usr/bin/git version
+e2e (2/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:02.0031460Z git version 2.51.0
+e2e (2/3)	Complete job	2026-10-29T11:14:02.7743580Z Cleaning up orphan processes
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z Current runner version: '2.329.0'
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z ##[group]Operating System
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z Ubuntu
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z 24.04.3
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z LTS
+e2e (3/3)	Set up job	2026-10-29T11:13:19.6000000Z ##[endgroup]
+e2e (3/3)	Set up job	2026-10-29T11:13:19.9000000Z Download action repository 'actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955'
+e2e (3/3)	Set up job	2026-10-29T11:13:20.1000000Z Download action repository 'actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903'
+e2e (3/3)	Set up job	2026-10-29T11:13:20.4000000Z Complete job name: e2e (3/3)
+e2e (3/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:21.1281570Z ##[group]Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+e2e (3/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:21.1281570Z ##[endgroup]
+e2e (3/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:21.1781570Z Syncing repository: example-org/example-site
+e2e (3/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:21.5781570Z Fetching the repository
+e2e (3/3)	Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:13:22.5664370Z Checking out the ref
+e2e (3/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:13:23.1047170Z ##[group]Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
+e2e (3/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:13:23.1047170Z ##[endgroup]
+e2e (3/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:13:23.5047170Z Found in cache @ /opt/hostedtoolcache/node/22.21.0/x64
+e2e (3/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:13:25.1216420Z Cache hit for: node-cache-Linux-x64-npm-e2e
+e2e (3/3)	Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903	2026-10-29T11:13:26.3343350Z Cache restored successfully
+e2e (3/3)	Install dependencies	2026-10-29T11:13:27.1470280Z ##[group]Run npm ci
+e2e (3/3)	Install dependencies	2026-10-29T11:13:27.1470280Z npm ci
+e2e (3/3)	Install dependencies	2026-10-29T11:13:27.1470280Z shell: /usr/bin/bash -e {0}
+e2e (3/3)	Install dependencies	2026-10-29T11:13:27.1470280Z ##[endgroup]
+e2e (3/3)	Install dependencies	2026-10-29T11:13:32.6617980Z added 3 packages, and audited 4 packages in 5s
+e2e (3/3)	Install dependencies	2026-10-29T11:13:32.6617980Z found 0 vulnerabilities
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:33.2745510Z ##[group]Run npx playwright install --with-deps
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:33.2745510Z npx playwright install --with-deps
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:33.2745510Z shell: /usr/bin/bash -e {0}
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:33.2745510Z ##[endgroup]
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:34.1745510Z Installing dependencies...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:34.1745510Z Switching to root user to install dependencies...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:34.7745510Z Hit:1 http://example.net/ubuntu noble InRelease
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:35.0745510Z Get:2 http://example.net/ubuntu noble-updates InRelease [126 kB]
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:36.9745510Z Fetched 5,107 kB in 2s (2,553 kB/s)
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:38.2745510Z Reading package lists...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:39.4745510Z 0 upgraded, 112 newly installed, 0 to remove and 18 not upgraded.
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:39.4745510Z Need to get 148 MB of archives.
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:39.6745510Z Get:1 http://example.net/ubuntu noble/main amd64 libwoff1 amd64 1.0.2-2build1 [45.1 kB]
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:47.5742060Z Get:112 http://example.net/ubuntu noble/universe amd64 gstreamer1.0-plugins-bad amd64 1.24.2-1ubuntu4 [3,011 kB]
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:56.4613180Z Setting up libgtk-4-1:amd64 (4.14.2+ds-1ubuntu2) ...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:58.4362320Z Setting up libwpewebkit-2.0-1:amd64 (2.48.5-0ubuntu0.24.04.1) ...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:59.4236890Z Processing triggers for libc-bin (2.39-0ubuntu8.6) ...
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:13:59.7236890Z Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium/1194/chromium-ubuntu-24.04.zip
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:05.7765950Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:06.0951690Z Chromium 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium-1194
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:06.3951690Z Downloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://example.net/playwright/builds/chromium_headless_shell/1194/chromium_headless_shell-ubuntu-24.04.zip
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:10.0709770Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:10.2644410Z Chromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /home/runner/.cache/ms-playwright/chromium_headless_shell-1194
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:10.5644410Z Downloading Firefox 142.0.1 (playwright build v1495) from https://example.net/playwright/builds/firefox/1495/firefox-ubuntu-24.04.zip
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:14.4254440Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:14.6286550Z Firefox 142.0.1 (playwright build v1495) downloaded to /home/runner/.cache/ms-playwright/firefox-1495
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:14.9286550Z Downloading WebKit 26.0 (playwright build v2215) from https://example.net/playwright/builds/webkit/2215/webkit-ubuntu-24.04.zip
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:20.9694010Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:21.2873350Z WebKit 26.0 (playwright build v2215) downloaded to /home/runner/.cache/ms-playwright/webkit-2215
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:21.5873350Z Downloading FFMPEG playwright build v1011 from https://example.net/playwright/builds/ffmpeg/1011/ffmpeg-ubuntu-24.04.zip
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:21.9444980Z |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 1 MiB
+e2e (3/3)	Install Playwright browsers	2026-10-29T11:14:21.9632960Z FFMPEG playwright build v1011 downloaded to /home/runner/.cache/ms-playwright/ffmpeg-1011
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:22.5632940Z ##[group]Run npx playwright test --workers=1 --shard=3/3
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:22.5632940Z npx playwright test --workers=1 --shard=3/3
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:22.5632940Z shell: /usr/bin/bash -e {0}
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:22.5632940Z ##[endgroup]
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:23.6632940Z 
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:23.6632940Z Running 8 tests using 1 worker
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:25.3857880Z   ✓  1 [chromium] › tests/blog.spec.ts:3:1 › blog page lists recent posts (1.7s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:27.0187580Z   ✓  2 [chromium] › tests/blog.spec.ts:8:1 › blog page paginates (1.6s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:28.1129740Z   ✓  3 [chromium] › tests/blog.spec.ts:13:1 › blog page links each post (1.1s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:29.5182080Z   ✓  4 [chromium] › tests/blog.spec.ts:18:1 › blog page shows post dates (1.4s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:30.8793460Z   ✓  5 [chromium] › tests/docs.spec.ts:3:1 › docs page has a search box (1.4s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:31.8956890Z   ✓  6 [chromium] › tests/docs.spec.ts:8:1 › docs page links getting started (1.0s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:32.9878200Z   ✓  7 [chromium] › tests/docs.spec.ts:13:1 › docs page links publishing (1.1s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:34.7742590Z   ✓  8 [chromium] › tests/docs.spec.ts:18:1 › docs page shows a table of contents (1.8s)
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:34.9742590Z 
+e2e (3/3)	Run Playwright tests	2026-10-29T11:14:35.0742590Z   8 passed (11.4s)
+e2e (3/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:35.2742600Z Post job cleanup.
+e2e (3/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:35.3742600Z /usr/bin/git version
+e2e (3/3)	Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955	2026-10-29T11:14:35.3742600Z git version 2.51.0
+e2e (3/3)	Complete job	2026-10-29T11:14:36.0034120Z Cleaning up orphan processes
