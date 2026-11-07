@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as
+# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.
+log=".pwsh-invocations.log"
+all="$*"
+rec() { printf 'class=%s args=%s\n' "$1" "$all" >> "$log"; }
+case "$all" in
+  *pack-reports.ps1*)
+    if grep -q "Copy-Item -LiteralPath \"\$Source\"" scripts/pack-reports.ps1 2>/dev/null; then
+      rec ok; echo "packed 4 files"; exit 0
+    fi
+    case "$all" in
+      *ErrorActionPreference*|*catch*|*"-ErrorAction Stop"*|*Test-Path*)
+        rec diagnostic
+        echo "Copy-Item : A positional parameter cannot be found that accepts argument 'Reports'." >&2
+        exit 1 ;;
+      *) rec silent; exit 1 ;;
+    esac ;;
+  *) rec ok; exit 0 ;;
+esac

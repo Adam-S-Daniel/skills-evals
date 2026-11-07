@@ -1,0 +1,58 @@
+# Eval fixture: tool-powershell (spaced-path-silent-exit)
+# A copy script exits 1 with no text. The cause is a source path with spaces
+# that the script passes unquoted-by-parameter-binding to a call that splits it.
+# The skill says to surface the real error once (Stop + try/catch, or
+# Test-Path) and fix the cause, not repeat the call or rename the folders.
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/833
+
+prompt: >
+  scripts/pack-reports.ps1 exits with code 1 and prints nothing. Find out why
+  and fix it. PowerShell here is the stand-in bin/pwsh; read README.md.
+
+objective_checks:
+  - id: error-was-surfaced
+    description: A diagnostic call (ErrorActionPreference, try/catch or Test-Path) was made
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_match:
+      - "class=diagnostic"
+  - id: no-blind-third-try
+    description: The bare failing call was not repeated three times
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_not_match:
+      - "(?s)class=silent.*class=silent.*class=silent"
+  - id: copy-uses-literalpath
+    description: The copy now passes the source as a quoted -LiteralPath value
+    type: file_matches
+    paths: ["scripts/pack-reports.ps1"]
+    must_match:
+      - 'Copy-Item -LiteralPath "\$Source"'
+  - id: defaults-untouched
+    description: The Source and Dest defaults are unchanged
+    type: file_matches
+    paths: ["scripts/pack-reports.ps1"]
+    must_match:
+      - '\$Source\s*=\s*''D:\\Team Share\\Weekly Reports'''
+      - '\$Dest\s*=\s*''D:\\outbox\\reports'''
+  - id: stand-in-untouched
+    description: The stand-in host was not edited
+    type: files_unchanged
+    paths: ["bin/pwsh"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence of rationale each:
+  (1) Diagnosis: did the agent get the real error out of the silent failure
+  before changing anything, instead of guessing or repeating the bare call?
+  Cap at 4 if it edited the script before seeing the error text.
+  (2) Fix: is the change the smallest one that matches the error (quoting the
+  spaced source path), with the reply naming the cause?
+  (3) Restraint: no folder renamed and nothing else in the script changed.
