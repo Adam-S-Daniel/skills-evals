@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XKzsrtXMB9L92bFuwKBENr",
+      "name": "Bash",
+      "input": "cd <path>; git log --oneline -5; ls -la; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 114,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XKzsrtXMB9L92bFuwKBENr",
+      "is_error": false,
+      "output": "284295a initial commit\ntotal 36\ndrwxr-xr-x  7 root root 4096 Nov  7 13:14 .\ndrwxrwxrwt 10 root root 4096 Nov  7 13:14 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:49 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:49 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov  7 13:14 .claude\ndrwxr-xr-x  3 root root...",
+      "output_chars": 1486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019YrWr6CpisyFFzmZddvU2b",
+      "name": "Bash",
+      "input": "cd <path>; for f in README.md platform.lock .github/workflows/cms-automerge-nudge.yml .gh/replay/api/repos/example-org/example-site/actions/*.json .gh/replay/*; do echo \"=== $f\"; cat \"$f\"; echo; done;...",
+      "input_chars": 283,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019YrWr6CpisyFFzmZddvU2b",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== README.md\n# Example site\n\nProduction: https://example.com\nPreview: https://preview.example.net\n\nThe repository uses the platform reusable workflows.\n\n=== platform.lock\nplatform_repo: Adam-S-Daniel/cm...",
+      "output_chars": 2192,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ui63Bginn45Uz5C3c2wqXY",
+      "name": "Bash",
+      "input": "cd <path>; wc -c .gh/replay/run-view-7712345001.log bin/gh; head -c 3000 .gh/replay/run-view-7712345001.log; echo; echo ...; tail -c 2000 .gh/replay/run-view-7712345001.log; echo; grep -n -iE 'secret|...",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ui63Bginn45Uz5C3c2wqXY",
+      "is_error": false,
+      "output": "   74 .gh/replay/run-view-7712345001.log\n54717 bin/gh\n54791 total\nNo job logs are available: this workflow did not start (startup_failure).\n\n...\nNo job logs are available: this workflow did not start (startup_failure).",
+      "output_chars": 218,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XNsWPwTPf4K9juYRst5ULb",
+      "name": "Bash",
+      "input": "cd <path>; head -60 bin/gh; grep -n -iE 'CMS_E2E_PAT|permission|fine-grained|contents|pull|workflows|actions|metadata' bin/gh | head -80; find .claude -type f",
+      "input_chars": 175,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XNsWPwTPf4K9juYRst5ULb",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 5167,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y6rnjaD7oTQSx8sHfMRLpp",
+      "name": "Bash",
+      "input": "cd <path>; find .claude -type f -exec sh -c 'echo \"== $1\"; cat \"$1\"' _ {} \\; ; cat .git/workspace-root 2><path>; ls .gh/replay -la",
+      "input_chars": 150,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y6rnjaD7oTQSx8sHfMRLpp",
+      "is_error": false,
+      "output": "<path>\ntotal 24\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 ..\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 api\n-rw-r--r-- 1 root root  199 Nov  7 04:20 run-list.json\n-rw-r--r-- 1 root root  324 Nov  7 04:20 run-view-7712345001.json\n-rw-r--r-- 1 root root   74 Nov...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H3c62psZkgbBHdFPfJwDzQ",
+      "name": "Bash",
+      "input": "cd <path>; export GH_REPLAY_DIR=$PWD/.gh/replay; ./bin/gh api repos/Adam-S-Daniel/cms-platform/contents/.github/workflows/cms-automerge-nudge.yml?ref=f3920c6e099c0386829bb5c64343d238de964d2e 2>&1 | he...",
+      "input_chars": 347,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H3c62psZkgbBHdFPfJwDzQ",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)\ngh: Not Found (HTTP 404)",
+      "output_chars": 74,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MD2cmH3kMx5xDZaKpaYHvr",
+      "name": "Bash",
+      "input": "git log --oneline -5 && ls -la && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MD2cmH3kMx5xDZaKpaYHvr",
+      "is_error": false,
+      "output": "b6d75de initial commit\ntotal 36\ndrwxr-xr-x  7 root root 4096 Nov  7 13:17 .\ndrwxrwxrwt 10 root root 4096 Nov  7 13:17 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:49 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:49 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov  7 13:17 .claude\ndrwxr-xr-x  3 root root...",
+      "output_chars": 1486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016VSYACS1dP4wTZ65hNg45G",
+      "name": "Bash",
+      "input": "for f in README.md platform.lock .github/workflows/cms-automerge-nudge.yml .gh/replay/api/repos/example-org/example-site/actions/*.json .gh/replay/run-list.json .gh/replay/run-view-7712345001.json .gh...",
+      "input_chars": 293,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016VSYACS1dP4wTZ65hNg45G",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.4KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== README.md\n# Example site\n\nProduction: https://example.com\nPreview: https://preview.example.net\n\nThe repository uses the platform reusable workflows.\n\n=== platform.lock\nplatform_repo: Adam-S-Daniel/cm...",
+      "output_chars": 2222,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014MQwYgfTNXccukFhny1miL",
+      "name": "Bash",
+      "input": "wc -c bin/gh; head -c 6000 bin/gh; echo; grep -n -i -E 'PAT|permission|secret|owner|repo' bin/gh | head -80; ls -R .claude",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014MQwYgfTNXccukFhny1miL",
+      "is_error": false,
+      "output": "54717 bin/gh\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no...",
+      "output_chars": 11215,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JAjmkeGPZL7F8PwiUiSSWw",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay GH_REPO=example-org/example-site; gh secret list; echo \"exit=$?\"; gh api repos/Adam-S-Daniel/cms-platform/contents/.github/workflows/cms-autome...",
+      "input_chars": 313,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JAjmkeGPZL7F8PwiUiSSWw",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\nexit=1\ngh: Not Found (HTTP 404)\nexit=1\ncat: .gitmodules: Permission denied\ncat: .mcp.json: Permission denied",
+      "output_chars": 133,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
