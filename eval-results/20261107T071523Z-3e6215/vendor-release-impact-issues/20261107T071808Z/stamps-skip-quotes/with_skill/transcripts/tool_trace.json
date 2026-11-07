@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GecjLg9sCotZvWvfd2bgDG",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GecjLg9sCotZvWvfd2bgDG",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UxqaPNiR6rQemGuPbAmJDr",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && wc -c vendor/*",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UxqaPNiR6rQemGuPbAmJDr",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\nRELEASES.md\nreleases.json\n1092 vendor/RELEASES.md\n 482 vendor/releases.json\n1574 total",
+      "output_chars": 238,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017L7WaYW9UKR1xXgp7Jnzep",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json .example-cli/settings.json .github/workflows/ci.yml hooks/session-start.sh scripts/check.sh README.md",
+      "input_chars": 145,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017L7WaYW9UKR1xXgp7Jnzep",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 or earlier that test fo...",
+      "output_chars": 2944,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MWgmyne6QZvPTx7kYcMyD7",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport json,re\nrel=json.load(open('vendor/releases.json'))['example-cli']\nnotes={};cur=None\nfor l in open('vendor/RELEASES.md'):\n    m=re.match(r'## v(\\...",
+      "input_chars": 4225,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MWgmyne6QZvPTx7kYcMyD7",
+      "is_error": false,
+      "output": "13:- `.example-cli/settings.json` registers the `SessionStart` hook with matcher `startup|resume`. Starting with 4.2.0 [2026-07-14T09:47Z], forked sessions may report source \"fork\", so `hooks/session-start.sh` may not run for them.\n15:- README.md says \"Requires ExampleCLI 4.1.0 or later\" and `.githu...",
+      "output_chars": 1155,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
