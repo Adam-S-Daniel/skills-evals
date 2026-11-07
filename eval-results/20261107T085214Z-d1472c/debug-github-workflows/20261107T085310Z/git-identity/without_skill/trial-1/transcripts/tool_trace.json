@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ExbKtxLHbWx6V5nUm2gnf7",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; cat test/run-tests.sh; ls test .github/workflows 2><path>; cat .github/workflows/* 2><path>",
+      "input_chars": 126,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ExbKtxLHbWx6V5nUm2gnf7",
+      "is_error": false,
+      "output": "6149b38 initial commit\n#!<path> bash\n# Build a scratch repository with a known history, then run the unit tests\n# against it.\nset -euo pipefail\n\nroot=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\necho \"Testing changelog at $(git -C \"$root\" describe --tags --always)\"\n\nwork=\"$(mktemp -d)\"\ntrap 'rm -rf \"$work\"' ...",
+      "output_chars": 1067,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CAeJyy7Ks8HXXL9qyMMpiu",
+      "name": "Bash",
+      "input": "cat test/test_changelog.py | head -50; env -i PATH=\"$PATH\" HOME=/nonexistent TMPDIR=\"$TMPDIR\" GIT_CONFIG_NOSYSTEM=1 bash test/run-tests.sh 2>&1 | tail -20",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CAeJyy7Ks8HXXL9qyMMpiu",
+      "is_error": false,
+      "output": "import os\nimport unittest\n\nfrom src.changelog import render, subjects\n\n\nclass ChangelogTests(unittest.TestCase):\n    def test_sections_from_a_real_history(self):\n        repo = os.environ[\"CHANGELOG_REPO\"]\n        self.assertEqual(render(subjects(repo)),\n                         \"## Features\\n- add ...",
+      "output_chars": 521,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W442DBFyE87VfpsQpXJnxc",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='test/run-tests.sh'\ns=open(p).read()\ns=s.replace('''  git -C \"$repo\" commit --quiet --allow-empty -m \"$1\" > <path> 2>&1''','''  git -C \"$repo\" -c user.name=\"Test\" -c user.email=\"<ema...",
+      "input_chars": 466,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W442DBFyE87VfpsQpXJnxc",
+      "is_error": false,
+      "output": "Testing changelog at 6149b38\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.003s\n\nOK\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK",
+      "output_chars": 276,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
