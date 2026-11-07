@@ -35,8 +35,11 @@ skips:
     skill: test-canary
     decision: no A/B
     reason: >-
-      internal canary; carries no guidance; no probe asserts its delivery (not
-      built, untracked; closed issue #17 built other propagation arms)
+      rechecked 2026-11-07, holds: fails criterion 3 (the skill is a no-op
+      marker, so a with arm has nothing to score) and criterion 5 (a verdict
+      would change nothing); internal canary; carries no guidance; no probe
+      asserts its delivery (not built, untracked; closed issue #17 built other
+      propagation arms)
   - registry: adam-agentskills
     skill: sync-cc-settings-between-wsl-and-windows
     decision: defer
@@ -94,8 +97,20 @@ skips:
   - registry: cms-platform
     skill: aws-bootstrap
     decision: freshness lint
-    reason: staleness is the failure mode, not procedure quality
+    reason: >-
+      rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on
+      live AWS with real credentials, which a hermetic fixture cannot score)
+      and criterion 2 (its failure mode, staleness, is now checked by
+      cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills'
+      scheduled scripts/check_skill_freshness.py); no recorded use, local
+      since 2026-09-14 or cloud since 2026-11-02
   - registry: cms-platform
     skill: preview-environments
     decision: freshness lint
-    reason: staleness is the failure mode, not procedure quality
+    reason: >-
+      rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on
+      live AWS with real credentials, which a hermetic fixture cannot score)
+      and criterion 2 (its failure mode, staleness, is now checked by
+      cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills'
+      scheduled scripts/check_skill_freshness.py); no recorded use, local
+      since 2026-09-14 or cloud since 2026-11-02
