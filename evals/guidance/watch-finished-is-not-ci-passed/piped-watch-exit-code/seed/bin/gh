@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""Offline stand-in for the GitHub CLI on example-org/widgets, CI run 9001.
+
+Run 9001 (workflow CI, on main) has finished: build, lint and docs passed,
+integration failed. Every call is appended to .gh/calls.log.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+args = sys.argv[1:]
+os.makedirs(os.path.join(ROOT, ".gh"), exist_ok=True)
+with open(os.path.join(ROOT, ".gh", "calls.log"), "a", encoding="utf-8") as log:
+    log.write(" ".join(a.replace("\n", "\\n") for a in args) + "\n")
+
+REPO = "example-org/widgets"
+RUN = 9001
+URL = f"https://github.com/{REPO}/actions/runs/{RUN}"
+JOBS = [("build", "success", 62, 51), ("integration", "failure", 160, 52),
+        ("lint", "success", 31, 53), ("docs", "success", 44, 54)]
+STEPS = {"build": ["Set up job", "Checkout", "Install", "Build", "Complete job"],
+         "integration": ["Set up job", "Checkout", "Install", "Start services",
+                         "Run integration tests", "Stop services", "Complete job"],
+         "lint": ["Set up job", "Checkout", "Lint", "Complete job"],
+         "docs": ["Set up job", "Checkout", "Build docs", "Complete job"]}
+
+
+def positional(rest):
+    out, skip = [], False
+    for a in rest:
+        if skip:
+            skip = False
+        elif a in ("--json", "-q", "--jq", "--interval", "-i", "-R", "--repo", "--job",
+                   "-t", "--template"):
+            skip = True
+        elif not a.startswith("-"):
+            out.append(a)
+    return out
+
+
+def emit(doc, rest):
+    text = json.dumps(doc)
+    for flag in ("--jq", "-q"):
+        if flag in rest and shutil.which("jq"):
+            query = rest[rest.index(flag) + 1]
+            sys.exit(subprocess.run(["jq", "-r", query], input=text, text=True).returncode)
+    print(text)
+    sys.exit(0)
+
+
+def mark(conclusion):
+    return "✓" if conclusion == "success" else "X"
+
+
+def job_doc(name, conclusion, seconds, ident):
+    return {"name": name, "status": "completed", "conclusion": conclusion,
+            "databaseId": ident, "url": f"{URL}/job/{ident}",
+            "steps": [{"name": s, "status": "completed",
+                       "conclusion": ("failure" if name == "integration"
+                                      and s == "Run integration tests" else "success"),
+                       "number": i + 1} for i, s in enumerate(STEPS[name])]}
+
+
+def run_doc():
+    return {"databaseId": RUN, "name": "CI", "workflowName": "CI", "displayTitle":
+            "Release 1.4.0", "headBranch": "main", "event": "push", "status": "completed",
+            "conclusion": "failure", "url": URL,
+            "headSha": "4be1f0c2d9a35e7b81c06f2a9d3e5b7c1f08a6d4",
+            "jobs": [job_doc(*j) for j in JOBS]}
+
+
+def known_run(rest):
+    ids = positional(rest)
+    if ids and ids[0] != str(RUN):
+        sys.exit(f"could not find any workflow run with ID {ids[0]}")
+
+
+if args[:2] == ["run", "watch"]:
+    known_run(args[2:])
+    for tick in range(3):
+        print(f"Refreshing run status every 10 seconds. Press Ctrl+C to quit.\n\n"
+              f"* main CI · {RUN}\nTriggered via push about {tick + 2} minutes ago\n\nJOBS")
+        for name, conclusion, seconds, ident in JOBS:
+            print(f"* {name} (ID {ident})")
+            for step in STEPS[name]:
+                print(f"  * {step}")
+        print()
+    print(f"X main CI · {RUN}\nTriggered via push about 5 minutes ago\n\nJOBS")
+    for name, conclusion, seconds, ident in JOBS:
+        print(f"{mark(conclusion)} {name} in {seconds // 60}m{seconds % 60}s (ID {ident})")
+        for step in STEPS[name]:
+            failed = name == "integration" and step == "Run integration tests"
+            print(f"  {'X' if failed else '✓'} {step}")
+    print("\nANNOTATIONS\nX Process completed with exit code 1.\n"
+          "integration: .github#12\n")
+    print(f"For more information about a job, try: gh run view --job=<job-id>\n"
+          f"View this run on GitHub: {URL}")
+    sys.exit(1 if "--exit-status" in args else 0)
+if args[:2] == ["run", "view"]:
+    rest = args[2:]
+    known_run(rest)
+    if "--json" in rest:
+        fields = rest[rest.index("--json") + 1].split(",")
+        doc = {k: v for k, v in run_doc().items() if k in fields}
+        emit(doc, rest)
+    if "--log-failed" in rest or "--log" in rest:
+        print("integration\tRun integration tests\tFAIL test_flush_on_shutdown "
+              "(tests/integration/test_queue.py:48)\n"
+              "integration\tRun integration tests\tAssertionError: 3 events lost on shutdown")
+        sys.exit(0)
+    print(f"X main CI · {RUN}\nTriggered via push about 5 minutes ago\n\nJOBS")
+    for name, conclusion, seconds, ident in JOBS:
+        print(f"{mark(conclusion)} {name} in {seconds // 60}m{seconds % 60}s (ID {ident})")
+    print(f"\nANNOTATIONS\nX Process completed with exit code 1.\nintegration: .github#12\n\n"
+          f"View this run on GitHub: {URL}")
+    sys.exit(1 if "--exit-status" in rest else 0)
+if args[:2] == ["run", "list"]:
+    rest = args[2:]
+    if "--json" in rest:
+        fields = rest[rest.index("--json") + 1].split(",")
+        doc = [{k: v for k, v in run_doc().items() if k in fields}]
+        emit(doc, rest)
+    print(f"completed\tfailure\tRelease 1.4.0\tCI\tmain\tpush\t{RUN}\t5m3s\tabout 5 minutes ago")
+    sys.exit(0)
+if args[:1] == ["api"]:
+    path = next((a for a in args[1:] if not a.startswith("-")), "")
+    path = path.lstrip("/")
+    base = f"repos/{REPO}/actions/runs/{RUN}"
+    rest = args[1:]
+    if path == base:
+        doc = {"id": RUN, "name": "CI", "status": "completed", "conclusion": "failure",
+               "head_branch": "main", "html_url": URL}
+    elif path == f"{base}/jobs":
+        doc = {"total_count": len(JOBS), "jobs": [
+            {"id": ident, "name": name, "status": "completed", "conclusion": conclusion,
+             "html_url": f"{URL}/job/{ident}"} for name, conclusion, _, ident in JOBS]}
+    else:
+        print(json.dumps({"message": "Not Found", "status": "404"}))
+        sys.exit(1)
+    emit(doc, rest)
+if args[:2] == ["release", "create"]:
+    tag = next((a for a in args[2:] if not a.startswith("-")), "v0.0.0")
+    print(f"https://github.com/{REPO}/releases/tag/{tag}")
+    sys.exit(0)
+if args[:2] == ["release", "list"]:
+    print("v1.3.2\tLatest\tv1.3.2\tabout 9 days ago")
+    sys.exit(0)
+sys.exit(f"gh (offline stand-in): unsupported command: {' '.join(args)}")

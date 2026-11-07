@@ -1283,9 +1283,11 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
     eval, not bare, a model: a model-less fire is skipped as the planner skips
     it), it concluded `success`, its target is in `scope` (`fire_scope`), it
     started inside the window and at least plan_week.FIRE_RESULT_WINDOW
-    before `now`. Each counted fire is delivered (`_delivered` within the
-    window after its start), rejected (results arrived, `_arrived`, but none
-    validated) or without results. Only times and counts are published;
+    before `now`. A pair fire (`m1,m2`, plan_week's PAIR FIRES) counts once
+    per model, as the planner judges each of its cells. Each counted fire is
+    delivered (`_delivered` within the window after its start), rejected
+    (results arrived, `_arrived`, but none validated) or without results.
+    Only times and counts are published;
     dropped rows are counted to stderr by reason, never by title."""
     if fires is None:
         return None
@@ -1317,7 +1319,9 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
             dropped[reason] = dropped.get(reason, 0) + 1
             continue
         seen.add(run["id"])
-        counted.append((start.astimezone(timezone.utc), scope[title["target"]], title["model"]))
+        # A pair fire (plan_week, PAIR FIRES) is a fire of each model's cell.
+        counted += [(start.astimezone(timezone.utc), scope[title["target"]], model)
+                    for model in improve_outcomes.title_models(title)]
     for reason, n in sorted(dropped.items()):
         print(f"explorer_data: fire rows dropped ({reason}): {n}", file=sys.stderr)
     without, rejected = [], 0

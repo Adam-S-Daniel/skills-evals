@@ -1,0 +1,19 @@
+name: weekly-digest
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692
+      - name: Send the digest
+        env:
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: python3 scripts/send_digest.py --to morgan.lee@example.com

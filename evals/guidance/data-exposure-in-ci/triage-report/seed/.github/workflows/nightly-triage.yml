@@ -1,0 +1,22 @@
+name: nightly-triage
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692
+      - name: Triage the inbox
+        env:
+          MAILBOX_URL: ${{ secrets.MAILBOX_URL }}
+          MAILBOX_TOKEN: ${{ secrets.MAILBOX_TOKEN }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          DIGEST_TO: ${{ secrets.DIGEST_TO }}
+        run: python3 scripts/triage.py

@@ -13,18 +13,26 @@ behaviors: without `--no-session-persistence` it writes
 `$HOME/.claude/projects/<munged cwd>/<session>.jsonl`, and `--resume` of a
 session with no such file fails. HOME and XDG_STATE_HOME are temp dirs; no
 network and no real `claude`.
+
+The judge also gets `--tools ""` (CLI 2.1.318: its init event then lists
+`tools: []`) and an environment without GitHub, cloud-provider or SSH-agent
+credentials, because it reads text the agent under test wrote; those
+launches are recorded through test/fake-claude's FAKE_CLAUDE_ARGV_LOG.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
@@ -38,6 +46,7 @@ from scorers import judge  # noqa: E402
 FLAG = "CLAUDE_CODE_DISABLE_AUTO_MEMORY"
 NO_PERSIST = "--no-session-persistence"
 STRICT = "--strict-mcp-config"
+NO_TOOLS = ("--tools", "")
 
 STAND_IN = f"""#!{sys.executable}
 import json, os, pathlib, re, sys
@@ -214,6 +223,7 @@ class IsolationFlagsTests(unittest.TestCase):
         self.assertIn(("--setting-sources", ""), pairs(call["argv"]))
         self.assertIn(STRICT, call["argv"])
         self.assertIn(NO_PERSIST, call["argv"])
+        self.assertIn(NO_TOOLS, pairs(call["argv"]))
         self.assertEqual(call["flag"], "1")
         self.assertFalse(self.projects.exists())
 
@@ -263,8 +273,120 @@ class IsolationFlagsTests(unittest.TestCase):
         self.assertIn(("--setting-sources", ""), pairs(cmd))
         self.assertIn(STRICT, cmd)
         self.assertIn(NO_PERSIST, cmd)
+        # No tool, named once: the tuple carries it, and a repeated
+        # variadic `--tools` is a shape the CLI was never measured on.
+        self.assertIn(NO_TOOLS, pairs(cmd))
+        self.assertEqual(cmd.count("--tools"), 1)
         self.assertEqual(judge.JUDGE_ISOLATION_FLAGS,
-                         ("--setting-sources", "", STRICT, NO_PERSIST))
+                         ("--setting-sources", "", STRICT, NO_PERSIST,
+                          *NO_TOOLS))
+
+
+FAKE_CLAUDE = ROOT / "test" / "fake-claude"
+
+#: Credential variables the judge never authenticates with; each must be
+#: gone from its environment. Values are placeholders.
+FOREIGN = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN",
+           "GITHUB_ENTERPRISE_TOKEN", "AWS_ACCESS_KEY_ID",
+           "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "AWS_PROFILE",
+           "GOOGLE_APPLICATION_CREDENTIALS", "CLOUDSDK_AUTH_ACCESS_TOKEN",
+           "CLOUDSDK_CORE_PROJECT", "AZURE_CLIENT_SECRET", "SSH_AUTH_SOCK",
+           "GNUPG_SSH_AUTH_SOCK")
+#: What the CLI logs in and connects through; each must stay.
+KEPT = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_SESSION_INGRESS_TOKEN_FILE",
+        "SESSION_INGRESS_URL", "HTTPS_PROXY", "https_proxy", "NO_PROXY",
+        "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "HOME", "PATH", "GH_HOST")
+
+
+class JudgeHasNoToolAndNoForeignCredentialTests(unittest.TestCase):
+    """Both judge modes, launched through test/fake-claude, which logs each
+    call's argv and environment names. No network and no real `claude`."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="judge-notools-"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.log = self.root / "argv.jsonl"
+        environ = {name: "placeholder" for name in (*FOREIGN, *KEPT)}
+        environ.update({"HOME": str(self.root), "PATH": TEST_PATH,
+                        "CLAUDE_BIN": str(FAKE_CLAUDE),
+                        "FAKE_CLAUDE_ARGV_LOG": str(self.log)})
+        patcher = mock.patch.dict(os.environ, environ)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def launch(self, mode):
+        with mock.patch.dict(os.environ, {"FAKE_CLAUDE_MODE": mode}):
+            if mode == "judge":
+                result = judge.score("rubric", "transcript", "", model="m-1",
+                                     timeout=60)
+            else:
+                result = judge.score(
+                    "rubric", "Hi Robin, passing on this one.", "",
+                    model="m-1", timeout=60, mode="pairwise",
+                    references=[{"name": "one", "text": "Hi Robin, no thanks."},
+                                {"name": "two", "text": "Dear Robin, regrets."}])
+        self.assertIsInstance(result, dict)
+        (call,) = self.calls()
+        return call
+
+    def test_both_modes_launch_the_judge_with_no_tools(self):
+        for mode in ("judge", "judge_pairwise"):
+            with self.subTest(mode=mode):
+                self.log.unlink(missing_ok=True)
+                argv = self.launch(mode)["argv"]
+                self.assertIn(NO_TOOLS, pairs(argv))
+                self.assertEqual(argv.count("--tools"), 1)
+                # `--tools` is variadic: only an option may follow its value,
+                # or it would take the next word as a tool name.
+                after = argv[argv.index("--tools") + 2:]
+                self.assertTrue(not after or after[0].startswith("-"), argv)
+
+    def test_both_modes_drop_foreign_credentials_and_keep_the_login(self):
+        for mode in ("judge", "judge_pairwise"):
+            with self.subTest(mode=mode):
+                self.log.unlink(missing_ok=True)
+                names = set(self.launch(mode)["env_keys"])
+                self.assertEqual(names & set(FOREIGN), set())
+                self.assertEqual(set(KEPT) - names, set())
+                self.assertIn(FLAG, names)
+
+    def test_drop_foreign_credentials_is_pure(self):
+        env = {name: "placeholder" for name in (*FOREIGN, *KEPT)}
+        before = dict(env)
+        out = judge.drop_foreign_credentials(env)
+        self.assertEqual(env, before, "the input mapping was mutated")
+        self.assertEqual(out, {name: "placeholder" for name in KEPT})
+        # A name is matched as spelled, not by a looser family: these are
+        # neither listed nor in a stripped prefix.
+        near = {"GITHUB_ACTIONS": "true", "GH_TOKEN_HINT": "x",
+                "MY_AWS_NOTE": "x", "GOOGLE_CLOUD_PROJECT": "x"}
+        self.assertEqual(judge.drop_foreign_credentials(near), near)
+
+
+class PreflightUsesTheJudgesFlagsTests(unittest.TestCase):
+    """eval.yml's WIF auth preflight says it proves the judge's launch, so
+    each of its `claude -p` commands carries JUDGE_ISOLATION_FLAGS in order.
+    The workflow is parsed with `yaml`; the step's shell is split with shlex."""
+
+    def test_every_preflight_call_carries_the_judge_isolation_flags(self):
+        doc = yaml.safe_load((ROOT / ".github" / "workflows" / "eval.yml")
+                             .read_text(encoding="utf-8"))
+        (script,) = [step["run"] for job in doc["jobs"].values()
+                     for step in job.get("steps", [])
+                     if step.get("name") == "WIF auth preflight"]
+        joined = script.replace("\\\n", " ")
+        commands = [line.split("$(", 1)[1].rsplit(")", 1)[0]
+                    for line in joined.splitlines() if "claude -p" in line]
+        self.assertEqual(len(commands), 2, commands)
+        want = list(judge.JUDGE_ISOLATION_FLAGS)
+        for command in commands:
+            words = shlex.split(command)
+            windows = [words[i:i + len(want)] for i in range(len(words))]
+            self.assertIn(want, windows, words)
 
 
 if __name__ == "__main__":
