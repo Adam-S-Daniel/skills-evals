@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013RbfX9D7X6rfeFruvQWb1F",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:review-bash-ci-reliability",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013RbfX9D7X6rfeFruvQWb1F",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:review-bash-ci-reliability",
+      "output_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013dZGuA43HhBUZBpwcxK666",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && find . -name '*.sh' -not -path './.git/*' -type f && ls .github/workflows 2><path>",
+      "input_chars": 113,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013dZGuA43HhBUZBpwcxK666",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nREADME.md\ndeploy/app.conf\ndeploy/cache.conf\ndeploy/worker.conf\nscripts/check-drift.sh\ntemplates/app.conf\ntemplates/cache.conf\ntemplates/worker.conf\n./scripts/check-drift.sh\ndrift.yml",
+      "output_chars": 210,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KvUuFTTYRCtjsTc9KLpCfG",
+      "name": "Bash",
+      "input": "cat -A scripts/check-drift.sh | head -0; cat scripts/check-drift.sh .github/workflows/drift.yml README.md; for f in app cache worker; do diff -q templates/$f.conf deploy/$f.conf; done",
+      "input_chars": 183,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KvUuFTTYRCtjsTc9KLpCfG",
+      "is_error": false,
+      "output": "#!<path> bash\n# Compare every deployed config with the template it was rendered from and\n# report each file that drifted, with the team that owns its template.\nset -euo pipefail\n\nchecked=0\ndrifted=0\n\nfor expected in templates/*.conf; do\n    name=$(basename \"$expected\")\n    actual=\"deploy/${name}\"\n  ...",
+      "output_chars": 1654,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0151SsrQseB89c9uamwXAw1V",
+      "name": "bash",
+      "input": "true",
+      "input_chars": 4,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0151SsrQseB89c9uamwXAw1V",
+      "is_error": true,
+      "output": "<tool_use_error>Error: No such tool available: bash. Tool names are case-sensitive: call Bash instead.</tool_use_error>",
+      "output_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VK5wLCepcD5qkeR9ayHVDf",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 56,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0179Mr6cFW2DZSX53UDuziih",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 56,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XHw422udn4cGvrYtQ7ieqi",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 56,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VK5wLCepcD5qkeR9ayHVDf",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 96,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0179Mr6cFW2DZSX53UDuziih",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 96,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XHw422udn4cGvrYtQ7ieqi",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 96,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W3LAqSYnuymNP3q9ysgkQu",
+      "name": "Bash",
+      "input": "t=$(mktemp -d) && cp -r scripts templates deploy \"$t\"<path>\"$t\" && echo \"--- clean\"; bash scripts/check-drift.sh; echo \"rc=$?\"\necho \"--- drift + no owner\"; echo \"x\" >> deploy/app.conf; sed -i '<path>'...",
+      "input_chars": 392,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W3LAqSYnuymNP3q9ysgkQu",
+      "is_error": false,
+      "output": "--- clean\ndrift check: 3 checked, 0 drifted\nrc=0\n--- drift + no owner\nDRIFT: deploy/app.conf (owner: web-team)\n--- templates/app.conf\t2026-11-07 19:08:31.268116769 +0000\n+++ deploy/app.conf\t2026-11-07 19:08:31.282776453 +0000\n@@ -2,3 +2,4 @@\n listen = 8080\n workers = 4\n log_level = info\n+x\nDRIFT: de...",
+      "output_chars": 694,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

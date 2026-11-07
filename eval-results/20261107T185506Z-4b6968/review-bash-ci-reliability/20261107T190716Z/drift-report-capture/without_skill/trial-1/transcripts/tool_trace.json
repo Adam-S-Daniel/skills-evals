@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VHQBwbeDbYECtDjEn2NtuH",
+      "name": "Bash",
+      "input": "git status --short | head; ls -a; ls .github/workflows 2><path>; find . -name '*.sh' -not -path './.git/*' | head -50",
+      "input_chars": 120,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VHQBwbeDbYECtDjEn2NtuH",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\ndeploy\nscripts\ntemplates\ndrif...",
+      "output_chars": 330,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L3zY78NxyvsL38ofumFUV3",
+      "name": "Bash",
+      "input": "cat .github/workflows/drift.yml; echo ------; cat -A scripts/check-drift.sh | head -0; cat scripts/check-drift.sh; ls deploy templates; cat README.md | head -30",
+      "input_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L3zY78NxyvsL38ofumFUV3",
+      "is_error": false,
+      "output": "name: Config drift\n\non:\n  pull_request:\n  schedule:\n    - cron: \"17 6 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  drift:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Compare deployed configs with t...",
+      "output_chars": 1745,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QprE6Weka4HRdL1in3HZYf",
+      "name": "Bash",
+      "input": "head -3 templates/*.conf; for f in templates/*; do diff -q $f deploy/$(basename $f); done; bash scripts/check-drift.sh; echo rc=$?",
+      "input_chars": 130,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QprE6Weka4HRdL1in3HZYf",
+      "is_error": false,
+      "output": "==> templates/app.conf <==\n# owner: web-team\nlisten = 8080\nworkers = 4\n\n==> templates/cache.conf <==\n# owner: data-team\nmax_entries = 50000\nttl_seconds = 300\n\n==> templates/worker.conf <==\n# owner: data-team\nqueue = jobs\nconcurrency = 8\ndrift check: 3 checked, 0 drifted\nrc=0",
+      "output_chars": 275,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q6g31hHkhL72Na9HA9BvAJ",
+      "name": "Bash",
+      "input": "t=$(mktemp -d) && cp -r scripts templates deploy $t/ && cd $t && echo \"extra = 1\" >> deploy/app.conf && sed -i 1d templates/cache.conf && echo \"--- drift in app.conf, ownerless cache.conf:\"; bash scri...",
+      "input_chars": 230,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q6g31hHkhL72Na9HA9BvAJ",
+      "is_error": false,
+      "output": "--- drift in app.conf, ownerless cache.conf:\nrc=1\nShell cwd was reset to <path>",
+      "output_chars": 106,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cej34L4KFk8fXdGGNGdTiN",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace('''checked=0\ndrifted=0\n\nfor expected in templates/*.conf; do\n''','''checked=0\ndrifted=0\n\n# An unmatched glob must not stay lit...",
+      "input_chars": 1700,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cej34L4KFk8fXdGGNGdTiN",
+      "is_error": false,
+      "output": "== clean\ndrift check: 3 checked, 0 drifted\nrc=0\n== drift+ownerless+missing\nDRIFT: deploy/app.conf (owner: web-team)\n--- templates/app.conf\t2026-11-07 19:09:02.848385259 +0000\n+++ deploy/app.conf\t2026-11-07 19:09:02.862778330 +0000\n@@ -2,3 +2,4 @@\n listen = 8080\n workers = 4\n log_level = info\n+extra=...",
+      "output_chars": 718,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
