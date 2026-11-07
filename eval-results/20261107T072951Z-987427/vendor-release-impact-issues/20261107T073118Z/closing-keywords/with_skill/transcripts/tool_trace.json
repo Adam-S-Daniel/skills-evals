@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FWiuEuDVu8K8MSc9MDYDeu",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100; cat docs/vendor-tracking.md",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LHqw4dLF2NYKWGQzooktJP",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FWiuEuDVu8K8MSc9MDYDeu",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nf91c951 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS....",
+      "output_chars": 563,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LHqw4dLF2NYKWGQzooktJP",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CwUaodJ7VwS8N8zy3X6K6i",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat README.md hooks/warm-cache.sh .example-cli/settings.json .gitmodules; ls -la",
+      "input_chars": 152,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CwUaodJ7VwS8N8zy3X6K6i",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 2547,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qc6gnHcE5ALAzhiABJJAZS",
+      "name": "Bash",
+      "input": "grep -rn -e '--config' --exclude-dir=.git --exclude-dir=vendor . 2><path> | head; mkdir -p issues; cat > $TMPDIR/gen.py <<'EOF'\nimport re,json\nsrc=open('vendor/RELEASES.md').read().splitlines()\nbul=[l...",
+      "input_chars": 3622,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qc6gnHcE5ALAzhiABJJAZS",
+      "is_error": false,
+      "output": "# ExampleCLI 4.4.0 enforces SessionStart hook timeout: warm-cache hook may be cut off at 20s\n\nFound in the ExampleCLI 4.4.0 [2026-10-06T18:31Z] release review (tracking PR link to be added once the PR is open). Not yet verified against this repo.\n\n## ExampleCLI changes\n\n```text\n**hooks:** honor `tim...",
+      "output_chars": 3562,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LgrWDLYT1BY42wJKUWyuT9",
+      "name": "Bash",
+      "input": "echo '| 4.4.0 | 2026-11-07 | 2 filed |' >> docs/vendor-tracking.md && cat > pr-body.md <<'EOF'\n## TLDR\n\nAdds the ExampleCLI 4.4.0 release review to `docs/vendor-tracking.md`. Two of the four changes t...",
+      "input_chars": 1939,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LgrWDLYT1BY42wJKUWyuT9",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-07 | 2 filed |",
+      "output_chars": 169,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
