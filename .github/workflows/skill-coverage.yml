@@ -17,6 +17,11 @@ name: Publish skill eval coverage and draft public gaps
 on:
   schedule:
     - cron: "19 8 * * *"
+    # The weekly guidance merge window (ADR 0017): a guidance removal pull
+    # request is opened only on a pass inside it, and every other job here is
+    # idempotent, so Monday's second pass is harmless. A test pins this entry
+    # inside the shipped window.
+    - cron: "19 17 * * 1"
   workflow_dispatch:
     inputs:
       dry_run:

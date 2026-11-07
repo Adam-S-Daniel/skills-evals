@@ -41,7 +41,11 @@ name: Gate routine guidance improvement candidate
 #   stays on its branch.
 # * The pull request comes from `eval-guidance-improve/<section>`: ready,
 #   labeled `agent-authored`, with auto-merge (merge commit,
-#   `--match-head-commit`) enabled and read back when the mode is `auto`; a
+#   `--match-head-commit`) enabled and read back when the mode is `auto` and
+#   the weekly guidance merge window is open (ADR 0017; the bounds are
+#   _agent-guidance's scripts/base-md-merge-window.yml, read from the checkout
+#   `prepare` built on); outside it the pull request is opened ready but not
+#   armed, and guidance-merge-window.yml arms it inside the next window; a
 #   draft otherwise. If that branch already exists, or any guidance-loop pull
 #   request (`eval-guidance-improve/*`, `retire-guidance/*`) is open there,
 #   nothing is opened: they all write AGENTS.md and docs/guidance-impact.md.
@@ -301,7 +305,10 @@ jobs:
             echo "- Run id: \`${RUN_ID}\`, section: \`${SECTION}\`"
             echo "- Source commit: \`${SHA}\`"
             echo "- Commit: \`${COMMIT}\` on \`eval-guidance-improve/${SECTION}\`"
-            if [ "$MODE" = auto ]; then
+            queued="$(sed -n 's/^queued=//p' "$RUNNER_TEMP/open.out")"
+            if [ "$queued" = true ]; then
+              echo "- Queued: the weekly guidance merge window is closed, so auto-merge is not armed; guidance-merge-window.yml arms it inside the next window (Mondays)."
+            elif [ "$MODE" = auto ]; then
               echo "- Auto-merge (merge commit, matched to that head) is enabled; it merges once the required checks pass."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

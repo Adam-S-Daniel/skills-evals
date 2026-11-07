@@ -1990,8 +1990,12 @@ class GuidanceRemovalTests(unittest.TestCase):
         old = os.environ.copy()
         os.environ.update(GIT_ENV)
         try:
-            rc = rs.main(argv, env=env, gh=gh, push=lambda c, b, *_: pushed.append(b),
-                         registry_gh=self.registry, out=out)
+            # The weekly merge window (ADR 0017) is open for these tests; the
+            # closed case is in test_issue_guidance_merge_window.py.
+            with mock.patch.object(rs.guidance_merge_window, "window_open",
+                                   return_value=True):
+                rc = rs.main(argv, env=env, gh=gh, push=lambda c, b, *_: pushed.append(b),
+                             registry_gh=self.registry, out=out)
         finally:
             os.environ.clear()
             os.environ.update(old)
@@ -2076,9 +2080,12 @@ class GuidanceRemovalTests(unittest.TestCase):
         old = os.environ.copy()
         os.environ.update(GIT_ENV)
         try:
-            rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
-                          str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
-                         push=lambda c, b, *_: None, registry_gh=registry, out=io.StringIO())
+            with mock.patch.object(rs.guidance_merge_window, "window_open",
+                                   return_value=True):
+                rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
+                              str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
+                             push=lambda c, b, *_: None, registry_gh=registry,
+                             out=io.StringIO())
         finally:
             os.environ.clear()
             os.environ.update(old)

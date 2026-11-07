@@ -2915,7 +2915,7 @@ class GuidancePushHeadsTests(unittest.TestCase):
             with self.assertRaises(rs.RetireError):  # FakeGh prints no pull request URL
                 rs.guidance_execute(plan, Path("."), FakeGh(),
                                     lambda c, b, heads=(): pushed.append((b, list(heads))),
-                                    AUTO_ENV)
+                                    AUTO_ENV, window_open=lambda tree: True)
         self.assertEqual(pushed, [(f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", [SHA_A])])
 
 
@@ -3584,7 +3584,8 @@ class RoundTenTests(t70.Base):
                   "body": "b", "notice": {"title": "n", "body": "{removal_pr}"}}
         with mock.patch.object(rs, "guidance_prepare_branch"), \
                 mock.patch.object(rs, "_git", return_value="a" * 40 + "\n"):
-            out = rs.guidance_execute(action, Path("."), gh, lambda *a: None, AUTO_ENV, gh)
+            out = rs.guidance_execute(action, Path("."), gh, lambda *a: None, AUTO_ENV, gh,
+                                       window_open=lambda tree: True)
         self.assertIn("commented on its open proposal issue #900", out)
         note = next(s for a, s in base.calls if a[:3] == ["issue", "comment", "900"])
         self.assertIn("guidance removal pull request", note)

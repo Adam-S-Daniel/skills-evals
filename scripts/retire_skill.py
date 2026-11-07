@@ -362,6 +362,7 @@ import yaml  # noqa: E402
 
 import compute_gates  # noqa: E402
 import gates  # noqa: E402
+import guidance_merge_window  # noqa: E402
 import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
@@ -2147,11 +2148,22 @@ def guidance_commands(action: dict) -> list:
 GUIDANCE_PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(GUIDANCE_REPO)}/pull/(\d+)")
 
 
+#: Said when a removal waits for the weekly guidance merge window (ADR 0017).
+WINDOW_CLOSED = ("no removal pull request is opened: the weekly guidance merge window "
+                 "(_agent-guidance ADR 0039) is closed; the schedule's Monday pass inside "
+                 "it opens it")
+
+
 def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
-                     registry_gh=None) -> str:
+                     registry_gh=None, window_open=None) -> str:
     """Make the plan's writes: skills-evals issues through `gh`,
-    _agent-guidance writes through `registry_gh` (default `gh`)."""
+    _agent-guidance writes through `registry_gh` (default `gh`). A removal
+    pull request is opened only while the weekly merge window is open
+    (`window_open(checkout)`, default guidance_merge_window.window_open): it
+    is armed the moment it opens, and an unarmed one reads as a person's
+    hold, so outside the window it is not opened at all."""
     registry_gh = registry_gh or gh
+    window_open = window_open or guidance_merge_window.window_open
     kind = action["action"]
     if kind == "none":
         return action["reason"]
@@ -2160,6 +2172,8 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
         gh(guidance_commands(action)[-1][1:], action["body"])
         return (f"filed an issue for {action['section']}" if kind == "create-issue"
                 else f"updated issue #{action['issue']} for {action['section']}" + commented)
+    if checkout is None or not window_open(checkout):
+        return WINDOW_CLOSED
     check_auto_env(env)
     guidance_prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
