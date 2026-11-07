@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I scanned about 40 contracts and they're all image-only PDFs. run OCR on them so I can search the text, and keep the originals",
+    "should_trigger": true
+  },
+  {
+    "query": "can you OCR the PDFs in ~/Documents/scans using ocrmypdf and write the results to a separate folder? I'll check them before replacing anything",
+    "should_trigger": true
+  },
+  {
+    "query": "make these scanned PDFs searchable — batch it, don't touch the originals, and then compare a few pages before/after so I know the OCR didn't wreck them",
+    "should_trigger": true
+  },
+  {
+    "query": "ocr-pdfs on the list in needs_ocr.csv please",
+    "should_trigger": true
+  },
+  {
+    "query": "my scanner output is just pictures of pages. run tesseract/ocrmypdf over the whole folder and tell me which ones failed",
+    "should_trigger": true
+  },
+  {
+    "query": "The audit says 12 of these PDFs have no text layer. go ahead and OCR them and verify the results look right",
+    "should_trigger": true
+  },
+  {
+    "query": "batch OCR pipeline for my tax documents folder, English and Spanish, preserve the folder structure in the output directory",
+    "should_trigger": true
+  },
+  {
+    "query": "process these scanned documents with OCR and then show me a page-by-page check that the searchable text matches what's printed",
+    "should_trigger": true
+  },
+  {
+    "query": "I need Ctrl+F to work in these old scanned statements. add a text layer with OCRmyPDF",
+    "should_trigger": true
+  },
+  {
+    "query": "redo the OCR on the ones that came out garbled last time, but write to a new folder so I can diff",
+    "should_trigger": true
+  },
+  {
+    "query": "which of these PDFs actually need OCR? just audit them, don't change anything",
+    "should_trigger": false
+  },
+  {
+    "query": "merge these five PDFs into one file in the order of their filenames",
+    "should_trigger": false
+  },
+  {
+    "query": "extract the text of page 3 of this PDF and summarize it",
+    "should_trigger": false
+  },
+  {
+    "query": "rename my scanned PDFs to something descriptive with the date at the front",
+    "should_trigger": false
+  },
+  {
+    "query": "compress these PDFs, they're too big to email",
+    "should_trigger": false
+  },
+  {
+    "query": "are these two PDFs identical when printed? I have report.pdf and report-signed.pdf",
+    "should_trigger": false
+  },
+  {
+    "query": "convert this folder of PNG screenshots into a single PDF",
+    "should_trigger": false
+  },
+  {
+    "query": "fill out the form fields in this PDF application",
+    "should_trigger": false
+  },
+  {
+    "query": "read the text from this photo of a receipt and put it in a spreadsheet",
+    "should_trigger": false
+  },
+  {
+    "query": "split a 200 page PDF into one file per chapter",
+    "should_trigger": false
+  }
+]

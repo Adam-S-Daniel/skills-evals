@@ -67,6 +67,7 @@ evals/
     trigger-eval-set.json  # reviewed should/should-not-trigger queries for
                            # propose_skill_edit.py --trigger-eval-set
   migrate-claude-memory/   # trigger eval set only
+  ocr-pdfs/                # trigger eval set only
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings, five fixtures
     release-pipeline/      # six findings and two decoys in a release pipeline's shell
       fixture.yaml         # prompt, objective checks (file_matches over the seed scripts), rubric
