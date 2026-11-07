@@ -1,0 +1,369 @@
+{
+  "skill": "platform-release-and-bump",
+  "arm": "without_skill",
+  "timestamp": "20261107T132142Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1218193,
+    "num_turns": 7,
+    "duration_ms": 31275,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 17119,
+      "cache_read_input_tokens": 266253,
+      "output_tokens": 2669,
+      "output_tokens_details": {
+        "thinking_tokens": 681
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 17119,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 778,
+          "cache_read_input_tokens": 43047,
+          "cache_creation_input_tokens": 2062,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2062
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "canonical-verifier",
+      "passed": false,
+      "detail": "command_nonzero exit=1 network=isolated stdout_bytes=349 stderr_bytes=1156 output=suppressed"
+    },
+    {
+      "id": "refs-on-release",
+      "passed": true,
+      "detail": "every platform ref pinned to v0.1.104"
+    },
+    {
+      "id": "resolved-revision",
+      "passed": true,
+      "detail": "Gemfile.lock matches"
+    },
+    {
+      "id": "added-caller",
+      "passed": false,
+      "detail": "found 0, expected at least 1"
+    },
+    {
+      "id": "retired-caller",
+      "passed": false,
+      "detail": "found 1, expected at most 0"
+    },
+    {
+      "id": "gem-files-present",
+      "passed": true,
+      "detail": "2 file(s) matched ['Gemfile', 'Gemfile.lock']"
+    },
+    {
+      "id": "no-pin-comments",
+      "passed": true,
+      "detail": "no trailing comment on any uses: pin"
+    },
+    {
+      "id": "no-gh-write",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "verifier-digest",
+      "passed": true,
+      "detail": ".cms-platform/scripts/verify-consumer-pins.sh: digest matches"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.cms-platform/e2e/node_modules/yaml/LICENSE, .cms-platform/e2e/node_modules/yaml/dist/compose/compose-collection.js, .cms-platform/e2e/node_modules/yaml/dist/compose/compose-doc.js, .cms-platform/e2e/node_modules/yaml/dist/compose/compose-node.js, .cms-platform/e2e/node_modules/yaml/dist/compose/compose-scalar.js, .cms-platform/e2e/node_modules/yaml/dist/compose/composer.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-block-map.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-block-scalar.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-block-seq.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-end.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-flow-collection.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-flow-scalar.js, .cms-platform/e2e/node_modules/yaml/dist/compose/resolve-props.js, .cms-platform/e2e/node_modules/yaml/dist/compose/util-contains-newline.js, .cms-platform/e2e/node_modules/yaml/dist/compose/util-empty-scalar-position.js, .cms-platform/e2e/node_modules/yaml/dist/compose/util-flow-indent-check.js, .cms-platform/e2e/node_modules/yaml/dist/compose/util-map-includes.js, .cms-platform/e2e/node_modules/yaml/dist/doc/Document.js, .cms-platform/e2e/node_modules/yaml/dist/doc/anchors.js, .cms-platform/e2e/node_modules/yaml/dist/doc/applyReviver.js, .cms-platform/e2e/node_modules/yaml/dist/doc/createNode.js, .cms-platform/e2e/node_modules/yaml/dist/doc/directives.js, .cms-platform/e2e/node_modules/yaml/dist/errors.js, .cms-platform/e2e/node_modules/yaml/dist/index.js, .cms-platform/e2e/node_modules/yaml/dist/log.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/Alias.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/Collection.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/Node.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/Pair.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/Scalar.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/YAMLMap.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/YAMLSeq.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/addPairToJSMap.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/identity.js, .cms-platform/e2e/node_modules/yaml/dist/nodes/toJS.js, .cms-platform/e2e/node_modules/yaml/dist/parse/cst-scalar.js, .cms-platform/e2e/node_modules/yaml/dist/parse/cst-stringify.js, .cms-platform/e2e/node_modules/yaml/dist/parse/cst-visit.js, .cms-platform/e2e/node_modules/yaml/dist/parse/cst.js, .cms-platform/e2e/node_modules/yaml/dist/parse/lexer.js, .cms-platform/e2e/node_modules/yaml/dist/parse/line-counter.js, .cms-platform/e2e/node_modules/yaml/dist/parse/parser.js, .cms-platform/e2e/node_modules/yaml/dist/public-api.js, .cms-platform/e2e/node_modules/yaml/dist/schema/Schema.js, .cms-platform/e2e/node_modules/yaml/dist/schema/common/map.js, .cms-platform/e2e/node_modules/yaml/dist/schema/common/null.js, .cms-platform/e2e/node_modules/yaml/dist/schema/common/seq.js, .cms-platform/e2e/node_modules/yaml/dist/schema/common/string.js, .cms-platform/e2e/node_modules/yaml/dist/schema/core/bool.js, .cms-platform/e2e/node_modules/yaml/dist/schema/core/float.js, .cms-platform/e2e/node_modules/yaml/dist/schema/core/int.js, .cms-platform/e2e/node_modules/yaml/dist/schema/core/schema.js, .cms-platform/e2e/node_modules/yaml/dist/schema/json/schema.js, .cms-platform/e2e/node_modules/yaml/dist/schema/tags.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/binary.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/bool.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/float.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/int.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/merge.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/omap.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/pairs.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/schema.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/set.js, .cms-platform/e2e/node_modules/yaml/dist/schema/yaml-1.1/timestamp.js, .cms-platfo [truncated: 6129 chars]"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 4,
+        "rationale": "All local pins, the Gemfile, and the Gemfile.lock revision moved to v0.1.104 (e76901db\u2026), but the agent itself reports that verify-consumer-pins.sh still fails the canonical caller set, so the cap at 4 applies; its stated reason for not adding cms-delete-published-preview.yml, an unknown apex, is weak because every other caller in the diff already uses `apex: example.com`."
+      },
+      {
+        "name": "Sequencing",
+        "score": 6,
+        "rationale": "The work is scoped to the released tag and reconciles every pin and revision, and the response honestly says the gate fails rather than presenting the bump as done; however, the caller set was left unreconciled on a question the repo already answers, and the verifier output is paraphrased instead of quoted with its exit code."
+      },
+      {
+        "name": "Restraint",
+        "score": 8,
+        "rationale": "The diff touches only consumer pin files, with nothing committed, no remote or gh writes, and no claims of live dispatch or deployment validation; the historical 'ONLY one since v0.1.103' comment was preserved, though the commented-out `# platform_ref` line in deploy-production.yml was also rewritten, which edges into pin comments."
+      }
+    ],
+    "overall": 5.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 14,
+      "output_tokens": 2669,
+      "cache_read_input_tokens": 266253,
+      "cache_creation_input_tokens": 17119,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "ac10a455fc22a82f15da07a85909f68ccfcbdc898d538fbc0f66744183587fd7",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T132040Z-b53b8e",
+    "session_id": "cse_01SphsQAAgLycFiD7zuTZoe9",
+    "harness_commit": "e297f853ea6a7c427f05ec0251b85a92b6216965",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T13:21:42Z",
+    "ended_at": "2026-11-07T13:24:49Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T13:21:46.302Z",
+      "to_at": "2026-11-07T13:24:48.864Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.44,
+          "to": 0.44,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQAAgLycFiD7zuTZoe9",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.6830478,
+      "agent_usd": 0.4310198,
+      "judge_usd": 0.252028,
+      "guard_usd": 0,
+      "metered_usd": 0.5923077999999999,
+      "last_agent_call_usd": 0.13742169999999998,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T13:21:42Z",
+      "ended_at": "2026-11-07T13:22:29Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T13:21:42Z",
+          "ended_at": "2026-11-07T13:22:15Z",
+          "duration_ms": 32720,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T13:22:16Z",
+          "ended_at": "2026-11-07T13:22:29Z",
+          "duration_ms": 13065,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T13:21:46.302Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.44,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T13:22:28.625Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.44,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 32720,
+        "num_turns": 7,
+        "cost_usd": 0.1218193,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 14,
+            "output_tokens": 2669,
+            "cache_read_input_tokens": 266253,
+            "cache_creation_input_tokens": 17119,
+            "cost_usd": 0.1218193
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 17119
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 13065,
+        "num_turns": 1,
+        "cost_usd": 0.0815,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 901,
+            "cache_read_input_tokens": 1520,
+            "cache_creation_input_tokens": 7896,
+            "cost_usd": 0.0815
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 7896
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}

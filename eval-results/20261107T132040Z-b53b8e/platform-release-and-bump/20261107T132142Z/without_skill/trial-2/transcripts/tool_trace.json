@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AXmuw7CTjPEHKuW6jVjTc4",
+      "name": "Bash",
+      "input": "git status --short | head; ls; grep -rIn --exclude-dir=node_modules --exclude-dir=.git -E \"platform.{0,40}v?0\\.1\\.[0-9]+|v?0\\.1\\.10[0-9]\" . | head -30",
+      "input_chars": 150,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AXmuw7CTjPEHKuW6jVjTc4",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nGemfile\nGemfile.lock\nPLATFORM_REF\nREADME.md\nassets\nbin\nplatform.lock\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission den...",
+      "output_chars": 3495,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xxscz32gwxGCrXPKBvL9H2",
+      "name": "Bash",
+      "input": "cat PLATFORM_REF platform.lock; git log --oneline | head -5; git diff --stat; ls bin; cat .gitmodules; grep -n -i -B2 -A10 \"bump\" README.md | head -60; cat .github/workflows/platform-bump.yml",
+      "input_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xxscz32gwxGCrXPKBvL9H2",
+      "is_error": false,
+      "output": "tag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\nf950a9f initial commit\ngh\ncat: .gitmodules: Permission denied\nname: Platform bump\non:\n  schedule:\n    - cron: \"0 7 * * 1\"\n  workflow_dispatch:\npermissions:\n  contents: writ...",
+      "output_chars": 887,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Pba1mrnup2AarxqJiWSWBA",
+      "name": "Bash",
+      "input": "cat Gemfile.lock | head -20; cat .github/workflows/platform-pin-consistency.yml; cat README.md | head -60; cat bin/gh | head -20; grep -rIn --exclude-dir=.git \"e76901d\\|0\\.1\\.104\" . 2><path> | grep -v...",
+      "input_chars": 221,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Pba1mrnup2AarxqJiWSWBA",
+      "is_error": false,
+      "output": "GIT\n  remote: https://github.com/Adam-S-Daniel/cms-platform\n  revision: 1111111111111111111111111111111111111111\n  tag: v0.1.103\n  specs:\n    cms-platform-theme (0.1.103)\n\nDEPENDENCIES\n  cms-platform-theme!\n# Thin caller \u2014 copied into a site repo as\n# `.github/workflows/platform-pin-consistency.yml`...",
+      "output_chars": 4144,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XYRmJdcUyuXAcEEW8KhMeZ",
+      "name": "Bash",
+      "input": "cd <path> && ls; ls scripts bin docs 2><path> | head -40; git log --oneline -1 2>&1 | head -2; grep -rIl -i \"bump\" --exclude-dir=.git . | head -15",
+      "input_chars": 180,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012X99XeQnGsLg4HCYg7eqNa",
+      "name": "Bash",
+      "input": "for f in .cms-platform/examples/site/.github/workflows/*.yml; do b=$(basename $f); echo \"== $b\"; diff <(sed 's/v0\\.1\\.104/vX/g' $f) <(sed 's/v0\\.1\\.103/vX/g' .github/workflows/$b) 2>&1 | head -20; don...",
+      "input_chars": 355,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XYRmJdcUyuXAcEEW8KhMeZ",
+      "is_error": false,
+      "output": "e2e\nexamples\nscripts\nscripts:\ncheck-platform-pin-consistency.js\nstale-platform-refs.js\nverify-consumer-pins.sh\nf950a9f initial commit\n./scripts/stale-platform-refs.js\n./scripts/verify-consumer-pins.sh\n./scripts/check-platform-pin-consistency.js\n./examples/site/.github/workflows/cms-scheduled-publish...",
+      "output_chars": 417,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012X99XeQnGsLg4HCYg7eqNa",
+      "is_error": false,
+      "output": "== *.yml\nsed: can't read .cms-platform/examples/site/.github/workflows/*.yml: No such file or directory\nsed: can't read .github/workflows/*.yml: No such file or directory\nsed: can't read .cms-platform/examples/site/.github/actions/local/action.yml: No such file or directory\nsed: can't read .github/a...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017bqKvj3FVjT6MGYsqFHKHp",
+      "name": "Bash",
+      "input": "cd <path> && sed -n 1,60p verify-consumer-pins.sh; echo ======; sed -n 1,50p stale-platform-refs.js; echo =====; sed -n 1,50p check-platform-pin-consistency.js",
+      "input_chars": 198,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017bqKvj3FVjT6MGYsqFHKHp",
+      "is_error": false,
+      "output": "#!<path> bash\n# THIS SCRIPT'S EXIT CODE IS THE DEFINITION OF DONE FOR A CONSUMER PIN BUMP.\n# Run it from the CONSUMER repo root; a green run \u2014 not a read of the diff, not a\n# subagent's prose \u2014 is what makes the bump done.\n#\n# WHY IT EXISTS. The v0.1.76 consumer bump was delegated with an exact spec...",
+      "output_chars": 9395,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FLxDPt92aQYGkWA1Mye1WA",
+      "name": "Bash",
+      "input": "cd <path> && ls -a . .cms-platform | head -50; ls AGENTS.md CLAUDE.md 2>&1; sed -n 60,200p .cms-platform/scripts/verify-consumer-pins.sh",
+      "input_chars": 153,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FLxDPt92aQYGkWA1Mye1WA",
+      "is_error": false,
+      "output": ".:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.cms-platform\n.gh\n.gh-invocations.log\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nGemfile\nGemfile.lock\nPLATFORM_REF\nREADME.md\nassets\nbin\nplatform.lock\n\n.cms-platform:\n.\n..\n.claude\ne2e\nexamples\nscripts\nls: cann...",
+      "output_chars": 6359,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CcVHCTPaCumhscNFoMGWd3",
+      "name": "Bash",
+      "input": "files=$(grep -rIl \"v0\\.1\\.103\" platform.lock Gemfile Gemfile.lock .github) && echo \"$files\" && sed -i '<path>' $files \\\n&& sed -i 's/cms-platform-theme (0\\.1\\.103)/cms-platform-theme (0.1.104)/; s/^  ...",
+      "input_chars": 586,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CcVHCTPaCumhscNFoMGWd3",
+      "is_error": false,
+      "output": "platform.lock\nGemfile\nGemfile.lock\n.github/actions/local/action.yml\n.github/workflows/cms-scheduled-publish-loop.yml\n.github/workflows/deploy-preview.yml\n.github/workflows/cms-media-roundtrip.yml\n.github/workflows/platform-bump.yml\n.github/workflows/cms-publish-loop-host.yml\n.github/workflows/platfo...",
+      "output_chars": 2213,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FHA6rBupgQQLUBUfUw4CK3",
+      "name": "Bash",
+      "input": "diff .github/workflows/old-preview-cleanup.yml .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml",
+      "input_chars": 125,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FHA6rBupgQQLUBUfUw4CK3",
+      "is_error": false,
+      "output": "2,13c2,6\n< # `.github/workflows/auto-resolve-newline-conflict.yml`. Owns the\n< # `workflow_run` + `workflow_dispatch` triggers + run-name; delegates the\n< # newline-conflict resolution to the platform's reusable workflow. The\n< # resolver script lives in the platform repo \u2014 this caller only translat...",
+      "output_chars": 3035,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
