@@ -94,6 +94,28 @@ def focus_of(**over):
     return [f["section"] for f in plan_week.guidance_focus(ctx(**over))[0]]
 
 
+#: SHARES outside the 2026-11-09 week (plan_week restores it after the reset).
+STANDING_SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
+
+
+class FinishWeekTests(unittest.TestCase):
+    """The settings for the week ending 2026-11-09 17:00 UTC (Adam,
+    2026-11-07): guidance first, every section, no guidance-improve, and
+    unknown-cost cells reserved cheaply. Restore after the reset."""
+
+    def test_the_week_settings(self):
+        self.assertEqual(plan_week.SHARES[0][0], "focus")
+        self.assertEqual(sorted(plan_week.SHARES), sorted(STANDING_SHARES))
+        self.assertGreaterEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 31)
+        self.assertTrue(plan_week.GUIDANCE_IMPROVE_HELD)
+        ctx = {"reservation": 1.0, "points_per_usd": 0.0005, "overrun": 0.0005}
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 0.1)
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": 100.0}, ctx), 0.05)
+
+
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ScoreTests(unittest.TestCase):
 
     def score(self, cells, **over):
@@ -272,6 +294,10 @@ class CeilingDoesNotBlockTests(unittest.TestCase):
         self.assertFalse(plan_week._blocking(cells[1]))
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
+@mock.patch.object(plan_week, "SHARES", STANDING_SHARES)
 class BandTests(unittest.TestCase):
 
     def test_focused_sections_go_to_focus_the_rest_to_guidance_rest(self):
@@ -390,6 +416,9 @@ class EvalCellsTests(unittest.TestCase):
         self.assertNotIn("with_counted", skill)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class GatherTests(unittest.TestCase):
     """The plan command passes the guidance policy and the open removal pull
     requests to the focus."""
@@ -434,6 +463,9 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(len(plan["guidance_focus"]), plan_week.GUIDANCE_FOCUS_SECTIONS)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ExplorerQueueTests(unittest.TestCase):
 
     def test_a_focused_section_gets_a_queue_place_before_the_rest(self):
@@ -466,6 +498,70 @@ class DocsTests(unittest.TestCase):
         for phrase in ("4. **Guidance focus**", "8. **Guidance rest**", "BLOCKING",
                        "one trial"):
             self.assertIn(phrase, doc)
+
+
+class AlonePairTests(unittest.TestCase):
+    """THE ALONE PAIR (owner, 2026-11-03): a guidance eval fire runs the
+    section-alone pair (`arms: both`) only for a section leaning toward
+    removal; every other guidance fire is `arms: in-situ`. Skill fires are
+    `both` as before."""
+
+    def arms_of(self, cells, **over):
+        plan = plan_week.build_plan(ctx(cells=cells, **over), NOW)
+        return {(f["fixture"], f["model"]): f["arms"] for f in plan["fires"]
+                if f["mode"] == "eval"}
+
+    def test_a_section_far_from_removal_fires_only_its_in_situ_pair(self):
+        cells = [near("s", 0.49, "a"), near("s", 0.9, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+        for c in cells:
+            self.assertEqual(plan_week.eval_item(c, ctx(cells=cells))["arms"], "in-situ")
+
+    def test_from_the_threshold_on_every_cell_fires_both_pairs(self):
+        # The section's progress is its LOWEST cell's: both cells at least
+        # halfway, so the alone pair runs beside the in-situ pair.
+        at = plan_week.ALONE_PAIR_FROM_PROGRESS
+        self.assertEqual(at, 0.5)
+        cells = [near("s", at, "a"), near("s", 0.8, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"both"})
+        self.assertAlmostEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"),
+                               at, 12)
+
+    def test_a_missing_cell_holds_the_section_below_the_threshold(self):
+        # A removal needs every cell, so one with no run keeps it at 0.
+        cells = [near("s", 0.95, "a"), missing("s", "b")]
+        self.assertEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"), 0.0)
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+
+    def test_an_in_situ_retire_fires_both_pairs_whatever_the_progress(self):
+        c = ctx()
+        for over in ({"in_situ_verdict": "retire"}, {"verdict": "retire"},
+                     {"verdict": "shorten-or-merge"}):
+            with self.subTest(**over):
+                cell = gcell("s", "a", **over)
+                self.assertTrue(plan_week.leans_to_removal(cell, ctx(cells=[cell])))
+                self.assertEqual(plan_week.eval_item(cell, ctx(cells=[cell]))["arms"], "both")
+        self.assertEqual(plan_week.eval_item(gcell("s", "a"), c)["arms"], "in-situ")
+
+    def test_the_policy_retire_level_scales_the_progress(self):
+        cell = near("s", 0.5)  # 0.45 no-help confidence
+        self.assertEqual(plan_week.fire_arms(cell, ctx(cells=[cell])), "both")
+        tight = ctx(cells=[cell], guidance_policy={"retire_confidence": 0.95})
+        self.assertEqual(plan_week.fire_arms(cell, tight), "in-situ")
+
+    def test_skill_cells_stay_both(self):
+        cells = [scell("a-skill", "missing"), near("s", 0.1)]
+        arms = self.arms_of(cells)
+        self.assertEqual(arms[("evals/a-skill", "heavy")], "both")
+        self.assertEqual(arms[(f"evals/guidance/s/a", "heavy")], "in-situ")
+
+    def test_an_in_situ_fire_is_a_paired_eval_fire_for_the_probe(self):
+        # While the routine is down the probe ranks banded paired fires;
+        # an in-situ fire is one, as `both` is.
+        cells = [near("s", 0.1)]
+        plan = plan_week.build_plan(ctx(cells=cells, routine_down=NOW), NOW)
+        evals = [f for f in plan["fires"] if f["mode"] == "eval"]
+        self.assertEqual([(f["band"], f["arms"]) for f in evals], [("focus", "in-situ")])
 
 
 if __name__ == "__main__":

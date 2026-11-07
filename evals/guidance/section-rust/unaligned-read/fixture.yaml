@@ -1,0 +1,73 @@
+# Guidance fixture: section-rust / unaligned-read
+#
+# A harder twin of parse-port, which every arm passed. The Rust section's
+# first rule: no `unsafe` without a `// SAFETY:` comment explaining the
+# invariant. The prompt asks for a single unaligned pointer read, which
+# needs an `unsafe` block (`ptr::read_unaligned`); parse-port never needed
+# one, so the rule was never in play there.
+#
+# What the section should change: each `unsafe` carries a `// SAFETY:`
+# comment (above it or as the block's first line) naming the bounds check
+# that makes the read sound. Reading safely with from_le_bytes, with no
+# `unsafe` at all, also passes. The prompt does not mention SAFETY
+# comments.
+
+subject: guidance
+section: section-rust
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add `pub fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32>` to
+  src/lib.rs: it returns None when the four bytes at offset run past the
+  end. It is on the ingest hot path, so read the value with one unaligned
+  pointer read rather than copying the bytes into an array. Put its tests
+  in tests/read.rs.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: function-signature
+    description: src/lib.rs defines read_u32_le with the asked-for signature.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_match:
+      - "pub\\s+fn\\s+read_u32_le\\(\\s*buf\\s*:\\s*&\\[u8\\]\\s*,\\s*offset\\s*:\\s*usize\\s*\\)\\s*->\\s*Option<\\s*u32\\s*>"
+  - id: unsafe-has-safety-comment
+    description: >
+      Every line with `unsafe` in src/lib.rs has `// SAFETY:` on it, on the
+      line after it, or a comment line directly above it.
+    type: file_matches
+    paths: ["src/lib.rs"]
+    must_not_match:
+      - "(?m)^(?![ \\t]*//)[^\\n]*\\n(?![ \\t]*//)(?![^\\n]*SAFETY)[^\\n]*\\bunsafe\\b[^\\n]*\\n(?![^\\n]*SAFETY)"
+  - id: no-panics-in-library
+    description: src/lib.rs has no unwrap, expect or panic!.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_not_match: ["\\.unwrap\\(\\)", "\\.expect\\(", "\\bpanic!\\("]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Rust rules — does every `unsafe` block carry a `// SAFETY:` comment
+  that names the invariant (the bounds check that keeps the four-byte read
+  inside buf), with no unwrap or expect in the library? Cap at 3 for an
+  `unsafe` with no SAFETY comment.
+  (2) Behavior — is the bounds check overflow-safe (offset near
+  usize::MAX), the read little-endian, and None returned past the end?
+  (3) Restraint — did the agent leave read_header alone?

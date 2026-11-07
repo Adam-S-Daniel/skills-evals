@@ -1,0 +1,173 @@
+# Eval fixture: review-bash-ci-reliability (pages-temp-repo-commit)
+# Measures SKILL.md checklist item 2, "Git Identity in CI", on the case its
+# own text names and no other fixture runs: a script that calls `git commit`
+# OUTSIDE the checkout directory. CI runners lack a global `user.name` /
+# `user.email`, so a commit in any repository that is not configured itself
+# fails with exit 128. Item 5 rides along, because the skill says to apply it
+# "whenever you add a CI identity".
+#
+# The seed's scripts/publish-pages.sh LOOKS like it handles identity: its
+# first two lines run `git config user.name/user.email` in the checkout. But
+# it publishes the built site as one fresh commit made in a NEW repository
+# (`git -C "$site" init` in a mktemp directory) and fetches that commit back
+# into the checkout to force-push gh-pages. The checkout's local config does
+# not reach the temporary repository, so on a runner `git -C "$site" commit`
+# dies with "Author identity unknown"; on a maintainer's machine, where a
+# global identity exists, it works, which is why it looks fine. A runner
+# whose global config turns `commit.gpgsign` on breaks the same commit a
+# second way. There is no `|| true`, `< <(`, optional tool or grep capture
+# in the script, so nothing else draws the eye.
+#
+# Why the other fixtures cannot measure this: `release-pipeline` scores its
+# missing identity by reading the script (file_matches) and its commit runs
+# in the checkout; `nightly-snapshot` seeds a working CI identity and
+# measures item 5 on a commit in the checkout, so an agent that only adds
+# `commit.gpgsign false` there scores full marks, and here that same fix
+# still fails `fresh-runner`. `drift-report-capture`,
+# `test-runner-assertions` and `empty-repo-discovery` commit nothing.
+#
+# What the objective column decides, and how: the two behavior and two
+# restraint checks RUN the final scripts/publish-pages.sh through the
+# `repo_tests` scorer. The probe (checker/.probe/pages.sh) copies the
+# workspace into a throwaway git repository with a local bare remote and its
+# own HOME, whose global config is the runner's (no identity, and
+# `user.useConfigOnly` so git cannot guess one from the host name), the
+# runner's with signing on, or a maintainer's own identity. It is an overlay
+# laid over a scratch copy of the workspace, so the agent never sees it. Each
+# case is decided by the script's exit code, the gh-pages commit on the
+# remote (one root commit titled `handbook <rev>` holding the built site),
+# main left alone, and for the maintainer case the global config left
+# byte-identical: a fix that overwrites `git config --global user.name`
+# unconditionally clobbers the identity of whoever runs the script locally,
+# which the README says maintainers do. The skill's own snippet sets the
+# global identity only when it is unset and passes. What it cannot decide:
+# an identity set only in the workflow (a `git config --global` step) fails
+# `fresh-runner`, because the probe runs the script, not the workflow; the
+# item's own text puts the setting in the script. Whether the reply explains
+# the failure mode is the judge's.
+#
+# No `context:` block: an isolation pair (ADR 0012) until
+# scripts/contextualize_fixtures.py gives it one; evals/unscheduled.yml
+# lists it with that reason.
+
+skill: review-bash-ci-reliability
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/696
+
+# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
+# picks both (ADR 0013).
+
+judge:
+  # Correctness carries the axis that matters; restraint is the guardrail and
+  # must not outvote it (DESIGN.md, "Harness-wide rules").
+  weights:
+    correctness: 0.5
+    restraint: 0.2
+    explanation: 0.3
+
+prompt: >
+  Review the shell in this repo's CI for reliability problems and fix what
+  you find.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# `repo_tests` requires a `fail_to_pass` list; that is the scorer's key name,
+# and every case listed must exit 0. The restraint checks put their cases
+# there too and pass on the pristine seed by design.
+objective_checks:
+  - id: workflow-yaml-parses
+    description: The pages workflow still parses as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  - id: workflow-file-present
+    description: The pages workflow itself is still present (yaml_parses passes on a deleted file)
+    type: file_matches
+    paths: [".github/workflows/pages.yml"]
+    require_present: true
+    must_match:
+      - '^name: Publish handbook[ \t]*$'
+
+  - id: fresh-runner
+    description: >
+      On a runner with no global git identity, the job passes and gh-pages on
+      the remote is one root commit titled `handbook <rev>` holding the built
+      site. The pristine script's `git -C "$site" commit` fails with "Author
+      identity unknown": the identity it sets is the checkout's, and the
+      commit is made in a new repository that does not see it.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/pages.sh]
+    fail_to_pass:
+      - fresh-runner
+
+  - id: signing-on-runner
+    description: >
+      The same, on a runner whose global git config also turns commit signing
+      on with no usable key. A fix that supplies an identity to the new
+      repository but leaves signing to the runner fails here.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/pages.sh]
+    fail_to_pass:
+      - signing-on-runner
+
+  - id: developer-config-untouched
+    description: >
+      Restraint: on a maintainer's machine with a global identity of their
+      own, the job publishes and leaves the global git config byte-identical.
+      A fix that sets `git config --global user.name` unconditionally fails
+      here. Passes on the pristine seed.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/pages.sh]
+    fail_to_pass:
+      - developer-config-untouched
+
+  - id: build-failure-still-fails
+    description: >
+      Restraint: when the site build fails, the job fails and publishes
+      nothing. A fix that makes the job green by swallowing errors fails
+      here. Passes on the pristine seed.
+    type: repo_tests
+    overlay: checker
+    argv: [bash, .probe/pages.sh]
+    fail_to_pass:
+      - build-failure-fails-the-job
+
+  - id: docs-untouched
+    description: >
+      The handbook pages are byte-identical to the seed: the fix belongs in
+      the scripts and the workflow.
+    type: files_unchanged
+    paths:
+      - "docs/*.md"
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — did the agent find that scripts/publish-pages.sh commits
+  in a NEW repository (the mktemp directory it `git init`s), which the
+  identity it configures in the checkout does not reach, so on a CI runner
+  with no global identity that commit fails; and fix it so the commit gets an
+  identity there (configured in that repository, passed with `git -c`, or set
+  globally only when unset), with commit signing disabled for that commit or
+  a key set up, since the runner's global config is unknown? Cap at 4 if
+  fresh-runner or signing-on-runner is failing.
+  (2) Restraint — did the agent keep the job failing when the build fails,
+  keep publishing gh-pages as one fresh commit, leave a maintainer's own
+  global git identity alone, leave the docs alone, and avoid unrelated
+  rewrites? Cap at 4 if developer-config-untouched, build-failure-still-fails
+  or docs-untouched is failing.
+  (3) Explanation — did the reply name the actual failure mode (a commit
+  outside the checkout does not see the checkout's local git config, and a
+  CI runner has no global identity and possibly a global signing setting),
+  so a reader could tell why the original code was unsafe even though it
+  works on a developer's machine?

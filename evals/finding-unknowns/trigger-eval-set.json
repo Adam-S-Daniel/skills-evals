@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I have to build a CSV-to-Parquet ingest for a vendor feed I've never seen, in a Rust codebase I've never opened. before we write anything, what should I be asking that I haven't thought to ask?",
+    "should_trigger": true
+  },
+  {
+    "query": "the last two plans for this billing migration both needed rework halfway through. before we draft a third, help me work out what we keep not knowing",
+    "should_trigger": true
+  },
+  {
+    "query": "we're about to redo the onboarding flow and the only acceptance criterion is that it feels polished. I can't say what polished means, but I'll know it when I see it. interview me so we can get it into words first",
+    "should_trigger": true
+  },
+  {
+    "query": "poke holes in this plan: move session storage from the app server's memory to Redis, roll out per region, flip the cookie domain last. what am I missing?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm porting our invoice PDF renderer to a new library and I keep finding behavior the old one did that nobody documented. before I go further, can we write down the output contract and go find the other surprises?",
+    "should_trigger": true
+  },
+  {
+    "query": "claude, what would you ask me before you start on this? it's a new domain for both of us (customs tariff classification) and I don't want to find out about the hard parts in week three",
+    "should_trigger": true
+  },
+  {
+    "query": "I just finished the caching layer and my teammate has to maintain it. write up where the build departed from the original plan and which assumptions turned out wrong, so they get the real story",
+    "should_trigger": true
+  },
+  {
+    "query": "before you start building the dashboard, give me a mockup or a failing test that pins down what 'readable' means here instead of a paragraph about it. I keep rejecting designs without being able to say why",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to bulk-rewrite 400 issue bodies with a script. the first batch of ten came back with the wrong footers and I had to resend all of them. what should I settle before I resend the rest?",
+    "should_trigger": true
+  },
+  {
+    "query": "quiz me on the change we just landed to the retry logic so I'm sure I actually understand it before I approve the PR, and list what we'd still get wrong if we had to redo it",
+    "should_trigger": true
+  },
+  {
+    "query": "fix the typo in README.md: 'recieve' should be 'receive'",
+    "should_trigger": false
+  },
+  {
+    "query": "bump lodash from 4.17.20 to 4.17.21 in package.json and regenerate the lockfile",
+    "should_trigger": false
+  },
+  {
+    "query": "rename the function getUserData to fetchUserProfile everywhere in src/ and update the imports",
+    "should_trigger": false
+  },
+  {
+    "query": "this test fails with 'expected 3, got 4' in test_pagination.py. here's the traceback, please fix the off-by-one in paginate()",
+    "should_trigger": false
+  },
+  {
+    "query": "write a regular expression that matches ISO 8601 dates like 2026-11-06",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize the attached meeting notes into five bullet points",
+    "should_trigger": false
+  },
+  {
+    "query": "write an ADR recording why we chose Postgres over DynamoDB for the orders service",
+    "should_trigger": false
+  },
+  {
+    "query": "review my pull request diff for bugs and style problems",
+    "should_trigger": false
+  },
+  {
+    "query": "add a --verbose flag to the CLI that sets the log level to debug; the spec is in the ticket and the failing test already covers it",
+    "should_trigger": false
+  },
+  {
+    "query": "my deploy workflow is red after the action pin bump. find out which step fails and fix it",
+    "should_trigger": false
+  }
+]

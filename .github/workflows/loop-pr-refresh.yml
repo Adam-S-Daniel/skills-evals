@@ -17,9 +17,12 @@ name: Refresh loop pull requests
 # the base is merged in and only those append-only paths are re-resolved (the
 # base's copy plus the pull request's own block). Anything else, or a change
 # that is not one inserted block, is left for a person and named in the job
-# summary. A resolved merge is pushed as a plain merge commit on top of the
-# head, never a force-push, by a GitHub App token, so the pull request's own
-# checks run again (a job-token push would start none).
+# summary. A resolved merge is pushed as a merge commit on top of the head:
+# fast-forward only (the fetched head must be its ancestor, or nothing is
+# pushed), leased on that head (`--force-with-lease`, so a branch that moved
+# or was deleted is refused, never rewritten or recreated), by a GitHub App
+# token, so the pull request's own checks run again (a job-token push would
+# start none).
 #
 # * Tokens: the job token reads (contents and pull-requests: read). Two App
 #   tokens, each minted under continue-on-error and used by the refresh step
@@ -35,11 +38,58 @@ name: Refresh loop pull requests
 #   schedule: nothing that handles an eval-improve branch may run on one
 #   (ThreePrGateTests, ADR 0010 decision 4). Default branch only; no push or
 #   pull_request trigger, so no path filter and no required check.
-# * No `concurrency` group: a run waiting in a group would cancel the pending
-#   one, and every run is idempotent (an up-to-date head is left alone, and a
-#   push that lost a race is refused as non-fast-forward).
+# * No workflow `concurrency` group: a run waiting in a group would cancel
+#   the pending one, and the refresh is idempotent (an up-to-date head is
+#   left alone, and a push that lost a race is refused as non-fast-forward).
+#   The `withdraw` job alone has its own group, `cancel-in-progress: false`
+#   (PR #724 round 2's R2-2): two passes at once would both withdraw one pull
+#   request, posting two comments and filing two retirement issues. A
+#   withdraw job left pending when a newer run queues is cancelled; that
+#   newer run withdraws and refreshes on newer verdicts. The group is not
+#   shared with skill-coverage.yml's `retirement` job, because a cancelled
+#   pending retirement job would lose that day's pass; and this job is not a
+#   required check.
 # * Every value reaches a `run:` block through `env`; no response body is
 #   printed.
+#
+# Removal pull requests (ADR 0014; PR #724 round 1's M2). Before the
+# refresh, the `withdraw` job recomputes the retirement verdicts from
+# `persistent/eval-results` exactly as skill-coverage.yml's `retirement` job
+# does, and runs `scripts/retire_skill.py --withdraw-stale` for skills and
+# then for guidance, each in its own step that runs unless the run was
+# cancelled, so one pass's failure never skips the other (the job still
+# fails). A removal whose verdict an ingest changed is therefore disarmed and
+# closed after that same ingest, not at the next daily run. The refresh then
+# brings a `retire-skill/` (or `retire-guidance/`) pull request up to date
+# only while `refresh_loop_prs.py removal-check` says its verdict still
+# supports an automatic removal in `auto` mode and no closed proposal issue
+# declines it (read with the job token, `issues: read`; an unreadable issue
+# list refreshes nothing, so a decline the withdraw job could not finish is
+# never merged by a refresh, round 10's R10-4); with the verdicts unknown
+# (the `withdraw` job failed) no removal is refreshed. Withdrawal writes only on
+# `workflow_run`; a dispatch computes the verdicts for the refresh's check and
+# withdraws nothing. The withdraw job's tokens: the eval-improve App, minted
+# per repository (adam-agentskills, then _agent-guidance) with
+# pull-requests: write under continue-on-error, for the disarm, the
+# `loop-withdrawn` label (creating it if missing, which pull-requests: write
+# allows), comment and close, and contents: write for the branch delete
+# after the close (leased on the closed pull request's head, so no branch
+# outlives its pull request); this job's own token, issues: write, for the
+# retirement issue here. A withdrawal is a pause: a closed removal the loop
+# opened, labeled and closed itself decides nothing, so the retirement job
+# opens a fresh removal if the verdict supports one again. A removal whose
+# subject's proposal issue a person closed while it was open is declined
+# instead (round 9's R9-1): disarmed, its `loop-withdrawn` label taken off and
+# read back (R10-1), and closed as a decision with no new issue, so the
+# closed removal decides the subject and its branch is kept. Any close of
+# the issue declines, whatever its reason. One rule overrides all of this
+# (round 12): a removal armed now whose latest `auto_merge_enabled` event is
+# a person's (a `User`, not the loop App or any bot, round 13) is that
+# person's, so the withdraw job does not disarm or withdraw it, and
+# `removal-check --number` lets the refresh bring it up to date, whatever
+# its verdict or mode. The latest person action wins (round 13): a closed
+# proposal issue still declines it unless the arm is strictly later than
+# the close. An unreadable timeline or a missing time is not a person's arm.
 
 on:
   workflow_run:
@@ -50,13 +100,152 @@ on:
 permissions: {}
 
 jobs:
-  refresh:
+  withdraw:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    # One withdrawal pass at a time (R2-2; see the header).
+    concurrency:
+      group: loop-pr-refresh-withdraw
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out the results branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: persistent/eval-results
+          path: eval-results
+          persist-credentials: false
+
+      - name: Check out adam-agentskills
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: registry-agentskills
+          persist-credentials: false
+
+      - name: Check out cms-platform
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: registry-cms
+          persist-credentials: false
+
+      - name: Check out adamdaniel.ai
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: registry-site
+          persist-credentials: false
+
+      - name: Check out _agent-guidance
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the offline verdict dependency
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+
+      - name: Compute the retirement verdicts
+        id: verdicts
+        working-directory: skills-evals
+        run: |
+          as_of=$(git -C "$GITHUB_WORKSPACE/eval-results" log -1 --format=%cI)
+          python3 scripts/compute_gates.py \
+            --results-tree "$GITHUB_WORKSPACE/eval-results" \
+            --roster evals/roster.yml --policy evals/gate-policy.yml \
+            --as-of "$as_of" \
+            --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
+            --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
+            --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
+            --guidance "$GITHUB_WORKSPACE/agent-guidance" \
+            --out "$RUNNER_TEMP/gates/latest.json"
+
+      - name: Upload the verdicts
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gates
+          path: ${{ runner.temp }}/gates/
+          if-no-files-found: error
+
+      # From here every step runs unless the run was cancelled, so a failed
+      # skill withdrawal never skips the guidance one; any failed step still
+      # fails the job. Withdrawal writes only after an ingest.
+      - name: Mint the GitHub App token for adam-agentskills
+        id: app-token
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Withdraw stale skill removal pull requests
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retire_skill.py --withdraw-stale \
+            --gates "$RUNNER_TEMP/gates/latest.json"
+
+      - name: Mint the GitHub App token for _agent-guidance
+        id: guidance-token
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: _agent-guidance
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Withdraw stale guidance removal pull requests
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && github.event_name == 'workflow_run' }}
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_TOKEN: ${{ steps.guidance-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retire_skill.py --withdraw-stale --target guidance \
+            --gates "$RUNNER_TEMP/gates/latest.json"
+
+  refresh:
+    # After the withdrawal, whatever its result: a failed `withdraw` leaves
+    # the verdicts unknown, and then no removal pull request is refreshed.
+    needs: withdraw
+    if: ${{ !cancelled() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: read
+      issues: read
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -69,6 +258,18 @@ jobs:
         uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
+
+      - name: Install the offline verdict dependency
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
+
+      - name: Download the verdicts
+        # Missing (the withdraw job failed before uploading) means unknown,
+        # and removal-check then refreshes no removal pull request.
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: gates
+          path: ${{ runner.temp }}/gates/
 
       - name: Mint the registry App token (adam-agentskills only)
         id: registry-token
@@ -99,6 +300,7 @@ jobs:
           ROSTER_TOKEN: ${{ steps.roster-token.outputs.token }}
           SELF_REPO: ${{ github.repository }}
           SCRIPT: ${{ github.workspace }}/skills-evals/scripts/refresh_loop_prs.py
+          GATES: ${{ runner.temp }}/gates/latest.json
         run: |
           set -euo pipefail
           echo "### Loop pull requests refreshed" >> "$GITHUB_STEP_SUMMARY"
@@ -137,6 +339,20 @@ jobs:
                 echo "::warning::skipping a pull request of ${repo} whose branch has an unexpected shape"
                 continue
               fi
+              # A removal is refreshed only while its verdict still supports
+              # an automatic removal: refreshing a stale one would re-run its
+              # checks and let auto-merge fire (ADR 0014).
+              case "$ref" in
+                retire-skill/*|retire-guidance/*)
+                  local check crc=0
+                  check="$(python3 "$SCRIPT" removal-check --gates "$GATES" --head "$ref" --number "$n")" || crc=$?
+                  if [ "$crc" != 0 ]; then
+                    echo "${repo}#${n}: removal not refreshed ($(sed -n 's/^reason=//p' <<<"$check"))"
+                    note "${repo}#${n}" "removal not refreshed: its verdict does not support it"
+                    continue
+                  fi
+                  ;;
+              esac
               # GitHub computes `mergeable` lazily: the first read may be null.
               local mergeable=""
               for _ in 1 2 3 4 5; do
@@ -179,10 +395,19 @@ jobs:
               fi
               local commit
               commit="$(git -C "$dir" rev-parse HEAD)"
-              # A plain push: if the branch moved since the fetch it is
-              # refused, and the next run starts again from the new head.
+              # Fast-forward only: the merge must sit on top of the fetched
+              # head, so the lease below can never rewrite history.
+              if ! git -C "$dir" merge-base --is-ancestor "$head" "$commit"; then
+                echo "::error::${repo}#${n}: the merge does not descend from the fetched head; not pushed"
+                failed=1
+                continue
+              fi
+              # Leased on that head: if the branch moved since the fetch, or
+              # a withdrawal deleted it (ADR 0014), it is refused rather than
+              # recreated, and the next run starts again from the new state.
               if ! git -C "$dir" -c "http.https://github.com/.extraheader=$auth" \
-                   push -q origin "${commit}:refs/heads/${ref}"; then
+                   push -q --force-with-lease="refs/heads/${ref}:${head}" origin \
+                   "${commit}:refs/heads/${ref}"; then
                 echo "::warning::${repo}#${n}: the push was refused (the branch moved); the next run retries"
                 note "${repo}#${n}" "push refused; retried next run"
                 continue

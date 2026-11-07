@@ -319,6 +319,44 @@ class TriggerSetGateTests(unittest.TestCase):
                 self.assertTrue(result["lane"])
                 self.assertFalse(result["eligible"], name)
 
+    def test_the_readme_layout_line_for_the_skill_is_allowed(self):
+        # skills-evals#744: every trigger-set pull request also lists the
+        # skill's directory in README.md's layout; that one line may ride.
+        for line in ("  writing-adrs/", "  writing-adrs/  # reviewed trigger-eval-set.json only"):
+            with self.subTest(line=line):
+                git(self.repo, "checkout", "-q", "-B", "pr", "main")
+                self.write(SET_PATH, trigger_set())
+                self.write("README.md", f"x\n{line}\n")
+                result = self.judge_set()
+                self.assertTrue(result["eligible"], result["reason"])
+
+    def test_any_other_readme_change_is_not_eligible(self):
+        cases = {
+            "two lines": "x\n  writing-adrs/\n  more/\n",
+            "a removed line": "  writing-adrs/\n",
+            "a changed line": "y\n  writing-adrs/\n",
+            "another skill": "x\n  other-skill/\n",
+            "not indented": "x\nwriting-adrs/\n",
+            "text after the entry": "x\n  writing-adrs/ see https://example.com\n",
+            "too long": "x\n  writing-adrs/  # " + "a" * gate.README_LINE_MAX + "\n",
+        }
+        for name, text in cases.items():
+            with self.subTest(case=name):
+                git(self.repo, "checkout", "-q", "-B", "pr", "main")
+                self.write(SET_PATH, trigger_set())
+                self.write("README.md", text)
+                self.assertFalse(self.judge_set()["eligible"], name)
+        with self.subTest(case="README.md alone"):
+            git(self.repo, "checkout", "-q", "-B", "pr", "main")
+            self.write("README.md", "x\n  writing-adrs/\n")
+            self.assertFalse(self.judge_set()["eligible"])
+        with self.subTest(case="README.md made executable"):
+            git(self.repo, "checkout", "-q", "-B", "pr", "main")
+            self.write(SET_PATH, trigger_set())
+            self.write("README.md", "x\n  writing-adrs/\n")
+            (self.repo / "README.md").chmod(0o755)
+            self.assertFalse(self.judge_set()["eligible"])
+
     def test_an_executable_set_is_not_eligible(self):
         self.write(SET_PATH, trigger_set())
         (self.repo / SET_PATH).chmod(0o755)
@@ -362,6 +400,13 @@ class FixturePrWorkflowTests(unittest.TestCase):
         self.assertIs(checkout["with"]["persist-credentials"], False)
         self.assertEqual(jobs["arm"]["permissions"], {})
         self.assertIn("lane == 'true'", jobs["disarm"]["if"])
+        # Disabling auto-merge needs repository write access; with
+        # contents: read the job token is refused and the PR merges anyway
+        # (skills-evals#744).
+        self.assertEqual(
+            jobs["disarm"]["permissions"],
+            {"contents": "write", "pull-requests": "write"},
+        )
         for job in jobs.values():
             self.assertNotIn("concurrency", job)
             for step in job["steps"]:
@@ -369,6 +414,27 @@ class FixturePrWorkflowTests(unittest.TestCase):
                 if "ROSTER_APP_PRIVATE_KEY" in str(step):
                     self.assertIs(step.get("continue-on-error"), True)
 
+
+    def test_disarm_uses_the_app_token_with_the_job_token_as_fallback(self):
+        # 2026-11-04: the job token with `contents: read` was refused
+        # ("Resource not accessible by integration
+        # (disablePullRequestAutoMerge)") and #744 merged while ineligible.
+        disarm = self.load("fixture-pr-gate.yml")["jobs"]["disarm"]
+        self.assertEqual(disarm["permissions"], {"contents": "write", "pull-requests": "write"})
+        mint, turn_off = disarm["steps"]
+        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+        self.assertEqual(mint["id"], "app-token")
+        self.assertIs(mint["continue-on-error"], True)
+        self.assertEqual(turn_off["env"]["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
+        self.assertEqual(turn_off["env"]["JOB_TOKEN"], "${{ github.token }}")
+        self.assertNotIn("GH_TOKEN", turn_off["env"])
+        run = turn_off["run"]
+        self.assertIn('*) token="$APP_TOKEN" ;;', run)
+        merges = [line.strip() for line in run.splitlines() if "pr merge" in line]
+        self.assertEqual(merges, ['if ! GH_TOKEN="$token" GITHUB_TOKEN="" gh pr merge "$NUMBER" '
+                                  '--repo "$REPO" --disable-auto > /dev/null; then'])
+        # A failed disable, or one that does not read back as off, is red.
+        self.assertEqual(run.count("exit 1"), 3)
 
 if __name__ == "__main__":
     unittest.main()

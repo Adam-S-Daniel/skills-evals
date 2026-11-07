@@ -138,28 +138,32 @@ test('chip: guidance Helps only on its own', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 7, 3, d === 0 ? 7 : null, d === 0 ? 7 : null, 8)), 'guidance'), 'helps');
 });
 test('chip: the guidance subject applies the shared rules too', () => {
-  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'early');
+  // A section's early sign is its in-situ gain (all the guidance vs all
+  // but the section), the pair every section runs.
+  eq(chipOf([secRun('a', 0, null, null, 7, 3, 8)], 'guidance'), 'early');
+  eq(chipOf([secRun('a', 0, 7, 3, 7, 7, 8)], 'guidance'), 'insufficient', 'an alone gain alone is no early sign');
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
 test('removed skills are listed with their date and revert link (#557)', () => {
   const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [], guidance: { sections: [] },
     removed_skills: [{ name: 'example-skill', plugin: 'adam-coding-anywhere', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=is%3Apr+head%3Aretire-skill%2Fexample-skill' }] };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  const text = P.textOf(P.renderRoute(doc, { name: 'removed', id: null }, {}));
   eq(text.includes(P.STRINGS.removedSkillsHeading), true);
   eq(text.includes('example-skill'), true);
-  const none = P.textOf(P.buildPage({ ...doc, removed_skills: [] }, 'skills', {}));
+  const none = P.textOf(P.renderRoute({ ...doc, removed_skills: [] }, { name: 'removed', id: null }, {}));
   eq(none.includes(P.STRINGS.removedSkillsHeading), false, 'no list without removals');
 });
 test('removed sections are listed with their date and revert link (#557)', () => {
   const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [],
     guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };
-  const text = P.textOf(P.buildPage(doc, 'guidance', {}));
+  const text = P.textOf(P.renderRoute(doc, { name: 'removed', id: null }, {}));
   eq(text.includes(P.STRINGS.removedHeading), true);
   eq(text.includes('bravo'), true);
   eq(text.includes('2026-11-20'), true);
-  const none = P.textOf(P.buildPage({ ...doc, guidance: { sections: [] } }, 'guidance', {}));
+  const none = P.textOf(P.renderRoute({ ...doc, guidance: { sections: [] } }, { name: 'removed', id: null }, {}));
   eq(none.includes(P.STRINGS.removedHeading), false, 'no list without removals');
+  ok(none.includes(P.STRINGS.removedNone), 'an empty Removed page says so');
 });
 test('with a loop verdict, the chip follows the loop, not the page rule', () => {
   const strong = [skillRun('a', 0, 9, 0, 9)];
@@ -325,7 +329,7 @@ test('the confidence view estimates the runs still needed, or says it is past th
   ok(near.includes('Keep: at this pace, about 14 more runs.'), 'keep estimate ' + near);
   ok(near.includes('Removal: at this pace, about 24 more runs.'), 'removal estimate');
   ok(near.includes(P.STRINGS.confPace), 'pace note');
-  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. At 40 runs without a decision, the loop stops testing it and files a removal proposal for me to decide instead of removing it on its own.'), 'runs');
+  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for the owner to decide.'), 'runs');
   const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
   ok(far.includes('Keep: not before the 40-run cap at this pace.') && far.includes('Removal: not before the 40-run cap at this pace.'), 'past cap');
   ok(!far.includes('more run'), 'no estimate past the cap');
@@ -343,7 +347,7 @@ test('the confidence view without cells (older data) shows the sentences only', 
   const n = cv({ helps: 0.5, no_help: 0.25 });
   eq(svgs(n).length, 0);
   const t = P.textOf(n);
-  ok(t.includes('A test still undecided after 40 comparison runs stops, and can only propose a removal.'), 'cap');
+  ok(t.includes('Testing a task and model stops at 40 comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for the owner to decide.'), 'cap');
   ok(!t.includes('more run') && !t.includes(P.STRINGS.confPace) && !t.includes(P.STRINGS.rangeWhat), 'no estimates, no chart notes');
   eq(svgs(cv({ helps: 0.5, no_help: 0.25, cells: [] })).length, 0);
 });
@@ -361,10 +365,10 @@ test('real-use counts show on skill cards with the census window', () => {
   doc.skills[1].usage = { invocations: 1 };
   doc.skills[2].usage = { invocations: 0 };
   const text = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(text.includes('Used 9 times in my real work from Sep 7 to Oct 31.'), 'plural, UTC window start');
-  ok(text.includes('Used 1 time in my real work from Sep 7 to Oct 31.'), 'singular');
-  ok(text.includes('Not used in my real work from Sep 7 to Oct 31.'), 'zero');
-  ok(text.includes('2,517 of my Claude Code sessions'), 'session count note');
+  ok(text.includes('Used 9 times in the owner\'s real work from Sep 7 to Oct 31.'), 'plural, UTC window start');
+  ok(text.includes('Used 1 time in the owner\'s real work from Sep 7 to Oct 31.'), 'singular');
+  ok(text.includes('Not used in the owner\'s real work from Sep 7 to Oct 31.'), 'zero');
+  ok(text.includes('2,517 of the owner\'s Claude Code sessions'), 'session count note');
   ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('real work from'), 'no census, no line');
 });
 test('each skill card says what the skill is for', () => {
@@ -382,11 +386,52 @@ test('each skill card says what the skill is for', () => {
 });
 test('sections sort by gain per KB, or by size', () => {
   const byValue = P.sectionItems(fixture, 'value').map((i) => i.id);
-  const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices'].includes(id));
-  eq(withGain.join(','), 'security,anything-you-name-gets-its-link,git-practices');
+  // By in-situ gain per KB: what the section adds beside the rest.
+  const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices', 'dependency-updates'].includes(id));
+  eq(withGain.join(','), 'anything-you-name-gets-its-link,dependency-updates,git-practices,security');
+  const items = Object.fromEntries(P.sectionItems(fixture, 'value').map((i) => [i.id, i]));
+  ok(items['dependency-updates'].perKb !== null, 'an in-situ-only section is ranked');
+  eq(items['dependency-updates'].perKb, items['anything-you-name-gets-its-link'].perKb, 'same in-situ runs, same bytes');
   const bySize = P.sectionItems(fixture, 'size').map((i) => i.bytes);
   ok(bySize.every((b, i) => i === 0 || bySize[i - 1] >= b), 'size order descending');
 });
+test('section-alone results show only when the data file carries them, with why', () => {
+  // Owner, 2026-11-03: explorer_data.py publishes a section's section-alone
+  // pair (section vs none) only when its in-situ verdict is retire.
+  const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
+  const card = (id) => P.sectionCard(items[id], refMs, fixture);
+  const inSitu = items['dependency-updates'];
+  eq(P.hasAlone(inSitu.pooled), false, 'no alone pair in the data');
+  const t = P.textOf(card('dependency-updates'));
+  ok(!t.includes(P.STRINGS.aloneShown), 'no reason line without alone results');
+  ok(!t.includes('With this section,'), 'no alone sentence');
+  ok(!t.includes(P.STRINGS.barSection) && !t.includes(P.STRINGS.barNone), 'no alone bars or legend');
+  ok(t.includes(P.STRINGS.barAll) && t.includes(P.STRINGS.barAblated), 'the in-situ bars stay');
+  ok(inSitu.sentence.startsWith('Example Large 2.0: With all the guidance, 21 of 24; with all of it but this section, 13 of 24.'), inSitu.sentence);
+  ok(inSitu.sentence.endsWith('18 trials in all, the last on Oct 31.'), inSitu.sentence);
+  ok(!inSitu.sentence.includes(P.STRINGS.notTried), 'its in-situ trials are counted: ' + inSitu.sentence);
+  ok(/\d+ trials in all, the last on /.test(inSitu.sentence), inSitu.sentence);
+  for (const id of ['security', 'git-practices']) {
+    eq(P.hasAlone(items[id].pooled), true, id + ' carries its alone pair');
+    const shown = P.textOf(card(id));
+    ok(shown.includes(P.STRINGS.aloneShown), id + ': reason line shown');
+    ok(shown.includes(P.STRINGS.barSection) && shown.includes(P.STRINGS.barNone), id + ': alone bars shown');
+  }
+  // The trend and the early-sign chip read the in-situ pair, so they work
+  // for a section without its alone pair.
+  ok(inSitu.trend.length > 0, 'in-situ-only section has a weekly trend');
+  // Same in-situ runs as anything-you-name-gets-its-link, so the same trend,
+  // whatever that section's alone pair shows.
+  eq(JSON.stringify(inSitu.trend), JSON.stringify(items['anything-you-name-gets-its-link'].trend), 'trend from the in-situ pair');
+  ok(inSitu.trend.length > 1 && P.findAll(card('dependency-updates'), (x) => x.tag === 'svg').length > 0, 'trend drawn');
+  const noVerdict = Object.assign({}, fixture, { guidance: { sections: [Object.assign({}, fixture.guidance.sections.find((x) => x.id === 'dependency-updates'), { verdict: null })] } });
+  eq(P.sectionItems(noVerdict)[0].chip, 'early', 'early sign from the in-situ gain');
+  // The headline keeps every section's none runs, this one's included.
+  const w = P.wholeGuidance(fixture);
+  ok(w.pooled.all.n > 0 && w.sentence.startsWith('With all the guidance, '), w.sentence);
+  eq(P.STRINGS.aloneShown, 'Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.');
+});
+
 test('whole-guidance headline pools full vs none', () => {
   const w = P.wholeGuidance(fixture);
   eq(w.chip, 'helps');
@@ -426,12 +471,59 @@ test('a good file loads and is cache-busted', async () => {
 });
 
 // --- modes -------------------------------------------------------------------
-test('default mode is skills; ?subject=guidance is guidance', () => {
-  eq(P.modeFromSearch(''), 'skills');
-  eq(P.modeFromSearch('?foo=1'), 'skills');
-  eq(P.modeFromSearch('?subject=guidance'), 'guidance');
-  eq(P.searchForMode('?data=x', 'guidance'), '?data=x&subject=guidance');
-  eq(P.searchForMode('?subject=guidance', 'skills'), '');
+test('hash routes: Summary by default, subject pages by id, ?subject=guidance and old dashboard tabs redirect', () => {
+  const pub = ['summary', 'hooks', 'loop', 'impact', 'ops'];
+  const r = (hash, search, groups) => JSON.stringify(P.parseRoute(hash, search || '', groups || pub));
+  eq(r(''), '{"name":"summary","id":null}');
+  eq(r('#/nowhere'), '{"name":"summary","id":null}');
+  eq(r('', '?subject=guidance'), '{"name":"guidance","id":null}');
+  eq(r('#/skills/example-skill-alpha'), '{"name":"skills","id":"example-skill-alpha"}');
+  eq(r('#/hooks/push-to-default'), '{"name":"hooks","id":"push-to-default"}');
+  eq(r('#/guidance/security'), '{"name":"guidance","id":"security"}');
+  eq(r('#/removed'), '{"name":"removed","id":null}');
+  eq(r('#/needs'), '{"name":"summary","id":null}', 'the public build has no Needs you group');
+  eq(r('#/needs', '', pub.concat(['needs'])), '{"name":"needs","id":null}');
+  eq(r('#overview', '', pub.concat(['needs'])), '{"name":"needs","id":null}', 'an old dashboard tab link');
+  eq(r('#costbenefit'), '{"name":"impact","id":null}');
+  eq(P.hashFor('skills', 'a b'), '#/skills/a%20b');
+  eq(r(P.hashFor('skills', 'a b')), '{"name":"skills","id":"a b"}');
+});
+test('the public build has five groups and Summary opens first', () => {
+  eq(JSON.stringify(Object.keys(P.GROUPS)), '["summary","needs","hooks","loop","impact","ops"]');
+  eq(P.groupOf('skills'), 'hooks');
+  eq(P.groupOf('method'), 'hooks');
+  const t = P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {}));
+  ok(t.includes(P.STRINGS.groups.summary), 'Summary heading');
+  ok(!/Adam/.test(t), 'names no person');
+});
+test('every route renders without throwing, and a missing subject says so', () => {
+  for (const name of ['summary', 'hooks', 'skills', 'guidance', 'removed', 'method', 'loop', 'impact', 'ops']) {
+    ok(P.textOf(P.renderRoute(fixture, { name, id: null }, {})).length > 0, name);
+  }
+  const t = P.textOf(P.renderRoute(fixture, { name: 'skills', id: 'example-skill-alpha' }, {}));
+  ok(t.includes('example-skill-alpha'), 'a subject page names its subject');
+  ok(P.textOf(P.renderRoute(fixture, { name: 'skills', id: 'example-no-such-skill' }, {})).length > 0, 'unknown subject');
+});
+test('the public voice says "the owner"; the private voice says "you"', () => {
+  try {
+    eq(P.STRINGS.voice, 'owner');
+    ok(P.STRINGS.lessonSignals.rule === 'a rule the owner stated', P.STRINGS.lessonSignals.rule);
+    P.useVoice('you');
+    eq(P.STRINGS.lessonSignals.rule, 'a rule you stated');
+    eq(P.STRINGS.title, 'Self-improvement project');
+  } finally { P.useVoice('owner'); }
+  eq(P.STRINGS.title, 'Evals Explorer');
+});
+test('search finds subjects, checks and pull requests, and filters by verdict', () => {
+  const items = P.searchItems(fixture, null);
+  ok(items.length > 0, 'items');
+  const hit = P.filterItems(items, { text: 'alpha', registry: '', verdict: '', model: '', stakes: '' });
+  ok(hit.some((i) => /example-skill-alpha/.test(i.title)), 'finds a skill by name');
+  eq(P.filterItems(items, { text: 'zzzz-not-there', registry: '', verdict: '', model: '', stakes: '' }).length, 0);
+  const dest = items.map((i) => i.href || i.url);
+  eq(new Set(dest).size, dest.length, 'one result per destination');
+  const twice = P.searchItems(fixture, items.slice(0, 2));
+  eq(twice.length, items.length, 'extra items already in the document are dropped');
 });
 test('each mode renders its own views', () => {
   const s = P.textOf(P.buildPage(fixture, 'skills', {}));
@@ -576,7 +668,7 @@ test('the skills view lists new-skill and skill items with kind, source, seen, d
   eq(rows.length, 6, 'three miner rows, then three issue rows');
   eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
   eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | Not drafted yet');
-  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule I stated ×3 | 3 times | Oct 10 | Oct 20 | Waiting for review');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Waiting for review');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
   ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 1, 'the table scrolls inside .tablewrap');
@@ -589,7 +681,7 @@ test('the guidance view lists guidance items by their heading', () => {
   eq(rows[0][1], 'Change to the guidance');
   eq(rows[1][0], 'example-unknown-section');
   eq(rows[1][1], 'Idea for a test');
-  eq(rows[1][2], 'Session transcripts (another computer) a correction I made ×1');
+  eq(rows[1][2], 'Session transcripts (another computer) a correction the owner made ×1');
 });
 
 test('the left-out note counts memory notes, git checks and private subjects, omitting zero parts', () => {
@@ -626,7 +718,7 @@ test('issue lessons show in the skills view after the miner rows, with their sou
   eq(rows.length, 6);
   eq(rows[3].join(' | '), '3 facts for docs/EXAMPLE.md in Adam-S-Daniel/example-repo | Fact to move into a repo | Claude\'s auto-memory | — | Oct 29 | — | #17 (open)');
   eq(rows[4].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
-  eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | My own proposal | — | Oct 27 | — | #88 (open)');
+  eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | The owner\'s proposal | — | Oct 27 | — | #88 (open)');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs.filter((u) => u === 'https://github.com/Adam-S-Daniel/example-repo/issues/17').length, 1, 'the issue link: ' + hrefs.join(' '));
   eq(lessonRows(lessonsSection(fixture, 'guidance')).length, 2, 'the guidance view shows no issue rows');
@@ -646,12 +738,12 @@ test('issue lessons alone still render, and bad issues are skipped', () => {
   ok(P.textOf(lessonsSection({ lessons: { date: null, items: null, left_out: null, issues: [] } }, 'skills')).includes(P.STRINGS.lessonsNone));
 });
 
-test('both views render the lessons section after the cards', () => {
-  for (const m of ['skills', 'guidance']) {
-    const t = P.textOf(P.buildPage(fixture, m, {}));
-    ok(t.indexOf(P.STRINGS.lessonsHeading) > t.indexOf(m === 'skills' ? P.STRINGS.skillsHeading : P.STRINGS.sectionsHeading), m);
-    ok(t.indexOf(P.STRINGS.lessonsHeading) < t.indexOf(P.STRINGS.rosterHeading), m);
-  }
+test('lesson proposals render once, on the Loop page, not under the subject lists', () => {
+  const loop = P.textOf(P.renderRoute(fixture, { name: 'loop', id: null }, {}));
+  ok(loop.includes(P.STRINGS.lessonsHeading), 'on Loop');
+  for (const m of ['skills', 'guidance']) ok(!P.textOf(P.buildPage(fixture, m, {})).includes(P.STRINGS.lessonsHeading), m);
+  const method = P.textOf(P.renderRoute(fixture, { name: 'method', id: null }, {}));
+  ok(method.includes(P.STRINGS.rosterHeading), 'the roster is on How the tests work');
 });
 
 // --- privacy ----------------------------------------------------------------------
@@ -662,7 +754,8 @@ test('no @, /home/ or cse_ string from the data reaches rendered text', () => {
     for (const bad of ['@', '/home/', 'cse_']) ok(!t.includes(bad), m + ' mode text contains ' + bad);
     const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
     ok(hrefs.length > 0, 'some links rendered');
-    ok(hrefs.every((u) => u.startsWith('https://github.com/')), 'only github.com links: ' + hrefs.filter((u) => !u.startsWith('https://github.com/')).join(' '));
+    const outside = hrefs.filter((u) => !u.startsWith('https://github.com/') && !/^#\/[a-z]+(\/[A-Za-z0-9%._-]+)?$/.test(u));
+    ok(outside.length === 0, 'only github.com links and this page\'s own routes: ' + outside.join(' '));
   }
 });
 test('no markup is built from data strings', () => {

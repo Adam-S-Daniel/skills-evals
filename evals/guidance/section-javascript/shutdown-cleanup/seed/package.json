@@ -1,0 +1,6 @@
+{
+  "name": "upload-worker",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/index.js"
+}

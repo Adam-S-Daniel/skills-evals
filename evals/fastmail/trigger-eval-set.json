@@ -1,0 +1,82 @@
+[
+  {
+    "query": "check my email on Fastmail and tell me if the landlord replied about the lease renewal",
+    "should_trigger": true
+  },
+  {
+    "query": "search my Fastmail inbox for anything from the accountant with an attachment since January",
+    "should_trigger": true
+  },
+  {
+    "query": "open my Fastmail and find the thread about the Portland conference hotel booking, then read me the confirmation number",
+    "should_trigger": true
+  },
+  {
+    "query": "reply to the last email from Dana in my inbox on Fastmail saying I can do Thursday at 2pm, and send it",
+    "should_trigger": true
+  },
+  {
+    "query": "look in Fastmail for invoices from after:2026-09-01 that have attachments and list who sent them",
+    "should_trigger": true
+  },
+  {
+    "query": "use my logged-in Fastmail tab to read the newest message from the school and summarize it",
+    "should_trigger": true
+  },
+  {
+    "query": "find the email from the contractor with the xlsx quote attached in Fastmail, download it (ask me first) and tell me the total",
+    "should_trigger": true
+  },
+  {
+    "query": "compose a new Fastmail message to the HOA board asking about the parking permit and leave it as a draft for me to review",
+    "should_trigger": true
+  },
+  {
+    "query": "can you go through my Fastmail inbox and tell me which emails need a reply today?",
+    "should_trigger": true
+  },
+  {
+    "query": "search my mail for subject:\"statement\" from:bank and open the most recent thread",
+    "should_trigger": true
+  },
+  {
+    "query": "add alias hello@example.com as a From address on my Fastmail account",
+    "should_trigger": false
+  },
+  {
+    "query": "which of my Fastmail aliases do I actually receive mail through? add them as sending identities",
+    "should_trigger": false
+  },
+  {
+    "query": "write a Python script that reads a mailbox over IMAP and counts messages per sender",
+    "should_trigger": false
+  },
+  {
+    "query": "set up an email filter rule in Gmail to label newsletters",
+    "should_trigger": false
+  },
+  {
+    "query": "draft a polite email to my landlord asking to renew the lease for another year, I'll send it myself",
+    "should_trigger": false
+  },
+  {
+    "query": "check my Fastmail from the GitHub Actions workflow that runs nightly, headless",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize this PDF attachment I pasted into the chat",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I configure SPF and DKIM for my own domain so mail doesn't land in spam?",
+    "should_trigger": false
+  },
+  {
+    "query": "my Outlook search isn't returning old messages, how do I rebuild the index?",
+    "should_trigger": false
+  },
+  {
+    "query": "write a regex that matches valid email addresses for our signup form",
+    "should_trigger": false
+  }
+]

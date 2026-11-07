@@ -1,0 +1,95 @@
+{
+  "attempt": 1,
+  "conclusion": "success",
+  "createdAt": "2026-11-02T13:17:29Z",
+  "databaseId": 93004,
+  "displayTitle": "Update the blog pagination copy",
+  "event": "push",
+  "headBranch": "main",
+  "headSha": "e9f4b218e9f4b218e9f4b218e9f4b218e9f4b218",
+  "jobs": [
+    {
+      "databaseId": 930041,
+      "name": "e2e",
+      "status": "completed",
+      "conclusion": "success",
+      "startedAt": "2026-11-02T13:17:32Z",
+      "completedAt": "2026-11-02T13:19:12Z",
+      "url": "https://example.com/example-org/example-site/actions/runs/93004/job/930041",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "startedAt": "2026-11-02T13:17:32Z",
+          "completedAt": "2026-11-02T13:17:33Z"
+        },
+        {
+          "name": "Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "startedAt": "2026-11-02T13:17:33Z",
+          "completedAt": "2026-11-02T13:17:35Z"
+        },
+        {
+          "name": "Run actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "startedAt": "2026-11-02T13:17:35Z",
+          "completedAt": "2026-11-02T13:17:39Z"
+        },
+        {
+          "name": "Install dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "startedAt": "2026-11-02T13:17:39Z",
+          "completedAt": "2026-11-02T13:17:47Z"
+        },
+        {
+          "name": "Install Playwright browsers",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "startedAt": "2026-11-02T13:17:47Z",
+          "completedAt": "2026-11-02T13:18:35Z"
+        },
+        {
+          "name": "Run Playwright tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "startedAt": "2026-11-02T13:18:35Z",
+          "completedAt": "2026-11-02T13:19:11Z"
+        },
+        {
+          "name": "Post Run actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "startedAt": "2026-11-02T13:19:11Z",
+          "completedAt": "2026-11-02T13:19:12Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "startedAt": "2026-11-02T13:19:12Z",
+          "completedAt": "2026-11-02T13:19:12Z"
+        }
+      ]
+    }
+  ],
+  "name": "e2e",
+  "number": 321,
+  "startedAt": "2026-11-02T13:17:29Z",
+  "status": "completed",
+  "updatedAt": "2026-11-02T13:19:13Z",
+  "url": "https://example.com/example-org/example-site/actions/runs/93004",
+  "workflowDatabaseId": 5502,
+  "workflowName": "e2e"
+}

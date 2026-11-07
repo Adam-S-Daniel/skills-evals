@@ -647,7 +647,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
                                           edit=self.only_six)
             for f in plan["fires"]:
                 self.assertEqual(f["mode"], "eval")
-                if f["arms"] == "both":
+                if f["arms"] in plan_week.PAIRED_ARMS:
                     fires.append(fire(1000 + len(fires), f["fixture"], now))
             now += self.CADENCE
         return fires, cells, plan
@@ -657,7 +657,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
         plan, _, down = self.plan([], self.BURST_AT)
         self.assertIsNone(down)
         self.assertFalse(plan["routine_down"])
-        self.assertEqual(self.kinds(plan), {("eval", "both"), ("eval", "bare"), ("improve", "")})
+        self.assertEqual(self.kinds(plan), {("eval", "both"), ("eval", "in-situ"), ("eval", "bare"), ("improve", "")})
         self.assertNotIn("Routine down", "\n".join(plan_week.summary_lines(plan)))
         self.assertNotIn("routine-down", {w["kind"] for w in plan["work"]})
 

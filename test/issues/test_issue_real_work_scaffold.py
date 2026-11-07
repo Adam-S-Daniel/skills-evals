@@ -1636,9 +1636,13 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(self.gate["permissions"], {})
         self.assertEqual(set(self.gate["jobs"]), {"validate", "disarm", "pull-request"})
         self.assertEqual(self.gate["jobs"]["validate"]["permissions"], {"contents": "read"})
-        for name in ("disarm", "pull-request"):
-            self.assertEqual(self.gate["jobs"][name]["permissions"],
-                             {"contents": "read", "pull-requests": "write"}, name)
+        self.assertEqual(self.gate["jobs"]["pull-request"]["permissions"],
+                         {"contents": "read", "pull-requests": "write"})
+        # The job token cannot disable auto-merge with `contents: read`
+        # ("Resource not accessible by integration"); it is disarm's fallback
+        # when no App token can be minted, so it gets `contents: write`.
+        self.assertEqual(self.gate["jobs"]["disarm"]["permissions"],
+                         {"contents": "write", "pull-requests": "write"})
         # Only a push that passed the gate, after its own disarm, is armed.
         self.assertEqual(self.gate["jobs"]["pull-request"]["needs"], ["disarm", "validate"])
         self.assertNotIn("needs", self.gate["jobs"]["disarm"])
@@ -1656,24 +1660,26 @@ class WorkflowShapeTests(unittest.TestCase):
         [step] = [s for s in self.gate["jobs"]["pull-request"]["steps"] if "run" in s]
         return step
 
-    def test_the_app_token_is_minted_only_in_the_pull_request_job(self):
-        # ADR 0003 round 6's App: its key in one mint step, its token under
-        # its own name in one step, never as GH_TOKEN.
-        steps = [step for job in self.gate["jobs"].values() for step in job["steps"]]
-        self.assertEqual([s.get("id") for s in steps
-                          if "ROSTER_APP_PRIVATE_KEY" in yaml.safe_dump(s)], ["app-token"])
-        [mint] = [s for s in self.gate["jobs"]["pull-request"]["steps"] if "uses" in s]
-        self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
-        self.assertIs(mint["continue-on-error"], True)
-        self.assertEqual(mint["with"]["repositories"], "skills-evals")
-        self.assertEqual({k: v for k, v in mint["with"].items() if k.startswith("permission-")},
-                         {"permission-contents": "write", "permission-pull-requests": "write"})
+    def test_the_app_token_is_minted_only_in_the_jobs_that_arm_or_disarm(self):
+        # ADR 0003 round 6's App: its key in one mint step per writing job,
+        # its token under its own name, never as GH_TOKEN in `env:`. disarm
+        # holds it because the job token is refused when it turns auto-merge
+        # off (fixture-pr-gate.yml, 2026-11-04).
+        for name in ("disarm", "pull-request"):
+            steps = self.gate["jobs"][name]["steps"]
+            self.assertEqual([s.get("id") for s in steps
+                              if "ROSTER_APP_PRIVATE_KEY" in yaml.safe_dump(s)], ["app-token"], name)
+            [mint] = [s for s in steps if "uses" in s]
+            self.assertTrue(mint["uses"].startswith("actions/create-github-app-token@"))
+            self.assertIs(mint["continue-on-error"], True)
+            self.assertEqual(mint["with"]["repositories"], "skills-evals")
+            self.assertEqual({k: v for k, v in mint["with"].items() if k.startswith("permission-")},
+                             {"permission-contents": "write", "permission-pull-requests": "write"})
         env = self.manage_step()["env"]
         self.assertEqual(env["APP_TOKEN"], "${{ steps.app-token.outputs.token }}")
         self.assertEqual(env["GH_TOKEN"], "${{ github.token }}")
-        for name in ("validate", "disarm"):
-            self.assertNotIn("app-token", yaml.safe_dump(self.gate["jobs"][name]), name)
-            self.assertNotIn("ROSTER_APP", yaml.safe_dump(self.gate["jobs"][name]), name)
+        self.assertNotIn("app-token", yaml.safe_dump(self.gate["jobs"]["validate"]))
+        self.assertNotIn("ROSTER_APP", yaml.safe_dump(self.gate["jobs"]["validate"]))
 
     def test_only_the_default_branch_copy_runs(self):
         self.assertIn("github.ref == format('refs/heads/{0}', "
@@ -1709,8 +1715,8 @@ class WorkflowShapeTests(unittest.TestCase):
         lines = text.splitlines()
         found = list(uses_nodes(yaml.compose(text)))
         # checkout x2, setup-python, setup-node (#595's checker parse),
-        # create-github-app-token.
-        self.assertEqual(len(found), 5)
+        # create-github-app-token in disarm and in pull-request.
+        self.assertEqual(len(found), 6)
         for node in found:
             with self.subTest(uses=node.value):
                 self.assertIsNone(lock_problem(node.value, GATE))
@@ -1759,10 +1765,15 @@ class WorkflowShapeTests(unittest.TestCase):
         self.assertEqual(self.manage_step()["env"]["LABEL"], scaffold.DRAFT_LABEL)
 
     def test_disarm_reads_the_branch_from_the_event_file_and_fails_closed(self):
-        [step] = self.gate["jobs"]["disarm"]["steps"]
-        self.assertEqual(step["env"], {"GH_TOKEN": "${{ github.token }}",
+        [step] = [s for s in self.gate["jobs"]["disarm"]["steps"] if "run" in s]
+        self.assertEqual(step["env"], {"JOB_TOKEN": "${{ github.token }}",
+                                       "APP_TOKEN": "${{ steps.app-token.outputs.token }}",
                                        "REPO": "${{ github.repository }}",
                                        "BASE": "${{ github.event.repository.default_branch }}"})
+        # The App token wins when it is well formed; the job token is the
+        # fallback, and gh never falls back to GITHUB_TOKEN on its own.
+        self.assertIn('*) GH_TOKEN="$APP_TOKEN" ;;', step["run"])
+        self.assertIn('export GH_TOKEN GITHUB_TOKEN=""', step["run"])
         self.assertIn('"${GITHUB_EVENT_PATH:?}"', step["run"])
         self.assertIn("^claude/scaffold-[A-Za-z0-9_][A-Za-z0-9._-]{0,63}-[1-9][0-9]{0,6}$",
                       step["run"])

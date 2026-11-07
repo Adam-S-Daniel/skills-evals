@@ -1911,10 +1911,13 @@ yet" must stay distinguishable.)
 |---|---|---|
 | `test-canary` | no A/B | internal canary; no propagation arm loads it, so its delivery probe is not built and no open issue tracks it (closed [#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17) built the adam-agentskills arms only) |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
-| `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
+| `sync-skills` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
+| `ocr-pdfs` | defer (rechecked 2026-11-06) | no recorded local use since 2026-09-14; the machine-bound reason no longer fits (since adam-agentskills [#26](https://github.com/Adam-S-Daniel/adam-agentskills/issues/26) the skill calls the OCRmyPDF CLI directly, which a container can run), so reopen it if it is used |
+| `sync-cc-settings-between-wsl-and-windows` | defer (rechecked 2026-11-05) | no recorded local use since 2026-09-14, and it needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply |
+| `migrate-claude-memory`, `compare-pdfpairs` | defer (rechecked 2026-11-05) | at most one recorded local use since 2026-09-14; the machine-bound reason no longer fits (a fake HOME, or PowerShell 7 and poppler in a container, can stand in for the surface), so reopen either one if it is used |
 | `launch-top-level-claude-session` | gap (call reversed 2026-11-03) | the defer row is withdrawn: it is the most-used skill in the local census (13 uses in the weeks of 2026-09-28 and 2026-10-05), and `windows-elevation-from-wsl` shows its surface is cheap to fake with logging `wt.exe`/`wsl.exe` shims on `PATH`, so a fixture can score the launch command; it needs one |
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
-| `fastmail` bundle | defer | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own |
+| `fastmail` bundle | defer (rechecked 2026-11-06) | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own. `fastmail` itself has one recorded local use since 2026-09-14 (week of 2026-09-14) |
 | `aws-bootstrap`, `preview-environments` | freshness lint | staleness is the failure mode, not procedure quality |
 | `admin-config-render`, `browser-testing`, `code-quality`, `editorial-label-audit` | freshness lint | reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval (scope decision 2026-11-03) |
 | `finding-unknowns`, `adam-writing-style` | owner review | process/taste skill; owner review replaces the eval (scope decision 2026-11-03) |
@@ -2391,7 +2394,7 @@ MCP connectors (mail, drive, GitHub) and wrote a transcript under
 | Spawn | Flags beyond its own |
 |---|---|
 | arm (`run_eval.run_agent`) | `--setting-sources project` (guidance: `user,project`), `--settings <sandbox, read-deny and agent-config-deny JSON>`, `--disallowedTools WebFetch,WebSearch` and `--no-chrome` (`run_eval.arm_isolation_flags`, every turn), `--strict-mcp-config`; `--no-session-persistence` only with no `followups:` |
-| judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence` |
+| judge (`judge._run_judge_cli`), proposal (`propose_skill_edit`), eval.yml preflight | `--setting-sources ""`, `--strict-mcp-config`, `--no-session-persistence`, `--tools ""` (`judge.JUDGE_ISOLATION_FLAGS`) |
 | canary/guard leg (`run_canary.run_leg`) | `--strict-mcp-config`; `--no-session-persistence` unless the leg has its own scratch `CLAUDE_CONFIG_DIR` |
 | anything through local_eval's guard launcher | `--strict-mcp-config`, and `--setting-sources project` when argv names none |
 
@@ -2404,6 +2407,12 @@ arm, one past the CLI's 200-character truncation, and one inside a guidance
 arm's own scratch are never touched. The judge's empty setting source means
 the CI judge no longer loads this checkout's `CLAUDE.md`/`AGENTS.md` or the
 fleet-memory SessionStart hook: that is the isolation, not a regression.
+The judge reads text the agent under test wrote, so it also gets no tool
+(`--tools ""`; CLI 2.1.318's init event then lists `tools: []`) and an
+environment without GitHub, cloud-provider or SSH-agent credentials
+(`judge.drop_foreign_credentials`; ANTHROPIC_*, CLAUDE_*, proxy and CA
+variables stay, since it logs in through them): an injection in an arm's
+output finds no tool to act through and no GitHub or cloud token to spend.
 What none of this stops: managed settings, the CLI's bundled skills and
 writes to `~/.claude.json`. An arm's own reads of the real HOME are fenced
 in separately (below).
@@ -2628,7 +2637,16 @@ gate reads it. Each declares four arms, `with_guidance_section` (`section`),
 runs both pairs in one fire, at four agent runs per fire, so the agent gets
 180 s and the guard 60 s to fit the 45-minute job;
 `run_eval.py <fixture> --ablation` still runs the in-situ pair alone, as arms
-`ablation_full` and `ablation_full_minus_section`. Results go to
+`ablation_full` and `ablation_full_minus_section`. `--arm in-situ` runs only
+the declared `full` and `full-minus-section` arms under their own names, so
+the ingest and the gate read them unchanged. Since 2026-11-03 (the owner's
+decision; the alone pair was about 37% of guidance agent spend and is read
+only by the twist below) the weekly planner fires `arms: both` for a
+guidance cell only when its section leans toward removal (its in-situ
+verdict is `retire`, or its retire progress, the lowest no-help confidence
+over its cells as a share of `retire_confidence`, is at least
+`ALONE_PAIR_FROM_PROGRESS` = 0.5), and `arms: in-situ` otherwise
+(`scripts/plan_week.py`, THE ALONE PAIR). Results go to
 `results/guidance/<section id>/<ts>/<arm>/summary.json`, beside the section's
 other fixtures, so each guidance summary records `fixture_name`,
 `fixture_digest` (the git-staged digest), `guidance_digests` (`section`: the
@@ -2650,7 +2668,18 @@ favored removal, so older strata are ignored and an edit elsewhere in the
 guidance starts a section's evidence over. The in-situ verdict decides. The one change: a
 section whose in-situ verdict is `retire` but which shows `benefit` alone in
 any cell gets **`shorten-or-merge`**, since the rest of the guidance covers
-what it teaches. That verdict never removes anything.
+what it teaches. That verdict never removes anything. Because the alone pair
+now runs only near removal, it may have few or no runs when the in-situ test
+reaches `retire`: a `retire` whose alone pair is unfinished (no alone cell,
+or one still `missing`, `insufficient`, `cannot-discriminate` or `paused`)
+has `removal: proposal`, never `auto`, and `scripts/retire_skill.py`
+re-checks the alone cells itself rather than trusting the field. The
+explorer publishes a section's alone results (the `section` mode and
+`alone_verdict`) only when its in-situ verdict is `retire`, the one case
+they factor into its decision; it keeps every `none` run, which the page's
+whole-guidance headline (full vs none) pools across sections. The page's
+section trend, help-per-word sort and early-sign chip read the in-situ gain
+(full vs full-minus-section), the pair every section runs.
 
 **The rule** (2026-11-03, after that day's statistics review and threshold
 sweep; Adam's decision on it is pending), the same for skills and sections
@@ -2698,9 +2727,9 @@ file when this was its only `##`) and re-copies `base.md` to
 (`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
 `## Repo-specific additions` heading line. A dry run lists every step.
 Retirement was made automatic, with no human approval (Adam, 2026-10-10,
-#124); since Adam's 2026-11-03 "Resume, auto-removal off",
-`evals/gate-policy.yml` commits `guidance.retirement_mode: proposal` while he
-decides on the new rule. In `auto`, a verdict with `removal: auto` opens the
+#124); Adam's 2026-11-03 "Resume, auto-removal off" set
+`guidance.retirement_mode` to `proposal`, and `evals/gate-policy.yml` commits
+`auto` again since withdrawal was hardened (PR #740, #645). In `auto`, a verdict with `removal: auto` opens the
 removal pull request in `_agent-guidance` is written with the eval-improve
 GitHub App's token minted for that repository alone (`skill-coverage.yml`'s
 `retirement` job). With no token it files the issue instead. Every removal

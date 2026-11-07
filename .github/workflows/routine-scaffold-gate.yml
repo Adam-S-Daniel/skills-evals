@@ -62,6 +62,14 @@ name: Gate routine fixture scaffold
 #   to the branch reaches this workflow. `pull-request` needs both `disarm`
 #   and `validate`, so only a push that passes the gate is ever armed. A
 #   failed `disarm` fails the run and arms nothing.
+# * `disarm` turns auto-merge off with the roster App token, the one that
+#   armed it, minted under `continue-on-error`: the job token with
+#   `contents: read` is refused ("Resource not accessible by integration
+#   (disablePullRequestAutoMerge)", fixture-pr-gate.yml's runs on
+#   2026-11-04), so a disarm on it left the pull request armed. The job
+#   token, with `contents: write`, is only the fallback when no App token
+#   can be minted. `disarm` reads only the event's branch name and never the
+#   branch's content.
 # * Branch names, shas and file content are never interpolated into a
 #   `run:` block: the event is read from $GITHUB_EVENT_PATH by the
 #   validator, which emits only values that matched a strict pattern, and
@@ -188,17 +196,40 @@ jobs:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The fallback job token needs `contents: write` to disable auto-merge;
+    # this job checks nothing out and reads only the event's branch name.
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
     steps:
+      - name: Mint the roster App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
       - name: Turn off auto-merge on the branch's open pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          JOB_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
           set -uo pipefail
+          # The App token that armed the pull request turns it off; the job
+          # token is the fallback. Under GH_TOKEN for this step only.
+          GH_TOKEN="$JOB_TOKEN"
+          case "${APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*)
+              echo "::warning::the roster App token is unavailable; trying the job token" ;;
+            *) GH_TOKEN="$APP_TOKEN" ;;
+          esac
+          export GH_TOKEN GITHUB_TOKEN=""
           # The branch from the event file, never an expression. Anything
           # that is not a scaffold branch name has no pull request to disarm;
           # validate rejects it on its own.

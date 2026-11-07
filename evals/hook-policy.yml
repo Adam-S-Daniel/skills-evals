@@ -1,0 +1,18 @@
+# The use-based verdict of each git hook check in the public explorer document
+# (scripts/explorer_public.py `verdict`, the document's `hooks`).
+#
+#   earning           blocked at least once in the window, and overridden in at
+#                     most max_override_rate of its blocks
+#   never-fires       no block in the window
+#   overridden-often  overridden in more than max_override_rate of its blocks
+#
+# A check that blocks but that no source counts overrides for (the local hook
+# log records none; only the CI file does) gets no verdict, never a guess.
+
+# ISO weeks, ending with the document's as-of week.
+window_weeks: 8
+# Overridden over blocked, as a fraction.
+max_override_rate: 0.20
+# Distinct named non-public repositories needed before the folded
+# `private repos` bucket is published at all.
+min_private_repos: 3

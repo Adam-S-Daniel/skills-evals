@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "evals-explorer",
+  "version": "1.0.0",
+  "description": "Source of the Evals Explorer and the project dashboard: npm run build writes ../tool/index.html, ../dashboard/page/index.html and dist/artifact/index.html",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "check": "node build.js --check",
+    "test": "node test/run.js"
+  },
+  "devDependencies": {
+    "acorn": "8.19.0",
+    "esbuild": "0.28.2"
+  }
+}
