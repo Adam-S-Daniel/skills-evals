@@ -46,6 +46,14 @@ slugs), null without a verdict; the document's `discarded_runs` sums them
 over the listed skills, sections and `all`. Counts, agent dollars at full
 precision and fixed slugs only: never a path, session or title.
 
+Each skill and section also carries `run_utility` and `decisions` (Adam,
+2026-11-07): every recorded arm run of it summed per (UTC day, arm model,
+utility class, discard reason) with its agent cost, and its cell versions
+with what each decided and when (harness/gates.py, RUN UTILITY); null
+without a verdict. Days, model ids, fixture names, fixed classes and slugs,
+counts and dollars only: never a run id, path, session or title. The
+explorer sums the rows over a period, per subject and for the fleet.
+
 Each skill and section also carries `confidence` (the levels its gate
 bounds reach, and per cell the gain measured so far and the range it likely
 falls in, `subject_confidence`; a cell's `task` is its fixture name, which
@@ -1762,6 +1770,57 @@ def discarded_runs(verdict: dict) -> dict | None:
     return gates.merge_discards({"by_reason": rows})
 
 
+_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_MODEL = re.compile(r"[a-z0-9][a-z0-9.-]*")
+
+
+def _day(value):
+    return value if isinstance(value, str) and _DAY.fullmatch(value) else None
+
+
+def _model(value):
+    return value if isinstance(value, str) and _MODEL.fullmatch(value) else None
+
+
+def run_utility(verdict: dict) -> list | None:
+    """A subject's `run_utility` (harness/gates.py, RUN UTILITY): its arm
+    runs per (UTC day, arm model, class, reason) with their agent cost. Only
+    days, model ids, the fixed classes and reason slugs, counts and dollars;
+    None without a verdict (unknown, not zero)."""
+    found = verdict.get("run_utility") if isinstance(verdict, dict) else None
+    if not isinstance(found, list):
+        return None
+    rows = [{"date": _day(r.get("date")), "model": _model(r.get("model")),
+             "class": r["class"], "reason": r.get("reason"),
+             "runs": r["runs"], "cost_usd": r["cost_usd"], "cost_unknown": r["cost_unknown"]}
+            for r in found
+            if isinstance(r, dict) and r.get("class") in gates.UTILITY_CLASSES
+            and (r.get("reason") is None or r.get("reason") in gates.DISCARD_REASONS)]
+    return gates.merge_utility(rows)
+
+
+def decisions(verdict: dict) -> list | None:
+    """A subject's `decisions` (harness/gates.py, RUN UTILITY, CELL
+    VERSIONS): per cell version, its fixture name, model, run days, class
+    and decision day. None without a verdict."""
+    found = verdict.get("decisions") if isinstance(verdict, dict) else None
+    if not isinstance(found, list):
+        return None
+    out = []
+    for d in found:
+        if not isinstance(d, dict) or not _model(d.get("model")) \
+                or not isinstance(d.get("class"), str) \
+                or not re.fullmatch(r"[a-z-]+", d["class"]):
+            continue
+        fixture = d.get("fixture")
+        out.append({"fixture": fixture if isinstance(fixture, str) else None,
+                    "model": d["model"], "current": d.get("current") is True,
+                    "from": _day(d.get("from")), "to": _day(d.get("to")),
+                    "class": d["class"], "decided": _day(d.get("decided")),
+                    "pair": d.get("pair") if d.get("pair") in ("in_situ", "alone") else None})
+    return out
+
+
 def fleet_discards(skills: list, sections: list) -> dict:
     """The document's `discarded_runs`: `discarded_runs` summed over the
     listed skills, the listed sections, and both (`all`). A subject with
@@ -1863,6 +1922,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        else {"invocations": counts.get(name, 0)},
                        "copies": copies,
                        "discarded_runs": discarded_runs(verdict),
+                       "run_utility": run_utility(verdict),
+                       "decisions": decisions(verdict),
                        "runs": by_skill.get(name, [])})
 
     renumber(skills)
@@ -1886,6 +1947,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "next_test": queue.get(("guidance", row["id"]), unqueued),
             "stakes": stakes_of("guidance", row["id"]),
             "discarded_runs": discarded_runs(verdict),
+            "run_utility": run_utility(verdict),
+            "decisions": decisions(verdict),
             "runs": runs if alone else without_alone(runs)})
 
     renumber(sections)

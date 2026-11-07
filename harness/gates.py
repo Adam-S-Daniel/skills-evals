@@ -1075,8 +1075,10 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                    current_rest_pairs=len(current_window),
                    rests=len(set(rest["keys"])), rest_guard=None)
 
-    def done(cls, reason):
-        return {**out, "class": cls, "reason": reason}
+    def done(cls, reason, at=None):
+        # `decided_at` (RUN UTILITY): the usable pair at which the class
+        # was decided, None for a class that has not decided.
+        return {**out, "class": cls, "reason": reason, "decided_at": at}
 
     if not window:
         return done("insufficient", "no pair: an arm has no counted run, or no fire "
@@ -1130,6 +1132,25 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     # rest moves, so pooled they read the current rest alone: pooling never
     # parks a cell the current rest would not.
     current_usable = [p for p, c in zip(usable, usable_current) if c]
+    # Where each current-rest usable pair falls among the usable pairs
+    # (1-based): the ceiling and no-harm tests count current-rest pairs.
+    current_places = [i + 1 for i, c in enumerate(usable_current) if c]
+
+    def place(n):
+        """Usable pair of the n-th (1-based) current-rest usable pair."""
+        return current_places[n - 1]
+
+    def count_reached(need):
+        """The usable pair (1-based) by which the current rest's window
+        holds `need` pairs: where a cap or the high-cell stop is reached."""
+        seen = used = 0
+        for (w, o), c in zip(window, is_current):
+            used += w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None
+            seen += c
+            if seen >= need:
+                return used
+        return len(usable)
+
     withouts = [o["numbers"]["run_mean"] for _, o in current_usable]
     current_ds = differences(current_usable)
     without_mean = _mean(withouts) if withouts else None
@@ -1232,7 +1253,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                         f"CLI version(s) in the pairs, under the "
                         f"{policy['min_cli_versions']} a removal needs")
         return done("no-clear-effect", f"{cap} pairs and neither test rejected: no clear "
-                    "effect, which can only propose a removal")
+                    "effect, which can only propose a removal", count_reached(cap))
 
     keep_at, remove_at = objective["keep_at"], objective["remove_at"]
     harm_pooled = harm_wealth(ds, bet_prior)
@@ -1378,17 +1399,17 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             # Round 4's m(d): every class a lapsed cell ends in says so.
             plain_done = done
 
-            def done(cls, reason):
+            def done(cls, reason, at=None):
                 return plain_done(cls, f"{reason}; the pooled keep at pair {pooled_keep} "
                                   "lapsed at the current rest's cap, which no more pairs "
-                                  "can test (an older rest alone never keeps)")
+                                  "can test (an older rest alone never keeps)", at)
     else:
         keeps = keep_at is not None and (remove_decided is None or keep_at <= remove_decided)
         provisional = ""
     if keeps:
         return done("benefit", f"the keep test rejected at pair {keep_at}: confident at "
                     f"{policy['benefit_confidence']:.0%} across the subject's {family} "
-                    f"cell(s) that the gain is above 0{provisional}")
+                    f"cell(s) that the gain is above 0{provisional}", keep_at)
     if (ceiling_at is not None or high) and harm_at is not None:
         # Round 1's M1: a cell at the ceiling can still show HARM, which
         # needs no headroom, so it is never hidden as `ceiling`.
@@ -1397,14 +1418,15 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         return done(
             "no-benefit", f"the harm test decided at pair {harm_decided} (crossed at "
             f"{harm_at}): confident at {policy['retire_confidence']:.0%} that the "
-            "subject lowers results here, which needs no headroom to show")
+            "subject lowers results here, which needs no headroom to show", harm_decided)
     if ceiling_at is not None and noharm_at is not None:
         return done("ceiling", f"the ceiling test rejected at pair {ceiling_at} and the "
                     f"no-harm test at pair {noharm_at}: confident at "
                     f"{policy['retire_confidence']:.0%} that the without arm's mean is "
                     f"above 1 - {margin} and the subject costs less than {margin} here, "
                     "so this task leaves no room to show the margin; the cell does not "
-                    "vote on removal and needs a harder fixture")
+                    "vote on removal and needs a harder fixture",
+                    max(place(ceiling_at), place(noharm_at)))
     if high or ceiling_at is not None:
         # High on the sample, or on the bound without the no-harm test:
         # neither park the cell nor let it vote. Round 2's M2: after
@@ -1418,7 +1440,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             return done("ceiling-unconfirmed", f"{len(current_window)} pairs, the without arm "
                         f"averaging {without_mean:.3f}, and the no-harm test rejected at "
                         f"pair {noharm_at}, but the ceiling test has not: the cell stops "
-                        "being fired, does not vote on removal and needs a harder fixture")
+                        "being fired, does not vote on removal and needs a harder fixture",
+                        max(count_reached(policy["max_runs_high_cell"]), place(noharm_at)))
         if not capped:
             return done("insufficient", f"the without arm averages {without_mean:.3f}, "
                         f"above 1 - {margin}, but the ceiling and no-harm tests have not "
@@ -1436,7 +1459,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         return done(
             "no-benefit", f"the remove test decided at pair {remove_decided} (crossed at "
             f"{remove_at}): confident at {policy['retire_confidence']:.0%} that the gain "
-            f"is under {margin}{over}")
+            f"is under {margin}{over}", remove_decided)
     if capped:
         return capped_class()
     return done("insufficient", "neither test has rejected yet")
@@ -1602,12 +1625,13 @@ def merge_discards(*summaries) -> dict:
             "by_reason": by_reason}
 
 
-def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
-                  rest: dict | None = None) -> list:
-    """(run, reason) for every run of one classified cell that does not
-    count toward the verdict (DISCARDED RUNS, "Inside a cell"), read from
-    `_cell_pairs` and `_classify`'s own window. `cls` is the cell's class;
-    `rest` is `classify_cell`'s."""
+def _cell_split(with_runs: list, without_runs: list, policy: dict, cls: str,
+                rest: dict | None) -> tuple:
+    """(discards, usable) of one classified cell: (run, reason) for every
+    run that does not count (DISCARDED RUNS, "Inside a cell"), and the
+    window's pairs with a run mean on both arms, in `_classify`'s order
+    (empty for a `cannot-discriminate` cell), whose 1-based places are the
+    ones `decided_at` names."""
     prime(with_runs + without_runs)
     _skipped, pairs, unpaired, rest_info = _cell_pairs(with_runs, without_runs, rest)
     cap = policy["max_runs_per_cell"]
@@ -1616,8 +1640,9 @@ def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
     else:
         window, _ = _rest_window(pairs, rest_info["keys"], rest_info["current"], cap)
     in_window = {id(r) for pair in window for r in pair}
-    scored = {id(r) for w, o in window for r in (w, o)
-              if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None}
+    usable = [(w, o) for w, o in window
+              if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None]
+    scored = {id(r) for pair in usable for r in pair}
     lone = {id(r) for r in unpaired}
     out = []
     for run in sorted(with_runs + without_runs, key=_order):
@@ -1632,7 +1657,200 @@ def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
             out.append((run, "no_objective_score"))
         elif cls == "cannot-discriminate":
             out.append((run, "cannot_discriminate"))
-    return out
+    return out, ([] if cls == "cannot-discriminate" else usable)
+
+
+def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
+                  rest: dict | None = None) -> list:
+    """(run, reason) for every run of one classified cell that does not
+    count toward the verdict (DISCARDED RUNS, "Inside a cell"), read from
+    `_cell_pairs` and `_classify`'s own window. `cls` is the cell's class;
+    `rest` is `classify_cell`'s."""
+    return _cell_split(with_runs, without_runs, policy, cls, rest)[0]
+
+
+# ---------------------------------------------------------------------------
+# Run utility (Adam, 2026-11-07: "what runs provided no utility vs helped
+# determine the disposition of the target for some period of time").
+#
+# Every arm run of a subject read by scripts/compute_gates.py gets ONE class
+# (UTILITY_CLASSES), and, when its current verdict does not count it, the
+# DISCARDED RUNS reason slug, so the ledger's reasons always add up to
+# `discarded_runs`:
+#
+#   decisive             counted in a current cell that has DECIDED (any
+#                        class but insufficient, missing and
+#                        cannot-discriminate), in a pair at or before the
+#                        cell's decision point `decided_at`.
+#   after_decision       counted (or, superseded, would have been) in a pair
+#                        after its cell's decision point: no utility.
+#   building             counted in a current cell that has not decided.
+#   decisive_superseded  not counted today because the content or roster
+#                        changed (STRANDING_REASONS), but its OLD cell
+#                        version decided, and its pair is at or before that
+#                        decision point: it decided a past disposition.
+#   stranded             not counted today for a STRANDING_REASONS change,
+#                        usable in its old cell version, which never decided.
+#   discarded            never usable: every other reason, and a superseded
+#                        run that its old cell version did not count either.
+#
+# THE DECISION POINT (`_classify`'s `decided_at`, 1-based over the cell's
+# usable pairs, those in the window with a run mean on both arms): for
+# `benefit` the keep test's crossing that stands (`keep_at`; pooled, the
+# final current-rest keep or the provisional pooled one); for `no-benefit`
+# the remove or harm test's stopping time (`remove_decided_at`,
+# `harm_decided_at`); for `ceiling` the later of the ceiling and no-harm
+# crossings; for `ceiling-unconfirmed` the later of the no-harm crossing and
+# the pair at which the current rest's window reached `max_runs_high_cell`
+# (the without-arm mean it also reads is over every pair, not a stopping
+# time, so that rule is the most defensible point); for `no-clear-effect`
+# the pair at which the current rest's window reached the cap. An
+# insufficient cell has none (its runs are `building`), including one at its
+# cap, and so has a cell whose decided class the agent-errored rule turned
+# back to insufficient. A cell parked by the eval scope pass keeps its
+# decision point, except a provisional pooled keep, which is undecided.
+#
+# CELL VERSIONS. A decision belongs to a cell VERSION: the cell (pooled
+# fixture, model) and the content it tested (fixture digest, the with arm's
+# tested digest, and the pair key: the other skills and the guidance, or the
+# rest of the guidance). A run dropped today as `fixture_off_main`,
+# `model_off_roster`, `fixture_changed`, `subject_changed`, `rest_changed` or
+# `context_unmatched` was valid when it ran and was invalidated by a later
+# change, so it is regrouped with the other such runs of its version (and
+# the without partners those leave `unpaired` in a current cell) and that
+# group is classified alone by `classify_cell`, with the subject's keep
+# family and prior. A without arm records no tested digest, so it takes
+# its with partner's (same run directory, fixture and model); one with no
+# such partner is grouped with a None digest and stays unpaired there, so
+# it is `discarded`. An old version is classified with `rest` None, as
+# `rest_policy: current` would (one rest per version, which can only make
+# fewer old decisions, so more runs read `stranded`, never fewer).
+#
+# Each subject also lists `decisions`: per cell version, its first and last
+# run day, its class, and the day of the pair at its decision point.
+
+UTILITY_CLASSES = ("decisive", "decisive_superseded", "after_decision", "building",
+                   "stranded", "discarded")
+#: The DISCARDED RUNS reasons that mean "valid when it ran, invalidated by a
+#: later change": a run dropped for one is regrouped by its old cell version.
+STRANDING_REASONS = frozenset({"fixture_off_main", "model_off_roster", "fixture_changed",
+                               "subject_changed", "rest_changed", "context_unmatched"})
+#: Classes that say a cell has not decided.
+UNDECIDED_CLASSES = frozenset({"missing", "insufficient", "cannot-discriminate"})
+
+
+def run_day(timestamp) -> str | None:
+    """The UTC day, YYYY-MM-DD, of a results timestamp (YYYYMMDDTHHMMSSZ)."""
+    if isinstance(timestamp, str) and len(timestamp) >= 8 and timestamp[:8].isdigit():
+        return f"{timestamp[:4]}-{timestamp[4:6]}-{timestamp[6:8]}"
+    return None
+
+
+def utility_entry(run: dict, cls: str, reason: str | None = None, cost=None) -> tuple:
+    """(day, model, class, reason, dollars, cost unknown) of one arm run.
+    `cost` is (dollars, unknown) when the run has no trial records."""
+    if cls not in UTILITY_CLASSES:
+        raise ValueError(f"unknown utility class {cls!r}")
+    if reason is not None and reason not in DISCARD_REASONS:
+        raise ValueError(f"unknown discard reason {reason!r}")
+    dollars, unknown = cost if cost is not None else run_cost(run.get("trials") or [])
+    model = run.get("model")
+    return (run_day(run.get("timestamp")), model if isinstance(model, str) else None,
+            cls, reason, dollars, unknown)
+
+
+def utility_rows(entries) -> list:
+    """The ledger: `utility_entry` entries summed per (day, model, class,
+    reason) as {"date", "model", "class", "reason", "runs", "cost_usd",
+    "cost_unknown"}, dollars by `math.fsum` at full precision."""
+    groups: dict = {}
+    for day, model, cls, reason, dollars, unknown in entries:
+        groups.setdefault((day, model, cls, reason), []).append((dollars, unknown))
+    return [{"date": day, "model": model, "class": cls, "reason": reason,
+             "runs": len(got), "cost_usd": _finite_sum([d for d, _ in got]),
+             "cost_unknown": sum(1 for _, u in got if u)}
+            for (day, model, cls, reason), got in sorted(
+                groups.items(), key=lambda kv: tuple(x or "" for x in kv[0]))]
+
+
+def merge_utility(*ledgers) -> list:
+    """One ledger of several (None skipped): rows of one key add."""
+    groups: dict = {}
+    for ledger in ledgers:
+        for row in ledger or []:
+            key = (row["date"], row["model"], row["class"], row["reason"])
+            groups.setdefault(key, []).append(row)
+    return [{"date": k[0], "model": k[1], "class": k[2], "reason": k[3],
+             "runs": sum(r["runs"] for r in got),
+             "cost_usd": _finite_sum([r["cost_usd"] for r in got]),
+             "cost_unknown": sum(r["cost_unknown"] for r in got)}
+            for k, got in sorted(groups.items(), key=lambda kv: tuple(x or "" for x in kv[0]))]
+
+
+def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
+                 rest: dict | None = None) -> tuple:
+    """((run, class, reason) for every run of one classified current cell,
+    the day of its decision point or None): RUN UTILITY's classes."""
+    discards, usable = _cell_split(with_runs, without_runs, policy, cell["class"], rest)
+    at = None if cell["class"] in UNDECIDED_CLASSES else cell.get("decided_at")
+    out = [(r, "discarded", why) for r, why in discards]
+    for i, pair in enumerate(usable, 1):
+        cls = "building" if at is None else "decisive" if i <= at else "after_decision"
+        out += [(r, cls, None) for r in pair]
+    day = run_day(usable[at - 1][0]["timestamp"]) if at and at <= len(usable) else None
+    return out, day
+
+
+def _version(entries: list) -> dict:
+    """A decisions row's dates: the first and last run day of `entries`."""
+    days = sorted(run_day(r["timestamp"]) or "" for r in entries)
+    return {"from": days[0] or None, "to": days[-1] or None}
+
+
+def supersede(ledger: list, skill: str, expected: dict, policy: dict, family: int,
+              bet_prior, errored_blocks: bool) -> list:
+    """RUN UTILITY, CELL VERSIONS, in place on `ledger` ([run, class,
+    reason] lists): every run dropped for a STRANDING_REASONS change, and
+    the without partners those leave unpaired, regrouped by old cell version
+    and classified alone. Returns (the old versions' `decisions` rows, the
+    ids of the runs moved to an old version)."""
+    def partner_key(run):
+        return (run["path"], run["fixture"] or "", run["model"])
+    dropped = [row for row in ledger if row[2] in STRANDING_REASONS]
+    if not dropped:
+        return [], set()
+    lone = {(partner_key(row[0]), row[0]["role"]): row for row in ledger
+            if row[2] == "unpaired"}
+    with_digest = {partner_key(row[0]): row[0].get("tested_digest")
+                   for row in dropped if row[0]["role"] == "with"}
+    groups: dict = {}
+    for row in dropped:
+        run = row[0]
+        key = (pooled_fixture(run, skill, expected) or "", run["model"], run["fixture_digest"],
+               with_digest.get(partner_key(run)), run.get("pair_key"))
+        members = groups.setdefault(key, {})
+        members[id(run)] = row
+        other = lone.get((partner_key(run), "without" if run["role"] == "with" else "with"))
+        if other is not None:
+            members[id(other[0])] = other
+    decisions, moved = [], set()
+    for key, members in sorted(groups.items(), key=lambda kv: tuple(str(x) for x in kv[0])):
+        rows = list(members.values())
+        moved.update(members)
+        with_runs = [r[0] for r in rows if r[0]["role"] == "with"]
+        without_runs = [r[0] for r in rows if r[0]["role"] == "without"]
+        cell = classify_cell(with_runs, without_runs, policy,
+                             any(r.get("judge_carried") for r, *_ in rows), family,
+                             bet_prior, errored_blocks=errored_blocks)
+        result, day = cell_utility(with_runs, without_runs, policy, cell)
+        old = {"decisive": "decisive_superseded", "building": "stranded"}
+        by_id = {id(r): cls for r, cls, _ in result}
+        for row in rows:
+            row[1] = old.get(by_id[id(row[0])], by_id[id(row[0])])
+        decisions.append({"fixture": key[0] or None, "model": key[1], "current": False,
+                          **_version([r[0] for r in rows]), "class": cell["class"],
+                          "decided": day if cell["class"] not in UNDECIDED_CLASSES else None})
+    return decisions, moved
 
 
 def pool_discard(run: dict, skill: str, models: list, expected: dict, strata: bool,
@@ -1690,6 +1908,7 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
         cls, reason = "insufficient", (f"{cls} on the numbers, but the cell has "
                                        f"{errored} agent-errored trial(s) or a run "
                                        "skipped as anomalous, so it cannot retire")
+        full = {**full, "decided_at": None}
     return {**full, "class": cls, "reason": reason, "judge_carried": judge_carried,
             "skipped": skipped, "unpaired": len(unpaired), "errored_trials": errored}
 
@@ -1881,7 +2100,7 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     m = len(expected) * max(1, len(models)) if family and expected else 1
     rest_policy = policy.get("rest_policy", DEFAULT_REST_POLICY) if strata else "current"
     pooled = rest_policy != "current"
-    cells, used, discards, pooled_ids = [], set(), [], set()
+    cells, used, ledger, pooled_ids, decisions = [], set(), [], set(), []
     all_runs = index.get("runs", [])
     for (fixture, model), pool in sorted(pool_cells(all_runs, skill,
                                                     models, expected, strata,
@@ -1892,12 +2111,13 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
         used.update(run_key(r) for r in runs)
         pooled_ids.update(id(r) for r in runs)
         missing = sorted(k for k, v in pool["key"].items() if v is None)
+        decision = None
         if not pool["on_model"]:
             cell = {"class": "missing", "reason": "no run on this model"}
         elif missing:
             cell = {"class": "insufficient",
                     "reason": f"pooling key incomplete: {', '.join(missing)}"}
-            discards += [discard_entry(r, "content_unknown") for r in runs]
+            ledger += [[r, "discarded", "content_unknown"] for r in runs]
         else:
             carried = any(r["judge_carried"] for r in runs)
             guard = {"current": pool["key"]["rest_digest"],
@@ -1905,8 +2125,14 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                                              DEFAULT_REST_GUARD_MIN_PAIRS)} if pooled else None
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
                                  bet_prior, errored_blocks=not strata, rest=guard)
-            discards += [discard_entry(r, why) for r, why in cell_discards(
-                arms["with"], arms["without"], policy, cell["class"], guard)]
+            cell_rows, decided_day = cell_utility(arms["with"], arms["without"], policy,
+                                                  cell, guard)
+            ledger += [list(row) for row in cell_rows]
+            if runs:
+                decision = {"fixture": fixture or None, "model": model, "current": True,
+                            **_version(runs), "class": cell["class"], "decided": decided_day,
+                            "_runs": runs}
+                decisions.append(decision)
         paused = (expected.get(fixture) or {}).get("scope_paused")
         provisional = cell["class"] == "benefit" and \
             (cell.get("rest_guard") or {}).get("keep_final") is False
@@ -1927,6 +2153,16 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                 cell = {**cell, "keep_tests": [
                     {**t, "p": 1.0} if t.get("route") == "objective" else t
                     for t in cell["keep_tests"]]}
+            if provisional:
+                # RUN UTILITY: a parked provisional keep has not decided.
+                ids = {id(r) for r in runs}
+                for row in ledger:
+                    if row[1] in ("decisive", "after_decision") and id(row[0]) in ids:
+                        row[1] = "building"
+                if decision:
+                    decision["decided"] = None
+            if decision:
+                decision["class"] = "paused"
             cell = {**cell, "class": "paused", "class_before_pause": cell["class"],
                     "reason": f"paused by the eval scope pass ({paused}) and no longer "
                               f"fired; before the pause it was {cell['class']}: "
@@ -1941,13 +2177,27 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                                                  for r in runs),
                       "runs": {role: [_run_entry(r) for r in sorted(arms[role], key=_order)]
                                for role in arms}})
-    discards += [discard_entry(r, pool_discard(r, skill, models, expected, strata,
-                                               rest_policy))
-                 for r in sorted(all_runs, key=_order)
-                 if r["skill"] == skill and id(r) not in pooled_ids]
-    # DISCARDED RUNS: every run of the subject given that does not count.
+    ledger += [[r, "discarded", pool_discard(r, skill, models, expected, strata, rest_policy)]
+               for r in sorted(all_runs, key=_order)
+               if r["skill"] == skill and id(r) not in pooled_ids]
+    # RUN UTILITY, CELL VERSIONS: runs a later change dropped, by old version.
+    old, moved = supersede(ledger, skill, expected, policy, m, bet_prior,
+                           errored_blocks=not strata)
+    for decision in decisions:
+        # A current version's days are its own runs', not those of an old
+        # version that a change left unpaired in its pool.
+        own = [r for r in decision.pop("_runs") if id(r) not in moved]
+        if own:
+            decision.update(_version(own))
+    decisions += old
+    # DISCARDED RUNS: every run of the subject given that does not count;
+    # RUN UTILITY: every run of it, by class, from the same ledger.
     out = {"cells": cells, "runs_used": sorted(used),
-           "discarded_runs": discard_summary(discards)}
+           "discarded_runs": discard_summary(discard_entry(r, why)
+                                             for r, _, why in ledger if why),
+           "run_utility": utility_rows(utility_entry(r, cls, why) for r, cls, why in ledger),
+           "decisions": sorted(decisions, key=lambda d: (d["fixture"] or "", d["model"],
+                                                         d["from"] or "", d["current"]))}
     out.update(_verdict(cells, bool(expected)))
     if family and expected:
         out.update(keep_family=m, keep_alpha=1 - policy["benefit_confidence"])
@@ -2200,4 +2450,7 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
             "runs_used": sorted(set(in_situ["runs_used"]) | set(alone["runs_used"])),
             "discarded_runs": merge_discards(in_situ.get("discarded_runs"),
                                              alone.get("discarded_runs")),
+            "run_utility": merge_utility(in_situ.get("run_utility"), alone.get("run_utility")),
+            "decisions": [{**d, "pair": pair} for pair in GUIDANCE_PAIRS
+                          for d in out[pair].get("decisions", [])],
             **{k: in_situ[k] for k in ("keep_family", "keep_alpha") if k in in_situ}}

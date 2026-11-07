@@ -113,6 +113,14 @@ under `discarded`; harness/gates.py `retirement` the ones its cells leave
 out; `compute` merges the two. Dollars are agent `cost_usd` at full
 precision; a run with a trial lacking one adds to `cost_unknown`.
 
+RUN UTILITY (Adam, 2026-11-07): every skill and section verdict also
+carries `run_utility`, the ledger of every arm run of it read here, summed
+per (UTC day of the run, arm model, class, reason) as {"date", "model",
+"class", "reason", "runs", "cost_usd", "cost_unknown"}, and `decisions`,
+its cell versions and what each decided when (harness/gates.py, RUN
+UTILITY, defines the classes and the decision point). The rows whose
+`reason` is set are exactly `discarded_runs`, by the same slugs.
+
 AFTER harness/gates.py's verdict, ONE RETIREMENT PER EVALUATION: of several
 skills whose verdict is `retire`, only the one with the most arm runs (then
 the first by name) keeps it; the rest are `retire-pending`. Nothing is read
@@ -488,15 +496,20 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
     `discarded` is {subject key (a skill, or `guidance/<section>`): [entry]}
     of every arm run read here that no verdict will count, as
     harness/gates.py `discard_entry` entries (DISCARDED RUNS): `invalid_run`,
-    `after_as_of`, `duplicate` and `bare_run`."""
+    `after_as_of`, `duplicate` and `bare_run`; `utility` is the same runs
+    as harness/gates.py `utility_entry` entries (RUN UTILITY), class
+    `discarded`."""
     runs, skipped, skills, sections = [], {}, set(), set()
     discarded: dict = {}
+    utility: dict = {}
 
     def count(reason):
         skipped[reason] = skipped.get(reason, 0) + 1
 
-    def discard(subject, entry):
-        discarded.setdefault(subject, []).append(entry)
+    def discard(subject, run, reason, cost=None):
+        entry = gates.utility_entry(run, "discarded", reason, cost)
+        discarded.setdefault(subject, []).append((reason, *entry[4:]))
+        utility.setdefault(subject, []).append(entry)
 
     def subject_of(record):
         return f"guidance/{record['skill']}" if "pair" in record else record["skill"]
@@ -516,7 +529,8 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
         record, reason = _validate(tree, key, entry, evals_dir)
         if record is None:
             count(reason)
-            discard(key[1], ("invalid_run", *_raw_cost(entry)))
+            # The run's day is its directory's; its model is unknown.
+            discard(key[1], {"timestamp": key[2]}, "invalid_run", _raw_cost(entry))
         else:
             validated.append(record)
     paired |= {(r["path"], r["fixture"]) for r in validated if r["role"] == "with"}
@@ -527,15 +541,15 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
             validated.remove(record)
             if record["timestamp"] > as_of:
                 count("after as-of")
-                discard(subject_of(record), gates.discard_entry(record, "after_as_of"))
+                discard(subject_of(record), record, "after_as_of")
             else:
                 bare.append(record)
-                discard(subject_of(record), gates.discard_entry(record, "bare_run"))
+                discard(subject_of(record), record, "bare_run")
     seen = set()
     for record in sorted(validated, key=lambda r: (r["path"], r["fixture"] or "", r["role"])):
         if record["timestamp"] > as_of:
             count("after as-of")
-            discard(subject_of(record), gates.discard_entry(record, "after_as_of"))
+            discard(subject_of(record), record, "after_as_of")
             continue
         here = (record["skill"], record["fixture"] or "", record["model"], record["role"],
                 record.get("pair"))
@@ -544,7 +558,7 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
             marks.add((here, "trials", record["content"][1]))
         if marks & seen:
             count("duplicate arm run")
-            discard(subject_of(record), gates.discard_entry(record, "duplicate"))
+            discard(subject_of(record), record, "duplicate")
             continue
         seen |= marks
         runs.append(record)
@@ -552,7 +566,7 @@ def build_index(tree: Path, evals_dir: Path, as_of: str) -> dict:
             "bare_runs": bare,
             "guidance_runs": [r for r in runs if "pair" in r],
             "skipped": skipped, "skills": sorted(skills), "sections": sorted(sections),
-            "discarded": discarded}
+            "discarded": discarded, "utility": utility}
 
 
 def parse_as_of(value: str) -> str:
@@ -735,11 +749,30 @@ def expected_guidance(evals_dir: Path, section: str, guidance_dir: Path | None) 
 VERDICT_RAISED = "the verdict raised "
 
 
-def raised_discards(runs: list, subject: str) -> dict:
+def raised_verdict(runs: list, subject: str, exc: BaseException) -> dict:
     """A subject whose verdict raised counts none of its runs: each is
-    discarded as `verdict_raised` (harness/gates.py, DISCARDED RUNS)."""
-    return gates.discard_summary(gates.discard_entry(r, "verdict_raised")
-                                 for r in runs if r["skill"] == subject)
+    discarded as `verdict_raised` (harness/gates.py, DISCARDED RUNS, RUN
+    UTILITY)."""
+    mine = [r for r in runs if r["skill"] == subject]
+    return {"verdict": "insufficient", "cells": [], "runs_used": [],
+            "reason": f"{VERDICT_RAISED}{type(exc).__name__}",
+            "discarded_runs": gates.discard_summary(gates.discard_entry(r, "verdict_raised")
+                                                    for r in mine),
+            "run_utility": gates.utility_rows(gates.utility_entry(r, "discarded",
+                                                                  "verdict_raised")
+                                              for r in mine),
+            "decisions": []}
+
+
+def add_index_drops(verdict: dict, index: dict, key: str) -> None:
+    """Merge into `verdict`, in place, the runs `build_index` dropped for
+    subject `key` (a skill, or `guidance/<section>`)."""
+    verdict["discarded_runs"] = gates.merge_discards(
+        verdict["discarded_runs"],
+        gates.discard_summary(index.get("discarded", {}).get(key, [])))
+    verdict["run_utility"] = gates.merge_utility(
+        verdict.get("run_utility"),
+        gates.utility_rows(index.get("utility", {}).get(key, [])))
 
 
 def finalize(skills: dict) -> None:
@@ -783,12 +816,8 @@ def compute(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path,
                 expected_content(evals_dir, skill, registries or {}, keep_paused=True),
                 gates.prior_from_history(history, skill, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one skill's failure is its own
-            skills[skill] = {"verdict": "insufficient", "cells": [], "runs_used": [],
-                             "reason": f"{VERDICT_RAISED}{type(exc).__name__}",
-                             "discarded_runs": raised_discards(index["runs"], skill)}
-        skills[skill]["discarded_runs"] = gates.merge_discards(
-            skills[skill]["discarded_runs"],
-            gates.discard_summary(index.get("discarded", {}).get(skill, [])))
+            skills[skill] = raised_verdict(index["runs"], skill, exc)
+        add_index_drops(skills[skill], index, skill)
     finalize(skills)
     doc = {"schema_version": 1, "as_of": as_of,
             "newest_run": max((r["timestamp"] for r in index["runs"]), default=None),
@@ -823,13 +852,8 @@ def guidance_section_verdicts(index: dict, models: list, policy: dict, evals_dir
                 expected_guidance(evals_dir, section, guidance_dir),
                 gates.prior_from_history(history, section, policy["objective_margin"]))
         except Exception as exc:  # noqa: BLE001 - one section's failure is its own
-            sections[section] = {"verdict": "insufficient", "cells": [], "runs_used": [],
-                                 "reason": f"{VERDICT_RAISED}{type(exc).__name__}",
-                                 "discarded_runs": raised_discards(index["guidance_runs"],
-                                                                   section)}
-        sections[section]["discarded_runs"] = gates.merge_discards(
-            sections[section]["discarded_runs"],
-            gates.discard_summary(index.get("discarded", {}).get(f"guidance/{section}", [])))
+            sections[section] = raised_verdict(index["guidance_runs"], section, exc)
+        add_index_drops(sections[section], index, f"guidance/{section}")
     finalize(sections)
     return {"guidance": sections, "guidance_policy": policy,
             "guidance_retirement_mode": policy["retirement_mode"],

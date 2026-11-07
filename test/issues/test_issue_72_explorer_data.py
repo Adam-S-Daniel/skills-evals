@@ -193,8 +193,9 @@ class ShapeAndMathTests(unittest.TestCase):
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
             self.assertEqual(sorted(s), ["bundle", "confidence", "copies", "current_text_runs",
-                                         "description", "discarded_runs", "name",
-                                         "next_test", "registry", "runs", "skip_reason",
+                                         "decisions", "description", "discarded_runs", "name",
+                                         "next_test", "registry", "run_utility", "runs",
+                                         "skip_reason",
                                          "stakes", "status", "usage", "verdict",
                                          "verdict_reason"])
             # No evals/stakes.yml row: normal.

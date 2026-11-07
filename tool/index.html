@@ -696,6 +696,47 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         no_objective_score: "no objective score",
         cannot_discriminate: "fixture looks broken"
       },
+      utilityHeading: "Run usefulness",
+      utilityFleetHeading: "Run usefulness, every subject",
+      utilityPeriodLabel: "Period",
+      utilityPeriods: { 7: "Last 7 days", 30: "Last 30 days", all: "All time" },
+      utilityWhat: "Each recorded run, by whether it helped decide keep or remove. Decisive: it counted up to the pair where its cell decided. Decided an earlier version: the same, for a version of the text, fixture or model that has since changed. Building: it counts toward a cell that has not decided yet. After the decision: it ran once its cell had already decided. Stranded: it was usable, but a change dropped it before its cell decided. Discarded: it could never count. No use is the last three. Days are UTC.",
+      utilityClasses: {
+        decisive: "Decisive",
+        decisive_superseded: "Decided an earlier version",
+        building: "Building",
+        after_decision: "After the decision",
+        stranded: "Stranded",
+        discarded: "Discarded"
+      },
+      utilityNoUse: "No use (after the decision, stranded, discarded)",
+      utilityTotal: "Every run",
+      utilityColClass: "Use",
+      utilityThis: "Runs · list-price cost",
+      utilityAll: "All subjects",
+      utilitySkills: "Skills",
+      utilityGuidance: "Guidance",
+      utilityNone: "No recorded run in this period.",
+      utilityUnknownCost: (n) => " (+" + n + " unpriced)",
+      utilityLead: (n, cost, total, all) => "No use: " + n + " of " + total + " runs, " + cost + " of " + all + ".",
+      utilityReasons: (list) => "Why runs did not count: " + list + ".",
+      utilityChartAria: (n) => "Runs per day by usefulness, " + n + (n === 1 ? " day" : " days"),
+      utilityVersionsLead: "Decisions over time, per model and task (a new version starts when the text, the fixture or the rest of the guidance changes):",
+      utilityStrandedVersion: "never decided before it changed (stranded)",
+      utilityOn: (task) => " on " + task,
+      utilityAlone: " (section alone)",
+      utilityDecision: (cls) => ({
+        benefit: "kept (helps)",
+        "no-benefit": "no benefit",
+        ceiling: "no room to help",
+        "ceiling-unconfirmed": "stopped near the ceiling",
+        "no-clear-effect": "no clear effect",
+        insufficient: "building",
+        paused: "paused",
+        "cannot-discriminate": "fixture looks broken",
+        missing: "no run"
+      })[cls] || cls,
+      utilityVersion: (n, current, what, decided, from, to) => "v" + n + (current ? " (current)" : "") + " " + what + (decided ? " on " + decided : "") + (from ? ", runs " + from + (to && to !== from ? " to " + to : "") : ""),
       colCopy: "Copy",
       colSurface: "Where",
       colVsMain: "Against main",
@@ -1719,10 +1760,10 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function discardedLine(d) {
     if (!d || typeof d !== "object" || !Number.isInteger(d.total) || d.total <= 0) return null;
-    const usd4 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
+    const usd5 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
     const rows = Object.entries(d.by_reason && typeof d.by_reason === "object" ? d.by_reason : {}).filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0).sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([k, r]) => (Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k)) + " (" + r.runs + ")");
     const unknown = Number.isInteger(d.cost_unknown) ? d.cost_unknown : 0;
-    return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd4, unknown, rows.join(", ")));
+    return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd5, unknown, rows.join(", ")));
   }
   function usageLine(u, window2, refMs) {
     if (!u || typeof u.invocations !== "number" || !window2) return null;
@@ -2084,6 +2125,192 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return { week, local: row ? row.local.blocked : 0, ci: row ? row.ci.blocked : 0 };
   }
 
+  // src/views/utility.js
+  var UTILITY_CLASSES = ["decisive", "decisive_superseded", "building", "after_decision", "stranded", "discarded"];
+  var NO_USE = ["after_decision", "stranded", "discarded"];
+  var UTILITY_COLORS = {
+    decisive: "var(--good)",
+    decisive_superseded: "color-mix(in srgb, var(--good) 45%, var(--surface))",
+    building: "var(--s1)",
+    after_decision: "var(--warning)",
+    stranded: "var(--s2)",
+    discarded: "var(--axis)"
+  };
+  var PERIODS = [{ key: "7", days: 7 }, { key: "30", days: 30 }, { key: "all", days: null }];
+  var DEFAULT_PERIOD = "30";
+  var DAY_MS = 864e5;
+  var isDay = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  function periodStart(period, refMs) {
+    const p = PERIODS.find((x) => x.key === period);
+    if (!p || p.days === null || !isFinite(refMs)) return null;
+    return new Date(refMs - (p.days - 1) * DAY_MS).toISOString().slice(0, 10);
+  }
+  function inPeriod(rows, period, refMs) {
+    const from = periodStart(period, refMs);
+    const list = Array.isArray(rows) ? rows.filter((r) => r && Number.isInteger(r.runs) && r.runs > 0 && UTILITY_CLASSES.includes(r.class)) : [];
+    return from === null ? list : list.filter((r) => isDay(r.date) && r.date >= from);
+  }
+  var blank = () => ({ runs: 0, cost: 0, unknown: 0 });
+  function add(t, r) {
+    t.runs += r.runs;
+    if (typeof r.cost_usd === "number" && isFinite(r.cost_usd)) t.cost += r.cost_usd;
+    t.unknown += Number.isInteger(r.cost_unknown) ? r.cost_unknown : 0;
+  }
+  function utilityTotals(rows, period, refMs) {
+    const out = { classes: {}, noUse: blank(), total: blank(), reasons: {}, days: [] };
+    UTILITY_CLASSES.forEach((c) => {
+      out.classes[c] = blank();
+    });
+    const days = {};
+    for (const r of inPeriod(rows, period, refMs)) {
+      add(out.classes[r.class], r);
+      add(out.total, r);
+      if (NO_USE.includes(r.class)) add(out.noUse, r);
+      if (typeof r.reason === "string" && r.reason) add(out.reasons[r.reason] = out.reasons[r.reason] || blank(), r);
+      if (isDay(r.date)) {
+        const d = days[r.date] = days[r.date] || { date: r.date };
+        d[r.class] = (d[r.class] || 0) + r.runs;
+      }
+    }
+    const keys = Object.keys(days).sort();
+    for (let t = keys.length ? Date.parse(keys[0] + "T00:00:00Z") : 0; keys.length && t <= Date.parse(keys[keys.length - 1] + "T00:00:00Z"); t += DAY_MS) {
+      const k = new Date(t).toISOString().slice(0, 10);
+      out.days.push(days[k] || { date: k });
+    }
+    return out;
+  }
+  var usd = (x) => "$" + x.toFixed(2);
+  var money = (t) => usd(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : "");
+  function dayChart(days) {
+    if (!days.length) return null;
+    const W = 480, H = 132, L = 36, R = 474, T = 10, B = 108;
+    const tops = days.map((d) => UTILITY_CLASSES.reduce((s, c) => s + (d[c] || 0), 0));
+    const top = Math.max(1, ...tops);
+    const step = (R - L) / days.length;
+    const bw = Math.max(2, Math.min(18, step - 3));
+    const lab = { "font-size": 11, fill: "var(--muted)" };
+    const kids = [
+      h("line", { x1: L, x2: R, y1: B, y2: B, stroke: "var(--axis)", "stroke-width": 1 }),
+      h("text", Object.assign({ x: L - 4, y: T + 4, "text-anchor": "end" }, lab), fmtCount(top)),
+      h("text", Object.assign({ x: L - 4, y: B, "text-anchor": "end" }, lab), "0")
+    ];
+    days.forEach((d, i) => {
+      const cx = L + step * i + step / 2;
+      let y = B;
+      for (const c of UTILITY_CLASSES) {
+        const v = d[c] || 0;
+        if (!v) continue;
+        const hgt = v / top * (B - T);
+        kids.push(h("rect", {
+          x: (cx - bw / 2).toFixed(1),
+          y: (y - hgt).toFixed(1),
+          width: bw,
+          height: Math.max(0.5, hgt - 1).toFixed(1),
+          fill: UTILITY_COLORS[c],
+          "data-class": c,
+          "pointer-events": "none"
+        }));
+        y -= hgt;
+      }
+      kids.push(h("rect", {
+        x: (cx - step / 2).toFixed(1),
+        y: T,
+        width: step.toFixed(1),
+        height: B - T,
+        fill: "transparent",
+        class: "mark",
+        tabindex: 0,
+        "data-tip": d.date + ": " + UTILITY_CLASSES.filter((c) => d[c]).map((c) => STRINGS.utilityClasses[c] + " " + fmtCount(d[c])).join(", ")
+      }));
+      if (days.length <= 8 || i === 0 || i === days.length - 1) {
+        kids.push(h("text", Object.assign({ x: cx.toFixed(1), y: B + 17, "text-anchor": "middle" }, lab), d.date.slice(5)));
+      }
+    });
+    return h("svg", { viewBox: "0 0 " + W + " " + H, class: "chart weeks", role: "img", "aria-label": STRINGS.utilityChartAria(days.length) }, kids);
+  }
+  var reasonName = (k) => Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k);
+  function utilityBody(groups, period, refMs) {
+    const totals = groups.map((g) => ({ label: g.label, t: utilityTotals(g.rows, period, refMs) }));
+    const main = totals[0].t;
+    if (!main.total.runs) return h("div", { class: "utility-body" }, h("p", { class: "note" }, STRINGS.utilityNone));
+    const cell = (t) => fmtCount(t.runs) + " · " + money(t);
+    const cols = [{ label: STRINGS.utilityColClass, cell: (r) => h("span", null, h("span", { class: "sw", style: "background:" + (UTILITY_COLORS[r.key] || "transparent") }), " ", r.label) }].concat(totals.map((g, i) => ({ label: g.label, num: true, sort: (r) => r.values[i].runs, cell: (r) => cell(r.values[i]) })));
+    const rows = UTILITY_CLASSES.map((c) => ({ key: c, label: STRINGS.utilityClasses[c], values: totals.map((g) => g.t.classes[c]) })).filter((r) => r.values.some((v) => v.runs)).concat([
+      { key: "no-use", label: STRINGS.utilityNoUse, values: totals.map((g) => g.t.noUse) },
+      { key: "total", label: STRINGS.utilityTotal, values: totals.map((g) => g.t.total) }
+    ]);
+    const reasons = Object.entries(main.reasons).sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1));
+    return h(
+      "div",
+      { class: "utility-body" },
+      h("p", { class: "meta" }, STRINGS.utilityLead(fmtCount(main.noUse.runs), usd(main.noUse.cost), fmtCount(main.total.runs), usd(main.total.cost))),
+      table(cols, rows),
+      reasons.length ? h("p", { class: "meta" }, STRINGS.utilityReasons(reasons.map(([k, t]) => reasonName(k) + " " + fmtCount(t.runs) + " (" + usd(t.cost) + ")").join(", "))) : null,
+      main.days.length ? [
+        legend(UTILITY_CLASSES.filter((c) => main.classes[c].runs).map((c) => ({ label: STRINGS.utilityClasses[c], color: UTILITY_COLORS[c] }))),
+        dayChart(main.days)
+      ] : null
+    );
+  }
+  function utilityView(groups, refMs, period) {
+    let current = period || DEFAULT_PERIOD;
+    const buttons = PERIODS.map((p) => h("button", {
+      type: "button",
+      "data-period": p.key,
+      "aria-pressed": p.key === current ? "true" : "false",
+      onclick: (e) => {
+        current = p.key;
+        const root = e.currentTarget.closest(".utility");
+        root.querySelectorAll("button[data-period]").forEach((b) => b.setAttribute("aria-pressed", b.getAttribute("data-period") === current ? "true" : "false"));
+        const old = root.querySelector(".utility-body");
+        old.replaceWith(toDom(utilityBody(groups, current, refMs), e.currentTarget.ownerDocument));
+      }
+    }, STRINGS.utilityPeriods[p.key]));
+    return h(
+      "div",
+      { class: "utility" },
+      h("div", { class: "seg", role: "group", "aria-label": STRINGS.utilityPeriodLabel }, buttons),
+      h("p", { class: "meta" }, STRINGS.utilityWhat),
+      utilityBody(groups, current, refMs)
+    );
+  }
+  function decisionsView(decisions, friendly) {
+    const list = Array.isArray(decisions) ? decisions.filter((d) => d && typeof d.model === "string") : [];
+    if (!list.length) return null;
+    const cells = {};
+    for (const d of list) {
+      const k = (d.pair || "") + "|" + (d.fixture || "") + "|" + d.model;
+      (cells[k] = cells[k] || []).push(d);
+    }
+    const items = Object.keys(cells).sort().map((k) => {
+      const vs = cells[k].sort((a, b) => (a.from || "") < (b.from || "") ? -1 : (a.from || "") > (b.from || "") ? 1 : a.current - b.current);
+      const head = vs[0];
+      const name = friendly(head.model) + (head.fixture ? STRINGS.utilityOn(clean(head.fixture)) : "") + (head.pair === "alone" ? STRINGS.utilityAlone : "");
+      const parts = vs.map((d, i) => STRINGS.utilityVersion(
+        i + 1,
+        d.current,
+        !d.current && !d.decided ? STRINGS.utilityStrandedVersion : STRINGS.utilityDecision(d.class),
+        d.decided,
+        d.from,
+        d.to
+      ));
+      return h("li", null, name + ": " + parts.join("; "));
+    });
+    return [h("p", { class: "meta" }, STRINGS.utilityVersionsLead), h("ul", { class: "plain" }, items)];
+  }
+  function fleetGroups(doc) {
+    const skills = (Array.isArray(doc.skills) ? doc.skills : []).flatMap((s) => s && Array.isArray(s.run_utility) ? s.run_utility : []);
+    const sections = (doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : []).flatMap((s) => s && Array.isArray(s.run_utility) ? s.run_utility : []);
+    return [
+      { label: STRINGS.utilityAll, rows: skills.concat(sections) },
+      { label: STRINGS.utilitySkills, rows: skills },
+      { label: STRINGS.utilityGuidance, rows: sections }
+    ];
+  }
+  function hasUtility(doc) {
+    return fleetGroups(doc)[0].rows.length > 0;
+  }
+
   // src/views/summary.js
   function summaryView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
@@ -2134,6 +2361,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       h("p", { class: "lead" }, STRINGS.summaryLead),
       srcLine(src, refMs),
       h("div", { class: "tiles" }, tiles, extra),
+      hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
       alertsView(doc, "all")
     );
   }
@@ -2336,7 +2564,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 
   // src/views/subject.js
   var share = (x) => typeof x === "number" && isFinite(x) ? Math.round(x * 100) + "%" : STRINGS.noValue;
-  var usd = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd2 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
   var one = (x) => typeof x === "number" && isFinite(x) ? fmtCount(x) : STRINGS.noValue;
   function runsOf2(doc, kind, name) {
     const key = kind === "guidance" ? "guidance/" + name : name;
@@ -2355,7 +2583,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + " (" + share(r.without_share) + ")" },
       { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
       { label: STRINGS.colJudge, sort: (r) => r.judge, cell: (r) => typeof r.with_judge === "number" && typeof r.without_judge === "number" ? STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1)) : STRINGS.judgeNotNeeded },
-      { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
+      { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd2(r.cost_usd) }
     ];
     if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
     cols.push({ label: STRINGS.colReport, cell: (r) => link(r.report_url, STRINGS.report) });
@@ -2475,6 +2703,10 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         confidenceView(raw.confidence, doc.policy, subj),
         hasData(it.pooled) ? h("div", { class: "cols" }, h("div", null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h("div", null, trendChart(it.trend, refMs))) : null
       ]),
+      Array.isArray(raw.run_utility) && raw.run_utility.length ? panel(STRINGS.utilityHeading, [
+        utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
+        decisionsView(raw.decisions, friendlyModel)
+      ]) : null,
       panel(STRINGS.runsHeading, runsTable(runs, refMs)),
       panel(STRINGS.bareHeading, bareTable(bare)),
       guidance ? null : panel(STRINGS.useHeading, [usageLine(raw.usage, doc.usage, refMs), ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null]),
@@ -2485,7 +2717,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/loop.js
-  var usd2 = (x) => "$" + (Number(x) || 0).toFixed(2);
+  var usd3 = (x) => "$" + (Number(x) || 0).toFixed(2);
   function stagesView() {
     return [
       h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
@@ -2510,7 +2742,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         { label: STRINGS.colPr, sort: (r) => r.prs, cell: (r) => r.prs ? link(r.prUrl, STRINGS.prState(r.merged, r.prs)) : "" },
         { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + " (" + r.realWork + ")" },
         { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
-        { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd2(r.costUsd) }
+        { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd3(r.costUsd) }
       ], fq.rows, { tall: true }) : null
     ];
   }
@@ -2567,7 +2799,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/impact.js
-  var usd3 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd4 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
   var dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
   function hookWeeksView(doc, refMs) {
     const weeks = hookWeeks(doc);
@@ -2609,7 +2841,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const a = doc.activity;
     const pulls = a && Array.isArray(a.pulls) ? a.pulls : [];
     const by = /* @__PURE__ */ new Map();
-    const add = (ts, key) => {
+    const add2 = (ts, key) => {
       const w = mondayOf(parseTime(ts));
       if (!w) return;
       if (!by.has(w)) by.set(w, { week: w, opened: 0, merged: 0 });
@@ -2617,8 +2849,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     };
     for (const p of pulls) {
       if (!p) continue;
-      add(p.created_at, "opened");
-      if (p.state === "merged") add(p.merged_at, "merged");
+      add2(p.created_at, "opened");
+      if (p.state === "merged") add2(p.merged_at, "merged");
     }
     return Array.from(by.values()).sort((x, y) => x.week < y.week ? 1 : -1);
   }
@@ -2659,9 +2891,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
         { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
-        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd3(w.api_usd) },
-        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd3(w.thread_spend_usd) },
-        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd3(w.cost_per_verdict) }
+        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) },
+        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd4(w.thread_spend_usd) },
+        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd4(w.cost_per_verdict) }
       ], s.weeks)
     ];
   }

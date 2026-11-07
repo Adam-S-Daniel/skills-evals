@@ -2588,6 +2588,12 @@
        "type": "null"
       }
      ]
+    },
+    "run_utility": {
+     "$ref": "#/$defs/run_utility"
+    },
+    "decisions": {
+     "$ref": "#/$defs/decisions"
     }
    },
    "required": [
@@ -2595,10 +2601,12 @@
     "bytes",
     "confidence",
     "current_text_runs",
+    "decisions",
     "discarded_runs",
     "heading",
     "id",
     "next_test",
+    "run_utility",
     "runs",
     "skip_reason",
     "stakes",
@@ -2742,6 +2750,12 @@
        "type": "null"
       }
      ]
+    },
+    "run_utility": {
+     "$ref": "#/$defs/run_utility"
+    },
+    "decisions": {
+     "$ref": "#/$defs/decisions"
     }
    },
    "required": [
@@ -2749,11 +2763,13 @@
     "confidence",
     "copies",
     "current_text_runs",
+    "decisions",
     "description",
     "discarded_runs",
     "name",
     "next_test",
     "registry",
+    "run_utility",
     "runs",
     "skip_reason",
     "stakes",
@@ -3443,6 +3459,202 @@
      }
     }
    }
+  },
+  "utility_row": {
+   "description": "One row of a subject's run-utility ledger (harness/gates.py, RUN UTILITY): the arm runs of one UTC day, arm model, class and reason.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "date",
+    "model",
+    "class",
+    "reason",
+    "runs",
+    "cost_usd",
+    "cost_unknown"
+   ],
+   "properties": {
+    "date": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "model": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[a-z0-9][a-z0-9.-]*$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "class": {
+     "enum": [
+      "decisive",
+      "decisive_superseded",
+      "after_decision",
+      "building",
+      "stranded",
+      "discarded"
+     ]
+    },
+    "reason": {
+     "anyOf": [
+      {
+       "enum": [
+        "invalid_run",
+        "after_as_of",
+        "duplicate",
+        "bare_run",
+        "verdict_raised",
+        "fixture_off_main",
+        "model_off_roster",
+        "content_unknown",
+        "fixture_changed",
+        "subject_changed",
+        "context_unknown",
+        "hooked_run",
+        "rest_changed",
+        "context_unmatched",
+        "no_check_results",
+        "no_scored_trials",
+        "unpaired",
+        "over_cap",
+        "no_objective_score",
+        "cannot_discriminate"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "runs": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "cost_usd": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "cost_unknown": {
+     "type": "integer",
+     "minimum": 0
+    }
+   }
+  },
+  "run_utility": {
+   "description": "A subject's run-utility ledger, null without a verdict (unknown, not zero).",
+   "anyOf": [
+    {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/utility_row"
+     }
+    },
+    {
+     "type": "null"
+    }
+   ]
+  },
+  "decision": {
+   "description": "One cell version of a subject (harness/gates.py, RUN UTILITY, CELL VERSIONS): its first and last run day, its class and the day of its decision point.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "fixture",
+    "model",
+    "current",
+    "from",
+    "to",
+    "class",
+    "decided",
+    "pair"
+   ],
+   "properties": {
+    "fixture": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "model": {
+     "type": "string",
+     "pattern": "^[a-z0-9][a-z0-9.-]*$"
+    },
+    "current": {
+     "type": "boolean"
+    },
+    "from": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "to": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "class": {
+     "type": "string",
+     "pattern": "^[a-z-]+$"
+    },
+    "decided": {
+     "anyOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "pair": {
+     "enum": [
+      "in_situ",
+      "alone",
+      null
+     ]
+    }
+   }
+  },
+  "decisions": {
+   "description": "A subject's cell versions and their decisions, null without a verdict.",
+   "anyOf": [
+    {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/decision"
+     }
+    },
+    {
+     "type": "null"
+    }
+   ]
   }
  }
 }

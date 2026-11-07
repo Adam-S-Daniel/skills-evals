@@ -20,6 +20,7 @@ import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
+import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
@@ -475,6 +476,65 @@ await test('a subject page shows its discarded runs, their cost and top reasons,
   ok(text.includes('Most often: fixture changed (5), past the run cap (2), duplicate copy (1)'), text);
   ok(!text.includes('no partner arm'), 'three reasons at most');
   for (const d of [null, { total: 0, cost_usd: 0, cost_unknown: 0, by_reason: {} }]) ok(!page(d).includes('Discarded runs'), JSON.stringify(d));
+});
+
+// Run usefulness (Adam, 2026-11-07): rows of `run_utility`, summed over a period
+// counted back from the document's generated_at, in UTC days.
+const U = (date, cls, runs, cost, reason) => ({ date, model: 'model-a', class: cls, reason: reason || null, runs, cost_usd: cost, cost_unknown: 0 });
+const UREF = Date.parse('2026-11-07T20:00:00Z');
+const UROWS = [U('2026-11-07', 'decisive', 2, 0.5), U('2026-11-01', 'after_decision', 4, 1), U('2026-10-31', 'stranded', 6, 1.5, 'fixture_changed'),
+  U('2026-10-09', 'building', 8, 2), U('2026-10-08', 'discarded', 10, 2.5, 'unpaired'), U(null, 'discarded', 1, 0.25, 'invalid_run'),
+  U('2026-11-06', 'decisive_superseded', 3, 0.75, 'subject_changed')];
+await test('a period counts back from the reference day, itself included', () => {
+  eq(periodStart('7', UREF), '2026-11-01');
+  eq(periodStart('30', UREF), '2026-10-09');
+  eq(periodStart('all', UREF), null);
+  // 2026-11-01 is the 7th day back and in; 2026-10-31 is the 8th and out.
+  eq(inPeriod(UROWS, '7', UREF).map((r) => r.date).join(','), '2026-11-07,2026-11-01,2026-11-06');
+  // 2026-10-09 is in the last 30 days, 2026-10-08 is not; a row with no day only in all time.
+  eq(inPeriod(UROWS, '30', UREF).length, 5);
+  eq(inPeriod(UROWS, 'all', UREF).length, 7);
+});
+await test('the totals split by class, no use is after the decision plus stranded plus discarded', () => {
+  eq(NO_USE.join(','), 'after_decision,stranded,discarded');
+  const all = utilityTotals(UROWS, 'all', UREF);
+  eq(all.total.runs, 34);
+  eq(all.noUse.runs, 4 + 6 + 10 + 1);
+  eq(all.noUse.cost, 1 + 1.5 + 2.5 + 0.25);
+  eq(all.classes.stranded.runs, 6);
+  eq(all.classes.decisive_superseded.runs, 3);
+  eq(Object.keys(all.reasons).sort().join(','), 'fixture_changed,invalid_run,subject_changed,unpaired');
+  const week = utilityTotals(UROWS, '7', UREF);
+  eq(week.noUse.runs, 4);
+  eq(week.days.map((d) => d.date).join(','), '2026-11-01,2026-11-02,2026-11-03,2026-11-04,2026-11-05,2026-11-06,2026-11-07');
+  eq(week.days[1].decisive, undefined, 'an empty day is a gap');
+});
+await test('a subject page shows run usefulness for the last 30 days, stranded on its own line, and decisions over time', () => {
+  const d = doc({ generated_at: '2026-11-07T20:00:00Z', skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [], run_utility: UROWS,
+    decisions: [{ fixture: 'task-a', model: 'claude-sonnet-4-5', current: false, from: '2026-10-28', to: '2026-11-02', class: 'benefit', decided: '2026-11-02', pair: null },
+      { fixture: 'task-a', model: 'claude-sonnet-4-5', current: true, from: '2026-11-05', to: '2026-11-07', class: 'insufficient', decided: null, pair: null },
+      { fixture: 'task-b', model: 'claude-sonnet-4-5', current: false, from: '2026-10-20', to: '2026-10-21', class: 'insufficient', decided: null, pair: null }] }] });
+  const node = renderRoute(d, { name: 'skills', id: 'demo-skill' }, {});
+  const text = textOf(node);
+  ok(text.includes('Run usefulness'), text);
+  ok(text.includes('No use: 10 of 23 runs, $2.50 of $5.75.'), text);
+  ok(text.includes('Stranded') && text.includes('fixture changed 6 ($1.50)'), text);
+  ok(text.includes('v1 kept (helps) on 2026-11-02, runs 2026-10-28 to 2026-11-02; v2 (current) building, runs 2026-11-05 to 2026-11-07'), text);
+  ok(text.includes('on task-b: v1 never decided before it changed (stranded), runs 2026-10-20 to 2026-10-21'), text);
+  const pressed = findAll(node, (n) => n.tag === 'button' && n.attrs['data-period'] && n.attrs['aria-pressed'] === 'true');
+  eq(pressed.map((n) => n.attrs['data-period']).join(','), '30');
+  ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-class'] === 'stranded').length === 1, 'stranded has its own segment');
+  const none = textOf(renderRoute(doc({ skills: [{ name: 'demo-skill', status: 'covered', verdict: 'keep', runs: [], run_utility: null }] }), { name: 'skills', id: 'demo-skill' }, {}));
+  ok(!none.includes('Run usefulness'), 'nothing when unknown');
+});
+await test('the summary shows run usefulness for every subject, skills and guidance', () => {
+  const d = doc({ generated_at: '2026-11-07T20:00:00Z', skills: [{ name: 'a', run_utility: [U('2026-11-07', 'decisive', 2, 0.5)] }],
+    guidance: { sections: [{ id: 's', run_utility: [U('2026-11-07', 'stranded', 4, 1, 'rest_changed')] }] } });
+  const text = textOf(renderRoute(d, { name: 'summary' }, {}));
+  ok(text.includes('Run usefulness, every subject'), text);
+  ok(text.includes('No use: 4 of 6 runs, $1.00 of $1.50.'), text);
+  ok(text.includes('All subjects') && text.includes('Skills') && text.includes('Guidance'), text);
+  ok(!textOf(renderRoute(doc({}), { name: 'summary' }, {})).includes('Run usefulness'), 'nothing without a ledger');
 });
 
 for (const f of failures) console.log('FAIL ' + f);
