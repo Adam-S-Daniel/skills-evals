@@ -28,9 +28,12 @@ digest comes from the `--guidance` checkout (harness/guidance.py
 `guidance:` block in the policy, the document gains `guidance` (a verdict
 per section seen, harness/gates.py `guidance_verdict`) and
 `guidance_retirement_mode`, and one section at most retires per
-evaluation, apart from the one skill. An in-situ cell is decided on the
-runs made beside the rest of the guidance on main: the `--guidance`
-checkout's `rest` digest (`expected_guidance`'s `rest_digest`).
+evaluation, apart from the one skill. The `--guidance` checkout's `rest`
+digest (`expected_guidance`'s `rest_digest`) names the rest of the guidance
+on main: by the guidance block's `rest_policy`, an in-situ cell is decided
+on the runs beside it only (`current`), or on the runs beside every rest
+with every removal guarded by the runs beside it (`pooled-with-current-guard`,
+the default; harness/gates.py, IN-SITU GUIDANCE CELLS).
 
 THE BET PRIOR. Each kind (skills; guidance in-situ) learns the betting
 bound's starting bet from its other subjects (harness/gates.py

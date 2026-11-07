@@ -1018,15 +1018,32 @@ def _level(block, field: str) -> float:
 def retire_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to no-benefit, as a share of the decision
     level: its objective's no-help confidence (the remove test's level so
-    far). The judge does not vote (harness/gates.py, 2026-11-03), so it is
-    not read. An absent value is 0."""
+    far), or for a pooled in-situ cell (`rest_guard`) the level its removal
+    evidence reached (`remove_evidence_confidence`), which is what decides
+    its removal (the pooled adversarial round 3's m3). The judge does not
+    vote (harness/gates.py, 2026-11-03), so it is not read. An absent value
+    is 0."""
+    guard = cell.get("rest_guard")
+    if isinstance(guard, dict):
+        return _level(guard, "remove_evidence_confidence") / level
     return _level(cell.get("objective"), "no_help_confidence") / level
 
 
 def keep_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to benefit, as a share of the decision
     level: its objective's helps confidence (the keep test's level so far,
-    per cell; the subject's keep family asks more of it)."""
+    per cell; the subject's keep family asks more of it). For a pooled
+    in-situ cell (`rest_guard`), 1 - the smallest p over its keep routes
+    (`keep_tests`, each p doubled, the pooled route's 1 until the current
+    rest's pair floor), as the explorer reads it; a provisional keep's
+    pooled route is left out, since that keep is not final (the pooled
+    adversarial round 4's m(c))."""
+    tests = cell.get("keep_tests")
+    if isinstance(cell.get("rest_guard"), dict) and isinstance(tests, list):
+        ps = [t["p"] for t in tests if isinstance(t, dict)
+              and isinstance(t.get("p"), (int, float))
+              and not (cell.get("provisional_keep") and t.get("route") == "objective")]
+        return max(0.0, 1 - min(ps)) / level if ps else 0.0
     return _level(cell.get("objective"), "helps_confidence") / level
 
 
@@ -1035,10 +1052,25 @@ def _produces_item(cell: dict) -> bool:
     is schedulable, its subject is not stakes `none`, and its fires have
     not come back empty (a fixture-broken item). A `pending` cell still
     counts: its fire may yet land a run, and dropping its section from the
-    focus for one sweep would hand the slot to another."""
+    focus for one sweep would hand the slot to another. A provisional keep
+    (`provisional_keep`) is undecided too (the pooled adversarial round 4's
+    M1)."""
     return cell.get("schedulable", True) and cell.get("stakes", "normal") != "none" \
-        and cell["class"] in ("missing", "insufficient") \
+        and (cell["class"] in ("missing", "insufficient") or bool(cell.get("provisional_keep"))) \
         and cell.get("empty_fires", 0) < BROKEN_AFTER_FIRES
+
+
+def verdict_open(cells: list) -> bool:
+    """Whether a subject's verdict is still open: every cell's subject
+    verdict is in FOCUS_VERDICTS, or it is `keep` only on provisional keeps
+    (`provisional_keep`: no cell keeps finally), which a removal can still
+    override and which lapse at the cap (the pooled adversarial round 4's
+    M1: such a section left the focus and its keep was never tested)."""
+    if all(c.get("verdict") in FOCUS_VERDICTS for c in cells):
+        return True
+    return all(c.get("verdict") == "keep" for c in cells) \
+        and any(c.get("provisional_keep") for c in cells) \
+        and not any(c["class"] == "benefit" and not c.get("provisional_keep") for c in cells)
 
 
 def _blocking(cell: dict) -> bool:
@@ -1058,7 +1090,7 @@ def guidance_focus(ctx: dict) -> tuple:
     from the eval cells alone (module docstring, band 4). A section's score
     is max(min over its cells of retire progress, max over its cells of
     keep progress): it retires only when every cell clears, and keeps on
-    one. Eligible: its verdict is still open (FOCUS_VERDICTS), some cell
+    one. Eligible: its verdict is still open (`verdict_open`), some cell
     would plan a fire (`_produces_item`), no removal pull request is open
     for it (ctx["guidance_removal_prs"]) and no cell is blocking (every
     cell, held ones too). The top GUIDANCE_FOCUS_SECTIONS by score, then
@@ -1078,7 +1110,7 @@ def guidance_focus(ctx: dict) -> tuple:
             sections.setdefault(cell["section"], []).append(cell)
     ranked = []
     for section, cells in sections.items():
-        if section in removals or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells) \
+        if section in removals or not verdict_open(cells) \
                 or not any(_produces_item(c) for c in cells) or any(_blocking(c) for c in cells):
             continue
         retire = min(retire_progress(c, retire_level) for c in cells)
@@ -1441,9 +1473,11 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
     fixture-broken), each cell's model's measured mean cost per observation
     (the dearest measured model for one with none) times the observations
     it still needs: min(`pairs_per_cell`, `cap` - the gate's own count of
-    its observations, `pairs`), at least 0. `cap` is the gate policy's
-    `max_runs_per_cell` (None: no cap). None when no model's cost is
-    measured."""
+    its observations toward the cap, `current_rest_pairs` for a pooled
+    in-situ guidance cell (its older rests' pairs do not fill the current
+    rest's window) and `pairs` otherwise), at least 0. `cap` is the gate
+    policy's `max_runs_per_cell` (None: no cap). None when no model's cost
+    is measured."""
     if not costs:
         return None
     dearest = max(costs.values())
@@ -1453,7 +1487,9 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
             continue
         remaining = pairs_per_cell
         if cap is not None:
-            done = cell.get("pairs")
+            done = cell.get("current_rest_pairs")
+            if done is None:
+                done = cell.get("pairs")
             done = done if isinstance(done, int) and not isinstance(done, bool) else 0
             remaining = min(remaining, cap - done)
         total += costs.get(cell["model"], dearest) * max(0.0, remaining)
@@ -1505,7 +1541,7 @@ def batch_subjects(ctx: dict) -> dict:
     """{(kind, subject): {status, rank, newest}} for every subject with a
     schedulable eval cell. Private skills are never listed (the record is
     public). Status, first match:
-      decided  its verdict is closed (anything but FOCUS_VERDICTS) or a
+      decided  its verdict is closed (not `verdict_open`) or a
                removal pull request is open for it;
       blocked  some cell is blocking (`_blocking`): more runs on the current
                content cannot move it;
@@ -1528,7 +1564,7 @@ def batch_subjects(ctx: dict) -> dict:
                 or not BATCH_SUBJECT_RE.fullmatch(name or ""):
             continue
         removal = name in (removal_sections if kind == "guidance" else removal_skills)
-        if removal or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells):
+        if removal or not verdict_open(cells):
             status = "decided"
         elif any(_blocking(c) for c in cells):
             status = "blocked"
@@ -1717,6 +1753,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     count, not an issue), and a decided cell at the cap is not re-checked
     (round 3's m5).
 
+    A PROVISIONAL KEEP (`provisional_keep`: a pooled in-situ cell kept by
+    the pooled keep test alone, which a later removal on the current rest's
+    evidence overrides and which lapses at the cap; harness/gates.py, THE
+    STALE KEEP) is fired as an undecided guidance cell (`_guidance_band`:
+    focus or guidance-rest; its section stays eligible, `verdict_open`),
+    until the current rest's own keep crosses or the cell is `at_cap`, so
+    the override gets its pairs; not when another cell of its section has a
+    final keep, which keeps the section whatever this cell does.
+
     CHEAPER MODEL FIRST (2026-11-03, the threshold sweep's adaptive
     allocation): in the missing, near, focus and guidance-rest bands a cell
     plans no fire while its subject's cell of the same fixture on a cheaper
@@ -1741,6 +1786,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     _focus, focused = guidance_focus(ctx)
     held = cheaper_first(ctx["cells"], costs)
     members = batch_members(ctx)
+    final_kept = {c["section"] for c in ctx["cells"]
+                  if c.get("section") and c["class"] == "benefit"
+                  and not c.get("provisional_keep")}
     bands = {band: [] for band in BANDS}
     work = []
     for cell in ctx["cells"]:
@@ -1757,6 +1805,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         newest = _stamp_time(cell["newest"])
         kept = cell.get("verdict") == "keep"
         due = newest is not None and now - newest >= recheck_after(cell)
+        provisional = False
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
         elif cell["class"] in PARKED_CLASSES:
@@ -1790,6 +1839,18 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # Round 3's m5: a decided cell at the cap is not re-checked; a
             # new pair cannot enter its frozen window.
             band, order = None, None
+        elif cell.get("provisional_keep") and cell.get("section") not in final_kept:
+            # The pooled adversarial rounds 2 and 4: a pooled keep is not
+            # final (a removal on the current rest's evidence overrides it,
+            # and it lapses at the cap), so it is fired like an undecided
+            # guidance cell (the focus band when its section is focused,
+            # `verdict_open`; guidance-rest otherwise), until the current
+            # rest's own keep test crosses or its window is full (`at_cap`,
+            # above). In the recheck band, which has no share, a full focus
+            # band starved it. A section with a final keep on another cell
+            # is kept whatever this cell does.
+            band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
+            provisional = True
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -1810,8 +1871,15 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
-        if members is not None and band in BATCH_BANDS and subject not in members:
-            continue  # THE BATCH: measured once its subject joins one
+        if members is not None and band in BATCH_BANDS and subject not in members \
+                and not provisional:
+            # THE BATCH: measured once its subject joins one. A provisional
+            # pooled keep is exempt (round 4 review): it is a verdict already
+            # reached that only the current rest's own runs can confirm or
+            # undo, as the recheck band fired it before round 4, and a
+            # section a blocking sibling keeps out of the batch must not
+            # strand it.
+            continue
         if band in CHEAPER_FIRST_BANDS and id(cell) in held:
             continue  # its cheaper model's cell of the same fixture goes first
         if band != "safety" and cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES:
@@ -2878,6 +2946,15 @@ def judge_empty_fires(fires: list, since: datetime) -> list:
     return verdicts
 
 
+def provisional_keep(gate_cell: dict | None) -> bool:
+    """Whether a gates cell keeps on a pooled keep alone, which is not final
+    (harness/gates.py, THE STALE KEEP): `eval_items` fires it until the
+    current rest's own keep crosses or its window is full."""
+    gate_cell = gate_cell or {}
+    return gate_cell.get("class") == "benefit" \
+        and (gate_cell.get("rest_guard") or {}).get("keep_final") is False
+
+
 def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                            now: datetime, routine_git: str | None = None) -> tuple:
     """(cells, outages, routine down). One cell per scheduled fixture x
@@ -3063,6 +3140,13 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "in_situ_verdict": verdict.get("in_situ_verdict"),
                 # Gates' pair count and reason (`cheaper_first`, `_blocking`).
                 "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
+                # A pooled in-situ cell's pairs beside the current rest, the
+                # ones its cap and its removal guard count (`subject_cost`).
+                "current_rest_pairs": (cell or {}).get("current_rest_pairs"),
+                # A pooled keep that is not final (gates' THE STALE KEEP):
+                # it is fired until the current rest's own keep crosses or
+                # its window is full (`eval_items`).
+                "provisional_keep": provisional_keep(cell),
                 "at_cap": (cell or {}).get("at_cap") is True,
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
@@ -3084,6 +3168,10 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 arms = {role: (cell or {}).get(role) for role in ("with", "without")}
                 cells[-1].update({
                     "objective": (cell or {}).get("objective"),
+                    # A pooled cell's guard, whose removal evidence is its
+                    # retire progress (`retire_progress`).
+                    "rest_guard": (cell or {}).get("rest_guard"),
+                    "keep_tests": (cell or {}).get("keep_tests"),
                     "judge": (cell or {}).get("judge"),
                     "judge_carried": bool((cell or {}).get("judge_carried")),
                     "reason": (cell or {}).get("reason"),
@@ -3268,6 +3356,16 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
     return out
 
 
+def rest_policy_of(gates_doc: dict) -> str:
+    """The `rest_policy` the verdict document's guidance cells were pooled
+    by (its `guidance_policy`, harness/gates.py REST_POLICIES). A document
+    without one predates the key (2026-11-07), so its cells were pooled by
+    `current`."""
+    policy = gates_doc.get("guidance_policy")
+    value = policy.get("rest_policy") if isinstance(policy, dict) else None
+    return value if value in ("current", "pooled-with-current-guard") else "current"
+
+
 def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
                       guidance_dir: Path | None, records: list = (), prs: list = (),
                       removals: list = (), on_hold: list = (),
@@ -3309,10 +3407,10 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
-        # Pooled as the gate pools in-situ cells: the current-content runs
-        # beside the rest of the guidance on main (2026-11-03; older rests
-        # are ignored), so the improve evidence counts the same runs the
-        # section's verdict does.
+        # Pooled as the gate pools in-situ cells, by the verdict document's
+        # `rest_policy` (`rest_policy_of`): the current-content runs beside
+        # every rest, or beside the rest on main only, so the improve
+        # evidence counts the same runs the section's verdict does.
         try:
             expected = compute_gates.expected_guidance(evals_dir, section, guidance_dir)
         except ValueError:
@@ -3321,7 +3419,7 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
             # skill path does, never a traceback or an opaque error.
             raise PlanError(SCHEDULE_FILES_MALFORMED) from None
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"], expected,
-                                 strata=True)
+                                 strata=True, rest_policy=rest_policy_of(gates_doc))
         try:
             row = proposer.load_row(guidance_dir, section)
         except proposer.Refusal:

@@ -1569,7 +1569,13 @@ class GuidancePolicyTests(unittest.TestCase):
         policy = gates.load_gate_policy()
         self.assertIsNotNone(policy["guidance"])
         self.assertEqual(policy["guidance"]["retirement_mode"], "auto")
-        self.assertEqual(set(policy["guidance"]), set(policy["skills"]))
+        # The guidance block adds only the rest of the guidance's two keys
+        # (2026-11-07: pool every rest, guard removals with the current one).
+        self.assertEqual(set(policy["guidance"]),
+                         set(policy["skills"]) | set(gates.GUIDANCE_ONLY_KEYS))
+        self.assertEqual((policy["guidance"]["rest_policy"],
+                          policy["guidance"]["rest_guard_min_pairs"]),
+                         ("pooled-with-current-guard", 6))
 
     def test_the_guidance_block_is_read_apart_from_skills(self):
         text = (ROOT / "evals" / "gate-policy.yml").read_text(encoding="utf-8")
@@ -1702,13 +1708,22 @@ class ComputeGuidanceTests(unittest.TestCase):
         edited = {**self.digests, "rest": "e" * 64}
         self.two_halves(self.digests, edited)
         self.assertEqual(self.cell_runs("alone"), (20, 20))
-        # In situ decides on runs beside the current rest only (2026-11-03:
-        # the strata's weighting favored removal); older rests are ignored,
-        # and the key names the current one.
+        # In situ pools every rest under the committed `rest_policy`
+        # (2026-11-07), pair by pair, and the key names the current rest,
+        # beside which the guard counts 12 pairs.
+        self.assertEqual(self.cell_runs(), (20, 20))
+        cell = self.compute()["guidance"]["bravo"]["cells"][0]
+        self.assertEqual(cell["key"]["rest_digest"], self.digests["rest"])
+        self.assertNotIn("strata", cell["key"])
+        self.assertEqual((cell["rests"], cell["current_rest_pairs"]), (2, 12))
+        # Under `current` (the rule of 2026-11-03, kept to switch back) only
+        # the runs beside the current rest count.
+        text = self.policy.read_text(encoding="utf-8")
+        self.assertIn("rest_policy: pooled-with-current-guard\n", text)
+        self.policy.write_text(text.replace("rest_policy: pooled-with-current-guard\n",
+                                            "rest_policy: current\n"))
         self.assertEqual(self.cell_runs(), (12, 12))
-        key = self.compute()["guidance"]["bravo"]["cells"][0]["key"]
-        self.assertEqual(key["rest_digest"], self.digests["rest"])
-        self.assertNotIn("strata", key)
+        self.assertNotIn("current_rest_pairs", self.compute()["guidance"]["bravo"]["cells"][0])
 
     def test_alone_runs_with_another_section_payload_do_not_pool(self):
         # Same section extent, different file intro: the arm loaded other text.

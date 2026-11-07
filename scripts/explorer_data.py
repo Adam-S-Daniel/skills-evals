@@ -1401,19 +1401,46 @@ def current_text_runs(verdict: dict, alone: bool = True) -> int:
     a with-arm run only when its `tested_digest` equals the subject's digest on
     main, so an edit empties it; a without-arm run pools across text changes and
     says nothing about the current text. A cell with no `with` key counts 0, and
-    a subject with no verdict has 0."""
+    a subject with no verdict has 0.
+
+    For a guidance section the meaning stays "runs on its current text" under
+    either `rest_policy` (harness/gates.py, IN-SITU GUIDANCE CELLS): under
+    `pooled-with-current-guard` an in-situ cell's with arm holds the runs on
+    the section's current text beside EVERY rest of the guidance, so an edit
+    to another section no longer empties it, while an edit to the section
+    itself still does. How many of a cell's pairs are beside the current rest
+    is the cell's own `current_rest_pairs`, not this count."""
     cells = list(verdict.get("cells") or [])
     if alone:
         cells += (verdict.get("alone") or {}).get("cells") or []
     return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
 
 
+#: The objective keep routes `subject_confidence` reads: the cell's keep
+#: test, and a pooled in-situ cell's keep test over the current rest alone
+#: (harness/gates.py, THE POOLED KEEP; each pooled route's p is already
+#: doubled, so `1 - m x min p` reads the cell's level either way).
+KEEP_ROUTES = ("objective", "objective-current-rest")
+
+
+def no_help_level(cell: dict) -> float:
+    """A cell's no-help level: its objective's `no_help_confidence`, or for a
+    pooled in-situ cell (`rest_guard`) the level its removal evidence
+    reached, which is what decides its removal (the pooled adversarial
+    round 3's m4). 0 when absent."""
+    guard = cell.get("rest_guard")
+    if isinstance(guard, dict):
+        return guard.get("remove_evidence_confidence", 0.0)
+    return (cell.get("objective") or {}).get("no_help_confidence", 0.0)
+
+
 def subject_confidence(verdict: dict) -> dict:
     """How sure the gate is, as levels in [0, 1) of its betting tests
     (harness/gates.py, THE BOUNDS): `helps`, the subject's keep level, 1 - m
-    x the smallest objective keep-test p over its cells (m its keep family,
-    `keep_family`; 1 without one), and `no_help`, the lowest no-help level
-    over its cells with headroom (the cells that vote on removal: neither
+    x the smallest objective keep-test p over its cells and routes
+    (`KEEP_ROUTES`; m its keep family, `keep_family`; 1 without one), and
+    `no_help`, the lowest no-help level (`no_help_level`) over its cells
+    with headroom (the cells that vote on removal: neither
     parked, `gates.PARKED_CLASSES`, nor `cannot-discriminate`; a cell with no objective figure
     gives 0). The judge does not vote, so it is not read. Both None while no
     cell has an objective figure. The keep and remove rules compare these
@@ -1421,7 +1448,9 @@ def subject_confidence(verdict: dict) -> dict:
 
     The page also draws how far each level is from its line, so four more
     keys carry the evidence behind them (each an int, or None when absent):
-    `keep_pairs`, the objective pair count of the cell `helps` comes from (the
+    `keep_pairs`, the objective pair count (a pooled in-situ cell's usable
+    current-rest pairs, `rest_guard.usable_current_rest_pairs`, the count
+    its chart row shows) of the cell `helps` comes from (the
     one with the smallest objective keep p); `no_help_pairs`, the pair count
     of the voting cell `no_help` comes from (the lowest no-help level);
     `max_pairs`, the largest objective pair count over figured cells (progress
@@ -1440,17 +1469,25 @@ def subject_confidence(verdict: dict) -> dict:
         return none
 
     def pairs_of(cell):
-        n = (cell.get("objective") or {}).get("pairs")
+        # A pooled in-situ cell's pace is its current-rest pairs, the ones
+        # its cap and its guard count (the pooled adversarial round 4's
+        # m(b)), not every rest's pairs.
+        if isinstance(cell.get("rest_guard"), dict):
+            # The usable ones (the round 5 review's m4), the same count as
+            # the gain chart's row (`rest_guard.current_objective`).
+            n = cell["rest_guard"].get("usable_current_rest_pairs")
+        else:
+            n = (cell.get("objective") or {}).get("pairs")
         return n if isinstance(n, int) and not isinstance(n, bool) else None
 
     family = verdict.get("keep_family")
     family = family if isinstance(family, int) and family >= 1 else 1
     tests = [(t["p"], c) for c in cells for t in (c.get("keep_tests") or [])
-             if isinstance(t, dict) and t.get("route") == "objective"
+             if isinstance(t, dict) and t.get("route") in KEEP_ROUTES
              and isinstance(t.get("p"), (int, float))]
     voting = [c for c in cells if c.get("class") not in gates.PARKED_CLASSES
               and c.get("class") != "cannot-discriminate"]
-    levels = [((c.get("objective") or {}).get("no_help_confidence", 0.0), c) for c in voting]
+    levels = [(no_help_level(c), c) for c in voting]
     keep_p, keep_cell = min(tests, key=lambda t: t[0]) if tests else (None, None)
     weakest = min(levels, key=lambda t: t[0]) if levels else (None, None)
     all_pairs = [n for n in map(pairs_of, figured) if n is not None]
@@ -1480,8 +1517,15 @@ def confidence_cell(cell: dict) -> dict | None:
     test's lower end, `high` the remove test's upper end, each in percentage
     points of checks passed, clamped to [-100, 100] and rounded to one
     decimal only here; `votes` whether the cell votes on removal (neither
-    parked nor `cannot-discriminate`); `status` from CELL_STATUS."""
+    parked nor `cannot-discriminate`); `status` from CELL_STATUS. A pooled
+    cell (`rest_guard`) charts its current rest's own figures
+    (`rest_guard.current_objective`, None with no current-rest pair), as
+    its pace and confidence do, never the pooled block."""
     objective = cell["objective"]
+    guard = cell.get("rest_guard")
+    if guard is not None:
+        current = guard.get("current_objective") if isinstance(guard, dict) else None
+        objective = current if isinstance(current, dict) else {}
     numbers = [objective.get(k) for k in ("delta", "benefit_lower", "retire_upper")]
     pairs = objective.get("pairs")
     model = cell.get("model")
