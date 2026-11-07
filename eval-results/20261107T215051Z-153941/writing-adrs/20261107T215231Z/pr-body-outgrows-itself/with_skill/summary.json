@@ -1,0 +1,442 @@
+{
+  "skill": "writing-adrs",
+  "arm": "with_skill",
+  "timestamp": "20261107T215231Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1199924,
+    "num_turns": 3,
+    "duration_ms": 17847,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 23034,
+      "cache_read_input_tokens": 86344,
+      "output_tokens": 1921,
+      "output_tokens_details": {
+        "thinking_tokens": 688
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 23034,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 437,
+          "cache_read_input_tokens": 36277,
+          "cache_creation_input_tokens": 1158,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1158
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "new-adr-0003-is-a-house-format-entry",
+      "passed": false,
+      "detail": "no such file: docs/decisions/0003-*.md \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "adr-0003-records-the-reason",
+      "passed": false,
+      "detail": "no such file: docs/decisions/0003-*.md \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "adr-0003-records-the-rejected-alternatives",
+      "passed": false,
+      "detail": "no such file: docs/decisions/0003-*.md \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "index-gained-a-row-for-0003",
+      "passed": false,
+      "detail": "docs/decisions/README.md lacks /^\\|[ \\t]*\\[0003\\]\\(0003-[a-z0-9-]+\\.md\\)[ \\t]*\\|[^|\\n]*[^|\\s][^|\\n]*\\|[^|\\n]*[^|\\s][^|\\n]*\\|[ \\t]*$/"
+    },
+    {
+      "id": "index-rows-for-0001-and-0002-kept",
+      "passed": true,
+      "detail": "docs/decisions/README.md matches"
+    },
+    {
+      "id": "decision-log-links-resolve",
+      "passed": true,
+      "detail": "all link targets exist (docs/decisions/0001-store-passcodes-hashed.md, docs/decisions/0002-expire-passcodes-after-five-minutes.md, docs/decisions/README.md)"
+    },
+    {
+      "id": "retry-config-comment-points-at-0003",
+      "passed": false,
+      "detail": "config/retry.yaml lacks /^[^#\\n]*#[^\\n]*docs/decisions/0003-[a-z0-9-]+\\.md[^\\n]*$/"
+    },
+    {
+      "id": "retry-config-pointers-resolve",
+      "passed": true,
+      "detail": "all link targets exist (config/retry.yaml)"
+    },
+    {
+      "id": "retry-config-values-unchanged",
+      "passed": true,
+      "detail": "config/retry.yaml matches"
+    },
+    {
+      "id": "pr-body-links-the-adr",
+      "passed": false,
+      "detail": "PR_BODY.md lacks /^[^\\n]*docs/decisions/0003-[a-z0-9-]+\\.md[^\\n]*$/"
+    },
+    {
+      "id": "pr-body-is-short",
+      "passed": false,
+      "detail": "PR_BODY.md contains /\\A(?:[^\\n]*\\n){21}/"
+    },
+    {
+      "id": "exactly-one-new-adr-file",
+      "passed": false,
+      "detail": "found 2, expected at least 3"
+    },
+    {
+      "id": "nothing-else-touched",
+      "passed": true,
+      "detail": "unchanged (AGENTS.md, CHANGELOG.md, README.md, docs/decisions/0001-store-passcodes-hashed.md, docs/decisions/0002-expire-passcodes-after-five-minutes.md)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "adr-holds-the-reasoning",
+        "score": 2,
+        "rationale": "No ADR was written; the context, decision and both rejected alternatives live only in PR_BODY.md, which triggers the cap of 4, and there is no imperative-titled ADR with positive and negative consequences."
+      },
+      {
+        "name": "pr-body-stays-a-signpost",
+        "score": 1,
+        "rationale": "PR_BODY.md restates the full context and both alternatives instead of briefly describing the change and linking an ADR, which triggers the cap of 4; retry.yaml got no comment pointing to an ADR, and the final reply never says the reasoning lives in an ADR."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "The agent left retry values, the existing ADRs, index rows, CHANGELOG.md, README.md and AGENTS.md untouched and created no stray files; it raised the changelog question instead of editing the file."
+      }
+    ],
+    "overall": 3.1
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 1921,
+      "cache_read_input_tokens": 86344,
+      "cache_creation_input_tokens": 23034,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "pr-body-outgrows-itself",
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "ae29eff5eeb8a72a844800a13f2f544300a9499e732c2531dcc9ff628148c48d",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/cms-platform",
+    "revision": "a101cdd3301df48d5e6a263026d1840458718c0b",
+    "digest": "c3add9589f7afddd927726339688c3db393587a25a56c9ca9aaf9af1b0754553",
+    "lock_digest": "7d643de6b4cddb2a0059dcf91693f06579c723f824a71caecee27d282ab88e0d",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "27eb4652c62074c464730b4f17cbd5bda2d3b902",
+        "digest": "10c3a45309543c34ae208bee1c473d76b0395975cf2e0ebce737a05675bef53f",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "bf26219194119286090609392b11b59ca7bbcccac4e72db338280de0ea9464e9"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "867b8a00ed40f43f3f0ce206c3c2091a826cfc8fb10a73a40ed0c04df55f8fda"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "dfdf1779badaf30beb2e348e1a055188cb194e0c",
+      "digest": "faa1a9c06f89e1a2520a89606e9be013c90b13b2740d056017be8ca7b648976c",
+      "bytes": 26233,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 26233,
+      "skill_catalog_bytes": 7653,
+      "skill_payload_bytes": 691992
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-anything-anywhere",
+    "skill": "writing-adrs",
+    "action": "removed",
+    "deployed_digest": "88722a1b11d7def8b6927c81e99a2774e9f2748174bf9d7d3116f1091a26b7e3",
+    "tested_digest": "88722a1b11d7def8b6927c81e99a2774e9f2748174bf9d7d3116f1091a26b7e3",
+    "bytes": 13463,
+    "subject_source": "main",
+    "subject_revision": "eccda739064bdf92f1b0d5e3018a911d54b0ae78"
+  },
+  "arm_context": {
+    "skills": 12,
+    "skills_digest": "0ce6433e15e681bbdb950ba30a2c60b4397a1409f95de940d5975ac183299cc0",
+    "others_digest": "fe68356a8a6ff973e6f4932b81dc5aab31a3e9813a4c76598db849c425c215f7",
+    "guidance_bytes": 26233,
+    "guidance_digest": "faa1a9c06f89e1a2520a89606e9be013c90b13b2740d056017be8ca7b648976c",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T215051Z-153941",
+    "session_id": "cse_01SphsQDvKWbi2BrpvZw8ugo",
+    "harness_commit": "a3da033298ba5ccf145bb7e211c2b82700901fb3",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T21:52:31Z",
+    "ended_at": "2026-11-07T21:53:19Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T21:52:36.709Z",
+      "to_at": "2026-11-07T21:53:19.592Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.69,
+          "to": 0.69,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQDvKWbi2BrpvZw8ugo",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3051085,
+      "agent_usd": 0.2379245,
+      "judge_usd": 0.067184,
+      "guard_usd": 0,
+      "metered_usd": 0.2696845,
+      "last_agent_call_usd": 0.11793210000000001,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T21:52:32Z",
+      "ended_at": "2026-11-07T21:53:13Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T21:52:32Z",
+          "ended_at": "2026-11-07T21:52:51Z",
+          "duration_ms": 18972,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T21:53:09Z",
+          "ended_at": "2026-11-07T21:53:13Z",
+          "duration_ms": 4535,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T21:52:36.709Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.69,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T21:53:13.244Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.69,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 18972,
+        "num_turns": 3,
+        "cost_usd": 0.1199924,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 1921,
+            "cache_read_input_tokens": 86344,
+            "cache_creation_input_tokens": 23034,
+            "cost_usd": 0.1199924
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 23034
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 4535,
+        "num_turns": 1,
+        "cost_usd": 0.03176,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 328,
+            "cache_read_input_tokens": 1520,
+            "cache_creation_input_tokens": 3111,
+            "cost_usd": 0.03176
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3111
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
