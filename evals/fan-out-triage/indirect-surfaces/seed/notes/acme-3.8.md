@@ -1,0 +1,44 @@
+# acme 3.8 release notes
+
+## 3.8.0
+
+- [A38-01] `acme outdated` is now up to three times faster on a cold start.
+- [A38-02] `acme exec` is now faster when hundreds of workspaces are present.
+- [A38-03] `acme why` now prints a hint when no project is found.
+- [A38-04] `acme watch` now prints a hint when no project is found.
+- [A38-05] Added `--color` to `acme doctor`.
+- [A38-06] Plugin API: `onAsset` callbacks now run after `onEmit` callbacks.
+- [A38-07] Fixed `acme audit` printing ANSI colors into a pipe.
+- [A38-08] Added `--filter` to `acme serve`.
+- [A38-09] Added `--max-age` to `acme graph`.
+- [A38-10] Fixed `acme outdated` reading the parent workspace config in a monorepo.
+- [A38-11] Fixed `acme audit` reporting exit code 0 after an interrupt.
+- [A38-12] `acme exec` now prints how long each phase took.
+- [A38-13] Added `--include-dev` to `acme graph`.
+- [A38-14] `acme config set` now prints a link to the matching documentation page on error.
+- [A38-15] `acme config get` is now up to three times faster on a cold start.
+- [A38-16] Added `--color` to `acme completion`.
+- [A38-17] `acme completion` is now about 20% faster on large projects.
+- [A38-18] Fixed `acme link` crashing on paths that contain spaces on Windows.
+- [A38-19] Plugin API: removed `registerTransform`, deprecated since 3.5; plugins must call `addTransform`.
+- [A38-20] `acme run` is now lighter on memory for big graphs.
+- [A38-21] Added `--depth` to `acme config get`.
+- [A38-22] `acme watch` is now faster when hundreds of workspaces are present.
+- [A38-23] Fixed `acme list` printing each warning twice in verbose mode.
+- [A38-24] `acme list` is now up to three times faster on a cold start.
+- [A38-25] Added `--format=table` to `acme completion`.
+- [A38-26] Added `--cwd` to `acme completion`.
+- [A38-27] `acme exec` is now about 20% faster on large projects.
+- [A38-28] Removed `acme auth start`, deprecated since 3.6; use `acme login`.
+- [A38-29] `acme run` is now about 20% faster on large projects.
+- [A38-30] `acme completion` now prints how long each phase took.
+- [A38-31] Added `--json` to `acme cache prune`.
+- [A38-32] `acme link` now prints a hint when no project is found.
+- [A38-33] Added `--quiet` to `acme fmt`.
+- [A38-34] Fixed `acme exec` losing output when the terminal is resized.
+- [A38-35] `acme login --sso` now remembers the last identity provider used.
+- [A38-36] Added `--json` to `acme watch`.
+- [A38-37] Fixed `acme run` rejecting a project path that is a symlink.
+- [A38-38] `acme list` now prints a hint when no project is found.
+- [A38-39] Added `--quiet` to `acme serve`.
+- [A38-40] `acme list` is now faster when hundreds of workspaces are present.

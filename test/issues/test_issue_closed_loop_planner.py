@@ -1342,6 +1342,7 @@ def gsection(fixtures=4, headroom=0.4, verdict="keep"):
                          "targets": []}}
 
 
+@mock.patch.object(plan_week, "GUIDANCE_IMPROVE_HELD", False)
 class ImproveValueTests(unittest.TestCase):
     """The improve candidates, skills and guidance sections, ranked by
     value = use x headroom / cost."""
@@ -2103,6 +2104,7 @@ class WatchdogTests(unittest.TestCase):
             self.assertEqual(out_file.read_text(), "dispatch=true\n")
 
 
+@mock.patch.object(plan_week, "GUIDANCE_IMPROVE_HELD", False)
 class ImproveCapPlanTests(unittest.TestCase):
     """#572, 2026-11-02: the planner applies the guard's improve cap
     (`allowance_guard.improve_cap`) to the improve band before allocation,
