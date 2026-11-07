@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FZGbkEmvCB491itbyamemk",
+      "name": "Bash",
+      "input": "git ls-files | grep -Ei '\\.github|\\.sh$|action' | head -50",
+      "input_chars": 58,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FZGbkEmvCB491itbyamemk",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nscripts/check-drift.sh",
+      "output_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PtB6WzgwnuQgqH5irRveAP",
+      "name": "Bash",
+      "input": "cat -n .github/workflows/drift.yml scripts/check-drift.sh",
+      "input_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PtB6WzgwnuQgqH5irRveAP",
+      "is_error": false,
+      "output": "     1\tname: Config drift\n     2\t\n     3\ton:\n     4\t  pull_request:\n     5\t  schedule:\n     6\t    - cron: \"17 6 * * *\"\n     7\t  workflow_dispatch:\n     8\t\n     9\tpermissions:\n    10\t  contents: read\n    11\t\n    12\tjobs:\n    13\t  drift:\n    14\t    runs-on: ubuntu-latest\n    15\t    steps:\n    16\t     ...",
+      "output_chars": 1516,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SFp3P58qP7ex7m6ub5tMrJ",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace('''checked=0\ndrifted=0\n\nfor''','''checked=0\ndrifted=0\n\nshopt -s nullglob\ntemplates=(templates/*.conf)\nif [[ ${#templates[@]} -eq...",
+      "input_chars": 1628,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SFp3P58qP7ex7m6ub5tMrJ",
+      "is_error": false,
+      "output": "DRIFT: deploy/x.conf (owner: unassigned)\n--- templates/x.conf\t2026-11-07 12:11:29.528218379 +0000\n+++ deploy/x.conf\t2026-11-07 12:11:29.528218379 +0000\n@@ -1 +1 @@\n-a\n+b\nDRIFT: deploy/y.conf (owner: t:eam)\n--- templates/y.conf\t2026-11-07 12:11:29.528218379 +0000\n+++ deploy/y.conf\t2026-11-07 12:11:29...",
+      "output_chars": 445,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

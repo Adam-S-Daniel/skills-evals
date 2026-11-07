@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H5jDiUWtVGZwKvaFvTdEZu",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls .github/workflows 2><path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H5jDiUWtVGZwKvaFvTdEZu",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nREADME.md\ndeploy/app.conf\ndeploy/cache.conf\ndeploy/worker.conf\nscripts/check-drift.sh\ntemplates/app.conf\ntemplates/cache.conf\ntemplates/worker.conf\ndrift.yml",
+      "output_chars": 185,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016obL9MyYkXX8ywDkL82yDR",
+      "name": "Bash",
+      "input": "cat .github/workflows/drift.yml scripts/check-drift.sh README.md",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016obL9MyYkXX8ywDkL82yDR",
+      "is_error": false,
+      "output": "name: Config drift\n\non:\n  pull_request:\n  schedule:\n    - cron: \"17 6 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  drift:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Compare deployed configs with t...",
+      "output_chars": 1654,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SpQcvLQuaUr3mtYCDDkXAA",
+      "name": "Bash",
+      "input": "head -3 templates/* ; bash scripts/check-drift.sh; echo \"exit=$?\"",
+      "input_chars": 65,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SpQcvLQuaUr3mtYCDDkXAA",
+      "is_error": false,
+      "output": "==> templates/app.conf <==\n# owner: web-team\nlisten = 8080\nworkers = 4\n\n==> templates/cache.conf <==\n# owner: data-team\nmax_entries = 50000\nttl_seconds = 300\n\n==> templates/worker.conf <==\n# owner: data-team\nqueue = jobs\nconcurrency = 8\ndrift check: 3 checked, 0 drifted\nexit=0",
+      "output_chars": 277,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KD1HeVnYnJjsSa9r8FgaFa",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace(\"\"\"    owner=$(grep '^# owner:' \"$expected\" | head -1 | cut -d: -f2 | tr -d ' ')\n    delta=$(diff -u \"$expected\" \"$actual\")\n    ...",
+      "input_chars": 898,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KD1HeVnYnJjsSa9r8FgaFa",
+      "is_error": false,
+      "output": "cp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>': Operation not permitted\ncp: cannot create special file '<path>':...",
+      "output_chars": 1377,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H72znkuHUHBPNwXkyTpBWw",
+      "name": "Bash",
+      "input": "rm -rf $TMPDIR/t; mkdir $TMPDIR/t && cp -r scripts templates deploy $TMPDIR/t/ && cd $TMPDIR/t && sed -i 1d templates/cache.conf && echo x >> deploy/app.conf && bash scripts/check-drift.sh; echo \"exit...",
+      "input_chars": 241,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H72znkuHUHBPNwXkyTpBWw",
+      "is_error": false,
+      "output": "DRIFT: deploy/app.conf (owner: web-team)\n--- templates/app.conf\t2026-11-07 12:11:57.960248759 +0000\n+++ deploy/app.conf\t2026-11-07 12:11:57.965381557 +0000\n@@ -2,3 +2,4 @@\n listen = 8080\n workers = 4\n log_level = info\n+x\nDRIFT: deploy/cache.conf (owner: unassigned)\n--- templates/cache.conf\t2026-11-0...",
+      "output_chars": 666,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

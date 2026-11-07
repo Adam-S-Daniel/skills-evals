@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Nz3t3j5sKb3Q8yLYpcf2Au",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:review-bash-ci-reliability",
+      "input_chars": 47,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Nz3t3j5sKb3Q8yLYpcf2Au",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:review-bash-ci-reliability",
+      "output_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LXr5tTWqY35kjNPGwrMHob",
+      "name": "Bash",
+      "input": "git ls-files | head -100; find . -name '*.sh' -not -path './.git/*' -type f; ls .github/workflows 2><path>",
+      "input_chars": 109,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LXr5tTWqY35kjNPGwrMHob",
+      "is_error": false,
+      "output": ".github/workflows/drift.yml\nREADME.md\ndeploy/app.conf\ndeploy/cache.conf\ndeploy/worker.conf\nscripts/check-drift.sh\ntemplates/app.conf\ntemplates/cache.conf\ntemplates/worker.conf\n./scripts/check-drift.sh\ndrift.yml",
+      "output_chars": 210,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Sqg1yDijwPaVkS1C9b5JVD",
+      "name": "Bash",
+      "input": "cat -A scripts/check-drift.sh | head -0; cat scripts/check-drift.sh .github/workflows/drift.yml README.md; ls -l scripts",
+      "input_chars": 120,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Sqg1yDijwPaVkS1C9b5JVD",
+      "is_error": false,
+      "output": "#!<path> bash\n# Compare every deployed config with the template it was rendered from and\n# report each file that drifted, with the team that owns its template.\nset -euo pipefail\n\nchecked=0\ndrifted=0\n\nfor expected in templates/*.conf; do\n    name=$(basename \"$expected\")\n    actual=\"deploy/${name}\"\n  ...",
+      "output_chars": 1717,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U4TYdBcK2zgoHUdLhca6gB",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/check-drift.sh'\ns=open(p).read()\ns=s.replace(\"\"\"checked=0\ndrifted=0\n\nfor\"\"\",\"\"\"checked=0\ndrifted=0\n\nshopt -s nullglob\ntemplates=(templates/*.conf)\nif [[ ${#templates[@]} -eq...",
+      "input_chars": 824,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U4TYdBcK2zgoHUdLhca6gB",
+      "is_error": false,
+      "output": "drift check: 3 checked, 0 drifted\nexit 0\n scripts/check-drift.sh | 18 +++++++++++++++---\n 1 file changed, 15 insertions(+), 3 deletions(-)",
+      "output_chars": 138,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WbnYkwfZuEUV2eHUKXxSZj",
+      "name": "Bash",
+      "input": "head -3 templates/*.conf | head -20; echo x >> deploy/app.conf; sed -i '<path>' templates/cache.conf; echo y >> deploy/cache.conf; rm deploy/worker.conf\nbash scripts/check-drift.sh; echo \"exit $?\"; gi...",
+      "input_chars": 256,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WbnYkwfZuEUV2eHUKXxSZj",
+      "is_error": false,
+      "output": "==> templates/app.conf <==\n# owner: web-team\nlisten = 8080\nworkers = 4\n\n==> templates/cache.conf <==\n# owner: data-team\nmax_entries = 50000\nttl_seconds = 300\n\n==> templates/worker.conf <==\n# owner: data-team\nqueue = jobs\nconcurrency = 8\nDRIFT: deploy/app.conf (owner: web-team)\n--- templates/app.conf...",
+      "output_chars": 934,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
