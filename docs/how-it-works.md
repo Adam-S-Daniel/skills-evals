@@ -775,7 +775,9 @@ pending, and `harness/gates.py`'s docstring is the full statement):
 - *Current content only.* A cell decides on runs of the skill and fixture
   on main. For a guidance section, the guidance block's `rest_policy`
   (2026-11-07, default `pooled-with-current-guard`) pools the runs beside
-  every rest of the guidance, pair by pair at equal weight, for keeping;
+  every rest of the guidance, pair by pair at equal weight, for keeping
+  once the current rest has 6 pairs (a keep test over the current rest
+  alone runs beside it, each at half the keep level);
   any removal also needs at least `rest_guard_min_pairs` (6) pairs beside
   the current rest whose own share of the test reaches the removal level,
   and ceilings, floors and the cap read the current rest only. `current`

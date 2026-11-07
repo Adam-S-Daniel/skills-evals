@@ -299,7 +299,8 @@ Known limits it left:
   never let a section accumulate the 18 or more pairs a decision needs.
   *Addressed for keeping, 2026-11-07* (the "Pooled-rest addendum" below): a
   cell now pools every rest's pairs at equal weight, so an edit elsewhere no
-  longer resets the keep test. A removal still needs pairs beside the
+  longer resets the keep test's evidence (the pooled keep counts once the
+  current rest has 6 pairs). A removal still needs pairs beside the
   current rest (at least 6, and enough for that rest's own share of the
   test to reach 90%), so an edit still delays a removal, by design.
 - *The current keeps restart as insufficient* (m7). The 8 subjects kept
@@ -1162,7 +1163,15 @@ Under `pooled-with-current-guard`, `harness/gates.py` behaves as follows
   sequence in time order, each at equal weight.
 - Each rest's window holds its first 40 pairs. The cell is at its cap when
   the current rest's window is full, so older pairs never freeze it.
-- The keep test reads every pair.
+- The keep is two tests, each at half the cell's keep alpha, and the
+  earlier crossing keeps. By Bonferroni the cell still keeps at its share of
+  `benefit_confidence`:
+  - The pooled keep test reads every pair. It counts only from the pair at
+    which the current rest has `rest_guard_min_pairs` (6) pairs (Adam,
+    2026-11-07). An older rest alone never keeps; such a cell stays
+    `insufficient` and is fired.
+  - A keep test over the current rest's pairs alone lets a section that
+    helps today keep, whatever the older rests showed.
 
 **Why equal weighting is not the flaw the review found.** The 2026-11-03
 review removed an inverse-variance weighting across strata. It gave the
@@ -1172,9 +1181,11 @@ construction. Equal weighting gives every pair one bet in one martingale.
 No stratum gains weight from its spread, and the betting bound's validity
 never depended on weights. What pooling does change is the null hypothesis:
 the pooled test asks whether the section helped across the rests it ran
-beside, not whether it helps beside today's rest. That is harmless for a
-keep (keeping is the safe error). For a removal it is not, and that is what
-the guard is for.
+beside, not whether it helps beside today's rest. For a keep that is the
+safe error, and it is accepted: a section that helped beside an older rest
+and no longer helps keeps once the current rest has its 6 pairs (the stale
+keep row below). For a removal it is not safe, and that is what the guard
+is for.
 
 **The guard: the exact condition.** A `no-benefit` decision, by the remove
 test or by the harm test, decides at pair n only when all of these hold:
@@ -1186,6 +1197,14 @@ test or by the harm test, decides at pair n only when all of these hold:
 4. The current rest's share of the test's log wealth is itself at log 10.
    The share is the sum of log(1 + lambda_t y_t) over the current rest's
    pairs, where lambda_t is the bet the pooled test made.
+
+A test counts as crossed only at the first pair where conditions 1 and 4
+both hold. That crossing is what rule 4 (harm at a high cell) and rule 7
+(no benefit) read. If a test has crossed but conditions 2 and 3 have not
+held at one pair, the cell stays `insufficient`. If it has not crossed, the
+cell falls through to the current rest's ceiling, high-cell and cap rules.
+A crossing made by older rests alone therefore never holds a cell (round 1
+below).
 
 Every other path toward removal reads the current rest only:
 
@@ -1229,31 +1248,68 @@ gaining exactly the margin (0.15). False-removal rates:
 | Policy | False-removal rate |
 |---|---|
 | `current` | 0.0070 |
-| `pooled-with-current-guard` | 0.0165 |
+| `pooled-with-current-guard` | 0.0170 |
 | pooled, no guard | 0.9445 |
 | pooled, light guard (rejected) | 0.9120 |
 
 The target is 0.10. With a current gain of 0.20 after 20 older pairs, the
 guarded rate was 0.0000 against 0.547 with no guard. With the without arm at
-0.70, the guarded rate was 0.0100.
+0.70, the guarded rate was 0.0110. These are the numbers after the round 1
+fixes below; before them the guarded rate was 0.0165 and 0.0100.
+
+How cells end once the current rest's window is full (500 runs per row, 40
+older pairs). "Stuck" means `insufficient` at the cap, which no more runs
+can move:
+
+| Case | Policy | Benefit | No-benefit | Stuck |
+|---|---|---|---|---|
+| Helps today by 0.25, older rest no gain | `current` | 1.000 | 0.000 | 0.000 |
+| | pooled, guarded | 1.000 | 0.000 | 0.000 |
+| Helps today by 0.25, older rest harmed by 0.20 | `current` | 1.000 | 0.000 | 0.000 |
+| | pooled, guarded | 1.000 | 0.000 | 0.000 |
+| Helps today by the margin, older rest no gain | `current` | 0.976 | 0.012 | 0.000 |
+| | pooled, guarded | 0.944 | 0.030 | 0.000 |
+| No gain today, older rest gained 0.30 (stale keep) | `current` | 0.036 | 0.942 | 0.000 |
+| | pooled, guarded | 1.000 | 0.000 | 0.000 |
+
+Before the round 1 fixes, the second row's pooled cells were stuck 97% of
+the time (the reviewer's simulation). The third row costs a little keep
+power, because the current-rest keep test runs at half the keep alpha. The
+last row is the accepted stale keep: a section whose content an edit
+elsewhere in base.md now covers is kept, not removed, while the older
+rest's pairs remain in its cell, that is until the section's own text
+changes.
 
 A true no-benefit section (no gain beside any rest) is removed after a
-median number of current-rest pairs:
+median number of current-rest pairs (500 runs per row):
 
 | Older pairs | `current` | `pooled-with-current-guard` |
 |---|---|---|
-| 0 | 20 pairs (94.4% removed within the cap) | 20 pairs (94.4%) |
-| 20 | 20 pairs (94.4%) | 18 pairs (95.0%) |
-| 40 | 20 pairs (95.6%) | 18 pairs (95.4%) |
+| 0 | 20 pairs (95.6% removed within the cap) | 20 pairs (96.2%) |
+| 20 | 20 pairs (95.2%) | 18 pairs (97.2%) |
+| 40 | 20 pairs (94.4%) | 17 pairs (98.0%) |
 
 So pooling buys keeps, and speeds a removal only a little, through better
 first bets. A removal still costs about as many current-rest pairs as before.
 That is the price of keeping the removal level against today's rest.
 
-**Outputs.** A pooled cell adds `current_rest_pairs`, `rests` and
-`rest_guard` (the levels the current rest's shares reached, the pair at
-which each share crossed, and whether the pair floor is met). `pairs`
-still counts every pair the cell holds. `at_cap` is the current rest's.
+**Outputs.** A pooled cell adds three fields:
+
+- `current_rest_pairs`: its window's pairs beside the current rest, which
+  the cap counts.
+- `rests`.
+- `rest_guard`, which holds:
+  - `usable_current_rest_pairs`: the current-rest pairs with a run mean on
+    both arms, which the guard counts;
+  - whether the pair floor is met;
+  - the levels the current rest's shares reached, and the pair at which
+    each share crossed;
+  - the pooled remove, harm and keep crossings, and the current-rest keep
+    crossing.
+
+The objective block's `remove_at` stays the pooled crossing, for display.
+`keep_tests` has two routes, each p doubled. `pairs` still counts every pair
+the cell holds, and `at_cap` is the current rest's.
 
 The explorer's `current_text_runs`, which `_agent-guidance`'s
 eval-protection gate reads, is unchanged in code and keeps its meaning:
@@ -1262,8 +1318,14 @@ runs on the section's current text beside every rest, so an edit elsewhere
 in base.md no longer zeroes it, while an edit to the section still does.
 
 The planner fires a cell whose pooled test leans to removal but whose guard
-is unmet: the cell is `insufficient`, not at its cap and not blocking. Its
-cost to a verdict counts `current_rest_pairs` against the cap. Its improve
+is unmet, for as long as the current rest's window has room. Such a cell is
+`insufficient`, and until that window is full it is neither at its cap nor
+blocking. At the cap it ends on the current rest's own rules (benefit,
+ceiling, ceiling-unconfirmed or no-clear-effect). It stays `insufficient`
+there only when a test that did cross has not met conditions 2 and 3 at one
+pair. That happens when the current rest has a single CLI version, as under
+`current`. The planner counts it as a `cell-at-cap` item. A cell's cost to a
+verdict counts `current_rest_pairs` against the cap. Its improve
 evidence pools by the verdict document's `rest_policy`, and reads `current`
 for a document written before the key existed.
 
@@ -1275,3 +1337,42 @@ and ignores every older rest).
 
 **Review.** This change touches the removal path. Like every change to it,
 it is subject to an independent adversarial round before merge.
+
+### Pooled-rest adversarial round 1 (2026-11-07)
+
+The round found no wrong-removal path. Under adversarial older-rest
+sequences, the worst false-removal rate it measured was 0.0855, against the
+0.10 target. It confirmed that `current` reproduces origin/main exactly on
+400 of 400 cases. It found the following, each now fixed with a test:
+
+- **Stuck evidence (blocker).** A pooled harm or no-benefit crossing made by
+  older rests alone held a cell `insufficient`, through `awaiting`, before
+  the current rest's ceiling, high-cell and cap rules could run. At the
+  current rest's cap the cell froze for good. Two examples: 40 older pairs
+  losing 0.20, then a current rest gaining 0.25, were stuck 97% of the time;
+  a current rest at the ceiling after older harm was stuck 100% of the time.
+
+  A test now counts as crossed only where the pooled wealth and the current
+  share are both at the level, as the guard section above states.
+  Otherwise the cell falls through to the current rest's rules. The
+  current-rest keep test lets a capped cell that helps today end `benefit`
+  rather than `no-clear-effect`.
+- **The keep on older rests (major; Adam's decision).** The pooled keep
+  counts only once the current rest has `rest_guard_min_pairs` pairs, so no
+  section is kept for good on zero current pairs. The two keep routes split
+  the keep alpha in half.
+- **Surviving mutants.** Regression tests now cover four mutants that the
+  first tests did not catch:
+  - the floor reading pooled pass rates;
+  - the no-harm test reading pooled differences;
+  - the cap read from the pooled window (40 older pairs and 3 current pairs
+    on two CLI versions ended `no-clear-effect` on older-rest data);
+  - the pooled-wealth condition dropped from the decision.
+- **Minor fixes.**
+  - The guard's own pair count is renamed `usable_current_rest_pairs`, so
+    it no longer shares a name with the top-level `current_rest_pairs`.
+  - `guidance_verdict`'s docstring is updated.
+  - `_shows_ceiling` reads the current rest's harm share, not the pooled
+    harm crossing.
+  - The reason text of a cell waiting on the guard now says what it is
+    waiting for.

@@ -70,7 +70,9 @@
 #     `pooled-with-current-guard` a cell pools the pairs made beside EVERY
 #     rest of the guidance (the guidance minus the section), each pair at
 #     equal weight in one betting sequence, a pair formed only within one
-#     rest. The keep test reads them all. Every decision toward removal is
+#     rest. Two keep tests at half the keep alpha each: the pooled one,
+#     counted once the current rest has `rest_guard_min_pairs` pairs, and
+#     one over the current rest alone. Every decision toward removal is
 #     guarded by the current rest (the rest on main): a no-benefit or harm
 #     decision needs at least `rest_guard_min_pairs` (6) pairs beside it,
 #     spanning `min_cli_versions`, and the current rest's own share of the

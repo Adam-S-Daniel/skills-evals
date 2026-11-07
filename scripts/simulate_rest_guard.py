@@ -26,6 +26,14 @@ reported for:
 
 The target is at most 1 - `retire_confidence` (0.10).
 
+AT THE CAP (`at_cap`, CAP_CASES). How cells end once the current rest's
+window is full, under `current` and the committed rule: the share that
+keep, that are removed, and that are STUCK (`insufficient` at the cap, which
+no more runs can move; the pooled adversarial round 1's blocker). The cases
+are a section that helps today after older rests that showed no gain or
+harm, and a STALE KEEP: one that helped beside an older rest and no longer
+does, which the pooled keep keeps (Adam's 2026-11-07 rule accepts it).
+
 NO BENEFIT (the cost). A section that does not help beside any rest: how
 many pairs beside the current rest each policy needs to remove it (median
 and the share removed within the cap), after 0, 20 and 40 older pairs.
@@ -143,6 +151,36 @@ def drift(rng, sims, policy, n_old, effect, base):
     return {k: v / sims for k, v in counts.items()}
 
 
+def at_cap(rng, sims, policy, n_old, old_effect, effect, base):
+    """{policy: {"benefit", "no-benefit", "stuck"}}: the share of cells that
+    end each way once the current rest's window is full. `stuck` is a cell
+    still `insufficient` at its cap, which no more runs beside the current
+    rest can move (the pooled adversarial round 1's blocker)."""
+    cap = policy["max_runs_per_cell"]
+    out = {"current": [], "pooled-with-current-guard": []}
+    for _ in range(sims):
+        pairs, keys = make_pairs(rng, n_old, cap, base, old_effect, effect)
+        mine = [p for p, k in zip(pairs, keys) if k == CURRENT]
+        out["current"].append(gates._classify(mine, policy, 1, None))
+        out["pooled-with-current-guard"].append(gates._classify(
+            pairs, policy, 1, None, {"keys": keys, "current": CURRENT,
+                                     "min_pairs": policy["rest_guard_min_pairs"]}))
+    return {name: {"benefit": sum(c["class"] == "benefit" for c in cells) / sims,
+                   "no-benefit": sum(c["class"] == "no-benefit" for c in cells) / sims,
+                   "stuck": sum(c["class"] == "insufficient" and c["at_cap"]
+                                for c in cells) / sims}
+            for name, cells in out.items()}
+
+
+#: (label, older pairs, older gain, current gain) for `at_cap`.
+CAP_CASES = (
+    ("helps today by 0.25, older rest no gain", 40, 0.0, 0.25),
+    ("helps today by 0.25, older rest harmed 0.20", 40, -0.20, 0.25),
+    ("helps today by the margin, older rest no gain", 40, 0.0, 0.15),
+    ("no gain today, older rest gained 0.30 (stale keep)", 40, 0.30, 0.0),
+)
+
+
 def no_benefit(rng, sims, policy, n_old, base):
     cap = policy["max_runs_per_cell"]
     out = {"current": [], "pooled-with-current-guard": []}
@@ -178,6 +216,14 @@ def main(argv=None) -> int:
     for name, rate in drift(rng, args.sims, policy, args.old_pairs, effect, args.base).items():
         print(f"  false removal, {name:28s} {rate:.4f}"
               f"{'' if rate <= target else '  ABOVE ' + format(target, '.2f')}")
+    print("\nAT THE CURRENT REST'S CAP: share keeping, removed, and stuck insufficient")
+    for label, n_old, old_effect, gain in CAP_CASES:
+        sims = max(1, args.sims // 4)
+        print(f"  {label} ({n_old} older pairs)")
+        for name, got in at_cap(rng, sims, policy, n_old, old_effect, gain,
+                                args.base).items():
+            print(f"    {name:28s} benefit {got['benefit']:.3f}, no-benefit "
+                  f"{got['no-benefit']:.3f}, stuck {got['stuck']:.3f}")
     print("\nNO BENEFIT: current pairs needed to remove (median), share removed in the cap")
     for n_old in (0, 20, 40):
         sims = max(1, args.sims // 4)

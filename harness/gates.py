@@ -303,8 +303,18 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     weight gives none more). Each rest's window holds its first
     `max_runs_per_cell` pairs (`_rest_window`, a predictable selection, so
     the tests keep their level), and the cell is `at_cap` when the current
-    rest's window is full. The keep test reads every pair: an older rest's
-    benefit can keep a section, the safe error.
+    rest's window is full.
+  * THE POOLED KEEP is two tests, each at half the cell's keep alpha
+    (Bonferroni, so the cell still keeps at its share of
+    `benefit_confidence`), and the earlier crossing keeps: the pooled keep
+    test over every pair, which counts only from the pair at which the
+    current rest has `rest_guard_min_pairs` pairs (Adam, 2026-11-07: an
+    older rest alone never keeps; such a cell stays `insufficient` and is
+    fired), and a keep test over the current rest's pairs alone, so a cell
+    that helps today keeps at its cap whatever the older rests showed.
+    Each route's `keep_tests` p is doubled for the same reason. An older
+    rest's benefit can still keep a section once the current rest has its
+    pairs: the safe error.
 
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
@@ -322,9 +332,16 @@ current rest:
     rest at 1 - retire_confidence. This is the non-contradiction condition
     made strict: the current rest's own evidence must decide the removal,
     and older rests only size its bets. A share that falls (the current rest
-    shows the gain the older ones did not) can never decide. Otherwise the
-    cell stays `insufficient` and the planner fires it beside the current
-    rest;
+    shows the gain the older ones did not) can never decide. A test counts
+    as CROSSED (`harm_at`, and the remove crossing rules 4 and 7 read) only
+    at the first pair where the pooled wealth and the current share are both
+    at the level (the pooled adversarial round 1's blocker: a crossing the
+    older rests made alone had held a cell `insufficient` at its cap for
+    good); a crossed test whose floor or CLI versions are not yet met keeps
+    the cell `insufficient`, and one that never crossed so lets the cell
+    fall through to the current rest's ceiling, high-cell and cap rules.
+    The objective block's `remove_at` and `rest_guard`'s `pooled_*` fields
+    report the pooled crossings for display;
   * the ceiling, no-harm and high-cell rules (rules 4 to 6), which park a
     cell and so can turn a keep in waiting into a proposed removal, and the
     floor (rule 2), which sets a cell aside, read the current rest's pairs
@@ -334,8 +351,11 @@ current rest:
 
 `rest_guard_min_pairs` (6) is a floor under the share test, which cannot
 reach its level in under three pairs: a removal never rests on one burst of
-fires beside a rest that just changed. Each cell reports `current_rest_pairs`,
-`rests` and `rest_guard` (the levels the current rest's shares reached).
+fires beside a rest that just changed. Each cell reports `current_rest_pairs`
+(its window's pairs beside the current rest, which the cap counts), `rests`
+and `rest_guard` (`usable_current_rest_pairs`, those with a run mean on both
+arms, which the guard counts; the levels the current rest's shares reached;
+the pooled and current-rest keep crossings).
 
 THE BET PRIOR (`bet_prior`). Each test's running estimate starts from
 pseudo-runs: by default NEUTRAL_BET_PRIOR (mean 0, variance 0.25, one run),
@@ -1044,7 +1064,11 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     ds = differences(usable)
     if not ds:
         return done("insufficient", "no run with objective checks on an arm")
-    objective = sequence_block(ds, margin, keep_alpha, remove_alpha, bet_prior)
+    # Pooled, the keep is two tests, the pooled one and one over the current
+    # rest alone, each at half the cell's keep alpha (Bonferroni), so the
+    # cell still keeps at its share of `benefit_confidence`.
+    route_alpha = keep_alpha if rest is None else keep_alpha / 2
+    objective = sequence_block(ds, margin, route_alpha, remove_alpha, bet_prior)
     out["objective"] = objective
     out["keep_tests"] = [{"route": "objective", "p": objective["keep_p"]}]
     # The judge is reported, never decides (2026-11-03): a removal it had to
@@ -1068,10 +1092,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     floor = 1 - margin
     ceiling_at = first_crossing(ceiling_wealth(withouts, floor), remove_alpha) \
         if floor > 0 and withouts else None
-    harm_at = first_crossing(harm_wealth(ds, bet_prior), remove_alpha)
     high = without_mean is not None and without_mean > floor
-    out.update(headroom=ceiling_at is None, without_mean=without_mean,
-               ceiling_at=ceiling_at, harm_at=harm_at)
 
     def versions(n, current_only=False):
         """The CLI versions of the first `n` usable pairs (with
@@ -1127,12 +1148,13 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         decide it, up to the cap."""
         if rest is not None:
             found = versions(len(usable), current_only=True)
-            return done("insufficient", f"{what} on the numbers (the pooled test crossed "
-                        f"at pair {crossed}), but the current-rest guard is not met: "
-                        f"{len(current_usable)} pair(s) beside the current rest (at least "
-                        f"{rest['min_pairs']} needed), spanning {len(found)} CLI "
-                        f"version(s) of {policy['min_cli_versions']}, and the current "
-                        "rest's share of the test must reach its level on its own")
+            return done("insufficient", f"{what} on the numbers (at pair {crossed} the pooled "
+                        "test and the current rest's own share of it both reached their "
+                        "level), but the current-rest guard has not held at one pair: it "
+                        f"needs at least {rest['min_pairs']} pairs beside the current rest "
+                        f"({len(current_usable)} so far) spanning "
+                        f"{policy['min_cli_versions']} CLI versions ({len(found)} so far), "
+                        "with both still at their level")
         found = versions(len(usable))
         return done("insufficient", f"{what} on the numbers (the test crossed at pair "
                     f"{crossed}), but it has not been at its level on pairs spanning "
@@ -1152,6 +1174,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     keep_at, remove_at = objective["keep_at"], objective["remove_at"]
     harm_pooled = harm_wealth(ds, bet_prior)
     remove_pooled = remove_wealth(ds, margin, bet_prior)
+    harm_at = first_crossing(harm_pooled, remove_alpha)
     harm_decided = decided_at(harm_pooled)
     remove_decided = decided_at(remove_pooled)
     # Round 2's M1: no harm beyond the margin (H0: E[D] <= -margin), at the
@@ -1159,18 +1182,59 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     # it reads the current rest, as the ceiling test does.
     noharm_at = first_crossing(keep_wealth(current_ds, bet_prior, -margin), remove_alpha) \
         if current_ds else None
-    out.update(harm_decided_at=harm_decided, remove_decided_at=remove_decided,
-               noharm_at=noharm_at)
     if rest is not None:
         remove_share, harm_share = current_share(remove_pooled), current_share(harm_pooled)
+        # Where each current-rest pair falls among the usable pairs (1-based).
+        places = [i + 1 for i, c in enumerate(usable_current) if c]
+
+        def both_at(wealth, share):
+            """The first pair at which the pooled test AND the current rest's
+            share are both at the remove level (the pooled adversarial round
+            1's blocker: a crossing older rests alone made must not hold a
+            cell undecided, so it is not a crossing here). Without one the
+            cell falls through to the current rest's own rules."""
+            return next((i + 1 for i, (w, s) in enumerate(zip(wealth, share))
+                         if w >= threshold and s >= threshold), None)
+
+        remove_at, harm_at = both_at(remove_pooled, remove_share), both_at(harm_pooled,
+                                                                           harm_share)
+        # THE KEEP, pooled (round 1's blocker and Adam's 2026-11-07 rule): the
+        # pooled keep counts only from the pair at which the current rest has
+        # `min_pairs` pairs, so an older rest alone never keeps; a keep test
+        # over the current rest alone (its first pair's bet neutral or the
+        # learned prior's, like a `current` cell) lets a cell that helps today
+        # keep at its cap. Each runs at half the keep alpha; the earlier wins.
+        pooled_keep = objective["keep_at"]
+        floor_at = places[rest["min_pairs"] - 1] if len(places) >= rest["min_pairs"] else None
+        pooled_keep = max(pooled_keep, floor_at) \
+            if pooled_keep is not None and floor_at is not None else None
+        current_keep_wealth = keep_wealth(current_ds, bet_prior)
+        current_keep = first_crossing(current_keep_wealth, route_alpha)
+        current_keep = places[current_keep - 1] if current_keep is not None else None
+        keep_at = min([k for k in (pooled_keep, current_keep) if k is not None],
+                      default=None)
+        # Each route's p is doubled (Bonferroni), so `1 - m x min p` still
+        # reads the cell's keep level; the pooled one counts only from the
+        # current-rest pair floor.
+        out["keep_tests"] = [
+            {"route": "objective", "p": min(1.0, 2 * objective["keep_p"])
+             if floor_at is not None else 1.0},
+            {"route": "objective-current-rest",
+             "p": min(1.0, 2 * ville_p(current_keep_wealth))}]
         out["rest_guard"] = {
-            "min_pairs": rest["min_pairs"], "current_rest_pairs": len(current_usable),
+            "min_pairs": rest["min_pairs"], "usable_current_rest_pairs": len(current_usable),
             "met_pairs": len(current_usable) >= rest["min_pairs"],
             # The levels the current rest's shares reached (Ville's 1 - 1/W).
             "no_help_confidence": reached(remove_share),
             "harm_confidence": reached(harm_share),
             "remove_share_at": first_crossing(remove_share, remove_alpha),
-            "harm_share_at": first_crossing(harm_share, remove_alpha)}
+            "harm_share_at": first_crossing(harm_share, remove_alpha),
+            "pooled_remove_at": objective["remove_at"],
+            "pooled_harm_at": first_crossing(harm_pooled, remove_alpha),
+            "pooled_keep_at": objective["keep_at"], "current_keep_at": current_keep}
+    out.update(headroom=ceiling_at is None, without_mean=without_mean,
+               ceiling_at=ceiling_at, harm_at=harm_at, harm_decided_at=harm_decided,
+               remove_decided_at=remove_decided, noharm_at=noharm_at)
     capped = held_current >= cap
     # Round 3's M3: the keep is compared with the removal's STOPPING TIME,
     # not its first crossing. A remove crossing that never decided (one CLI
@@ -1552,7 +1616,11 @@ def _shows_ceiling(cell: dict) -> bool:
         return True
     if cell["class"] != "paused" or cell.get("scope_paused") != "ceiling":
         return False
-    if cell.get("harm_at") is not None:
+    # A pooled in-situ cell reads the harm the current rest shows on its own
+    # (its share of the harm test), as its ceiling and no-harm tests do.
+    guard = cell.get("rest_guard")
+    harm = guard.get("harm_share_at") if isinstance(guard, dict) else cell.get("harm_at")
+    if harm is not None:
         return False
     if cell.get("class_before_pause") in CEILING_CLASSES:
         return True
@@ -1737,8 +1805,11 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     still turn into shorten-or-merge. Its `removal` is then `proposal`,
     never `auto`, with ALONE_UNFINISHED_REASON.
 
-    The in-situ cells hold only runs beside the rest on main (`retirement`
-    with `strata`). The alone cells pool as before."""
+    The in-situ cells are `retirement` with `strata`: by the policy's
+    `rest_policy`, the runs beside the rest on main only (`current`), or
+    beside every rest with THE CURRENT-REST GUARD (`pooled-with-current-guard`;
+    module docstring, IN-SITU GUIDANCE CELLS). The alone cells pool as
+    before."""
     runs = index.get("runs", [])
     out = {pair: retirement({"runs": [r for r in runs if r.get("pair") == pair]},
                             models, section, policy, expected,
