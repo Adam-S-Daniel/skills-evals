@@ -112,7 +112,10 @@ name: Fire eval routine
 #   the routine runs run_eval once per model, in sequence, under this one
 #   run id, into eval-results/<run id>/ on claude/eval-<run id>. The run
 #   title ends `<fixture> m1,m2`, which every title reader expands to a cell
-#   of each model (scripts/improve_outcomes.py `title_models`). A routine
+#   of each model (scripts/improve_outcomes.py `title_models`). Each run_eval
+#   is stopped 40 minutes after it starts, so the planner holds a pending
+#   pair fire's cells for 90 minutes (scripts/routine_deadlines.py) and
+#   counts it in flight for twice a one-model fire's time. A routine
 #   session costs about $0.67 of its own on every fire, so the weekly sweep
 #   pairs a fixture's two model cells whenever it plans both.
 # * Scaffold mode's issue snapshot (Adam, 2026-10-06: "Fire workflow

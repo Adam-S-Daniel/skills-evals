@@ -87,7 +87,8 @@ class InstructionsTests(unittest.TestCase):
         steps = text[text.index("\nEVAL STEPS:"):text.index("\nSCAFFOLD MODE is ")]
         self.assertIn("`git checkout --quiet --detach <INSTRUCTIONS_SHA> && "
                       "python3 scripts/routine_eval.py --payload <that file>`", steps)
-        self.assertIn("timeout of 2700000 ms", steps)
+        # Two models' runs of 40 minutes each, plus setup and the push.
+        self.assertIn("timeout of 5400000 ms (90 minutes;", steps)
         self.assertIn("Write the fire text, unchanged, to a new file outside every checkout",
                       steps)
         self.assertIn("do not run it again", steps)

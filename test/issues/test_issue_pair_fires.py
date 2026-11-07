@@ -55,6 +55,7 @@ import explorer_data  # noqa: E402
 import improve_outcomes as io_mod  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
 import plan_week  # noqa: E402
+import routine_deadlines  # noqa: E402
 import run_eval  # noqa: E402
 
 import test_issue_routine_eval_fire as fire_base  # noqa: E402
@@ -148,6 +149,22 @@ class TitleTests(unittest.TestCase):
             [fire(1, SKILL_FIXTURE, started, PAIR, conclusion=None, status="in_progress")],
             NOW), 1)
 
+    def test_a_pair_fire_is_in_flight_for_forty_minutes(self):
+        # Its two run_eval commands run one after the other.
+        def count(model, minutes):
+            return plan_week.in_flight(
+                [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=minutes), model)], NOW)
+        self.assertEqual(plan_week.EVAL_FLIGHT, timedelta(minutes=20))
+        self.assertEqual((count(PAIR, 39), count(PAIR, 40)), (1, 0))
+        self.assertEqual((count(A, 19), count(A, 20)), (1, 0))
+
+    def test_the_guard_holds_a_pair_fire_in_full_until_its_deadline(self):
+        # A pair fire with no results may still be running its second model
+        # an hour in: it is held at the full reservation, not the overrun.
+        self.assertEqual(guard.PENDING_FULL_HOLD, routine_deadlines.deadline("eval", 2))
+        runs = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=60), PAIR)]
+        self.assertEqual(plan_week._fire_pair(runs, NOW), (1, 1))
+
 
 class CellReaderTests(unittest.TestCase):
     """The planner's per-cell readers expand a pair title to both cells."""
@@ -177,6 +194,21 @@ class CellReaderTests(unittest.TestCase):
     def test_a_lone_fire_holds_only_its_own_cell(self):
         got = self.cells([fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=10), A)])
         self.assertEqual({m: c["pending"] for m, c in got.items()}, {A: True, B: False})
+
+    def test_a_pair_fire_holds_its_cells_for_both_models_stops(self):
+        started = NOW - timedelta(minutes=60)
+        # Another cell delivered since, so the routine is up: only a fire's
+        # own window keeps it pending.
+        doc = self.doc()
+        landed = stamp(started + timedelta(minutes=5))
+        doc["skills"]["disarm-inherited-reach"] = {"cells": [
+            {"fixture": None, "model": A, "class": "missing",
+             "runs": {"with": [], "without": []},
+             "newest_on_model": landed, "run_stamps_on_model": [landed]}]}
+        pair = self.cells([fire(1, SKILL_FIXTURE, started, PAIR)], doc)
+        self.assertEqual({m: c["pending"] for m, c in pair.items()}, {A: True, B: True})
+        lone = self.cells([fire(1, SKILL_FIXTURE, started, A)], doc)
+        self.assertEqual({m: c["pending"] for m, c in lone.items()}, {A: False, B: False})
 
     def test_each_cell_of_a_pair_fire_is_judged_on_its_own_models_runs(self):
         started = NOW - timedelta(hours=3)

@@ -1917,6 +1917,10 @@ class WatchdogTests(unittest.TestCase):
 
     ANCHOR = datetime(2026, 11, 1, 16, 11, tzinfo=timezone.utc)
 
+    def held_until(self, ends):
+        """The start of a fire whose guard hold ends at `ends`."""
+        return ends - guard.PENDING_FULL_HOLD
+
     @staticmethod
     def fire(started, conclusion="success"):
         return {"status": "completed", "conclusion": conclusion,
@@ -1929,7 +1933,9 @@ class WatchdogTests(unittest.TestCase):
                 "updated_at": stamp(ended or created)}
 
     def test_the_stalled_fire_re_plans_two_minutes_after_its_hold(self):
-        fires = [self.fire(datetime(2026, 11, 1, 15, 55, tzinfo=timezone.utc))]
+        # The 2026-11-01 fire's hold ended at 16:40 (it started at 15:55,
+        # under the 45-minute hold of the time).
+        fires = [self.fire(self.held_until(datetime(2026, 11, 1, 16, 40, tzinfo=timezone.utc)))]
         due = plan_week.watchdog_due(self.ANCHOR, fires)
         self.assertEqual(due, datetime(2026, 11, 1, 16, 42, tzinfo=timezone.utc))
         self.assertEqual(plan_week.watchdog_decide([], fires, due, self.ANCHOR),
@@ -1938,15 +1944,15 @@ class WatchdogTests(unittest.TestCase):
                                                    self.ANCHOR), ("wait", due))
 
     def test_ended_failed_and_unparsable_fires_fall_back_to_the_idle_limit(self):
-        fires = [self.fire(self.ANCHOR - timedelta(minutes=45)),
+        fires = [self.fire(self.held_until(self.ANCHOR)),
                  self.fire(self.ANCHOR - timedelta(minutes=5), conclusion="failure"),
                  {"conclusion": "success", "run_started_at": "not a time"}, "junk"]
         self.assertEqual(plan_week.watchdog_due(self.ANCHOR, fires),
                          self.ANCHOR + timedelta(minutes=50))
 
     def test_the_earliest_hold_wins(self):
-        fires = [self.fire(self.ANCHOR - timedelta(minutes=10)),
-                 self.fire(self.ANCHOR - timedelta(minutes=30))]
+        fires = [self.fire(self.held_until(self.ANCHOR + timedelta(minutes=35))),
+                 self.fire(self.held_until(self.ANCHOR + timedelta(minutes=15)))]
         self.assertEqual(plan_week.watchdog_due(self.ANCHOR, fires),
                          self.ANCHOR + timedelta(minutes=17))
 
@@ -1973,7 +1979,7 @@ class WatchdogTests(unittest.TestCase):
         def sleep(seconds):
             slept.append(seconds)
             clock[0] += timedelta(seconds=seconds)
-        fires = [self.fire(self.ANCHOR - timedelta(minutes=16))]
+        fires = [self.fire(self.held_until(self.ANCHOR + timedelta(minutes=29)))]
         go, reason = plan_week.watchdog("wait", lambda since: [], lambda since: fires,
                                         lambda: self.fail("wait mode reads no timers"),
                                         3300, lambda: clock[0], sleep)

@@ -30,6 +30,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import routine_deadlines  # noqa: E402
 import routine_eval  # noqa: E402
 
 INSTRUCTIONS = ROOT / "docs" / "routine" / "eval-runner-instructions.md"
@@ -583,22 +584,37 @@ class CommandTests(CheckoutCase):
 
 class TimeLimitTests(CheckoutCase):
 
-    def test_each_run_gets_the_time_left_to_the_hard_stop(self):
+    def test_each_run_gets_its_own_forty_minutes(self):
         self.fire(payload(models=[MODEL_A, MODEL_B]), writes=False, setup_seconds=90,
                   seconds={MODEL_A: 600, MODEL_B: 60})
-        first, second = [timeout for _, timeout in self.runner.evals]
-        self.assertEqual(first, routine_eval.HARD_STOP_S - 90)
-        # Less the wait for a new UTC second between the two runs (under 1 s).
-        self.assertAlmostEqual(second, routine_eval.HARD_STOP_S - 90 - 600, delta=1.0)
-        self.assertLess(second, routine_eval.HARD_STOP_S - 90 - 600)
+        self.assertEqual([timeout for _, timeout in self.runner.evals],
+                         [40 * 60, 40 * 60])
+        self.assertEqual(routine_eval.RUN_STOP_S, 40 * 60)
 
-    def test_no_run_starts_after_the_soft_limit(self):
-        code = self.fire(payload(models=[MODEL_A, MODEL_B]), writes=True,
-                         seconds={MODEL_A: routine_eval.SOFT_LIMIT_S + 1})
+    def test_the_second_run_starts_at_minute_35_when_the_first_ran_long(self):
+        self.fire(payload(models=[MODEL_A, MODEL_B]), writes=False, setup_seconds=90,
+                  seconds={MODEL_A: 35 * 60 - 90})
+        self.assertEqual(len(self.runner.evals), 2)
+        # The second run's stop is 40 minutes from its own start, not what
+        # was left of the first run's.
+        self.assertEqual(self.runner.evals[1][1], 40 * 60)
+        self.assertIn(f"run {MODEL_B}: exit 0", self.report)
+
+    def test_a_run_is_not_started_past_its_start_limit(self):
+        self.assertEqual([routine_eval.start_limit_s(k) for k in (0, 1)], [40 * 60, 80 * 60])
+        # The second run may start until the fire is 80 minutes old.
+        code = self.fire(payload(models=[MODEL_A, MODEL_B]), writes=False, setup_seconds=90,
+                         seconds={MODEL_A: 80 * 60 - 90})
         self.assertEqual(code, 1)
         self.assertEqual(len(self.runner.evals), 1)
-        self.assertIn(f"run {MODEL_B}: not started (past the 30-minute limit)", self.report)
+        self.assertIn(f"run {MODEL_B}: not started (past the 80-minute limit)", self.report)
         self.assertTrue(self.report.endswith("RESULT: error\n"))
+
+    def test_setup_that_takes_forty_minutes_leaves_the_first_run_none(self):
+        code = self.fire(payload(model=MODEL_A), writes=False, setup_seconds=40 * 60)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.runner.evals, [])
+        self.assertIn(f"run {MODEL_A}: not started (past the 40-minute limit)", self.report)
 
     def test_a_run_stopped_at_the_hard_stop_is_reported(self):
         class Stopped(FakeRunner):
@@ -621,10 +637,14 @@ class TimeLimitTests(CheckoutCase):
         text = INSTRUCTIONS.read_text(encoding="utf-8")
         limits = text.split("Limits: ", 1)[1]
         self.assertTrue(limits.startswith(
-            f"eval and scaffold modes max {routine_eval.MAX_AGENT_RUNS_PER_MODEL} nested "
-            "agent runs"))
-        self.assertIn(f"after {routine_eval.SOFT_LIMIT_S // 60} minutes and stops one at "
-                      f"{routine_eval.HARD_STOP_S // 60})", limits)
+            f"eval mode max {routine_eval.MAX_AGENT_RUNS_PER_MODEL} nested agent runs"))
+        minutes = routine_eval.RUN_STOP_S // 60
+        self.assertIn(f"stops each run_eval.py command {minutes} minutes after it starts) "
+                      f"and stop after {minutes} minutes per model ({2 * minutes} for a "
+                      "two-model fire)", limits)
+        # The planner's deadline for a fire is built on the same per-model stop.
+        self.assertEqual(routine_eval.RUN_STOP_S,
+                         routine_deadlines.MODE_LIMITS["eval"].total_seconds())
 
 
 class PublishTests(CheckoutCase):

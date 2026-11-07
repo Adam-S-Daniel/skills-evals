@@ -39,12 +39,13 @@ one week's sanctioned push to the next):
     summary of one run_eval invocation carries the same run-level block, so
     an invocation is counted once however many summaries it wrote.
   * pending: successful runs of routine-eval-fire.yml in the window that
-    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (45
+    have no ingested results yet. One younger than `PENDING_FULL_HOLD` (90
     minutes) is reserved at `per_run_cap + per_run_overrun`; an older one is
     charged `per_run_overrun` only for the rest of the week. A routine run
     finishes within minutes (healthy runs take 4-12, ingest a few more) and
-    the routine's own prompt stops an eval or scaffold run at 30 minutes, so
-    a fire with no results 45 minutes later failed or never started (or is a
+    the routine stops each run_eval command 40 minutes after it starts, two
+    of them in a pair fire, so a fire with no results 90 minutes later
+    failed or never started (or is a
     scaffold or improve run, which never lands in routine-results/), and the
     in-run stops (`per_run_cap`,
     `stop_when_account_above` in harness/run_eval.py) still bound what it
@@ -126,9 +127,9 @@ Fires without results (2026-11-01): the bound still charged every eval fire
 without an ingested run, so 15 fires that had stopped hours before the 84%
 reading held 7.5 points it already held, and three fires were refused 3
 points under the 95% stop. A fire that started `PENDING_FULL_HOLD` or more
-before the reading has finished inside it (a routine run stops at 30
-minutes), so when the fires' start times are known the bound charges only
-the fires after that cut that no ingested run accounts for: a recent one the
+before the reading has finished inside it (an eval fire, a pair fire's two
+runs included, has stopped by then), so when the fires' start times are
+known the bound charges only the fires after that cut that no ingested run accounts for: a recent one the
 full reservation, an older one the overrun. An ingested run inside the
 reading whose summaries say it had ended by then (`usage.ended_at`) has no
 call after it, so it is not charged the overrun either (2026-11-01 13:54
@@ -218,6 +219,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 
 import budget as budget_file  # noqa: E402
 import improve_outcomes  # noqa: E402
+import routine_deadlines  # noqa: E402
 
 #: The routine run id the fire workflow generates (routine-eval-fire.yml's
 #: validate step), and the directory ingest names after it.
@@ -241,9 +243,12 @@ MANUAL_RESETS = (datetime(2026, 11, 4, 18, 15, tzinfo=timezone.utc),)
 #: allowance Adam had left; healthy runs land within about 15 minutes. It was
 #: 2 hours until 2026-10-27, when three fires that failed at startup held
 #: about 31 points against a 30-point cap while measured use was about 5, and
-#: blocked every fire for two hours. The routine stops an eval or scaffold run
-#: at 30 minutes, so 45 minutes covers that limit plus the push and ingest.
-PENDING_FULL_HOLD = timedelta(minutes=45)
+#: blocked every fire for two hours. It was 45 minutes until 2026-11-07, when
+#: an eval fire's stop became 40 minutes per model
+#: (scripts/routine_deadlines.py): a pair fire still running its second model
+#: past 45 minutes was charged the overrun alone. It is now the latest a pair
+#: fire can deliver.
+PENDING_FULL_HOLD = routine_deadlines.deadline("eval", 2)
 #: ingest_routine_results.SIZE_CAPS["summary.json"]: a bigger file was never
 #: ingested by that validator, so it is not read here either.
 SUMMARY_MAX_BYTES = 64 * 1024

@@ -32,9 +32,11 @@ then does what the EVAL STEPS paragraph used to ask of the session:
 4. Runs harness/run_eval.py once per model, in sequence (never both at
    once; see _wait_for_a_new_second), never retrying,
    into eval-results/<run id>/, with the run context flags and never
-   --asserted-quiet. The nested-agent limit is 6 agent runs per model; no
-   run starts after 30 minutes and a running one is stopped at 40
-   (SOFT_LIMIT_S, HARD_STOP_S).
+   --asserted-quiet. The nested-agent limit is 6 agent runs per model. Each
+   run is stopped 40 minutes after its own start (RUN_STOP_S), and the k-th,
+   counted from 0, starts only while the fire is younger than 40 minutes
+   times k + 1 (`start_limit_s`), so a fire ends within 40 minutes per model
+   plus setup.
 5. Commits only the summary.json, report.md and transcripts/tool_trace.json
    files under eval-results/<run id>/ (never transcripts/raw.json) to
    claude/eval-<run id>, in skills-evals or, for the private registry, in
@@ -80,8 +82,9 @@ MAX_PAYLOAD_BYTES = 16 * 1024
 
 #: The instructions' "Limits:" for eval mode, per model.
 MAX_AGENT_RUNS_PER_MODEL = 6
-SOFT_LIMIT_S = 30 * 60
-HARD_STOP_S = 40 * 60
+#: Each run_eval.py command is stopped this long after its own start:
+#: routine_deadlines.MODE_LIMITS["eval"], which is per model.
+RUN_STOP_S = 40 * 60
 #: A git command that talks to a remote, in the commit and push step.
 NETWORK_TIMEOUT_S = 120
 LOCAL_TIMEOUT_S = 60
@@ -152,6 +155,15 @@ class Run:
     wall_s: float = 0.0
     summaries: list = field(default_factory=list)
     log: Path | None = None
+    #: How old the fire may be when this run starts (`start_limit_s`).
+    start_limit_s: int = 0
+
+
+def start_limit_s(index: int) -> int:
+    """How old the fire may be when its `index`-th run_eval.py command
+    (counted from 0) starts: one RUN_STOP_S for each run up to and including
+    it, so a run that starts never ends past RUN_STOP_S per model."""
+    return RUN_STOP_S * (index + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -399,13 +411,15 @@ class Steps:
         self.fetched: set[Path] = set()
         self.notes: list[str] = []
 
-    def remaining(self) -> float:
-        return max(1.0, HARD_STOP_S - (self.clock() - self.start))
+    def setup_left(self) -> float:
+        """The time left to the first run's start limit: setup that runs
+        past it leaves the first model no run."""
+        return max(1.0, start_limit_s(0) - (self.clock() - self.start))
 
     def cmd(self, argv: list[str], what: str, *, cwd: Path | None = None,
             timeout: float | None = None) -> str:
         code, out = self.runner.run(argv, cwd=cwd,
-                                    timeout=self.remaining() if timeout is None else timeout)
+                                    timeout=self.setup_left() if timeout is None else timeout)
         with open(self.logs / "setup.log", "a", encoding="utf-8") as log:
             log.write(f"$ {shlex.join(argv)}\n{out}\n")
         if code != 0:
@@ -686,7 +700,8 @@ def fire(args, runner, clock, wall, sleep, python, err) -> tuple[list[str], str]
     logs = Path(tempfile.mkdtemp(prefix="skills-evals-routine-"))
     steps = Steps(runner, checkout, siblings, logs, clock, start)
     results = checkout / RESULTS_ROOT / payload.run_id
-    runs = [Run(model=m, argv=[]) for m in payload.models]
+    runs = [Run(model=m, argv=[], start_limit_s=start_limit_s(index))
+            for index, m in enumerate(payload.models)]
     errors: list[str] = []
     pushed = "none"
     try:
@@ -708,20 +723,20 @@ def fire(args, runner, clock, wall, sleep, python, err) -> tuple[list[str], str]
         registries = ([] if fixture.guidance
                       else steps.detach_registries(registry_names(checkout, fixture)))
         ended = None
-        for run in runs:
+        for index, run in enumerate(runs):
             run.argv = run_eval_argv(python, payload, fixture, run.model, guidance,
                                      registries)
-            if clock() - start >= SOFT_LIMIT_S:
+            if clock() - start >= run.start_limit_s:
                 continue
             if ended is not None:
                 _wait_for_a_new_second(ended, wall, sleep)
             print(f"routine_eval: running run_eval.py ({run.model or 'roster default'})",
                   file=err, flush=True)
             before = summary_paths(results)
-            run.log = logs / f"run-eval-{runs.index(run) + 1}.log"
+            run.log = logs / f"run-eval-{index + 1}.log"
             run.started = True
             began = clock()
-            run.code = runner.run_eval(run.argv, cwd=checkout, timeout=steps.remaining(),
+            run.code = runner.run_eval(run.argv, cwd=checkout, timeout=RUN_STOP_S,
                                        log=run.log)
             run.wall_s = clock() - began
             ended = wall()
@@ -755,9 +770,9 @@ def run_lines(run: Run, fixture: Fixture) -> list[str]:
     label = f"run {run.model or 'roster default'}"
     if not run.started:
         if run.argv:
-            return [f"{label}: not started (past the {SOFT_LIMIT_S // 60}-minute limit)"]
+            return [f"{label}: not started (past the {run.start_limit_s // 60}-minute limit)"]
         return [f"{label}: not started"]
-    exit_text = (f"stopped at the {HARD_STOP_S // 60}-minute hard stop"
+    exit_text = (f"stopped at the {RUN_STOP_S // 60}-minute hard stop"
                  if run.code is None else f"exit {run.code}")
     docs = arm_docs(run.summaries)
     arms = ", ".join(arm_result(doc) for doc in docs) or "no arm summary"

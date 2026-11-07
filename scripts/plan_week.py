@@ -123,9 +123,9 @@ THE BANDS (rule D), in order:
   "no run after two fires", whatever the cause. A cell whose verdict
   document lacks `newest_on_model` or `run_stamps_on_model` counts none and
   joins no window (fail safe). Safety cells are exempt. Every band, safety included, skips a cell with a
-  PENDING fire: one younger than PENDING_WINDOW (the routine's 30-minute
-  eval stop plus 10 minutes), successful or still running, with no run on
-  the cell since it started; past that the fire cannot deliver, so the
+  PENDING fire: one younger than its `pending_window` (the routine's
+  40-minute eval stop per model plus 10 minutes), successful or still
+  running, with no run on the cell since it started; past that the fire cannot deliver, so the
   cell is planned again, a lost fire re-fired within the hour. THE CIRCUIT BREAKER
   (#583): the routine is down from the start of an outage fire until a
   paired eval fire on a known cell delivers (or, for the breaker only,
@@ -420,7 +420,10 @@ its own band and cost. A lone cell, an improve or guidance-improve fire,
 a probe and the refresh fire stay single legs. `--max-fires` caps cells,
 so pairing only ever shortens the matrix, and wait-slot still counts
 fires. The fire workflow sends the pair as `models: [m1, m2]`; the
-routine runs run_eval once per model, in that order, into one run id. Its
+routine runs run_eval once per model, in that order, into one run id. Each
+run gets its own 40 minutes, so a pending pair fire holds its cells for
+`routine_deadlines.deadline("eval", 2)`, 90 minutes, and counts in flight
+for twice EVAL_FLIGHT (`fire_models`). Its
 run title, `... <fixture> m1,m2`, holds a cell of each model: every
 reader here expands it per model (`improve_outcomes.title_models`), so a
 pending pair fire holds both cells and its two runs are judged each on
@@ -507,9 +510,10 @@ RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
-#: How long a fire with no run yet holds its cell (`pending`): the routine's
-#: own eval-mode stop plus a margin (scripts/routine_deadlines.py), after
-#: which the fire cannot deliver, so the cell is planned again. Adam,
+#: How long a one-model fire with no run yet holds its cell (`pending`): the
+#: routine's own eval-mode stop plus a margin (scripts/routine_deadlines.py),
+#: after which the fire cannot deliver, so the cell is planned again. The
+#: stop is per model, so a pair fire holds for `pending_window` of two. Adam,
 #: 2026-11-03: a lost fire must not wait FIRE_RESULT_WINDOW, two hours, for
 #: someone to notice it. The fire itself is still classified only at
 #: FIRE_RESULT_WINDOW, so the outage windows and PROBE_WAIT keep their
@@ -624,10 +628,11 @@ MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: wait-slot: at most this many fires in flight, each counted in flight this
 #: long after it started (an eval run takes 4 to 12 minutes, an improve run
-#: a few hours), polled once a minute. 6 for the allowance week ending
-#: 2026-11-09 17:00 UTC only (Adam, 2026-11-03: spend the rest of the week's
-#: allowance as fast as possible before his manual reset); restore to 3 with
-#: evals/budget.yml's restore after that reset.
+#: a few hours; a pair fire EVAL_FLIGHT per model), polled once a minute. 6
+#: for the allowance week ending 2026-11-09 17:00 UTC only (Adam, 2026-11-03:
+#: spend the rest of the week's allowance as fast as possible before his
+#: manual reset); restore to 3 with evals/budget.yml's restore after that
+#: reset.
 MAX_IN_FLIGHT = 6
 EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
@@ -720,6 +725,19 @@ def _stamp_time(stamp) -> datetime | None:
         return datetime.strptime(stamp, STAMP).replace(tzinfo=timezone.utc)
     except (TypeError, ValueError):
         return None
+
+
+def fire_models(title: dict | None) -> int:
+    """How many run_eval commands a fire of this parsed run title runs, one
+    after the other: two for a pair fire (PAIR FIRES), else one."""
+    return max(1, len(outcomes_mod.title_models(title)))
+
+
+def pending_window(title: dict | None) -> timedelta:
+    """How long an eval fire of this run title with no run yet holds its
+    cells: PENDING_WINDOW for one model, the routine's per-model stop twice
+    over plus the margin for a pair fire."""
+    return routine_deadlines.deadline("eval", fire_models(title))
 
 
 # ---------------------------------------------------------------------------
@@ -2860,11 +2878,11 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
       * `down_fires`: the candidates that are down fires, in neither count
         above.
       * `pending`: a successful or still running non-bare eval fire that
-        started after the bound and less than PENDING_WINDOW ago, so its
-        run may still land. On an unknown cell any such fire is pending:
-        holding a cell for at most PENDING_WINDOW is cheaper than a second
-        fire. Past PENDING_WINDOW the routine has stopped, so the cell is
-        planned again.
+        started after the bound and less than its `pending_window` ago
+        (PENDING_WINDOW, longer for a pair fire), so its run may still
+        land. On an unknown cell any such fire is pending: holding a cell
+        for at most that window is cheaper than a second fire. Past it the
+        routine has stopped, so the cell is planned again.
       * `pending_since`: the start of the newest fire started after the
         bound and less than FIRE_RESULT_WINDOW ago, else None; one younger
         than PROBE_WAIT holds the next probe (`probe_blocked`).
@@ -2886,6 +2904,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     scheduled = schedule.scheduled_fixtures(evals_dir / "scheduled.yml", committed)
     finished: dict = {}
     young: dict = {}
+    held: dict = {}  # (cell, start): how long that young fire holds the cell
     latest: dict = {}  # each cell's newest successful or running fire, any arms, any age
     for run in fire_runs:
         title = outcomes_mod.parse_title(run.get("display_title"))
@@ -2905,6 +2924,8 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
             if now - started < FIRE_RESULT_WINDOW:
                 if running or run.get("conclusion") == "success":
                     young.setdefault(key, []).append(started)
+                    held[key, started] = max(held.get((key, started), PENDING_WINDOW),
+                                             pending_window(title))
             elif run.get("conclusion") == "success" \
                     and now - started <= RETRY_AFTER + OUTAGE_GAP \
                     and started >= EMPTY_FIRES_SINCE:
@@ -3000,7 +3021,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                     "reason": (cell or {}).get("reason"),
                     **{f"{role}_counted": (arm.get("runs") or 0) if isinstance(arm, dict) else 0
                        for role, arm in arms.items()}})
-    # A fire past PENDING_WINDOW is lost when the routine has delivered a run
+    # A fire past its pending window is lost when the routine has delivered a run
     # of any cell since it started: the routine is up, so this fire alone
     # failed, and its cell is planned again now. With no delivery since,
     # the routine may be down, so the cell keeps holding for
@@ -3009,7 +3030,8 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
     landed_any = [r for cell_landed in all_landed for r in cell_landed]
     for cell in cells:
         waiting = cell.pop("waiting")
-        cell["pending"] = any(now - t < PENDING_WINDOW
+        key = (cell["fixture"], cell["model"])
+        cell["pending"] = any(now - t < held[key, t]
                               or not any(r > t for r in landed_any)
                               for t in waiting)
     # Second pass, once every fire is classified: judge each empty fire on
@@ -3810,7 +3832,8 @@ def validate_fire(env: dict, root: Path = REPO_ROOT) -> None:
 def in_flight(runs: list, now: datetime) -> int:
     """Fire runs still running, or started within their mode's flight time.
     A pair fire (PAIR FIRES) is one run, so it counts once: the cap counts
-    fires, not cells."""
+    fires, not cells. It runs its models one after the other, so it is in
+    flight for EVAL_FLIGHT per model."""
     count = 0
     for run in runs:
         if not isinstance(run, dict):
@@ -3822,7 +3845,8 @@ def in_flight(runs: list, now: datetime) -> int:
         if started is None or run.get("conclusion") != "success":
             continue
         title = outcomes_mod.parse_title(run.get("display_title"))
-        flight = IMPROVE_FLIGHT if title and title["mode"] in IMPROVE_MODES else EVAL_FLIGHT
+        flight = (IMPROVE_FLIGHT if title and title["mode"] in IMPROVE_MODES
+                  else EVAL_FLIGHT * fire_models(title))
         if now - started < flight:
             count += 1
     return count

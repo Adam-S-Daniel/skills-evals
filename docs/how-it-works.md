@@ -165,11 +165,11 @@ Three layers enforce it:
    each run every other thread's use: 116 points booked against about 23 real
    in the week to 2026-11-04); or at the full reservation,
    `per_run_cap + per_run_overrun`, when neither is known, plus every successful
-   fire without results: at the full reservation when it is under 2 hours
+   fire without results: at the full reservation when it is under 90 minutes
    old, and at the overrun alone after that (a routine run finishes within
-   minutes, so a fire with no results two hours later failed or never
-   started). An improve fire (or a guidance-improve fire) never lands
-   results, so it is charged its own
+   minutes and a pair fire's two runs stop 40 minutes each, so a fire with no
+   results 90 minutes later failed or never started). An improve fire (or a
+   guidance-improve fire) never lands results, so it is charged its own
    cost for the whole week: eight eval fires at their measured mean
    (eight full reservations until anything is measured; twelve until
    2026-11-02, when the account meter around improve fires measured 2.3 to
@@ -488,7 +488,10 @@ fire workflow checks each id as it checks one and sends `models: [m1, m2]`;
 the routine runs the harness once per model, in that order, under one run id
 and one results branch, and each summary keeps its own model. The run is
 titled `Fire eval routine: eval <fixture> m1,m2`, which the planner and the
-explorer read as a fire of each model's cell. The allowance guard reserves it
+explorer read as a fire of each model's cell. Each invocation is stopped 40
+minutes after it starts, so the planner holds a pending pair fire's cells for
+90 minutes (a one-model fire's for 50) and counts it in flight for twice a
+one-model fire's 20 minutes. The allowance guard reserves it
 as one fire and, once its run is ingested, charges each of its two
 invocations.
 

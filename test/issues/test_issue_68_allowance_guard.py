@@ -68,6 +68,8 @@ RESERVE = 0.035
 NOW = datetime(2026, 10, 20, 15, 30, 0, tzinfo=timezone.utc)
 #: The hold window in hours, read from the guard so the tests follow it.
 HOLD_H = guard.PENDING_FULL_HOLD.total_seconds() / 3600
+#: The hold window's `created` bound for NOW, as the runs API query carries it.
+HOLD_QUERY = "%3E%3D" + (NOW - guard.PENDING_FULL_HOLD).strftime("%Y-%m-%dT%H%%3A%M%%3A%SZ")
 VALID_BUDGET = ("weekly_cap: 0.30\nper_run_cap: 0.03\nper_run_overrun: 0.005\n"
                 "stop_when_account_above: 0.80\n")
 
@@ -849,7 +851,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
         self.assertIn("pending 0.0 points", out)
-        self.assertIn("(0 from the last 0.75h held in full)", out)
+        self.assertIn(f"(0 from the last {HOLD_H:g}h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
         self.assertNotIn("20261020T100000Z", out + summary)
@@ -922,12 +924,12 @@ class LiveFiresTests(unittest.TestCase):
         self.assertEqual(self.live(opener), (5, 2))
         self.assertEqual(len(seen), 2)
         self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
-        self.assertIn("created=%3E%3D2026-10-20T14%3A45%3A00Z", seen[1])
+        self.assertIn("created=" + HOLD_QUERY, seen[1])
         self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
 
     def test_a_failed_hold_window_count_fails_closed(self):
         def opener(request, timeout):
-            if "2026-10-20T14%3A45" in request.full_url:
+            if HOLD_QUERY in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
                                              io.BytesIO(b"private-body-marker"))
             return FireCountTests.Response(b'{"total_count": 5}')
