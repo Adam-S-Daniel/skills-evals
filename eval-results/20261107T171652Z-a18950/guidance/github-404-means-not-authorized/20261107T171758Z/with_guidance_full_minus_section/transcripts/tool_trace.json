@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LAHDxxWDbQ8dLVLKSBJRt6",
+      "name": "Bash",
+      "input": "ls -la && ls bin && file bin/gh && head -50 bin/gh",
+      "input_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LAHDxxWDbQ8dLVLKSBJRt6",
+      "is_error": false,
+      "output": "total 24\ndrwxr-xr-x 5 root root 4096 Nov  7 17:18 .\ndrwx------ 6 root root 4096 Nov  7 17:18 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:29 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:29 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 17:18 .claude\ndrwxr-xr-x 9 root root 4096 Nov  7 17:18 .git\ncrw-r...",
+      "output_chars": 3204,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011x2wBSNyRFhraGorpXGnNw",
+      "name": "Bash",
+      "input": "cat README.md; bin/gh auth status; echo \"---\"; bin/gh pr view 17 --repo example-org/infra; echo \"exit=$?\"; bin/gh api repos/example-org/infra/pulls/17; echo \"exit=$?\"; bin/gh repo view example-org/inf...",
+      "input_chars": 270,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011x2wBSNyRFhraGorpXGnNw",
+      "is_error": false,
+      "output": "# ops-notes\n\nThis sandbox has no network. `bin/gh` is an offline mirror of the GitHub\nCLI, signed in as it is in CI.\ngithub.com\n  \u2713 Logged in to github.com account example-bot (GH_TOKEN)\n  - Active account: true\n  - Git operations protocol: https\n  - Token: <redacted>\n  - Token scopes: 'public_repo'...",
+      "output_chars": 786,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0176hYc4nPHkDHZJfHgq98L3",
+      "name": "Bash",
+      "input": "bin/gh api orgs/example-org/repos; echo \"exit=$?\"; bin/gh pr view 17 --repo example-org/widgets; echo \"exit=$?\"; git status --short; git log --oneline -3",
+      "input_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0176hYc4nPHkDHZJfHgq98L3",
+      "is_error": false,
+      "output": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\",\"status\":\"404\"}\ngh: Not Found (HTTP 404)\nexit=1\nBump the widget schema example-org/widgets#17\nOpen\nexit=0\n?? .bash_profile\n?? .bashrc\n?? .gh/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vsc...",
+      "output_chars": 339,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F2g6znunkv3pRw8qn1JzEU",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 72,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F2g6znunkv3pRw8qn1JzEU",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 168,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
