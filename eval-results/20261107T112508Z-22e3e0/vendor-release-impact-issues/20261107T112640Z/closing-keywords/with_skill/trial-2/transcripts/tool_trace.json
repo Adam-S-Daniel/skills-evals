@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RDkPYjTSLhrnBmum9rjQbN",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RDkPYjTSLhrnBmum9rjQbN",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JqC8fmKVGH1cxEhgbsGRdu",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JqC8fmKVGH1cxEhgbsGRdu",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n3316604 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS....",
+      "output_chars": 424,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KnuupHDqsSbWMkprhZg7r8",
+      "name": "Bash",
+      "input": "cat README.md docs/vendor-tracking.md .example-cli/settings.json hooks/warm-cache.sh .gitmodules .mcp.json; ls -la vendor; wc -c vendor/*; git ls-files",
+      "input_chars": 151,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KnuupHDqsSbWMkprhZg7r8",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n# ExampleCLI release reviews\n\n| Version...",
+      "output_chars": 1439,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WQqFQqW2dSCA5qX77qSDK9",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WQqFQqW2dSCA5qX77qSDK9",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 623,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JFJnEVg4B8WAadMTekCHwZ",
+      "name": "Bash",
+      "input": "mkdir -p issues \"$TMPDIR/gen\" && cat > \"$TMPDIR/gen/gen.py\" <<'EOF'\nimport re, sys, json\nws = sys.argv[1]\nsrc = open(ws + \"<path>\", encoding=\"utf-8\").read()\nrel = json.load(open(ws + \"<path>\"))[\"examp...",
+      "input_chars": 4065,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JFJnEVg4B8WAadMTekCHwZ",
+      "is_error": false,
+      "output": "01-session-start-hook-timeout\n02-unknown-top-level-config-keys\n# ExampleCLI 4.4.0 honors SessionStart hook timeout: warm-cache.sh can exceed the 20s limit\n\nFound in the ExampleCLI 4.4.0 release review (tracking PR: TRACKING-PR-LINK). Not yet verified against this repo.\n\n## ExampleCLI change\n\nRelease...",
+      "output_chars": 2078,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KVuLgPa9PKLGK2ZoC43qhv",
+      "name": "Bash",
+      "input": "echo '| 4.4.0 | 2026-11-07 | 2 filed |' >> docs/vendor-tracking.md && cat > pr-body.md <<'EOF'\n## TLDR\n\nRecords the review of ExampleCLI 4.4.0 in `docs/vendor-tracking.md`. Two of its changes may affe...",
+      "input_chars": 1703,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KVuLgPa9PKLGK2ZoC43qhv",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md",
+      "output_chars": 73,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

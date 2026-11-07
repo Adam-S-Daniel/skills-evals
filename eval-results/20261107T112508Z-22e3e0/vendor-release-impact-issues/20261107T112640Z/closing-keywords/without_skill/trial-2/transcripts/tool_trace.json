@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014dTWFhEbTyqcFJue1EWmZK",
+      "name": "Bash",
+      "input": "git status --short && ls -R . | grep -v '^./.git' | head -50 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 123,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014dTWFhEbTyqcFJue1EWmZK",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\nAGENTS.md\nREADME.md\ndocs\nhooks\nvendor\n\n./docs:\nvendor-tracking.md\n\n./hooks:\nwarm-cache.sh\n\n./vendor:\nRELEASES.md\nreleases.json\n# ExampleCLI releas...",
+      "output_chars": 453,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018PDX2RGo1cTRDiPJ4spfhh",
+      "name": "Bash",
+      "input": "cat README.md hooks/warm-cache.sh; cat vendor/RELEASES.md; head -c 3000 vendor/releases.json; git log --oneline | head",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018PDX2RGo1cTRDiPJ4spfhh",
+      "is_error": false,
+      "output": "# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n#!<path> bash\n# Warms the dependency ca...",
+      "output_chars": 1189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JBqVnadDqJSUuaVEHJLpus",
+      "name": "Bash",
+      "input": "ls -a .example-cli; cat .example-cli/*; cat .gitmodules; git ls-files",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JBqVnadDqJSUuaVEHJLpus",
+      "is_error": false,
+      "output": ".\n..\nsettings.json\n{\n  \"telemetryOptOut\": true,\n  \"hooks\": {\n    \"SessionStart\": [\n      {\n        \"matcher\": \"startup|resume\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"bash hooks/warm-cache.sh\",\n            \"timeout\": 20\n          }\n        ]\n      }\n   ...",
+      "output_chars": 475,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EaEvgNAyt5kqfi963vbQnv",
+      "name": "Bash",
+      "input": "mkdir -p issues && echo '| 4.4.0 | 2026-11-07 | 2 filed |' >> docs/vendor-tracking.md\nM='<sub>\ud83e\udd16 Written by Claude Code on behalf of @Adam-S-Daniel</sub>'\ncat > issues/01-session-start-hook-timeout-now...",
+      "input_chars": 4141,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EaEvgNAyt5kqfi963vbQnv",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? commit-message.txt\n?? issues/\n?? pr-body.md\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-07 | 2 filed |",
+      "output_chars": 169,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
