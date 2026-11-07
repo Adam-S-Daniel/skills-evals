@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T19:25:53Z",
+  "fetched_at": "2026-11-07T19:29:43Z",
   "issues": [
    {
     "created_at": "2026-11-03T16:21:28Z",
@@ -7340,6 +7340,30 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-07T19:18:50Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42405588650,
+    "state": "completed",
+    "title": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)",
+    "updated_at": "2026-11-07T19:29:31Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42405588650",
+    "workflow": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T19:27:02Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42406265379,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/red-ci-adamdaniel-ai/paths-required claude-opus-5-5,claude-sonnet-5-5",
+    "updated_at": "2026-11-07T19:27:49Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42406265379",
+    "workflow": "Fire eval routine: eval evals/red-ci-adamdaniel-ai/paths-required claude-opus-5-5,claude-sonnet-5-5"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-07T19:24:48Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -7876,18 +7900,6 @@
     "title": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)",
     "updated_at": "2026-11-07T19:19:01Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42405588676",
-    "workflow": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T19:18:50Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42405588650,
-    "state": "in_progress",
-    "title": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-07T19:18:54Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42405588650",
     "workflow": "PR #4707 \u2014 delete: published entry via Decap (auto-merge)"
    },
    {
@@ -9017,18 +9029,6 @@
     "updated_at": "2026-11-07T18:49:18Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42403148081",
     "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:48:50Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42403135909,
-    "state": "completed",
-    "title": "Eval results 20261107T183710Z-0eaa74",
-    "updated_at": "2026-11-07T18:48:57Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42403135909",
-    "workflow": "Routine eval results pushed"
    },
    {
     "conclusion": "success",
@@ -27271,7 +27271,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T19:25:53Z"
+  "since": "2026-10-24T19:29:43Z"
  },
  "agent_made": {
   "items": [
@@ -28425,12 +28425,12 @@
     "fired_at": "2026-11-07T13:45:32Z",
     "fixture": "red-ci-adamdaniel-ai/timeout-wall",
     "model": "claude-opus-5-5",
-    "paired_at": "2026-11-07T16:12:12Z",
+    "paired_at": "2026-11-07T19:12:53Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T134532Z-42eb2b/red-ci-adamdaniel-ai/20261107T134637Z/report.md",
     "run_id": "20261107T134532Z-42eb2b",
     "skill": "red-ci-adamdaniel-ai",
     "trials": 3,
-    "with_share": 0.8888888888888888,
+    "with_share": 1.0,
     "without_share": 0.6666666666666666
    },
    {
@@ -28953,13 +28953,13 @@
     "fired_at": "2026-11-07T08:55:47Z",
     "fixture": "red-ci-adamdaniel-ai/timeout-wall",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-07T16:12:12Z",
+    "paired_at": "2026-11-07T19:12:53Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T085547Z-5571ca/red-ci-adamdaniel-ai/20261107T085642Z/report.md",
     "run_id": "20261107T085547Z-5571ca",
     "skill": "red-ci-adamdaniel-ai",
     "trials": 3,
-    "with_share": 0.5555555555555556,
-    "without_share": 0.5555555555555556
+    "with_share": 0.4444444444444444,
+    "without_share": 0.6666666666666666
    },
    {
     "bare": 5.333333333333333,
@@ -29256,10 +29256,10 @@
     "bare_won": 12,
     "model": "All",
     "pairs": 53,
-    "setup_lift": -0.011384092019643145,
-    "skill_lift": 0.12890716165294114,
+    "setup_lift": -0.009287655960942874,
+    "skill_lift": 0.12681072559424086,
     "with": 0.8567528622394559,
-    "without": 0.7278457005865148
+    "without": 0.729942136645215
    },
    {
     "bare": 0.7691429863867537,
@@ -29267,8 +29267,8 @@
     "model": "claude-opus-5-5",
     "pairs": 19,
     "setup_lift": -0.01062887814965373,
-    "skill_lift": 0.08309529805374678,
-    "with": 0.8416094062908468,
+    "skill_lift": 0.08894325127012094,
+    "with": 0.847457359507221,
     "without": 0.7585141082371001
    },
    {
@@ -29276,13 +29276,35 @@
     "bare_won": 7,
     "model": "claude-sonnet-5-5",
     "pairs": 34,
-    "setup_lift": -0.011806123299931399,
-    "skill_lift": 0.15450790895837344,
-    "with": 0.8652153817401497,
-    "without": 0.7107074727817763
+    "setup_lift": -0.00853814944372226,
+    "skill_lift": 0.14797196124595507,
+    "with": 0.8619474078839404,
+    "without": 0.7139754466379854
    }
   ],
   "latest": [
+   {
+    "checks": 3.0,
+    "fired_at": "2026-11-07T19:12:53Z",
+    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T191253Z-d69f89",
+    "with_share": 0.4444444444444444,
+    "with_skill": 1.3333333333333333,
+    "without_share": 0.6666666666666666,
+    "without_skill": 2.0
+   },
+   {
+    "checks": 3.0,
+    "fired_at": "2026-11-07T19:12:53Z",
+    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
+    "model": "claude-opus-5-5",
+    "run_id": "20261107T191253Z-d69f89",
+    "with_share": 1.0,
+    "with_skill": 3.0,
+    "without_share": 0.6666666666666666,
+    "without_skill": 2.0
+   },
    {
     "checks": 8.0,
     "fired_at": "2026-11-07T19:09:21Z",
@@ -30129,28 +30151,6 @@
     "with_skill": 5.666666666666667,
     "without_share": 0.8888888888888888,
     "without_skill": 5.333333333333333
-   },
-   {
-    "checks": 3.0,
-    "fired_at": "2026-11-07T16:12:12Z",
-    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261107T161212Z-c19b27",
-    "with_share": 0.5555555555555556,
-    "with_skill": 1.6666666666666667,
-    "without_share": 0.5555555555555556,
-    "without_skill": 1.6666666666666667
-   },
-   {
-    "checks": 3.0,
-    "fired_at": "2026-11-07T16:12:12Z",
-    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
-    "model": "claude-opus-5-5",
-    "run_id": "20261107T161212Z-c19b27",
-    "with_share": 0.8888888888888888,
-    "with_skill": 2.6666666666666665,
-    "without_share": 0.6666666666666666,
-    "without_skill": 2.0
    },
    {
     "checks": 3.0,
@@ -31277,11 +31277,55 @@
   ],
   "latest_summary": {
    "helped": 76,
-   "hurt": 13,
+   "hurt": 14,
    "tests": 138,
-   "tied": 49
+   "tied": 48
   },
   "runs": [
+   {
+    "account_week_after": 64.0,
+    "checks": 3.0,
+    "cli": "2.1.319",
+    "cost_usd": 0.5415147,
+    "fired_at": "2026-11-07T19:12:53Z",
+    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
+    "gain": -0.6666666666666667,
+    "judge": "ran",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T191253Z-d69f89/red-ci-adamdaniel-ai/20261107T192158Z/report.md",
+    "run_id": "20261107T191253Z-d69f89",
+    "skill": "red-ci-adamdaniel-ai",
+    "trials": 3,
+    "with_judge": 3.1666666666666665,
+    "with_share": 0.4444444444444444,
+    "with_skill": 1.3333333333333333,
+    "without_judge": 3.5,
+    "without_share": 0.6666666666666666,
+    "without_skill": 2.0
+   },
+   {
+    "account_week_after": 64.0,
+    "checks": 3.0,
+    "cli": "2.1.319",
+    "cost_usd": 2.20683292,
+    "fired_at": "2026-11-07T19:12:53Z",
+    "fixture": "red-ci-adamdaniel-ai/timeout-wall",
+    "gain": 1.0,
+    "judge": "skipped: checks decided",
+    "meter_points": 1.0,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T191253Z-d69f89/red-ci-adamdaniel-ai/20261107T191434Z/report.md",
+    "run_id": "20261107T191253Z-d69f89",
+    "skill": "red-ci-adamdaniel-ai",
+    "trials": 3,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 3.0,
+    "without_judge": null,
+    "without_share": 0.6666666666666666,
+    "without_skill": 2.0
+   },
    {
     "account_week_after": 63.0,
     "checks": 8.0,
@@ -52097,34 +52141,34 @@
   ],
   "summary": [
    {
-    "helped": 488,
-    "hurt": 89,
-    "lift": 0.13449222390810522,
+    "helped": 489,
+    "hurt": 90,
+    "lift": 0.13431013240094833,
     "model": "All",
-    "runs": 865,
+    "runs": 867,
     "tied": 288,
-    "with_avg": 0.8502025908490771,
-    "without_avg": 0.7157103669409719
-   },
-   {
-    "helped": 152,
-    "hurt": 28,
-    "lift": 0.10647274708279479,
-    "model": "claude-opus-5-5",
-    "runs": 286,
-    "tied": 106,
-    "with_avg": 0.8544720276179605,
-    "without_avg": 0.7479992805351657
+    "with_avg": 0.8499073650852321,
+    "without_avg": 0.7155972326842839
    },
    {
     "helped": 329,
-    "hurt": 60,
-    "lift": 0.14583919105933704,
+    "hurt": 61,
+    "lift": 0.14519346928165017,
     "model": "claude-sonnet-5-5",
-    "runs": 569,
+    "runs": 570,
     "tied": 180,
-    "with_avg": 0.8462571445690491,
-    "without_avg": 0.7004179535097121
+    "with_avg": 0.8455522100074271,
+    "without_avg": 0.7003587407257769
+   },
+   {
+    "helped": 153,
+    "hurt": 28,
+    "lift": 0.1072632020871521,
+    "model": "claude-opus-5-5",
+    "runs": 287,
+    "tied": 106,
+    "with_avg": 0.8549790937238213,
+    "without_avg": 0.7477158916366692
    },
    {
     "helped": 7,
@@ -52274,7 +52318,7 @@
     "without_pass_rate": 0.8819444444444444
    }
   ],
-  "generated_at": "2026-11-07T19:25:25Z",
+  "generated_at": "2026-11-07T19:29:17Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -52350,7 +52394,7 @@
    "requests_open": 1
   }
  },
- "generated_at": "2026-11-07T19:24:28Z",
+ "generated_at": "2026-11-07T19:28:12Z",
  "guidance": {
   "removed": [
    {
@@ -64143,7 +64187,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-07T19:21:17Z",
+ "newest_run": "2026-11-07T19:21:58Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -75219,11 +75263,11 @@
       "votes": true
      },
      {
-      "gain": 5.6,
-      "high": 49.6,
-      "low": -100.0,
+      "gain": 11.1,
+      "high": 46.8,
+      "low": -47.7,
       "model": "claude-opus-5-5",
-      "pairs": 4,
+      "pairs": 5,
       "status": "open",
       "task": "timeout-wall",
       "votes": true
@@ -75239,11 +75283,11 @@
       "votes": true
      },
      {
-      "gain": 8.3,
-      "high": 30.4,
-      "low": -26.6,
+      "gain": 5.6,
+      "high": 26.7,
+      "low": -26.2,
       "model": "claude-sonnet-5-5",
-      "pairs": 10,
+      "pairs": 11,
       "status": "open",
       "task": "timeout-wall",
       "votes": true
@@ -75251,8 +75295,8 @@
     ],
     "helps": 0.0,
     "keep_family": 6,
-    "keep_pairs": 10,
-    "max_pairs": 10,
+    "keep_pairs": 11,
+    "max_pairs": 11,
     "no_help": 0.0,
     "no_help_pairs": null
    },
@@ -75268,7 +75312,7 @@
      "to": "2026-11-07"
     }
    },
-   "current_text_runs": 29,
+   "current_text_runs": 31,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
@@ -75279,6 +75323,48 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-07T19:21:58Z",
+     "cli_version": "2.1.319",
+     "fixture": "timeout-wall",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T191253Z-d69f89/red-ci-adamdaniel-ai/20261107T192158Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 9,
+      "cost_usd": 0.2960267,
+      "judge_mean": 3.1666666666666665,
+      "trials": 3
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 0.245488,
+      "judge_mean": 3.5,
+      "trials": 3
+     }
+    },
+    {
+     "at": "2026-11-07T19:14:34Z",
+     "cli_version": "2.1.319",
+     "fixture": "timeout-wall",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T191253Z-d69f89/red-ci-adamdaniel-ai/20261107T191434Z/report.md",
+     "with": {
+      "checks_passed": 9,
+      "checks_total": 9,
+      "cost_usd": 1.1250357850000001,
+      "judge_mean": null,
+      "trials": 3
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 9,
+      "cost_usd": 1.081797135,
+      "judge_mean": null,
+      "trials": 3
+     }
+    },
     {
      "at": "2026-11-07T16:20:59Z",
      "cli_version": "2.1.319",
@@ -84936,7 +85022,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a19d5387e3f1b50139680908dce0eb9fde43c165",
-  "results_commit": "a14b740d378110b349d9cdb6717020887c7e3517"
+  "results_commit": "79e6e9435a34b76977497f906e9b72b6af712a57"
  },
  "spend": {
   "generated_at": "2026-11-07T18:31:06Z",
