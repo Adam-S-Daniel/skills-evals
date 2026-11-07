@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01S7nwk6vDWTvBmLdFS7GBa9",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -la && cat test/run-tests.sh && ls .github/workflows 2><path> && cat .github/workflows/* 2><path>",
+      "input_chars": 152,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01S7nwk6vDWTvBmLdFS7GBa9",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n07a1bfc initial commit\ntotal 40\ndrwxr-xr-x 9 root root 4096 Nov  7 15:57 .\ndrwx------ 6 root root 4096 Nov  7 15:57 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 12:10 ....",
+      "output_chars": 2178,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A7SLUTKUxXiwpg8WzAeXiz",
+      "name": "Bash",
+      "input": "cat README.md; ls bin src test; cat src/* test/*.py bin/*; find .gh -type f | head -50",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A7SLUTKUxXiwpg8WzAeXiz",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.6KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Example changelog\n\nTurns a repository's conventional commit subjects (`feat: ...`, `fix: ...`)\ninto the sections of a release changelog.\n\nRun the tests from the repository root:\n\n```bash\nbash test/run-...",
+      "output_chars": 2243,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NSgbHLXYZBW7yeoMCGM9Cc",
+      "name": "Bash",
+      "input": "head -60 bin/gh; find .gh -type f | head -50; which gh; echo GH_REPLAY_DIR=$GH_REPLAY_DIR",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NSgbHLXYZBW7yeoMCGM9Cc",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 4459,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DxCBzM5L43hTWZ9CWkVdM8",
+      "name": "Bash",
+      "input": "gh run list --limit 5; gh run view 52001 --log-failed 2>&1 | tail -40 || gh run view 52001 --log | tail -40",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DxCBzM5L43hTWZ9CWkVdM8",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 52001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"4f2a9c1e5b7d3f8a0c6e2b4d9f1a3c5e7b9d0f2a\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\n    \"url\": \"https://example.com/example-org/example-changelog/a...",
+      "output_chars": 707,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AKoyMYWjsRX29zjxhSHSGy",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u EMAIL HOME=$h XDG_CONFIG_HOME=$h GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=<path> bash test/r...",
+      "input_chars": 230,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AKoyMYWjsRX29zjxhSHSGy",
+      "is_error": false,
+      "output": "Testing changelog at 07a1bfc\nBuilding a scratch repository for the changelog tests\nexit=128",
+      "output_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019P3BA3mkbUoRDjqWv1mQfr",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UapfXUnMMYiFsKhDPTky7H",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL -u EMAIL HOME=$h XDG_CONFIG_HOME=$h GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=<path> bash test/r...",
+      "input_chars": 285,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019P3BA3mkbUoRDjqWv1mQfr",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 91,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UapfXUnMMYiFsKhDPTky7H",
+      "is_error": false,
+      "output": "Testing changelog at 07a1bfc\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK\nci-like exit=0\nTesting changelog at 07a1bfc\nBuilding a scratch repository for the changelog tests\n.\n-------------------...",
+      "output_chars": 390,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tc57roUeuTx8cd8m1PqK92",
+      "name": "Bash",
+      "input": "git diff --stat",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tc57roUeuTx8cd8m1PqK92",
+      "is_error": false,
+      "output": " test/run-tests.sh | 6 +++++-\n 1 file changed, 5 insertions(+), 1 deletion(-)",
+      "output_chars": 77,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
