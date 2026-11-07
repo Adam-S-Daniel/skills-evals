@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -57,6 +58,12 @@ REVIEWED = ["evals/embeddable-tool-pages",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
             "evals/guidance/finding-your-unknowns/changelog-check",
             "evals/guidance/turn-lessons-into-checks/recurring-debug-flag",
+            # Harder fixtures, set A (2026-11-07).
+            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+            "evals/guidance/git-practices/stale-branch-pull-request",
+            "evals/guidance/watch-finished-is-not-ci-passed/piped-watch-exit-code",
+            "evals/guidance/automation-vs-branch-protection/generated-stats-push",
+            "evals/guidance/subagent-delegation/contradicting-report",
             # Skill fixtures merged hermetic and left off the schedule while
             # the skills-fixture lane was stopped (#62's children): their
             # skills are live in adam-agentskills and cms-platform.
@@ -89,13 +96,17 @@ REVIEWED = ["evals/embeddable-tool-pages",
 PROMOTED_NOTE = "Promoted automatically"
 
 
-def bare_trials():
-    """scripts/plan_week.py's literal `BARE_TRIALS`, read from its AST so
-    this module imports no harness code."""
+def plan_week_literal(name):
+    """scripts/plan_week.py's literal `name`, read from its AST so this
+    module imports no harness code."""
     tree = ast.parse((ROOT / "scripts" / "plan_week.py").read_text(encoding="utf-8"))
     (value,) = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
-                and [getattr(t, "id", None) for t in node.targets] == ["BARE_TRIALS"]]
+                and [getattr(t, "id", None) for t in node.targets] == [name]]
     return value
+
+
+def bare_trials():
+    return plan_week_literal("BARE_TRIALS")
 
 
 def scheduled_rows():
@@ -678,7 +689,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
         self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
                       plan_step["run"])
-        self.assertIn("--max-fires 30", plan_step["run"])
+        self.assertIn("--max-fires 60", plan_step["run"])
+        # The planner refuses a cap above MAX_FIRES_CAP, which failed every
+        # plan when the flag was raised alone (2026-11-07).
+        cap = int(re.search(r"--max-fires (\d+)", plan_step["run"]).group(1))
+        self.assertTrue(1 <= cap <= plan_week_literal("MAX_FIRES_CAP"), cap)
         self.assertEqual(plan_step["env"], {"GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
         names = [s["name"] for s in steps]
@@ -687,7 +702,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 60")
+        self.assertEqual(steps[order[3]]["run"], "sleep 200")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share
@@ -761,7 +776,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                 "example.com/sample", "--ref", "main", "--raw-field",
                                 "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
                                 "--raw-field", "model=claude-opus-5-5",
-                                "--raw-field", "arms=both", "--raw-field", "trials=1"])
+                                "--raw-field", "arms=both", "--raw-field", "trials=3"])
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -802,7 +817,8 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                       "--raw-field", "arms=bare",
                                       "--raw-field", f"trials={bare_trials()}"])
         # A guidance cell not leaning toward removal fires its in-situ pair
-        # alone (owner, 2026-11-03), at one trial like `both`.
+        # alone (owner, 2026-11-03), at one trial: the harness refuses more for a
+        # guidance fixture.
         guidance = "evals/guidance/anything-you-name-gets-its-link/handoff"
         result, sent = self.dispatch({"MODE": "eval", "ARMS": "in-situ", "FIXTURE": guidance,
                                       "MODEL": "claude-opus-5-5"})
@@ -811,6 +827,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                       "--raw-field", "model=claude-opus-5-5",
                                       "--raw-field", "arms=in-situ",
                                       "--raw-field", "trials=1"])
+        # A guidance cell leaning toward removal fires `both`, still at one.
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "both", "FIXTURE": guidance,
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-2:], ["--raw-field", "trials=1"])
         for arms in ("", "with", "without", "both bare", "in-situ both"):
             with self.subTest(arms=arms):
                 result, sent = self.dispatch({"MODE": "eval", "ARMS": arms,

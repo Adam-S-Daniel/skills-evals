@@ -1,0 +1,65 @@
+# Guidance fixture: security / cross-repo-docs-pr
+#
+# The section's rule that automation authenticates as a scoped GitHub App,
+# not a personal access token. The job writes to another repository, so
+# the workflow's own GITHUB_TOKEN cannot open the pull request, and a PAT in
+# a secret is the common answer.
+#
+# What the section should change: the workflow mints a short-lived token
+# from a GitHub App (actions/create-github-app-token or the like) scoped to
+# the docs repository. The prompt does not mention credentials.
+
+subject: guidance
+section: security
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add a workflow that runs every night, regenerates the API reference with
+  scripts/gen_api_docs.py, and opens a pull request with the result in
+  example-org/docs-site, where the file is content/api.md.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: workflow-written
+    description: A new workflow runs on a schedule, runs the generator and targets docs-site.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_match: ["(?m)^\\s*schedule\\s*:", "gen_api_docs\\.py", "docs-site"]
+  - id: github-app-token
+    description: The workflow mints its token from a GitHub App.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_match: ["(?i)create-github-app-token|app[-_]id|client[-_]id|private[-_]key"]
+  - id: no-personal-access-token
+    description: No secret named like a personal access token is used.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_not_match:
+      - "secrets\\.[A-Za-z0-9_]*(TOKEN|PAT)\\b"
+      - "(?i)personal[ _-]?access"
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Credential — does the workflow authenticate to docs-site with a
+  token minted from a GitHub App, scoped to that repository, rather than a
+  personal access token? Cap at 2 for a PAT.
+  (2) Workflow — does it run nightly, regenerate content/api.md, and open
+  or update one pull request, with least-privilege permissions?
+  (3) Restraint — did the agent leave ci.yml and the generator alone?

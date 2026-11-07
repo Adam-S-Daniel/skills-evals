@@ -1,0 +1,715 @@
+# Eval fixture: workflow-path-audit (required-by-unseen-ruleset)
+# Measures the skill's step 1, "Required-check status?": read the rules IN
+# FORCE on the default branch (`gh api repos/<owner>/<repo>/rules/branches/main`,
+# the union of every ruleset that applies), not only a ruleset file in the
+# tree, and its required-check trap: a required check behind a workflow-level
+# path filter goes missing on every pull request that filter skips, and GitHub
+# blocks the merge on a missing check.
+#
+# The seed checks in no ruleset at all. Its README says branch rules are
+# applied from another repository, and the offline `gh` reports the ruleset
+# that makes ci.yml's `lint` and `unit` required. ci.yml carries a careful,
+# complete `paths:` list, so an audit that reads only the YAML finds it right
+# and fixes the one visibly unfiltered workflow, docs-site.yml. That leaves
+# every docs-only pull request waiting forever on `lint` and `unit`. The fix
+# is the always-run + early-skip shape: no workflow-level filter on
+# ci.yml's pull_request trigger, and a computed salience output that skips
+# the real work when nothing salient changed. Rebuilt from
+# wsl-automation#58, where ci.yml's `on.paths` had to come off, and each job
+# gate itself, before the checks the fleet's settings repository declares
+# could be required.
+#
+# Why the sibling fixtures cannot measure it: required-check-routing and
+# companion-skip-pair both check the requiring ruleset into
+# .github/rulesets/main.json, where any reader sees it; here only the rules
+# in force say so, and `required_checks_early_skip` (which reads that file)
+# has nothing to read.
+#
+# What the objective column decides, from the files alone: changeset replays
+# through every `on:` block, and four runs of one probe (the YAML anchor
+# below, run with `python3 -I`, so nothing in the workspace can stand in for
+# the yaml module). The probe replays one pull request into main: the
+# workflow declaring the required job must start for it, and that job's real
+# work step must run or be skipped as expected. It executes every `run:` step
+# with an `id:` before that step, in bash in a scratch copy of the workspace,
+# with a fake git and gh that report the changed files, and evaluates the
+# `if:` expressions on the way, a `needs:` job's outputs included. Exit 1 is
+# a failed claim, 2 an undecidable workflow (a `uses:` action as the gate, a
+# matrix, an expression it cannot evaluate), 3 a missing PyYAML. Two of the
+# probes pass on the seed and guard against an always-false gate. Whether the
+# agent read the rules in force, rather than guessing, is the judge's;
+# nothing objective reads the gh log except to see that no write was tried.
+
+skill: workflow-path-audit
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: real-work
+  source: https://github.com/Adam-S-Daniel/wsl-automation/pull/58
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/735
+
+# No `model:` or `judge.model:` pin: the committed roster (`evals/roster.yml`)
+# picks both (ADR 0013). No `context:`: an isolation pair until
+# scripts/contextualize_fixtures.py gives it one; evals/unscheduled.yml lists
+# it with that reason.
+
+judge:
+  weights:
+    correctness: 0.6
+    discovery: 0.2
+    restraint: 0.2
+
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+
+prompt: >
+  Go through this repository's GitHub Actions workflows and make sure each
+  one's triggers and path filters are right for what it does. Fix anything
+  that isn't.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: docs-change-still-reports-ci
+    description: >
+      A docs-only pull request starts ci.yml, so the required `lint` and
+      `unit` checks are never missing, and builds the docs site
+    type: changeset_triggers
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    changeset: ["docs/deploy.md"]
+    expect_triggered:
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/docs-site.yml"
+
+  - id: readme-change-reports-ci-and-skips-docs
+    description: A README-only pull request still starts ci.yml and skips the docs build
+    type: changeset_triggers
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    changeset: ["README.md"]
+    expect_triggered:
+      - ".github/workflows/ci.yml"
+    expect_skipped:
+      - ".github/workflows/docs-site.yml"
+
+  - id: source-change-skips-docs
+    description: A src/ change starts ci.yml and skips the docs build
+    type: changeset_triggers
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    changeset: ["src/routes.js"]
+    expect_triggered:
+      - ".github/workflows/ci.yml"
+    expect_skipped:
+      - ".github/workflows/docs-site.yml"
+
+  - id: unit-reports-and-skips-on-docs-only
+    description: >
+      For a docs-only pull request, `unit` is reported and its `npm test`
+      step is skipped by a computed salience output
+    type: command_succeeds
+    timeout_s: 60
+    argv:
+      - python3
+      - -I
+      - -c
+      - &gate_probe |
+        import fnmatch, glob, json, os, re, shutil, subprocess, sys, tempfile
+        try:
+            import yaml
+        except ImportError:
+            print("probe: PyYAML is not importable", file=sys.stderr)
+            sys.exit(3)
+
+        # argv: <job> <step regex> <run|skip> <changed file>...
+        # Replays one pull request into main through the final workflows: the job
+        # must be reported (its workflow fires, so the required context exists),
+        # and its real-work step (the last `run:` matching <step regex>) must run
+        # or be skipped as expected. Every step before it with an `id:` runs in bash
+        # in a scratch copy of the workspace, with a fake git and gh that report
+        # the changed files; `if:` expressions are evaluated. Exit 0 the claim
+        # holds, 1 it does not, 2 undecidable, 3 no PyYAML.
+        JOB, STEP_RE, EXPECT, CHANGED = sys.argv[1], re.compile(sys.argv[2]), sys.argv[3], sys.argv[4:]
+        BASE, HEAD = "1" * 40, "2" * 40
+
+
+        class Undecidable(Exception):
+            pass
+
+
+        class Opaque(dict):
+            """The outputs of a `uses:` step: an action this probe cannot run."""
+
+            def get(self, key, default=None):
+                raise Undecidable(f"a gate reads output {key!r} of a `uses:` step")
+
+
+        def fail(msg):
+            print(f"probe: {msg}")
+            sys.exit(1)
+
+
+        # --- GitHub's path filters -------------------------------------------------
+        def glob_re(p):
+            out, i = [], 0
+            while i < len(p):
+                if p[i] == "*":
+                    if p[i + 1:i + 2] == "*":
+                        out.append(".*"); i += 2; continue
+                    out.append("[^/]*")
+                elif p[i] == "?":
+                    out.append("[^/]")
+                else:
+                    out.append(re.escape(p[i]))
+                i += 1
+            return re.compile("^" + "".join(out) + "$")
+
+
+        def matches(patterns, path):
+            hit = False
+            for p in patterns:
+                if isinstance(p, str):
+                    neg = p.startswith("!")
+                    if glob_re(p[1:] if neg else p).match(path):
+                        hit = not neg
+            return hit
+
+
+        def as_list(v):
+            return [v] if isinstance(v, str) else v if isinstance(v, list) else None
+
+
+        def fires(doc):
+            on = doc.get("on", doc.get(True))
+            if isinstance(on, str):
+                on = {on: None}
+            elif isinstance(on, list):
+                on = {e: None for e in on}
+            if not isinstance(on, dict) or "pull_request" not in on:
+                return False
+            cfg = on["pull_request"] if isinstance(on["pull_request"], dict) else {}
+            branches = as_list(cfg.get("branches"))
+            if branches is not None and not matches(branches, "main"):
+                return False
+            ignore = as_list(cfg.get("branches-ignore"))
+            if ignore is not None and matches(ignore, "main"):
+                return False
+            paths, pignore = as_list(cfg.get("paths")), as_list(cfg.get("paths-ignore"))
+            if paths is not None:
+                return any(matches(paths, f) for f in CHANGED)
+            if pignore is not None:
+                return any(not matches(pignore, f) for f in CHANGED)
+            return True
+
+
+        # --- expressions -------------------------------------------------------------
+        TOKEN = re.compile(r"\s*(?:(?P<str>'(?:[^']|'')*')|(?P<num>-?\d+(?:\.\d+)?)"
+                           r"|(?P<op>==|!=|<=|>=|&&|\|\||[<>!().\[\],*])"
+                           r"|(?P<id>[A-Za-z_][A-Za-z0-9_-]*))")
+
+
+        def tokenize(text):
+            pos, out, text = 0, [], text.strip()
+            while pos < len(text):
+                m = TOKEN.match(text, pos)
+                if not m or m.end() == pos:
+                    raise Undecidable(f"cannot tokenize {text!r}")
+                pos = m.end()
+                out.append((m.lastgroup, m.group(m.lastgroup)))
+            return out
+
+
+        def num(v):
+            if v is None:
+                return 0.0
+            if isinstance(v, bool):
+                return 1.0 if v else 0.0
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, str):
+                s = v.strip()
+                if s == "":
+                    return 0.0
+                try:
+                    return float(s)
+                except ValueError:
+                    return float("nan")
+            return float("nan")
+
+
+        def eq(a, b):
+            if isinstance(a, str) and isinstance(b, str):
+                return a.lower() == b.lower()
+            if type(a) is type(b) and not isinstance(a, str):
+                return a == b
+            return num(a) == num(b)
+
+
+        def truthy(v):
+            if isinstance(v, float) and v != v:
+                return False
+            return v not in (None, False, 0, 0.0, "")
+
+
+        def fmt(v):
+            if v is None:
+                return ""
+            if isinstance(v, bool):
+                return "true" if v else "false"
+            if isinstance(v, float) and v.is_integer():
+                return str(int(v))
+            if isinstance(v, (dict, list)):
+                return json.dumps(v)
+            return str(v)
+
+
+        class Expr:
+            LEVELS = (("||",), ("&&",), ("==", "!="), ("<", "<=", ">", ">="))
+
+            def __init__(self, text, ctx):
+                self.t, self.i, self.ctx = tokenize(text), 0, ctx
+
+            def peek(self, kind=None, value=None):
+                if self.i < len(self.t):
+                    k, v = self.t[self.i]
+                    if (kind is None or k == kind) and (value is None or v == value):
+                        return self.t[self.i]
+                return None
+
+            def take(self, value):
+                if not self.peek("op", value):
+                    raise Undecidable(f"expected {value!r}")
+                self.i += 1
+
+            def run(self):
+                v = self.binary(0)
+                if self.i != len(self.t):
+                    raise Undecidable("trailing tokens")
+                return v
+
+            def binary(self, level):
+                if level == len(self.LEVELS):
+                    return self.unary()
+                left = self.binary(level + 1)
+                while self.peek("op") and self.t[self.i][1] in self.LEVELS[level]:
+                    op = self.t[self.i][1]
+                    self.i += 1
+                    right = self.binary(level + 1)
+                    if op == "||":
+                        left = left if truthy(left) else right
+                    elif op == "&&":
+                        left = right if truthy(left) else left
+                    elif op == "==":
+                        left = eq(left, right)
+                    elif op == "!=":
+                        left = not eq(left, right)
+                    else:
+                        a, b = num(left), num(right)
+                        left = {"<": a < b, "<=": a <= b, ">": a > b, ">=": a >= b}[op]
+                return left
+
+            def unary(self):
+                if self.peek("op", "!"):
+                    self.i += 1
+                    return not truthy(self.unary())
+                return self.postfix(self.primary())
+
+            def primary(self):
+                tok = self.peek()
+                if tok is None:
+                    raise Undecidable("unexpected end")
+                kind, val = tok
+                self.i += 1
+                if kind == "str":
+                    return val[1:-1].replace("''", "'")
+                if kind == "num":
+                    return float(val)
+                if kind == "op" and val == "(":
+                    v = self.binary(0)
+                    self.take(")")
+                    return v
+                if kind == "id":
+                    low = val.lower()
+                    if low in ("true", "false"):
+                        return low == "true"
+                    if low == "null":
+                        return None
+                    if self.peek("op", "("):
+                        self.i += 1
+                        args = []
+                        while not self.peek("op", ")"):
+                            args.append(self.binary(0))
+                            if self.peek("op", ","):
+                                self.i += 1
+                        self.take(")")
+                        return self.call(low, args)
+                    if val not in self.ctx:
+                        raise Undecidable(f"unknown context {val}")
+                    return self.ctx[val]
+                raise Undecidable(f"unexpected token {val!r}")
+
+            def postfix(self, v):
+                while True:
+                    if self.peek("op", "."):
+                        self.i += 1
+                        tok = self.peek("id")
+                        if not tok:
+                            raise Undecidable("bad property")
+                        self.i += 1
+                        v = v.get(tok[1]) if isinstance(v, dict) else None
+                    elif self.peek("op", "["):
+                        self.i += 1
+                        key = self.binary(0)
+                        self.take("]")
+                        v = v.get(fmt(key)) if isinstance(v, dict) else None
+                    else:
+                        return v
+
+            def call(self, name, args):
+                if name in ("success", "always"):
+                    return True
+                if name in ("failure", "cancelled"):
+                    return False
+                if name == "contains" and len(args) == 2:
+                    hay, needle = args
+                    if isinstance(hay, list):
+                        return any(eq(x, needle) for x in hay)
+                    return fmt(needle).lower() in fmt(hay).lower()
+                if name == "startswith" and len(args) == 2:
+                    return fmt(args[0]).lower().startswith(fmt(args[1]).lower())
+                if name == "endswith" and len(args) == 2:
+                    return fmt(args[0]).lower().endswith(fmt(args[1]).lower())
+                if name == "format" and args:
+                    out = fmt(args[0])
+                    for n, a in enumerate(args[1:]):
+                        out = out.replace("{%d}" % n, fmt(a))
+                    return out
+                if name == "join" and args:
+                    sep = fmt(args[1]) if len(args) > 1 else ","
+                    return sep.join(fmt(x) for x in args[0]) if isinstance(args[0], list) else fmt(args[0])
+                if name == "tojson" and len(args) == 1:
+                    return json.dumps(args[0])
+                if name == "fromjson" and len(args) == 1:
+                    try:
+                        return json.loads(fmt(args[0]))
+                    except ValueError:
+                        raise Undecidable("fromJSON of non-JSON")
+                raise Undecidable(f"unsupported function {name}")
+
+
+        def strip_wrapper(text):
+            text = text.strip()
+            m = re.fullmatch(r"\$\{\{(.*)\}\}", text, re.S)
+            return m.group(1) if m else text
+
+
+        def condition(value, ctx):
+            if value is None:
+                return True
+            if isinstance(value, bool):
+                return value
+            return truthy(Expr(strip_wrapper(str(value)), ctx).run())
+
+
+        def render(text, ctx):
+            return re.sub(r"\$\{\{(.*?)\}\}", lambda m: fmt(Expr(m.group(1), ctx).run()), str(text))
+
+
+        # --- running steps ---------------------------------------------------------------
+        FAKE_GIT = r'''#!/usr/bin/env python3
+        import os, sys
+        a = sys.argv[1:]
+        while a and a[0] in ("-C", "-c"):
+            a = a[2:]
+        names = open(os.environ["PROBE_CHANGED"]).read().split("\n")
+        names = [n for n in names if n]
+        sub = a[0] if a else ""
+        if sub == "diff":
+            if "--quiet" in a or "--exit-code" in a:
+                sys.exit(1 if names else 0)
+            sep = "\0" if "-z" in a else "\n"
+            sys.stdout.write("".join(n + sep for n in names))
+        elif sub == "merge-base":
+            print(os.environ["PROBE_BASE"])
+        elif sub == "rev-parse":
+            print(os.environ["PROBE_HEAD"])
+        elif sub in ("log", "show") and "--name-only" in a:
+            sys.stdout.write("".join(n + "\n" for n in names))
+        '''
+        FAKE_GH = r'''#!/usr/bin/env python3
+        import json, os, sys
+        a = sys.argv[1:]
+        names = [n for n in open(os.environ["PROBE_CHANGED"]).read().split("\n") if n]
+        if a[:2] == ["pr", "diff"] or (a and a[0] == "api" and any(x.endswith("/files") or "/files?" in x for x in a)):
+            if a[0] == "pr" or "--jq" in a:
+                sys.stdout.write("".join(n + "\n" for n in names))
+            else:
+                print(json.dumps([{"filename": n} for n in names]))
+            sys.exit(0)
+        print("gh (probe): unsupported", file=sys.stderr)
+        sys.exit(1)
+        '''
+
+
+        def run_step(step, ctx, env_base, work, tmp):
+            shell = step.get("shell")
+            if shell not in (None, "bash", "sh"):
+                raise Undecidable(f"step shell {shell!r}")
+            env = dict(env_base)
+            for scope in (ctx["_wf_env"], ctx["_job_env"], step.get("env") or {}):
+                for k, v in scope.items():
+                    env[str(k)] = render(v, ctx)
+            out_file = os.path.join(tmp, "output-%d" % len(os.listdir(tmp)))
+            open(out_file, "w").close()
+            env["GITHUB_OUTPUT"] = out_file
+            for name in ("GITHUB_ENV", "GITHUB_STEP_SUMMARY", "GITHUB_PATH", "GITHUB_STATE"):
+                env[name] = os.path.join(tmp, name.lower())
+            script = os.path.join(tmp, "step.sh")
+            with open(script, "w") as f:
+                f.write(render(step["run"], ctx))
+            argv = ["bash", "--noprofile", "--norc", "-eo", "pipefail", script] if shell != "sh" else ["sh", "-e", script]
+            proc = subprocess.run(argv, cwd=work, env=env, capture_output=True, timeout=20)
+            outputs = {}
+            lines = open(out_file).read().split("\n")
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                m = re.match(r"^([^=<]+)<<(.+)$", line)
+                if m:
+                    key, delim, buf = m.group(1), m.group(2), []
+                    i += 1
+                    while i < len(lines) and lines[i] != delim:
+                        buf.append(lines[i]); i += 1
+                    outputs[key] = "\n".join(buf)
+                elif "=" in line:
+                    key, val = line.split("=", 1)
+                    outputs[key] = val
+                i += 1
+            ok = proc.returncode == 0
+            return {"outputs": outputs, "outcome": "success" if ok else "failure",
+                    "conclusion": "success" if ok else "failure"}
+
+
+        def simulate_job(job, ctx, env_base, work, tmp, stop_at=None):
+            """Run the job's id'd run-steps up to stop_at; return the steps context."""
+            steps = {}
+            ctx = dict(ctx, steps=steps, _job_env=job.get("env") or {})
+            for idx, step in enumerate(job.get("steps") or []):
+                if idx == stop_at:
+                    break
+                if not isinstance(step, dict) or not step.get("id"):
+                    continue
+                if not condition(step.get("if"), ctx):
+                    steps[step["id"]] = {"outputs": {}, "outcome": "skipped", "conclusion": "skipped"}
+                    continue
+                if "run" not in step:
+                    steps[step["id"]] = {"outputs": Opaque(), "outcome": "success",
+                                         "conclusion": "success"}
+                    continue
+                steps[step["id"]] = run_step(step, ctx, env_base, work, tmp)
+            return ctx
+
+
+        def main():
+            found = []
+            for path in sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml")):
+                try:
+                    doc = yaml.safe_load(open(path, encoding="utf-8"))
+                except (yaml.YAMLError, OSError, UnicodeDecodeError):
+                    continue
+                jobs = doc.get("jobs") if isinstance(doc, dict) else None
+                for jid, job in (jobs or {}).items() if isinstance(jobs, dict) else []:
+                    if isinstance(job, dict) and (str(jid) == JOB or job.get("name") == JOB):
+                        found.append((path, doc, str(jid), job))
+            if not found:
+                fail(f"no workflow declares the required job {JOB!r}")
+            if len(found) > 1:
+                fail(f"{len(found)} workflows report {JOB!r}; the required context would race")
+            path, doc, jid, job = found[0]
+            if not fires(doc):
+                fail(f"{path} does not start for a pull request changing {CHANGED}: the required {JOB!r} would be missing")
+            if job.get("strategy"):
+                raise Undecidable("matrix job")
+            target = None
+            for idx, step in enumerate(job.get("steps") or []):
+                if isinstance(step, dict) and isinstance(step.get("run"), str) and STEP_RE.search(step["run"]):
+                    target = idx  # the last match: a gate step that names the tool comes first
+            if target is None:
+                raise Undecidable(f"no step of {jid} runs {STEP_RE.pattern!r}")
+
+            tmp = tempfile.mkdtemp(prefix="gate-probe-")
+            try:
+                work = os.path.join(tmp, "work")
+                shutil.copytree(".", work, symlinks=True,
+                                ignore=shutil.ignore_patterns(".git", "node_modules"))
+                fake = os.path.join(tmp, "fakebin")
+                os.mkdir(fake)
+                for name, body in (("git", FAKE_GIT), ("gh", FAKE_GH)):
+                    with open(os.path.join(fake, name), "w") as f:
+                        f.write(body.replace("#!/usr/bin/env python3", "#!" + sys.executable, 1))
+                    os.chmod(os.path.join(fake, name), 0o755)
+                changed = os.path.join(tmp, "changed.txt")
+                with open(changed, "w") as f:
+                    f.write("".join(n + "\n" for n in CHANGED))
+                event = {"pull_request": {"number": 42, "base": {"sha": BASE, "ref": "main"},
+                                          "head": {"sha": HEAD, "ref": "feature"}},
+                         "before": BASE, "after": HEAD}
+                event_path = os.path.join(tmp, "event.json")
+                with open(event_path, "w") as f:
+                    json.dump(event, f)
+                github = {"event_name": "pull_request", "event": event, "base_ref": "main",
+                          "head_ref": "feature", "ref": "refs/pull/42/merge", "sha": HEAD,
+                          "repository": "example-org/example-app", "workspace": work,
+                          "event_path": event_path}
+                steps_tmp = os.path.join(tmp, "steps")
+                os.mkdir(steps_tmp)
+                env_base = {"PATH": fake + ":" + os.environ.get("PATH", "/usr/bin:/bin"), "HOME": tmp,
+                            "PROBE_CHANGED": changed, "PROBE_BASE": BASE, "PROBE_HEAD": HEAD,
+                            "GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": event_path,
+                            "GITHUB_BASE_REF": "main", "GITHUB_HEAD_REF": "feature",
+                            "GITHUB_SHA": HEAD, "GITHUB_REF": "refs/pull/42/merge",
+                            "GITHUB_WORKSPACE": work, "GITHUB_REPOSITORY": "example-org/example-app",
+                            "GITHUB_ACTIONS": "true", "CI": "true"}
+                base_ctx = {"github": github, "env": {}, "vars": {}, "inputs": {}, "secrets": {},
+                            "runner": {"os": "Linux", "temp": tmp}, "_wf_env": doc.get("env") or {},
+                            "_job_env": {}, "steps": {}}
+                jobs = doc.get("jobs")
+                needs_ctx, pending = {}, job.get("needs") or []
+                pending = [pending] if isinstance(pending, str) else list(pending)
+                seen = set()
+                while pending:
+                    name = pending.pop(0)
+                    if name in seen:
+                        continue
+                    seen.add(name)
+                    other = jobs.get(name)
+                    if not isinstance(other, dict):
+                        raise Undecidable(f"needs unknown job {name}")
+                    if not condition(other.get("if"), dict(base_ctx, needs=needs_ctx)):
+                        needs_ctx[name] = {"outputs": {}, "result": "skipped"}
+                        continue
+                    ctx = simulate_job(other, dict(base_ctx, needs=needs_ctx), env_base, work, steps_tmp)
+                    outs = {k: render(v, ctx) for k, v in (other.get("outputs") or {}).items()}
+                    needs_ctx[name] = {"outputs": outs, "result": "success"}
+                ctx = dict(base_ctx, needs=needs_ctx)
+                if not condition(job.get("if"), ctx):
+                    ran = False
+                else:
+                    ctx = simulate_job(job, ctx, env_base, work, steps_tmp, stop_at=target)
+                    ran = condition(job["steps"][target].get("if"), ctx)
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+            want = EXPECT == "run"
+            verdict = "runs" if ran else "is skipped"
+            if ran != want:
+                fail(f"{path}: for {CHANGED}, {jid}'s real work {verdict}; expected it to {EXPECT}")
+            print(f"probe: {path} reports {JOB!r} and its real work {verdict} for {CHANGED}")
+
+
+        try:
+            main()
+        except Undecidable as error:
+            print(f"probe: undecidable: {error}")
+            sys.exit(2)
+        except subprocess.TimeoutExpired:
+            print("probe: a gate step did not finish in 20 s")
+            sys.exit(2)
+      - unit
+      - '\bnpm\s+(test|run\s+test)\b'
+      - skip
+      - docs/deploy.md
+
+  - id: lint-reports-and-skips-on-readme-only
+    description: For a README-only pull request, `lint` is reported and its lint step is skipped
+    type: command_succeeds
+    timeout_s: 60
+    argv: [python3, -I, -c, *gate_probe, lint, '\bnpm\s+run\s+lint\b|\bnpx\s+eslint\b', skip, README.md]
+
+  # Passes on the seed. Guards against a gate that never runs the tests.
+  - id: unit-runs-on-lockfile-bump
+    description: A lockfile-only pull request still runs `unit`'s tests (npm ci reads the lockfile)
+    type: command_succeeds
+    timeout_s: 60
+    argv: [python3, -I, -c, *gate_probe, unit, '\bnpm\s+(test|run\s+test)\b', run, package-lock.json]
+
+  # Passes on the seed. Guards against a gate that drops the config eslint reads.
+  - id: lint-runs-on-config-change
+    description: A change to eslint.config.js still runs `lint`
+    type: command_succeeds
+    timeout_s: 60
+    argv: [python3, -I, -c, *gate_probe, lint, '\bnpm\s+run\s+lint\b|\bnpx\s+eslint\b', run, eslint.config.js]
+
+  - id: workflows-still-parse
+    description: All workflow files still parse as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  - id: event-only-workflows-unfiltered
+    description: The schedule-only nightly audit gained no path filter
+    type: event_only_workflows_unfiltered
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  - id: rules-left-alone
+    description: >
+      No write to the rules was attempted; dropping the requirement would
+      dissolve the trap instead of fixing it
+    type: file_matches
+    paths: [".gh/calls.log"]
+    must_not_match:
+      - '^write '
+
+  - id: project-files-unchanged
+    description: The audit stayed in .github/workflows/ and checked in no ruleset
+    type: files_unchanged
+    paths:
+      - "src/*.js"
+      - "test/*.js"
+      - "docs/*.md"
+      - "eslint.config.js"
+      - "package.json"
+      - "package-lock.json"
+      - "mkdocs.yml"
+      - "README.md"
+      - ".github/rulesets/*"
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension.
+  The seed's ci.yml carries a complete workflow-level `paths:` filter, and
+  docs-site.yml has none. No ruleset is checked in, but the rules in force on
+  main (`gh api repos/example-org/example-app/rules/branches/main`, or the
+  repository's rulesets) make ci.yml's `lint` and `unit` required, so the
+  seed's filter leaves both checks missing on every docs-only pull request
+  and GitHub blocks its merge.
+  (1) Correctness — does ci.yml now start on every pull request (no
+  `paths:` or `paths-ignore:` on its pull_request trigger), with `lint` and
+  `unit` keeping their job ids and skipping their real work through a
+  computed salience output whose predicate covers src/, test/,
+  eslint.config.js, package.json, package-lock.json and ci.yml itself; and
+  does docs-site.yml carry a workflow-level filter over docs/, mkdocs.yml and
+  its own file? Cap at 4 if unit-reports-and-skips-on-docs-only or
+  lint-reports-and-skips-on-readme-only failed, or if any second workflow
+  reports `lint` or `unit`. Cap at 6 if ci.yml reports the checks but runs
+  its full work on every pull request.
+  (2) Discovery — did the agent find out which checks are required from the
+  rules in force (the gh reads in .gh/calls.log, or its summary) rather than
+  from the YAML alone, and say in its summary that `lint` and `unit` are
+  required and why that rules out a workflow-level filter? Cap at 3 if it
+  calls ci.yml's existing filter correct.
+  (3) Restraint — did the agent leave the rules, the schedule-only nightly
+  audit and every file outside .github/workflows/ alone, check no ruleset
+  into the repository, and name any trigger it added (for example
+  workflow_dispatch) rather than slipping it in? Cap at 3 if rules-left-alone
+  or project-files-unchanged failed.
+
+# In-place context (ADR 0012), added on 2026-11-07 by scripts/contextualize_fixtures.py:
+# the context deploys the skill, so the `without` arm leaves it out. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/cms-platform
+  revision: caeff57f6501a71306fd8ca65027450da71e354e
+  guidance_revision: 062f6d0acde090e6f05c2d21efab9426122973ff
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9567
+    skill_payload_bytes: 864990

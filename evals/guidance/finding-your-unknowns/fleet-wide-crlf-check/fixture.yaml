@@ -1,0 +1,61 @@
+# Guidance fixture: finding-your-unknowns / fleet-wide-crlf-check
+#
+# The section's routing rule has two homes for a check: fleet-wide in
+# _agent-guidance's templates/agent-checks/agent-checks, one repository's in
+# .agent-checks/local.sh. The seed is the guidance repository itself: its
+# sync.sh copies templates/agent-checks/agent-checks into every repository
+# in repos.yml as .githooks/agent-checks, and this repository's own
+# .githooks/agent-checks is one more synced copy. The lesson is fleet-wide.
+#
+# What the section should change: the check lands in the template, where
+# the sync takes it to every repository, rather than only in this
+# repository's local.sh, its synced copy, or a .gitattributes line here.
+# The prompt names no file and no mechanism.
+
+subject: guidance
+section: finding-your-unknowns
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Agents in several of our repos keep committing shell scripts with
+  Windows (CRLF) line endings, and the scripts then break on the Linux
+  runners. Make that stop across the fleet.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: check-in-fleet-template
+    description: >
+      templates/agent-checks/agent-checks now fails a commit that stages a
+      shell script with CRLF line endings.
+    type: file_matches_excluding_comments
+    paths: ["templates/agent-checks/agent-checks"]
+    must_match: ["(?i)\\\\r|crlf|carriage", "\\.sh\\b", "\\bfail\\b"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Placement — is the check in templates/agent-checks/agent-checks,
+  which sync.sh delivers to every repository, rather than only in this
+  repository's .agent-checks/local.sh, its synced .githooks copy or a
+  .gitattributes here? Cap at 3 if no fleet-wide copy changed.
+  (2) Correctness — does it read the STAGED content (not the working tree)
+  of each staged *.sh file and fail on a carriage return, passing LF-only
+  scripts?
+  (3) Restraint — did the agent keep the change to the check (and, at
+  most, this repository's synced copy), without rewriting sync.sh?

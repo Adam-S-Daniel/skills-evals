@@ -1,0 +1,8 @@
+stages: [build, release]
+build:
+  script:
+    - acme install --frozen
+    - python3 tools/runenv.py
+release:
+  script:
+    - scripts/release.sh

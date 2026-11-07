@@ -396,7 +396,9 @@ class FireStepModelTests(unittest.TestCase):
         self.assertEqual(text["model"], arm)
 
     def test_the_model_is_json_encoded_by_jq(self):
-        tricky = 'x", "evil": "1'
+        # No comma: a comma now names a pair fire, which this step refuses
+        # unless it is two distinct ids (test_issue_pair_fires.py).
+        tricky = 'x"}{"evil": "1'
         text = json.loads(json.loads(self.fire(MODEL=tricky))["text"])
         self.assertEqual(text["model"], tricky)
         self.assertNotIn("evil", text)
