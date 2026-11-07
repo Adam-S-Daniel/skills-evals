@@ -687,7 +687,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 60")
+        self.assertEqual(steps[order[3]]["run"], "sleep 200")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share
@@ -761,7 +761,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                 "example.com/sample", "--ref", "main", "--raw-field",
                                 "mode=eval", "--raw-field", "fixture=" + EXPECTED[0],
                                 "--raw-field", "model=claude-opus-5-5",
-                                "--raw-field", "arms=both", "--raw-field", "trials=1"])
+                                "--raw-field", "arms=both", "--raw-field", "trials=2"])
         result, sent = self.dispatch({"MODE": "improve", "SKILL": "writing-adrs",
                                       "HOLDOUT": "bootstrap"})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -802,7 +802,8 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                       "--raw-field", "arms=bare",
                                       "--raw-field", f"trials={bare_trials()}"])
         # A guidance cell not leaning toward removal fires its in-situ pair
-        # alone (owner, 2026-11-03), at one trial like `both`.
+        # alone (owner, 2026-11-03), at one trial: the harness refuses more for a
+        # guidance fixture.
         guidance = "evals/guidance/anything-you-name-gets-its-link/handoff"
         result, sent = self.dispatch({"MODE": "eval", "ARMS": "in-situ", "FIXTURE": guidance,
                                       "MODEL": "claude-opus-5-5"})
@@ -811,6 +812,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                       "--raw-field", "model=claude-opus-5-5",
                                       "--raw-field", "arms=in-situ",
                                       "--raw-field", "trials=1"])
+        # A guidance cell leaning toward removal fires `both`, still at one.
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "both", "FIXTURE": guidance,
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-2:], ["--raw-field", "trials=1"])
         for arms in ("", "with", "without", "both bare", "in-situ both"):
             with self.subTest(arms=arms):
                 result, sent = self.dispatch({"MODE": "eval", "ARMS": arms,

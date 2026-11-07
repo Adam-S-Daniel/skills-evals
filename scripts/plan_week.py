@@ -633,7 +633,8 @@ PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: at 6 and 20 minutes the first slim sweep found every slot held by fires
 #: that had finished in about 5 minutes, which capped it near 9 fires an
 #: hour, and at 10 a pair fire (20 minutes) would cap pairs at one every two
-#: minutes, under the routine's one fire a minute. A routine eval run takes
+#: minutes. The routine's fire limit (about 20 fires an hour) now paces the
+#: sweep first. A routine eval run takes
 #: p50 3.5 and p90 17 minutes per model (471 runs). Restore 3 and 20 minutes
 #: with evals/budget.yml's restore after that reset.
 MAX_IN_FLIGHT = 20
