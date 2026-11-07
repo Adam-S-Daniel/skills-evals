@@ -1,0 +1,76 @@
+# Eval fixture: tool-powershell (robocopy-exit-one)
+# A nightly mirror script "fails" with a bare exit 1 and no text. The cause is
+# not a fault: robocopy's exit code is a bit field, and 1 means files were
+# copied. The skill's first-failure step says to print $LASTEXITCODE after a
+# native program and read it against the program's own table, so the fix is
+# the exit-code mapping, not the copy. An agent that treats exit 1 as a broken
+# path (as silent-exit-one trains) edits the paths or the robocopy flags, or
+# repeats the call. Rebuilt from wsl-automation#61, which added the same
+# 0-7 success / 8-and-up failure rule to the restic backup's OneDrive copy.
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: real-work
+  source: https://github.com/Adam-S-Daniel/wsl-automation/pull/61
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/721
+
+prompt: >
+  The nightly task marks scripts/mirror-exports.ps1 as failed: it exits with
+  code 1 and prints nothing, yet D:\backup\export looks current. Find out why
+  and make the task stop failing when nothing is wrong. PowerShell here is the
+  stand-in bin/pwsh; read README.md.
+
+objective_checks:
+  - id: exit-code-read
+    description: A diagnostic call printed or tested $LASTEXITCODE
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_match:
+      - "class=diagnostic"
+  - id: no-blind-third-try
+    description: The bare failing call was not repeated three times
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_not_match:
+      - "(?s)class=silent.*class=silent.*class=silent"
+  - id: exit-code-mapped
+    description: The script now compares the robocopy exit code to a threshold and exits 0 below it
+    type: file_matches
+    paths: ["scripts/mirror-exports.ps1"]
+    must_match:
+      - 'LASTEXITCODE\s+-(ge|gt|lt|le)\s+\d+'
+  - id: copy-untouched
+    description: The robocopy line, its flags and the path defaults are unchanged
+    type: file_matches
+    paths: ["scripts/mirror-exports.ps1"]
+    must_match:
+      - 'robocopy \$Source \$Dest /E /R:1 /W:1 /NFL /NDL'
+      - '\$Source\s*=\s*''D:\\data\\export'''
+      - '\$Dest\s*=\s*''D:\\backup\\export'''
+    must_not_match:
+      - '/MIR|/PURGE'
+  - id: reply-names-cause
+    description: The reply says robocopy's exit code 1 is a success code (files copied), not a failure
+    type: transcript_matches
+    must_match:
+      - '(?i)robocopy'
+      - '(?i)(exit|return)( code)? 1[^\n]*(success|copied|not (a )?(fail|error))|(success|copied|not (a )?(fail|error))[^\n]*(exit|return)( code)? 1'
+  - id: stand-in-untouched
+    description: The stand-in host was not edited
+    type: files_unchanged
+    paths: ["bin/pwsh"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence of rationale each:
+  (1) Diagnosis: did the agent get the real exit code out (print $LASTEXITCODE
+  after the native call) before changing anything, instead of guessing at the
+  paths or repeating the bare call? Cap at 4 if it edited the script before
+  seeing the code.
+  (2) Reading the code: did it read robocopy's 1 as "files copied" from
+  robocopy's own table (0-7 success, 8 and up failure) rather than as a fault?
+  Cap at 3 if it changed the source, the destination or the copy flags.
+  (3) Fix: is the change the smallest one that makes 0-7 exit 0 and 8 and up
+  exit nonzero, with the reply naming the cause and nothing else changed?
