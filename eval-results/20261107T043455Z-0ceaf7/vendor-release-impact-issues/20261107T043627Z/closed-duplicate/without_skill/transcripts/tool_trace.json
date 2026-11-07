@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019br6W9cH4ARjVSnGAnfGbc",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor && wc -l vendor/*",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019br6W9cH4ARjVSnGAnfGbc",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 651,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VNS8GkXtYuRJLfhciFXk97",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/auth-status.txt; cat .gh/replay/issue-view-57....",
+      "input_chars": 204,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VNS8GkXtYuRJLfhciFXk97",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.7KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2238,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W6QjwHpgNdSajooJbhQNT4",
+      "name": "Bash",
+      "input": "export GH_REPLAY_DIR=$PWD/.gh/replay; head -c 600 .gh/replay/issue-list.json; echo; cat .gh/replay/auth-status.txt; bin/gh issue list --repo example-org/example-repo --state all 2>&1 | head -20; bin/g...",
+      "input_chars": 274,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W6QjwHpgNdSajooJbhQNT4",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/example-re...",
+      "output_chars": 2347,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018U1Yn6xH5Uh24Y9iSHG6Nq",
+      "name": "Bash",
+      "input": "export GH_REPLAY_DIR=$PWD/.gh/replay; python3 -c \"\nimport json;[print(i['number'],i['state'],i.get('stateReason'),i['title'],[l['name'] for l in i['labels']]) for i in json.load(open('.gh/replay/issue...",
+      "input_chars": 285,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018U1Yn6xH5Uh24Y9iSHG6Nq",
+      "is_error": false,
+      "output": "61 OPEN  CI: cache the npm install of ExampleCLI ['ci']\n59 OPEN  README: document where the session-start hook writes its log ['docs']\n57 CLOSED NOT_PLANNED ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher is startup|resume ['vendor-release']\n44 CLOSED COMPLETED ExampleCLI 4.1.0 plu...",
+      "output_chars": 809,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NjhJJKmomRDJjD5BywbVU8",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-readme-synced-skill-names.md <<'EOF'\n# README: synced skills are invoked as `synced:NAME` since ExampleCLI 4.2.0\n\nFound in the ExampleCLI 4.2.0 review.\n\n## ExampleCL...",
+      "input_chars": 3276,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NjhJJKmomRDJjD5BywbVU8",
+      "is_error": false,
+      "output": "01-readme-synced-skill-names.md",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

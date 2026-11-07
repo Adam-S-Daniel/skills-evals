@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018qp9kf2r7T3suAgTBqyPv9",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TLdCiwV9owzrFx38jgMS3k",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor",
+      "input_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018qp9kf2r7T3suAgTBqyPv9",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TLdCiwV9owzrFx38jgMS3k",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 593,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PeRDaSd8qsosn2jsKJifGr",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md AGENTS.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/auth-s...",
+      "input_chars": 216,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PeRDaSd8qsosn2jsKJifGr",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.9KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2218,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013oSPSxiAj4Eda5Z9SHn3DZ",
+      "name": "Bash",
+      "input": "head -c 1500 bin/gh | tail -c 900; echo ----; cat .gh/replay/issue-list.json | head -c 2500; echo; cat .gh/replay/api/repos/example-org/example-repo/issues/57.json | head -c 2500; echo; cat .gh/replay...",
+      "input_chars": 344,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013oSPSxiAj4Eda5Z9SHn3DZ",
+      "is_error": false,
+      "output": "e way a read-only\n    token is refused, and classed write. No remote state is changed.\n    An optional write-policy.json permits local label additions and recorded\n    workflow dispatch responses; once it grants any dispatch, an ungranted\n    one is refused with the permitted command lines instead o...",
+      "output_chars": 4161,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0162Enuf3CVjYNq2xWAqQYyv",
+      "name": "Bash",
+      "input": "mkdir -p issues && python3 -I - <<'EOF'\nimport re,json\nt=open('vendor/RELEASES.md').read()\nbul=[re.sub(r'\\s*\\n\\s*',' ',b.strip()) for b in re.split(r'\\n- ',\"\\n\"+t.split('\\n\\n',3)[3])[1:]]\npub=json.loa...",
+      "input_chars": 4032,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0162Enuf3CVjYNq2xWAqQYyv",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 synced skills renamed to `synced:NAME`: README invokes `<path>` by bare name\n\nFound in the ExampleCLI 4.2.0 [2026-07-14T09:47Z] release review (bullet 4.2.0/2). Not yet verified against this repo.\n\n## ExampleCLI change(s)\n\n> Synced skills are now named `synced:NAME` instead of `NA...",
+      "output_chars": 1822,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UY8gmRfrem43jNUUbjz683",
+      "name": "Bash",
+      "input": "sed -i 's/`startup|resume`<path>`startup\\\\|resume`/' review.md && grep -c 'startup\\\\|resume' review.md",
+      "input_chars": 97,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UY8gmRfrem43jNUUbjz683",
+      "is_error": false,
+      "output": "1",
+      "output_chars": 1,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
