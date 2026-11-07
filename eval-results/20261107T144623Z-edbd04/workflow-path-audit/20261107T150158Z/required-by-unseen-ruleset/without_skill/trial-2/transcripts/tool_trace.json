@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PYs4PpDA91HqeMK6UANgHf",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PYs4PpDA91HqeMK6UANgHf",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\nbin\ndocs\neslint.config.js\nmkdocs.yml\npackage-lock.json\npackage.json\nsrc\ntest\nci.yml\ndocs-site.yml\nnightly-audit.yml",
+      "output_chars": 254,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014HUe8qqbnAqtf4fgBVZY9T",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat package.json; ls .github bin docs test src",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014HUe8qqbnAqtf4fgBVZY9T",
+      "is_error": false,
+      "output": "=== .github/workflows/ci.yml\nname: CI\n\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"eslint.config.js\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/ci.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"src/**\"\n    ...",
+      "output_chars": 2387,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RurjzkDsjkixtXyfBoFr1a",
+      "name": "Bash",
+      "input": "cat eslint.config.js mkdocs.yml; head -5 bin/gh; grep -rn \"require\\|import\" src test | head",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RurjzkDsjkixtXyfBoFr1a",
+      "is_error": false,
+      "output": "module.exports = [\n  {\n    files: [\"src/**/*.js\", \"test/**/*.js\"],\n    languageOptions: { ecmaVersion: 2022, sourceType: \"commonjs\" },\n    rules: { \"no-unused-vars\": \"error\", eqeqeq: \"error\" },\n  },\n];\nsite_name: example-app\nnav:\n  - Home: index.md\n  - Deploying: deploy.md\n#!<path> python3\n\"\"\"Offlin...",
+      "output_chars": 841,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012J46DAeDFdZQBruxCPPz7w",
+      "name": "Bash",
+      "input": "grep -n -i \"required\\|context\\|docs\\|CI\" bin/gh | head -30",
+      "input_chars": 58,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012J46DAeDFdZQBruxCPPz7w",
+      "is_error": false,
+      "output": "21:               \"parameters\": {\"required_approving_review_count\": 1,\n37:    rules = BASE_RULES + [{\"type\": \"required_status_checks\",\n38:                           \"parameters\": {\"strict_required_status_checks_policy\": True,\n39:                                          \"required_status_checks\": [\n4...",
+      "output_chars": 544,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y4cGQBgfBkAnJ9zoWct9YN",
+      "name": "Bash",
+      "input": "sed -n 1,60p bin/gh; ./bin/gh api repos/example-org/example-app/rulesets 2>&1 | head -30; ./bin/gh api repos/example-org/example-app/rules/branches/main 2>&1 | head -40",
+      "input_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y4cGQBgfBkAnJ9zoWct9YN",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline mirror of the GitHub CLI for example-org/example-app: repository and ruleset reads only.\n\nAnswers the reads an audit of branch rules makes (the rules in force on main,\nthe rulesets, the repository) from the data below, refuses every write with\nthe 403 a read-only token ge...",
+      "output_chars": 3301,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PpwRvjSEarVw6tVoKkNTeq",
+      "name": "Bash",
+      "input": "cat > .github/workflows/ci.yml <<'EOF'\nname: CI\n\n# `lint` and `unit` are required checks (ruleset main-protection), so this\n# workflow must not use on.paths: a skipped workflow never reports the\n# con...",
+      "input_chars": 3337,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PpwRvjSEarVw6tVoKkNTeq",
+      "is_error": false,
+      "output": " .github/workflows/ci.yml        | 76 ++++++++++++++++++++++++++++++-----------\n .github/workflows/docs-site.yml |  9 +++++\n 2 files changed, 65 insertions(+), 20 deletions(-)",
+      "output_chars": 175,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

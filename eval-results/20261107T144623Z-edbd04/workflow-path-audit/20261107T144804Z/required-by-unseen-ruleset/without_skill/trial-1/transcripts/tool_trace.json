@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KbrHASGZiKBx11ZBBQTPHA",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -la && ls .github/workflows && cat AGENTS.md 2><path> | head -100",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KbrHASGZiKBx11ZBBQTPHA",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nd0e9c17 initial commit\ntotal 64\ndrwxr-xr-x 9 root root 4096 Nov  7 14:53 .\ndrwx------ 6 root root 4096 Nov  7 14:53 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:42 ....",
+      "output_chars": 1560,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y37cK694sE6biSLowsxtxu",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*.yml README.md package.json eslint.config.js mkdocs.yml .gitignore .editorconfig; do echo \"=== $f\"; cat \"$f\"; done; ls -R bin docs src test .claude",
+      "input_chars": 175,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y37cK694sE6biSLowsxtxu",
+      "is_error": false,
+      "output": "=== .github/workflows/ci.yml\nname: CI\n\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"eslint.config.js\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/ci.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"src/**\"\n    ...",
+      "output_chars": 3148,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FKPZuMRC6f1LekJzGTmqku",
+      "name": "Bash",
+      "input": "file bin/gh; head -30 bin/gh; echo ===; cat docs/*.md; echo ===; cat src/*.js test/*.js | head -60; git remote -v; git branch -a; node --version; ls node_modules 2><path> | head",
+      "input_chars": 180,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FKPZuMRC6f1LekJzGTmqku",
+      "is_error": false,
+      "output": "bin/gh: Python script, Unicode text, UTF-8 text executable\n#!<path> python3\n\"\"\"Offline mirror of the GitHub CLI for example-org/example-app: repository and ruleset reads only.\n\nAnswers the reads an audit of branch rules makes (the rules in force on main,\nthe rulesets, the repository) from the data b...",
+      "output_chars": 2156,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EuUNmxw1GhEiNDoVpQoFcE",
+      "name": "Bash",
+      "input": "sed -n 30,200p bin/gh; echo ===; bin/gh api repos/example-org/example-app/rules/branches/main; echo; bin/gh api repos/example-org/example-app/rulesets; echo; bin/gh api repos/example-org/example-app/r...",
+      "input_chars": 215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EuUNmxw1GhEiNDoVpQoFcE",
+      "is_error": false,
+      "output": "        with open(\".gh/calls.log\", \"a\", encoding=\"utf-8\") as f:\n            f.write(f\"{kind} {json.dumps(args)}\\n\")\n    except OSError:\n        pass\n\n\ndef ruleset(rs):\n    rules = BASE_RULES + [{\"type\": \"required_status_checks\",\n                           \"parameters\": {\"strict_required_status_check...",
+      "output_chars": 7366,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L4qiXyH1nYBFqbJuHJmAWh",
+      "name": "Bash",
+      "input": "npm view yaml time --json 2>&1 | tail -8; npm view yaml dist-tags --json 2>&1; cat package-lock.json",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L4qiXyH1nYBFqbJuHJmAWh",
+      "is_error": false,
+      "output": "{\n  \"error\": {\n    \"code\": \"E403\",\n    \"summary\": \"403 host is not on the allow list - GET https://registry.npmjs.org/yaml\",\n    \"detail\": \"In most cases, you or one of your dependencies are requesting\\na package version that is forbidden by your security policy, or\\non a server you do not have acce...",
+      "output_chars": 2054,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JxnmtRZx5b3XuviRytpp85",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014i7JRe18oC4W5LuLRmA66R",
+      "name": "Bash",
+      "input": "git status --short && ls -a . .github .github/* test && cat .github/workflows/ci.yml .github/workflows/docs-site.yml && cat test/*.js | head -30",
+      "input_chars": 144,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014i7JRe18oC4W5LuLRmA66R",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gh/\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n.:\n.\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitignore\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprof...",
+      "output_chars": 2362,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DpyDmW8FCt7zyrqYz8FgYa",
+      "name": "Bash",
+      "input": "mkdir -p .github/scripts && cat > .github/scripts/salient-changes.sh <<'EOF'\n#!<path> bash\n# Decide whether a pull request touches any path a job cares about.\n#\n# A required status check cannot use `o...",
+      "input_chars": 7763,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DpyDmW8FCt7zyrqYz8FgYa",
+      "is_error": false,
+      "output": "  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 0\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 56.294762\nexit 1\nyaml exit 0\nbash -n exit 0\n M .github/workflows/ci.yml\n M .github/workflows/docs-site.yml\n?? .bash_profile\n?? .gh/\n?? .gitconfig\n?? .g...",
+      "output_chars": 419,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H9PyKjj4n4gimnZrino9AL",
+      "name": "Bash",
+      "input": "cat package.json | grep -A5 scripts; node --test test/ 2>&1 | head -30",
+      "input_chars": 70,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H9PyKjj4n4gimnZrino9AL",
+      "is_error": false,
+      "output": "  \"scripts\": {\n    \"start\": \"node src/server.js\",\n    \"lint\": \"eslint .\",\n    \"test\": \"node --test test/\"\n  },\n  \"devDependencies\": {\nTAP version 13\n# node:internal/modules/cjs/loader:1433\n#   throw err;\n#   ^\n# Error: Cannot find module '<path>'\n#     at Function._resolveFilename (node:internal/mod...",
+      "output_chars": 1118,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01W3oWFzYCPSHxBdcFEdcuUa",
+      "name": "Bash",
+      "input": "node --test test/*.test.js 2>&1 | grep -E '^# (tests|pass|fail)|^not ok'; echo \"exit ${PIPESTATUS[0]}\"; npx --no-install eslint test .github 2>&1 | tail -5",
+      "input_chars": 155,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01W3oWFzYCPSHxBdcFEdcuUa",
+      "is_error": false,
+      "output": "# tests 7\n# pass 7\n# fail 0\nexit 0\n  * If the file is ignored because no matching configuration was supplied, check file patterns in your config file.\n    https://eslint.org/docs/latest/use/configure/configuration-files#specify-files-with-arbitrary-extensions\n\n  * If the file is ignored because it i...",
+      "output_chars": 524,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y58p5punWRoe9TzKGPqZVM",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All four files are written. The exact verifier `node --test test/` fails, so that one is BLOCKED. The other three verifiers pass, and the tests pass when run by file glob.\\n\\n**Files**\\n-...",
+      "input_chars": 1998,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y58p5punWRoe9TzKGPqZVM",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JxnmtRZx5b3XuviRytpp85",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"aaa5313e7c42cf509\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: aaa5313e7c42cf509 (use SendMessage with to: 'aaa5313e7c42cf509', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KtsyZdzPVBYrm5th2cfzjP",
+      "name": "Bash",
+      "input": "git diff; cat .github/scripts/salient-changes.sh test/salient-changes.test.js; ls -l .github/scripts; echo ===; d=$(mktemp -d) && git archive HEAD | tar -x -C \"$d\" && (cd \"$d\" && node --test test/; ec...",
+      "input_chars": 237,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KtsyZdzPVBYrm5th2cfzjP",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex 828538c..50507b6 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -1,24 +1,23 @@\n name: CI\n \n on:\n+  # lint and unit are required status checks, so this trigger must not be\n+  # path-filtered: a check that ...",
+      "output_chars": 8488,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VFzEsyagNzY9NTfDokDPdu",
+      "name": "Bash",
+      "input": "sed -i 's|\"test\": \"node --test test/\"|\"test\": \"node --test \\\\\"test/**/*.test.js\\\\\"\"|' package.json && grep '\"test\"' package.json && cat > AGENTS.md <<'EOF'\n# Agent notes for example-app\n\n## Workflow t...",
+      "input_chars": 1846,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VFzEsyagNzY9NTfDokDPdu",
+      "is_error": false,
+      "output": "    \"test\": \"node --test \\\"test/**/*.test.js\\\"\"\n\n> example-app@1.4.0 test\n> node --test \"test/**/*.test.js\"\n\nTAP version 13\n# Subtest: health answers ok\nok 1 - health answers ok\n  ---\n  duration_ms: 1.707895\n  type: 'test'\n  ...\n# Subtest: unknown paths are 404\nok 2 - unknown paths are 404\n  ---\n  d...",
+      "output_chars": 1501,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011ANDNRcdLhAKzZ5vtULPJ5",
+      "name": "Bash",
+      "input": "cp .github/scripts/salient-changes.sh \"$TMPDIR/s.bak\" && sed -i 's/  run=false/  run=true/' .github/scripts/salient-changes.sh && { node --test \"test/**/*.test.js\" 2>&1 | grep -E '^# (pass|fail)'; } ;...",
+      "input_chars": 404,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011ANDNRcdLhAKzZ5vtULPJ5",
+      "is_error": false,
+      "output": "# pass 6\n# fail 1\n 1 file changed, 28 insertions(+)\n# pass 7\n# fail 0",
+      "output_chars": 69,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
