@@ -952,8 +952,8 @@ class DispatchLegTests(unittest.TestCase):
             fetched.append(since)
             return runs
         self.assertTrue(plan_week.wait_slot(fetch, 1500, lambda: clock[0], sleep))
-        # Run 1 leaves its 10-minute flight 5 minutes on.
-        self.assertEqual(slept, [60] * 5)
+        # Run 1 leaves its 20-minute flight 15 minutes on.
+        self.assertEqual(slept, [60] * 15)
         self.assertEqual(fetched[0], NOW - plan_week.IMPROVE_FLIGHT)
         slept.clear()
         clock[0] = NOW
