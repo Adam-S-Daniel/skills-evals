@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A5PupGnuRcZh1CJF5YevRg",
+      "name": "Bash",
+      "input": "cat REFS.txt; ls -a; ls .github 2><path>; cat package.json 2><path> | head -20",
+      "input_chars": 84,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A5PupGnuRcZh1CJF5YevRg",
+      "is_error": false,
+      "output": "# `git ls-remote --tags <url>`, captured for this offline sandbox.\n\n## https://github.com/actions/checkout\nbd4aa0d1a48d757a118d3fe9d4f547b843d5a2ca\trefs/tags/v4.2.2\n9459ac0c7a9a78b5ac15c6e471312de28ff87692\trefs/tags/v4.2.2^{}\n\n## https://github.com/actions/setup-node\n87788e64c72e96ca086359b8905b54f0...",
+      "output_chars": 773,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015WPL4EqX9YK9R6AG2uqXWd",
+      "name": "Bash",
+      "input": "ls -la .github/workflows; ls workflows; cat .github/workflows/actions.lock 2><path>",
+      "input_chars": 86,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015WPL4EqX9YK9R6AG2uqXWd",
+      "is_error": true,
+      "output": "Exit code 1\ntotal 12\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 ..\n-rw-r--r-- 1 root root  228 Nov  7 04:20 ci.yml\nls: cannot access 'workflows': No such file or directory",
+      "output_chars": 212,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WFrvPLJHG7cEMzmtHTZ5ww",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml",
+      "input_chars": 28,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WFrvPLJHG7cEMzmtHTZ5ww",
+      "is_error": false,
+      "output": "name: ci\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@d5e50132c4d90c4ae953c821b3d1d9eaa7242950\n      - run: npm ci && npm test",
+      "output_chars": 227,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vtqp7x62w3C87NDYRJtTD6",
+      "name": "Bash",
+      "input": "cat > .github/workflows/lint.yml <<'EOF'\nname: lint\non:\n  pull_request:\npermissions:\n  contents: read\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@9459ac0c7a9a78b...",
+      "input_chars": 610,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vtqp7x62w3C87NDYRJtTD6",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
