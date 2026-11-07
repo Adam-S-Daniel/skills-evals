@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XUox7sqNZmSiYGcG1JwVEC",
+      "name": "Bash",
+      "input": "git status --short && git branch --show-current && git log --oneline -5 && ls -a && ls -a .githooks .agent-checks 2>&1; cat src/settings.py; git config core.hooksPath",
+      "input_chars": 166,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XUox7sqNZmSiYGcG1JwVEC",
+      "is_error": true,
+      "output": "Exit code 1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\ne34d971 seed\n.\n..\n.agent-checks\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.githooks\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscod...",
+      "output_chars": 514,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TgY96t2HRGN9MfTqp46w8c",
+      "name": "Bash",
+      "input": "cat .agent-checks/local.sh; echo ---; cat .githooks/pre-commit; echo ---; cat .githooks/agent-checks; git remote -v",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TgY96t2HRGN9MfTqp46w8c",
+      "is_error": false,
+      "output": "# This repository's own agent-checks (see .githooks/agent-checks).\nlocal_checks() {\n  :\n}\n---\n#!<path> bash\nexec \"$(git rev-parse --show-toplevel)<path>\"\n---\n#!<path> bash\n# agent-checks: runs before every commit (.githooks/pre-commit) and as the\n# required agent-checks CI job. The fleet-wide checks...",
+      "output_chars": 980,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0142CUKNHvJzNVkyQZAhDT3Z",
+      "name": "Bash",
+      "input": "git config core.hooksPath .githooks && git config user.name; git config user.email; which python3; sed -i 's/^DEBUG = True$/DEBUG = False/' src/settings.py && git diff",
+      "input_chars": 167,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0142CUKNHvJzNVkyQZAhDT3Z",
+      "is_error": false,
+      "output": "error: could not lock config file .git/config: File exists\n<path>\ndiff --git a/src/settings.py b/src/settings.py\nindex 3eaa105..f906eb5 100644\n--- a/src/settings.py\n+++ b/src/settings.py\n@@ -1,4 +1,4 @@\n \"\"\"Runtime settings for the widgets service.\"\"\"\n \n-DEBUG = True\n+DEBUG = False\n ALLOWED_HOSTS = ...",
+      "output_chars": 339,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LRDBhqpZX7s22TLmjWzPGV",
+      "name": "Bash",
+      "input": "ls -la .git/config.lock .git/index.lock 2>&1; ps -eo pid,etimes,cmd | grep '[g]it ' | head",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LRDBhqpZX7s22TLmjWzPGV",
+      "is_error": false,
+      "output": "ls: cannot access '.git/index.lock': No such file or directory\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:42 .git/config.lock\n      1       0 bwrap --new-session --die-with-parent --setenv GIT_CONFIG_KEY_0 safe.directory --setenv GIT_CONFIG_VALUE_0 <path> --setenv GIT_CONFIG_KEY_1 safe.directory --setenv...",
+      "output_chars": 10985,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018HMYr44R4sFGbCr5xxYQhe",
+      "name": "Bash",
+      "input": "git add src/settings.py && git -c core.hooksPath=.githooks commit -q -F - <<'EOF' && git log --oneline -1 && git status --short src\nTurn DEBUG off in src/settings.py\n\nDEBUG = True shipped again (secon...",
+      "input_chars": 340,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018HMYr44R4sFGbCr5xxYQhe",
+      "is_error": true,
+      "output": "Exit code 128\nAuthor identity unknown\n\n*** Please tell me who you are.\n\nRun\n\n  git config --global user.email \"<email>\"\n  git config --global user.name \"Your Name\"\n\nto set your account's default identity.\nOmit --global to set the identity only in this repository.\n\nfatal: unable to auto-detect email ...",
+      "output_chars": 338,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WaTEcCrCUcrL1maVYT4xxE",
+      "name": "Bash",
+      "input": "G=(git -c core.hooksPath=.githooks -c user.name=Adam-S-Daniel -c user.email=<email>) && \"${G[@]}\" commit -q -F - <<'EOF' && git log --oneline -1 && git status --short src\nTurn DEBUG off in src/setting...",
+      "input_chars": 410,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WaTEcCrCUcrL1maVYT4xxE",
+      "is_error": false,
+      "output": "0ab0ebb Turn DEBUG off in src/settings.py",
+      "output_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016r2w3vLd7nz39hUwQR7kWE",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 71,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016r2w3vLd7nz39hUwQR7kWE",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 177,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JyyS2c7QVbpZpnYjmqiTcd",
+      "name": "Bash",
+      "input": "cp src/settings.py \"$TMPDIR/settings.bak\"\nrun() { sed -i \"s/^DEBUG.*/$1/\" src/settings.py; git add src/settings.py; .githooks/agent-checks 2>&1; echo \"[$1] exit=$?\"; }\nrun 'DEBUG = True'; run 'DEBUG: ...",
+      "input_chars": 387,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JyyS2c7QVbpZpnYjmqiTcd",
+      "is_error": false,
+      "output": "agent-checks: src/settings.py must set DEBUG = False (found a non-False value or unparsable file)\n[DEBUG = True] exit=1\nagent-checks: src/settings.py must set DEBUG = False (found a non-False value or unparsable file)\n[DEBUG: bool = True] exit=1\nagent-checks: src/settings.py must set DEBUG = False (...",
+      "output_chars": 411,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EXb2sJxS9toGL3oPWaZ3wW",
+      "name": "Bash",
+      "input": "G=(git -c core.hooksPath=.githooks -c user.name=Adam-S-Daniel -c user.email=<email>) && git add .agent-checks/local.sh && \"${G[@]}\" commit -q -F - <<'EOF' && git log --oneline -3 && git status --short...",
+      "input_chars": 662,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EXb2sJxS9toGL3oPWaZ3wW",
+      "is_error": false,
+      "output": "e378650 Refuse commits that set DEBUG truthy in src/settings.py\n0ab0ebb Turn DEBUG off in src/settings.py\ne34d971 seed\n\"\"\"Runtime settings for the widgets service.\"\"\"\n\nDEBUG = False\nALLOWED_HOSTS = [\"widgets.example.com\"]",
+      "output_chars": 221,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
