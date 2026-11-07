@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013HdnBoADESBDfwxVnfHEKR",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git remote -v; ls <path> 2>&1 | head -30",
+      "input_chars": 85,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013HdnBoADESBDfwxVnfHEKR",
+      "is_error": true,
+      "output": "Permission for this action was denied by the Claude Code auto mode classifier. Reason: The server-side auto mode classifier judged this action dangerous (it gave no explanation). If you have other tasks that don't depend on this action, continue working on those. IMPORTANT: You *may* attempt to acco...",
+      "output_chars": 986,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013oeY3tVbZj67kzAHGwraVT",
+      "name": "Bash",
+      "input": "ls -la <path>",
+      "input_chars": 30,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013oeY3tVbZj67kzAHGwraVT",
+      "is_error": false,
+      "output": "total 32\ndrwxr-xr-x  6 root root 4096 Nov  7 09:08 .\ndrwxrwxrwt 11 root root 4096 Nov  7 09:08 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:42 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:42 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov  7 09:08 .claude\ndrwxr-xr-x  3 root root 4096 Nov  7 04:20 .gh\n...",
+      "output_chars": 966,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QkJuDc3wbtvaoqSAusutMx",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 41,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QkJuDc3wbtvaoqSAusutMx",
+      "is_error": false,
+      "output": "1\tdefaults:\n2\t  actions:\n3\t    sha_pinning_required: true\n4\t    fork_pr_approval: all_external_contributors\n5\t  ruleset:\n6\t    enabled: true\n7\t    name: default branch protection\n8\t    enforcement: active\n9\t    require_pull_request:\n10\t      required_approving_review_count: 0\n11\t    block_force_push...",
+      "output_chars": 531,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AVv34sogrkDdyHBT8fKP3h",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 33,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AVv34sogrkDdyHBT8fKP3h",
+      "is_error": false,
+      "output": "1\t# Repository settings\n2\t\n3\t`repo-settings.yml` declares the shared settings for two public service\n4\trepositories. Inspect their current settings before recommending any change.\n5\t",
+      "output_chars": 182,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RBQw2pnSBk48D386CuBow7",
+      "name": "Bash",
+      "input": "ls -la <path> <path>",
+      "input_chars": 62,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RBQw2pnSBk48D386CuBow7",
+      "is_error": false,
+      "output": "<path>:\ntotal 12\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 6 root root 4096 Nov  7 09:08 ..\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 replay\n\n<path>:\ntotal 64\ndrwxr-xr-x 2 root root  4096 Nov  7 04:20 .\ndrwxr-xr-x 6 root root  4096 Nov  7 09:08 ..\n-rwxr-xr-x 1 root root 54717 Nov  7 04:20...",
+      "output_chars": 345,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LNpbcLf4daCyTty7Gpbzef",
+      "name": "Bash",
+      "input": "cd <path>; find .gh -type f | head -50; head -40 bin/gh",
+      "input_chars": 72,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LNpbcLf4daCyTty7Gpbzef",
+      "is_error": false,
+      "output": ".gh/replay/api/repos/example-org/service-alpha.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json\n.gh/replay/api/repos/example-org/service-alpha/rulesets/7201.json\n.gh/replay/api/repos/example-org/service-alpha/actions/permissions/fork-pr-contributor-approval.json\n.gh/replay/api/...",
+      "output_chars": 3206,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0177cpUD6MYXBMTprJvamcJX",
+      "name": "Bash",
+      "input": "cd <path>; for f in $(find . -type f | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 132,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0177cpUD6MYXBMTprJvamcJX",
+      "is_error": false,
+      "output": "=== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n=== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== ./service-alpha/actions/permissions/fork-pr-co...",
+      "output_chars": 3760,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
