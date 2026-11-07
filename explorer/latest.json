@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-07T20:57:09Z",
+  "fetched_at": "2026-11-07T21:05:56Z",
   "issues": [
    {
     "created_at": "2026-11-07T17:36:28Z",
@@ -554,33 +554,43 @@
   ],
   "pulls": [
    {
-    "created_at": "2026-11-07T20:57:26Z",
+    "created_at": "2026-11-07T21:04:44Z",
     "merged_at": null,
-    "number": 840,
-    "repo": "Adam-S-Daniel/skills-evals",
+    "number": 4709,
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
     "state": "open",
-    "title": "Cap a long judge parse error instead of rejecting the paid run",
-    "updated_at": "2026-11-07T20:57:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/840"
+    "title": "tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:12Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4709"
    },
    {
     "created_at": "2026-11-07T20:56:11Z",
-    "merged_at": null,
+    "merged_at": "2026-11-07T21:04:27Z",
     "number": 839,
     "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
+    "state": "merged",
     "title": "Report each subject's discarded eval runs, their reasons and cost",
-    "updated_at": "2026-11-07T20:56:42Z",
+    "updated_at": "2026-11-07T21:04:30Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/839"
    },
    {
+    "created_at": "2026-11-07T20:57:26Z",
+    "merged_at": "2026-11-07T21:03:59Z",
+    "number": 840,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "merged",
+    "title": "Cap a long judge parse error instead of rejecting the paid run",
+    "updated_at": "2026-11-07T21:04:01Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/840"
+   },
+   {
     "created_at": "2026-11-07T20:52:40Z",
-    "merged_at": null,
+    "merged_at": "2026-11-07T21:00:01Z",
     "number": 838,
     "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
+    "state": "merged",
     "title": "Scope review 2026-11-07: recheck test-canary, aws-bootstrap, preview-environments",
-    "updated_at": "2026-11-07T20:52:48Z",
+    "updated_at": "2026-11-07T21:00:03Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/838"
    },
    {
@@ -3562,16 +3572,6 @@
     "title": "Create Post \u201cA map of what Claude actually remembers\u201d",
     "updated_at": "2026-11-03T16:17:37Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/2538"
-   },
-   {
-    "created_at": "2026-11-03T16:03:30Z",
-    "merged_at": "2026-11-03T16:16:38Z",
-    "number": 4609,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "state": "merged",
-    "title": "List the section index first in the NAV CURRENT message",
-    "updated_at": "2026-11-03T16:16:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4609"
    },
    {
     "created_at": "2026-11-03T16:13:46Z",
@@ -7340,6 +7340,582 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-07T21:00:04Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413711919,
+    "state": "completed",
+    "title": "Merge pull request #838 from Adam-S-Daniel/scope-review/2026-11-07",
+    "updated_at": "2026-11-07T21:06:10Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413711919",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:45Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414109732,
+    "state": "completed",
+    "title": "PR #4709",
+    "updated_at": "2026-11-07T21:05:49Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414109732",
+    "workflow": "PR #4709"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:36Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414096381,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-07T21:05:48Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414096381",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:53Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414120524,
+    "state": "completed",
+    "title": "Site freshness",
+    "updated_at": "2026-11-07T21:05:47Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414120524",
+    "workflow": "Site freshness"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:05:11Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414149030,
+    "state": "completed",
+    "title": "chained \u2014 after PR #4709 \u2014 tools: sync Evals Explorer to a3da033 #16058",
+    "updated_at": "2026-11-07T21:05:47Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414149030",
+    "workflow": "chained \u2014 after PR #4709 \u2014 tools: sync Evals Explorer to a3da033 #16058"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112512,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:44Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112512",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112657,
+    "state": "in_progress",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:38Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112657",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112475,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:30Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112475",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112375,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:24Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112375",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:05:10Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/_agent-guidance",
+    "run_id": 42414146810,
+    "state": "completed",
+    "title": "Anthropic article watch",
+    "updated_at": "2026-11-07T21:05:21Z",
+    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/42414146810",
+    "workflow": "Anthropic article watch"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T20:55:34Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413372889,
+    "state": "queued",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T21:05:19Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413372889",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112514,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:15Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112514",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112479,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:13Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112479",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112566,
+    "state": "completed",
+    "title": "tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:11Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112566",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112407,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:10Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112407",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112786,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:06Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112786",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112738,
+    "state": "in_progress",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:06Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112738",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112716,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:05Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112716",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112502,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:05:01Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112502",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:36Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414096445,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-07T21:04:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414096445",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088537,
+    "state": "completed",
+    "title": "Merge pull request #839 from Adam-S-Daniel/claude/discarded-runs",
+    "updated_at": "2026-11-07T21:04:52Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088537",
+    "workflow": "Propagation"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088637,
+    "state": "completed",
+    "title": null,
+    "updated_at": "2026-11-07T21:04:51Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088637",
+    "workflow": null
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:36Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414096476,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-07T21:04:50Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414096476",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-07T21:04:47Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42414112668,
+    "state": "completed",
+    "title": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033",
+    "updated_at": "2026-11-07T21:04:49Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42414112668",
+    "workflow": "PR #4709 \u2014 tools: sync Evals Explorer to a3da033"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:36Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414096429,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-07T21:04:48Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414096429",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088191,
+    "state": "in_progress",
+    "title": "Push on main",
+    "updated_at": "2026-11-07T21:04:42Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088191",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088765,
+    "state": "completed",
+    "title": "PR #839 \u2192 site preview (closed)",
+    "updated_at": "2026-11-07T21:04:42Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088765",
+    "workflow": "PR #839 \u2192 site preview (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088546,
+    "state": "completed",
+    "title": "Merge pull request #839 from Adam-S-Daniel/claude/discarded-runs",
+    "updated_at": "2026-11-07T21:04:40Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088546",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:36Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414096330,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T21:04:37Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414096330",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-07T21:02:41Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413939114,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-07T21:04:37Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413939114",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:30Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414088548,
+    "state": "in_progress",
+    "title": "Merge pull request #839 from Adam-S-Daniel/claude/discarded-runs",
+    "updated_at": "2026-11-07T21:04:34Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414088548",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:14Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414068322,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-07T21:04:33Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414068322",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:01Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414051494,
+    "state": "completed",
+    "title": "Merge pull request #840 from Adam-S-Daniel/claude/project-thread-caqn3l",
+    "updated_at": "2026-11-07T21:04:28Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414051494",
+    "workflow": "Propagation"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:01Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414051506,
+    "state": "completed",
+    "title": "Merge pull request #840 from Adam-S-Daniel/claude/project-thread-caqn3l",
+    "updated_at": "2026-11-07T21:04:14Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414051506",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:04:01Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414051732,
+    "state": "completed",
+    "title": "PR #840 \u2192 site preview (closed)",
+    "updated_at": "2026-11-07T21:04:13Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414051732",
+    "workflow": "PR #840 \u2192 site preview (closed)"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:01Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414051295,
+    "state": "in_progress",
+    "title": "Push on main",
+    "updated_at": "2026-11-07T21:04:06Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414051295",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-07T21:04:01Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42414051523,
+    "state": "in_progress",
+    "title": "Merge pull request #840 from Adam-S-Daniel/claude/project-thread-caqn3l",
+    "updated_at": "2026-11-07T21:04:05Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42414051523",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:00:03Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413711324,
+    "state": "completed",
+    "title": "Push on main",
+    "updated_at": "2026-11-07T21:03:40Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413711324",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:57:29Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413518532,
+    "state": "completed",
+    "title": "Cap a long judge parse error instead of rejecting the paid run",
+    "updated_at": "2026-11-07T21:03:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413518532",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:56:15Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413426060,
+    "state": "completed",
+    "title": "Report each subject's discarded eval runs, their reasons and cost",
+    "updated_at": "2026-11-07T21:02:46Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413426060",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:00:28Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413749067,
+    "state": "completed",
+    "title": "Routine eval watchdog",
+    "updated_at": "2026-11-07T21:02:44Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413749067",
+    "workflow": "Routine eval watchdog"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:00:04Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413711909,
+    "state": "completed",
+    "title": "Merge pull request #838 from Adam-S-Daniel/scope-review/2026-11-07",
+    "updated_at": "2026-11-07T21:00:30Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413711909",
+    "workflow": "Propagation"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:00:04Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413712030,
+    "state": "completed",
+    "title": "Merge pull request #838 from Adam-S-Daniel/scope-review/2026-11-07",
+    "updated_at": "2026-11-07T21:00:15Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413712030",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T21:00:04Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413712359,
+    "state": "completed",
+    "title": "PR #838 \u2192 site preview (closed)",
+    "updated_at": "2026-11-07T21:00:13Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413712359",
+    "workflow": "PR #838 \u2192 site preview (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:57:27Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413516423,
+    "state": "completed",
+    "title": "PR #840",
+    "updated_at": "2026-11-07T20:59:38Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413516423",
+    "workflow": "PR #840"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:52:43Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413149981,
+    "state": "completed",
+    "title": "Scope review 2026-11-07: recheck test-canary, aws-bootstrap, preview-environments",
+    "updated_at": "2026-11-07T20:58:58Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413149981",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:56:12Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413422500,
+    "state": "completed",
+    "title": "PR #839",
+    "updated_at": "2026-11-07T20:58:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413422500",
+    "workflow": "PR #839"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-07T20:57:29Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42413518658,
+    "state": "completed",
+    "title": "Cap a long judge parse error instead of rejecting the paid run",
+    "updated_at": "2026-11-07T20:57:51Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413518658",
+    "workflow": "Propagation"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-07T20:57:29Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -7361,42 +7937,6 @@
     "updated_at": "2026-11-07T20:57:36Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413518542",
     "workflow": "PR #840 \u2192 site preview (opened)"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:57:29Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413518658,
-    "state": "in_progress",
-    "title": "Cap a long judge parse error instead of rejecting the paid run",
-    "updated_at": "2026-11-07T20:57:33Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413518658",
-    "workflow": "Propagation"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:57:29Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413518532,
-    "state": "in_progress",
-    "title": "Cap a long judge parse error instead of rejecting the paid run",
-    "updated_at": "2026-11-07T20:57:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413518532",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:57:27Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413516423,
-    "state": "in_progress",
-    "title": "PR #840",
-    "updated_at": "2026-11-07T20:57:32Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413516423",
-    "workflow": "PR #840"
    },
    {
     "conclusion": "skipped",
@@ -7435,18 +7975,6 @@
     "workflow": "Refresh loop pull requests"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:56:15Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413426060,
-    "state": "in_progress",
-    "title": "Report each subject's discarded eval runs, their reasons and cost",
-    "updated_at": "2026-11-07T20:56:29Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413426060",
-    "workflow": "CI"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T20:56:15Z",
     "event": "pull_request",
@@ -7483,18 +8011,6 @@
     "workflow": "PR #839 \u2192 site preview (opened)"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:56:12Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413422500,
-    "state": "in_progress",
-    "title": "PR #839",
-    "updated_at": "2026-11-07T20:56:24Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413422500",
-    "workflow": "PR #839"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-07T20:55:34Z",
     "event": "workflow_run",
@@ -7529,18 +8045,6 @@
     "updated_at": "2026-11-07T20:55:42Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413372868",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:55:34Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413372889,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T20:55:35Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413372889",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -7649,18 +8153,6 @@
     "updated_at": "2026-11-07T20:52:55Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413158182",
     "workflow": "Fixture PR seen"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-07T20:52:43Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42413149981,
-    "state": "in_progress",
-    "title": "Scope review 2026-11-07: recheck test-canary, aws-bootstrap, preview-environments",
-    "updated_at": "2026-11-07T20:52:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42413149981",
-    "workflow": "CI"
    },
    {
     "conclusion": "success",
@@ -8000,18 +8492,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T20:28:45Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42411238194,
-    "state": "completed",
-    "title": "Pool in-situ guidance runs across base.md versions, guard removals with the current version",
-    "updated_at": "2026-11-07T20:34:56Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42411238194",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T20:31:31Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -8069,18 +8549,6 @@
     "updated_at": "2026-11-07T20:32:07Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42411502551",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-07T20:19:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410515379,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-07T20:31:58Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410515379",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "success",
@@ -8144,30 +8612,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951830,
-    "state": "completed",
-    "title": "Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:31:20Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951830",
-    "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:28:43Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42411235752,
-    "state": "completed",
-    "title": "PR #831",
-    "updated_at": "2026-11-07T20:30:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42411235752",
-    "workflow": "PR #831"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T20:28:55Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -8189,18 +8633,6 @@
     "updated_at": "2026-11-07T20:29:13Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42411238213",
     "workflow": "Propagation"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:28:45Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42411238306,
-    "state": "completed",
-    "title": "Pool in-situ guidance runs across base.md versions, guard removals with the current version",
-    "updated_at": "2026-11-07T20:28:58Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42411238306",
-    "workflow": "agent-checks"
    },
    {
     "conclusion": "success",
@@ -8240,114 +8672,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-07T20:25:00Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410948868,
-    "state": "completed",
-    "title": "PR #837",
-    "updated_at": "2026-11-07T20:26:43Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410948868",
-    "workflow": "PR #837"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:16Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410970409,
-    "state": "completed",
-    "title": "Fixture PR gate",
-    "updated_at": "2026-11-07T20:25:39Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410970409",
-    "workflow": "Fixture PR gate"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:11Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410963662,
-    "state": "completed",
-    "title": "Fixture PR gate",
-    "updated_at": "2026-11-07T20:25:34Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410963662",
-    "workflow": "Fixture PR gate"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951814,
-    "state": "completed",
-    "title": "Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:25:27Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951814",
-    "workflow": "Propagation"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951849,
-    "state": "completed",
-    "title": "Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:25:16Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951849",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:07Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410958511,
-    "state": "completed",
-    "title": "Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:25:14Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410958511",
-    "workflow": "Fixture PR seen"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951818,
-    "state": "completed",
-    "title": "PR #837 \u2192 site preview (opened)",
-    "updated_at": "2026-11-07T20:25:10Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951818",
-    "workflow": "PR #837 \u2192 site preview (opened)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951838,
-    "state": "completed",
-    "title": "Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:25:09Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951838",
-    "workflow": "Fixture PR seen"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-07T20:25:03Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410951821,
-    "state": "completed",
-    "title": "PR #837 \u2014 Add three invented tool-powershell fixtures",
-    "updated_at": "2026-11-07T20:25:04Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410951821",
-    "workflow": "PR #837 \u2014 Add three invented tool-powershell fixtures"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-07T20:21:05Z",
     "event": "schedule",
     "repo": "Adam-S-Daniel/fastmail-actions",
@@ -8357,138 +8681,6 @@
     "updated_at": "2026-11-07T20:22:19Z",
     "url": "https://github.com/Adam-S-Daniel/fastmail-actions/actions/runs/42410635528",
     "workflow": "Add received-from addresses"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410515453,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-07T20:20:52Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410515453",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410515628,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-07T20:20:03Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410515628",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410515426,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-07T20:19:52Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410515426",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:42Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410515334,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-07T20:19:51Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410515334",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:20Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410484846,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-07T20:19:40Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410484846",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:19:10Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410471513,
-    "state": "completed",
-    "title": "Eval results 20261107T200304Z-03749f",
-    "updated_at": "2026-11-07T20:19:18Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410471513",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:16:30Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410257301,
-    "state": "completed",
-    "title": "Fixture PR gate",
-    "updated_at": "2026-11-07T20:16:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410257301",
-    "workflow": "Fixture PR gate"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:16:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410246689,
-    "state": "completed",
-    "title": "Pool in-situ guidance runs across base.md versions, guard removals with the current version",
-    "updated_at": "2026-11-07T20:16:45Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410246689",
-    "workflow": "Propagation"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:16:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410246682,
-    "state": "completed",
-    "title": "Pool in-situ guidance runs across base.md versions, guard removals with the current version",
-    "updated_at": "2026-11-07T20:16:36Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410246682",
-    "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:16:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410246679,
-    "state": "completed",
-    "title": "PR #831 \u2192 site preview (synchronize)",
-    "updated_at": "2026-11-07T20:16:31Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410246679",
-    "workflow": "PR #831 \u2192 site preview (synchronize)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T20:16:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42410246659,
-    "state": "completed",
-    "title": "Pool in-situ guidance runs across base.md versions, guard removals with the current version",
-    "updated_at": "2026-11-07T20:16:29Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42410246659",
-    "workflow": "Fixture PR seen"
    },
    {
     "conclusion": "success",
@@ -9545,186 +9737,6 @@
     "updated_at": "2026-11-07T18:40:42Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42402440343",
     "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:40:24Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42402441053,
-    "state": "completed",
-    "title": "reap PR #4705 (closed)",
-    "updated_at": "2026-11-07T18:40:31Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42402441053",
-    "workflow": "reap PR #4705 (closed)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718273,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:32:44Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718273",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:32:00Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401754149,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16043",
-    "updated_at": "2026-11-07T18:32:22Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401754149",
-    "workflow": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16043"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:51Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401742675,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16042",
-    "updated_at": "2026-11-07T18:32:08Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401742675",
-    "workflow": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16042"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-07T18:31:58Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401752213,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16044",
-    "updated_at": "2026-11-07T18:32:01Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401752213",
-    "workflow": "chained \u2014 after PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d #16044"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718399,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:32:00Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718399",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401717920,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:59Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401717920",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718067,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:57Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718067",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:39Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401726045,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401726045",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401717989,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401717989",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718050,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:54Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718050",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718054,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718054",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718171,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718171",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401718166,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:44Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401718166",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-07T18:31:34Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42401717934,
-    "state": "completed",
-    "title": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
-    "updated_at": "2026-11-07T18:31:35Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42401717934",
-    "workflow": "PR #4705 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
    },
    {
     "conclusion": "success",
@@ -13913,18 +13925,6 @@
     "updated_at": "2026-11-07T10:06:00Z",
     "url": "https://github.com/Adam-S-Daniel/ai-usage-dashboard/actions/runs/42362404661",
     "workflow": "PR #26"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-07T10:03:55Z",
-    "event": "repository_dispatch",
-    "repo": "Adam-S-Daniel/_agent-guidance",
-    "run_id": 42362340295,
-    "state": "completed",
-    "title": "skills-lock-bump",
-    "updated_at": "2026-11-07T10:05:56Z",
-    "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/42362340295",
-    "workflow": "Bump the fleet's skills pins"
    },
    {
     "conclusion": "success",
@@ -27343,7 +27343,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-24T20:57:09Z"
+  "since": "2026-10-24T21:05:56Z"
  },
  "agent_made": {
   "items": [
@@ -28471,6 +28471,129 @@
   "skipped": 10,
   "total": 38
  },
+ "discarded_runs": {
+  "all": {
+   "by_reason": {
+    "bare_run": {
+     "cost_unknown": 0,
+     "cost_usd": 23.405410200000002,
+     "runs": 53
+    },
+    "context_unknown": {
+     "cost_unknown": 0,
+     "cost_usd": 0.35449420000000004,
+     "runs": 5
+    },
+    "context_unmatched": {
+     "cost_unknown": 0,
+     "cost_usd": 1.9001595,
+     "runs": 20
+    },
+    "fixture_changed": {
+     "cost_unknown": 0,
+     "cost_usd": 151.63952527,
+     "runs": 386
+    },
+    "fixture_off_main": {
+     "cost_unknown": 3,
+     "cost_usd": 141.13544268,
+     "runs": 216
+    },
+    "invalid_run": {
+     "cost_unknown": 0,
+     "cost_usd": 18.24264745,
+     "runs": 79
+    },
+    "model_off_roster": {
+     "cost_unknown": 0,
+     "cost_usd": 11.413198,
+     "runs": 12
+    },
+    "subject_changed": {
+     "cost_unknown": 0,
+     "cost_usd": 7.000992800000001,
+     "runs": 41
+    },
+    "unpaired": {
+     "cost_unknown": 0,
+     "cost_usd": 3.8277303,
+     "runs": 36
+    }
+   },
+   "cost_unknown": 3,
+   "cost_usd": 358.91960040000004,
+   "total": 848
+  },
+  "guidance": {
+   "by_reason": {
+    "context_unmatched": {
+     "cost_unknown": 0,
+     "cost_usd": 1.9001595,
+     "runs": 20
+    },
+    "fixture_changed": {
+     "cost_unknown": 0,
+     "cost_usd": 3.3252683000000003,
+     "runs": 28
+    },
+    "invalid_run": {
+     "cost_unknown": 0,
+     "cost_usd": 1.88839215,
+     "runs": 25
+    }
+   },
+   "cost_unknown": 0,
+   "cost_usd": 7.11381995,
+   "total": 73
+  },
+  "skills": {
+   "by_reason": {
+    "bare_run": {
+     "cost_unknown": 0,
+     "cost_usd": 23.405410200000002,
+     "runs": 53
+    },
+    "context_unknown": {
+     "cost_unknown": 0,
+     "cost_usd": 0.35449420000000004,
+     "runs": 5
+    },
+    "fixture_changed": {
+     "cost_unknown": 0,
+     "cost_usd": 148.31425697,
+     "runs": 358
+    },
+    "fixture_off_main": {
+     "cost_unknown": 3,
+     "cost_usd": 141.13544268,
+     "runs": 216
+    },
+    "invalid_run": {
+     "cost_unknown": 0,
+     "cost_usd": 16.3542553,
+     "runs": 54
+    },
+    "model_off_roster": {
+     "cost_unknown": 0,
+     "cost_usd": 11.413198,
+     "runs": 12
+    },
+    "subject_changed": {
+     "cost_unknown": 0,
+     "cost_usd": 7.000992800000001,
+     "runs": 41
+    },
+    "unpaired": {
+     "cost_unknown": 0,
+     "cost_usd": 3.8277303,
+     "runs": 36
+    }
+   },
+   "cost_unknown": 3,
+   "cost_usd": 351.80578045,
+   "total": 775
+  }
+ },
  "evals": {
   "bare_runs": [
    {
@@ -28753,13 +28876,13 @@
     "fired_at": "2026-11-07T12:59:10Z",
     "fixture": "workflow-path-audit/workflow-doc-in-step",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-07T19:41:34Z",
+    "paired_at": "2026-11-07T20:42:50Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T125910Z-f2348c/workflow-path-audit/20261107T130005Z/report.md",
     "run_id": "20261107T125910Z-f2348c",
     "skill": "workflow-path-audit",
     "trials": 3,
-    "with_share": 0.8666666666666666,
-    "without_share": 0.8666666666666666
+    "with_share": 0.6,
+    "without_share": 1.0
    },
    {
     "bare": 5.0,
@@ -29325,13 +29448,13 @@
   "bare_summary": [
    {
     "bare": 0.7392297926061578,
-    "bare_won": 11,
+    "bare_won": 12,
     "model": "All",
     "pairs": 53,
-    "setup_lift": 0.002222776304206319,
-    "skill_lift": 0.11418718561221049,
-    "with": 0.8556397545225747,
-    "without": 0.7414525689103643
+    "setup_lift": 0.004738499574646561,
+    "skill_lift": 0.10664001580088976,
+    "with": 0.8506083079816942,
+    "without": 0.7439682921808044
    },
    {
     "bare": 0.7691429863867537,
@@ -29345,13 +29468,13 @@
    },
    {
     "bare": 0.7225135960817076,
-    "bare_won": 6,
+    "bare_won": 7,
     "model": "claude-sonnet-5-5",
     "pairs": 34,
-    "setup_lift": 0.009217841841680919,
-    "skill_lift": 0.12348549999478783,
-    "with": 0.8552169379181764,
-    "without": 0.7317314379233886
+    "setup_lift": 0.013139410469131885,
+    "skill_lift": 0.11172079411243493,
+    "with": 0.8473738006632745,
+    "without": 0.7356530065508395
    }
   ],
   "latest": [
@@ -29376,6 +29499,28 @@
     "with_skill": 7,
     "without_share": 0.7142857142857143,
     "without_skill": 5
+   },
+   {
+    "checks": 10,
+    "fired_at": "2026-11-07T20:42:50Z",
+    "fixture": "workflow-path-audit/workflow-doc-in-step",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261107T204250Z-455b93",
+    "with_share": 0.6,
+    "with_skill": 6,
+    "without_share": 1.0,
+    "without_skill": 10
+   },
+   {
+    "checks": 10,
+    "fired_at": "2026-11-07T20:42:50Z",
+    "fixture": "workflow-path-audit/workflow-doc-in-step",
+    "model": "claude-opus-5-5",
+    "run_id": "20261107T204250Z-455b93",
+    "with_share": 0.4,
+    "with_skill": 4,
+    "without_share": 1.0,
+    "without_skill": 10
    },
    {
     "checks": 7,
@@ -29508,28 +29653,6 @@
     "with_skill": 4.0,
     "without_share": 0.6666666666666667,
     "without_skill": 3.3333333333333335
-   },
-   {
-    "checks": 10.0,
-    "fired_at": "2026-11-07T19:41:34Z",
-    "fixture": "workflow-path-audit/workflow-doc-in-step",
-    "model": "claude-opus-5-5",
-    "run_id": "20261107T194134Z-cf0b26",
-    "with_share": 1.0,
-    "with_skill": 10.0,
-    "without_share": 1.0,
-    "without_skill": 10.0
-   },
-   {
-    "checks": 10.0,
-    "fired_at": "2026-11-07T19:41:34Z",
-    "fixture": "workflow-path-audit/workflow-doc-in-step",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261107T194134Z-cf0b26",
-    "with_share": 0.8666666666666666,
-    "with_skill": 8.666666666666666,
-    "without_share": 0.8666666666666666,
-    "without_skill": 8.666666666666666
    },
    {
     "checks": 7.0,
@@ -31349,9 +31472,9 @@
   ],
   "latest_summary": {
    "helped": 70,
-   "hurt": 18,
+   "hurt": 20,
    "tests": 138,
-   "tied": 50
+   "tied": 48
   },
   "runs": [
    {
@@ -31397,6 +31520,50 @@
     "without_judge": null,
     "without_share": 0.7142857142857143,
     "without_skill": 5
+   },
+   {
+    "account_week_after": 68.0,
+    "checks": 10,
+    "cli": "2.1.319",
+    "cost_usd": 0.3078482,
+    "fired_at": "2026-11-07T20:42:50Z",
+    "fixture": "workflow-path-audit/workflow-doc-in-step",
+    "gain": -4,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T204250Z-455b93/workflow-path-audit/20261107T204807Z/report.md",
+    "run_id": "20261107T204250Z-455b93",
+    "skill": "workflow-path-audit",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.6,
+    "with_skill": 6,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 10
+   },
+   {
+    "account_week_after": 68.0,
+    "checks": 10,
+    "cli": "2.1.319",
+    "cost_usd": 1.0417241,
+    "fired_at": "2026-11-07T20:42:50Z",
+    "fixture": "workflow-path-audit/workflow-doc-in-step",
+    "gain": -6,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T204250Z-455b93/workflow-path-audit/20261107T204422Z/report.md",
+    "run_id": "20261107T204250Z-455b93",
+    "skill": "workflow-path-audit",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.4,
+    "with_skill": 4,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 10
    },
    {
     "account_week_after": 67.0,
@@ -52918,33 +53085,33 @@
   "summary": [
    {
     "helped": 507,
-    "hurt": 96,
-    "lift": 0.1334127056259842,
+    "hurt": 98,
+    "lift": 0.13200668408186436,
     "model": "All",
-    "runs": 899,
+    "runs": 901,
     "tied": 296,
-    "with_avg": 0.8502062583644462,
-    "without_avg": 0.7167935527384619
+    "with_avg": 0.8494288859818391,
+    "without_avg": 0.7174222018999746
    },
    {
     "helped": 163,
-    "hurt": 31,
-    "lift": 0.10817753454543472,
+    "hurt": 32,
+    "lift": 0.10584800318179835,
     "model": "claude-opus-5-5",
-    "runs": 303,
+    "runs": 304,
     "tied": 109,
-    "with_avg": 0.8556290006611355,
-    "without_avg": 0.7474514661157008
+    "with_avg": 0.8541302210536974,
+    "without_avg": 0.7482822178718991
    },
    {
     "helped": 337,
-    "hurt": 64,
-    "lift": 0.14378525783007537,
+    "hurt": 65,
+    "lift": 0.14285887749305645,
     "model": "claude-sonnet-5-5",
-    "runs": 586,
+    "runs": 587,
     "tied": 185,
-    "with_avg": 0.8456551418829127,
-    "without_avg": 0.7018698840528372
+    "with_avg": 0.8452366493073029,
+    "without_avg": 0.7023777718142465
    },
    {
     "helped": 7,
@@ -53133,7 +53300,7 @@
     "without_pass_rate": 0.8819444444444444
    }
   ],
-  "generated_at": "2026-11-07T20:56:36Z",
+  "generated_at": "2026-11-07T21:05:36Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -53200,7 +53367,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-07T20:55:25Z",
+ "generated_at": "2026-11-07T21:04:28Z",
  "guidance": {
   "removed": [
    {
@@ -53228,6 +53395,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 7,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Working in these repos",
     "id": "working-in-these-repos",
     "next_test": {
@@ -53469,6 +53642,23 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 30,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.3259308,
+       "runs": 4
+      },
+      "invalid_run": {
+       "cost_unknown": 0,
+       "cost_usd": 0.3888002,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.714731,
+     "total": 8
+    },
     "heading": "Anything you name gets its link",
     "id": "anything-you-name-gets-its-link",
     "next_test": {
@@ -54421,6 +54611,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 8,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Finding your unknowns",
     "id": "finding-your-unknowns",
     "next_test": {
@@ -54699,6 +54895,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 2,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Turn lessons into checks, skills and guidance",
     "id": "turn-lessons-into-checks",
     "next_test": {
@@ -54776,6 +54978,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Workstation layout",
     "id": "workstation-layout",
     "next_test": {
@@ -55008,6 +55216,23 @@
      "no_help_pairs": null
     },
     "current_text_runs": 10,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.1591029,
+       "runs": 2
+      },
+      "invalid_run": {
+       "cost_unknown": 0,
+       "cost_usd": 0.40689994999999995,
+       "runs": 9
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.56600285,
+     "total": 11
+    },
     "heading": "Security",
     "id": "security",
     "next_test": {
@@ -55401,6 +55626,23 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 25,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.17239179999999998,
+       "runs": 2
+      },
+      "invalid_run": {
+       "cost_unknown": 0,
+       "cost_usd": 0.3119986,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.4843904,
+     "total": 6
+    },
     "heading": "Data exposure in CI and public repos",
     "id": "data-exposure-in-ci",
     "next_test": {
@@ -56128,6 +56370,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Read before you start",
     "id": "read-before-you-start",
     "next_test": {
@@ -56360,6 +56608,18 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 8,
+    "discarded_runs": {
+     "by_reason": {
+      "invalid_run": {
+       "cost_unknown": 0,
+       "cost_usd": 0.3758399,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.3758399,
+     "total": 4
+    },
     "heading": "Automation vs branch protection",
     "id": "automation-vs-branch-protection",
     "next_test": {
@@ -56638,6 +56898,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 8,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Two GitHub connectors, and which one you are holding",
     "id": "two-github-connectors",
     "next_test": {
@@ -56916,6 +57182,18 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 28,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.4774677,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.4774677,
+     "total": 4
+    },
     "heading": "Agent-made GitHub contributions carry a marker",
     "id": "agent-contribution-markers",
     "next_test": {
@@ -57740,6 +58018,7 @@
      "no_help_pairs": null
     },
     "current_text_runs": 0,
+    "discarded_runs": null,
     "heading": "PR descriptions open with a TLDR",
     "id": "pr-tldr",
     "next_test": {
@@ -57791,6 +58070,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 8,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "A GitHub 404 means \"not authorized\", not \"not there\"",
     "id": "github-404-means-not-authorized",
     "next_test": {
@@ -58069,6 +58354,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 9,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "The fleet spans TWO owners, and a scoped search will not say so",
     "id": "fleet-spans-two-owners",
     "next_test": {
@@ -58356,6 +58647,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 7,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "\"The watch finished\" is not \"CI passed\"",
     "id": "watch-finished-is-not-ci-passed",
     "next_test": {
@@ -58597,6 +58894,18 @@
      "no_help_pairs": null
     },
     "current_text_runs": 2,
+    "discarded_runs": {
+     "by_reason": {
+      "fixture_changed": {
+       "cost_unknown": 0,
+       "cost_usd": 3.3252683000000003,
+       "runs": 28
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 3.3252683000000003,
+     "total": 28
+    },
     "heading": "A successful `git push` does not mean your commit exists",
     "id": "git-push-does-not-mean-commit-exists",
     "next_test": {
@@ -58905,6 +59214,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 12,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Dependency updates",
     "id": "dependency-updates",
     "next_test": {
@@ -59289,6 +59604,18 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 12,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.1546343,
+       "runs": 2
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.1546343,
+     "total": 2
+    },
     "heading": "A name you choose becomes data a scanner reads",
     "id": "name-becomes-scanner-data",
     "next_test": {
@@ -59682,6 +60009,18 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 12,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.4253746,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.4253746,
+     "total": 4
+    },
     "heading": "Pinning GitHub Actions",
     "id": "pinning-github-actions",
     "next_test": {
@@ -60075,6 +60414,18 @@
      "no_help_pairs": 2
     },
     "current_text_runs": 10,
+    "discarded_runs": {
+     "by_reason": {
+      "context_unmatched": {
+       "cost_unknown": 0,
+       "cost_usd": 0.1852574,
+       "runs": 2
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.1852574,
+     "total": 2
+    },
     "heading": "A test that can signal can kill every session",
     "id": "test-that-can-signal-kills-every-session",
     "next_test": {
@@ -60387,6 +60738,12 @@
      "no_help_pairs": null
     },
     "current_text_runs": 7,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Subagent delegation (model routing)",
     "id": "subagent-delegation",
     "next_test": {
@@ -60628,6 +60985,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Skills ecosystem",
     "id": "skills-ecosystem",
     "next_test": {
@@ -60860,6 +61223,12 @@
      "no_help_pairs": 1
     },
     "current_text_runs": 8,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Two setup gaps you may close, and must not nag about",
     "id": "two-setup-gaps",
     "next_test": {
@@ -61117,6 +61486,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 9,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Git practices",
     "id": "git-practices",
     "next_test": {
@@ -61404,6 +61779,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Docker",
     "id": "section-docker",
     "next_test": {
@@ -61615,6 +61996,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": ".NET / C#",
     "id": "section-dotnet",
     "next_test": {
@@ -61826,6 +62213,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Go",
     "id": "section-go",
     "next_test": {
@@ -62037,6 +62430,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "JavaScript",
     "id": "section-javascript",
     "next_test": {
@@ -62248,6 +62647,18 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {
+      "invalid_run": {
+       "cost_unknown": 0,
+       "cost_usd": 0.4048535,
+       "runs": 4
+      }
+     },
+     "cost_unknown": 0,
+     "cost_usd": 0.4048535,
+     "total": 4
+    },
     "heading": "Python",
     "id": "section-python",
     "next_test": {
@@ -62459,6 +62870,12 @@
      "no_help_pairs": null
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "Rust",
     "id": "section-rust",
     "next_test": {
@@ -62670,6 +63087,12 @@
      "no_help_pairs": 0
     },
     "current_text_runs": 6,
+    "discarded_runs": {
+     "by_reason": {},
+     "cost_unknown": 0,
+     "cost_usd": 0.0,
+     "total": 0
+    },
     "heading": "TypeScript",
     "id": "section-typescript",
     "next_test": {
@@ -65058,6 +65481,7 @@
    },
    "current_text_runs": 0,
    "description": "Add email addresses to a Fastmail account as \"From\" sending identities by triggering the add-from-address workflow in Adam-S-Daniel/fastmail-actions, with a dry-run preview. Trigger on \"add a from address\", \"add a sending identity\", \"let me send as X\". To discover which aliases are worth adding, use add-received-from-addresses.",
+   "discarded_runs": null,
    "name": "add-from-address",
    "next_test": {
     "band": null,
@@ -65103,6 +65527,7 @@
    },
    "current_text_runs": 0,
    "description": "Find the Fastmail alias addresses you actually correspond through (distinct X-Delivered-To, minus existing identities) and add them as \"From\" identities via the add-received-from-addresses workflow in Adam-S-Daniel/fastmail-actions, with a dry-run preview. Trigger on \"add From addresses for aliases I use\". For one known address, use add-from-address.",
+   "discarded_runs": null,
    "name": "add-received-from-addresses",
    "next_test": {
     "band": null,
@@ -65148,6 +65573,18 @@
    },
    "current_text_runs": 0,
    "description": "Understand and safely change how the Decap /admin config is built \u2014 the gem-shipped admin machinery, the build-time render hook, the site-owned collections seam, the window.CMS_* identity injection, and the base_collections opt-out. Use when editing theme/admin/* (config.base.yml, the JS/HTML shells, the reviews dashboards), changing the render hook or its CLI mirror, debugging why /admin renders wrong/missing collections or wrong identity, adding a per-site collection, or hiding the platform's built-in collections. Trigger on mentions of \"admin config\", \"config.base.yml\", \"render-decap-config\", \"decap_config_hook\", \"collections.site.yml\", \"base_collections\", \"CMS_REPO / window.CMS_*\", or \"/admin shows the wrong collections\".",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 1.8189056000000001,
+      "runs": 6
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 1.8189056000000001,
+    "total": 6
+   },
    "name": "admin-config-render",
    "next_test": {
     "band": null,
@@ -65257,6 +65694,7 @@
    },
    "current_text_runs": 0,
    "description": "Deploy, update, or troubleshoot the platform AWS bootstrap CloudFormation stack for a site. Use when setting up AWS infrastructure for the first time, adding new resources, diagnosing CloudFormation errors, checking stack outputs, or explaining what the bootstrap provisions.",
+   "discarded_runs": null,
    "name": "aws-bootstrap",
    "next_test": {
     "band": null,
@@ -65302,6 +65740,18 @@
    },
    "current_text_runs": 0,
    "description": "Write, run, and maintain Playwright e2e tests across the browser/viewport/accessibility matrix. Use when adding new e2e tests, updating the test matrix, debugging cross-browser failures, or understanding how the browser testing infrastructure works.",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 7.104316300000001,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 7.104316300000001,
+    "total": 2
+   },
    "name": "browser-testing",
    "next_test": {
     "band": null,
@@ -65428,6 +65878,23 @@
    },
    "current_text_runs": 25,
    "description": "Speed up a slow GitHub Actions job or test step using measurements, not guesses. Trigger when CI is slow; when asked to speed up a workflow, job, or step; to cache a tool or browser download in CI; to parallelize or shard tests; to add more workers; when asked why a step takes a minute (or any specific duration); or when evaluating nektos/act as a local CI inner loop. Covers reading job/step timings and log timestamps to tell CPU-bound from waiting, the actions/cache economics for Playwright browser installs, Playwright worker-count tuning, sharding tradeoffs against the fixed per-job cost, keeping a required check green across shards, and running act locally (Docker-in-WSL, binary and image pinning).",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.301182,
+      "runs": 1
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 3.1334141,
+      "runs": 18
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 3.4345961,
+    "total": 19
+   },
    "name": "ci-job-performance",
    "next_test": {
     "band": "missing",
@@ -66167,6 +66634,18 @@
    },
    "current_text_runs": 0,
    "description": "Patterns for setting up reliable agent self-feedback when waiting on long-running GitHub Actions workflows in this repo (cms-publish-loop-host, deploy-production, e2e matrix). The default temptation \u2014 `RUN=$(gh workflow run X && gh run list --jq ...)` chained into a polling `until` loop \u2014 silently breaks because both commands' stdout concatenate into the variable. Use the patterns here when chaining \"wait for PR merge \u2192 trigger workflow \u2192 watch completion\" or any multi-step CI poll. Trigger when the user asks to watch a workflow, set up a feedback loop, monitor PR completion, or any \"let me know when X finishes\" task that involves the gh CLI.",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 1.1983205,
+      "runs": 6
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 1.1983205,
+    "total": 6
+   },
    "name": "ci-watcher-loops",
    "next_test": {
     "band": null,
@@ -66297,6 +66776,18 @@
    },
    "current_text_runs": 13,
    "description": "Diagnose \"stuck\" or \"repeatedly failing\" runs of cms-publish-loop-host.yml, cms-publish-loop-prod.yml, canary-prod.yml, or any workflow that opens a `cms/<col>/<slug>` PR via Decap and waits for it to auto-merge. The workflow itself is rarely the bug \u2014 almost always the cause is a long-lived BLOCKED PR whose CI ran on a stale base, or a PR stuck BLOCKED with all checks green. Use when the user says a publish-loop is \"stuck\", cancels & restarts a run, or asks why a daily canary keeps failing.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.5534666,
+      "runs": 1
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 0.5534666,
+    "total": 1
+   },
    "name": "cms-stuck-pr-triage",
    "next_test": {
     "band": "near",
@@ -66616,6 +67107,18 @@
    },
    "current_text_runs": 0,
    "description": "Reference for the per-language lint + static-analysis + style toolchain (ESLint/Prettier, Ruff/Bandit/mypy, RuboCop, ShellCheck/shfmt, yamllint/actionlint, Stylelint, markdownlint) \u2014 its rule relaxations and gotchas. Use when a contributor asks to \"lint\", \"format\", set up a linter for a new language, or understand why a lint rule is disabled. NOTE - the CI half described here is NOT wired up in cms-platform; read the \"What actually runs\" section first.",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 2.0587261,
+      "runs": 6
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 2.0587261,
+    "total": 6
+   },
    "name": "code-quality",
    "next_test": {
     "band": null,
@@ -66725,6 +67228,7 @@
    },
    "current_text_runs": 0,
    "description": "Compare PDF pairs (name.pdf + name<suffix>.pdf) under a folder to tell whether they print identically and whether their text differs, e.g. before deleting \"-signed\" or \"-needsocr\" duplicates. Triggers: \"compare pdf pairs\", \"find duplicate pdfs\", \"are these pdfs identical\", \"dedupe scanned pdfs\".",
+   "discarded_runs": null,
    "name": "compare-pdfpairs",
    "next_test": {
     "band": null,
@@ -66791,6 +67295,23 @@
    },
    "current_text_runs": 42,
    "description": "The exact GitHub Actions repository secrets AND variables a cms-platform consumer site must set \u2014 the precise fine-grained PAT permissions for each secret, plus the repo variables the reusable workflows read via vars.* and the scripts/set-repo-variables.sh setter that derives them. Use when setting up a new consumer, when a workflow fails with \"GH_TOKEN env var is required\" / \"Input required and not supplied: github-token\" / a startup_failure on a required secret, when auto-merge/nudge/sweep/auto-resolve don't run, when a loop probes the wrong URL/bucket, or when platform-bump fails \"refusing to allow ... to update workflow ... without 'workflows' permission\". Trigger on \"CMS_E2E_PAT\", \"CMS_PLATFORM_PAT\", \"WORKFLOW_SHA_COMMENT_PAT\", \"CMS_AUTOMATION_APP_ID\", \"CMS_AUTOMATION_APP_PRIVATE_KEY\", \"required secrets\", \"PAT permissions\", \"platform-bump workflow scope\", \"AWS_ROLE_ARN\", \"repo variables\", \"CMS_APEX\", \"CMS_PROD_URL\", \"PREVIEW_BUCKET\", or \"PROD_PLAYGROUND_MODE\".",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.2541158000000001,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 3.7272427,
+      "runs": 26
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 4.981358500000001,
+    "total": 28
+   },
    "name": "consumer-repo-provisioning",
    "next_test": {
     "band": "near",
@@ -68075,6 +68596,23 @@
    },
    "current_text_runs": 64,
    "description": "Debugging GitHub Actions workflow failures. Use when workflows are failing, showing unexpected results, or when you need to read workflow run logs and diagnose CI/CD issues.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 3.0192205000000003,
+      "runs": 7
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 20.1221202,
+      "runs": 60
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 23.1413407,
+    "total": 67
+   },
    "name": "debug-github-workflows",
    "next_test": {
     "band": "near",
@@ -70102,6 +70640,33 @@
    },
    "current_text_runs": 22,
    "description": "Sever a scratch tree's inherited push path to the real repository the moment the tree exists, before anything runs in it. Fires on the concrete act, not on how risky the work feels: copying a repo (cp -a, cp -r, rsync, untarring, a /tmp scratch tree), git clone, git worktree add, or standing up a throwaway checkout to run something in; and on any negative control - proving the verifier can fail, a mutation test, a deliberately broken tree, editing a dry-run flag or confirmation prompt or required check to watch it fire, or running an untested destructive path such as a reaper, a sweeper, a delete or force-push script, or a data migration. cp -a copies .git/config, so the copy inherits origin pointing at production. A worktree is not a copy and must be handled differently, because removing its remote removes the parent's. Use this even when you believe you are only verifying.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.5105521999999998,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 16.1152547,
+      "runs": 28
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.269105,
+      "runs": 2
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 2.0735836,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 19.9684955,
+    "total": 34
+   },
    "name": "disarm-inherited-reach",
    "next_test": {
     "band": null,
@@ -70927,6 +71492,18 @@
    },
    "current_text_runs": 0,
    "description": "Diagnose and fix Decap's persistent \"Decap CMS is adding labels to N of your Editorial Workflow entries\" dialog, which appears (and never clears) on /admin \u2014 on prod AND every preview deploy. Use when an editor reports that dialog, when the Workflow tab churns, or when setting up the daily audit that catches the condition. Covers the cause (an open cms/* PR missing its decap-cms/<status> label), the audit script + reusable workflow \u2014 which SELF-HEALS by applying the missing label since v0.1.48 \u2014 the e2e guard, and the manual escalation path for when self-heal fails. Trigger on \"adding labels dialog\", \"editorial workflow dialog stuck\", \"label migration\", \"decap-cms/draft label\", \"editorial-label-audit\", or \"audit-editorial-labels\".",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 1.0752171,
+      "runs": 4
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 1.0752171,
+    "total": 4
+   },
    "name": "editorial-label-audit",
    "next_test": {
     "band": null,
@@ -71036,6 +71613,33 @@
    },
    "current_text_runs": 16,
    "description": "Add a self-contained interactive tool to the site's Tools section, or embed one in a blog post. Use when asked to publish a self-contained interactive HTML app (an explorable, calculator or widget) as a Tools page, to embed one in a post, or to add a new top-level site section. Not for embedding third-party media such as a video. Covers the `tools` Jekyll collection, the static-asset + iframe embed pattern, the Decap CMS wiring (admin/collections.site.yml), the local nav override, and embedding the same tool in a post.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.8820083000000001,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 18.835448200000002,
+      "runs": 28
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.2509101,
+      "runs": 2
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 1.8777210000000002,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 21.8460876,
+    "total": 34
+   },
    "name": "embeddable-tool-pages",
    "next_test": {
     "band": null,
@@ -71834,6 +72438,33 @@
    },
    "current_text_runs": 24,
    "description": "Triage a large list of items (release notes, issues, alerts, findings; dozens to thousands) against one or more repos with parallel subagents, guarding against ID drift and a thin inventory. Use when asked to go through a changelog, backlog or report and decide which items affect your code, especially before splitting across agents. Not for a list readable in one sitting or one dependency bump.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.6070704,
+      "runs": 2
+     },
+     "context_unknown": {
+      "cost_unknown": 0,
+      "cost_usd": 0.0827665,
+      "runs": 1
+     },
+     "subject_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 5.1914705,
+      "runs": 30
+     },
+     "unpaired": {
+      "cost_unknown": 0,
+      "cost_usd": 3.097842,
+      "runs": 29
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 8.9791494,
+    "total": 62
+   },
    "name": "fan-out-triage",
    "next_test": {
     "band": "near",
@@ -73014,6 +73645,7 @@
    },
    "current_text_runs": 0,
    "description": "Automate Fastmail via a local browser session: search mail, read threads and attachments, compose, send and reply. Only on Adam's computer with browser access (Claude desktop or Cowork with Claude in Chrome), never headless. Trigger on \"Fastmail\", \"check my email\", \"search my inbox\". Not for From addresses; use add-from-address.",
+   "discarded_runs": null,
    "name": "fastmail",
    "next_test": {
     "band": null,
@@ -73059,6 +73691,18 @@
    },
    "current_text_runs": 0,
    "description": "Surface and resolve a task's ambiguities before, during and after implementation: blind-spot pass, self-interview, reference-driven specs, implementation notes, post-hoc explainer or quiz. Use on non-trivial builds, unfamiliar code or domains, subjective criteria, plans that keep needing rework, or \"what am I missing\", \"poke holes in this\".",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 11.3748137,
+      "runs": 26
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 11.3748137,
+    "total": 26
+   },
    "name": "finding-unknowns",
    "next_test": {
     "band": null,
@@ -73399,6 +74043,23 @@
    },
    "current_text_runs": 17,
    "description": "Configure and enforce GitHub repository security settings as code: require actions to be pinned to full-length commit SHAs, require approval for all outside collaborators' fork pull-request workflow runs, and protect the default branch via a repository ruleset. The settings-as-code engine, its schema, and the fleet fan-out live in the repo-settings repo, which this skill points to; it also carries manual `gh api` recipes. Trigger when: setting up a new repo, running a security audit, onboarding a repo to org standards, enforcing settings across a fleet, or when asked to configure or harden Actions security settings. Trigger on mentions of \"actions settings\", \"repo security settings\", \"repo settings as code\", \"settings drift\", \"fork approval\", \"outside collaborators\", \"actions policy\", \"branch protection\", \"ruleset\", \"harden repo\", \"actions event policy\", or \"pull_request_target policy\".",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.8248981,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 11.0231708,
+      "runs": 24
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 11.848068900000001,
+    "total": 26
+   },
    "name": "github-actions-repo-settings",
    "next_test": {
     "band": "near",
@@ -74075,6 +74736,33 @@
    },
    "current_text_runs": 44,
    "description": "How cms-platform and its consumer sites pin GitHub Actions \u2014 third-party actions go to a bare full 40-character commit SHA with NO trailing version comment, and a cross-repo reference to cms-platform's own reusable workflows or composite actions stays on its release tag \u2014 plus the 7-day cooling-off before adopting a new release. Trigger when adding, editing, or auditing workflow files in cms-platform, adamdaniel.ai, or jodidaniel.com.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.7603055000000001,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 14.74897389,
+      "runs": 26
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.44439780000000006,
+      "runs": 2
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 1.7777528,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 17.73142999,
+    "total": 32
+   },
    "name": "github-actions-sha-pinning",
    "next_test": {
     "band": null,
@@ -75320,6 +76008,7 @@
    },
    "current_text_runs": 0,
    "description": "Launch a new top-level interactive Claude Code session in a new Windows Terminal tab, on Windows or in WSL, in a chosen folder, optionally remote-controllable and seeded with a prompt or handoff file. Use whenever the user asks to start, open, launch or spawn a new or separate Claude Code session, or to hand off to a fresh one.",
+   "discarded_runs": null,
    "name": "launch-top-level-claude-session",
    "next_test": {
     "band": null,
@@ -75365,6 +76054,7 @@
    },
    "current_text_runs": 0,
    "description": "Inventory and clean up Claude Code auto-memory stores under ~/.claude/projects/*/memory/ on this machine: decoded paths, counts, sizes, freshness, orphaned stores for review, never deleting ambiguous ones. Trigger on \"clean up claude memory\", \"orphaned memory\", \"inventory memory stores\". Local-only; needs this machine's ~/.claude.",
+   "discarded_runs": null,
    "name": "migrate-claude-memory",
    "next_test": {
     "band": null,
@@ -75410,6 +76100,7 @@
    },
    "current_text_runs": 0,
    "description": "OCR scanned PDFs with OCRmyPDF, preserve the originals, and review page appearance and searchable text before replacing any files.",
+   "discarded_runs": null,
    "name": "ocr-pdfs",
    "next_test": {
     "band": null,
@@ -75455,6 +76146,18 @@
    },
    "current_text_runs": 0,
    "description": "Audit PDFs to see whether OCR is needed to make them text-searchable. Use when asked about PDF searchability, OCR status, embedded text or which PDFs are scans, or to inventory a folder for text extraction. Triggers: \"which PDFs need OCR\", \"are my PDFs searchable\", \"audit my PDFs\", \"find scanned PDFs\".",
+   "discarded_runs": {
+    "by_reason": {
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 0.4834667,
+      "runs": 4
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 0.4834667,
+    "total": 4
+   },
    "name": "pdf-ocr-audit",
    "next_test": {
     "band": null,
@@ -75564,6 +76267,18 @@
    },
    "current_text_runs": 13,
    "description": "Cut a new cms-platform release (vX.Y.Z) and reconcile BOTH consumer repos (adamdaniel.ai, jodidaniel.com) to it in single-version lockstep. Use when you've merged a platform fix and need it to flow to consumers, when bumping platform_ref, or when the pin-consistency guard fails after a partial bump. Covers the release dispatch, the exact set of references to bump (platform_ref, gem tag+revision, workflow and composite ref pins), the pin-consistency check, and the lockstep invariant. Trigger on \"cut a release\", \"release vX.Y.Z\", \"bump platform_ref\", \"reconcile consumers\", \"platform-pin-consistency\", or \"flow the fix to consumers\".",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.4310198,
+      "runs": 1
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 0.4310198,
+    "total": 1
+   },
    "name": "platform-release-and-bump",
    "next_test": {
     "band": "near",
@@ -75904,6 +76619,23 @@
    },
    "current_text_runs": 15,
    "description": "Wire a workflow's Playwright (or other captured-log) failures into the PR conversation as a marker-tagged, secret-scrubbed comment via the `.github/actions/post-failure-comment` composite action. Use when adding a new long-running/Playwright workflow, when a workflow's failures are opaque to agents iterating on a PR, when the user asks to \"make CI failures self-report\", or when refactoring inline gitleaks-scrub-and-comment blocks into the shared action.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.32521530000000004,
+      "runs": 1
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 0.6334608,
+      "runs": 4
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 0.9586761000000001,
+    "total": 5
+   },
    "name": "post-failure-comment",
    "next_test": {
     "band": null,
@@ -76286,6 +77018,7 @@
    },
    "current_text_runs": 0,
    "description": "Work with PR preview environments for a platform site. Use when checking preview status, debugging failed deployments, understanding the S3/CloudFront pipeline, fixing the preview bot comment, investigating cache issues, or explaining how previews are deployed and torn down.",
+   "discarded_runs": null,
    "name": "preview-environments",
    "next_test": {
     "band": null,
@@ -76372,6 +77105,23 @@
    },
    "current_text_runs": 33,
    "description": "Diagnose and fix a red or blocked CI result after pushing to a cms-platform-style Jekyll site such as adamdaniel.ai. Use when a pushed branch or PR shows a failed, cancelled or never-reported required check, a PR stuck BLOCKED, or a job that fails at \"Set up job\". Covers reading every check conclusion on the head commit, telling a cancelled required check from a real failure, and the fixes for concurrency cancels, timeout walls, path-filtered required checks and unpinned actions.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.2792086,
+      "runs": 4
+     },
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 1.645497195,
+      "runs": 8
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 2.924705795,
+    "total": 12
+   },
    "name": "red-ci-adamdaniel-ai",
    "next_test": {
     "band": "missing",
@@ -77216,6 +77966,23 @@
    },
    "current_text_runs": 9,
    "description": "Rename already-searchable PDFs in a specified folder to descriptive, date-prefixed names, proposing each name from the PDF's own content and prompting for per-file confirmation or edit before applying. Use after running `ocr-pdfs` to clean up scanner-output filenames like \"Scan from 2024-03-15.pdf\", \"QuickScan_001.pdf\", or \"Document(47).pdf\" \u2014 or for any folder of PDFs that already have text layers but unhelpful filenames. Triggers: \"rename my pdfs\", \"clean up pdf filenames\", \"rename searchable pdfs\", \"give my pdfs descriptive names\", \"rename scanned pdfs\", \"tidy pdf names\".",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.2816113,
+      "runs": 1
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 2.5232462,
+      "runs": 16
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 2.8048575,
+    "total": 17
+   },
    "name": "rename-pdfs",
    "next_test": {
     "band": "near",
@@ -77720,6 +78487,33 @@
    },
    "current_text_runs": 63,
    "description": "Review bash scripts for CI/CD reliability issues. Use when writing or reviewing shell scripts that run in GitHub Actions or other CI environments to catch silent failure patterns, missing error propagation, and environment assumptions.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 2.0408445000000004,
+      "runs": 5
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 1.2359339,
+      "runs": 6
+     },
+     "fixture_off_main": {
+      "cost_unknown": 2,
+      "cost_usd": 35.523533445,
+      "runs": 30
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.37627900000000003,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 2,
+    "cost_usd": 39.176590845,
+    "total": 43
+   },
    "name": "review-bash-ci-reliability",
    "next_test": {
     "band": "near",
@@ -79487,6 +80281,38 @@
    },
    "current_text_runs": 32,
    "description": "Diagnose skill DELIVERY health for the current session: name the surface, diff the expected set in `skills.lock` against what actually loaded (the session's own skill listing, `~/.claude/skills/`, the account `synced/manifest.json`, `claude plugin list`), attribute every skill to the registry and bundle it came from by reading the bootstrap hook's own install record rather than guessing, and flag silent shadowing and dangling payload references. Reports only \u2014 it never installs, copies, deletes or repairs anything. Use when a skill you expected is missing or won't trigger, when a repo-owned skill looks overridden, when the session-start `skills:` verdict reads DEGRADED, when you need to know where a skill came from or whether the hook installed it, or when the user says \"why didn't that skill load\", \"which skills do I actually have\", \"is my registry stale\", \"audit my skills\", \"skills doctor\".",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.9808122,
+      "runs": 4
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 15.5736309,
+      "runs": 22
+     },
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 1.7083534999999999,
+      "runs": 8
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.338658,
+      "runs": 2
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 2.0760867999999997,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 21.6775414,
+    "total": 38
+   },
    "name": "skills-doctor",
    "next_test": {
     "band": "missing",
@@ -80541,6 +81367,7 @@
    },
    "current_text_runs": 0,
    "description": "Sync Claude Code settings.json between the Windows and WSL homes, merging per property and keeping OS-bound keys per file. Use for \"sync Claude Code settings\", \"merge my settings.json\", or keeping WSL and Windows settings in sync, not for editing one file. Windows-only (PowerShell 7+ and the WSL UNC share).",
+   "discarded_runs": null,
    "name": "sync-cc-settings-between-wsl-and-windows",
    "next_test": {
     "band": null,
@@ -80586,6 +81413,7 @@
    },
    "current_text_runs": 0,
    "description": "Internal propagation canary for the cms-platform bundle. It carries no guidance; never invoke it in normal work.",
+   "discarded_runs": null,
    "name": "test-canary",
    "next_test": {
     "band": null,
@@ -80712,6 +81540,38 @@
    },
    "current_text_runs": 24,
    "description": "Use when a PowerShell tool call fails with a bare \"Exit code 1\", fails the same way twice, or is refused as blocked or protected. Covers getting the real error, the two-strikes stop rule, reporting a policy block instead of routing around it, and previewing deletions. For \"Access is denied\" from powershell.exe in WSL, use windows-elevation-from-wsl.",
+   "discarded_runs": {
+    "by_reason": {
+     "context_unknown": {
+      "cost_unknown": 0,
+      "cost_usd": 0.1278995,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 0.1950171,
+      "runs": 2
+     },
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 0.585953,
+      "runs": 4
+     },
+     "subject_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 1.5860301,
+      "runs": 9
+     },
+     "unpaired": {
+      "cost_unknown": 0,
+      "cost_usd": 0.7298883,
+      "runs": 7
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 3.224788,
+    "total": 24
+   },
    "name": "tool-powershell",
    "next_test": {
     "band": "near",
@@ -81574,6 +82434,33 @@
    },
    "current_text_runs": 54,
    "description": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 2.5620476,
+      "runs": 6
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 0.9723236,
+      "runs": 6
+     },
+     "fixture_off_main": {
+      "cost_unknown": 1,
+      "cost_usd": 20.288619399999998,
+      "runs": 26
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.8044543,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 1,
+    "cost_usd": 24.627444899999997,
+    "total": 40
+   },
    "name": "vendor-release-impact-issues",
    "next_test": {
     "band": "near",
@@ -83090,6 +83977,33 @@
    },
    "current_text_runs": 0,
    "description": "Handle \"Access is denied\" from powershell.exe or pwsh.exe run inside WSL: scheduled-task registration, service changes, LSA rights grants such as SeBatchLogonRight, HKLM writes or any other Windows state change from WSL. Use it before attempting such a write from WSL and the moment one is denied.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.0871207999999999,
+      "runs": 2
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 13.70096568,
+      "runs": 42
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.2419562,
+      "runs": 2
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 1.8104838,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 16.84052648,
+    "total": 48
+   },
    "name": "windows-elevation-from-wsl",
    "next_test": {
     "band": null,
@@ -83566,11 +84480,11 @@
       "votes": true
      },
      {
-      "gain": 0.0,
-      "high": 100.0,
+      "gain": -15.0,
+      "high": 39.6,
       "low": -100.0,
       "model": "claude-opus-5-5",
-      "pairs": 3,
+      "pairs": 4,
       "status": "open",
       "task": "workflow-doc-in-step",
       "votes": true
@@ -83606,11 +84520,11 @@
       "votes": true
      },
      {
-      "gain": -3.3,
-      "high": 20.5,
+      "gain": -6.7,
+      "high": 16.3,
       "low": -36.2,
       "model": "claude-sonnet-5-5",
-      "pairs": 10,
+      "pairs": 11,
       "status": "open",
       "task": "workflow-doc-in-step",
       "votes": true
@@ -83635,8 +84549,40 @@
      "to": "2026-11-07"
     }
    },
-   "current_text_runs": 35,
+   "current_text_runs": 37,
    "description": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.7681094000000002,
+      "runs": 4
+     },
+     "context_unknown": {
+      "cost_unknown": 0,
+      "cost_usd": 0.14382820000000002,
+      "runs": 2
+     },
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 37.46182754,
+      "runs": 46
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 12.6367386,
+      "runs": 34
+     },
+     "subject_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 0.22349220000000003,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 52.23399594,
+    "total": 88
+   },
    "name": "workflow-path-audit",
    "next_test": {
     "band": "near",
@@ -83646,6 +84592,48 @@
    },
    "registry": "adam-agentskills",
    "runs": [
+    {
+     "at": "2026-11-07T20:48:07Z",
+     "cli_version": "2.1.319",
+     "fixture": "workflow-doc-in-step",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T204250Z-455b93/workflow-path-audit/20261107T204807Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 10,
+      "cost_usd": 0.1788698,
+      "judge_mean": 6.250000000000001,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.1289784,
+      "judge_mean": 10.0,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-07T20:44:22Z",
+     "cli_version": "2.1.319",
+     "fixture": "workflow-doc-in-step",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T204250Z-455b93/workflow-path-audit/20261107T204422Z/report.md",
+     "with": {
+      "checks_passed": 4,
+      "checks_total": 10,
+      "cost_usd": 0.6698791,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 10,
+      "checks_total": 10,
+      "cost_usd": 0.3718449999999999,
+      "judge_mean": 9.000000000000002,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-07T19:51:46Z",
      "cli_version": "2.1.319",
@@ -84984,6 +85972,38 @@
    },
    "current_text_runs": 25,
    "description": "Write a lightweight Nygard-style Architecture Decision Record under `docs/decisions/` when a non-obvious decision needs context that won't fit in a code comment and would rot if left only in a PR description. Trigger when the user asks \"should I document this\", \"add an ADR\", \"why did we do X\" referring to a past choice with no comment trail, or when you find yourself drafting a multi-paragraph PR description justifying a one-line change. Also covers the bootstrap case (creating `docs/decisions/README.md` + the first ADR from scratch) if the folder doesn't exist yet.",
+   "discarded_runs": {
+    "by_reason": {
+     "bare_run": {
+      "cost_unknown": 0,
+      "cost_usd": 1.9366013,
+      "runs": 4
+     },
+     "fixture_changed": {
+      "cost_unknown": 0,
+      "cost_usd": 25.2905875,
+      "runs": 46
+     },
+     "fixture_off_main": {
+      "cost_unknown": 0,
+      "cost_usd": 19.2913593,
+      "runs": 44
+     },
+     "invalid_run": {
+      "cost_unknown": 0,
+      "cost_usd": 0.9917563,
+      "runs": 6
+     },
+     "model_off_roster": {
+      "cost_unknown": 0,
+      "cost_usd": 1.79757,
+      "runs": 2
+     }
+    },
+    "cost_unknown": 0,
+    "cost_usd": 49.3078744,
+    "total": 102
+   },
    "name": "writing-adrs",
    "next_test": {
     "band": "missing",
@@ -86499,8 +87519,8 @@
  ],
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
-  "repository_commit": "fa773fe7e2f04d888266c4dc127f52dc124c2c52",
-  "results_commit": "00a7df58b2f264f345c9f4af54a53e0c324d9c98"
+  "repository_commit": "a3da033298ba5ccf145bb7e211c2b82700901fb3",
+  "results_commit": "35a3634ab96e0cbb62e90ecad9c868eefcc3371f"
  },
  "spend": {
   "generated_at": "2026-11-07T20:31:19Z",
