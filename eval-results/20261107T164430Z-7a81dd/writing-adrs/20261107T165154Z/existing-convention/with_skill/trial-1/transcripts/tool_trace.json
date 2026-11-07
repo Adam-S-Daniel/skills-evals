@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PVrG6tJkfCvkPxUMbv6jjN",
+      "name": "Skill",
+      "input": "adam-anything-anywhere:writing-adrs",
+      "input_chars": 35,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PVrG6tJkfCvkPxUMbv6jjN",
+      "is_error": false,
+      "output": "Launching skill: adam-anything-anywhere:writing-adrs",
+      "output_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BPNXVa7su5asBqWvzfgBGe",
+      "name": "Bash",
+      "input": "git log --oneline | head -20; ls docs/decisions; cat docs/decisions/README.md; cat scripts/retry.sh; cat CHANGELOG.md | head -20",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BPNXVa7su5asBqWvzfgBGe",
+      "is_error": false,
+      "output": "58e5bb9 initial commit\n0001-cache-order-status-in-redis.md\n0002-poll-fulfillment-service-every-30s.md\n0003-poll-fulfillment-service-every-10s.md\nREADME.md\n# Architecture decisions\n\nThis log records decisions worth remembering: what we picked, why, and what\nit costs us. Skip it when a one-line code c...",
+      "output_chars": 2315,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XfZ7nPXqGEv5eRtaGjj45V",
+      "name": "Bash",
+      "input": "cd <path> && cat 0003-*.md",
+      "input_chars": 68,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XfZ7nPXqGEv5eRtaGjj45V",
+      "is_error": false,
+      "output": "# 0003. Poll the fulfillment service every 10 seconds\n\n## Status\n\nAccepted\n\n## Context\n\nSupport tickets showed customers noticing a shipped order before Order Sync\ndid, with the 30-second interval from 0002 landing near the middle of that\ngap often enough to matter. The fulfillment service's documen...",
+      "output_chars": 610,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P6nKejLdpVeoWzqg3P5bVp",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 101,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015FvDBM8DZbQfCWRkUBrg4B",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 58,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P6nKejLdpVeoWzqg3P5bVp",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 197,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015FvDBM8DZbQfCWRkUBrg4B",
+      "is_error": true,
+      "output": "<tool_use_error>Found 2 matches of the string to replace, but replace_all is false. To replace all occurrences, set replace_all to true. To replace only one occurrence, please provide more context to uniquely identify the instance.\nString: | Accepted |\n</tool_use_error>",
+      "output_chars": 270,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LT9QGKw5P2jrYpH3QH6KK1",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 58,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CUZbYWf583YYaBWzkwoeRy",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 50,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LT9QGKw5P2jrYpH3QH6KK1",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 98,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CUZbYWf583YYaBWzkwoeRy",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 90,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
