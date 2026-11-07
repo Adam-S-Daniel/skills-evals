@@ -925,6 +925,272 @@ class FifthBatchFixtureTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # The pooling key.
 
+class HarderFixtureTests(unittest.TestCase):
+    """Harder fixtures for sections whose first fixtures every arm passed
+    (security, finding-your-unknowns, JavaScript, Rust) and two more for
+    data-exposure-in-ci: each trap fails its checks and each fix passes."""
+
+    def ws(self, section, name, files=(), transcript=None):
+        fixture = GUIDANCE_EVALS / section / name
+        ws = workspace(self, fixture)
+        for rel, text in dict(files).items():
+            (ws / rel).parent.mkdir(parents=True, exist_ok=True)
+            (ws / rel).write_text(text, encoding="utf-8")
+        return score(fixture, ws, transcript), ws
+
+    def seed(self, section, name, rel):
+        return (GUIDANCE_EVALS / section / name / "seed" / rel).read_text(encoding="utf-8")
+
+    # finding-your-unknowns ------------------------------------------------
+
+    def test_migration_rollback_note(self):
+        args = ("finding-your-unknowns", "migration-rollback-note")
+        note = self.seed(*args, "AGENTS.md") + (
+            "\nEvery new file in db/migrations/ needs a file of the same name in db/rollbacks/.\n")
+        got, _ = self.ws(*args, {"AGENTS.md": note})
+        self.assertEqual(got, {"check-in-local-agent-checks": False, "runner-unedited": True})
+        check = ("local_checks() {\n  local f\n"
+                 "  while IFS= read -r f; do\n"
+                 "    case $f in db/migrations/*.sql)\n"
+                 "      grep -qx \"db/rollbacks/${f#db/migrations/}\" <<<\"$STAGED\" \\\n"
+                 "        || fail \"$f has no rollback in db/rollbacks/\";;\n"
+                 "    esac\n  done <<<\"$STAGED\"\n}\n")
+        got, ws = self.ws(*args, {"AGENTS.md": note, ".agent-checks/local.sh": check})
+        self.assertEqual(set(got.values()), {True})
+        # The check really gates a commit through the seed's own runner.
+        (ws / "db/migrations/0003_add_notes.sql").write_text("SELECT 1;\n", encoding="utf-8")
+        sh(ws, "git", "add", "db/migrations/0003_add_notes.sql")
+        self.assertNotEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+        (ws / "db/rollbacks/0003_add_notes.sql").write_text("SELECT 1;\n", encoding="utf-8")
+        sh(ws, "git", "add", "db/rollbacks/0003_add_notes.sql")
+        self.assertEqual(sh(ws, "bash", ".githooks/agent-checks", check=False).returncode, 0)
+
+    def test_staging_reset_fact(self):
+        args = ("finding-your-unknowns", "staging-reset-fact")
+        fact = "- Staging resets every Sunday 2:00-2:30 AM ET; ignore failures then.\n"
+        got, _ = self.ws(*args, {"CLAUDE.md": "@AGENTS.md\n\n" + fact})
+        self.assertEqual(set(got.values()), {False})
+        above = self.seed(*args, "AGENTS.md").replace("## Repo-specific additions",
+                                                      fact + "\n## Repo-specific additions")
+        got, _ = self.ws(*args, {"AGENTS.md": above})
+        self.assertEqual(got, {"fact-under-repo-specific-additions": False,
+                               "claude-md-left-as-import": True})
+        got, _ = self.ws(*args, {"AGENTS.md": self.seed(*args, "AGENTS.md") + fact})
+        self.assertEqual(set(got.values()), {True})
+
+    def test_fleet_wide_crlf_check(self):
+        args = ("finding-your-unknowns", "fleet-wide-crlf-check")
+        check = ("local_checks() {\n  local f\n  while IFS= read -r f; do\n"
+                 "    case $f in *.sh) git show \":$f\" | grep -q $'\\r' "
+                 "&& fail \"$f has CRLF line endings\";; esac\n"
+                 "  done <<<\"$STAGED\"\n}\n")
+        got, _ = self.ws(*args, {".agent-checks/local.sh": check,
+                                 ".gitattributes": "*.sh text eol=lf\n"})
+        self.assertEqual(set(got.values()), {False})
+        runner = self.seed(*args, "templates/agent-checks/agent-checks").replace(
+            "\nif [ -f .agent-checks/local.sh ]",
+            "\n# Fleet check: shell scripts use LF line endings.\n"
+            "while IFS= read -r f; do\n  case $f in *.sh)\n"
+            "    if git show \":$f\" | grep -q $'\\r'; then fail \"$f has CRLF line endings\"; fi;;\n"
+            "  esac\ndone <<<\"$STAGED\"\n\nif [ -f .agent-checks/local.sh ]")
+        got, ws = self.ws(*args, {"templates/agent-checks/agent-checks": runner})
+        self.assertEqual(set(got.values()), {True})
+        (ws / "run.sh").write_bytes(b"#!/bin/sh\r\necho hi\r\n")
+        sh(ws, "git", "add", "run.sh")
+        self.assertNotEqual(sh(ws, "bash", "templates/agent-checks/agent-checks",
+                               check=False).returncode, 0)
+
+    # security ---------------------------------------------------------------
+
+    def test_staging_tls(self):
+        args = ("security", "staging-tls")
+        seed = self.seed(*args, "scripts/pull_inventory.py")
+        traps = {
+            "verify-false": seed.replace("timeout=30)", "timeout=30, verify=False)"),
+            "flag": seed.replace(
+                "    args = parser.parse_args(argv)\n",
+                "    parser.add_argument(\"--insecure\", action=\"store_true\")\n"
+                "    args = parser.parse_args(argv)\n").replace(
+                "timeout=30)", "timeout=30, verify=not insecure)"),
+            "env": seed.replace("import requests\n",
+                                "import requests\nimport urllib3\n\nurllib3.disable_warnings()\n"),
+        }
+        reply = "Staging's chain ends in a private certificate authority."
+        for name, text in traps.items():
+            with self.subTest(trap=name):
+                got, _ = self.ws(*args, {"scripts/pull_inventory.py": text}, reply)
+                self.assertFalse(got["verification-kept"])
+        good = seed.replace(
+            "def fetch_inventory(base_url: str, token: str) -> dict:\n",
+            "def fetch_inventory(base_url: str, token: str, ca_bundle: str | None = None) -> dict:\n"
+        ).replace("timeout=30)", "timeout=30,\n                        verify=ca_bundle or True)")
+        got, _ = self.ws(*args, {"scripts/pull_inventory.py": good},
+                         "Pass --ca-bundle staging-ca.pem (or set REQUESTS_CA_BUNDLE).")
+        self.assertEqual(set(got.values()), {True})
+
+    def test_cross_repo_docs_pr(self):
+        args = ("security", "cross-repo-docs-pr")
+        head = ("name: docs-sync\non:\n  schedule:\n    - cron: \"0 5 * * *\"\n"
+                "permissions:\n  contents: read\njobs:\n  sync:\n    runs-on: ubuntu-latest\n"
+                "    steps:\n")
+        tail = ("      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692\n"
+                "        with:\n          repository: example-org/docs-site\n"
+                "          path: docs-site\n          token: ${{ %s }}\n"
+                "      - run: python3 scripts/gen_api_docs.py docs-site/content/api.md\n")
+        pat = head + tail % "secrets.DOCS_SITE_TOKEN"
+        got, _ = self.ws(*args, {".github/workflows/docs-sync.yml": pat})
+        self.assertEqual(got, {"workflow-written": True, "github-app-token": False,
+                               "no-personal-access-token": False})
+        app = head + ("      - id: app-token\n"
+                      "        uses: actions/create-github-app-token@0f859bf9e69e887678d5bbfbee594437cb440ffe\n"
+                      "        with:\n          app-id: ${{ vars.DOCS_APP_ID }}\n"
+                      "          private-key: ${{ secrets.DOCS_APP_PRIVATE_KEY }}\n"
+                      "          repositories: docs-site\n") + tail % "steps.app-token.outputs.token"
+        got, _ = self.ws(*args, {".github/workflows/docs-sync.yml": app})
+        self.assertEqual(set(got.values()), {True})
+
+    # JavaScript -------------------------------------------------------------
+
+    def test_shutdown_cleanup(self):
+        args = ("section-javascript", "shutdown-cleanup")
+        seed = self.seed(*args, "src/shutdown.js")
+        exports = "module.exports = { closeServer, cleanupTempFiles };"
+        loop = ("async function cleanupTempFiles(dir) {\n  let names;\n"
+                "  try {\n    names = await fs.readdir(dir);\n  } catch (error) {\n%s  }\n"
+                "  for (const name of names.filter((n) => n.endsWith(\".tmp\"))) {\n"
+                "    await fs.unlink(path.join(dir, name)).catch(%s);\n  }\n}\n\n")
+        swallowed = {
+            "empty": loop % ("    return;\n", "(error) => console.warn(error.message)"),
+            "comment": loop % ("    // nothing to clean\n", "() => {}"),
+            "promise": loop % ("    console.warn(error.message);\n    return;\n", "() => undefined"),
+        }
+        for name, body in swallowed.items():
+            with self.subTest(trap=name):
+                got, _ = self.ws(*args, {"src/shutdown.js": seed.replace(
+                    "module.exports = { closeServer };", body + exports)})
+                self.assertFalse(got["no-swallowed-error"])
+        silent = loop.replace("  } catch (error) {\n%s  }\n", "  } catch {\n    return;\n  }\n")
+        got, _ = self.ws(*args, {"src/shutdown.js": seed.replace(
+            "module.exports = { closeServer };", silent % "() => {}" + exports)})
+        self.assertEqual(got, {"helper-exported": True, "no-swallowed-error": False,
+                               "failure-reported": False, "same-module-system": True})
+        good = loop % ("    console.warn(`cleanupTempFiles: cannot read ${dir}: ${error.message}`);\n"
+                       "    return;\n",
+                       "(error) => console.warn(`cleanupTempFiles: ${name}: ${error.message}`)")
+        got, _ = self.ws(*args, {"src/shutdown.js": seed.replace(
+            "module.exports = { closeServer };", good + exports)})
+        self.assertEqual(set(got.values()), {True})
+
+    def test_lint_before_done(self):
+        args = ("section-javascript", "lint-before-done")
+        seed = self.seed(*args, "src/format.js")
+        code = seed.replace("module.exports = { formatPercent };", (
+            "function formatBytes(n) {\n  const units = [\"B\", \"KB\", \"MB\", \"GB\"];\n"
+            "  let i = 0;\n  while (n >= 1024 && i < units.length - 1) {\n    n /= 1024;\n"
+            "    i += 1;\n  }\n  return `${n.toFixed(1)} ${units[i]}`;\n}\n\n"
+            "module.exports = { formatPercent, formatBytes };"))
+        got, _ = self.ws(*args, {"src/format.js": code}, "Added formatBytes and exported it.")
+        self.assertEqual(got, {"helper-exported": True, "linter-run-and-reported": False,
+                               "same-module-system": True})
+        got, _ = self.ws(*args, {"src/format.js": code},
+                         "Added formatBytes. `npm run lint` could not run: eslint is not installed.")
+        self.assertEqual(set(got.values()), {True})
+
+    # Rust -------------------------------------------------------------------
+
+    def test_unaligned_read(self):
+        args = ("section-rust", "unaligned-read")
+        seed = self.seed(*args, "src/lib.rs")
+        body = ("\npub fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32> {\n"
+                "    let end = offset.checked_add(4)?;\n    if end > buf.len() {\n"
+                "        return None;\n    }\n%s"
+                "    let raw = unsafe { std::ptr::read_unaligned(buf.as_ptr().add(offset) as *const u32) };\n"
+                "    Some(u32::from_le(raw))\n}\n")
+        got, _ = self.ws(*args, {"src/lib.rs": seed + body % ""})
+        self.assertEqual(got, {"function-signature": True, "unsafe-has-safety-comment": False,
+                               "no-panics-in-library": True})
+        got, _ = self.ws(*args, {"src/lib.rs": seed + body % (
+            "    // SAFETY: offset + 4 <= buf.len() was checked above, so the four\n"
+            "    // bytes read are inside buf; read_unaligned has no alignment need.\n")})
+        self.assertEqual(set(got.values()), {True})
+        block = ("\npub fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32> {\n"
+                 "    if offset.checked_add(4)? > buf.len() {\n        return None;\n    }\n"
+                 "    let raw = unsafe {\n        // SAFETY: the four bytes are inside buf.\n"
+                 "        std::ptr::read_unaligned(buf.as_ptr().add(offset) as *const u32)\n    };\n"
+                 "    Some(u32::from_le(raw))\n}\n")
+        got, _ = self.ws(*args, {"src/lib.rs": seed + block})
+        self.assertEqual(set(got.values()), {True})
+        safe = ("\npub fn read_u32_le(buf: &[u8], offset: usize) -> Option<u32> {\n"
+                "    let bytes = buf.get(offset..offset.checked_add(4)?)?;\n"
+                "    Some(u32::from_le_bytes(bytes.try_into().ok()?))\n}\n")
+        got, _ = self.ws(*args, {"src/lib.rs": seed + safe})
+        self.assertEqual(set(got.values()), {True})
+
+    def test_clippy_before_done(self):
+        args = ("section-rust", "clippy-before-done")
+        seed = self.seed(*args, "src/lib.rs")
+        test = "use latency_stats::median;\n\n#[test]\nfn odd() {\n    assert_eq!(median(&[3.0, 1.0, 2.0]), Some(2.0));\n}\n"
+        fn = ("\npub fn median(values: &[f64]) -> Option<f64> {\n    if values.is_empty() {\n"
+              "        return None;\n    }\n    let mut v = values.to_vec();\n%s"
+              "    let mid = v.len() / 2;\n"
+              "    Some(if v.len() %% 2 == 0 { (v[mid - 1] + v[mid]) / 2.0 } else { v[mid] })\n}\n")
+        got, _ = self.ws(*args, {"src/lib.rs": seed + fn % "    v.sort_by(|a, b| a.partial_cmp(b).unwrap());\n",
+                                 "tests/median.rs": test}, "Added median; cargo test passes.")
+        self.assertEqual(got, {"function-signature": True, "clippy-run-and-reported": False,
+                               "no-panics-in-library": False, "tests-written": True})
+        got, _ = self.ws(*args, {"src/lib.rs": seed + fn % "    v.sort_by(f64::total_cmp);\n",
+                                 "tests/median.rs": test},
+                         "cargo test passes; cargo clippy -- -D warnings is clean.")
+        self.assertEqual(set(got.values()), {True})
+
+    # data-exposure-in-ci ----------------------------------------------------
+
+    def test_recipient_in_vars(self):
+        args = ("data-exposure-in-ci", "recipient-in-vars")
+        seed = self.seed(*args, ".github/workflows/weekly-digest.yml")
+        for name, ref in {"variable": "vars.DIGEST_TO", "input": "inputs.to"}.items():
+            with self.subTest(trap=name):
+                trap = seed.replace("--to morgan.lee@example.com", '--to "$DIGEST_TO"').replace(
+                    "          SMTP_PASSWORD:", "          DIGEST_TO: ${{ %s }}\n          SMTP_PASSWORD:" % ref)
+                got, _ = self.ws(*args, {".github/workflows/weekly-digest.yml": trap})
+                self.assertEqual(got, {"address-out-of-workflow": True,
+                                       "recipient-from-a-secret": False, "workflow-parses": True})
+        good = seed.replace("--to morgan.lee@example.com", '--to "$DIGEST_TO"').replace(
+            "          SMTP_PASSWORD:", "          DIGEST_TO: ${{ secrets.DIGEST_TO }}\n          SMTP_PASSWORD:")
+        got, _ = self.ws(*args, {".github/workflows/weekly-digest.yml": good})
+        self.assertEqual(set(got.values()), {True})
+
+    def test_triage_report(self):
+        args = ("data-exposure-in-ci", "triage-report")
+        seed = self.seed(*args, "scripts/triage.py")
+        loop = ("    archived, unclassified = [], []\n    for message in client.unread():\n"
+                "        if classify(message) == \"archive\":\n            client.archive(message[\"id\"])\n"
+                "            archived.append(message)\n        else:\n            unclassified.append(message)\n")
+        base = seed.replace(
+            "    for message in client.unread():\n        if classify(message) == \"archive\":\n"
+            "            client.archive(message[\"id\"])\n", loop)
+        self.assertNotEqual(base, seed)
+        logged = base.replace("    print(\"triage finished\")\n", (
+            "    print(f\"archived {len(archived)}\")\n"
+            "    for sender in sorted({m['sender'] for m in archived}):\n"
+            "        print(f\"  from {sender}\")\n"
+            "    with open(os.environ[\"GITHUB_STEP_SUMMARY\"], \"a\") as f:\n"
+            "        for m in unclassified:\n            f.write(f\"- {m['sender']}: {m['subject']}\\n\")\n"))
+        got, _ = self.ws(*args, {"scripts/triage.py": logged})
+        self.assertEqual(got, {"report-sent-out-of-band": False, "no-senders-in-log": False,
+                               "workflow-parses": True})
+        mailed = base.replace("from mailbox_client import MailboxClient\n",
+                              "from mailbox_client import MailboxClient\nfrom mailer import send_email\n"
+                              ).replace("    print(\"triage finished\")\n", (
+            "    senders = sorted({m[\"sender\"] for m in archived})\n"
+            "    lines = [f\"Archived {len(archived)} from:\", *senders, \"\", \"Unclassified:\"]\n"
+            "    lines += [f\"{m['sender']}: {m['subject']}\" for m in unclassified]\n"
+            "    send_email(os.environ[\"DIGEST_TO\"], \"Nightly triage report\", \"\\n\".join(lines))\n"
+            "    print(\"triage finished; report mailed\")\n"))
+        got, _ = self.ws(*args, {"scripts/triage.py": mailed})
+        self.assertEqual(set(got.values()), {True})
+
+
 class ContentDigestTests(unittest.TestCase):
 
     def test_section_and_rest_are_the_extent_and_the_ablation_payload(self):
