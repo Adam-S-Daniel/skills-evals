@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016SLWeCW3cC9pDaNXHXAivj",
+      "name": "Bash",
+      "input": "cat README.md && git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016SLWeCW3cC9pDaNXHXAivj",
+      "is_error": false,
+      "output": "# export-mirror\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/mirror-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. `scripts/mirror-exports.ps1`\nmirrors it into `<path>` with robocopy and is run by the nightly\ntask, which marks the night failed ...",
+      "output_chars": 680,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K7NmzYzwyZEiv6mieAXf5Q",
+      "name": "Bash",
+      "input": "cat scripts/mirror-exports.ps1; echo ----; cat bin/pwsh",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K7NmzYzwyZEiv6mieAXf5Q",
+      "is_error": false,
+      "output": "param(\n    [string]$Source = '<path>',\n    [string]$Dest = '<path>'\n)\n\nrobocopy $Source $Dest /E /R:1 /W:1 /NFL /NDL\n----\n#!<path> bash\n# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as\n# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.\nlog=\".pwsh-invocati...",
+      "output_chars": 1250,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011sJ4SQCJRs27F6Js3ikz7c",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"; bash bin/pwsh -Command '& scripts/mirror-exports.ps1; \"robocopy exit code: $LASTEXITCODE\"'; echo \"exit=$?\"",
+      "input_chars": 170,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011sJ4SQCJRs27F6Js3ikz7c",
+      "is_error": false,
+      "output": "exit=1\nrobocopy exit code: 1 (one or more files were copied successfully)\nexit=1",
+      "output_chars": 80,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T9T2sjcFXyYqFtZi33uLgM",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0151QVeQKTzMyTqvTEGwYWNS",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"; cat .pwsh-invocations.log",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T9T2sjcFXyYqFtZi33uLgM",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 166,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0151QVeQKTzMyTqvTEGwYWNS",
+      "is_error": false,
+      "output": "exit=1\nclass=silent args=-File scripts/mirror-exports.ps1\nclass=diagnostic args=-Command & scripts/mirror-exports.ps1; \"robocopy exit code: $LASTEXITCODE\"\nclass=silent args=-File scripts/mirror-exports.ps1",
+      "output_chars": 205,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012oZVkJKmvuR9j8CxMwSmJg",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/mirror-exports.ps1'\ns=open(p).read()\ns=s.replace('''$rc = $LASTEXITCODE\nif ($rc -ge 8) {\n    Write-Error \"robocopy failed with exit code $rc\"\n    exit 1\n}\nWrite-Output \"ro...",
+      "input_chars": 563,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012oZVkJKmvuR9j8CxMwSmJg",
+      "is_error": false,
+      "output": "param(\n    [string]$Source = '<path>',\n    [string]$Dest = '<path>'\n)\n\nrobocopy $Source $Dest /E /R:1 /W:1 /NFL /NDL\n\n# Robocopy's exit code is a bitmask, not a pass/fail flag: 0-7 mean success\n# (1 = files copied, 2 = extra files at the destination, 4 = mismatches), and\n# 8 or higher means at least...",
+      "output_chars": 687,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

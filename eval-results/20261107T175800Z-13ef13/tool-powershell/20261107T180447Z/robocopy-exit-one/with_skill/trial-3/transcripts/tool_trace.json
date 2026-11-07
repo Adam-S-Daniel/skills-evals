@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016ZMhELgDpu459TmpUMGsGM",
+      "name": "Bash",
+      "input": "ls -R . | grep -v '^./.git' | head -50; cat README.md; cat scripts/mirror-exports.ps1; cat bin/pwsh",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016ZMhELgDpu459TmpUMGsGM",
+      "is_error": false,
+      "output": ".:\nREADME.md\nbin\nscripts\n\n./bin:\npwsh\n\n./scripts:\nmirror-exports.ps1\n# export-mirror\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/mirror-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. `scripts/mirror-exports.ps1`\nmirrors it into `<path>` with r...",
+      "output_chars": 1653,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NoM44eUqYyQYV1V1tfm9GU",
+      "name": "Bash",
+      "input": "cat >> scripts/mirror-exports.ps1 <<'EOF'\n\n# robocopy exit codes 0-7 mean success (bit 1 = files copied, 2 = extras,\n# 4 = mismatches); only 8 and above indicate a real failure.\nif ($LASTEXITCODE -ge ...",
+      "input_chars": 366,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NoM44eUqYyQYV1V1tfm9GU",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0",
+      "output_chars": 23,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

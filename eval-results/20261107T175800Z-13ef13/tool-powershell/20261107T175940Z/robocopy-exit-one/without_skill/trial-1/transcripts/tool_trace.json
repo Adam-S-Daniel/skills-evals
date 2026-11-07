@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UrCi5eCUwNFq8UoZknrg81",
+      "name": "Bash",
+      "input": "git status --short && ls -la && cat README.md && ls -R scripts bin tests 2><path>; cat scripts/mirror-exports.ps1",
+      "input_chars": 116,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UrCi5eCUwNFq8UoZknrg81",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  7 18:01 .\ndrwx------ 6 root root 4096 Nov  7 18:01 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 12:10 .bash_profile\ncrw-rw-rw-...",
+      "output_chars": 1544,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M2mT8oumiqCdsYbxF7CMwQ",
+      "name": "Bash",
+      "input": "cat bin/pwsh; git log --oneline | head; bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M2mT8oumiqCdsYbxF7CMwQ",
+      "is_error": false,
+      "output": "#!<path> bash\n# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as\n# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.\nlog=\".pwsh-invocations.log\"\nall=\"$*\"\nrec() { printf 'class=%s args=%s\\n' \"$1\" \"$all\" >> \"$log\"; }\ncase \"$all\" in\n  *mirror-exports.ps1*)\n    ...",
+      "output_chars": 1140,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XWh7rpdj34R9auXYJkbks4",
+      "name": "Bash",
+      "input": "bash bin/pwsh -Command 'robocopy <path> <path> /E /R:1 /W:1 /NFL /NDL; \"robocopy exit code: $LASTEXITCODE\"'; echo \"exit=$?\"",
+      "input_chars": 141,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XWh7rpdj34R9auXYJkbks4",
+      "is_error": false,
+      "output": "robocopy exit code: 1 (one or more files were copied successfully)\nexit=1",
+      "output_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013HUsseCmyHt639YtdFFVj7",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013HUsseCmyHt639YtdFFVj7",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 166,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KayDxUirgUtA2YQr1r79PS",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"; cat .pwsh-invocations.log; git status --short | grep -v '^?? \\.'",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KayDxUirgUtA2YQr1r79PS",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0\nclass=silent args=-File scripts/mirror-exports.ps1\nclass=diagnostic args=-Command robocopy <path> <path> /E /R:1 /W:1 /NFL /NDL; \"robocopy exit code: $LASTEXITCODE\"\nclass=ok args=-File scripts/mirror-exports.ps1\n M scripts/mirror-exports.ps1",
+      "output_chars": 283,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

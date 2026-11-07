@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GrQDcneeGXa2aK3vwm8Ung",
+      "name": "Bash",
+      "input": "git status --short && ls -la && cat README.md && cat scripts/mirror-exports.ps1 && ls bin && cat bin/pwsh | head -80",
+      "input_chars": 116,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GrQDcneeGXa2aK3vwm8Ung",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  7 18:00 .\ndrwx------ 6 root root 4096 Nov  7 18:00 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 12:10 .bash_profile\ncrw-rw-rw-...",
+      "output_chars": 2621,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J4Az5C78PuwgDyHWyLKPtq",
+      "name": "Bash",
+      "input": "bash bin/pwsh -Command \"& scripts/mirror-exports.ps1; \\\"robocopy exit code: \\$LASTEXITCODE\\\"\"; echo \"exit=$?\"",
+      "input_chars": 109,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J4Az5C78PuwgDyHWyLKPtq",
+      "is_error": false,
+      "output": "robocopy exit code: 1 (one or more files were copied successfully)\nexit=1",
+      "output_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DeDD8HE3EF8eiffZsehxfj",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ENUCD4C1WHRfm9Da7bBxTd",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"; git diff --stat",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DeDD8HE3EF8eiffZsehxfj",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 166,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ENUCD4C1WHRfm9Da7bBxTd",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0\n scripts/mirror-exports.ps1 | 10 ++++++++++\n 1 file changed, 10 insertions(+)",
+      "output_chars": 101,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
