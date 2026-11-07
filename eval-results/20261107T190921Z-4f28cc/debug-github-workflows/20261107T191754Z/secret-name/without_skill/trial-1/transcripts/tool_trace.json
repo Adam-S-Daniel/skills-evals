@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013vtpEe6yu8bvpiNcXniZXN",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -ril \"release notes\" .github/workflows",
+      "input_chars": 92,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013vtpEe6yu8bvpiNcXniZXN",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ndocs.yml\nrelease-notes.yml\n.github/workflows/release-notes.yml",
+      "output_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JjWVp5AMyYcoAiMzthBr65",
+      "name": "Bash",
+      "input": "cat .github/workflows/release-notes.yml; git log --oneline | head; ls",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JjWVp5AMyYcoAiMzthBr65",
+      "is_error": false,
+      "output": "name: Release notes\n\non:\n  release:\n    types: [published]\n\npermissions:\n  contents: read\n\njobs:\n  notes:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Publish release notes\n        env:\n          # The release bot's token...",
+      "output_chars": 697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GHjcH1dVB6hiHwTmjaGGUb",
+      "name": "Bash",
+      "input": "ls -la scripts bin; cat scripts/render_notes.py; head -30 CHANGES.md; cat .github/workflows/docs.yml",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GHjcH1dVB6hiHwTmjaGGUb",
+      "is_error": false,
+      "output": "bin:\ntotal 64\ndrwxr-xr-x 2 root root  4096 Nov  7 04:20 .\ndrwxr-xr-x 8 root root  4096 Nov  7 19:19 ..\n-rwxr-xr-x 1 root root 54717 Nov  7 04:20 gh\n\nscripts:\ntotal 12\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 8 root root 4096 Nov  7 19:19 ..\n-rw-r--r-- 1 root root  465 Nov  7 04:20 rende...",
+      "output_chars": 1190,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016rgTJeSWPvVrs5pHUdXdSQ",
+      "name": "Bash",
+      "input": "cat README.md; file bin/gh; head -c 600 bin/gh; git tag; cat .gitmodules",
+      "input_chars": 72,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016rgTJeSWPvVrs5pHUdXdSQ",
+      "is_error": true,
+      "output": "Exit code 1\n# Example docs\n\nThe documentation site for the example tool. Publishing a release runs the\n`Release notes` workflow, which renders the release's notes from\n`CHANGES.md` and writes them onto the release; editing a release then runs\nthe `Docs` workflow, which rebuilds the site.\nbin/gh: Pyt...",
+      "output_chars": 983,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NjXmnarZqYYnbF7vS5MBV2",
+      "name": "Bash",
+      "input": "echo \"$GH_REPLAY_DIR\"; sed -n 1,60p bin/gh; which gh",
+      "input_chars": 52,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FgLyXEpo8Ant7z34Vn3Me3",
+      "name": "Bash",
+      "input": "for t in v1.4.0 v1.5.0; do python3 scripts/render_notes.py $t | head -3; echo \"--$t\"; done",
+      "input_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NjXmnarZqYYnbF7vS5MBV2",
+      "is_error": false,
+      "output": "<path>\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no netwo...",
+      "output_chars": 3784,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FgLyXEpo8Ant7z34Vn3Me3",
+      "is_error": false,
+      "output": "- Add the `export` command.\n- Keep empty sections out of generated pages.\n--v1.4.0\n\n--v1.5.0",
+      "output_chars": 92,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011Kz1dev3T5BMXTQFk1N4Pk",
+      "name": "Bash",
+      "input": "ls -R .gh | head -40; bin/gh run list --workflow \"Release notes\" 2>&1 | head",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011Kz1dev3T5BMXTQFk1N4Pk",
+      "is_error": false,
+      "output": ".gh:\nreplay\n\n.gh/replay:\napi\nauth-status.txt\nrun-list.json\nrun-view-43001.json\nrun-view-43001.log\nrun-view-43002.json\nrun-view-43002.log\nsecret-list.txt\nworkflow-list.json\n\n.gh/replay/api:\nrepos\n\n.gh/replay/api/repos:\nexample-org\n\n.gh/replay/api/repos/example-org:\nexample-docs\nexample-docs.json\n\n.gh...",
+      "output_chars": 872,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014JbVa1D2KPtu6oFfF3e9uz",
+      "name": "Bash",
+      "input": "cd <path> && cat run-view-43001.log run-view-43002.log; cat secret-list.txt",
+      "input_chars": 113,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014JbVa1D2KPtu6oFfF3e9uz",
+      "is_error": false,
+      "output": "notes\tPublish release notes\t2026-01-02T16:00:05Z ##[group]Run python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-02T16:00:05Z python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-02T16:00:05Z gh release edit \"$TAG\" --notes-file note...",
+      "output_chars": 2090,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017R9FbeMKPMWdftjjBDD86n",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017R9FbeMKPMWdftjjBDD86n",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 109,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
