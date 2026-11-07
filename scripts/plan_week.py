@@ -646,13 +646,17 @@ PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: minutes. The routine's fire limit (about 20 fires an hour) now paces the
 #: sweep first. A routine eval run takes
 #: p50 3.5 and p90 17 minutes per model (471 runs). Restore 3 and 20 minutes
-#: with evals/budget.yml's restore after that reset.
-MAX_IN_FLIGHT = 20
+#: with evals/budget.yml's restore after that reset. Restored early, on
+#: 2026-11-07 at 20:00 UTC: Adam asked at 17:51 UTC to slow evals, and the
+#: weekly sweep's 400-second spacing did not, since every re-plan starts a
+#: fresh sweep whose first leg fires at once. Three slots held 20 minutes
+#: each cap fires near 9 an hour whatever starts the sweep.
+MAX_IN_FLIGHT = 3
 #: plan --max-fires: the most cells one sweep may plan. 60 lets a sweep
 #: pick both models' cells of a fixture so they pair (PAIR FIRES); the
 #: dispatch matrix's limit is 256 legs.
 MAX_FIRES_CAP = 60
-EVAL_FLIGHT = timedelta(minutes=10)
+EVAL_FLIGHT = timedelta(minutes=20)
 IMPROVE_FLIGHT = timedelta(hours=3)
 POLL_SECONDS = 60
 #: wait-slot: the whole sweep's dispatch legs share this much waiting, counted
