@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017keTVnXeweuVdahayiNPsM",
+      "name": "Bash",
+      "input": "git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100; cat AGENTS.md",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017keTVnXeweuVdahayiNPsM",
+      "is_error": false,
+      "output": "910a595 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode\n...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TTHLSuNQofogsxFytqcmwR",
+      "name": "Bash",
+      "input": "for f in README.md vendor/RELEASES.md hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json .mcp.json .gitmodules; do echo \"=== $f\"; cat \"$f\"; done; echo; wc -c vendor/releases.js...",
+      "input_chars": 224,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TTHLSuNQofogsxFytqcmwR",
+      "is_error": false,
+      "output": "=== README.md\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment and CI checks; see `.example-cli/settings.json` for the hook\nconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n\nWe register a `SessionStart` hook (`hooks/session-st...",
+      "output_chars": 3467,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0118g7mcREPZDgKCLSJz1u1q",
+      "name": "Bash",
+      "input": "cat vendor/releases.json; echo; git ls-files; git show HEAD:.mcp.json 2>&1 | head; git show HEAD:.gitmodules 2>&1|head; grep -rn \"model\\|synced\\|skill\" --exclude-dir=.git . 2><path> | grep -v vendor/",
+      "input_chars": 202,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0118g7mcREPZDgKCLSJz1u1q",
+      "is_error": false,
+      "output": "{\n  \"example-cli\": {\n    \"4.1.0\": {\n      \"published_at\": \"2026-06-02T14:03Z\",\n      \"created_at\": \"2026-06-02T14:02Z\",\n      \"tag_commit_time\": \"2026-06-02T14:02Z\",\n      \"npm_publish_time\": \"2026-06-02T14:08Z\"\n    },\n    \"4.2.0\": {\n      \"published_at\": \"2026-07-14T09:47Z\",\n      \"created_at\": \"20...",
+      "output_chars": 995,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RZwKzfQmBo1KmvzcgqW1X7",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-sessionstart-hook-misses-forked-sessions.md <<'EOF'\n# SessionStart hook stops logging forked sessions on ExampleCLI \u2265 4.2.0\n\n## Summary\n\nExampleCLI v4.2.0 changed th...",
+      "input_chars": 5443,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RZwKzfQmBo1KmvzcgqW1X7",
+      "is_error": false,
+      "output": "01-sessionstart-hook-misses-forked-sessions.md\n02-synced-skills-renamed-update-readme.md\n03-bump-ci-example-cli-pin.md",
+      "output_chars": 118,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

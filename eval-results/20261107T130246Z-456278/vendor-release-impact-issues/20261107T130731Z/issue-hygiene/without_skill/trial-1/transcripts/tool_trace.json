@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EupH4A7mUWHn789Ew45FbV",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EupH4A7mUWHn789Ew45FbV",
+      "is_error": false,
+      "output": "fff18f3 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode",
+      "output_chars": 299,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SArpaXXyUSsGH6qfpNFiVB",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; cat vendor/releases.json | head -80; cat README.md .example-cli/settings.json hooks/session-start.sh .github/workflows/ci.yml .mcp.json .gitmodules",
+      "input_chars": 171,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SArpaXXyUSsGH6qfpNFiVB",
+      "is_error": true,
+      "output": "Exit code 1\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the con...",
+      "output_chars": 3823,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QFNa1z3vW3VLzKbJ2tS6Vz",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-fork-source.md <<'EOF'\n# SessionStart hook no longer fires for forked sessions (ExampleCLI v4.2.0)\n\n## Context\n\nExampleCLI v4.2.0 changed the `Ses...",
+      "input_chars": 4262,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QFNa1z3vW3VLzKbJ2tS6Vz",
+      "is_error": false,
+      "output": "01-session-start-hook-fork-source.md\n02-synced-skill-names-readme.md\n03-ci-example-cli-version-pin.md",
+      "output_chars": 101,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
