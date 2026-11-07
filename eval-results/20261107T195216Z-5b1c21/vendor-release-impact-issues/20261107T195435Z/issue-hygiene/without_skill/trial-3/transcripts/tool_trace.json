@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N1xZ38XUoaRyEsKY6r7nmo",
+      "name": "Bash",
+      "input": "git status --short && ls -la && find . -path ./.git -prune -o -type f -print | head -100 && wc -l vendor/* 2><path>",
+      "input_chars": 118,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N1xZ38XUoaRyEsKY6r7nmo",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 40\ndrwxr-xr-x 8 root root 4096 Nov  7 20:00 .\ndrwx------ 7 root root 4096 Nov  7 20:00 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw-...",
+      "output_chars": 1524,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VvnGVeh2fK42QudChDc296",
+      "name": "Bash",
+      "input": "for f in README.md AGENTS.md vendor/RELEASES.md vendor/releases.json hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json; do echo \"=== $f\"; cat -n \"$f\"; done; ls -la .claude; fi...",
+      "input_chars": 251,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VvnGVeh2fK42QudChDc296",
+      "is_error": false,
+      "output": "=== README.md\n     1\t# example-repo\n     2\t\n     3\tUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\n     4\tdevelopment and CI checks; see `.example-cli/settings.json` for the hook\n     5\tconfiguration and `.github/workflows/ci.yml` for how CI installs it.\n     6\t\n     7\tWe ...",
+      "output_chars": 4910,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YJabMs1jx3Qydyw2PK3s61",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-sessionstart-matcher-misses-forked-sessions.md <<'EOF'\n# SessionStart hook stops logging forked sessions on ExampleCLI 4.2.0+\n\n## Summary\n\nExampleCLI [v4.2.0](https:...",
+      "input_chars": 5922,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YJabMs1jx3Qydyw2PK3s61",
+      "is_error": false,
+      "output": "01-sessionstart-matcher-misses-forked-sessions.md\n02-synced-skills-renamed-synced-prefix.md\n03-bump-ci-example-cli-pin-to-4-3-0.md\n==> issues/01-sessionstart-matcher-misses-forked-sessions.md <==\n# SessionStart hook stops logging forked sessions on ExampleCLI 4.2.0+\n\n==> issues/02-synced-skills-rena...",
+      "output_chars": 513,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

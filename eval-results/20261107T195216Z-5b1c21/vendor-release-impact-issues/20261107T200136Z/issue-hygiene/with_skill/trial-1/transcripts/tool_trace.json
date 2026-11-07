@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DQeqAXP9zqv9SKxg2ZTia6",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DQeqAXP9zqv9SKxg2ZTia6",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0157Zzw9CzYWnR5EaEeasm8G",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor issues 2>&1 | head -30",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0157Zzw9CzYWnR5EaEeasm8G",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nvendor/RELEASES.md\nvendor/releases.json\nls: cannot access 'issues': No such file or directory\nvendor:\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  7 04:20 .\ndrwxr-xr-x 8 root root 4096 Nov  7 20:01 ..\n-rw-r--...",
+      "output_chars": 400,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016tyUTXRo6qQj2j8xgjgxJg",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json .example-cli/settings.json .github/workflows/ci.yml README.md hooks/session-start.sh; git log --oneline | head",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016tyUTXRo6qQj2j8xgjgxJg",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- The CLI now prints `[example-cli:unrecognized_model] warning: model ID not\n  recognized` to stderr when the configured `--m...",
+      "output_chars": 3764,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Buv4SRsH5DcPT3yixB571X",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > $TMPDIR/gen.py <<'EOF'\nimport re, json, sys\nroot = sys.argv[1]\ntext = open(f\"{root}<path>\").read()\ntimes = json.load(open(f\"{root}<path>\"))[\"example-cli\"]\nidx = {}\nfor sec in ...",
+      "input_chars": 5066,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Buv4SRsH5DcPT3yixB571X",
+      "is_error": false,
+      "output": "01-session-start-fork-source unstamped versions: ['4.1.0']\n02-synced-skill-names unstamped versions: ['4.2.0', '4.1.0']\n# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart matcher startup|resume may skip forked sessions\n\nFound in a review of `vendor/RELEASES.md` against this repo (group: hoo...",
+      "output_chars": 4297,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UUsgMFF6iahfrSvHFW5K8f",
+      "name": "Bash",
+      "input": "sed -i 's/likely still right on 4.1.0/likely still right on {{4.1.0}}/; s/pin past 4.1.0,/pin past {{4.1.0}},/' $TMPDIR/gen.py && python3 -I $TMPDIR/gen.py \"$PWD\" && grep -n \"4.1.0\" issues/*.md; git s...",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UUsgMFF6iahfrSvHFW5K8f",
+      "is_error": false,
+      "output": "01-session-start-fork-source unstamped versions: ['4.1.0']\n02-synced-skill-names unstamped versions: ['4.2.0']\nissues/01-session-start-fork-source.md:16:- `.github/workflows/ci.yml`: CI installs `example-cli@4.1.0` (released 4.1.0 [2026-06-02T14:03Z]), which predates this change, so CI is likely una...",
+      "output_chars": 882,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

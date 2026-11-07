@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YG4eM7mzeSMPh4vqHMc9jM",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YG4eM7mzeSMPh4vqHMc9jM",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019z3evas8c9v41884zdvbWU",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; find . -path ./.git -prune -o -type f -print | head -100; cat AGENTS.md",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019z3evas8c9v41884zdvbWU",
+      "is_error": false,
+      "output": "3924dcc initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/session-start.sh\n./.github/workflows/ci.yml\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.profile\n./.zshrc\n./AGENTS.md\n./.bash_profile\n./vendor/releases.json\n./vendor/RELEASES.md\n./.mcp.json\n./.gitmodules\n./.vscode\n...",
+      "output_chars": 350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xmk8HAKhXAAKCCVfeYzwE1",
+      "name": "Bash",
+      "input": "for f in hooks/session-start.sh .github/workflows/ci.yml .example-cli/settings.json README.md .mcp.json .gitmodules vendor/RELEASES.md vendor/releases.json; do echo \"=== $f\"; cat \"$f\"; done; ls -la .i...",
+      "input_chars": 211,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xmk8HAKhXAAKCCVfeYzwE1",
+      "is_error": false,
+      "output": "=== hooks/session-start.sh\n#!<path> bash\n# Runs on every SessionStart event matched by .example-cli/settings.json's\n# \"startup|resume\" matcher. Logs the session source so the team can audit\n# which sessions start cold vs. resume a previous one.\nset -euo pipefail\necho \"session-start: source=${EXAMPLE...",
+      "output_chars": 4086,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XBbM3Zp7hd8o9dozVpFNax",
+      "name": "Bash",
+      "input": "mkdir -p $TMPDIR/gen && cat > $TMPDIR/gen/gen.py <<'EOF'\nimport json, re, sys, pathlib\nws = pathlib.Path(sys.argv[1])\nrel = json.loads((ws/'vendor/releases.json').read_text())['example-cli']\n# Extract...",
+      "input_chars": 3155,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XBbM3Zp7hd8o9dozVpFNax",
+      "is_error": false,
+      "output": "4.3.0/1 | The CLI now prints `[example-cli:unrecognized_mode",
+      "output_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AeDZ5UrYh6xhbNQnmSWRBg",
+      "name": "Bash",
+      "input": "cd $TMPDIR/gen && sed -i \"s/    for k, v in bullets.items(): print(k, '|', v\\[:50\\]); sys.exit()/    [print(k, '|', v) for k, v in bullets.items()]; sys.exit()/\" gen.py && python3 -I gen.py <path> x -...",
+      "input_chars": 232,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AeDZ5UrYh6xhbNQnmSWRBg",
+      "is_error": false,
+      "output": "4.3.0/1 | The CLI now prints `[example-cli:unrecognized_model] warning: model ID not recognized` to stderr when the configured `--model` value is not recognized.\n4.3.0/2 | Fixed a memory leak in long-running `watch` sessions.\n4.3.0/3 | Update checker now retries with backoff on transient network err...",
+      "output_chars": 1264,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019MndNwzgrkiSjorsrpDhLd",
+      "name": "Bash",
+      "input": "cat > $TMPDIR/gen/spec.json <<'EOF'\n[\n {\"slug\": \"fork-session-source-hook-matcher\",\n  \"title\": \"ExampleCLI 4.2.0 hooks report source \\\"fork\\\": SessionStart hook matches only startup|resume\",\n  \"quotes...",
+      "input_chars": 3679,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019MndNwzgrkiSjorsrpDhLd",
+      "is_error": false,
+      "output": "wrote issues/01-fork-session-source-hook-matcher.md\nwrote issues/02-synced-skill-namespace.md\n# ExampleCLI 4.2.0 hooks report source \"fork\": SessionStart hook matches only startup|resume\n\nFound in a review of ExampleCLI release notes 4.1.0 [2026-06-02T14:03Z] through 4.3.0 [2026-08-25T02:16Z] (`vend...",
+      "output_chars": 4902,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UGjXmXYVGb7Gx2hKWXPKjf",
+      "name": "Bash",
+      "input": "sed -i 's/until the pin moves past {{4.2.0}}/until the pin moves to {{4.2.0}} or later/' $TMPDIR/gen/spec.json && python3 -I $TMPDIR/gen/gen.py . $TMPDIR/gen/spec.json && grep -n \"pin moves\" issues/01...",
+      "input_chars": 489,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UGjXmXYVGb7Gx2hKWXPKjf",
+      "is_error": false,
+      "output": "wrote issues/01-fork-session-source-hook-matcher.md\nwrote issues/02-synced-skill-namespace.md\n16:- `.github/workflows/ci.yml`: CI installs `example-cli@4.1.0`, so CI cannot observe this change until the pin moves to 4.2.0 or later.\nwrote <path>\nunmarked versions: ['4.1.0']\nexit=1\n?? .bash_profile\n??...",
+      "output_chars": 517,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
