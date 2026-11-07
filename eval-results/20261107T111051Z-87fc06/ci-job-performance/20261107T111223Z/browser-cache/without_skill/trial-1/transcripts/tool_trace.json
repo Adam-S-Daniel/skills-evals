@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JqjWT8NaXf5DLL8ZJo5f8P",
+      "name": "Bash",
+      "input": "cat .github/workflows/e2e.yml; gh run list --repo example-org/example-repo --workflow e2e.yml --limit 30",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JqjWT8NaXf5DLL8ZJo5f8P",
+      "is_error": false,
+      "output": "name: e2e\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  e2e:\n    name: e2e (${{ matrix.browser }})\n    runs-on: ubuntu-latest\n    timeout-minutes: 20\n    strategy:\n      fail-fast: false\n      matrix:\n        browser: [chromium, firefox, webkit]\n    env:\n ...",
+      "output_chars": 5835,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NhoacT2YS2eyftxw2ftCgP",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do echo \"== $r\"; gh run view $r --repo example-org/example-repo --json jobs --jq '.jobs[] | .name as $n | .steps[] | select(.name|test(\"cache|...",
+      "input_chars": 311,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NhoacT2YS2eyftxw2ftCgP",
+      "is_error": false,
+      "output": "== 71001\n{\n  \"attempt\": 1,\n  \"conclusion\": \"success\",\n  \"createdAt\": \"2026-10-12T09:14:03Z\",\n  \"databaseId\": 71001,\n  \"displayTitle\": \"Add pricing page smoke test\",\n  \"event\": \"push\",\n  \"headBranch\": \"main\",\n  \"headSha\": \"3f6c1e23f6c1e23f6c1e23f6c1e23f6c1e23f6c1\",\n  \"name\": \"e2e\",\n  \"number\": 21,\n  ...",
+      "output_chars": 4878,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SocByYJLAii1gfHeZWf5J4",
+      "name": "Bash",
+      "input": "for r in 71001 71002 71003 71004 72001 72002 72003 72004; do gh run view $r --repo example-org/example-repo --json jobs > $TMPDIR/$r.json; done; python3 -I - <<EOF\nimport json,os,datetime as d\nt=lambd...",
+      "input_chars": 727,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SocByYJLAii1gfHeZWf5J4",
+      "is_error": false,
+      "output": "71001 e2e (chromium) total 93 {'Install dependencies': 8, 'Install browser OS dependencies': 24, 'Install browser': 11, 'Run Playwright tests': 42}\n71001 e2e (firefox) total 97 {'Install dependencies': 13, 'Install browser OS dependencies': 20, 'Install browser': 5, 'Run Playwright tests': 51}\n71001...",
+      "output_chars": 4262,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KqRaZjeEbdipDkqirdBNrv",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 59,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G8oq6SHMwGmoMZBGDvymbh",
+      "name": "Bash",
+      "input": "git diff --stat",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KqRaZjeEbdipDkqirdBNrv",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 99,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G8oq6SHMwGmoMZBGDvymbh",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 4 ++++\n 1 file changed, 4 insertions(+)",
+      "output_chars": 68,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
