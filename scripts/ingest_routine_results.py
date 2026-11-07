@@ -1765,13 +1765,18 @@ def _generated_at(data: bytes) -> str | None:
 
 def check_cost_target(mode: str, target: str, evals: Path) -> None:
     """Refuse a target the public results branch must not name: a private
-    skill, or one with no committed fixture set here. A guidance section
-    must have fixtures under evals/guidance/<section>/ (the manifest is in
-    _agent-guidance, which this workflow does not check out; the fire
-    workflow's fire-check already required both)."""
+    skill, or one with no committed fixture set here. A skill's set is its
+    fixtures or, for a trigger-only improve fire, its reviewed
+    evals/<skill>/trigger-eval-set.json (2026-11-07: every trigger-only
+    fire's record was refused). A guidance section must have fixtures under
+    evals/guidance/<section>/ (the manifest is in _agent-guidance, which this
+    workflow does not check out; the fire workflow's fire-check already
+    required both)."""
     folder = evals / target if mode == "improve" else evals / "guidance" / target
-    if folder.is_symlink() or not folder.is_dir() \
-            or not any(folder.rglob("fixture.yaml")):
+    trigger_set = folder / "trigger-eval-set.json"
+    has_set = any(folder.rglob("fixture.yaml")) or (
+        mode == "improve" and trigger_set.is_file() and not trigger_set.is_symlink())
+    if folder.is_symlink() or not folder.is_dir() or not has_set:
         raise Rejected("the record's target has no committed fixture set")
     if mode == "improve":
         sys.path.insert(0, str(Path(__file__).resolve().parent))

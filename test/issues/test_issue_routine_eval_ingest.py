@@ -1150,6 +1150,22 @@ class CostBranchTests(GitCase):
                                                        target=SECTION))})
         self.assertEqual(self.validate_cost()[1], f"improve-costs/{RUN_ID}.json")
 
+    def test_accepts_a_skill_with_only_a_trigger_set(self):
+        # A trigger-only improve fire's skill may have no fixture.yaml.
+        path = self.evals / "trigger-skill" / "trigger-eval-set.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("[]\n", encoding="utf-8")
+        self.commit({COST_PATH: cost_bytes(cost_record(target="trigger-skill"))})
+        self.assertEqual(self.validate_cost()[1], f"improve-costs/{RUN_ID}.json")
+
+    def test_a_trigger_set_is_no_guidance_section(self):
+        path = self.evals / "guidance" / "trigger-section" / "trigger-eval-set.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("[]\n", encoding="utf-8")
+        self.commit({COST_PATH: cost_bytes(cost_record(mode="guidance-improve",
+                                                       target="trigger-section"))})
+        self.assertCostRejected("no committed fixture set")
+
     def test_rejects_a_private_skill(self):
         # Negative control: the same record, public target, is accepted
         # (test_accepts_one_record_and_stages_its_exact_bytes).
