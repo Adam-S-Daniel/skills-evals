@@ -554,7 +554,11 @@ OUTAGE_REPORT_WINDOW = timedelta(hours=24)
 #: provisional trip. An eval run lands in 4 to 12 minutes; FIRE_RESULT_WINDOW
 #: still decides whether a fire was empty.
 PROBE_WAIT = timedelta(minutes=45)
-SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
+#: The guidance focus takes its share first until the 2026-11-09 17:00 UTC
+#: reset (Adam, 2026-11-07: guidance verdicts first while base.md is frozen),
+#: so the --max-fires cap cannot fill with cheaper bands before it. Restore
+#: the order missing, near, focus, improve after that reset.
+SHARES = (("focus", 0.15), ("missing", 0.30), ("near", 0.20), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
 #: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
 #: 18:42 UTC: remove a section at 90% confidence it does not improve results
@@ -564,7 +568,13 @@ BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "gu
 #: refuses `--trials > 1` for a guidance fixture, and trials collapse into
 #: one run mean, so three cost as much per verdict (2026-11-02 design
 #: review).
-GUIDANCE_FOCUS_SECTIONS = 2
+#: 40 (every section) until the 2026-11-09 17:00 UTC reset, while base.md
+#: is frozen so in-situ runs pool (Adam, 2026-11-07); restore 2 after it.
+GUIDANCE_FOCUS_SECTIONS = 40
+#: True until the 2026-11-09 17:00 UTC reset: no guidance-improve fire is
+#: planned, since an accepted one edits base.md and resets every section's
+#: in-situ evidence while base.md is frozen (Adam, 2026-11-07). False after.
+GUIDANCE_IMPROVE_HELD = True
 #: The decision levels a cell's progress is normalized by when the verdict
 #: document carries no `guidance_policy` (evals/gate-policy.yml's).
 DEFAULT_RETIRE_CONFIDENCE = 0.90
@@ -886,10 +896,20 @@ def with_run_after(cells: dict, moment: datetime) -> bool:
 # ---------------------------------------------------------------------------
 # Rule D: the bands.
 
+#: Until the 2026-11-09 17:00 UTC reset, a cell with no cost history is
+#: reserved at this many points instead of a full reservation: every guidance
+#: cell lost its history when base.md last changed (2026-11-04), and at one
+#: point each they filled the room (Adam, 2026-11-07). The per-fire guard
+#: still checks the full reservation. None after that reset.
+UNKNOWN_FIRE_POINTS = 0.1
+
+
 def fire_cost(cell: dict, ctx: dict) -> float:
     """A cell's fire at its historical cost (module docstring)."""
     reserve, ratio = ctx["reservation"], ctx.get("points_per_usd")
     usd = cell.get("usd_per_fire")
+    if usd is None and UNKNOWN_FIRE_POINTS is not None:
+        return min(reserve, UNKNOWN_FIRE_POINTS)
     if not ratio or usd is None:
         return reserve
     return min(reserve, max(ctx["overrun"], usd * ratio))
@@ -2472,6 +2492,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     for name in trim_skills & {i["skill"] for i in improve if i["mode"] == "improve"}:
         status[name]["deferred"] = "a description trim is planned for it"
     improve = [i for i in improve if not (i["mode"] == "improve" and i["skill"] in trim_skills)]
+    if GUIDANCE_IMPROVE_HELD:
+        improve = [i for i in improve if i["mode"] != "guidance-improve"]
     # Trigger-only and trim fires join the improve band before the cap, so
     # they count against it exactly as the guard counts them (improve mode).
     trigger_fires, triggers, hooks, trigger_status = trigger_items(
