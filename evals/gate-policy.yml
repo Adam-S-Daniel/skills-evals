@@ -65,8 +65,21 @@
 #   * Removals still need runs on `min_cli_versions` (2) Claude Code
 #     versions: a removal decides at the first pair where its test is at
 #     its level and the pairs so far span them.
-#   * In-situ guidance cells decide on runs beside the current rest of the
-#     guidance only.
+#   * In-situ guidance cells (the guidance block's `rest_policy`, Adam's
+#     decision of 2026-11-07, "Pool + removal guard"): under
+#     `pooled-with-current-guard` a cell pools the pairs made beside EVERY
+#     rest of the guidance (the guidance minus the section), each pair at
+#     equal weight in one betting sequence, a pair formed only within one
+#     rest. The keep test reads them all. Every decision toward removal is
+#     guarded by the current rest (the rest on main): a no-benefit or harm
+#     decision needs at least `rest_guard_min_pairs` (6) pairs beside it,
+#     spanning `min_cli_versions`, and the current rest's own share of the
+#     test's wealth at the retire level on its own; the ceiling, no-harm,
+#     high-cell and floor rules and the `max_runs_per_cell` cap read the
+#     current rest only (each rest's window caps at that count). `current`
+#     is the rule of 2026-11-03, runs beside the current rest only; set it
+#     to switch back. Both keys are optional and the guidance block's only
+#     (ADR 0014, "Pooled-rest addendum (2026-11-07)").
 #
 # A cell whose arms both pass at most `floor_fraction` over harness/gates.py
 # FLOOR_MIN_RUNS pairs is set aside as a broken fixture and left out of the
@@ -108,7 +121,8 @@ skills:
 # they are the same. Each removal is tracked and can be reverted (#564). The
 # write path for an automatic removal is the eval-improve GitHub App's token
 # for _agent-guidance alone; with no token, scripts/retire_skill.py --target
-# guidance files the issue instead.
+# guidance files the issue instead. `rest_policy` and
+# `rest_guard_min_pairs` are this block's own (see the in-situ bullet above).
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -119,3 +133,5 @@ guidance:
   max_runs_high_cell: 20
   floor_fraction: 0.10
   retirement_mode: auto
+  rest_policy: pooled-with-current-guard
+  rest_guard_min_pairs: 6

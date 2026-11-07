@@ -297,6 +297,11 @@ Known limits it left:
   beside the current rest of the guidance, so an edit to any other section
   starts every in-situ cell over. A frequently edited guidance file may
   never let a section accumulate the 18 or more pairs a decision needs.
+  *Addressed for keeping, 2026-11-07* (the "Pooled-rest addendum" below): a
+  cell now pools every rest's pairs at equal weight, so an edit elsewhere no
+  longer resets the keep test. A removal still needs pairs beside the
+  current rest (at least 6, and enough for that rest's own share of the
+  test to reach 90%), so an edit still delays a removal, by design.
 - *The current keeps restart as insufficient* (m7). The 8 subjects kept
   under the old bound (4 skills and 4 guidance sections) had 1 to 3 pairs
   per cell. A valid bound needs 4 to 17 pairs to keep, depending on the
@@ -1128,3 +1133,145 @@ fresh retirement issue between those passes gets a second one filed.
 The decision is `withdrawal_decision`, a pure function; the tests are in
 `test/issues/test_issue_removal_withdrawal.py`. `retirement_mode` stays
 `proposal`, and switching it remains Adam's decision.
+
+
+## Pooled-rest addendum (2026-11-07)
+
+**The decision.** Adam chose "Pool + removal guard" on 2026-11-07 (15:52
+UTC). From 2026-11-03 an in-situ guidance cell read only the runs beside the
+current rest of the guidance (base.md without the section). One base.md
+edit on 2026-11-04 then discarded 494 of 498 in-situ arms, and known limit
+m6 above became the gate's main cost.
+
+**What changed.** The guidance block of `evals/gate-policy.yml` gains two
+optional keys, read only there:
+
+- `rest_policy`: `pooled-with-current-guard` (committed, and the default) or
+  `current` (the 2026-11-03 rule, reproduced exactly). Any other value
+  fails the policy load and names both choices.
+- `rest_guard_min_pairs`: 6, an integer from 1 to `max_runs_per_cell`.
+
+Under `pooled-with-current-guard`, `harness/gates.py` behaves as follows
+(module docstring, IN-SITU GUIDANCE CELLS and THE CURRENT-REST GUARD):
+
+- A cell pools runs beside every rest. It keeps the rest of today's key: the
+  with arm's tested digest, the fixture digest, the model, and no fleet
+  hook set. Only the rest digest is relaxed.
+- A with run and a without run pair only within one rest, so D still
+  compares two arms beside the same rest. All pairs then form one betting
+  sequence in time order, each at equal weight.
+- Each rest's window holds its first 40 pairs. The cell is at its cap when
+  the current rest's window is full, so older pairs never freeze it.
+- The keep test reads every pair.
+
+**Why equal weighting is not the flaw the review found.** The 2026-11-03
+review removed an inverse-variance weighting across strata. It gave the
+most weight to the strata with the least spread, which are the constant,
+at-ceiling ones where D is about 0. So it leaned toward removal by
+construction. Equal weighting gives every pair one bet in one martingale.
+No stratum gains weight from its spread, and the betting bound's validity
+never depended on weights. What pooling does change is the null hypothesis:
+the pooled test asks whether the section helped across the rests it ran
+beside, not whether it helps beside today's rest. That is harmless for a
+keep (keeping is the safe error). For a removal it is not, and that is what
+the guard is for.
+
+**The guard: the exact condition.** A `no-benefit` decision, by the remove
+test or by the harm test, decides at pair n only when all of these hold:
+
+1. The pooled test's wealth is at 1/(1 - `retire_confidence`), that is 10.
+2. Of pairs 1..n, at least `rest_guard_min_pairs` are beside the current
+   rest.
+3. Those pairs span `min_cli_versions` CLI versions.
+4. The current rest's share of the test's log wealth is itself at log 10.
+   The share is the sum of log(1 + lambda_t y_t) over the current rest's
+   pairs, where lambda_t is the bet the pooled test made.
+
+Every other path toward removal reads the current rest only:
+
+- the ceiling, no-harm and high-cell rules (each parks a cell, which can
+  turn a keep in waiting into a proposed removal);
+- the floor (it sets a cell aside, which lets the other cells remove);
+- `no-clear-effect`, which needs the current rest's own 40 pairs.
+
+A `retire`, `retire-pending` or `shorten-or-merge` verdict is built only
+from those cell classes, so it inherits the guard.
+
+**Why this condition.** Each bet lambda_t is fixed by the pairs before t,
+which makes it predictable. So under H0 "the section still helps by at
+least the margin beside the current rest", the current rest's share is a
+nonnegative supermartingale, whatever the older rests showed. By Ville's
+inequality it reaches 10 with probability at most 0.10 at any time. A false
+removal against today's rest therefore stays at the gate's own level, with
+the older rests used only to size the bets.
+
+This is a strict form of "the current rest must not contradict the pooled
+bound". The weaker form proposed with the decision fails in simulation.
+That form was the pooled test, 6 current pairs, and a current-only keep
+test at the margin that has not rejected. It removed a section that helps
+by exactly the margin 91% of the time. The current rest's own bound rarely
+excludes the margin in a few pairs, so a guard that only waits for it to
+object almost never fires.
+
+`rest_guard_min_pairs` (6) is a floor under the share test, which cannot
+reach its level in fewer than 3 pairs. It keeps a removal from resting on a
+single burst of fires beside a rest that has just changed. It is twice
+FLOOR_MIN_RUNS and well under the 16 to 20 pairs a true no-benefit removal
+takes, so it rarely binds on its own.
+
+**Simulation.** `scripts/simulate_rest_guard.py` (seed 20261107, 2,000 runs
+per row) runs the gate's own `_classify` on synthetic pairs. Each arm is one
+run of 10 checks with the without arm at 0.55. The CLI version alternates.
+Bets are neutral. The drift case is 40 older pairs with no gain (the older
+rest already covered the section's content), then up to 40 current pairs
+gaining exactly the margin (0.15). False-removal rates:
+
+| Policy | False-removal rate |
+|---|---|
+| `current` | 0.0070 |
+| `pooled-with-current-guard` | 0.0165 |
+| pooled, no guard | 0.9445 |
+| pooled, light guard (rejected) | 0.9120 |
+
+The target is 0.10. With a current gain of 0.20 after 20 older pairs, the
+guarded rate was 0.0000 against 0.547 with no guard. With the without arm at
+0.70, the guarded rate was 0.0100.
+
+A true no-benefit section (no gain beside any rest) is removed after a
+median number of current-rest pairs:
+
+| Older pairs | `current` | `pooled-with-current-guard` |
+|---|---|---|
+| 0 | 20 pairs (94.4% removed within the cap) | 20 pairs (94.4%) |
+| 20 | 20 pairs (94.4%) | 18 pairs (95.0%) |
+| 40 | 20 pairs (95.6%) | 18 pairs (95.4%) |
+
+So pooling buys keeps, and speeds a removal only a little, through better
+first bets. A removal still costs about as many current-rest pairs as before.
+That is the price of keeping the removal level against today's rest.
+
+**Outputs.** A pooled cell adds `current_rest_pairs`, `rests` and
+`rest_guard` (the levels the current rest's shares reached, the pair at
+which each share crossed, and whether the pair floor is met). `pairs`
+still counts every pair the cell holds. `at_cap` is the current rest's.
+
+The explorer's `current_text_runs`, which `_agent-guidance`'s
+eval-protection gate reads, is unchanged in code and keeps its meaning:
+with-arm runs on the subject's current text. A pooled cell's with arm holds
+runs on the section's current text beside every rest, so an edit elsewhere
+in base.md no longer zeroes it, while an edit to the section still does.
+
+The planner fires a cell whose pooled test leans to removal but whose guard
+is unmet: the cell is `insufficient`, not at its cap and not blocking. Its
+cost to a verdict counts `current_rest_pairs` against the cap. Its improve
+evidence pools by the verdict document's `rest_policy`, and reads `current`
+for a document written before the key existed.
+
+**Switching back.** Set `rest_policy: current` in the guidance block of
+`evals/gate-policy.yml`. The 2026-11-03 rule then applies exactly
+(`test/issues/test_issue_557_stratified_verdict.py` runs under it, and
+`test/issues/test_issue_pooled_rest_guard.py` pins that it adds no field
+and ignores every older rest).
+
+**Review.** This change touches the removal path. Like every change to it,
+it is subject to an independent adversarial round before merge.

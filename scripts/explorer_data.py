@@ -1401,7 +1401,15 @@ def current_text_runs(verdict: dict, alone: bool = True) -> int:
     a with-arm run only when its `tested_digest` equals the subject's digest on
     main, so an edit empties it; a without-arm run pools across text changes and
     says nothing about the current text. A cell with no `with` key counts 0, and
-    a subject with no verdict has 0."""
+    a subject with no verdict has 0.
+
+    For a guidance section the meaning stays "runs on its current text" under
+    either `rest_policy` (harness/gates.py, IN-SITU GUIDANCE CELLS): under
+    `pooled-with-current-guard` an in-situ cell's with arm holds the runs on
+    the section's current text beside EVERY rest of the guidance, so an edit
+    to another section no longer empties it, while an edit to the section
+    itself still does. How many of a cell's pairs are beside the current rest
+    is the cell's own `current_rest_pairs`, not this count."""
     cells = list(verdict.get("cells") or [])
     if alone:
         cells += (verdict.get("alone") or {}).get("cells") or []

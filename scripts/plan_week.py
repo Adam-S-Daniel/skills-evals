@@ -1437,9 +1437,11 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
     fixture-broken), each cell's model's measured mean cost per observation
     (the dearest measured model for one with none) times the observations
     it still needs: min(`pairs_per_cell`, `cap` - the gate's own count of
-    its observations, `pairs`), at least 0. `cap` is the gate policy's
-    `max_runs_per_cell` (None: no cap). None when no model's cost is
-    measured."""
+    its observations toward the cap, `current_rest_pairs` for a pooled
+    in-situ guidance cell (its older rests' pairs do not fill the current
+    rest's window) and `pairs` otherwise), at least 0. `cap` is the gate
+    policy's `max_runs_per_cell` (None: no cap). None when no model's cost
+    is measured."""
     if not costs:
         return None
     dearest = max(costs.values())
@@ -1449,7 +1451,9 @@ def subject_cost(cells: list, costs: dict, pairs_per_cell: float,
             continue
         remaining = pairs_per_cell
         if cap is not None:
-            done = cell.get("pairs")
+            done = cell.get("current_rest_pairs")
+            if done is None:
+                done = cell.get("pairs")
             done = done if isinstance(done, int) and not isinstance(done, bool) else 0
             remaining = min(remaining, cap - done)
         total += costs.get(cell["model"], dearest) * max(0.0, remaining)
@@ -3060,6 +3064,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "in_situ_verdict": verdict.get("in_situ_verdict"),
                 # Gates' pair count and reason (`cheaper_first`, `_blocking`).
                 "pairs": (cell or {}).get("pairs"), "reason": (cell or {}).get("reason"),
+                # A pooled in-situ cell's pairs beside the current rest, the
+                # ones its cap and its removal guard count (`subject_cost`).
+                "current_rest_pairs": (cell or {}).get("current_rest_pairs"),
                 "at_cap": (cell or {}).get("at_cap") is True,
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
@@ -3265,6 +3272,16 @@ def skill_contexts(evals_dir: Path, tree: Path, as_of: str, registries: dict,
     return out
 
 
+def rest_policy_of(gates_doc: dict) -> str:
+    """The `rest_policy` the verdict document's guidance cells were pooled
+    by (its `guidance_policy`, harness/gates.py REST_POLICIES). A document
+    without one predates the key (2026-11-07), so its cells were pooled by
+    `current`."""
+    policy = gates_doc.get("guidance_policy")
+    value = policy.get("rest_policy") if isinstance(policy, dict) else None
+    return value if value in ("current", "pooled-with-current-guard") else "current"
+
+
 def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
                       guidance_dir: Path | None, records: list = (), prs: list = (),
                       removals: list = (), on_hold: list = (),
@@ -3306,10 +3323,10 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
         names = [Path(f).name for f in found]
         enough = len(names) >= MIN_IMPROVE_FIXTURES
         holdout = names[-1] if enough else ""
-        # Pooled as the gate pools in-situ cells: the current-content runs
-        # beside the rest of the guidance on main (2026-11-03; older rests
-        # are ignored), so the improve evidence counts the same runs the
-        # section's verdict does.
+        # Pooled as the gate pools in-situ cells, by the verdict document's
+        # `rest_policy` (`rest_policy_of`): the current-content runs beside
+        # every rest, or beside the rest on main only, so the improve
+        # evidence counts the same runs the section's verdict does.
         try:
             expected = compute_gates.expected_guidance(evals_dir, section, guidance_dir)
         except ValueError:
@@ -3318,7 +3335,7 @@ def guidance_contexts(evals_dir: Path, tree: Path, as_of: str, gates_doc: dict,
             # skill path does, never a traceback or an opaque error.
             raise PlanError(SCHEDULE_FILES_MALFORMED) from None
         cells = gates.pool_cells(runs, section, gates_doc["roster_models"], expected,
-                                 strata=True)
+                                 strata=True, rest_policy=rest_policy_of(gates_doc))
         try:
             row = proposer.load_row(guidance_dir, section)
         except proposer.Refusal:

@@ -773,8 +773,13 @@ pending, and `harness/gates.py`'s docstring is the full statement):
 - *The judge* is reported beside each cell and does not vote; single
   checks no longer keep on their own.
 - *Current content only.* A cell decides on runs of the skill and fixture
-  on main; for a guidance section, on runs beside the current rest of the
-  guidance. Older runs are ignored.
+  on main. For a guidance section, the guidance block's `rest_policy`
+  (2026-11-07, default `pooled-with-current-guard`) pools the runs beside
+  every rest of the guidance, pair by pair at equal weight, for keeping;
+  any removal also needs at least `rest_guard_min_pairs` (6) pairs beside
+  the current rest whose own share of the test reaches the removal level,
+  and ceilings, floors and the cap read the current rest only. `current`
+  reads the current rest only, as from 2026-11-03.
 - *The bet prior.* Each cell's first bet starts from a prior learned from
   other subjects' pairs made before the Monday of the cell's first pair
   (three pseudo-runs, mean clamped to -0.2..0.5, variance at least 0.001).
@@ -1241,11 +1246,13 @@ the alone pair only for a section leaning toward removal: its in-situ
 verdict is `retire`, or its in-situ test is at least halfway to a removal
 (`ALONE_PAIR_FROM_PROGRESS` in `scripts/plan_week.py`); every other section's
 fires run only the in-situ pair (`arms: in-situ`), which saves about a third
-of guidance spend. The in-situ runs are pooled by the rest of the
-guidance each ran beside, and only the runs beside the current rest decide
-(2026-11-03; #557's weighting across older rests favored removal, so older
-rests are ignored and an edit elsewhere in the guidance starts the evidence
-over). A section is `retire` by the skills' rule above, with the guidance
+of guidance spend. The in-situ runs are grouped by the rest of the
+guidance each ran beside. From 2026-11-03 only the runs beside the current
+rest decided (#557's weighting across older rests favored removal), so an
+edit elsewhere in the guidance started the evidence over; since 2026-11-07
+(`rest_policy: pooled-with-current-guard`) every rest's pairs count at equal
+weight, and a removal still needs the current rest's own evidence (ADR 0014,
+"Pooled-rest addendum (2026-11-07)"). A section is `retire` by the skills' rule above, with the guidance
 block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the

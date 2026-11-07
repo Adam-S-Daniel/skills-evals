@@ -279,16 +279,63 @@ stickiness, and holding the one slot while a removal pull request is open,
 are part 2's: it reads the open pull requests from GitHub rather than
 trusting an earlier gates file.
 
-IN-SITU GUIDANCE CELLS (#557; decided on the CURRENT rest since 2026-11-03,
-the review's C3): a cell holds only the runs made beside the rest of the
-guidance on main (`expected`'s `rest_digest`, computed by compute_gates from
-the `--guidance` checkout), so every pair compares the section against
-today's rest. Runs beside an older rest are ignored for now, however many
-there are; with no `rest_digest` the cell is `insufficient`. The
-inverse-variance weighting across rest strata is gone: it gave the
-constant, at-ceiling strata the most weight. An agent-errored trial scores 0
-and does not block a guidance cell's removal; a run skipped as anomalous
-does, as for a skill.
+IN-SITU GUIDANCE CELLS (#557). The guidance block's `rest_policy` chooses
+how a cell reads the runs beside the rest of the guidance (the guidance
+without the section; a run's `pair_key`), and `expected`'s `rest_digest`
+(computed by compute_gates from the `--guidance` checkout) names the rest
+on main, the CURRENT rest. With no `rest_digest` the cell is `insufficient`
+under either policy. An agent-errored trial scores 0 and does not block a
+guidance cell's removal; a run skipped as anomalous does, as for a skill.
+
+  * `current` (2026-11-03, the review's C3): a cell holds only the runs
+    beside the current rest, so every pair compares the section against
+    today's rest; runs beside an older rest are ignored. One edit elsewhere
+    in base.md then starts every cell over (on 2026-11-04 one edit
+    discarded 494 of 498 in-situ arms).
+  * `pooled-with-current-guard` (Adam, 2026-11-07, the default; ADR 0014,
+    "Pooled-rest addendum (2026-11-07)"): a cell holds the runs beside
+    EVERY rest, under the same key otherwise (the with arm's tested
+    digest, the fixture digest, the model, and no fleet hook set). Runs
+    pair only within one rest (`classify_cell`), and the pairs of every
+    rest form ONE betting sequence in time order, each pair at equal weight
+    (the inverse-variance weighting across strata the 2026-11-03 review
+    removed gave the constant, at-ceiling strata the most weight; equal
+    weight gives none more). Each rest's window holds its first
+    `max_runs_per_cell` pairs (`_rest_window`, a predictable selection, so
+    the tests keep their level), and the cell is `at_cap` when the current
+    rest's window is full. The keep test reads every pair: an older rest's
+    benefit can keep a section, the safe error.
+
+THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
+current rest:
+
+  * a `no-benefit` decision, by the remove test (rule 7) or the harm test
+    (rule 4), decides only at a pair n where the pooled test is at its level
+    AND, of pairs 1..n, at least `rest_guard_min_pairs` are beside the
+    current rest, those span `min_cli_versions`, and the current rest's
+    SHARE of the test's log wealth (the log gains of its own pairs, betting
+    what the pooled test bet) is at log(1 / (1 - retire_confidence)) on its
+    own. The bets are predictable (each is fixed by the pairs before it), so
+    the share is a nonnegative supermartingale under "the section still
+    helps by the margin beside the current rest", whatever the older rests
+    showed, and Ville's inequality holds a false removal against TODAY's
+    rest at 1 - retire_confidence. This is the non-contradiction condition
+    made strict: the current rest's own evidence must decide the removal,
+    and older rests only size its bets. A share that falls (the current rest
+    shows the gain the older ones did not) can never decide. Otherwise the
+    cell stays `insufficient` and the planner fires it beside the current
+    rest;
+  * the ceiling, no-harm and high-cell rules (rules 4 to 6), which park a
+    cell and so can turn a keep in waiting into a proposed removal, and the
+    floor (rule 2), which sets a cell aside, read the current rest's pairs
+    only, as under `current`;
+  * `no-clear-effect` (rule 8) needs the current rest's window full and its
+    pairs spanning `min_cli_versions`.
+
+`rest_guard_min_pairs` (6) is a floor under the share test, which cannot
+reach its level in under three pairs: a removal never rests on one burst of
+fires beside a rest that just changed. Each cell reports `current_rest_pairs`,
+`rests` and `rest_guard` (the levels the current rest's shares reached).
 
 THE BET PRIOR (`bet_prior`). Each test's running estimate starts from
 pseudo-runs: by default NEUTRAL_BET_PRIOR (mean 0, variance 0.25, one run),
@@ -416,6 +463,23 @@ SKILL_KEYS = {
 }
 
 
+#: How an in-situ guidance cell reads runs beside older rests of the
+#: guidance (module docstring, IN-SITU GUIDANCE CELLS): `current` reads only
+#: the runs beside the rest on main (the rule of 2026-11-03);
+#: `pooled-with-current-guard` (Adam, 2026-11-07) pools every rest, pair by
+#: pair at equal weight, and guards every removal-direction decision with the
+#: current rest's own evidence.
+REST_POLICIES = ("current", "pooled-with-current-guard")
+#: The `rest_policy` of a guidance block that names none, and of a policy
+#: given in code without one.
+DEFAULT_REST_POLICY = "pooled-with-current-guard"
+#: The `rest_guard_min_pairs` of a guidance block that names none: the
+#: least pairs beside the current rest a removal-direction decision needs.
+DEFAULT_REST_GUARD_MIN_PAIRS = 6
+#: The keys only the guidance block takes, each optional with its default.
+GUIDANCE_ONLY_KEYS = ("rest_policy", "rest_guard_min_pairs")
+
+
 def parse_gate_policy(text: str) -> dict:
     """{"skills": {...}, "guidance": {...} or None} from `text`, or
     GatePolicyError naming the key. `guidance:` (skills-evals#124) is
@@ -435,15 +499,23 @@ def parse_gate_policy(text: str) -> dict:
         raise GatePolicyError("gate policy must be a mapping with the key skills "
                               "and optionally guidance")
     return {"skills": _policy_block(document["skills"], "skills"),
-            "guidance": (_policy_block(document["guidance"], "guidance")
+            "guidance": (_policy_block(document["guidance"], "guidance", guidance=True)
                          if "guidance" in document else None)}
 
 
-def _policy_block(block, name: str) -> dict:
-    """One block of thresholds (`skills:` or `guidance:`), checked."""
+def _policy_block(block, name: str, guidance: bool = False) -> dict:
+    """One block of thresholds (`skills:` or `guidance:`), checked. Only the
+    guidance block takes GUIDANCE_ONLY_KEYS (a skill has no rest of the
+    guidance): `rest_policy`, one of REST_POLICIES (default
+    DEFAULT_REST_POLICY), and `rest_guard_min_pairs`, an integer from 1 to
+    `max_runs_per_cell` (default DEFAULT_REST_GUARD_MIN_PAIRS). An unknown
+    `rest_policy` fails: unlike `retirement_mode`, no value of it is safe to
+    fall back to silently."""
     if not isinstance(block, dict):
         raise GatePolicyError(f"gate policy {name} must be a mapping")
-    unknown = sorted(set(block) - set(SKILL_KEYS) - {"retirement_mode"})
+    allowed = set(SKILL_KEYS) | {"retirement_mode"} | (
+        set(GUIDANCE_ONLY_KEYS) if guidance else set())
+    unknown = sorted(set(block) - allowed)
     if unknown:
         raise GatePolicyError(f"gate policy {name} has unknown keys {unknown}")
     out = {}
@@ -458,6 +530,16 @@ def _policy_block(block, name: str) -> dict:
                               f"{SKILL_KEYS['max_runs_high_cell'][0]}")
     mode = block.get("retirement_mode")
     out["retirement_mode"] = mode if mode in MODES else "proposal"
+    if guidance:
+        rest_policy = block.get("rest_policy", DEFAULT_REST_POLICY)
+        if not isinstance(rest_policy, str) or rest_policy not in REST_POLICIES:
+            raise GatePolicyError(f"gate policy {name}.rest_policy must be one of "
+                                  f"{', '.join(REST_POLICIES)}, not {rest_policy!r}")
+        guard = block.get("rest_guard_min_pairs", DEFAULT_REST_GUARD_MIN_PAIRS)
+        if not _count(1)(guard) or guard > out["max_runs_per_cell"]:
+            raise GatePolicyError(f"gate policy {name}.rest_guard_min_pairs must be an "
+                                  "integer of at least 1, at most max_runs_per_cell")
+        out.update(rest_policy=rest_policy, rest_guard_min_pairs=guard)
     return out
 
 
@@ -875,25 +957,67 @@ def differences(pairs: list, field: str = "run_mean", scale: float = 1.0) -> lis
     return out
 
 
+def _rest_window(pairs: list, keys: list, current, cap: int) -> tuple:
+    """(window, is_current) of a pooled in-situ cell (IN-SITU GUIDANCE CELLS):
+    the first `cap` pairs of EACH rest, in the cells' order, and whether each
+    is beside the `current` rest. Whether a pair enters depends only on the
+    pairs before it, so the window is a predictable selection and every
+    betting test over it keeps its level; each rest's window is frozen at its
+    cap, as a whole cell's is under `current`."""
+    seen: dict = {}
+    window, is_current = [], []
+    for pair, key in zip(pairs, keys):
+        if seen.get(key, 0) < cap:
+            seen[key] = seen.get(key, 0) + 1
+            window.append(pair)
+            is_current.append(key == current)
+    return window, is_current
+
+
 def _classify(pairs: list, policy: dict, family: int = 1,
-              bet_prior: dict | None = None) -> dict:
+              bet_prior: dict | None = None, rest: dict | None = None) -> dict:
     """Rules 1 to 8 of the module docstring (A CELL'S CLASS), over a cell's
     `pairs` in order: the first `max_runs_per_cell` decide, and a removal's
     CLI versions are read over the pairs that entered it. `family` is the
-    subject's keep family m."""
+    subject's keep family m.
+
+    `rest` (an in-situ guidance cell under `pooled-with-current-guard`):
+    {"keys": each pair's rest (`pair_key`), "current": the rest on main,
+    "min_pairs": `rest_guard_min_pairs`}. The keep, remove and harm tests
+    then bet over every rest's pairs (`_rest_window`), each pair at equal
+    weight, while everything that parks a cell, sets it aside, caps it or
+    lets a removal decide reads the current rest (module docstring, IN-SITU
+    GUIDANCE CELLS, THE CURRENT-REST GUARD). None is the rule for skills and
+    for `current`: every pair is beside the current content."""
     cap = policy["max_runs_per_cell"]
-    window = pairs[:cap]
+    if rest is None:
+        window = pairs[:cap]
+        is_current = [True] * len(window)
+        held_current = len(pairs)
+    else:
+        window, is_current = _rest_window(pairs, rest["keys"], rest["current"], cap)
+        held_current = sum(is_current)
+    current_window = [p for p, c in zip(window, is_current) if c]
     arms = {"with": _arm_summary([w for w, _ in window]),
             "without": _arm_summary([o for _, o in window])}
+    current_arms = arms if rest is None else {
+        "with": _arm_summary([w for w, _ in current_window]),
+        "without": _arm_summary([o for _, o in current_window])}
     cli = sorted({v for pair in window for r in pair for v in r["cli_versions"]})
     margin = policy["objective_margin"]
     keep_alpha = (1 - policy["benefit_confidence"]) / family
     remove_alpha = 1 - policy["retire_confidence"]
     out = {**arms, "cli_versions": cli, "pairs": len(pairs), "pairs_used": len(window),
            # Round 2's C1: the window is frozen, so more fires change nothing.
-           "at_cap": len(pairs) >= cap,
+           # Pooled, each rest's window is, so the cell is at its cap when
+           # the CURRENT rest's is: more fires beside it change nothing.
+           "at_cap": held_current >= cap,
            "objective": None, "judge": None, "keep_tests": [], "keep_family": family,
            "bet_prior": bet_prior, "headroom": None, "without_mean": None}
+    if rest is not None:
+        out.update(rest_policy="pooled-with-current-guard",
+                   current_rest_pairs=len(current_window),
+                   rests=len(set(rest["keys"])), rest_guard=None)
 
     def done(cls, reason):
         return {**out, "class": cls, "reason": reason}
@@ -901,16 +1025,23 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     if not window:
         return done("insufficient", "no pair: an arm has no counted run, or no fire "
                     "has both arms counted")
-    rates = [arms[a]["pass_rate"] for a in arms]
+    # The floor sets a cell aside, which lets the subject's other cells
+    # remove it, so pooled it reads the current rest alone.
+    rates = [current_arms[a]["pass_rate"] for a in current_arms]
     if all(r is not None and r <= policy["floor_fraction"] for r in rates):
-        if len(window) >= FLOOR_MIN_RUNS:
+        if len(current_window) >= FLOOR_MIN_RUNS:
             return done("cannot-discriminate", "both arms' pass rate at or below "
-                        f"{policy['floor_fraction']} over {len(window)} pairs: the "
-                        "fixture looks broken")
+                        f"{policy['floor_fraction']} over {len(current_window)} pairs: "
+                        "the fixture looks broken")
         return done("insufficient", "both arms' pass rate at or below "
                     f"{policy['floor_fraction']}; {FLOOR_MIN_RUNS} pairs decide whether "
                     "the fixture is broken")
-    ds = differences(window)
+    usable, usable_current = [], []
+    for (w, o), c in zip(window, is_current):
+        if w["numbers"]["run_mean"] is not None and o["numbers"]["run_mean"] is not None:
+            usable.append((w, o))
+            usable_current.append(c)
+    ds = differences(usable)
     if not ds:
         return done("insufficient", "no run with objective checks on an arm")
     objective = sequence_block(ds, margin, keep_alpha, remove_alpha, bet_prior)
@@ -925,21 +1056,42 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             out["judge"] = {**sequence_block(jd, policy["judge_margin"] / 10, keep_alpha,
                                              remove_alpha, None, scale=10.0),
                             "votes": False}
-    usable = [(w, o) for w, o in window if w["numbers"]["run_mean"] is not None
-              and o["numbers"]["run_mean"] is not None]
-    withouts = [o["numbers"]["run_mean"] for _, o in usable]
-    without_mean = _mean(withouts)
+    # The ceiling, no-harm and high-cell rules park a cell (a parked cell
+    # does not vote, so it can turn a keep in waiting into a proposed
+    # removal) and read the without arm's level, which is what a change of
+    # rest moves, so pooled they read the current rest alone: pooling never
+    # parks a cell the current rest would not.
+    current_usable = [p for p, c in zip(usable, usable_current) if c]
+    withouts = [o["numbers"]["run_mean"] for _, o in current_usable]
+    current_ds = differences(current_usable)
+    without_mean = _mean(withouts) if withouts else None
     floor = 1 - margin
     ceiling_at = first_crossing(ceiling_wealth(withouts, floor), remove_alpha) \
-        if floor > 0 else None
+        if floor > 0 and withouts else None
     harm_at = first_crossing(harm_wealth(ds, bet_prior), remove_alpha)
-    high = without_mean > floor
+    high = without_mean is not None and without_mean > floor
     out.update(headroom=ceiling_at is None, without_mean=without_mean,
                ceiling_at=ceiling_at, harm_at=harm_at)
 
-    def versions(n):
-        """The CLI versions of the first `n` usable pairs."""
-        return sorted({v for pair in usable[:n] for r in pair for v in r["cli_versions"]})
+    def versions(n, current_only=False):
+        """The CLI versions of the first `n` usable pairs (with
+        `current_only`, of those beside the current rest)."""
+        return sorted({v for pair, c in zip(usable[:n], usable_current[:n])
+                       if c or not current_only for r in pair for v in r["cli_versions"]})
+
+    threshold = -math.log(remove_alpha)
+
+    def current_share(wealth):
+        """The current rest's share of a pooled test's running log wealth:
+        after pair n, the sum of the log gains of the pairs up to n beside
+        the current rest, betting what the pooled test bet."""
+        out_share, total, previous = [], 0.0, 0.0
+        for w, c in zip(wealth, usable_current):
+            if c:
+                total += w - previous
+            previous = w
+            out_share.append(total)
+        return out_share
 
     def decided_at(wealth):
         """The STOPPING TIME of a removal-side test (round 2's C1): the first
@@ -948,23 +1100,48 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         None} lies inside {the wealth ever reaches 1/alpha}, which Ville's
         inequality bounds by alpha under H0, so the level holds. The wealth
         must be at the threshold at n itself: a pair that knocks it under
-        (a late D = +1 on a new version) does not decide."""
+        (a late D = +1 on a new version) does not decide.
+
+        Pooled (`rest`), THE CURRENT-REST GUARD also holds at n: at least
+        `min_pairs` of pairs 1..n are beside the current rest, those span
+        `min_cli_versions`, and the current rest's share of the wealth
+        (`current_share`) is itself at 1/remove_alpha. That share is a test
+        martingale for H0 on the current rest alone, whatever the older
+        rests showed, so a removal keeps its level against TODAY's rest."""
         need = policy["min_cli_versions"]
-        threshold = -math.log(remove_alpha)
-        return next((i + 1 for i, w in enumerate(wealth)
-                     if w >= threshold and len(versions(i + 1)) >= need), None)
+        if rest is None:
+            return next((i + 1 for i, w in enumerate(wealth)
+                         if w >= threshold and len(versions(i + 1)) >= need), None)
+        share = current_share(wealth)
+        seen = 0
+        for i, w in enumerate(wealth):
+            seen += usable_current[i]
+            if w >= threshold and share[i] >= threshold and seen >= rest["min_pairs"] \
+                    and len(versions(i + 1, current_only=True)) >= need:
+                return i + 1
+        return None
 
     def awaiting(crossed, what):
         """A test that crossed but has not decided: more pairs on a second
-        CLI version can still decide it, up to the cap."""
+        CLI version (pooled: more pairs beside the current rest) can still
+        decide it, up to the cap."""
+        if rest is not None:
+            found = versions(len(usable), current_only=True)
+            return done("insufficient", f"{what} on the numbers (the pooled test crossed "
+                        f"at pair {crossed}), but the current-rest guard is not met: "
+                        f"{len(current_usable)} pair(s) beside the current rest (at least "
+                        f"{rest['min_pairs']} needed), spanning {len(found)} CLI "
+                        f"version(s) of {policy['min_cli_versions']}, and the current "
+                        "rest's share of the test must reach its level on its own")
         found = versions(len(usable))
         return done("insufficient", f"{what} on the numbers (the test crossed at pair "
                     f"{crossed}), but it has not been at its level on pairs spanning "
                     f"{policy['min_cli_versions']} CLI versions ({len(found)} so far)")
 
     def capped_class():
-        """Rule 8: the cap reached with no test deciding."""
-        found = versions(len(usable))
+        """Rule 8: the cap reached with no test deciding (pooled: the
+        current rest's cap, on the current rest's CLI versions)."""
+        found = versions(len(usable), current_only=rest is not None)
         if len(found) < policy["min_cli_versions"]:
             return done("insufficient", f"no clear effect on the numbers, but {len(found)} "
                         f"CLI version(s) in the pairs, under the "
@@ -973,14 +1150,28 @@ def _classify(pairs: list, policy: dict, family: int = 1,
                     "effect, which can only propose a removal")
 
     keep_at, remove_at = objective["keep_at"], objective["remove_at"]
-    harm_decided = decided_at(harm_wealth(ds, bet_prior))
-    remove_decided = decided_at(remove_wealth(ds, margin, bet_prior))
+    harm_pooled = harm_wealth(ds, bet_prior)
+    remove_pooled = remove_wealth(ds, margin, bet_prior)
+    harm_decided = decided_at(harm_pooled)
+    remove_decided = decided_at(remove_pooled)
     # Round 2's M1: no harm beyond the margin (H0: E[D] <= -margin), at the
-    # remove level. A ceiling cell parks only when this rejects too.
-    noharm_at = first_crossing(keep_wealth(ds, bet_prior, -margin), remove_alpha)
+    # remove level. A ceiling cell parks only when this rejects too; pooled,
+    # it reads the current rest, as the ceiling test does.
+    noharm_at = first_crossing(keep_wealth(current_ds, bet_prior, -margin), remove_alpha) \
+        if current_ds else None
     out.update(harm_decided_at=harm_decided, remove_decided_at=remove_decided,
                noharm_at=noharm_at)
-    capped = len(window) >= cap
+    if rest is not None:
+        remove_share, harm_share = current_share(remove_pooled), current_share(harm_pooled)
+        out["rest_guard"] = {
+            "min_pairs": rest["min_pairs"], "current_rest_pairs": len(current_usable),
+            "met_pairs": len(current_usable) >= rest["min_pairs"],
+            # The levels the current rest's shares reached (Ville's 1 - 1/W).
+            "no_help_confidence": reached(remove_share),
+            "harm_confidence": reached(harm_share),
+            "remove_share_at": first_crossing(remove_share, remove_alpha),
+            "harm_share_at": first_crossing(harm_share, remove_alpha)}
+    capped = held_current >= cap
     # Round 3's M3: the keep is compared with the removal's STOPPING TIME,
     # not its first crossing. A remove crossing that never decided (one CLI
     # version) must not outrank a keep reached later; the keep's own
@@ -1013,9 +1204,9 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         # harm of 0.15 two times in three) and the without arm is at least
         # HIGH_STOP_MIN_WITHOUT (round 3's M2: a stop at 0.85 parked a third
         # of the cells whose true without arm was 0.82).
-        if len(window) >= policy["max_runs_high_cell"] and noharm_at is not None \
+        if len(current_window) >= policy["max_runs_high_cell"] and noharm_at is not None \
                 and without_mean >= HIGH_STOP_MIN_WITHOUT:
-            return done("ceiling-unconfirmed", f"{len(window)} pairs, the without arm "
+            return done("ceiling-unconfirmed", f"{len(current_window)} pairs, the without arm "
                         f"averaging {without_mean:.3f}, and the no-harm test rejected at "
                         f"pair {noharm_at}, but the ceiling test has not: the cell stops "
                         "being fired, does not vote on removal and needs a harder fixture")
@@ -1046,13 +1237,18 @@ def run_key(run: dict) -> str:
 
 def classify_cell(with_runs: list, without_runs: list, policy: dict,
                   judge_carried: bool = False, family: int = 1, bet_prior=None,
-                  errored_blocks: bool = True) -> dict:
+                  errored_blocks: bool = True, rest: dict | None = None) -> dict:
     """A cell's class over all its counted runs (module docstring), paired
     by `pair_runs`. `bet_prior` is a learned prior, None (neutral), or a
     function of the cell's first pair's timestamp returning either.
     `errored_blocks` (skills; not in-situ guidance) keeps a cell with an
     agent-errored trial from `no-benefit` and `no-clear-effect`, so it never
-    leads to a removal, automatic or proposed (the review's m4)."""
+    leads to a removal, automatic or proposed (the review's m4).
+
+    `rest` (an in-situ guidance cell under `pooled-with-current-guard`):
+    {"current": the rest on main, "min_pairs": `rest_guard_min_pairs`}. Runs
+    pair only within one rest (one `pair_key`), never across two, and the
+    pairs of every rest are ordered together for `_classify`."""
     prime(with_runs + without_runs)
     counted, skipped = [], {}
     for runs in (with_runs, without_runs):
@@ -1064,10 +1260,21 @@ def classify_cell(with_runs: list, without_runs: list, policy: dict,
             else:
                 skipped[reason] = skipped.get(reason, 0) + 1
         counted.append(keep)
-    pairs, unpaired = pair_runs(*counted)
+    if rest is None:
+        pairs, unpaired = pair_runs(*counted)
+        rest_info = None
+    else:
+        pairs, unpaired = [], []
+        for key in sorted({r.get("pair_key") for r in counted[0] + counted[1]}, key=str):
+            some, lone = pair_runs([r for r in counted[0] if r.get("pair_key") == key],
+                                   [r for r in counted[1] if r.get("pair_key") == key])
+            pairs += some
+            unpaired += lone
+        pairs.sort(key=lambda p: _order(p[0]))
+        rest_info = {**rest, "keys": [w.get("pair_key") for w, _ in pairs]}
     if callable(bet_prior):
         bet_prior = bet_prior(pairs[0][0]["timestamp"]) if pairs else None
-    full = _classify(pairs, policy, family, bet_prior)
+    full = _classify(pairs, policy, family, bet_prior, rest_info)
     cls, reason = full["class"], full["reason"]
     errored = sum(r["numbers"]["errored_trials"] for r in with_runs + without_runs)
     if cls in ("no-benefit", "no-clear-effect") \
@@ -1134,7 +1341,7 @@ def pooled_fixture(run: dict, skill: str, expected: dict) -> str:
 
 
 def pool_cells(runs: list, skill: str, models: list, expected: dict,
-               strata: bool = False) -> dict:
+               strata: bool = False, rest_policy: str = DEFAULT_REST_POLICY) -> dict:
     """Which arm runs each (fixture, model) cell of `skill` holds, each arm
     pooled by its own key against the content on main (module docstring).
     `expected` maps each fixture on main ("" for a flat one) to its
@@ -1156,9 +1363,18 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict,
     guidance on main (`pair_key` equal to `expected`'s `rest_digest`; the
     module docstring, IN-SITU GUIDANCE CELLS), under `strata` too, and its
     own key {tested_digest, fixture_digest, rest_digest}: an unknown rest
-    makes the key incomplete."""
+    makes the key incomplete. With `rest_policy` `pooled-with-current-guard`
+    (the module docstring, IN-SITU GUIDANCE CELLS) the cell holds the runs
+    beside EVERY rest instead, under the same key otherwise: the with arm's
+    tested digest, the fixture digest, the model, and no fleet hook set (a
+    hooked run's `pair_key` carries its hook set, so it never equaled the
+    rest on main either). Each rest is a stratum, and `rest_digest` still
+    names the current one, which the guard reads."""
+    if rest_policy not in REST_POLICIES:
+        raise ValueError(f"unknown rest_policy {rest_policy!r}")
     if strata:
-        return _pool_strata(runs, skill, models, expected)
+        return _pool_strata(runs, skill, models, expected,
+                            pooled=rest_policy != "current")
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
@@ -1188,7 +1404,8 @@ def pool_cells(runs: list, skill: str, models: list, expected: dict,
     return cells
 
 
-def _pool_strata(runs: list, skill: str, models: list, expected: dict) -> dict:
+def _pool_strata(runs: list, skill: str, models: list, expected: dict,
+                 pooled: bool = False) -> dict:
     own = [r for r in runs if r["skill"] == skill]
     cells = {}
     for fixture, main in sorted(expected.items()):
@@ -1199,8 +1416,13 @@ def _pool_strata(runs: list, skill: str, models: list, expected: dict) -> dict:
             groups: dict = {}
             for run in mine:
                 if run["model"] != model or not run.get("pair_key") or fdig is None \
-                        or run["fixture_digest"] != fdig or rest is None \
-                        or run["pair_key"] != rest:
+                        or run["fixture_digest"] != fdig or rest is None:
+                    continue
+                if pooled:
+                    # Any rest, but the hook part of the key as on main: none.
+                    if run.get("fleet_hooks_digest") is not None:
+                        continue
+                elif run["pair_key"] != rest:
                     continue
                 if run["role"] == "with" and (tested is None or run["tested_digest"] != tested):
                     continue
@@ -1239,8 +1461,10 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     `bet_prior` is None (neutral bets), a learned prior for every cell, or a
     function of a cell's first pair's timestamp (`prior_from_history`).
 
-    `strata` (#557, in-situ guidance): cells hold only the runs beside the
-    rest of the guidance on main (`pool_cells`), and an agent-errored trial
+    `strata` (#557, in-situ guidance): cells hold the runs beside the rest
+    of the guidance on main, or beside every rest under the policy's
+    `rest_policy` `pooled-with-current-guard` (`pool_cells`; each cell is
+    then classified with THE CURRENT-REST GUARD), and an agent-errored trial
     does not block a removal.
 
     `family` (default on): the keep is applied per SUBJECT. Every cell's
@@ -1249,9 +1473,12 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
     at `benefit_confidence` overall. The verdict records `keep_family` (m)
     and `keep_alpha`. The alone pair passes `family=False` (m = 1)."""
     m = len(expected) * max(1, len(models)) if family and expected else 1
+    rest_policy = policy.get("rest_policy", DEFAULT_REST_POLICY) if strata else "current"
+    pooled = rest_policy != "current"
     cells, used = [], set()
     for (fixture, model), pool in sorted(pool_cells(index.get("runs", []), skill,
-                                                    models, expected, strata).items()):
+                                                    models, expected, strata,
+                                                    rest_policy).items()):
         arms = {"with": pool["with"], "without": pool["without"]}
         runs = arms["with"] + arms["without"]
         prime(runs)
@@ -1264,8 +1491,11 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                     "reason": f"pooling key incomplete: {', '.join(missing)}"}
         else:
             carried = any(r["judge_carried"] for r in runs)
+            guard = {"current": pool["key"]["rest_digest"],
+                     "min_pairs": policy.get("rest_guard_min_pairs",
+                                             DEFAULT_REST_GUARD_MIN_PAIRS)} if pooled else None
             cell = classify_cell(arms["with"], arms["without"], policy, carried, m,
-                                 bet_prior, errored_blocks=not strata)
+                                 bet_prior, errored_blocks=not strata, rest=guard)
         paused = (expected.get(fixture) or {}).get("scope_paused")
         if paused and cell["class"] not in PAUSE_KEEPS_CLASS:
             # Round 3's C1: the eval scope pass stopped firing this fixture.
