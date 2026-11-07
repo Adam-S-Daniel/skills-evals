@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0165WnQPDHTP6uckgpf4iCZE",
+      "name": "Bash",
+      "input": "git status --short | head; ls; ls .github/workflows; cat AGENTS.md 2><path> | head -80",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0165WnQPDHTP6uckgpf4iCZE",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests-skip.yml\ntests.yml",
+      "output_chars": 263,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011AqcSyKmibZb7xc14zY9Fa",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; git ls-files | grep -v '^\\.' | awk -F/ '{print $1\"<path>\"$2}' | sort -u | head -50; cat package.json",
+      "input_chars": 157,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011AqcSyKmibZb7xc14zY9Fa",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 2718,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SSrtHRsgUKjqMMhfmySV9B",
+      "name": "Bash",
+      "input": "cat mkdocs.yml; grep -rn \"require\\|import\\|readFile\\|\\.\\./\" src test | head -20; ls .github; git ls-files | head -30",
+      "input_chars": 116,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SSrtHRsgUKjqMMhfmySV9B",
+      "is_error": false,
+      "output": "site_name: Example Service\nsite_url: https://docs.example.com/\ndocs_dir: docs\n\nnav:\n  - Home: index.md\n  - Guide: guide.md\nsrc/index.js:3:const http = require(\"node:http\");\nsrc/index.js:4:const { greeting } = require(\"./util\");\nsrc/index.js:18:if (require.main === module) {\ntest/util.test.js:3:const...",
+      "output_chars": 1126,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q86UwDZbqkWsEcryBHsSNW",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; cat bin/gh | head -30; cat .gh/replay/ruleset-view-4410273.json",
+      "input_chars": 95,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q86UwDZbqkWsEcryBHsSNW",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 3312,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
