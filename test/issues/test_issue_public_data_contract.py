@@ -725,8 +725,8 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn(f"  {name}=={pins[name]}\n", setup)
 
     def test_the_agents_md_row_names_the_new_inputs(self):
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        row = next(line for line in agents.splitlines() if line.startswith("  | `explorer-data.yml`"))
+        agents = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")
+        row = next(line for line in agents.splitlines() if line.startswith("| `explorer-data.yml`"))
         for word in ("schema.json", "activity", "hook-policy.yml", "public-export.yml",
                      "lesson_funnel", "private repos"):
             self.assertIn(word, row)

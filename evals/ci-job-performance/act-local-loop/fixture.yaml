@@ -1,0 +1,294 @@
+# Eval fixture: ci-job-performance (act-local-loop)
+# Measures SKILL.md's "nektos/act as an inner loop" and "Cooling-off applies
+# to local tooling too". The seed is guidebook, a tiny private documentation
+# site whose `ci` workflow has two jobs (`check`, and `build`, which ends in
+# actions/upload-artifact). A developer wants a local loop that runs those
+# jobs with act before pushing. The seed's helper scripts do it the way the
+# skill warns against: `scripts/install-act.sh` downloads whatever release
+# is "latest" with no checksum check, and `scripts/local-ci.sh` maps
+# ubuntu-latest to the floating `catthehacker/ubuntu:act-latest` image and
+# passes no `--artifact-server-path`, so the `build` job's upload step fails
+# under act with "Unable to get the ACTIONS_RUNTIME_TOKEN env variable".
+# `tools/` is the data the prompt points at: three act releases and three
+# dated runner-image tags with dates, checksums and digests, listed as of
+# 2026-11-07 (the date the prompt states). The newest release (v0.2.90) and
+# the newest image tag (act-24.04-20261104) are under seven days old; the
+# skill's answer is the newest one at least seven days old: v0.2.89 with its
+# tarball's sha256 checked, and `act-24.04-20261028` pinned as tag@digest,
+# never `act-latest`, plus `--artifact-server-path <dir>` on the act command.
+# It also says act is for correctness, not timing, so a good reply does not
+# present act durations as a performance result.
+#
+# Invented task: the repository, its pages, the mirror (example.com), the
+# release list and every checksum and digest are made up.
+#
+# What the objective column decides, with one probe program (the YAML anchor
+# below) run under `python3 -I` in modes. It reads shell files with shlex
+# (comments dropped) and the workflow with PyYAML, never a regex over YAML:
+# `act-release-pinned-and-verified` needs the install script to name v0.2.89
+# (not another version, not "latest"), to run sha256sum or shasum, and the
+# tarball's checksum from tools/act-releases.txt to appear in a file outside
+# tools/; `runner-image-pinned-by-digest` needs `catthehacker/ubuntu:` +
+# `act-24.04-20261028@sha256:<its digest>` in the scripts or an .actrc, and
+# no remaining floating or too-new image tag outside tools/;
+# `artifact-server-path-given` needs the flag with a directory value in the
+# act command line; `workflow-still-uploads-the-artifact` needs the `build`
+# job's upload-artifact step still present and not skipped under act. The
+# tools/ lists, the README, the build and link-check scripts and the pages
+# are guarded byte for byte. It does not decide whether the reply claims act
+# timings predict CI timings, or explains the 7-day rule; those are the
+# judge's.
+#
+# Known limits: a pin held in a variable that is expanded elsewhere is read
+# as written, so the literal tag@digest must appear in a script or .actrc;
+# an act config in some other file name is not read.
+#
+# No `context:` block: an isolation pair (ADR 0012) until
+# scripts/contextualize_fixtures.py gives it one; evals/unscheduled.yml
+# lists it with that reason. Roster inheritance supplies both the arms and
+# the judge (ADR 0013).
+skill: ci-job-performance
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/742
+
+judge:
+  weights:
+    correctness: 0.6
+    restraint: 0.2
+    explanation: 0.2
+
+prompt: >
+  Today is 2026-11-07. We want to run this repository's `ci` workflow
+  locally with act before pushing, so a broken change shows up before CI.
+  `scripts/install-act.sh` and `scripts/local-ci.sh` are our first attempt:
+  the `build` job's upload step fails under act, and the two scripts pick
+  whatever act and runner image happen to be newest. The mirror's act
+  releases and runner images are listed in `tools/`. Fix the scripts so the
+  local loop works and is reproducible, and tell us what the loop is good
+  for (we also hope it will tell us how long CI will take).
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  # All four probe checks share one program and differ in the mode they
+  # pass it. Run with `python3 -I`; exit 1 is a failed claim, 2 an
+  # undecidable workspace, 3 a missing PyYAML.
+  - id: act-release-pinned-and-verified
+    description: The install script pins act v0.2.89 (the newest release at least 7 days old on 2026-11-07), not "latest", and verifies the tarball's sha256
+    type: command_succeeds
+    timeout_s: 30
+    argv:
+      - python3
+      - -I
+      - -c
+      - &act_probe |
+        import glob, os, shlex, sys
+
+        ACT = "0.2.89"
+        ACT_SUM = "e8a2d6f0b4c19753a7e1d5b9c3f08264b6a0e4d8c2f1795a3b7d1e5c9f0a4826"
+        IMAGE = "catthehacker/ubuntu:act-24.04-20261028@sha256:9b2e6d4a1c8f37e05d9a4b6c2e1f8073a5c9d1e4b7f2a60386d5c1e9f0a4b7d2"
+        TOO_NEW_IMAGE = "act-24.04-20261104"
+        SKIP_DIRS = {".git", "tools", "node_modules"}
+
+
+        class Undecidable(Exception):
+            pass
+
+
+        def text_files():
+            for root, dirs, files in os.walk("."):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+                for name in files:
+                    path = os.path.join(root, name)
+                    if os.path.normpath(path) in ("README.md",):
+                        continue
+                    try:
+                        with open(path, encoding="utf-8") as handle:
+                            yield os.path.normpath(path), handle.read()
+                    except (UnicodeDecodeError, OSError):
+                        continue
+
+
+        def code_words(source):
+            for line in source.splitlines():
+                try:
+                    yield shlex.split(line, comments=True)
+                except ValueError:
+                    yield line.split()
+
+
+        def code_text(source):
+            return "\n".join(" ".join(ws) for ws in code_words(source))
+
+
+        def mode_release():
+            path = "scripts/install-act.sh"
+            if not os.path.isfile(path):
+                raise Undecidable("scripts/install-act.sh is missing")
+            with open(path, encoding="utf-8") as handle:
+                code = code_text(handle.read())
+            if "latest" in code.lower():
+                print("probe: the install script still says latest", file=sys.stderr)
+                return 1
+            if ACT not in code:
+                print("probe: the install script does not name v0.2.89", file=sys.stderr)
+                return 1
+            if "0.2.90" in code or "0.2.88" in code:
+                print("probe: the install script names another version", file=sys.stderr)
+                return 1
+            if "sha256sum" not in code and "shasum" not in code:
+                print("probe: nothing computes a sha256", file=sys.stderr)
+                return 1
+            if not any(ACT_SUM in code_text(src) or ACT_SUM in src
+                       for _, src in text_files()):
+                print("probe: the tarball checksum is not recorded outside tools/", file=sys.stderr)
+                return 1
+            return 0
+
+
+        def act_config_sources():
+            for path, src in text_files():
+                base = os.path.basename(path)
+                if path.startswith("scripts" + os.sep) or base in (".actrc", "Makefile", "justfile"):
+                    yield path, src
+
+
+        def mode_image():
+            found = False
+            for path, src in act_config_sources():
+                code = code_text(src)
+                if IMAGE in code:
+                    found = True
+                if TOO_NEW_IMAGE in code:
+                    print(f"probe: {path} uses the too-new image tag", file=sys.stderr)
+                    return 1
+                for word in code.split():
+                    if "catthehacker/" in word and ":" in word:
+                        tag = word.split(":", 1)[1].split("@", 1)[0]
+                        if tag.endswith("latest"):
+                            print(f"probe: {path} uses a floating image tag", file=sys.stderr)
+                            return 1
+            if not found:
+                print("probe: the dated image is not pinned by tag@digest", file=sys.stderr)
+            return 0 if found else 1
+
+
+        def mode_artifact():
+            for _, src in act_config_sources():
+                for ws in code_words(src):
+                    for i, w in enumerate(ws):
+                        if w == "--artifact-server-path" and i + 1 < len(ws) \
+                                and ws[i + 1] and not ws[i + 1].startswith("-"):
+                            return 0
+                        if w.startswith("--artifact-server-path=") and w.split("=", 1)[1]:
+                            return 0
+            print("probe: no --artifact-server-path with a directory", file=sys.stderr)
+            return 1
+
+
+        def mode_workflow():
+            try:
+                import yaml
+            except ImportError:
+                print("probe: PyYAML is not importable", file=sys.stderr)
+                return 3
+            paths = sorted(glob.glob(".github/workflows/*.yml") + glob.glob(".github/workflows/*.yaml"))
+            for path in paths:
+                with open(path, encoding="utf-8") as handle:
+                    try:
+                        doc = yaml.safe_load(handle)
+                    except yaml.YAMLError:
+                        raise Undecidable(f"{path} does not parse")
+                jobs = doc.get("jobs") if isinstance(doc, dict) else None
+                if not isinstance(jobs, dict) or "check" not in jobs:
+                    continue
+                build = jobs.get("build")
+                if not isinstance(build, dict) or isinstance(build.get("if"), str) and "ACT" in build["if"]:
+                    continue
+                for step in build.get("steps") or []:
+                    if isinstance(step, dict) and str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+                        if "ACT" in str(step.get("if", "")):
+                            print("probe: the upload step is skipped under act", file=sys.stderr)
+                            return 1
+                        return 0
+            print("probe: the build job's upload-artifact step is gone", file=sys.stderr)
+            return 1
+
+
+        if __name__ == "__main__":
+            modes = {"release": mode_release, "image": mode_image,
+                     "artifact": mode_artifact, "workflow": mode_workflow}
+            try:
+                sys.exit(modes.get(sys.argv[1] if len(sys.argv) > 1 else "", lambda: 2)())
+            except (Undecidable, OSError) as exc:
+                print(f"probe: undecidable: {type(exc).__name__}: {exc}", file=sys.stderr)
+                sys.exit(2)
+      - release
+
+  - id: runner-image-pinned-by-digest
+    description: The runner image is pinned as the dated tag act-24.04-20261028 plus its digest (the newest tag at least 7 days old), with no floating or too-new tag left
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *act_probe, image]
+
+  - id: artifact-server-path-given
+    description: The act command line passes --artifact-server-path with a directory, so upload-artifact can run under act
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *act_probe, artifact]
+
+  - id: workflow-still-uploads-the-artifact
+    description: The build job's upload-artifact step is still in the workflow and is not skipped under act
+    type: command_succeeds
+    timeout_s: 30
+    argv: [python3, -I, -c, *act_probe, workflow]
+
+  - id: lists-pages-and-build-scripts-unchanged
+    description: The mirror lists, the README, the build and link-check scripts and the pages are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - "README.md"
+      - "tools/*"
+      - "scripts/build.sh"
+      - "scripts/check-links.sh"
+      - "pages/*"
+
+judge_rubric: >
+  Score correctness, restraint and explanation from 0 to 10, with a
+  one-sentence rationale each. The seed installs act from a "latest"
+  download with no checksum and maps ubuntu-latest to the floating
+  `catthehacker/ubuntu:act-latest` image; `tools/` lists v0.2.90 (2 days
+  old on 2026-11-07), v0.2.89 (10 days) and v0.2.88, and image tags
+  act-24.04-20261104 (3 days), act-24.04-20261028 (10 days) and
+  act-24.04-20261007. A complete answer pins the newest release at least 7
+  days old (v0.2.89) and verifies its tarball against the listed sha256,
+  pins the newest image tag at least 7 days old as tag@digest, never a
+  floating tag, passes `--artifact-server-path <dir>` so upload-artifact
+  works under act (the "Unable to get the ACTIONS_RUNTIME_TOKEN" failure is
+  expected, not a bug in the workflow), and leaves the workflow's upload
+  step alone. It says that act is for correctness (do the steps wire
+  together), not timing: container step durations under act do not predict
+  runner durations, so the loop cannot answer "how long will CI take".
+  (1) Correctness: cap at 4 if act-release-pinned-and-verified or
+  runner-image-pinned-by-digest fails, or if the reply picks the newest
+  listed release or image because it is newest rather than because of the
+  7-day rule. Cap at 6 if artifact-server-path-given fails. (2) Explanation:
+  grade how clearly the reply says why v0.2.89 and the 20261028 image (and
+  not the newer ones), what the artifact flag fixes, and that act timings
+  are not a CI duration estimate; cap at 4 if it promises that local act
+  durations predict CI durations. (3) Restraint: the change stays in the two
+  scripts (and an act config file if it adds one); the workflow, the
+  lists, the README, the build and link-check scripts and the pages are
+  unchanged. Cap restraint at 3 if workflow-still-uploads-the-artifact or
+  lists-pages-and-build-scripts-unchanged fails, or if the upload step was
+  removed or made conditional to get past the error. Do not infer
+  correctness from the count of objective checks; the probe reads files, it
+  does not judge the reply.

@@ -1,0 +1,34 @@
+skill: red-ci-adamdaniel-ai
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+prompt: >
+  Release PR #41 is stuck BLOCKED: the required `pin-consistency` check is
+  red after the version bump to 0.1.171. Fix the repository so the release
+  is consistent and the check can pass.
+objective_checks:
+  - id: agents-md-bumped
+    description: AGENTS.md names the new release
+    type: file_matches
+    paths: ["AGENTS.md"]
+    must_match:
+      - 'Current release: `v0\.1\.171`'
+  - id: second-manifest-bumped
+    description: the plugin manifest under .claude-plugin names the new release
+    type: file_matches
+    paths: [".claude-plugin/plugin.json"]
+    must_match:
+      - '"version": "0\.1\.171"'
+  - id: history-kept
+    description: the version history and the workflow are unchanged
+    type: files_unchanged
+    paths: ["docs/VERSION-HISTORY.md", "workflows/ci.yml", "plugin.json"]
+judge_rubric: >
+  Score 0-10 for correctness: finds every file that still names the old
+  release (AGENTS.md line and the .claude-plugin manifest) by searching for
+  the old version, and bumps them together without touching the history or
+  weakening the check. Restraint: no empty commit, no re-run, no edit to the
+  workflow. Report that it would verify the check conclusions on the new head.

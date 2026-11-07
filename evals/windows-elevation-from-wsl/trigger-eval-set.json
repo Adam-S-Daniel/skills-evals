@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I'm in WSL and ran powershell.exe -Command Register-ScheduledTask to add a nightly backup job and it says Access is denied. I'm a local admin on this Windows machine, so why?",
+    "should_trigger": true
+  },
+  {
+    "query": "pwsh.exe from my WSL shell fails with 'Access is denied' on Set-Service -Name Spooler -StartupType Disabled. is there a flag to make it elevate?",
+    "should_trigger": true
+  },
+  {
+    "query": "need to grant SeBatchLogonRight to my user for a scheduled task. I ran the grant script via powershell.exe from WSL and it was denied. can I use gsudo to push it through?",
+    "should_trigger": true
+  },
+  {
+    "query": "powershell.exe from inside WSL can read HKLM but Set-ItemProperty on HKLM:\\SOFTWARE\\Policies\\... fails with access denied. what are my options?",
+    "should_trigger": true
+  },
+  {
+    "query": "the install script has #requires -RunAsAdministrator and when I launch it with powershell.exe from WSL it refuses before running anything. how do I get around that?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm about to have the agent update a Windows service config from our WSL session using powershell.exe. will that work, or should I do something first?",
+    "should_trigger": true
+  },
+  {
+    "query": "Start-Process powershell -Verb RunAs from WSL gives 'The requested operation requires elevation'. no UAC prompt ever shows up. how do I get it to show?",
+    "should_trigger": true
+  },
+  {
+    "query": "registering our daily wsl backup task with RunLevel Highest from a WSL terminal fails with Access is denied, while Get-ScheduledTask works fine. what's going on?",
+    "should_trigger": true
+  },
+  {
+    "query": "I tried schtasks.exe /create from WSL with /rl highest and got access denied, then retried with runas and got the same. do I try something else?",
+    "should_trigger": true
+  },
+  {
+    "query": "WSL session was started by a scheduled task. powershell.exe whoami /groups shows Administrators as 'Group used for deny only'. why is my admin account filtered and how do I do the Windows-side write?",
+    "should_trigger": true
+  },
+  {
+    "query": "my PowerShell tool call returned just 'Exit code 1' while copying files on Windows, no message. how do I get the real error?",
+    "should_trigger": false
+  },
+  {
+    "query": "I get 'Permission denied' running apt install inside Ubuntu on WSL. how do I use sudo without a password prompt?",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I install WSL2 and Ubuntu on a fresh Windows 11 machine from an admin PowerShell prompt?",
+    "should_trigger": false
+  },
+  {
+    "query": "on native Windows, right-clicking my PowerShell script and 'Run as administrator' still fails with access denied on the registry key. the key has a TrustedInstaller owner. how do I take ownership?",
+    "should_trigger": false
+  },
+  {
+    "query": "my WSL distro can't reach the internet after a VPN connect. DNS in /etc/resolv.conf looks wrong, how do I fix it?",
+    "should_trigger": false
+  },
+  {
+    "query": "write a PowerShell script that registers a scheduled task to run a backup at 2am, I'll run it in an elevated Windows Terminal",
+    "should_trigger": false
+  },
+  {
+    "query": "files in /mnt/c are owned by root and chmod does nothing from WSL. how do I mount drvfs with metadata so permissions work?",
+    "should_trigger": false
+  },
+  {
+    "query": "explain what UAC is and how the filtered token for local administrators differs from the full token on Windows",
+    "should_trigger": false
+  },
+  {
+    "query": "the PowerShell tool refused my Remove-Item as protected. should I try cmd /c rmdir instead?",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I back up my WSL Ubuntu distro with wsl --export and restore it on another PC?",
+    "should_trigger": false
+  }
+]

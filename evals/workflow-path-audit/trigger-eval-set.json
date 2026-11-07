@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I'm adding .github/workflows/lint.yml that runs on pull_request and push. Before I commit it, can you check whether it should have a paths filter? It only runs eslint on src/ and the root package.json",
+    "should_trigger": true
+  },
+  {
+    "query": "our Actions bill jumped 40% last month and I think half the workflows fire on every README edit. can you go through .github/workflows and tighten the triggers so they only run when something they use changed?",
+    "should_trigger": true
+  },
+  {
+    "query": "I moved e2e/checkout.spec.js to tests/e2e/checkout.spec.js yesterday and now the Playwright workflow never runs on spec changes. I think its paths: list still points at the old folder, can you find every workflow that has this problem?",
+    "should_trigger": true
+  },
+  {
+    "query": "audit all our workflows for missing path filters. we have 14 of them in .github/workflows and I suspect most trigger on docs-only PRs",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to make the `build` job a required status check, but it has paths: on the workflow. what's the right way to keep the filter's savings without blocking docs-only PRs forever?",
+    "should_trigger": true
+  },
+  {
+    "query": "just added a new step to ci.yml that runs scripts/check-licenses.sh. does ci.yml's paths filter need updating? it currently lists src/** and package.json only",
+    "should_trigger": true
+  },
+  {
+    "query": "docs-only PRs are running the full 25 minute test matrix. add paths-ignore for the stuff that doesn't matter (README, docs/, LICENSE) to the pull_request trigger in test.yml, and make sure the workflow file itself still counts as salient",
+    "should_trigger": true
+  },
+  {
+    "query": "The deploy workflow filters on package.json but we bumped a dependency through package-lock.json only and nothing deployed. Is the filter wrong? check the other workflows for the same hole",
+    "should_trigger": true
+  },
+  {
+    "query": "review .github/workflows/docker-publish.yml: it triggers on push to main with no path filter, and it builds an image from services/api. what should its salient paths be?",
+    "should_trigger": true
+  },
+  {
+    "query": "we have a required check called `unit` that's currently skipped when only markdown changes, and it's blocking merges on those PRs. How do I restructure the workflow so it reports green quickly instead?",
+    "should_trigger": true
+  },
+  {
+    "query": "the nightly cron in .github/workflows/backup.yml didn't fire last night. Why would a schedule trigger get skipped?",
+    "should_trigger": false
+  },
+  {
+    "query": "my workflow pins actions/checkout to a tag. Can you convert every uses: line across our workflows to a full commit SHA?",
+    "should_trigger": false
+  },
+  {
+    "query": "The e2e job is taking 18 minutes. Help me shard the Playwright tests across 4 runners and cache the browser download",
+    "should_trigger": false
+  },
+  {
+    "query": "CI is red on my PR: 'Process completed with exit code 1' in the build step. Here's the log, can you figure out what failed?",
+    "should_trigger": false
+  },
+  {
+    "query": "set up branch protection on main so PRs need one approval and the unit check to pass, as a ruleset I can apply with gh api",
+    "should_trigger": false
+  },
+  {
+    "query": "write a new GitHub Actions workflow that runs pytest on Python 3.11 and 3.12 for every pull request",
+    "should_trigger": false
+  },
+  {
+    "query": "How do I pass a secret from one reusable workflow to the caller job without printing it in the logs?",
+    "should_trigger": false
+  },
+  {
+    "query": "Explain the difference between pull_request and pull_request_target and when each one is safe to use with fork PRs",
+    "should_trigger": false
+  },
+  {
+    "query": "Add a CODEOWNERS file so that anything under .github/workflows needs review from the platform team",
+    "should_trigger": false
+  },
+  {
+    "query": "write a shell script that lists all the open PRs in our org older than 30 days and posts them to Slack",
+    "should_trigger": false
+  }
+]

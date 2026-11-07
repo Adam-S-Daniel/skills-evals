@@ -20,8 +20,8 @@ September pause, and is not updated any more.
   the weekly allowance, at most 3% per run, and nothing fires once the
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
-  A successful fire with no results holds a full reservation for 2
-  hours, then only the overrun
+  A successful fire with no results holds a full reservation for 90
+  minutes, then only the overrun
   ([#412](https://github.com/Adam-S-Daniel/skills-evals/pull/412)).
 - **Roster:** `claude-sonnet-5-5` and `claude-opus-5-5`, judged by
   `claude-fable-5-1`. `roster-refresh.yml` refreshes it weekly so it follows
@@ -47,8 +47,9 @@ September pause, and is not updated any more.
   `retirement` job gives each one a verdict, and a section that helps only
   when alone gets `shorten-or-merge`, not removal. Removal was automatic
   (`guidance.retirement_mode: auto`, a removal pull request into
-  `_agent-guidance` that auto-merges); both blocks commit `proposal` since
-  Adam's 2026-11-03 "Resume, auto-removal off". See DESIGN.md, "Section
+  `_agent-guidance` that auto-merges); Adam's 2026-11-03 "Resume,
+  auto-removal off" set both blocks to `proposal`, and they commit `auto`
+  again since withdrawal was hardened (PR #740, #645). See DESIGN.md, "Section
   fixtures, verdicts and removal".
 - **One removal rule (Adam, 2026-11-02, #557):** skills and sections are
   removed at 90% confidence that they do not improve results by 0.15 or

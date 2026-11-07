@@ -10,8 +10,8 @@ on dispatch). Three checks decide:
           and that commit is more than DESIGN_MAX_AGE old (its committer time).
   data    explorer/latest.json's `generated_at` is older than DATA_MAX_AGE.
   page    the live page, loaded in headless Chromium, did not draw the data
-          (the `p.asof` line, built only after the data loaded; a
-          `.panel.failure` means the page drew its error panel).
+          (a `p.src` source line, or the older page's `p.asof`, built only
+          after the data loaded; a `.panel.failure` means the page drew its error panel).
 
 Mechanical fixes (`fix`): an open sync PR that is BEHIND its base gets
 update-branch with the eval-improve App token; a stale design with neither a
@@ -41,17 +41,15 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 import subprocess
 import sys
 import urllib.request
 
 EVALS_REPO = "Adam-S-Daniel/skills-evals"
-DEFAULT_SITE_REPO = "Adam-S-Daniel/adamdaniel.ai"
 SYNC_BRANCH = "tool-sync/skills-evals"
 PROVENANCE_PATH = "_data/tool_sources/skills-evals.yml"
 SOURCE_FILE = "tool/index.html"
-DEFAULT_PAGE_URL = "https://adamdaniel.ai/tools/evals/"
-DEFAULT_ASSET_URL = "https://adamdaniel.ai/assets/tools/skills-evals/index.html"
 DATA_URL = ("https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/"
             "persistent/eval-results/explorer/latest.json")
 
@@ -74,6 +72,9 @@ _ROUTINE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
 _REPO = re.compile(r"[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}")
 
 #: The reasons the page check can give; fixed text, never page content.
+# What the page draws only once its data loaded: the source line under each
+# panel heading (`p.src`), or `p.asof` on the page before the six-group app.
+DRAWN = "#app p.src, #app p.asof"
 PAGE_OK = "drew"
 
 
@@ -379,11 +380,26 @@ def sync_state(site_repo: str, token: str | None) -> tuple:
         return prs, False if err.missing else None
 
 
+def drawn_state(frames) -> str | None:
+    """"drew" when any frame shows a `DRAWN` line, "failed" when one shows the
+    error panel instead, None while none has drawn yet."""
+    failed = False
+    for frame in frames:
+        try:
+            if frame.query_selector(DRAWN):
+                return "drew"
+            if frame.query_selector("#app .panel.failure"):
+                failed = True
+        except Exception:  # noqa: BLE001 - a frame that navigated away
+            continue
+    return "failed" if failed else None
+
+
 def browser_results(urls: list) -> dict:
     """Load each URL in headless Chromium: PAGE_OK when the data-dependent
-    `p.asof` line appears, else a fixed reason. The page's text is never
+    `DRAWN` line appears, else a fixed reason. The page's text is never
     returned."""
-    from playwright.sync_api import TimeoutError as PwTimeout, sync_playwright
+    from playwright.sync_api import sync_playwright
 
     results = {}
     with sync_playwright() as pw:
@@ -396,13 +412,17 @@ def browser_results(urls: list) -> dict:
                     if response is None or response.status >= 400:
                         results[url] = f"http {response.status if response else 'none'}"
                         continue
-                    try:
-                        page.wait_for_selector("#app p.asof, #app .panel.failure",
-                                               timeout=45_000)
-                    except PwTimeout:
+                    # The site's tool page wraps the app in an iframe, so look
+                    # in every frame, not only the top document.
+                    state, deadline = None, time.monotonic() + 45
+                    while state is None and time.monotonic() < deadline:
+                        state = drawn_state(page.frames)
+                        if state is None:
+                            page.wait_for_timeout(500)
+                    if state is None:
                         results[url] = "nothing drew in 45 seconds"
                         continue
-                    results[url] = (PAGE_OK if page.query_selector("#app p.asof")
+                    results[url] = (PAGE_OK if state == "drew"
                                     else "the page drew its error panel")
                 except Exception as err:  # noqa: BLE001
                     results[url] = f"browser error {type(err).__name__}"
@@ -433,13 +453,27 @@ def post_fire(routine_id: str, bearer: str, text: str) -> str:
 # CLI
 # --------------------------------------------------------------------------
 
+REQUIRED_VARIABLES = {
+    "SITE_REPO": "the site repository as owner/name",
+    "SITE_PAGE_URL": "the live page URL",
+    "SITE_ASSET_URL": "the URL of the vendored asset",
+}
+
+
 def env_config() -> dict:
-    site_repo = os.environ.get("SITE_REPO", DEFAULT_SITE_REPO)
+    """The site settings, all required: none has a default."""
+    missing = [name for name in REQUIRED_VARIABLES if not os.environ.get(name)]
+    if missing:
+        raise SystemExit(
+            "Missing repository variables: "
+            + "; ".join(f"{n} ({REQUIRED_VARIABLES[n]})" for n in missing)
+            + ". Set them under Settings > Secrets and variables > Actions > Variables.")
+    site_repo = os.environ["SITE_REPO"]
     if not _REPO.fullmatch(site_repo):
         raise SystemExit("SITE_REPO is not owner/name")
     return {"site_repo": site_repo,
-            "page_url": os.environ.get("SITE_PAGE_URL") or DEFAULT_PAGE_URL,
-            "asset_url": os.environ.get("SITE_ASSET_URL") or DEFAULT_ASSET_URL}
+            "page_url": os.environ["SITE_PAGE_URL"],
+            "asset_url": os.environ["SITE_ASSET_URL"]}
 
 
 def utcnow() -> datetime:
@@ -573,7 +607,8 @@ def cmd_fire(args) -> int:
     routine_id, bearer = os.environ.get("ROUTINE_ID", ""), os.environ.get("FIRE_BEARER", "")
     number = os.environ.get("ISSUE_NUMBER", "")
     if not _ROUTINE_ID.fullmatch(routine_id) or not bearer or not number.isdigit():
-        print("::error::the routine id, the bearer or the issue number is missing or malformed")
+        print("::error::the routine id (repository variable SITE_FRESHNESS_ROUTINE_ID), the "
+              "bearer (secret SITE_FRESHNESS_FIRE_BEARER) or the issue number is missing or malformed")
         return 1
     status = post_fire(routine_id, bearer, Path(args.fire_text).read_text(encoding="utf-8"))
     print(f"fire API status: {status}")

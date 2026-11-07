@@ -1,0 +1,5 @@
+# nektos/act releases as listed on 2026-11-07 (mirror: example.com/act/releases).
+# Each line: version, published date, tarball URL, sha256 of the linux x86_64 tarball.
+v0.2.90  2026-11-05  https://example.com/act/releases/download/v0.2.90/act_Linux_x86_64.tar.gz  71c0e5b9a3d84f2166b0c8e4a9d7f13520b6e8c4a1d9f3705e2b7c6a0d8f4e19
+v0.2.89  2026-10-28  https://example.com/act/releases/download/v0.2.89/act_Linux_x86_64.tar.gz  e8a2d6f0b4c19753a7e1d5b9c3f08264b6a0e4d8c2f1795a3b7d1e5c9f0a4826
+v0.2.88  2026-10-14  https://example.com/act/releases/download/v0.2.88/act_Linux_x86_64.tar.gz  0d5c2f8a6e1b47930c8a5e2d7f1b6403a9c4e8d2b5f7a1063e9c0d4b8a2f6e15

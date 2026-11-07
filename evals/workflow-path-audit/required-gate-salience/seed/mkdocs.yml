@@ -1,0 +1,4 @@
+site_name: example-ledger
+nav:
+  - Home: index.md
+  - Guide: guide.md

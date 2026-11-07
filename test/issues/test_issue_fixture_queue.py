@@ -524,14 +524,14 @@ class WorkflowTests(unittest.TestCase):
 class DocsTests(unittest.TestCase):
 
     def test_the_workflow_table_and_the_docs_name_the_queue(self):
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        agents = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")
         row = next(line for line in agents.splitlines()
-                   if line.startswith("  | `explorer-data.yml`"))
+                   if line.startswith("| `explorer-data.yml`"))
         for text in ("fixture_queue.py", "queue-alerts", "`pull-requests: read`",
                      "half-built-or-broken", "`issues: write`"):
             self.assertIn(text, row)
         supply = next(line for line in agents.splitlines()
-                      if line.startswith("  | `routine-fixture-supply.yml`"))
+                      if line.startswith("| `routine-fixture-supply.yml`"))
         self.assertIn("paused", supply)
         self.assertIn("skills-evals#656", supply)
         docs = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")

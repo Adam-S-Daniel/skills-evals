@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import json
+import os
 from pathlib import Path
+import re
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -69,6 +72,47 @@ class DesignTests(unittest.TestCase):
         self.assertEqual(c.links, ["https://example.com/p"])
 
 
+class EnvConfigTests(unittest.TestCase):
+    FULL = {"SITE_REPO": "example-owner/example-site",
+            "SITE_PAGE_URL": "https://example.com/tools/evals/",
+            "SITE_ASSET_URL": "https://example.com/assets/index.html"}
+
+    def config(self, env):
+        with mock.patch.dict(os.environ, env, clear=True):
+            return sf.env_config()
+
+    def test_all_set_is_read_verbatim(self):
+        self.assertEqual(self.config(self.FULL),
+                         {"site_repo": "example-owner/example-site",
+                          "page_url": "https://example.com/tools/evals/",
+                          "asset_url": "https://example.com/assets/index.html"})
+
+    def test_each_missing_variable_is_named(self):
+        for gone in self.FULL:
+            env = {k: v for k, v in self.FULL.items() if k != gone}
+            with self.assertRaises(SystemExit) as caught:
+                self.config(env)
+            message = str(caught.exception)
+            self.assertIn(gone, message)
+            for kept in env:
+                self.assertNotIn(kept, message)
+
+    def test_an_empty_value_counts_as_missing(self):
+        with self.assertRaises(SystemExit) as caught:
+            self.config({**self.FULL, "SITE_PAGE_URL": ""})
+        self.assertIn("SITE_PAGE_URL", str(caught.exception))
+
+    def test_all_missing_are_named_in_one_message(self):
+        with self.assertRaises(SystemExit) as caught:
+            self.config({})
+        for name in self.FULL:
+            self.assertIn(name, str(caught.exception))
+
+    def test_no_default_constants_remain(self):
+        for name in ("DEFAULT_SITE_REPO", "DEFAULT_PAGE_URL", "DEFAULT_ASSET_URL"):
+            self.assertFalse(hasattr(sf, name), name)
+
+
 class DataTests(unittest.TestCase):
     def test_fresh_stale_and_boundary(self):
         self.assertTrue(sf.data_check(iso(ago(hours=1)), NOW).ok)
@@ -84,6 +128,20 @@ class DataTests(unittest.TestCase):
     def test_offset_times_are_normalized(self):
         self.assertTrue(sf.data_check("2026-11-04T07:00:00-05:00", NOW).ok)
 
+
+
+class DrawnSelectorTests(unittest.TestCase):
+    """The check must look for something the CURRENT public page draws: the
+    six-group app drew no `p.asof`, so a selector naming only that would call
+    a healthy page broken."""
+
+    def test_the_built_page_draws_a_class_the_selector_names(self):
+        page = (ROOT / "tool" / "index.html").read_text(encoding="utf-8")
+        classes = [part.strip().split(".")[-1] for part in sf.DRAWN.split(",")]
+        self.assertIn("src", classes)
+        self.assertTrue(any(f"class: '{c}'" in page or f'class: "{c}"' in page
+                            for c in classes),
+                        "tool/index.html draws none of the classes in DRAWN")
 
 class PageTests(unittest.TestCase):
     def test_all_drew_passes(self):
@@ -314,6 +372,15 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(rest, "* * * *")
         self.assertEqual(int(minute) % 2, 1, "an odd minute, off the hour")
 
+    def test_explorer_data_dispatches_this_check(self):
+        # The hourly cron is dropped for hours at a time, so every explorer
+        # publish dispatches this workflow when it has not run for 50 minutes.
+        doc = yaml.safe_load((ROOT / ".github/workflows/explorer-data.yml").read_text())
+        run = doc["jobs"]["check-site"]["steps"][0]["run"]
+        self.assertIn("gh workflow run site-freshness.yml", run)
+        self.assertIn("-lt 3000", run)
+        self.assertIn("workflow_dispatch", self.doc.get("on", self.doc.get(True)))
+
     def test_site_sync_is_named_by_the_workflow_it_watches(self):
         name = yaml.safe_load((ROOT / ".github/workflows/site-sync.yml").read_text())["name"]
         self.assertEqual(name, "Site sync")
@@ -329,10 +396,13 @@ class WorkflowTests(unittest.TestCase):
 
     def test_bearer_reaches_only_the_fire_step_via_env(self):
         holders = [s for s in self.steps if "SITE_FRESHNESS_FIRE_BEARER" in json.dumps(s)]
-        self.assertEqual(len(holders), 2, "the presence check and the fire step")
+        self.assertEqual(len(holders), 3, "the two presence checks and the fire step")
+        site = [s for s in self.steps if s.get("id") == "site"][0]
+        self.assertEqual(site["env"]["HAVE_BEARER"],
+                         "${{ secrets.SITE_FRESHNESS_FIRE_BEARER != '' }}")
         fire = [s for s in self.steps if s.get("name") == "Fire the Sonnet routine"][0]
         self.assertEqual(fire["env"]["FIRE_BEARER"], "${{ secrets.SITE_FRESHNESS_FIRE_BEARER }}")
-        self.assertEqual(fire["env"]["ROUTINE_ID"], "${{ vars.SITE_FRESHNESS_ROUTINE_ID || 'trig_01Nu9F7UQ8aUWq4q2QsXHQhK' }}")
+        self.assertEqual(fire["env"]["ROUTINE_ID"], "${{ vars.SITE_FRESHNESS_ROUTINE_ID }}")
         for step in holders:
             self.assertNotIn("secrets.SITE_FRESHNESS_FIRE_BEARER", step.get("run", ""))
             self.assertNotIn("secrets.SITE_FRESHNESS_FIRE_BEARER", json.dumps(step.get("with", {})))
@@ -353,17 +423,57 @@ class WorkflowTests(unittest.TestCase):
     def test_app_token_mint_is_soft_and_scoped(self):
         mint = [s for s in self.steps if s.get("id") == "mint"][0]
         self.assertIs(mint["continue-on-error"], True)
-        self.assertEqual(mint["with"]["repositories"], "adamdaniel.ai")
-        self.assertEqual(mint["with"]["owner"], "Adam-S-Daniel")
+        self.assertEqual(mint["with"]["repositories"], "${{ steps.site.outputs.name }}")
+        self.assertEqual(mint["with"]["owner"], "${{ steps.site.outputs.owner }}")
 
     def test_site_repo_none_skips_every_step_after_the_decision(self):
-        self.assertEqual(self.doc["env"]["SITE_REPO"],
-                         "${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}")
+        self.assertEqual(self.doc["env"]["SITE_REPO"], "${{ vars.SITE_REPO }}")
         decide = [s for s in self.steps if s.get("id") == "site"][0]
         self.assertIn('[ "$SITE_REPO" = none ]', decide["run"])
         for step in self.steps:
             if step is not decide:
                 self.assertIn("steps.site.outputs.skip != 'true'", step["if"], step.get("name"))
+
+    def test_no_variable_has_a_fallback(self):
+        for name in ("site-freshness.yml", "site-sync.yml", "site-preview.yml"):
+            doc = yaml.safe_load((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
+            envs = [("workflow", doc.get("env", {}))]
+            for job_id, job in doc["jobs"].items():
+                envs.append((job_id, job.get("env", {})))
+                envs += [(f"{job_id}/{s.get('name')}", s.get("env", {})) for s in job["steps"]]
+            for where, env in envs:
+                for key, value in env.items():
+                    self.assertIsNone(re.search(r"vars\.\w+\s*\|\|", str(value)),
+                                      f"{name} {where} {key}: {value}")
+
+    def test_first_step_fails_naming_each_missing_variable(self):
+        decide = [s for s in self.steps if s.get("id") == "site"][0]
+
+        def run(**env):
+            base = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": os.devnull}
+            base.update(env)
+            return subprocess.run(["bash", "-c", decide["run"]], env=base,
+                                  capture_output=True, text=True)
+
+        unset = run()
+        self.assertEqual(unset.returncode, 1)
+        self.assertIn("SITE_REPO is not set", unset.stdout)
+        self.assertEqual(run(SITE_REPO="none").returncode, 0)
+        full = {"SITE_REPO": "example-owner/example-site", "SITE_PAGE_URL": "https://example.com/p",
+                "SITE_ASSET_URL": "https://example.com/a", "HAVE_BEARER": "false"}
+        self.assertEqual(run(**full).returncode, 0)
+        for gone in ("SITE_PAGE_URL", "SITE_ASSET_URL"):
+            partial = {k: v for k, v in full.items() if k != gone}
+            result = run(**partial)
+            self.assertEqual(result.returncode, 1, gone)
+            self.assertIn(gone, result.stdout)
+        both = run(SITE_REPO=full["SITE_REPO"], HAVE_BEARER="false")
+        self.assertIn("SITE_PAGE_URL", both.stdout)
+        self.assertIn("SITE_ASSET_URL", both.stdout)
+        # The routine id is required only once the bearer exists.
+        self.assertEqual(run(**{**full, "HAVE_BEARER": "true"}).returncode, 1)
+        self.assertIn("SITE_FRESHNESS_ROUTINE_ID", run(**{**full, "HAVE_BEARER": "true"}).stdout)
+        self.assertEqual(run(**{**full, "HAVE_BEARER": "true", "ROUTINE_ID": "trig_x"}).returncode, 0)
 
     def test_fire_only_when_the_issue_step_asked(self):
         fire = [s for s in self.steps if s.get("name") == "Fire the Sonnet routine"][0]
@@ -387,3 +497,28 @@ class WorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DrawnStateTests(unittest.TestCase):
+    """The site's tool page wraps the app in an iframe (skills-evals#750), so
+    the check must find the drawn line in any frame, not only the top one."""
+
+    class Frame:
+        def __init__(self, hits):
+            self.hits = hits
+
+        def query_selector(self, selector):
+            return object() if selector in self.hits else None
+
+    def test_a_drawn_child_frame_counts(self):
+        top = self.Frame(set())
+        child = self.Frame({sf.DRAWN})
+        self.assertEqual(sf.drawn_state([top, child]), "drew")
+
+    def test_the_error_panel_is_failed_and_nothing_is_none(self):
+        self.assertEqual(sf.drawn_state([self.Frame({"#app .panel.failure"})]), "failed")
+        self.assertIsNone(sf.drawn_state([self.Frame(set()), self.Frame(set())]))
+
+    def test_the_browser_check_reads_every_frame(self):
+        src = Path(sf.__file__).read_text()
+        self.assertIn("drawn_state(page.frames)", src)

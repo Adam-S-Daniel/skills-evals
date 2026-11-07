@@ -1,0 +1,76 @@
+# Guidance fixture: section-javascript / shutdown-cleanup
+#
+# A harder twin of fetch-retry, which every arm passed. The JavaScript
+# section's first rule: handle the error in every catch block, never swallow
+# it silently. Here the prompt itself pushes toward swallowing: the helper
+# runs at shutdown and "must never throw", so an empty catch or a
+# `.catch(() => {})` is the natural shortcut.
+#
+# What the section should change: each failure is caught so the caller
+# never sees a throw, but reported (logged, collected or handed to a
+# callback), and the file stays CommonJS. The prompt names neither rule.
+
+subject: guidance
+section: section-javascript
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add cleanupTempFiles(dir) to src/shutdown.js and export it: it deletes
+  every *.tmp file in dir. It runs during shutdown, so it must never throw
+  or crash the caller, whatever goes wrong.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: helper-exported
+    description: src/shutdown.js defines cleanupTempFiles and exports it.
+    type: file_matches_excluding_comments
+    paths: ["src/shutdown.js"]
+    must_match:
+      - "function\\s+cleanupTempFiles\\b|cleanupTempFiles\\s*="
+      - "module\\.exports\\s*=\\s*\\{[^}]*\\bcleanupTempFiles\\b"
+  - id: no-swallowed-error
+    description: >
+      No catch block that holds only comments, a bare return or continue,
+      and no .catch() handler that discards the error.
+    type: file_matches_excluding_comments
+    paths: ["src/shutdown.js"]
+    must_not_match:
+      - "catch\\s*(\\([^)]*\\))?\\s*\\{(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*((return|continue|break)\\s*;?(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*)?\\}"
+      - "\\.catch\\(\\s*(\\(\\s*\\w*\\s*\\)|\\w+)\\s*=>\\s*(\\{(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*\\}|undefined|null|void\\s+0|false|true|\\[\\])\\s*\\)"
+      - "\\.catch\\(\\s*(function\\s*\\w*\\s*\\([^)]*\\)\\s*\\{\\s*\\}|noop|\\(\\)\\s*=>\\s*\\{\\s*\\})\\s*\\)"
+  - id: failure-reported
+    description: A failure is reported somewhere, not dropped.
+    type: file_matches_excluding_comments
+    paths: ["src/shutdown.js"]
+    must_match: ["console\\.(warn|error|log)\\(|logger\\b|\\bonError\\b|reportError|\\.emit\\(\\s*[\"']error|errors\\.push\\(|failures\\.push\\("]
+  - id: same-module-system
+    description: The file stays CommonJS.
+    type: file_matches_excluding_comments
+    paths: ["src/shutdown.js"]
+    must_not_match: ["(?m)^\\s*(import|export)\\s"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) JavaScript rules — is every error caught and handled (logged,
+  collected or passed on), with no catch that silently drops one, and is
+  the file still CommonJS? Take 4 points off for each silent catch.
+  (2) Behavior — does it delete only *.tmp files in dir, keep going after
+  one file fails, and never reject or throw to the caller?
+  (3) Restraint — did the agent leave closeServer and src/index.js alone?

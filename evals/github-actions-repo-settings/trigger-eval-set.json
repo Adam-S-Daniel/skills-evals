@@ -1,0 +1,82 @@
+[
+  {
+    "query": "we just made our org repo public and I want to make sure fork PRs from random people can't run our workflows without someone approving them first. how do I set that with gh api?",
+    "should_trigger": true
+  },
+  {
+    "query": "can you set up a ruleset on main for this repo that requires PRs and blocks force pushes and deletions? I'd rather use rulesets than classic branch protection",
+    "should_trigger": true
+  },
+  {
+    "query": "I've got 15 repos and their Actions settings have drifted — some allow unpinned actions, some don't. is there a way to declare the desired settings in a yaml file and have it diff and apply across all of them?",
+    "should_trigger": true
+  },
+  {
+    "query": "turn on 'require actions to be pinned to a full-length commit SHA' for my repo. I think it's under actions/permissions in the API?",
+    "should_trigger": true
+  },
+  {
+    "query": "run a security audit on my new repo's GitHub settings: fork PR approval, SHA pinning, and default branch protection. tell me what's off",
+    "should_trigger": true
+  },
+  {
+    "query": "onboard this repo to our org standards for Actions security. what settings should be on and how do I apply them?",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm getting a 422 trying to set fork-pr-contributor-approval to require_approval_for_all_outside_collaborators. what's the right value?",
+    "should_trigger": true
+  },
+  {
+    "query": "GitHub started blocking pull_request_target on public repos. how do I add an actions event policy that allows it for just one workflow file?",
+    "should_trigger": true
+  },
+  {
+    "query": "harden the repo: all outside collaborators need approval for workflow runs, and the default branch can't be force-pushed. use the repo-settings engine if it's available here",
+    "should_trigger": true
+  },
+  {
+    "query": "the repo-settings plan says there's drift on my ruleset after someone edited it in the UI. how do I reconcile it back to what's in fleet.yml?",
+    "should_trigger": true
+  },
+  {
+    "query": "pin every `uses:` in my workflows to a commit SHA and generate the actions.lock file. use the exact tag I've written",
+    "should_trigger": false
+  },
+  {
+    "query": "my workflow is failing at the checkout step with 'Process completed with exit code 128'. can you pull the run logs and figure out why?",
+    "should_trigger": false
+  },
+  {
+    "query": "write a GitHub Actions workflow that runs pytest on every pull request and caches pip",
+    "should_trigger": false
+  },
+  {
+    "query": "set up dependabot for npm and github-actions with a 7 day cooldown for version updates",
+    "should_trigger": false
+  },
+  {
+    "query": "add a CODEOWNERS file so that anything under infra/ needs review from the platform team",
+    "should_trigger": false
+  },
+  {
+    "query": "my CI takes 14 minutes. can you shard the Playwright tests across 4 jobs?",
+    "should_trigger": false
+  },
+  {
+    "query": "how do I configure branch naming conventions for our team? like feature/ and fix/ prefixes, and a git hook that rejects anything else",
+    "should_trigger": false
+  },
+  {
+    "query": "our required status check is stuck at 'Expected — waiting for status to be reported' because the workflow has a paths filter. how do I fix that?",
+    "should_trigger": false
+  },
+  {
+    "query": "create a GitHub App for our bot and give it only contents:read and pull-requests:write. walk me through the permissions screen",
+    "should_trigger": false
+  },
+  {
+    "query": "my AWS IAM role for GitHub OIDC keeps failing with 'Not authorized to perform sts:AssumeRoleWithWebIdentity'. what's wrong with the trust policy?",
+    "should_trigger": false
+  }
+]
