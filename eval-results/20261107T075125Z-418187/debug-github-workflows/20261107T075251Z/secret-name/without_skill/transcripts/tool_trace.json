@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014PMBkhr3jJziX5H2jAzQ8s",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows; grep -il \"release notes\" .github/workflows/*",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014PMBkhr3jJziX5H2jAzQ8s",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ndocs.yml\nrelease-notes.yml\n.github/workflows/release-notes.yml",
+      "output_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018578rC1PPySxE78kiZvjJT",
+      "name": "Bash",
+      "input": "cat .github/workflows/release-notes.yml; git log --oneline | head; ls",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018578rC1PPySxE78kiZvjJT",
+      "is_error": false,
+      "output": "name: Release notes\n\non:\n  release:\n    types: [published]\n\npermissions:\n  contents: read\n\njobs:\n  notes:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Publish release notes\n        env:\n          # The release bot's token...",
+      "output_chars": 697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019Hz566U3rgwxa3JBKzrQ6c",
+      "name": "Bash",
+      "input": "ls scripts bin; cat scripts/render_notes.py; head -30 CHANGES.md; cat .github/workflows/docs.yml",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019Hz566U3rgwxa3JBKzrQ6c",
+      "is_error": false,
+      "output": "bin:\ngh\n\nscripts:\nrender_notes.py\n\"\"\"Print the CHANGES.md section for one tag.\"\"\"\n\nimport sys\nfrom pathlib import Path\n\n\ndef section(text, tag):\n    lines, keep = [], False\n    for line in text.splitlines():\n        if line.startswith(\"## \"):\n            keep = line[3:].strip() == tag\n            co...",
+      "output_chars": 913,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KmiZGfYLyhhwa7e6RtabmB",
+      "name": "Bash",
+      "input": "cat bin/gh; git tag; cat README.md | head -30; python3 scripts/render_notes.py v1.4.0; python3 scripts/render_notes.py v1.5.0 | od -c | head",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KmiZGfYLyhhwa7e6RtabmB",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (53.8KB). Full output saved to: <path>\n\nPreview (first 2KB):\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, k...",
+      "output_chars": 2230,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UEVbnKcy5xKMFRjnVkjjuv",
+      "name": "Bash",
+      "input": "echo \"replay=$GH_REPLAY_DIR\"; bin/gh run list --workflow \"Release notes\" --limit 5 2>&1 | head -20; git tag",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UEVbnKcy5xKMFRjnVkjjuv",
+      "is_error": false,
+      "output": "replay=<path>\n[\n  {\n    \"databaseId\": 43002,\n    \"name\": \"Release notes\",\n    \"workflowName\": \"Release notes\",\n    \"headBranch\": \"v1.4.0\",\n    \"headSha\": \"5555555555555555555555555555555555555555\",\n    \"event\": \"release\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\n    \"url\": \"https://ex...",
+      "output_chars": 661,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01APR1Uzu3qnnDXBUaPY3uEo",
+      "name": "Bash",
+      "input": "bin/gh run view 43002 --log-failed 2>&1 | head -40",
+      "input_chars": 50,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01APR1Uzu3qnnDXBUaPY3uEo",
+      "is_error": false,
+      "output": "notes\tPublish release notes\t2026-01-12T16:00:05Z ##[group]Run python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z gh release edit \"$TAG\" --notes-file note...",
+      "output_chars": 1004,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016cGXe3NTDm4y6vnnG6iwB4",
+      "name": "Bash",
+      "input": "bin/gh run view 43001 --log-failed 2>&1 | grep -E \"GH_TOKEN|error|gh:\" ; bin/gh secret list 2>&1 | head",
+      "input_chars": 103,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016cGXe3NTDm4y6vnnG6iwB4",
+      "is_error": false,
+      "output": "notes\tPublish release notes\t2026-01-02T16:00:05Z   GH_TOKEN: \n<redacted>\tPublish release notes\t2026-01-02T16:00:05Z gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable. Example:\nnotes\tPublish release notes\t2026-01-02T16:00:05Z     GH_TOKEN: <redacted> github.tok...",
+      "output_chars": 468,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012eeH3ZkY28uvVompiyNCBq",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 69,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Sp8BSnGsjBERmWWenDCUMg",
+      "name": "Bash",
+      "input": "grep -rn \"RELEASE_NOTES_\" --exclude-dir=.git --exclude-dir=.gh . | grep -v \"^./bin\" | head; git diff --stat",
+      "input_chars": 107,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012eeH3ZkY28uvVompiyNCBq",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 109,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Sp8BSnGsjBERmWWenDCUMg",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 587,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
