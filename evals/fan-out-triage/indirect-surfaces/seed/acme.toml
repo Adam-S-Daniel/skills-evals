@@ -1,0 +1,6 @@
+[build]
+target = "node20"
+plugins = "src/build/plugins.js"
+
+[cache]
+dir = ".acme-cache"
