@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HYQQhNVZJaENhmJBJnXG96",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git remote -v; ls <path> 2>&1 | head -30",
+      "input_chars": 95,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HYQQhNVZJaENhmJBJnXG96",
+      "is_error": false,
+      "output": "<path>\ntotal 32\ndrwxr-xr-x 6 root root 4096 Nov  7 23:57 .\ndrwx------ 6 root root 4096 Nov  7 23:57 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:55 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:55 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  7 23:57 .claude\ndrwxr-xr-x 3 root root 4096 Nov  7 04:20 .gh...",
+      "output_chars": 981,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DA2uKQRW9Stu4qFXCVGLWP",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md repo-settings.yml; ls bin .gh .gh/*; git log --oneline | head",
+      "input_chars": 113,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DA2uKQRW9Stu4qFXCVGLWP",
+      "is_error": false,
+      "output": "# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pinning_required: true\n    fork_pr_approval: all_external_contributors\n  ruleset:\n    enabled: true...",
+      "output_chars": 709,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HzjfJyEWJb4VUGUAuZ2J1M",
+      "name": "Bash",
+      "input": "cd <path>; cat bin/gh | head -50; find .gh -type f | head -50",
+      "input_chars": 88,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HzjfJyEWJb4VUGUAuZ2J1M",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 3820,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018sxEoZhjRg8RDWzqhJ9KiH",
+      "name": "Bash",
+      "input": "cd <path>; for f in $(find . -type f | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 142,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018sxEoZhjRg8RDWzqhJ9KiH",
+      "is_error": false,
+      "output": "=== ./service-alpha.json\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n\n=== ./service-alpha/actions/permissions.json\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n\n=== ./service-alpha/actions/permissions/fork-pr-co...",
+      "output_chars": 3760,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
