@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hs2bWfYvqjvmXSuVQ1zqyq",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -8; git remote -v; ls; ls .github/workflows 2><path>",
+      "input_chars": 100,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019hWptUYhw8CRCHn4B8bTNQ",
+      "name": "Bash",
+      "input": "which gh; gh auth status 2>&1 | head -5",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hs2bWfYvqjvmXSuVQ1zqyq",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ncd64305 initial commit\nf0be913 Import example service\norigin\t<path> (fetch)\norigin\t<path> (push)\nREADME.md\nbin\nsrc\ntest\nci.yml",
+      "output_chars": 357,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019hWptUYhw8CRCHn4B8bTNQ",
+      "is_error": false,
+      "output": "<path>\nexample.com\n  Logged in to example.com as example-operator\n  Active account: true\n  Git operations protocol: https",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ac1P546JGPxFjkxVjh9418",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md | head -30; ls -R bin src test | head -40; cat bin/gh | head -30",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ac1P546JGPxFjkxVjh9418",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 2378,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RoWusvedXwSy4XvgNx1NjZ",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -8; echo \"exit=${PIPESTATUS[0]}\"; python3 -m unittest discover -s test 2>&1 | tail -8; echo \"exit=${PIPESTATUS[0]}\"; git log --stat --format='%h %s' | ...",
+      "input_chars": 257,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RoWusvedXwSy4XvgNx1NjZ",
+      "is_error": false,
+      "output": "             ^^^^^^^^^^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'test.test_legacy'\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\nexit=1\n.\n----------------------------------------------------------------------\nRan 1 test in ...",
+      "output_chars": 1697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QAEF7fLGH1bYqAXYG82U1H",
+      "name": "Bash",
+      "input": "gh run view 77001 --log-failed 2>&1 | head -30; gh run view 77001 2>&1 | head -30; cat .gh/replay/run-view-77001.log; git log --format='%h %s' -3 -- src test .github; gh api repos/example-org/example-...",
+      "input_chars": 260,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QAEF7fLGH1bYqAXYG82U1H",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 3159,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

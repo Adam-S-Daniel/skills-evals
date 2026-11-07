@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NvLwi5J4EdEeCK9TVDupjo",
+      "name": "Bash",
+      "input": "git status && git log --oneline -10 && git remote -v && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NvLwi5J4EdEeCK9TVDupjo",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n0169c84 ...",
+      "output_chars": 1547,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013K5mAKhaCuBvMfZhaV2H4r",
+      "name": "Bash",
+      "input": "cat README.md; echo ---; cat .github/workflows/ci.yml; echo ---; ls -la bin src test .gh .claude; find .gh -type f | head -50",
+      "input_chars": 125,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013K5mAKhaCuBvMfZhaV2H4r",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\n---\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  content...",
+      "output_chars": 2240,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Km1hEmopuT3FxwLS66WDx",
+      "name": "Bash",
+      "input": "cat src/sequence.py; echo ---; cat test/test_current.py; echo ---; git show --stat HEAD~1 HEAD | head -40; echo ---; cd .gh/replay && cat auth-status.txt run-list.json run-view-77001.log; echo; cat ru...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Km1hEmopuT3FxwLS66WDx",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\n---\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n---\ncommit f0be9137d6ed1769cd156...",
+      "output_chars": 4062,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012ktpccj4viVm8dMQLi4eb8",
+      "name": "Bash",
+      "input": "for f in workflow-list.json $(find api -type f | sort); do echo \"=== $f\"; cat \"$f\"; echo; done",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012ktpccj4viVm8dMQLi4eb8",
+      "is_error": false,
+      "output": "=== workflow-list.json\n[\n  {\n    \"id\": 55001,\n    \"name\": \"CI\",\n    \"path\": \".github/workflows/ci.yml\",\n    \"state\": \"active\"\n  }\n]\n\n=== api/repos/example-org/example-service.json\n{\n  \"name\": \"example-service\",\n  \"full_name\": \"example-org/example-service\",\n  \"default_branch\": \"main\",\n  \"html_url\": \"...",
+      "output_chars": 6325,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Aog59bbcsNrUrKpFjmjss3",
+      "name": "Bash",
+      "input": "cd <path> && python3 --version; echo \"== current CI command\"; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo \"== naive rename\"; python3 -m unittest test.test_current; echo \"exit=$?\"; pytho...",
+      "input_chars": 452,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Aog59bbcsNrUrKpFjmjss3",
+      "is_error": false,
+      "output": "Python 3.11.18\n== current CI command\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTra...",
+      "output_chars": 1655,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012EVVmLk5WqNeTvzyXMR42T",
+      "name": "Bash",
+      "input": "d=$(mktemp -d) && cp -r <path> <path> \"$d\"/ && printf 'def next_value(value):\\n    return value + 2\\n' > \"$d/src/sequence.py\" && cd \"$d\" && python3 -m unittest discover -s test 2>&1 | tail -3; echo \"e...",
+      "input_chars": 284,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012EVVmLk5WqNeTvzyXMR42T",
+      "is_error": false,
+      "output": "Ran 1 test in 0.000s\n\nFAILED (failures=1)\nexit=1\nShell cwd was reset to <path>",
+      "output_chars": 105,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
