@@ -1,0 +1,4 @@
+site_name: example-app
+nav:
+  - Home: index.md
+  - Deploying: deploy.md
