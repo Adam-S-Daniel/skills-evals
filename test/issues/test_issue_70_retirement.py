@@ -1456,9 +1456,13 @@ class ComputeGatesTests(unittest.TestCase):
         _, with_bare = self.run_gates("b.json")
         shutil.rmtree(base.parent.parent)
         _, without_bare = self.run_gates("c.json")
-        # The verdict is the same; only the discarded-runs report names it.
+        # The verdict is the same; only the discarded-runs report and the
+        # run-utility ledger name it.
         bare_discards = with_bare["skills"]["ctxbot"].pop("discarded_runs")
         without_bare["skills"]["ctxbot"].pop("discarded_runs")
+        bare_ledger = with_bare["skills"]["ctxbot"].pop("run_utility")
+        without_bare["skills"]["ctxbot"].pop("run_utility")
+        self.assertEqual([r["reason"] for r in bare_ledger if r["reason"]], ["bare_run"])
         self.assertEqual(with_bare["skills"], without_bare["skills"])
         self.assertEqual(bare_discards["by_reason"]["bare_run"]["runs"], 1)
         self.assertEqual(len(with_bare["bare_runs"]), 1)

@@ -13,6 +13,7 @@ import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
 import { trendChart } from './trend.js';
 import { confidenceView } from './range.js';
+import { utilityView, decisionsView } from './utility.js';
 import { lessonItem, lessonIssue, lessonTitle, lessonStatus, lessonIssueTitle } from './lessons.js';
 
 const share = (x) => (typeof x === 'number' && isFinite(x) ? Math.round(x * 100) + '%' : STRINGS.noValue);
@@ -144,6 +145,9 @@ export function subjectPage(doc, kind, name, ctx) {
       guidance && hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null),
     panel(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
       hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs))) : null]),
+    Array.isArray(raw.run_utility) && raw.run_utility.length
+      ? panel(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
+        decisionsView(raw.decisions, friendlyModel)]) : null,
     panel(STRINGS.runsHeading, runsTable(runs, refMs)),
     panel(STRINGS.bareHeading, bareTable(bare)),
     guidance ? null : panel(STRINGS.useHeading, [usageLine(raw.usage, doc.usage, refMs), ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null]),

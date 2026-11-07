@@ -6,8 +6,9 @@ import { chip } from '../core/charts.js';
 import { skillItems, wholeGuidance } from '../core/items.js';
 import { blockedThisWeek } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
-import { tile, srcTip, srcLine } from './bits.js';
+import { tile, srcTip, srcLine, panel } from './bits.js';
 import { alertsView } from './alerts.js';
+import { utilityView, fleetGroups, hasUtility } from './utility.js';
 
 export function summaryView(doc, ctx) {
   const refMs = parseTime(doc.generated_at);
@@ -39,5 +40,6 @@ export function summaryView(doc, ctx) {
     h('p', { class: 'lead' }, STRINGS.summaryLead),
     srcLine(src, refMs),
     h('div', { class: 'tiles' }, tiles, extra),
+    hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
     alertsView(doc, 'all'));
 }
