@@ -1,0 +1,402 @@
+{
+  "skill": "post-failure-comment",
+  "arm": "without_skill",
+  "timestamp": "20261107T130719Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.1003803,
+    "num_turns": 4,
+    "duration_ms": 33366,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 13493,
+      "cache_read_input_tokens": 140123,
+      "output_tokens": 3238,
+      "output_tokens_details": {
+        "thinking_tokens": 1014
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 13493,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 656,
+          "cache_read_input_tokens": 38638,
+          "cache_creation_input_tokens": 2845,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2845
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "schedule-only-workflow-untouched",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/nightly-audit.yml)"
+    },
+    {
+      "id": "e2e-inline-block-removed",
+      "passed": false,
+      "detail": ".github/workflows/e2e-tests.yml contains /gh pr comment/"
+    },
+    {
+      "id": "e2e-post-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job='e2e', job_if_equals=None, job_needs_nonempty=False, if_contains='failure()', if_gates_on_outcome='failure', with_present=['log-file', 'marker', 'title'], with_equals={'mode': 'post'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='resolve') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "e2e-resolve-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job='e2e', job_if_equals=None, job_needs_nonempty=False, if_contains='success()', if_gates_on_outcome='success', with_present=['marker', 'title'], with_equals={'mode': 'resolve'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='post') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-report-job-shape",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=['always()', '!cancelled()'], job_needs_nonempty=True, if_contains=None, if_gates_on_outcome=None, with_present=None, with_equals=None, with_tag_ref=None, marker_not_html_comment=False, with_forbids_job_status=False, marker_pairs_with_mode=None) \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-post-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='failure', with_present=['log-file', 'marker', 'title'], with_equals={'mode': 'post'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='resolve') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-resolve-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='success', with_present=['marker', 'title'], with_equals={'mode': 'resolve'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='post') \u2014 found 0 of 0 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "post-failure-comment-reference-valid",
+      "passed": false,
+      "detail": "no step found with a `uses:` ending '/post-failure-comment'"
+    },
+    {
+      "id": "markers-unique-per-workflow",
+      "passed": true,
+      "detail": "every 'marker' distinct across workflows (0 value(s) seen)"
+    },
+    {
+      "id": "no-event-or-input-interpolation-in-run",
+      "passed": true,
+      "detail": "no run: step interpolates github.event.* or inputs.*"
+    },
+    {
+      "id": "cms-platform-vendored-contract-unchanged",
+      "passed": true,
+      "detail": "unchanged (.cms-platform/.github/actions/post-failure-comment/action.yml)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "convention_fidelity",
+        "score": 1,
+        "rationale": "The agent never used the platform composite action and posted comments with raw `gh pr comment`, so no unique per-workflow marker was set; the multi-job visual-regression workflow gates on per-job `failure()` instead of a `needs.<job>.result` aggregator job, so the documented caller convention is not followed in any respect beyond basic `if: failure()` gating."
+      },
+      {
+        "name": "gitleaks_explanation",
+        "score": 0,
+        "rationale": "The reply never mentions the composite's bundled gitleaks pass-through or why caller-side redaction is unnecessary, and by bypassing the action it posts unscrubbed 4000-byte log tails directly to PRs, which removes the secret-scrubbing protection entirely."
+      },
+      {
+        "name": "restraint",
+        "score": 6,
+        "rationale": "It correctly left nightly-audit.yml and the vendored .cms-platform/ action untouched and edited only the two Playwright workflows, but it replaced the platform action with an ad-hoc comment mechanism instead of using the supported contract, which is a form of inventing its own convention."
+      }
+    ],
+    "overall": 2.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 3238,
+      "cache_read_input_tokens": 140123,
+      "cache_creation_input_tokens": 13493,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "a107e7d3d6035db5741d1c7d8ab3870e373ed06f196d07a014ef40b1c72b7aad",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T130617Z-0ac9a3",
+    "session_id": "cse_01SphsQEeWGjPHpeqdmXpEU1",
+    "harness_commit": "23ab5ea53a3e5e1648463b40cd3940168ed5b895",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T13:07:19Z",
+    "ended_at": "2026-11-07T13:09:51Z",
+    "meter": {
+      "snapshot_count": 7,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T13:07:23.481Z",
+      "to_at": "2026-11-07T13:09:51.084Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.43,
+          "to": 0.44,
+          "delta": 0.01,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEeWGjPHpeqdmXpEU1",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.4845313,
+      "agent_usd": 0.32521530000000004,
+      "judge_usd": 0.15931599999999999,
+      "guard_usd": 0,
+      "metered_usd": 0.4318593,
+      "last_agent_call_usd": 0.10777330000000002,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T13:07:19Z",
+      "ended_at": "2026-11-07T13:08:03Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T13:07:19Z",
+          "ended_at": "2026-11-07T13:07:54Z",
+          "duration_ms": 34839,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T13:07:54Z",
+          "ended_at": "2026-11-07T13:08:03Z",
+          "duration_ms": 8567,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T13:07:23.481Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.43,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T13:07:54.149Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.44,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T13:08:02.832Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.44,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 34839,
+        "num_turns": 4,
+        "cost_usd": 0.1003803,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 3238,
+            "cache_read_input_tokens": 140123,
+            "cache_creation_input_tokens": 13493,
+            "cost_usd": 0.1003803
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 13493
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 8567,
+        "num_turns": 1,
+        "cost_usd": 0.051392,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 720,
+            "cache_read_input_tokens": 1520,
+            "cache_creation_input_tokens": 4585,
+            "cost_usd": 0.051392
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 4585
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
