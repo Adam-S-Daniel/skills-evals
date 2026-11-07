@@ -414,7 +414,7 @@ class WorkItemIssueTests(unittest.TestCase):
         self.assertEqual((code, self.writes(calls)), (1, []))
 
     def test_an_open_request_without_its_kind_label_gets_it_once(self):
-        body = "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->\n"
+        body = work_item_issues.body_of(self.HARDER, "writing-adrs", None)[1]
         items = {"routine_down": False, "work": [self.HARDER]}
         unlabeled = [{"number": 21, "state": "open", "body": body, "labels": ["agent-ready"]}]
         code, calls, _ = self.run_main(items, unlabeled)
@@ -435,6 +435,47 @@ class WorkItemIssueTests(unittest.TestCase):
         judged = {"routine_down": False, "work": [], "subjects": {"skills": ["writing-adrs"]}}
         self.assertEqual(self.writes(self.run_main(judged, unlabeled)[1]),
                          [["issue", "comment"], ["issue", "close"]])
+
+    def test_an_open_request_with_stale_instructions_gets_its_body_refreshed(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        kind = "needs-harder-fixtures"
+        # The body as filed before the `origin:` instruction existed.
+        stale = f"<!-- skills-evals:{kind}:writing-adrs -->\n\nWrite a fixture.\n"
+        issue = {"number": 31, "state": "open", "body": stale, "labels": ["agent-ready", kind]}
+        code, calls, _ = self.run_main(items, [issue], "--run-url", "https://example.com/run/2")
+        self.assertEqual(code, 0)
+        edits = [(a, s) for a, s in calls if a[0] == "issue"]
+        self.assertEqual([a for a, _ in edits],
+                         [["issue", "edit", "31", "-R", work_item_issues.EVALS_REPO,
+                           "--body-file", "-"]])
+        self.assertIn("origin:", edits[0][1])
+        self.assertIn("https://example.com/run/2", edits[0][1])
+        # The edited issue now matches, so the next run leaves it alone.
+        fresh = {**issue, "body": edits[0][1]}
+        self.assertEqual(self.writes(self.run_main(items, [fresh])[1]), [])
+
+    def test_a_changed_run_link_or_trailing_blank_lines_are_no_difference(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        body = work_item_issues.body_of(self.HARDER, "writing-adrs", "https://example.com/run/1")[1]
+        kind = "needs-harder-fixtures"
+        for text in (body, body + "\n\n  \n", body.replace("\n", "\r\n")):
+            issue = {"number": 32, "state": "open", "body": text, "labels": ["agent-ready", kind]}
+            code, calls, out = self.run_main(items, [issue], "--run-url", "https://example.com/run/9")
+            self.assertEqual((code, self.writes(calls)), (0, []))
+
+    def test_a_request_a_worker_is_on_or_with_unknown_labels_is_not_refreshed(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        kind = "needs-harder-fixtures"
+        stale = f"<!-- skills-evals:{kind}:writing-adrs -->\n\nWrite a fixture.\n"
+        for labels in (["agent-ready", kind, "agent-working"], None):
+            issue = {"number": 33, "state": "open", "body": stale, "labels": labels}
+            code, calls, _ = self.run_main(items, [issue])
+            self.assertEqual((code, self.writes(calls)), (0, []))
+        # A lost-fire issue has no instructions to refresh.
+        bbody = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\nold\n"
+        self.assertEqual(self.writes(self.run_main(
+            {"routine_down": False, "work": [BROKEN]},
+            [{"number": 34, "state": "open", "body": bbody, "labels": []}])[1]), [])
 
     def test_the_issue_listing_asks_for_labels(self):
         gh = FakeGh([{"number": 3, "state": "open", "body": "x", "labels": ["a"]}])
