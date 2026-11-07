@@ -690,6 +690,8 @@ class PublishTests(CheckoutCase):
         self.assertIn(f"branch pushed: {branch} in Adam-S-Daniel/skills-evals at {sha}, "
                       "5 file(s), 3 other file(s) left out", self.report)
         self.assertEqual(lines[-1], "RESULT: ok")
+        # The pushed results tree is removed from the checkout.
+        self.assertFalse((self.checkout / "eval-results" / RUN_ID).exists())
         self.assertNotIn("secret-check-text", self.report)
         self.assertNotIn(branch, self.remote_branches("adam-agentskills-private"))
         # The registries were detached at origin/main.
