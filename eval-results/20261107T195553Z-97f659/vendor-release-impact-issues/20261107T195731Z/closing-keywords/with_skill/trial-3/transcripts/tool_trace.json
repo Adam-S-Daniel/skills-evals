@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ujn42esdnvGCZcHh2S2a8f",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 165,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019j1pXR7uJZ5SvdrnXvM2mZ",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ujn42esdnvGCZcHh2S2a8f",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n83543cb initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./hooks/warm-cache.sh\n./.zprofile\n./.example-cli/settings.json\n./README.md\n./.ripgreprc\n./.prof...",
+      "output_chars": 619,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019j1pXR7uJZ5SvdrnXvM2mZ",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QWtecUgun8Pr1tBcVDppJv",
+      "name": "Bash",
+      "input": "cat README.md AGENTS.md vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat .example-cli/settings.json hooks/warm-cache.sh .gitmodules .mcp.json; ls -la .idea .vscode; cat .gitconf...",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QWtecUgun8Pr1tBcVDppJv",
+      "is_error": true,
+      "output": "Exit code 1\n# example-repo\n\nUses [ExampleCLI](https://github.com/example-vendor/example-cli) for local\ndevelopment. `.example-cli/settings.json` holds the hook configuration;\n`docs/vendor-tracking.md` records which ExampleCLI releases have been\nreviewed against this repo.\n# AGENTS.md\n\n- Each Example...",
+      "output_chars": 1917,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011teVwKA8x9CRhyS1FMp2dH",
+      "name": "Bash",
+      "input": "mkdir -p \"$TMPDIR/gen\" && cat > \"$TMPDIR/gen/gen.py\" <<'EOF'\nimport json, re, sys, pathlib\nws = pathlib.Path(sys.argv[1])\nnotes = (ws/\"vendor/RELEASES.md\").read_text()\nmeta = json.loads((ws/\"vendor/re...",
+      "input_chars": 4727,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011teVwKA8x9CRhyS1FMp2dH",
+      "is_error": false,
+      "output": "4.4.0/1 | **hooks:** honor `timeout` for SessionSt\n4.4.0/2 | **config:** reject unknown top-level key\n4.4.0/3 | **windows:** handle network drive paths \n4.4.0/4 | **ui:** add a compact status line\n<path> 102\n<path> 98\n# ExampleCLI 4.4.0 enforces SessionStart hook timeouts: warm-cache.sh has 20s, nee...",
+      "output_chars": 4222,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018sG6FsFgxUaY4NkWamBA65",
+      "name": "Bash",
+      "input": "sed -i 's/^- Record it in a comment on this issue (this repo has no discrepancy log): the version observed, the exact quote, a$/- Record it in a comment on this issue (this repo has no discrepancy log...",
+      "input_chars": 2531,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018sG6FsFgxUaY4NkWamBA65",
+      "is_error": false,
+      "output": "<path> 102\n<path> 98\n## If behavior and the notes disagree\n\n- Record it in a comment on this issue (this repo has no discrepancy log):\n  the version observed, the exact quote, a\n  minimal repro, and the evidence.\n# ExampleCLI release reviews\n\n| Version | Reviewed | Issues |\n|---|---|---|\n| 4.2.0 | 2...",
+      "output_chars": 604,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
