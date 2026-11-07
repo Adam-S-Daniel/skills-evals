@@ -112,6 +112,7 @@ REPO_ROOT = SCRIPTS.parent
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 
+import guidance_merge_window  # noqa: E402
 import improve_gate  # noqa: E402
 import improve_outcomes  # noqa: E402
 import ingest_routine_results as ingest  # noqa: E402
@@ -547,9 +548,20 @@ def prepare(staged: Path, tree: Path, section: str, guidance_sha: str, run_id: s
             "commit": ingest.resolve_commit(repo, "HEAD")}
 
 
-def pr_body(staged: Path, run_id: str, sha: str, branch: str, mode: str = "draft") -> str:
+def pr_body(staged: Path, run_id: str, sha: str, branch: str, mode: str = "draft",
+            queued: bool = False) -> str:
     report = (staged / "report.md").read_text(encoding="utf-8")
-    if mode == "auto":
+    if mode == "auto" and queued:
+        review = ("This pull request is queued: fleet guidance merges by automation are "
+                  "batched into one weekly window (Monday 17:00 to 19:00 UTC, "
+                  "_agent-guidance ADR 0039), and it opened outside it. "
+                  "guidance-merge-window.yml arms auto-merge (merge commit) inside the "
+                  "next window, and it merges once this repository's required checks "
+                  "pass, with no human review (decided 2026-10-26, repo-settings ADRs "
+                  "0012 and 0014). A person may merge it sooner, which restarts every "
+                  "guidance section's eval evidence. Where the report below says to "
+                  "review before merging, this paragraph supersedes it.")
+    elif mode == "auto":
         review = ("This pull request merges itself (merge commit) once this "
                   "repository's required checks pass, with no human review: Adam "
                   "decided on 2026-10-26 that accepted loop changes merge with no "
@@ -591,9 +603,12 @@ PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(GUIDANCE_REPO)}/pull/(\
 
 
 def open_pr(token: str | None, gh, push, *, section: str, run_id: str, base: str,
-            commit: str, mode: str, body: str) -> dict:
+            commit: str, mode: str, body: str, arm: bool = True) -> dict:
     """Open the pull request (module docstring). {opened: url or "",
-    reason: why nothing was opened, or ""}."""
+    reason: why nothing was opened, or ""}. In `auto` mode with `arm` False
+    (the weekly merge window is closed, guidance_merge_window.py) the pull
+    request is opened ready but not armed, and `queued` is "true"; the
+    window's workflow arms it."""
     target = TARGET_BRANCH.format(section=section)
     if not token:
         return {"opened": "", "reason": NO_TOKEN}
@@ -619,6 +634,8 @@ def open_pr(token: str | None, gh, push, *, section: str, run_id: str, base: str
     # the loop's stays open for a person.
     gh(["api", "-X", "POST", f"repos/{GUIDANCE_REPO}/issues/{match.group(1)}/labels",
         "-f", f"labels[]={AGENT_LABEL}"])
+    if mode == "auto" and not arm:
+        return {"opened": url, "reason": "", "queued": "true"}
     if mode == "auto":
         gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge",
             "--match-head-commit", commit])
@@ -718,7 +735,9 @@ def main(argv: list[str] | None = None, *, env=None, gh=None, push=None,
             if not match or match.group("run_id") != args.run_id \
                     or not ingest.SHA_RE.fullmatch(args.sha):
                 raise Rejected(f"{args.command} takes only validated values")
-            body = pr_body(args.staged, args.run_id, args.sha, args.branch, args.mode)
+            queued = args.mode == "auto" and args.command == "open-pr" \
+                and not guidance_merge_window.window_open(args.tree)
+            body = pr_body(args.staged, args.run_id, args.sha, args.branch, args.mode, queued)
             if args.command == "pr-body":
                 out.write(body)
                 return 0
@@ -731,7 +750,7 @@ def main(argv: list[str] | None = None, *, env=None, gh=None, push=None,
                 token, gh or (lambda a, stdin=None: default_gh(a, stdin, token)),
                 push or (lambda branch: default_push(args.tree, branch, token)),
                 section=args.section, run_id=args.run_id, base=args.base,
-                commit=args.commit, mode=args.mode, body=body)
+                commit=args.commit, mode=args.mode, body=body, arm=not queued)
     except Rejected as exc:
         message = "".join(c if c.isprintable() else repr(c)[1:-1] for c in str(exc))
         print(f"rejected: {message}", file=sys.stderr)

@@ -1,0 +1,108 @@
+name: Arm queued guidance improvements in the merge window
+
+# ADR 0017. Fleet guidance merges by automation are batched into one weekly
+# window (Mondays, bounds in _agent-guidance's scripts/base-md-merge-window.yml
+# and nowhere else), because every merge of agents-md/base.md restarts every
+# guidance section's eval evidence. The guidance improvement gate
+# (routine-guidance-improve-gate.yml) opens its pull request in
+# _agent-guidance ready but NOT armed when it runs outside the window; this
+# workflow arms auto-merge (merge commit, matched to each head) on those
+# queued pull requests, and only while the window is open.
+#
+# * The bounds are read from a sparse checkout of _agent-guidance's default
+#   branch by scripts/guidance_merge_window.py, which treats an unreadable or
+#   malformed file as closed and arms nothing. The two cron entries below are
+#   a schedule constant: they sit inside the shipped window (a test pins
+#   that), and the second is a retry for a first run GitHub skipped or delayed.
+#   A run outside the window is harmless, it arms nothing.
+# * Only pull requests the loop opened are armed: head `eval-guidance-improve/`
+#   in _agent-guidance, authored by the loop's App, labeled `agent-authored`,
+#   not draft, not labeled `on-hold`. Retirement pull requests are not queued:
+#   scripts/retire_skill.py opens none outside the window.
+# * One App token, minted for _agent-guidance alone under continue-on-error
+#   and used by one step. With the secrets unset or the mint failed, nothing
+#   is armed, the job says so and succeeds.
+# * No push or pull_request trigger, so no path filter, and not a required
+#   check. No `concurrency` group. Nothing from a pull request runs: the step
+#   reads a listing and calls `gh pr merge --auto`. Default branch only.
+
+on:
+  schedule:
+    - cron: "7 17 * * 1"
+    - cron: "7 18 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  arm:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      # Only the window file is read from it; nothing of it runs.
+      - name: Check out the merge window bounds from _agent-guidance
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: agent-guidance
+          sparse-checkout: scripts/base-md-merge-window.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the script's dependencies
+        run: python3 -m pip install pyyaml==6.0.3
+
+      - name: Are the GitHub App's secrets configured?
+        id: credential
+        env:
+          PR_CREDENTIAL_SET: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
+        run: |
+          if [ "$PR_CREDENTIAL_SET" = "true" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the GitHub App token for _agent-guidance
+        id: guidance-token
+        if: steps.credential.outputs.present == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.EVAL_IMPROVE_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: _agent-guidance
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Arm the queued pull requests, inside the window only
+        working-directory: skills-evals
+        env:
+          GUIDANCE_TOKEN: ${{ steps.guidance-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          if [ -n "$GUIDANCE_TOKEN" ]; then
+            echo "::add-mask::${GUIDANCE_TOKEN}"
+          fi
+          python3 scripts/guidance_merge_window.py arm-queued \
+            --tree "$GITHUB_WORKSPACE/agent-guidance" > "$RUNNER_TEMP/arm.out"
+          {
+            echo "### Queued guidance improvements"
+            echo
+            sed 's/^/- /' "$RUNNER_TEMP/arm.out"
+          } >> "$GITHUB_STEP_SUMMARY"

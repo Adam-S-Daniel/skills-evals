@@ -121,6 +121,15 @@ session that lost the guidance must not also lose these.
   (`test/run_tests.py`) fails CI otherwise; this check turned the first CI run
   red on each of the trigger-set PRs skills-evals#785 to #792.
 
+- **Guidance loop merges wait for _agent-guidance's weekly window** (Monday
+  17:00 to 19:00 UTC; the bounds live only in its
+  `scripts/base-md-merge-window.yml`; [ADR 0017](docs/decisions/0017-guidance-loop-merges-wait-for-the-weekly-window.md)).
+  Outside it the improvement gate queues its pull request unarmed and
+  `guidance-merge-window.yml` arms it on Mondays; `retire_skill.py --target
+  guidance` opens no removal. A new path that merges `agents-md/` changes by
+  automation must ask `scripts/guidance_merge_window.py` first. A manual merge
+  outside the window restarts every guidance section's eval evidence.
+
 - **Workflow triggers and salient paths.** `test` (ci.yml) is the one
   required check. Every workflow's triggers and salient-path handling are
   tabled in [`docs/workflows.md`](docs/workflows.md); keep that table in step
