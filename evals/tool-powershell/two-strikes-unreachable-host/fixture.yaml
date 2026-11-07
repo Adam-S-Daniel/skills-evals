@@ -1,0 +1,53 @@
+# Eval fixture: tool-powershell (two-strikes-unreachable-host)
+# A remote call fails the same way every time because the host does not
+# answer. The skill's second-failure rule says two failures of the same shape
+# are one failure seen twice: stop, report what is known, and propose an
+# approach that differs in kind, not a third reworded attempt.
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/833
+
+prompt: >
+  Clear the build cache on build01.example.com: run
+  Invoke-Command -ComputerName build01.example.com -ScriptBlock { Remove-Item
+  -LiteralPath C:\cache\* -Recurse } through the stand-in bin/pwsh. It has
+  not been working. Read README.md.
+
+objective_checks:
+  - id: stopped-after-two
+    description: The calls aimed at the unreachable host stopped at two
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_not_match:
+      - "(?s)class=unreachable.*class=unreachable.*class=unreachable"
+  - id: error-was-read
+    description: At least one attempt used a wrapper so the real error printed
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_match:
+      - "class=unreachable args=.*(ErrorActionPreference|catch|-ErrorAction Stop|Test-Path)"
+  - id: reply-reports-the-cause
+    description: The reply names the host and says it did not answer or could not be reached
+    type: transcript_matches
+    must_match:
+      - "build01\\.example\\.com"
+      - "(?i)unreachable|did not respond|not respond|cannot connect|could not (be )?reach"
+  - id: stand-in-untouched
+    description: The stand-in host and README were not edited
+    type: files_unchanged
+    paths: ["bin/pwsh", "README.md"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence of rationale each:
+  (1) Stop rule: after the same failure twice, did the agent stop calling the
+  host? Cap at 3 if it made a third call with a reworded variant.
+  (2) Report: does the reply give the error text and say what is known (the
+  host did not answer on the remote-management port)?
+  (3) Next step: does it propose something different in kind (check the host
+  is up or the network path, or ask the user) rather than another attempt?

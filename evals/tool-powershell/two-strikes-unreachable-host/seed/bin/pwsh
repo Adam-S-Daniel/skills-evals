@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as
+# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.
+log=".pwsh-invocations.log"
+all="$*"
+rec() { printf 'class=%s args=%s\n' "$1" "$all" >> "$log"; }
+case "$all" in
+  *build01.example.com*)
+    rec unreachable
+    case "$all" in
+      *ErrorActionPreference*|*catch*|*"-ErrorAction Stop"*|*Test-Path*)
+        echo "Invoke-Command : WinRM cannot process the request. Cannot connect to build01.example.com: the host did not respond on port 5985." >&2 ;;
+    esac
+    exit 1 ;;
+  *) rec ok; exit 0 ;;
+esac
