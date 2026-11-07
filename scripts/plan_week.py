@@ -1028,7 +1028,18 @@ def retire_progress(cell: dict, level: float) -> float:
 def keep_progress(cell: dict, level: float) -> float:
     """How near a guidance cell is to benefit, as a share of the decision
     level: its objective's helps confidence (the keep test's level so far,
-    per cell; the subject's keep family asks more of it)."""
+    per cell; the subject's keep family asks more of it). For a pooled
+    in-situ cell (`rest_guard`), 1 - the smallest p over its keep routes
+    (`keep_tests`, each p doubled, the pooled route's 1 until the current
+    rest's pair floor), as the explorer reads it; a provisional keep's
+    pooled route is left out, since that keep is not final (the pooled
+    adversarial round 4's m(c))."""
+    tests = cell.get("keep_tests")
+    if isinstance(cell.get("rest_guard"), dict) and isinstance(tests, list):
+        ps = [t["p"] for t in tests if isinstance(t, dict)
+              and isinstance(t.get("p"), (int, float))
+              and not (cell.get("provisional_keep") and t.get("route") == "objective")]
+        return max(0.0, 1 - min(ps)) / level if ps else 0.0
     return _level(cell.get("objective"), "helps_confidence") / level
 
 
@@ -1037,10 +1048,25 @@ def _produces_item(cell: dict) -> bool:
     is schedulable, its subject is not stakes `none`, and its fires have
     not come back empty (a fixture-broken item). A `pending` cell still
     counts: its fire may yet land a run, and dropping its section from the
-    focus for one sweep would hand the slot to another."""
+    focus for one sweep would hand the slot to another. A provisional keep
+    (`provisional_keep`) is undecided too (the pooled adversarial round 4's
+    M1)."""
     return cell.get("schedulable", True) and cell.get("stakes", "normal") != "none" \
-        and cell["class"] in ("missing", "insufficient") \
+        and (cell["class"] in ("missing", "insufficient") or bool(cell.get("provisional_keep"))) \
         and cell.get("empty_fires", 0) < BROKEN_AFTER_FIRES
+
+
+def verdict_open(cells: list) -> bool:
+    """Whether a subject's verdict is still open: every cell's subject
+    verdict is in FOCUS_VERDICTS, or it is `keep` only on provisional keeps
+    (`provisional_keep`: no cell keeps finally), which a removal can still
+    override and which lapse at the cap (the pooled adversarial round 4's
+    M1: such a section left the focus and its keep was never tested)."""
+    if all(c.get("verdict") in FOCUS_VERDICTS for c in cells):
+        return True
+    return all(c.get("verdict") == "keep" for c in cells) \
+        and any(c.get("provisional_keep") for c in cells) \
+        and not any(c["class"] == "benefit" and not c.get("provisional_keep") for c in cells)
 
 
 def _blocking(cell: dict) -> bool:
@@ -1060,7 +1086,7 @@ def guidance_focus(ctx: dict) -> tuple:
     from the eval cells alone (module docstring, band 4). A section's score
     is max(min over its cells of retire progress, max over its cells of
     keep progress): it retires only when every cell clears, and keeps on
-    one. Eligible: its verdict is still open (FOCUS_VERDICTS), some cell
+    one. Eligible: its verdict is still open (`verdict_open`), some cell
     would plan a fire (`_produces_item`), no removal pull request is open
     for it (ctx["guidance_removal_prs"]) and no cell is blocking (every
     cell, held ones too). The top GUIDANCE_FOCUS_SECTIONS by score, then
@@ -1080,7 +1106,7 @@ def guidance_focus(ctx: dict) -> tuple:
             sections.setdefault(cell["section"], []).append(cell)
     ranked = []
     for section, cells in sections.items():
-        if section in removals or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells) \
+        if section in removals or not verdict_open(cells) \
                 or not any(_produces_item(c) for c in cells) or any(_blocking(c) for c in cells):
             continue
         retire = min(retire_progress(c, retire_level) for c in cells)
@@ -1511,7 +1537,7 @@ def batch_subjects(ctx: dict) -> dict:
     """{(kind, subject): {status, rank, newest}} for every subject with a
     schedulable eval cell. Private skills are never listed (the record is
     public). Status, first match:
-      decided  its verdict is closed (anything but FOCUS_VERDICTS) or a
+      decided  its verdict is closed (not `verdict_open`) or a
                removal pull request is open for it;
       blocked  some cell is blocking (`_blocking`): more runs on the current
                content cannot move it;
@@ -1534,7 +1560,7 @@ def batch_subjects(ctx: dict) -> dict:
                 or not BATCH_SUBJECT_RE.fullmatch(name or ""):
             continue
         removal = name in (removal_sections if kind == "guidance" else removal_skills)
-        if removal or any(c.get("verdict") not in FOCUS_VERDICTS for c in cells):
+        if removal or not verdict_open(cells):
             status = "decided"
         elif any(_blocking(c) for c in cells):
             status = "blocked"
@@ -1725,8 +1751,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
 
     A PROVISIONAL KEEP (`provisional_keep`: a pooled in-situ cell kept by
     the pooled keep test alone, which a later removal on the current rest's
-    evidence overrides; harness/gates.py, THE STALE KEEP) is fired in the
-    recheck band whether or not its re-check is due, ahead of the due ones,
+    evidence overrides and which lapses at the cap; harness/gates.py, THE
+    STALE KEEP) is fired as an undecided guidance cell (`_guidance_band`:
+    focus or guidance-rest; its section stays eligible, `verdict_open`),
     until the current rest's own keep crosses or the cell is `at_cap`, so
     the override gets its pairs; not when another cell of its section has a
     final keep, which keeps the section whatever this cell does.
@@ -1808,16 +1835,16 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # new pair cannot enter its frozen window.
             band, order = None, None
         elif cell.get("provisional_keep") and cell.get("section") not in final_kept:
-            # The pooled adversarial round 2: a pooled keep is not final (a
-            # later guarded removal overrides it), so it is fired, re-check
-            # or not, until the current rest's own keep test crosses or its
-            # window is full (`at_cap`, above). Otherwise the override would
-            # never get the current-rest pairs it needs. A section with a
-            # final keep on another cell is kept whatever this cell does.
-            # Ahead of the band's due re-checks (their order is (rank, time)).
-            band = "recheck"
-            order = (rank, -math.inf, cell.get("current_rest_pairs") or 0, price,
-                     -item["weight"])
+            # The pooled adversarial rounds 2 and 4: a pooled keep is not
+            # final (a removal on the current rest's evidence overrides it,
+            # and it lapses at the cap), so it is fired like an undecided
+            # guidance cell (the focus band when its section is focused,
+            # `verdict_open`; guidance-rest otherwise), until the current
+            # rest's own keep test crosses or its window is full (`at_cap`,
+            # above). In the recheck band, which has no share, a full focus
+            # band starved it. A section with a final keep on another cell
+            # is kept whatever this cell does.
+            band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
             # due, or a kept subject with an unsettled cell would never be
@@ -3132,6 +3159,7 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                     # A pooled cell's guard, whose removal evidence is its
                     # retire progress (`retire_progress`).
                     "rest_guard": (cell or {}).get("rest_guard"),
+                    "keep_tests": (cell or {}).get("keep_tests"),
                     "judge": (cell or {}).get("judge"),
                     "judge_carried": bool((cell or {}).get("judge_carried")),
                     "reason": (cell or {}).get("reason"),

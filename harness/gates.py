@@ -312,7 +312,10 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     older rest alone never keeps; such a cell stays `insufficient` and is
     fired), and a keep test over the current rest's pairs alone, so a cell
     that helps today keeps at its cap whatever the older rests showed.
-    Each route's `keep_tests` p is doubled for the same reason.
+    Each route's `keep_tests` p is doubled for the same reason. A cell with
+    no older pair in its window (ONE REST, the pooled adversarial round
+    4's M2) is classified exactly as a `current` cell: one keep route at
+    the full keep alpha, and `rest_guard` null.
   * THE STALE KEEP (the pooled adversarial rounds 2 and 3): a keep the
     pooled test made is NOT final. If the removal (below) decides at any
     pair, before or after it, the cell is `no-benefit`; and at the current
@@ -322,8 +325,10 @@ guidance cell's removal; a run skipped as anomalous does, as for a skill.
     keeps. A keep the current-rest keep test made stays final when it
     crossed no later than the removal's stopping time, as under `current`.
     A provisional keep reports `rest_guard.keep_final` false and its reason
-    says so; scripts/plan_week.py fires it until the current rest's own keep
-    crosses or its window is full.
+    says so; one that a removal overrode or that lapsed reports its route's
+    `keep_tests` p as 1, and every class a lapsed cell ends in says it
+    lapsed. scripts/plan_week.py fires it as an undecided cell until the
+    current rest's own keep crosses or its window is full.
 
 THE CURRENT-REST GUARD (pooled only). Every path toward removal reads the
 current rest:
@@ -351,15 +356,17 @@ current rest:
     crossing; a crossed test whose floor or CLI versions are not yet met
     keeps the cell `insufficient` (to its cap, where a single CLI version
     leaves it so, as under `current`);
-  * a `no-benefit` decision by the harm test (rule 4) needs the pooled harm
-    test at its level AND its current share at its level, with the same
-    floor and CLI versions, and counts as crossed (`harm_at`) only where
-    both are at the level (the pooled adversarial round 1's blocker: a
-    crossing the older rests made alone had held a cell `insufficient` at
-    its cap for good); one that never crossed so lets the cell fall through
-    to the current rest's ceiling, high-cell and cap rules. The objective
-    block's `remove_at` and `rest_guard`'s `pooled_*` fields report the
-    pooled crossings for display;
+  * a `no-benefit` decision by the harm test (rule 4) decides the same
+    way on its own HARM EVIDENCE (`harm_evidence`, the mean of its current
+    share and the current rest's own harm test; the pooled adversarial
+    round 4's M3: older gains held the pooled harm bets near zero, so a
+    section harming today was never removed), and counts as crossed
+    (`harm_at`) at that evidence's first crossing. A crossing the older
+    rests made alone is never one (round 1's blocker: it had held a cell
+    `insufficient` at its cap for good); a test that never crossed lets the
+    cell fall through to the current rest's ceiling, high-cell and cap
+    rules. The objective block's `remove_at` and `rest_guard`'s `pooled_*`
+    fields report the pooled crossings for display;
   * the ceiling, no-harm and high-cell rules (rules 4 to 6), which park a
     cell and so can turn a keep in waiting into a proposed removal, and the
     floor (rule 2), which sets a cell aside, read the current rest's pairs
@@ -377,8 +384,9 @@ the pooled and current-rest keep crossings; `keep_final`; the current rest's
 own remove test's and the removal evidence's crossings, `current_remove_at`
 and `remove_evidence_at`; and `remove_evidence_confidence`, the level the
 evidence reached, which the planner and the explorer read for the cell's
-no-help level). `no_help_confidence` and `remove_share_at` still report the
-share alone.
+no-help level; `harm_evidence_at` and `harm_evidence_confidence`, the same
+for the harm evidence). `no_help_confidence`, `harm_confidence`,
+`remove_share_at` and `harm_share_at` still report the shares alone.
 
 THE BET PRIOR (`bet_prior`). Each test's running estimate starts from
 pseudo-runs: by default NEUTRAL_BET_PRIOR (mean 0, variance 0.25, one run),
@@ -1061,6 +1069,13 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         out.update(rest_policy="pooled-with-current-guard",
                    current_rest_pairs=len(current_window),
                    rests=len(set(rest["keys"])), rest_guard=None)
+        if all(is_current):
+            # ONE REST (the pooled adversarial round 4's M2): with no older
+            # pair in the window, pooling has nothing to add, and two keep
+            # routes would split the keep alpha over the same test. The cell
+            # is classified exactly as a `current` cell (`rest_guard` stays
+            # null, every keep is final).
+            rest = None
 
     def done(cls, reason):
         return {**out, "class": cls, "reason": reason}
@@ -1151,7 +1166,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         top = max(a, b)
         return top + math.log1p(math.exp(min(a, b) - top)) - math.log(2)
 
-    def decided_at(wealth, evidence=None, pooled=True):
+    def decided_at(wealth, evidence=None):
         """The STOPPING TIME of a removal-side test (round 2's C1): the first
         pair n at which its running wealth is at 1/remove_alpha AND the
         pairs so far span `min_cli_versions`. The event {decided_at is not
@@ -1160,26 +1175,24 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         must be at the threshold at n itself: a pair that knocks it under
         (a late D = +1 on a new version) does not decide.
 
-        Pooled (`rest`), THE CURRENT-REST GUARD also holds at n: at least
-        `min_pairs` of pairs 1..n are beside the current rest, those span
-        `min_cli_versions`, and the current rest's share of the wealth
-        (`current_share`) is itself at 1/remove_alpha. That share is a test
-        martingale for H0 on the current rest alone, whatever the older
-        rests showed, so a removal keeps its level against TODAY's rest.
-        `evidence` replaces that share (the remove test passes the mean of
-        its share and the current rest's own remove test, `remove_evidence`),
-        and `pooled=False` drops the pooled wealth's condition (the remove
-        test, round 3's m5: the evidence alone carries the level)."""
+        Pooled (`rest`), the test decides on THE CURRENT-REST GUARD instead:
+        at n, at least `min_pairs` of pairs 1..n are beside the current
+        rest, those span `min_cli_versions`, and the current rest's
+        `evidence` (the mean of the test's current share and the current
+        rest's own test, `remove_evidence` or `harm_evidence`) is at
+        1/remove_alpha. That evidence is a test martingale for H0 on the
+        current rest alone, whatever the older rests showed, so a removal
+        keeps its level against TODAY's rest; the pooled wealth's own level
+        is not required (rounds 3's m5 and 4's M3: it added nothing to the
+        level, and older gains could hold it down for good)."""
         need = policy["min_cli_versions"]
         if rest is None:
             return next((i + 1 for i, w in enumerate(wealth)
                          if w >= threshold and len(versions(i + 1)) >= need), None)
-        share = current_share(wealth) if evidence is None else evidence
         seen = 0
-        for i, w in enumerate(wealth):
+        for i in range(len(wealth)):
             seen += usable_current[i]
-            if (w >= threshold or not pooled) and share[i] >= threshold \
-                    and seen >= rest["min_pairs"] \
+            if evidence[i] >= threshold and seen >= rest["min_pairs"] \
                     and len(versions(i + 1, current_only=True)) >= need:
                 return i + 1
         return None
@@ -1208,22 +1221,19 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         """Rule 8: the cap reached with no test deciding (pooled: the
         current rest's cap, on the current rest's CLI versions)."""
         found = versions(len(usable), current_only=rest is not None)
-        note = (f"; the pooled keep at pair {pooled_keep} lapsed at the current rest's "
-                "cap, which no more pairs can test (an older rest alone never keeps)"
-                ) if lapsed else ""
         if len(found) < policy["min_cli_versions"]:
             return done("insufficient", f"no clear effect on the numbers, but {len(found)} "
                         f"CLI version(s) in the pairs, under the "
-                        f"{policy['min_cli_versions']} a removal needs{note}")
+                        f"{policy['min_cli_versions']} a removal needs")
         return done("no-clear-effect", f"{cap} pairs and neither test rejected: no clear "
-                    f"effect, which can only propose a removal{note}")
+                    "effect, which can only propose a removal")
 
     keep_at, remove_at = objective["keep_at"], objective["remove_at"]
     harm_pooled = harm_wealth(ds, bet_prior)
     remove_pooled = remove_wealth(ds, margin, bet_prior)
     harm_at = first_crossing(harm_pooled, remove_alpha)
-    harm_decided = decided_at(harm_pooled)
     if rest is None:
+        harm_decided = decided_at(harm_pooled)
         remove_decided = decided_at(remove_pooled)
     else:
         # THE CURRENT-REST EVIDENCE for a removal: the mean of two test
@@ -1236,11 +1246,19 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         # The removal decides on this evidence, the pair floor and the CLI
         # versions alone (round 3's m5): the pooled wealth added nothing to
         # the level, and one rule now serves a removal with or without a
-        # pooled keep before it. The harm test keeps the pooled wealth.
+        # pooled keep before it.
         remove_evidence = [mean_of(a, b) for a, b in zip(
             current_share(remove_pooled),
             per_pair(remove_wealth(current_ds, margin, bet_prior)))]
-        remove_decided = decided_at(remove_pooled, remove_evidence, pooled=False)
+        remove_decided = decided_at(remove_pooled, remove_evidence)
+        # The harm test likewise (round 4's M3): older gains held the pooled
+        # harm test's bets near zero, so a section harming today was never
+        # removed. Its evidence is the mean of its current share and the
+        # current rest's own harm test, and it decides on that evidence with
+        # the pair floor and the CLI versions.
+        harm_evidence = [mean_of(a, b) for a, b in zip(
+            current_share(harm_pooled), per_pair(harm_wealth(current_ds, bet_prior)))]
+        harm_decided = decided_at(harm_pooled, harm_evidence)
     # Round 2's M1: no harm beyond the margin (H0: E[D] <= -margin), at the
     # remove level. A ceiling cell parks only when this rejects too; pooled,
     # it reads the current rest, as the ceiling test does.
@@ -1251,20 +1269,12 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         # Where each current-rest pair falls among the usable pairs (1-based).
         places = [i + 1 for i, c in enumerate(usable_current) if c]
 
-        def both_at(wealth, share):
-            """The first pair at which the pooled test AND the current rest's
-            share are both at the remove level (the pooled adversarial round
-            1's blocker: a crossing older rests alone made must not hold a
-            cell undecided, so it is not a crossing here). Without one the
-            cell falls through to the current rest's own rules."""
-            return next((i + 1 for i, (w, s) in enumerate(zip(wealth, share))
-                         if w >= threshold and s >= threshold), None)
-
-        # The remove test's crossing reads the same current-rest evidence as
-        # its stopping time (`remove_evidence`), or a crossing could wait
-        # for a decision that cannot come.
+        # Each test's crossing reads the same current-rest evidence as its
+        # stopping time, or a crossing could wait for a decision that cannot
+        # come; one older rests made alone is never a crossing (the pooled
+        # adversarial round 1's blocker).
         remove_at = first_crossing(remove_evidence, remove_alpha)
-        harm_at = both_at(harm_pooled, harm_share)
+        harm_at = first_crossing(harm_evidence, remove_alpha)
         # THE KEEP, pooled (round 1's blocker and Adam's 2026-11-07 rule): the
         # pooled keep counts only from the pair at which the current rest has
         # `min_pairs` pairs, so an older rest alone never keeps; a keep test
@@ -1306,7 +1316,10 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             "remove_evidence_at": remove_at,
             # The level the removal evidence reached (Ville's 1 - 1/W), what
             # the planner's retire progress and the explorer read.
-            "remove_evidence_confidence": reached(remove_evidence)}
+            "remove_evidence_confidence": reached(remove_evidence),
+            # Round 4's M3: the harm evidence's crossing and level.
+            "harm_evidence_at": harm_at,
+            "harm_evidence_confidence": reached(harm_evidence)}
     out.update(headroom=ceiling_at is None, without_mean=without_mean,
                ceiling_at=ceiling_at, harm_at=harm_at, harm_decided_at=harm_decided,
                remove_decided_at=remove_decided, noharm_at=noharm_at)
@@ -1316,24 +1329,31 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     # version) must not outrank a keep reached later; the keep's own
     # crossing bounds its error either way.
     if rest is not None:
-        # THE STALE KEEP (the pooled adversarial round 2): a keep the pooled
-        # test made is NOT final. If the guarded removal later decides (the
-        # pooled wealth and the current rest's share both at the remove
-        # level, the pair floor and the CLI versions), no-benefit wins over
-        # it, since that decision holds its level against "helps by the
-        # margin beside today's rest" whatever came before. A keep the
-        # current-rest test made alone stays final, ordered against the
-        # removal's stopping time as a `current` cell's keep is.
+        # THE STALE KEEP (the pooled adversarial rounds 2 to 4): a keep the
+        # pooled test made is NOT final. If the remove test decides on the
+        # current rest's evidence (with the pair floor and the CLI versions),
+        # no-benefit wins over it, since that decision holds its level
+        # against today's rest whatever came before. (The harm test's null,
+        # E[D] >= 0, is harder to reject than the remove test's, so a harm
+        # decision comes no sooner in practice; round 4's mutation check
+        # found reading it here changed nothing.) A keep the current-rest test made alone stays final,
+        # ordered against the removal's stopping time as a `current` cell's
+        # keep is.
         final = current_keep is not None and (remove_decided is None
                                              or current_keep <= remove_decided)
         standing = [current_keep] if final else []
+        removed = remove_decided is not None
         # Round 3's M1: a provisional keep does not stand at the current
         # rest's cap either. No more pairs can test it there, so the cell
         # ends on the current rest's own rules, as a `current` cell would:
         # an older rest alone never keeps.
-        lapsed = pooled_keep is not None and remove_decided is None and capped
-        if pooled_keep is not None and remove_decided is None and not capped:
+        lapsed = pooled_keep is not None and not removed and capped
+        if pooled_keep is not None and not removed and not capped:
             standing.append(pooled_keep)
+        elif pooled_keep is not None:
+            # Round 4's m(a): a pooled keep that a removal overrode or that
+            # lapsed is no keep evidence, so its route reports p = 1.
+            out["keep_tests"][0]["p"] = 1.0
         keep_at = min(standing, default=None)
         out["rest_guard"]["keep_final"] = final
         keeps = keep_at is not None
@@ -1341,9 +1361,17 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             " (a pooled keep, not final: a removal on the current rest's evidence "
             "overrides it, and it lapses at the current rest's cap, unless the current "
             "rest's own keep test rejects first)")
+        if lapsed:
+            # Round 4's m(d): every class a lapsed cell ends in says so.
+            plain_done = done
+
+            def done(cls, reason):
+                return plain_done(cls, f"{reason}; the pooled keep at pair {pooled_keep} "
+                                  "lapsed at the current rest's cap, which no more pairs "
+                                  "can test (an older rest alone never keeps)")
     else:
         keeps = keep_at is not None and (remove_decided is None or keep_at <= remove_decided)
-        provisional, lapsed = "", False
+        provisional = ""
     if keeps:
         return done("benefit", f"the keep test rejected at pair {keep_at}: confident at "
                     f"{policy['benefit_confidence']:.0%} across the subject's {family} "
@@ -1725,9 +1753,9 @@ def _shows_ceiling(cell: dict) -> bool:
     if cell["class"] != "paused" or cell.get("scope_paused") != "ceiling":
         return False
     # A pooled in-situ cell reads the harm the current rest shows on its own
-    # (its share of the harm test), as its ceiling and no-harm tests do.
+    # (its harm evidence), as its ceiling and no-harm tests do.
     guard = cell.get("rest_guard")
-    harm = guard.get("harm_share_at") if isinstance(guard, dict) else cell.get("harm_at")
+    harm = guard.get("harm_evidence_at") if isinstance(guard, dict) else cell.get("harm_at")
     if harm is not None:
         return False
     if cell.get("class_before_pause") in CEILING_CLASSES:

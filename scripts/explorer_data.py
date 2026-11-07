@@ -1448,7 +1448,8 @@ def subject_confidence(verdict: dict) -> dict:
 
     The page also draws how far each level is from its line, so four more
     keys carry the evidence behind them (each an int, or None when absent):
-    `keep_pairs`, the objective pair count of the cell `helps` comes from (the
+    `keep_pairs`, the objective pair count (a pooled in-situ cell's
+    `current_rest_pairs`) of the cell `helps` comes from (the
     one with the smallest objective keep p); `no_help_pairs`, the pair count
     of the voting cell `no_help` comes from (the lowest no-help level);
     `max_pairs`, the largest objective pair count over figured cells (progress
@@ -1467,7 +1468,13 @@ def subject_confidence(verdict: dict) -> dict:
         return none
 
     def pairs_of(cell):
-        n = (cell.get("objective") or {}).get("pairs")
+        # A pooled in-situ cell's pace is its current-rest pairs, the ones
+        # its cap and its guard count (the pooled adversarial round 4's
+        # m(b)), not every rest's pairs.
+        if isinstance(cell.get("rest_guard"), dict):
+            n = cell.get("current_rest_pairs")
+        else:
+            n = (cell.get("objective") or {}).get("pairs")
         return n if isinstance(n, int) and not isinstance(n, bool) else None
 
     family = verdict.get("keep_family")

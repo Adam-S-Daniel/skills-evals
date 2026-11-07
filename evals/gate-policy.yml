@@ -76,13 +76,13 @@
 #     removal on the current rest's evidence overrides it, and it lapses at
 #     the current rest's cap (a current-rest keep is final). Every decision
 #     toward removal is guarded by the current rest (the rest on main): a
-#     no-benefit or harm
-#     decision needs at least `rest_guard_min_pairs` (6) pairs beside it,
-#     spanning `min_cli_versions`, and the current rest's own evidence (its
-#     share of the test's wealth, averaged for the remove test with its own
-#     remove test) at the retire level on its own; the ceiling, no-harm,
+#     no-benefit or harm decision needs at least `rest_guard_min_pairs` (6)
+#     pairs beside it, spanning `min_cli_versions`, and the current rest's
+#     own evidence (its share of the test's wealth averaged with its own
+#     test's) at the retire level on its own; the ceiling, no-harm,
 #     high-cell and floor rules and the `max_runs_per_cell` cap read the
-#     current rest only (each rest's window caps at that count). `current`
+#     current rest only (each rest's window caps at that count). A cell
+#     with one rest is a `current` cell. `current`
 #     is the rule of 2026-11-03, runs beside the current rest only; set it
 #     to switch back. Both keys are optional and the guidance block's only
 #     (ADR 0014, "Pooled-rest addendum (2026-11-07)").

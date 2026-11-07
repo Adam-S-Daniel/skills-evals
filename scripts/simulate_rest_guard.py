@@ -189,7 +189,7 @@ def at_cap(rng, sims, policy, n_old, old_effect, effect, base):
     got["pooled-with-current-guard"].update(
         # Round 3's M1: a pooled keep never stands at the cap (it lapses).
         kept_provisionally=sum(c["class"] == "benefit" and c["at_cap"]
-                               and c["rest_guard"]["keep_final"] is False
+                               and (c["rest_guard"] or {}).get("keep_final") is False
                                for c in out["pooled-with-current-guard"]) / sims,
         provisional=len(held) / sims,
         fires_while_provisional=statistics.mean(held) if held else 0.0)
@@ -203,7 +203,7 @@ def provisional_fires(cell, policy, n_old):
     window is full), or None when it never holds a pooled keep alone. The
     older pairs come first, so pair n is current pair n - n_old."""
     guard = cell["rest_guard"]
-    if guard["pooled_keep_at"] is None:
+    if guard is None or guard["pooled_keep_at"] is None:
         return None
     start = max(guard["pooled_keep_at"], n_old + policy["rest_guard_min_pairs"])
     current = guard["current_keep_at"]
@@ -227,6 +227,14 @@ CAP_CASES = (
     ("helps today by the margin, older rest gained 0.30", 40, 0.30, 0.15),
     ("no gain today, older rest gained 0.30 (stale keep)", 40, 0.30, 0.0),
     ("gains 0.05 today, older rest gained 0.30 (stale keep)", 40, 0.30, 0.05),
+    # Round 4's M2: one rest, where the pooled rule is the `current` rule.
+    ("helps today by 0.10, one rest", 0, 0.0, 0.10),
+    # Round 4's M3: harm at a high without arm (above 1 - margin, where
+    # only the harm test can remove) after older gains, and its false
+    # removal at the harm test's null (no gain today) there.
+    ("costs 0.30 today, without arm 0.90, older rest gained 0.10", 40, 0.10, -0.30, 0.90),
+    ("no gain today (the harm null), without arm 0.90, older rest gained 0.10", 40, 0.10,
+     0.0, 0.90),
 )
 
 
@@ -266,11 +274,11 @@ def main(argv=None) -> int:
         print(f"  false removal, {name:28s} {rate:.4f}"
               f"{'' if rate <= target else '  ABOVE ' + format(target, '.2f')}")
     print("\nAT THE CURRENT REST'S CAP: share keeping, removed, and stuck insufficient")
-    for label, n_old, old_effect, gain in CAP_CASES:
+    for label, n_old, old_effect, gain, *base in CAP_CASES:
         sims = max(1, args.sims // 4)
         print(f"  {label} ({n_old} older pairs)")
         for name, got in at_cap(rng, sims, policy, n_old, old_effect, gain,
-                                args.base).items():
+                                base[0] if base else args.base).items():
             print(f"    {name:28s} benefit {got['benefit']:.3f}, no-benefit "
                   f"{got['no-benefit']:.3f}, no-clear-effect {got['no-clear-effect']:.3f}, "
                   f"stuck {got['stuck']:.3f}"
