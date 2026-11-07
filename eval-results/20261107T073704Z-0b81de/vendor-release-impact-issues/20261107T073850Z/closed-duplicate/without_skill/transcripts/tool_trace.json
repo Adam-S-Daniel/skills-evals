@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ma5ck2wGMgfZnfuT8dhvzN",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor && wc -c vendor/*",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ma5ck2wGMgfZnfuT8dhvzN",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 651,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JuTPVYqh64rbFnuRnKbgUt",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json README.md .example-cli/settings.json hooks/session-start.sh bin/gh; cat .gh/replay/issue-list.json .gh/replay/issue-view-57.json .gh/replay/auth-status.txt",
+      "input_chars": 199,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JuTPVYqh64rbFnuRnKbgUt",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.7KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2238,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BcSN353QC9hGkqFVmSMrUJ",
+      "name": "Bash",
+      "input": "head -c 1500 .gh/replay/issue-list.json; echo; cat .gh/replay/issue-view-57.json | head -c 2500; echo; cat .gh/replay/auth-status.txt; git log --oneline | head; sed -n 1,40p bin/gh; ls -a",
+      "input_chars": 187,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BcSN353QC9hGkqFVmSMrUJ",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\",\n    \"labels\": [\n      {\n        \"name\": \"ci\"\n      }\n    ],\n    \"url\": \"https://github.com/example-org/example-re...",
+      "output_chars": 5376,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LsePQcNj4V2isq6svJEMeM",
+      "name": "Bash",
+      "input": "grep -rIl -iE \"proxy|synced|review-checklist|update.check|theme|contrast\" --exclude-dir=.git . | head; cat .gh/replay/api/repos/example-org/example-repo/issues/57/comments.json | head -c 600; ls .clau...",
+      "input_chars": 222,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LsePQcNj4V2isq6svJEMeM",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 795,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ExRWXk6smNKqSqQthKMW6Q",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-synced-skills-renamed.md <<'EOF'\n# README: synced skills are invoked as `synced:NAME` since ExampleCLI 4.2.0\n\nFound in the ExampleCLI 4.2.0 review.\n\n## ExampleCLI ch...",
+      "input_chars": 3135,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ExRWXk6smNKqSqQthKMW6Q",
+      "is_error": false,
+      "output": "01-synced-skills-renamed.md",
+      "output_chars": 27,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

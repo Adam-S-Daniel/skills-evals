@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TPiJzdHPenbro8zao2w9y5",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:vendor-release-impact-issues",
+      "input_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TPiJzdHPenbro8zao2w9y5",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:vendor-release-impact-issues",
+      "output_chars": 66,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016NkqACXFaQAib1SLQS14Do",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls vendor && wc -c vendor/*",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016NkqACXFaQAib1SLQS14Do",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.gh/replay/api/repos/example-org/example-repo/issues.json\n.gh/replay/api/repos/example-org/example-repo/issues/57.json\n.gh/replay/api/repos/example-org/example-repo/issues/57/comments.json\n.gh/replay/auth-status.txt\n.gh/replay/issue-list.json\n.gh/replay/issue-view-57.json\n...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016z8GvDyxFxP7u3ki17swzD",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md vendor/releases.json; echo ----; cat AGENTS.md README.md .example-cli/settings.json hooks/session-start.sh bin/gh; echo ----; cat .gh/replay/issue-list.json .gh/replay/auth-stat...",
+      "input_chars": 272,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016z8GvDyxFxP7u3ki17swzD",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (57.5KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# ExampleCLI release notes\n\n## v4.2.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.2.0](https://github.com/example-vendor/example-cli/releases/tag/v4.2.0)\n\n- Session-start hooks now re...",
+      "output_chars": 2223,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F9FXVpiJ44u5cQcq47E2GH",
+      "name": "Bash",
+      "input": "cd <path> && cat auth-status.txt; head -c 1500 issue-list.json; echo; head -c 3000 api/repos/example-org/example-repo/issues/57.json; echo; head -c 1500 api/repos/example-org/example-repo/issues/57/co...",
+      "input_chars": 368,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F9FXVpiJ44u5cQcq47E2GH",
+      "is_error": false,
+      "output": "example.com\n  Logged in to example.com as example-operator\n  Active account: true\n  Git operations protocol: https\n[\n  {\n    \"number\": 61,\n    \"title\": \"CI: cache the npm install of ExampleCLI\",\n    \"state\": \"OPEN\",\n    \"stateReason\": \"\",\n    \"closedAt\": null,\n    \"createdAt\": \"2026-08-03T15:10:00Z\"...",
+      "output_chars": 3210,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VZWqu1NHdSqFMfmjUsNYpd",
+      "name": "Bash",
+      "input": "grep -rniE \"proxy|palette|theme|color|windows|synced|skill|update\" --exclude-dir=.git --exclude-dir=vendor --exclude=gh . | grep -v '^./.gh' ; ls -a; ls .github 2>&1 | head; git log --oneline | head",
+      "input_chars": 198,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VZWqu1NHdSqFMfmjUsNYpd",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 851,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TvNJfYWwdsFayTnNPyG2d8",
+      "name": "Bash",
+      "input": "mkdir -p issues && python3 -I - <<'EOF'\nimport re\nsrc=open('vendor/RELEASES.md').read()\nsec=src.split('## v4.2.0')[1]\nbullets=[re.sub(r'\\s*\\n\\s*',' ',b.strip()) for b in re.split(r'\\n- ',\"\\n\"+sec.spli...",
+      "input_chars": 4399,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TvNJfYWwdsFayTnNPyG2d8",
+      "is_error": false,
+      "output": "# ExampleCLI 4.2.0 synced skills renamed to `synced:NAME`: README invokes them by bare name\n\nFound in the ExampleCLI 4.2.0 release review (bullet 4.2.0/2). Not yet verified against this repo.\n\n## ExampleCLI change(s)\n\n> Synced skills are now named `synced:NAME` instead of `NAME`.\n>",
+      "output_chars": 282,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
