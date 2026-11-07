@@ -2448,6 +2448,37 @@ def pair_fires(chosen: list, roster: list | None) -> list:
     return [item for item in out if item is not None]
 
 
+#: Until the 2026-11-09 17:00 UTC reset only (Adam, 2026-11-07: use the
+#: week's remaining allowance under the routine's fire limit): every single
+#: `both`-arms eval fire on a skill fixture also runs the fixture's other
+#: roster model (`pair_every_fire`), whether or not that cell is due. Set
+#: False after that reset.
+PAIR_EVERY_FIRE = True
+
+
+def pair_every_fire(legs: list, roster: list | None) -> list:
+    """PAIR_EVERY_FIRE: each single `both`-arms eval leg on a skill fixture
+    (not under evals/guidance/) whose model is on `roster` made a pair fire
+    on the roster's first two models, in roster order. Its cost is
+    unchanged: the added cell was not planned, so nothing reserved it, and
+    the per-fire guard and the account stop still bound what it spends.
+    Every other leg, and every leg when `roster` has fewer than two
+    models, is kept as it is."""
+    if not roster or len(roster) < 2:
+        return list(legs)
+    pair = list(roster[:2])
+    out = []
+    for leg in legs:
+        if (leg["mode"] == "eval" and leg.get("arms") == "both"
+                and leg["model"] in pair and "," not in leg["model"]
+                and leg.get("fixture") and not leg["fixture"].startswith("evals/guidance/")
+                and all(PAIR_MODEL_RE.fullmatch(m) for m in pair)):
+            leg = {**leg, "model": ",".join(pair),
+                   "cells": [{"model": leg["model"], "band": leg["band"], "cost": leg["cost"]}]}
+        out.append(leg)
+    return out
+
+
 def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     """The plan for `ctx` (see `gather`), as of `now`. Pure. While
     ctx["routine_down"] (#583) it holds improve and bare fires and plans at
@@ -2519,6 +2550,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     chosen.sort(key=lambda i: i["mode"] in IMPROVE_MODES)
     # PAIR FIRES: one fire for a fixture's two model cells.
     legs = pair_fires(chosen, ctx.get("roster_models"))
+    if PAIR_EVERY_FIRE:
+        legs = pair_every_fire(legs, ctx.get("roster_models"))
     fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
               "fixture": i["fixture"],
               # Per fixture, never per model: a pair's two cells share it.

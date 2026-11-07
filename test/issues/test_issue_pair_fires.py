@@ -315,6 +315,7 @@ class PlannerPairTests(unittest.TestCase):
         self.assertEqual(self.legs(self.plan(roster=None), SKILL_FIXTURE),
                          sorted([("both", A), ("both", B)]))
 
+    @mock.patch.object(plan_week, "PAIR_EVERY_FIRE", False)
     def test_a_lone_cell_stays_a_single_leg(self):
         # B's cell has a pending fire, so only A's is planned.
         held = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=10), B)]
@@ -402,6 +403,38 @@ class PairFiresUnitTests(unittest.TestCase):
         chosen = [self.item(third), self.item(B), self.item(A)]
         self.assertEqual(self.models(chosen, (A, B, third)),
                          [("evals/x", "both", third), ("evals/x", "both", PAIR)])
+
+
+class PairEveryFireTests(unittest.TestCase):
+    """PAIR_EVERY_FIRE, until the 2026-11-09 17:00 UTC reset."""
+
+    item = staticmethod(PairFiresUnitTests.item)
+
+    def test_a_single_skill_both_leg_gains_the_other_model(self):
+        for model in (A, B):
+            with self.subTest(model=model):
+                (leg,) = plan_week.pair_every_fire([self.item(model, cost=0.05)], [A, B])
+                self.assertEqual((leg["model"], leg["cost"]), (PAIR, 0.05))
+                self.assertEqual(leg["cells"], [{"model": model, "band": "missing",
+                                                 "cost": 0.05}])
+
+    def test_other_legs_are_kept(self):
+        legs = [self.item(PAIR), self.item(A, arms="bare"),
+                self.item(A, GUIDANCE_FIXTURE, arms="both"),
+                self.item(A, GUIDANCE_FIXTURE, arms="in-situ"),
+                self.item("", mode="improve", arms=""), self.item("claude-other-1")]
+        self.assertEqual(plan_week.pair_every_fire(legs, [A, B]), legs)
+        self.assertEqual(plan_week.pair_every_fire([self.item(A)], [A]), [self.item(A)])
+        self.assertEqual(plan_week.pair_every_fire([self.item(A)], None), [self.item(A)])
+
+    def test_the_planner_pairs_a_lone_cell(self):
+        case = PlannerPairTests("test_a_lone_cell_stays_a_single_leg")
+        case.setUp()
+        try:
+            held = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=10), B)]
+            self.assertEqual(case.legs(case.plan(held), SKILL_FIXTURE), [("both", PAIR)])
+        finally:
+            case.doCleanups()
 
 
 class ValidateFireTests(unittest.TestCase):

@@ -489,7 +489,7 @@ jobs:
             eval)
               # A bare baseline is one arm at three trials; a cell's pair
               # (both arms, or a guidance fixture's in-situ pair alone) is
-              # at one. A skill fixture's `both` is at two until the
+              # at one. A skill fixture's `both` is at three until the
               # 2026-11-09 17:00 UTC reset, then one: the fire limit below
               # caps fires, not trials (Adam, 2026-11-07: use the week's
               # remaining allowance). The harness refuses more than one
@@ -499,7 +499,7 @@ jobs:
                 both|in-situ)
                   case "$FIXTURE" in
                     evals/guidance/*) trials=1 ;;
-                    *) trials=2 ;;
+                    *) trials=3 ;;
                   esac ;;
                 bare) trials=3 ;;
                 *)
