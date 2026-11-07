@@ -62,8 +62,9 @@ is defined). The same contract holds, and the keys are just as
 untrusted: a `Skill` tool call's `input.skill` and a typed
 `<command-name>` are free strings, so a name becomes a key ONLY when it is
 in `skill_allowlist()` — skills that already appear by name in this public
-repo, as a fixture or a non-coverage row whose registry is not private — and
-matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
+repo, as a fixture or a non-coverage row whose registry is not private, or
+that the published coverage census lists for a public registry
+(`--coverage-census`) — and matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
 
@@ -302,14 +303,52 @@ SKILL_KEY_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _COMMAND_NAME_RE = re.compile(r"<command-name>([^<]{0,200})</command-name>")
 
 
-def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
+def coverage_skills(path: Path | None, registries: dict) -> set[str]:
+    """The skill names the published coverage census (`coverage/latest.json`
+    on `persistent/eval-results`, skill-coverage.yml's redacted census) lists
+    for a registry that is `private: false` both there and in
+    harness/registries.yml and whose names are not withheld: a public
+    registry's skill that has neither a fixture nor a non-coverage row yet (a
+    gap) is still a public name. Nothing for no path or an unreadable or
+    malformed file: this source only adds names."""
+    import eval_coverage
+    if path is None:
+        return set()
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return set()
+    entries = doc.get("registries") if isinstance(doc, dict) else None
+    if not isinstance(entries, list):
+        return set()
+    names = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("private") is not False \
+                or entry.get("names_withheld") is not False \
+                or not isinstance(entry.get("skills"), list):
+            continue
+        registry = entry.get("name")
+        config = registries.get(registry) if isinstance(registry, str) else None
+        if not config or config.get("private") is not False \
+                or registry in eval_coverage.PRIVATE_REGISTRIES:
+            continue
+        names |= {skill["skill"] for skill in entry["skills"]
+                  if isinstance(skill, dict) and skill.get("registry") == registry
+                  and isinstance(skill.get("skill"), str)}
+    return names
+
+
+def skill_allowlist(root: Path = REPO_ROOT,
+                    coverage: Path | None = None) -> frozenset[str]:
     """The skill names that may become published keys.
 
     A name qualifies when this public repo already carries it: a skill
     fixture `scripts/eval_coverage.py` counts under `root/evals`, or a row
     of `root/evals/non-coverage.yml`, in either case only when its registry
     is not private (a private skill's name must not become a public key; its
-    calls count under `other`).
+    calls count under `other`). With `coverage`, a public registry's skill
+    the published coverage census lists qualifies too (`coverage_skills`),
+    so a gap is counted by name before its first fixture lands.
     Both are read by eval_coverage's own `count_fixtures`/`load_skips`, so
     "is a fixture" means the same here as in the coverage census. Raises
     `eval_coverage.CensusRefusal` or ValueError when either cannot be read;
@@ -327,6 +366,7 @@ def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
              if registry not in eval_coverage.PRIVATE_REGISTRIES}
     names |= {skill for registry, skill in skips
               if registry not in eval_coverage.PRIVATE_REGISTRIES}
+    names |= coverage_skills(coverage, registries)
     return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))
 
 
@@ -1885,6 +1925,10 @@ def main() -> int:
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
                              "script's repo)")
+    parser.add_argument("--coverage-census", type=Path, default=None,
+                        help="the published coverage census (coverage/latest.json "
+                             "on persistent/eval-results): its public registries' "
+                             "skills are publishable names too")
     parser.add_argument("--now", default=None,
                         help="ISO-8601 instant to treat as now (tests and "
                              "scripts/publish_usage_census.sh's test seam); "
@@ -1927,7 +1971,7 @@ def main() -> int:
     if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
-            allowlist = skill_allowlist(args.skill_allowlist_root)
+            allowlist = skill_allowlist(args.skill_allowlist_root, args.coverage_census)
             repos = public_repos()
             private = private_plugins()
             entries = public_registry_entries()

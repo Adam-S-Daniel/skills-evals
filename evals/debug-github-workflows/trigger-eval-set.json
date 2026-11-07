@@ -1,0 +1,82 @@
+[
+  {
+    "query": "the nightly build workflow has been red since Tuesday and the Actions tab just says 'Process completed with exit code 1'. can you pull the logs for the failed run and tell me which step is actually breaking?",
+    "should_trigger": true
+  },
+  {
+    "query": "my deploy workflow shows green but nothing got deployed. the 'Publish' step finished in 1 second. can you figure out what's really going on in the run?",
+    "should_trigger": true
+  },
+  {
+    "query": "git commit works on my laptop but the release job on Actions dies with exit code 128 right at the commit step. no idea why",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a script in CI that does mapfile -t REPOS < <(gh repo list ...) and when gh fails the array is just empty and the job passes. is that a known gotcha? help me find why our sync job did nothing last night",
+    "should_trigger": true
+  },
+  {
+    "query": "gh isn't installed in this cloud sandbox and I need to see why the last three runs of ci.yml failed on the PR. how do I read the job logs and annotations through the API instead?",
+    "should_trigger": true
+  },
+  {
+    "query": "the matrix job 'test (windows)' fails but 'test (ubuntu)' passes with the same commit. walk through the run logs with me and find the difference",
+    "should_trigger": true
+  },
+  {
+    "query": "a workflow I added on a feature branch never shows up in the Actions tab. is it because it only exists on that branch? help me debug it",
+    "should_trigger": true
+  },
+  {
+    "query": "the scheduled workflow ran but the step summary says 'no items found, exiting 0'. I think the list call failed silently and the job reported success anyway. dig into the logs and tell me",
+    "should_trigger": true
+  },
+  {
+    "query": "CI failed on my PR with a cryptic annotation about a missing secret. can you read the check-run annotations and the failing step and tell me what to fix?",
+    "should_trigger": true
+  },
+  {
+    "query": "before I change anything, reproduce this failing GitHub Actions step locally using the same command the workflow runs, then compare with the log from the failed run",
+    "should_trigger": true
+  },
+  {
+    "query": "write me a new GitHub Actions workflow that runs eslint and the unit tests on every pull request",
+    "should_trigger": false
+  },
+  {
+    "query": "our CI takes 14 minutes. split the Playwright tests into shards so the job finishes faster",
+    "should_trigger": false
+  },
+  {
+    "query": "which actions in .github/workflows aren't pinned to a full commit SHA? list them and pin them",
+    "should_trigger": false
+  },
+  {
+    "query": "add path filters to ci.yml so docs-only changes don't trigger the full test matrix",
+    "should_trigger": false
+  },
+  {
+    "query": "the PR is stuck BLOCKED even though every check I can see is green. a required check never reported. how do I get it unstuck?",
+    "should_trigger": false
+  },
+  {
+    "query": "set up branch protection on main so PRs need two reviews and the build check to pass before merging",
+    "should_trigger": false
+  },
+  {
+    "query": "explain what the concurrency key does in a GitHub Actions workflow and when to use cancel-in-progress",
+    "should_trigger": false
+  },
+  {
+    "query": "my local pytest run fails with an ImportError, how do I fix it",
+    "should_trigger": false
+  },
+  {
+    "query": "write a bash script that loops over all repos in an org and archives the ones with no commits in two years",
+    "should_trigger": false
+  },
+  {
+    "query": "set up Dependabot for npm and github-actions with a 7 day cooldown",
+    "should_trigger": false
+  }
+]

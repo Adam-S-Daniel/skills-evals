@@ -205,7 +205,7 @@ class OutcomeAndGuardTests(unittest.TestCase):
 
     def test_the_guard_counts_and_charges_guidance_fires_as_improve_fires(self):
         # Fires 1 to 3 in the week; only fire 3, a guidance fire, is inside
-        # PENDING_FULL_HOLD (45 minutes).
+        # PENDING_FULL_HOLD (90 minutes).
         self.assertEqual(guard.improve_counts(self.runs(), NOW), (3, 1))
         self.assertEqual(len(guard.improve_starts(self.runs(), NOW)), 3)
         state = {"cap": 1.0, "spent": 0.0, "pending": 0.0, "pace_room": 0.0,

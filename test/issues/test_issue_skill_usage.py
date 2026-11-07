@@ -303,6 +303,54 @@ class AllowlistTests(unittest.TestCase):
                 if r["kind"] == "skill"]
         self.assertEqual(sorted(rows), [("other", 1), ("workflow-path-audit", 1)])
 
+    def test_the_coverage_census_adds_public_registry_gaps(self):
+        root = make_allowlist_root(self.tmp / "repo")
+        coverage = self.tmp / "latest.json"
+
+        def write(registries):
+            coverage.write_text(json.dumps({"registries": registries}), encoding="utf-8")
+
+        def entry(name, skills, private=False, withheld=False):
+            return {"name": name, "private": private, "names_withheld": withheld,
+                    "skills": [{"registry": name, "skill": s} for s in skills]}
+
+        write([entry("adam-agentskills", ["zz-gap-skill", "Not A Key"]),
+               entry("adam-agentskills-private", ["zz-private-gap"], private=True),
+               entry("adam-agentskills", ["zz-withheld"], withheld=True),
+               entry("no-such-registry", ["zz-unknown-registry"]),
+               # The census document says public; harness/registries.yml says
+               # private, and the repository's own config wins.
+               entry("adam-agentskills-private", ["zz-mislabeled"])])
+        allow = census.skill_allowlist(root, coverage)
+        self.assertEqual(allow, {"workflow-path-audit", "zz-skipped-skill", "zz-gap-skill"})
+        for text in ("{", "[]", json.dumps({"registries": {}})):
+            with self.subTest(text=text):
+                coverage.write_text(text, encoding="utf-8")
+                self.assertEqual(census.skill_allowlist(root, coverage),
+                                 census.skill_allowlist(root))
+        self.assertEqual(census.skill_allowlist(root, self.tmp / "missing.json"),
+                         census.skill_allowlist(root))
+
+    def test_a_gap_skill_call_counts_by_name_with_the_coverage_census(self):
+        root = make_allowlist_root(self.tmp / "repo")
+        coverage = self.tmp / "latest.json"
+        coverage.write_text(json.dumps({"registries": [
+            {"name": "adam-agentskills", "private": False, "names_withheld": False,
+             "skills": [{"registry": "adam-agentskills", "skill": "zz-gap-skill"}]}]}),
+            encoding="utf-8")
+        projects = self.tmp / "projects"
+        write_transcript(projects / "p" / "s.jsonl", [skill_call("zz-gap-skill")])
+        out, weekly_out = self.tmp / "out.json", self.tmp / "weekly-local.json"
+        argv = ["model_usage_census.py", "--projects", str(projects), "--out", str(out),
+                "--weekly-out", str(weekly_out), "--now", NOW_TEXT, "--hook-logs", "",
+                "--skill-allowlist-root", str(root), "--coverage-census", str(coverage)]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+            self.assertEqual(census.main(), 0)
+        rows = [(r["name"], r["invocations"])
+                for r in json.loads(weekly_out.read_text(encoding="utf-8"))["rows"]
+                if r["kind"] == "skill"]
+        self.assertEqual(rows, [("zz-gap-skill", 1)])
+
     def test_the_committed_evals_tree_loads(self):
         allow = census.skill_allowlist()
         self.assertIn("workflow-path-audit", allow)
@@ -451,6 +499,30 @@ class PublisherTests(unittest.TestCase):
         printed = proc.stdout + proc.stderr
         for forbidden in ("workflow-path-audit", "123456789012", str(self.tmp)):
             self.assertNotIn(forbidden, printed)
+
+    def test_the_results_branch_coverage_census_names_a_gap_skill(self):
+        """A public registry's skill with no fixture or non-coverage row is
+        counted by name once coverage/latest.json on the results branch
+        lists it, and check_public accepts the key."""
+        work = self.tmp / "results-work"
+        self.git("clone", "--quiet", "--branch", self.BRANCH, self.origin.as_uri(), str(work))
+        (work / "coverage").mkdir()
+        (work / "coverage" / "latest.json").write_text(json.dumps({"registries": [
+            {"name": "adam-agentskills", "private": False, "names_withheld": False,
+             "skills": [{"registry": "adam-agentskills", "skill": "zz-gap-skill"}]}]}),
+            encoding="utf-8")
+        self.git("add", "coverage/latest.json", cwd=work)
+        self.git("commit", "--quiet", "-m", "coverage", cwd=work)
+        self.git("push", "--quiet", "origin", self.BRANCH, cwd=work)
+        write_transcript(self.projects / "-home-example-proj" / "g.jsonl",
+                         [skill_call("zz-gap-skill", "toolu_07")])
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        doc = json.loads(self.git("show", f"{self.BRANCH}:usage/weekly-local.json",
+                                  cwd=self.origin))
+        self.assertEqual(sorted((r["name"], r["invocations"]) for r in doc["rows"]
+                                if r["kind"] == "skill"),
+                         [("other", 1), ("workflow-path-audit", 1), ("zz-gap-skill", 1)])
 
     def test_a_change_to_skills_alone_is_published(self):
         """Same clock and the same model counts: latest.json's bytes do not

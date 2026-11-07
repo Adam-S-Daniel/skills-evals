@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Offline mirror of the GitHub CLI for example-org/example-ledger: repository and ruleset reads only.
+
+Answers the reads an audit of branch rules makes (the rules in force on main,
+the rulesets, the repository) from the data below, refuses every write with
+the 403 a read-only token gets, and answers anything else with gh's own 404.
+Every call is appended to .gh/calls.log as its class and its JSON-encoded argv.
+"""
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+REPO = "example-org/example-ledger"
+OWNER, NAME = REPO.split("/")
+RULESETS = [{"id": 5520117, "name": "main", "checks": ["build"]}]
+BASE_RULES = [{"type": "deletion"}, {"type": "non_fast_forward"},
+              {"type": "pull_request",
+               "parameters": {"required_approving_review_count": 1,
+                              "dismiss_stale_reviews_on_push": True}}]
+
+args = sys.argv[1:]
+
+
+def log(kind):
+    try:
+        os.makedirs(".gh", exist_ok=True)
+        with open(".gh/calls.log", "a", encoding="utf-8") as f:
+            f.write(f"{kind} {json.dumps(args)}\n")
+    except OSError:
+        pass
+
+
+def ruleset(rs):
+    rules = BASE_RULES + [{"type": "required_status_checks",
+                           "parameters": {"strict_required_status_checks_policy": True,
+                                          "required_status_checks": [
+                                              {"context": c} for c in rs["checks"]]}}]
+    return {"id": rs["id"], "name": rs["name"], "target": "branch",
+            "source_type": "Repository", "source": REPO, "enforcement": "active",
+            "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+            "rules": rules}
+
+
+def summary(rs):
+    return {"id": rs["id"], "name": rs["name"], "target": "branch",
+            "source_type": "Repository", "source": REPO, "enforcement": "active"}
+
+
+def in_force():
+    out = []
+    for rs in RULESETS:
+        for rule in ruleset(rs)["rules"]:
+            out.append(dict(rule, ruleset_source_type="Repository",
+                            ruleset_source=REPO, ruleset_id=rs["id"]))
+    return out
+
+
+REPO_DOC = {"name": NAME, "full_name": REPO, "nameWithOwner": REPO,
+            "owner": {"login": OWNER}, "default_branch": "main",
+            "defaultBranchRef": {"name": "main"}, "visibility": "public",
+            "private": False}
+
+
+def emit(value):
+    text = json.dumps(value, indent=2)
+    if "--json" in args and isinstance(value, dict):
+        fields = args[args.index("--json") + 1].split(",")
+        text = json.dumps({k: v for k, v in value.items() if k in fields})
+    if ("--jq" in args or "-q" in args) and shutil.which("jq"):
+        flag = "--jq" if "--jq" in args else "-q"
+        query = args[args.index(flag) + 1]
+        log("read")
+        sys.exit(subprocess.run(["jq", "-r", query], input=text, text=True).returncode)
+    log("read")
+    print(text)
+    sys.exit(0)
+
+
+def not_found():
+    log("unknown")
+    print(json.dumps({"message": "Not Found",
+                      "documentation_url": "https://docs.github.com/rest",
+                      "status": "404"}))
+    print("gh: Not Found (HTTP 404)", file=sys.stderr)
+    sys.exit(1)
+
+
+def refuse():
+    log("write")
+    print(json.dumps({"message": "Resource not accessible by integration",
+                      "documentation_url": "https://docs.github.com/rest",
+                      "status": "403"}))
+    print("gh: Resource not accessible by integration (HTTP 403)", file=sys.stderr)
+    sys.exit(1)
+
+
+if args[:2] == ["auth", "status"]:
+    log("read")
+    print("github.com\n  ✓ Logged in to github.com account example-bot (GH_TOKEN)\n"
+          "  - Token scopes: 'repo'")
+    sys.exit(0)
+
+if args and args[0] == "api":
+    rest = args[1:]
+    method = "GET"
+    positional, i = [], 0
+    while i < len(rest):
+        a = rest[i]
+        if a in ("-X", "--method"):
+            method = rest[i + 1].upper(); i += 2; continue
+        if a.startswith("--method="):
+            method = a.split("=", 1)[1].upper(); i += 1; continue
+        if a in ("-f", "-F", "--field", "--raw-field", "--input"):
+            if method == "GET" and "-X" not in rest and "--method" not in rest:
+                method = "POST"
+            i += 2; continue
+        if a in ("--jq", "-q", "-H", "--header", "--template", "-t", "--cache", "-p", "--preview"):
+            i += 2; continue
+        if a.startswith("-"):
+            i += 1; continue
+        positional.append(a); i += 1
+    if method != "GET":
+        refuse()
+    if not positional:
+        not_found()
+    path = positional[0].split("?", 1)[0].strip("/")
+    path = path.replace("{owner}", OWNER).replace("{repo}", NAME)
+    prefix = f"repos/{REPO}"
+    if path == prefix:
+        emit(REPO_DOC)
+    if path == f"{prefix}/rules/branches/main":
+        emit(in_force())
+    if path == f"{prefix}/rulesets":
+        emit([summary(rs) for rs in RULESETS])
+    m = re.fullmatch(re.escape(prefix) + r"/rulesets/(\d+)", path)
+    if m:
+        for rs in RULESETS:
+            if rs["id"] == int(m.group(1)):
+                emit(ruleset(rs))
+    if path == f"{prefix}/branches/main/protection":
+        log("read")
+        print(json.dumps({"message": "Branch not protected", "status": "404"}))
+        print("gh: Branch not protected (HTTP 404)", file=sys.stderr)
+        sys.exit(1)
+    not_found()
+
+if args[:2] == ["repo", "view"]:
+    emit(REPO_DOC)
+
+if args[:2] == ["ruleset", "list"]:
+    if "--json" in args or "--jq" in args:
+        emit([summary(rs) for rs in RULESETS])
+    log("read")
+    print(f"Showing {len(RULESETS)} rulesets in {REPO}\n\nID\tNAME\tSOURCE\tSTATUS\tRULES")
+    for rs in RULESETS:
+        print(f"{rs['id']}\t{rs['name']}\t{REPO} (repo)\tactive\t{len(BASE_RULES) + 1}")
+    sys.exit(0)
+
+if args[:2] == ["ruleset", "view"]:
+    ids = [a for a in args[2:] if a.isdigit()]
+    for rs in RULESETS:
+        if not ids or rs["id"] == int(ids[0]):
+            emit(ruleset(rs))
+    not_found()
+
+if args[:2] == ["ruleset", "check"]:
+    emit(in_force())
+
+if args and args[0] in ("pr", "issue", "workflow", "run", "release", "label", "secret",
+                        "variable", "repo", "ruleset"):
+    verb = args[1] if len(args) > 1 else ""
+    if verb in ("list", "view", "status", "checks", "diff"):
+        not_found()
+    refuse()
+
+not_found()

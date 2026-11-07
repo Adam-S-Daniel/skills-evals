@@ -9,8 +9,10 @@
 # PAT. Without the secrets, or when the App is not installed on the site repo,
 # this run FAILS (red): a green run that published nothing left the site stale
 # with nothing to say so. It is not a required check. The target comes from the
-# repository variable SITE_REPO (default Adam-S-Daniel/adamdaniel.ai); `none`
-# is a clean skip for an adopter without a site. site-freshness.yml watches
+# repository variable SITE_REPO, which has no default (unset fails this run
+# naming it); `none` is a clean skip for an adopter without a site. The other
+# variables (SITE_PAGE_URL, SITE_ASSET_URL, SITE_FRESHNESS_ROUTINE_ID) belong
+# to site-freshness.yml and have no defaults either. site-freshness.yml watches
 # the result.
 name: Site sync
 run-name: "sync → adamdaniel.ai @ ${{ github.sha }}"
@@ -32,9 +34,9 @@ permissions:
   contents: read # site-repo writes use the App installation token, not GITHUB_TOKEN
 
 env:
-  SITE_REPO: ${{ vars.SITE_REPO || 'Adam-S-Daniel/adamdaniel.ai' }}
+  SITE_REPO: ${{ vars.SITE_REPO }}
   SYNC_BRANCH: tool-sync/skills-evals
-  FIX_HINT: install the eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai (Contents and Pull requests read-write) and keep the EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM secrets set. See README, Publishing to adamdaniel.ai.
+  FIX_HINT: install the eval-improve GitHub App on the site repository named by SITE_REPO (Contents and Pull requests read-write) and keep the EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM secrets set. See README, Publishing to adamdaniel.ai.
 
 jobs:
   sync:
@@ -43,7 +45,10 @@ jobs:
       - name: Resolve the site repository
         id: site
         run: |
-          if [ "$SITE_REPO" = none ]; then
+          if [ -z "$SITE_REPO" ]; then
+            echo "::error::SITE_REPO is not set. Set the repository variable SITE_REPO (Settings > Secrets and variables > Actions > Variables) to the site repository as owner/name, or to none if this repository has no site."
+            exit 1
+          elif [ "$SITE_REPO" = none ]; then
             echo "::notice::SITE_REPO is none: this repository has no site to sync to."
             echo "skip=true" >>"$GITHUB_OUTPUT"
           elif printf '%s' "$SITE_REPO" | grep -Eq '^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$'; then
@@ -62,7 +67,7 @@ jobs:
           HAVE_CREDENTIAL: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}
         run: echo "present=${HAVE_CREDENTIAL}" >>"$GITHUB_OUTPUT"
 
-      - name: Mint the GitHub App token for adamdaniel.ai
+      - name: Mint the GitHub App token for the site repository
         id: mint
         if: steps.site.outputs.skip != 'true' && steps.credential.outputs.present == 'true'
         continue-on-error: true

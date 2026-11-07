@@ -4,9 +4,9 @@ The skills-evals eval runner routine (`trig_014cqgegCtJUqXYjAKmkr4J5`, ADR 0010)
 
 Claude cannot edit a routine's prompt. The stub below is the one piece that stays in the routine's settings; Adam pastes everything inside the fence, replacing the whole prompt, only when the stub itself changes. The other things that live in the routine's settings, not in any file, are its list of cloned repositories, its environment, its model and its trigger. A new repository the instructions need still has to be added to the routine by hand.
 
-`test/issues/test_issue_routine_instructions.py` holds the stub to the instructions file's path and keeps it short. `test/issues/test_issue_fire_deadlines.py` reads the instructions file's "Limits:" sentence and holds `scripts/routine_deadlines.py` to it, so change a limit in both together.
+`test/issues/test_issue_routine_instructions.py` holds the stub to the instructions file's path and keeps it short. The instructions file is itself kept short: an eval fire's steps are `scripts/routine_eval.py`, which the file tells the routine to run, and each other mode's section is a file under [`modes/`](modes/), which the file tells the routine to read from the same commit in that mode only. `test/issues/test_issue_fire_deadlines.py` reads the instructions file's "Limits:" sentence and holds `scripts/routine_deadlines.py` to it, so change a limit in both together.
 
-The instructions are read only from `origin/main`, which is PR-only. The lanes that auto-merge into this repository are each limited to fixture and data paths under `evals/` or, for Dependabot, to dependency manifests, so none of them can change the instructions file.
+The instructions are read only from `origin/main`, which is PR-only. The lanes that auto-merge into this repository are each limited to fixture and data paths under `evals/` or, for Dependabot, to dependency manifests, so none of them can change the instructions file, its mode files or `scripts/routine_eval.py`.
 
 ```text
 You are the skills-evals EVAL RUNNER routine. Your complete instructions are a file in the skills-evals repository, not this prompt.

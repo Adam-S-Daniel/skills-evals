@@ -94,6 +94,28 @@ def focus_of(**over):
     return [f["section"] for f in plan_week.guidance_focus(ctx(**over))[0]]
 
 
+#: SHARES outside the 2026-11-09 week (plan_week restores it after the reset).
+STANDING_SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
+
+
+class FinishWeekTests(unittest.TestCase):
+    """The settings for the week ending 2026-11-09 17:00 UTC (Adam,
+    2026-11-07): guidance first, every section, no guidance-improve, and
+    unknown-cost cells reserved cheaply. Restore after the reset."""
+
+    def test_the_week_settings(self):
+        self.assertEqual(plan_week.SHARES[0][0], "focus")
+        self.assertEqual(sorted(plan_week.SHARES), sorted(STANDING_SHARES))
+        self.assertGreaterEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 31)
+        self.assertTrue(plan_week.GUIDANCE_IMPROVE_HELD)
+        ctx = {"reservation": 1.0, "points_per_usd": 0.0005, "overrun": 0.0005}
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 0.1)
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": 100.0}, ctx), 0.05)
+
+
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ScoreTests(unittest.TestCase):
 
     def score(self, cells, **over):
@@ -272,6 +294,10 @@ class CeilingDoesNotBlockTests(unittest.TestCase):
         self.assertFalse(plan_week._blocking(cells[1]))
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
+@mock.patch.object(plan_week, "SHARES", STANDING_SHARES)
 class BandTests(unittest.TestCase):
 
     def test_focused_sections_go_to_focus_the_rest_to_guidance_rest(self):
@@ -390,6 +416,9 @@ class EvalCellsTests(unittest.TestCase):
         self.assertNotIn("with_counted", skill)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class GatherTests(unittest.TestCase):
     """The plan command passes the guidance policy and the open removal pull
     requests to the focus."""
@@ -434,6 +463,9 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(len(plan["guidance_focus"]), plan_week.GUIDANCE_FOCUS_SECTIONS)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ExplorerQueueTests(unittest.TestCase):
 
     def test_a_focused_section_gets_a_queue_place_before_the_rest(self):

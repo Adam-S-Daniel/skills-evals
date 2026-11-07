@@ -20,8 +20,8 @@ September pause, and is not updated any more.
   the weekly allowance, at most 3% per run, and nothing fires once the
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
-  A successful fire with no results holds a full reservation for 2
-  hours, then only the overrun
+  A successful fire with no results holds a full reservation for 90
+  minutes, then only the overrun
   ([#412](https://github.com/Adam-S-Daniel/skills-evals/pull/412)).
 - **Roster:** `claude-sonnet-5-5` and `claude-opus-5-5`, judged by
   `claude-fable-5-1`. `roster-refresh.yml` refreshes it weekly so it follows

@@ -1,0 +1,12 @@
+{
+  "name": "storefront",
+  "version": "1.8.0",
+  "private": true,
+  "scripts": {
+    "build": "acme build --minify",
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "@acme/cli": "3.4.2"
+  }
+}
