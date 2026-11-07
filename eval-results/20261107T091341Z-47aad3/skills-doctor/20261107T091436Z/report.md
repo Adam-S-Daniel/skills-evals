@@ -1,0 +1,38 @@
+# Eval report: skills-doctor
+
+- Timestamp: 20261107T091436Z
+- Trials per arm: 3
+- Run: billing subscription, runner routine, location cloud, id 20261107T091341Z-47aad3; started 2026-11-07T09:14:36Z, ended 2026-11-07T09:16:26Z
+- Account meter (account-wide, so anything else the account ran is in it; read as each agent, judge or guard call starts, so the 1 call(s) from the last reading on are not in it): seven_day 0.36 to 0.36, from 6 snapshots
+- Estimated cost (an estimate from the CLI's own per-call dollar figures, not a meter reading): $0.38 over 6 call(s); agent $0.27, judge $0.11, guard $0.00; last agent call $0.09
+
+## Fixture: personal-copy-outranks-repo (n=3)
+
+- Prompt: The capture in this directory is from a cloud session where the repo's release-notes skill keeps ignoring a change that merged last week. Work out which copy of release-notes that session actually reads and where that copy came from, and write your findings to FINDINGS.md at the top of this directory. Include a line starting `Winning copy:` with the path, relative to this directory, of the SKILL.md the session reads, and a line starting `Source:` saying how that copy got where it is. Change nothing else.
+- Harness: Claude Code `2.1.319 (Claude Code)`; models used: without_skill=claude-sonnet-5-5
+
+| Arm | n | Errors | Objective (mean) | Judge overall (mean, min to max) | Cost USD (mean / sum) |
+| --- | --- | --- | --- | --- | --- |
+| without_skill | 3 | 0 | 5.7/6 | 7.9 (7.7 to 8.3, 3 judged) | 0.0891 / 0.2674 |
+
+Efficiency per trial (a trial that did not report a metric is left out and the cell says how many did):
+
+| Metric (mean / median) | without_skill |
+| --- | --- |
+| cost_usd | 0.0891 / 0.0857 |
+| num_turns | 5.7 / 5 |
+| duration_ms | 24894.3 / 23649 |
+| input_tokens | 10.7 / 10 |
+| output_tokens | 1934 / 1901 |
+| cache_creation_input_tokens | 12592.7 / 12449 |
+| cache_read_input_tokens | 194169.3 / 181734 |
+| tool_errors | 0 / 0 |
+
+| Check (passed / scored) | without_skill |
+| --- | --- |
+| findings-written | 3/3 |
+| the-personal-copy-is-named-as-the-winner | 3/3 |
+| the-winner-is-attributed-to-a-hand-copy | 2/3 |
+| the-missing-section-is-named | 3/3 |
+| nothing-in-the-capture-was-repaired | 3/3 |
+| no-skill-was-added-to-the-personal-store | 3/3 |
