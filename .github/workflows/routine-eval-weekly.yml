@@ -489,10 +489,18 @@ jobs:
             eval)
               # A bare baseline is one arm at three trials; a cell's pair
               # (both arms, or a guidance fixture's in-situ pair alone) is
-              # at one. MODEL is one id or a pair fire's "m1,m2", passed as
+              # at one. A skill fixture's `both` is at two until the
+              # 2026-11-09 17:00 UTC reset, then one: the fire limit below
+              # caps fires, not trials (Adam, 2026-11-07: use the week's
+              # remaining allowance). The harness refuses more than one
+              # trial for a guidance fixture. MODEL is one id or a pair fire's "m1,m2", passed as
               # it is: the fire workflow validates and splits it.
               case "${ARMS:-}" in
-                both|in-situ) trials=1 ;;
+                both|in-situ)
+                  case "$FIXTURE" in
+                    evals/guidance/*) trials=1 ;;
+                    *) trials=2 ;;
+                  esac ;;
                 bare) trials=3 ;;
                 *)
                   echo "::error::Routine eval dispatch failed"
