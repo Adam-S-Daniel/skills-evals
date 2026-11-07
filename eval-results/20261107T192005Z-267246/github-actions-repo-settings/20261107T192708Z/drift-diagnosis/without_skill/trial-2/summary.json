@@ -1,0 +1,417 @@
+{
+  "skill": "github-actions-repo-settings",
+  "arm": "without_skill",
+  "timestamp": "20261107T192708Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0979189,
+    "num_turns": 6,
+    "duration_ms": 27853,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 14878,
+      "cache_read_input_tokens": 207829,
+      "output_tokens": 1760,
+      "output_tokens_details": {
+        "thinking_tokens": 281
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 14878,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 1100,
+          "cache_read_input_tokens": 38718,
+          "cache_creation_input_tokens": 1205,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 1205
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "alpha-sha-drift",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*actions\\.sha_pinning_required[ \\t]*\\|[ \\t]*false[ \\t]*\\|[ \\t]*true[ \\t]*\\|[ \\t]*(?:(?:\\*\\*|`)[ \\t]*|[-*+][ \\t]+)*(?i:(?:run[ \\t]+\\S*repo_settings\\.py[ \\t]+apply[ \\t]+to[ \\t]+|please[ \\t]+|should[ \\t]+|must[ \\t]+)?(?:enable|require|set|turn[ \\t]+on)\\b)[ \\t]+(?i:(?:(?:(?:full[- ]length|commit)[ \\t]+)?SHA(?:[- ]pinning|[ \\t]+pinning)|sha_pinning_required[ \\t]*(?:=|to)[ \\t]*true))[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/; transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*overall[ \\t]*\\|[ \\t]*(?i:drift|mismatch|one[ \\t]+declared[ \\t]+setting[ \\t]+drifts;[ \\t]+one[ \\t]+extra[ \\t]+ruleset)[ \\t]*\\|[ \\t]*[^|\\n]*[ \\t]*\\|[ \\t]*[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-unmanaged-ruleset-facts",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*(?:ruleset[ \\t]+)?(?:`manual-main`|manual-main)[ \\t]*(?:\\((?i:(?:id|ruleset))[ \\t]*:?[ \\t]*7302\\)|#7302)[ \\t]*\\|[ \\t]*bypass_actors[ \\t]*(?:=|:)[ \\t]*\\[\\][ \\t]*\\|[ \\t]*(?i:unmanaged|undeclared|not[ \\t]+declared(?:[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config))?|not[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config)|absent[ \\t]+from[ \\t]+(?:the[ \\t]+)?(?:declared[ \\t]+)?(?:baseline|config)|not[ \\t]+managed[ \\t]+by[ \\t]+(?:the[ \\t]+)?engine)[ \\t]*\\|[ \\t]*[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-engine-does-not-delete",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-alpha[ \\t]*\\|[ \\t]*(?:ruleset[ \\t]+)?(?:`manual-main`|manual-main)[ \\t]*(?:\\((?i:(?:id|ruleset))[ \\t]*:?[ \\t]*[0-9]+\\)|#[0-9]+)[ \\t]*\\|[ \\t]*[^|\\n]*[ \\t]*\\|[ \\t]*(?i:unmanaged|undeclared|not[ \\t]+declared(?:[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config))?|not[ \\t]+in[ \\t]+(?:the[ \\t]+)?(?:baseline|config)|absent[ \\t]+from[ \\t]+(?:the[ \\t]+)?(?:declared[ \\t]+)?(?:baseline|config)|not[ \\t]+managed[ \\t]+by[ \\t]+(?:the[ \\t]+)?engine)[ \\t]*\\|[ \\t]*[^|\\n]*(?i:(?:the[ \\t]+)?(?:engine|repo_settings\\.py)(?:[ \\t]+apply)?[ \\t]+(?:will[ \\t]+not|does[ \\t]+not|cannot|won\\x27t|won\u2019t)[ \\t]+(?:automatically[ \\t]+)?delete|(?:leave|keep)[ \\t]+(?:it|this[ \\t]+ruleset)[ \\t]+in[ \\t]+place[ \\t]+because[ \\t]+(?:it[ \\t]+is[ \\t]+)?unmanaged|apply[ \\t]+(?:never[ \\t]+touches[ \\t]+other[ \\t]+rulesets|leaves[ \\t]+it[ \\t]+untouched))[^|\\n]*(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "beta-overall-match",
+      "passed": false,
+      "detail": "transcript lacks /^[ \\t]*(?:>[ \\t]*)*(?:[-*+][ \\t]*)?(?:\\|[ \\t]*)?example-org/service-beta[ \\t]*\\|[ \\t]*overall[ \\t]*\\|[ \\t]*(?i:match|(?:all[ \\t]+)?(?:declared[ \\t]+)?settings[ \\t]+match|matches[ \\t]+declared[ \\t]+settings|no[ \\t]+drift)[ \\t]*\\|[ \\t]*(?i:declared[ \\t]+baseline|same[ \\t]+as[ \\t]+declared|match)[ \\t]*\\|[ \\t]*(?i:no[ \\t]+(?:change|changes|action)[ \\t]+(?:needed|required)|leave[ \\t]+(?:as[ \\t]+is|unchanged))(?:[ \\t]*\\|)?[ \\t]*$/"
+    },
+    {
+      "id": "alpha-live-settings-read",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "beta-live-settings-read",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "no-write-attempted",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "config-unchanged",
+      "passed": true,
+      "detail": "unchanged (repo-settings.yml)"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gh/replay/api/repos/example-org/service-alpha.json, .gh/replay/api/repos/example-org/service-alpha/actions/permissions.json, .gh/replay/api/repos/example-org/service-alpha/actions/permissions/fork-pr-contributor-approval.json, .gh/replay/api/repos/example-org/service-alpha/rulesets.json, .gh/replay/api/repos/example-org/service-alpha/rulesets/7201.json, .gh/replay/api/repos/example-org/service-alpha/rulesets/7302.json, .gh/replay/api/repos/example-org/service-beta.json, .gh/replay/api/repos/example-org/service-beta/actions/permissions.json, .gh/replay/api/repos/example-org/service-beta/actions/permissions/fork-pr-contributor-approval.json, .gh/replay/api/repos/example-org/service-beta/rulesets.json, .gh/replay/api/repos/example-org/service-beta/rulesets/7202.json, README.md, bin/gh)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "reasoning",
+        "score": 8,
+        "rationale": "The answer correctly ties the alpha drift to the two declared-versus-observed differences and makes sound causal points: unpinned `uses:` refs will break once SHA pinning is enabled, and the undeclared ruleset 7302 stacks on 7201 without an admin bypass, so it cancels the declared admin bypass; each recommendation follows from that evidence and is routed through repo-settings rather than hand edits."
+      },
+      {
+        "name": "communication",
+        "score": 8,
+        "rationale": "The table is unambiguous and actionable, with clear observed and desired values, defined terms, and per-row next steps that include the prerequisite check before enabling pinning and the ask-owner step before removing 7302, though it never states which of the two alpha fixes to do first."
+      }
+    ],
+    "overall": 8.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 12,
+      "output_tokens": 1760,
+      "cache_read_input_tokens": 207829,
+      "cache_creation_input_tokens": 14878,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "drift-diagnosis",
+  "trial": 2,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "62c2015096f54cb44fdfaaef6bd117a791b971c08b4dc9f344e811465b7b215e",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/repo-settings",
+    "revision": "56c9dac9d044a13aa376664eb5f95aec6fc73dd5",
+    "digest": "f76f7fe7a4a510f4732c94634f3a46c74c9a7ba0042ff9daed742a205d2a8433",
+    "lock_digest": "e7c0f476b067e7c51c7f350ddc59a4b80bd7daeaf98b9bb39d160f3b8a1e125f",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "5ca459fc6aa270f204cab3d67603fc0e5699b3d7",
+      "digest": "c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+      "bytes": 25512,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25512,
+      "skill_catalog_bytes": 7447,
+      "skill_payload_bytes": 688780
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "github-actions-repo-settings",
+    "action": "removed",
+    "deployed_digest": "b8d280f4811efcb5a95536272263a635299f8665e86ca9295eb94f7a9b5e130a",
+    "tested_digest": "b8d280f4811efcb5a95536272263a635299f8665e86ca9295eb94f7a9b5e130a",
+    "bytes": 16944,
+    "subject_source": "main",
+    "subject_revision": "eccda739064bdf92f1b0d5e3018a911d54b0ae78"
+  },
+  "arm_context": {
+    "skills": 10,
+    "skills_digest": "0a8aade3a5620d3056e69f9b1a8abb2969b8e8dbe9d6e8f2c3b3e2b0f4edc845",
+    "others_digest": "0a8aade3a5620d3056e69f9b1a8abb2969b8e8dbe9d6e8f2c3b3e2b0f4edc845",
+    "guidance_bytes": 25512,
+    "guidance_digest": "c635c131d537ec676d96f7d814d2dd8b9fcbdd00bc2675f564256f4988abdc46",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261107T192005Z-267246",
+    "session_id": "cse_01SphsQAnUPNHzEjPZyrnm3N",
+    "harness_commit": "a19d5387e3f1b50139680908dce0eb9fde43c165",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-07T19:27:08Z",
+    "ended_at": "2026-11-07T19:30:49Z",
+    "meter": {
+      "snapshot_count": 12,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-07T19:27:11.991Z",
+      "to_at": "2026-11-07T19:30:48.672Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.64,
+          "to": 0.64,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQAnUPNHzEjPZyrnm3N",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.8654734,
+      "agent_usd": 0.6586374,
+      "judge_usd": 0.206836,
+      "guard_usd": 0,
+      "metered_usd": 0.8302014,
+      "last_agent_call_usd": 0.09312649999999999,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-07T19:29:04Z",
+      "ended_at": "2026-11-07T19:30:39Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-07T19:29:04Z",
+          "ended_at": "2026-11-07T19:29:33Z",
+          "duration_ms": 28980,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-07T19:30:32Z",
+          "ended_at": "2026-11-07T19:30:39Z",
+          "duration_ms": 7397,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-07T19:29:08.044Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.64,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-07T19:30:39.206Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.64,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 28980,
+        "num_turns": 6,
+        "cost_usd": 0.0979189,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 12,
+            "output_tokens": 1760,
+            "cache_read_input_tokens": 207829,
+            "cache_creation_input_tokens": 14878,
+            "cost_usd": 0.0979189
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 14878
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 7397,
+        "num_turns": 1,
+        "cost_usd": 0.036204,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 441,
+            "cache_read_input_tokens": 1520,
+            "cache_creation_input_tokens": 3384,
+            "cost_usd": 0.036204
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3384
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}

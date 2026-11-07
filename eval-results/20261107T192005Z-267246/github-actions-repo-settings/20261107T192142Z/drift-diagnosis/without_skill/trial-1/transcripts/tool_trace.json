@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016XhyMFWiSdwYrviujddt1G",
+      "name": "Bash",
+      "input": "git status --short | head; ls -la; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016XhyMFWiSdwYrviujddt1G",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ntotal 32\ndrwxr-xr-x 6 root root 4096 Nov  7 19:23 .\ndrwx------ 6 root root 4096 Nov  7 19:23 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:22 .bash_profile\ncrw-rw-rw- 1 root ro...",
+      "output_chars": 2032,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GKZHne4NXN3bAwJcUxdDNa",
+      "name": "Bash",
+      "input": "cat README.md repo-settings.yml; echo ---; cat bin/gh; ls -R .claude; for f in $(find .gh -type f | sort); do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 143,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GKZHne4NXN3bAwJcUxdDNa",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (58.1KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Repository settings\n\n`repo-settings.yml` declares the shared settings for two public service\nrepositories. Inspect their current settings before recommending any change.\ndefaults:\n  actions:\n    sha_pi...",
+      "output_chars": 2196,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QF5XqZfpt22unvQzdm5reK",
+      "name": "Bash",
+      "input": "ls -R .claude; for f in $(find .gh -type f | sort); do echo \"=== $f\"; python3 -c \"import json,sys;print(json.dumps(json.load(open(sys.argv[1])),indent=1)[:3000])\" $f; done",
+      "input_chars": 171,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QF5XqZfpt22unvQzdm5reK",
+      "is_error": false,
+      "output": ".claude:\n=== .gh/replay/api/repos/example-org/service-alpha.json\n{\n \"default_branch\": \"main\",\n \"full_name\": \"example-org/service-alpha\",\n \"private\": false\n}\n=== .gh/replay/api/repos/example-org/service-alpha/actions/permissions.json\n{\n \"allowed_actions\": \"all\",\n \"enabled\": true,\n \"sha_pinning_requir...",
+      "output_chars": 3740,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MQTKuN38YxDvH8sxh4oW2h",
+      "name": "Bash",
+      "input": "sed -n 1,80p bin/gh; grep -n \"GH_REPLAY_DIR\\|environ\" bin/gh | head -20",
+      "input_chars": 71,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MQTKuN38YxDvH8sxh4oW2h",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 5253,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SKRL2XWTj1PFAbfas5gNh1",
+      "name": "Bash",
+      "input": "export GH_REPLAY_DIR=$PWD/.gh/replay PATH=$PWD/bin:$PATH; for r in service-alpha service-beta; do for p in \"\" <path> <path> /rulesets; do echo \"== $r$p\"; gh api repos/example-org/$r$p; echo \" [exit $?...",
+      "input_chars": 528,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SKRL2XWTj1PFAbfas5gNh1",
+      "is_error": false,
+      "output": "== service-alpha\n{\n  \"default_branch\": \"main\",\n  \"full_name\": \"example-org/service-alpha\",\n  \"private\": false\n}\n [exit 0]\n== service-alpha/actions/permissions\n{\n  \"allowed_actions\": \"all\",\n  \"enabled\": true,\n  \"sha_pinning_required\": false\n}\n [exit 0]\n== service-alpha/actions/permissions/fork-pr-con...",
+      "output_chars": 1209,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
