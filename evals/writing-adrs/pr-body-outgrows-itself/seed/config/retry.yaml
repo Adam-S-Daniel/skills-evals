@@ -1,0 +1,5 @@
+# Retry policy for failed SMS sends.
+retry:
+  strategy: fixed
+  interval_seconds: 30
+  max_attempts: 10
