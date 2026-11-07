@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019Bzw3zHGRF5PTNFNFDWCkD",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls .github/workflows && cat AGENTS.md 2><path> | head -80",
+      "input_chars": 88,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019Bzw3zHGRF5PTNFNFDWCkD",
+      "is_error": false,
+      "output": ".editorconfig\n.gh/replay/api/repos/example-org/example-service/rules/branches/main.json\n.gh/replay/api/repos/example-org/example-service/rulesets.json\n.gh/replay/api/repos/example-org/example-service/rulesets/4410273.json\n.gh/replay/auth-status.txt\n.gh/replay/repo-view.json\n.gh/replay/ruleset-list.j...",
+      "output_chars": 706,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FXBCEwroKZTGMP8BLnjywp",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat .github/rulesets/main.json package.json mkdocs.yml; cat README.md | head -40",
+      "input_chars": 142,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FXBCEwroKZTGMP8BLnjywp",
+      "is_error": false,
+      "output": "=== .github/workflows/docs-site.yml\nname: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n...",
+      "output_chars": 3526,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CCVsGwsGeMrcWEayXSc6uv",
+      "name": "Bash",
+      "input": "cat src/*.js test/*.js; cat docs/*.md; cat scripts/sweep-stale.sh; git log --oneline | head",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CCVsGwsGeMrcWEayXSc6uv",
+      "is_error": false,
+      "output": "\"use strict\";\n\nconst http = require(\"node:http\");\nconst { greeting } = require(\"./util\");\n\nconst PORT = Number(process.env.PORT || 8080);\n\nconst server = http.createServer((req, res) => {\n  if (req.url === \"<path>\") {\n    res.writeHead(204);\n    res.end();\n    return;\n  }\n  res.writeHead(200, { \"con...",
+      "output_chars": 1694,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
