@@ -1,0 +1,9 @@
+{
+  "name": "widgets",
+  "private": true,
+  "scripts": {"test": "node --test"},
+  "dependencies": {
+    "example-lib": "^2.3.0",
+    "example-cli": "1.8.2"
+  }
+}
