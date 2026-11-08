@@ -1,13 +1,13 @@
 {
   "fixture_readiness": {
-    "context_declared": 61,
-    "context_missing": 70,
+    "context_declared": 73,
+    "context_missing": 68,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 131
+    "total": 141
   },
-  "generated_at": "2026-11-07T11:55:02Z",
+  "generated_at": "2026-11-08T12:10:06Z",
   "include_private_names": false,
   "problems": [],
   "registries": [
@@ -33,7 +33,7 @@
         },
         {
           "bundle": "adam-anything-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "writing-adrs",
@@ -41,7 +41,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "ci-job-performance",
@@ -73,7 +73,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "github-actions-repo-settings",
@@ -81,7 +81,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "red-ci-adamdaniel-ai",
@@ -97,7 +97,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "skills-doctor",
@@ -145,7 +145,7 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 5,
+          "fixtures": 8,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "tool-powershell",
@@ -240,7 +240,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "staleness is the failure mode, not procedure quality",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
           "registry": "cms-platform",
           "skill": "aws-bootstrap",
           "status": "skipped"
@@ -320,7 +320,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "staleness is the failure mode, not procedure quality",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
           "registry": "cms-platform",
           "skill": "preview-environments",
           "status": "skipped"
@@ -328,7 +328,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the skill is a no-op marker, so a with arm has nothing to score) and criterion 5 (a verdict would change nothing); internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
           "registry": "cms-platform",
           "skill": "test-canary",
           "status": "skipped"
