@@ -403,11 +403,21 @@ def check_env_block(env_spec, where: str) -> None:
 CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
                   "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}
 
+# Removed from every CLI child. CLAUDE_CODE_SUBAGENT_MODEL (set in the cloud
+# environments on 2026-11-08) gives a subagent spawned without a model that
+# model instead of its parent's, so an Opus arm's subagents would run on
+# another model than every earlier run's, and the runs pooled across that
+# date would measure two different setups.
+CLI_DROPPED_ENV = ("CLAUDE_CODE_SUBAGENT_MODEL",)
+
 
 def cli_child_env(env=None) -> dict:
     """A copy of `env` (default: this process's environment) with
-    `CLI_FORCED_ENV` applied last. The input mapping is never mutated."""
+    `CLI_DROPPED_ENV` removed and `CLI_FORCED_ENV` applied last. The input
+    mapping is never mutated."""
     out = dict(os.environ if env is None else env)
+    for name in CLI_DROPPED_ENV:
+        out.pop(name, None)
     out.update(CLI_FORCED_ENV)
     return out
 
