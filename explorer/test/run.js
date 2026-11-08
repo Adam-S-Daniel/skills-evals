@@ -20,7 +20,7 @@ import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
-import { conversionTotals, conversionView, PLANNER_CHANGE } from '../src/private/conversion.js';
+import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
@@ -292,7 +292,8 @@ await test('no source file but config.js names the owner/repo', () => {
 
 // --- the public bundle -------------------------------------------------------------
 const publicJs = await bundle('public.js');
-const privateJs = await bundle('private.js');
+// Unminified, so the module path comments the leak checks look for survive.
+const privateJs = await bundle('private.js', { minifyWhitespace: false });
 await test('the leak check sees the dashboard adapter in the private bundle', () => {
   // The negative control: the same check must flag what it exists to keep out.
   const leaks = privateLeaks(privateJs);
@@ -344,6 +345,13 @@ await test('tool/index.html is one self-contained file', () => {
 await test('dashboard/page/index.html is a fresh build of explorer/src', async () => {
   const fresh = await buildPrivatePage();
   ok(fresh === fs.readFileSync(PRIVATE_PAGE, 'utf8'), 'dashboard/page/index.html differs from a build: run `npm run build` in explorer/ and commit both');
+});
+await test('the private page fits an ArtifactData document once JSON-serialized', async () => {
+  // The console stores the page as the `text` field of files/index.html, a
+  // document capped at 262,144 bytes of UTF-8 after JSON.stringify.
+  const page = await buildPrivatePage();
+  const size = Buffer.byteLength(JSON.stringify({ text: page }), 'utf8');
+  ok(size < 262144, 'serialized private page is ' + size + ' bytes, over the 262,144 limit');
 });
 await test('dashboard/page/index.html is one self-contained Dashboard fragment', () => {
   const html = fs.readFileSync(PRIVATE_PAGE, 'utf8');
@@ -579,6 +587,22 @@ await test('the summary shows building into decisive with its lead, table, plann
   const a = findAll(node, (n) => n.tag === 'a' && n.attrs.href === PLANNER_CHANGE.url);
   eq(a.length, 1);
   ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-group'] === 'stranded').length === 2, 'stranded segments');
+});
+await test('building into decisive toggles between percent and run counts', () => {
+  const node = renderRoute(CDOC(), { name: 'summary' }, { ext: makeExt(fakeDash({})) });
+  const btns = findAll(node, (n) => n.tag === 'button' && n.attrs['data-mode']);
+  eq(btns.map((b) => b.attrs['data-mode'] + ':' + b.attrs['aria-pressed']).join(','), 'share:true,count:false');
+  const share = textOf(conversionBody(CDOC(), 'share'));
+  ok(share.includes('17 runs, 29% near a verdict, 59% partway'), share);
+  const count = textOf(conversionBody(CDOC(), 'count'));
+  ok(count.includes(', Nov 8 UTC): 17 runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
+  ok(count.includes('Before it: 54 runs: 30 near a verdict, 12 partway, 4 far, 8 never.'), count);
+  ok(count.includes('Runs by the day they ran, and where they stand now.') && !count.includes('fills from decided'), count);
+  // The busiest day (2026-11-05) has 30 runs, so the axis tops out there.
+  const top = findAll(conversionBody(CDOC(), 'count'), (n) => n.tag === 'text' && n.children[0] === '30');
+  eq(top.length, 1);
+  ok(findAll(conversionBody(CDOC(), 'count'), (n) => n.attrs && typeof n.attrs['data-tip'] === 'string' && n.attrs['data-tip'].includes('decided 10, building 20')).length === 1, 'count tooltip');
+  ok(findAll(conversionBody(CDOC(), 'share'), (n) => n.tag === 'text' && n.children[0] === '100%').length === 1, 'share axis');
 });
 await test('no building into decisive panel when no subject has run_utility', () => {
   ok(conversionView(doc({ skills: [{ name: 'a' }] })) === null, 'null view');

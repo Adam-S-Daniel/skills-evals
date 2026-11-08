@@ -5,7 +5,7 @@
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
 import { fmtCount } from '../core/format.js';
-import { h } from '../core/h.js';
+import { h, toDom } from '../core/h.js';
 import { legend } from '../core/charts.js';
 import { table } from '../views/bits.js';
 import { DATA_REPO } from '../config.js';
@@ -24,6 +24,8 @@ export const GROUPS = ['near', 'partway', 'far', 'never'];
 const DAY_MS = 86400000;
 const isDay = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 const blank = () => ({ runs: 0, cost: 0, unknown: 0 });
+const MODES = [{ key: 'share' }, { key: 'count' }];
+const DEFAULT_MODE = 'share';
 const SEGMENTS = ['decided', 'building', 'stranded', 'after'];
 const SEGMENT_CLASS = { decisive: 'decided', decisive_superseded: 'decided', building: 'building', stranded: 'stranded', after_decision: 'after' };
 const SEGMENT_COLOR = { decided: UTILITY_COLORS.decisive, building: UTILITY_COLORS.building, stranded: UTILITY_COLORS.stranded, after: UTILITY_COLORS.after_decision };
@@ -114,15 +116,17 @@ const pct = (p, t) => Math.round((p / t) * 100) + '%';
 
 /* 100%-stacked bars, one per run day, with a dashed line where the planner
    changed. */
-function shareChart(days) {
+function dayChart(days, mode) {
   if (!days.length) return null;
+  const count = mode === 'count';
+  const top = Math.max(1, ...days.map((d) => SEGMENTS.reduce((s, k) => s + d[k], 0)));
   const W = 480, H = 132, L = 36, R = 474, T = 10, B = 108;
   const step = (R - L) / days.length;
   const bw = Math.max(2, Math.min(18, step - 3));
   const lab = { 'font-size': 11, fill: 'var(--muted)' };
   const kids = [
     h('line', { x1: L, x2: R, y1: B, y2: B, stroke: 'var(--axis)', 'stroke-width': 1 }),
-    h('text', Object.assign({ x: L - 4, y: T + 4, 'text-anchor': 'end' }, lab), '100%'),
+    h('text', Object.assign({ x: L - 4, y: T + 4, 'text-anchor': 'end' }, lab), count ? fmtCount(top) : '100%'),
     h('text', Object.assign({ x: L - 4, y: B, 'text-anchor': 'end' }, lab), '0')
   ];
   days.forEach((d, i) => {
@@ -132,14 +136,14 @@ function shareChart(days) {
       let y = B;
       for (const k of SEGMENTS) {
         if (!d[k]) continue;
-        const hgt = (d[k] / total) * (B - T);
+        const hgt = (d[k] / (count ? top : total)) * (B - T);
         kids.push(h('rect', { x: (cx - bw / 2).toFixed(1), y: (y - hgt).toFixed(1), width: bw, height: Math.max(0.5, hgt - 1).toFixed(1),
           fill: SEGMENT_COLOR[k], 'data-group': k, 'pointer-events': 'none' }));
         y -= hgt;
       }
     }
     const tip = total ? P.conversionTip(d.date, fmtCount(total), SEGMENTS.filter((k) => d[k])
-      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + pct(d[k], total)).join(', ')) : d.date + ': 0 runs';
+      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : d.date + ': 0 runs';
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0, 'data-tip': tip }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
       kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), d.date.slice(5)));
@@ -151,21 +155,19 @@ function shareChart(days) {
     kids.push(h('line', { x1: x, x2: x, y1: T, y2: B, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'pointer-events': 'none' }));
     kids.push(h('text', Object.assign({ x: (Number(x) + 3).toFixed(1), y: T + 8, 'text-anchor': 'start' }, lab), '#' + PLANNER_CHANGE.pr));
   }
-  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': P.conversionChartAria(days.length) }, kids);
+  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': (count ? P.conversionChartAriaCount : P.conversionChartAria)(days.length) }, kids);
 }
 
-function plannerShares(side) {
-  return GROUPS.filter((g) => g !== 'never' || side.never).map((g) => P.conversionPlannerShare(pct(side[g], side.total), P.conversionPlannerWords[g])).join(', ');
+function plannerShares(side, mode) {
+  return GROUPS.filter((g) => g !== 'never' || side.never).map((g) => P.conversionPlannerShare(mode === 'count' ? fmtCount(side[g]) : pct(side[g], side.total), P.conversionPlannerWords[g])).join(', ');
 }
 
 /* The panel body, or null when no subject carries a ledger. */
-export function conversionView(doc) {
+/* The parts that change with the mode: the chart, its caption, the cells
+   decided per day, the table and the planner line. */
+export function conversionBody(doc, mode) {
   const t = conversionTotals(doc);
-  if (!t.decided.runs && !t.building.runs && !t.stranded.runs && !t.after.runs) return null;
-  const lead = t.conversion === null
-    ? P.conversionLeadNone(fmtCount(t.building.runs), money(t.building))
-    : P.conversionLead(fmtCount(t.resolved.runs), fmtCount(t.decided.runs), Math.round(t.conversion * 100) + '%', fmtCount(t.stranded.runs),
-      t.strandedPerDecided === null ? '-' : t.strandedPerDecided.toFixed(1), fmtCount(t.building.runs), money(t.building));
+  const count = mode === 'count';
   const cols = [
     { label: P.conversionColDistance, cell: (r) => r.label },
     { label: P.conversionColSubjects, num: true, sort: (r) => r.v.subjects, cell: (r) => fmtCount(r.v.subjects) },
@@ -175,17 +177,39 @@ export function conversionView(doc) {
   const rows = GROUPS.map((g) => ({ label: P.conversionGroups[g], v: t.groups[g] })).concat([{ label: P.conversionTotal, v: t.groupsTotal }]);
   const p = t.planner;
   const plannerLink = h('a', { href: PLANNER_CHANGE.url, rel: 'noopener', target: '_blank' }, DATA_REPO.split('/')[1] + '#' + PLANNER_CHANGE.pr);
+  const since = count ? P.conversionPlannerSinceCount : P.conversionPlannerSince;
+  const before = count ? P.conversionPlannerBeforeCount : P.conversionPlannerBefore;
   const plannerLine = p.since.total
-    ? h('p', { class: 'meta' }, P.conversionPlannerLead, plannerLink, P.conversionPlannerSince(fmtCount(p.since.total), plannerShares(p.since)),
-      p.before.total ? P.conversionPlannerBefore(fmtCount(p.before.total), plannerShares(p.before)) : null)
+    ? h('p', { class: 'meta' }, P.conversionPlannerLead, plannerLink, since(fmtCount(p.since.total), plannerShares(p.since, mode)),
+      p.before.total ? before(fmtCount(p.before.total), plannerShares(p.before, mode)) : null)
     : h('p', { class: 'meta' }, P.conversionPlannerNone, plannerLink, P.conversionPlannerNoneEnd);
-  return h('div', { class: 'conversion' },
-    h('p', { class: 'meta' }, lead),
-    legend(SEGMENTS.map((k) => ({ label: P.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
-    shareChart(t.days),
-    h('p', { class: 'meta' }, P.conversionCaption),
+  return h('div', { class: 'conversion-body' },
+    dayChart(t.days, mode),
+    h('p', { class: 'meta' }, count ? P.conversionCaptionCount : P.conversionCaption),
     t.decisionsByDay.length ? h('p', { class: 'meta' }, P.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + ' ' + d.cells).join(', '))) : null,
     table(cols, rows),
     h('p', { class: 'meta' }, P.conversionNote),
     plannerLine);
+}
+
+/* The panel body, or null when no subject carries a ledger. The mode buttons
+   swap the body in place, like the period buttons on the usefulness panel. */
+export function conversionView(doc) {
+  const t = conversionTotals(doc);
+  if (!t.decided.runs && !t.building.runs && !t.stranded.runs && !t.after.runs) return null;
+  const lead = t.conversion === null
+    ? P.conversionLeadNone(fmtCount(t.building.runs), money(t.building))
+    : P.conversionLead(fmtCount(t.resolved.runs), fmtCount(t.decided.runs), Math.round(t.conversion * 100) + '%', fmtCount(t.stranded.runs),
+      t.strandedPerDecided === null ? '-' : t.strandedPerDecided.toFixed(1), fmtCount(t.building.runs), money(t.building));
+  const buttons = MODES.map((m) => h('button', { type: 'button', 'data-mode': m.key, 'aria-pressed': m.key === DEFAULT_MODE ? 'true' : 'false',
+    onclick: (e) => {
+      const root = e.currentTarget.closest('.conversion');
+      root.querySelectorAll('button[data-mode]').forEach((b) => b.setAttribute('aria-pressed', b.getAttribute('data-mode') === m.key ? 'true' : 'false'));
+      root.querySelector('.conversion-body').replaceWith(toDom(conversionBody(doc, m.key), e.currentTarget.ownerDocument));
+    } }, P.conversionModes[m.key]));
+  return h('div', { class: 'conversion' },
+    h('p', { class: 'meta' }, lead),
+    h('div', { class: 'seg', role: 'group', 'aria-label': P.conversionModeLabel }, buttons),
+    legend(SEGMENTS.map((k) => ({ label: P.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
+    conversionBody(doc, DEFAULT_MODE));
 }

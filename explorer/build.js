@@ -35,7 +35,8 @@ const artifactAdapter = {
 };
 
 /* The bundle of one entry, as a string. Exported for test/run.js. */
-export async function bundle(entry) {
+export async function bundle(entry, opts) {
+  const whitespace = opts && typeof opts.minifyWhitespace === 'boolean' ? opts.minifyWhitespace : entry === 'private.js';
   const res = await build({
     plugins: entry === 'artifact.js' ? [artifactAdapter] : [],
     entryPoints: [path.join(HERE, 'src', 'entries', entry)],
@@ -45,6 +46,10 @@ export async function bundle(entry) {
     platform: 'browser',
     target: 'es2020',
     charset: 'utf8',
+    // The console stores the private page as one ArtifactData document, which
+    // holds at most 262,144 bytes once JSON-serialized. Whitespace only: names
+    // and syntax stay readable, and the public bundles are unchanged.
+    minifyWhitespace: whitespace,
     legalComments: 'none',
     // The page was a strict-mode script before the split; keep it one.
     banner: { js: "'use strict';" },
