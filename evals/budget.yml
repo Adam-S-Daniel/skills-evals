@@ -69,6 +69,7 @@ points_per_usd: 0.0005
 # limit: scripts/allowance_guard.py starts no fire past it (Adam, "Unify the
 # limit"). 95 points for the allowance week ending 2026-11-09 17:00 UTC only
 # (Adam, 2026-11-02); 85 from 2026-11-07 17:51 UTC, when Adam asked to slow
-# evals so his other work keeps room before the reset. Restore to 0.80 after
-# that reset.
-stop_when_account_above: 0.85
+# evals so his other work keeps room before the reset; 90 from 2026-11-08
+# 19:21 UTC (Adam: "Increase this week's (already high) cap by 5 further
+# percentage points"). Restore to 0.80 after that reset.
+stop_when_account_above: 0.90
