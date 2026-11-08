@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qz5YPWRsx7dhsyWYwAPrpy",
+      "name": "Bash",
+      "input": "git status && git log --oneline -10 && ls -la && git remote -v",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qz5YPWRsx7dhsyWYwAPrpy",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n8a9cff7 ...",
+      "output_chars": 1540,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019hMynSVxn95sYRonLMn5wY",
+      "name": "Bash",
+      "input": "cat README.md; find .github .gh bin src test .claude -type f | head -50; git show --stat HEAD HEAD~1 | head -40",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019hMynSVxn95sYRonLMn5wY",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\n.github/workflows/ci.yml\n.gh/replay/auth-status.txt\n.gh/replay/run-view-77001.json\n.gh/replay/api/repos/exa...",
+      "output_chars": 2802,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013wvURCdhJ1F77wUqCAXFwf",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml src/sequence.py test/test_current.py; which gh; gh auth status; gh run list --repo example-org/example-service",
+      "input_chars": 139,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013wvURCdhJ1F77wUqCAXFwf",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1139,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FCA9mYZyXkVZTCiH9gYUiL",
+      "name": "Bash",
+      "input": "gh run view 77001 --repo example-org/example-service --log-failed; echo ---; gh api repos/example-org/example-service/actions/runs/77001/jobs; echo ---; gh api repos/example-org/example-service/check-...",
+      "input_chars": 403,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FCA9mYZyXkVZTCiH9gYUiL",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 3117,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BoNDFGCt8kJRmRWQSVbuHz",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo ---; python3 -m unittest discover -s test -v; echo \"exit=$?\"; echo ---; gh pr list --repo example-org/example-service --state all 2>&1; gh ap...",
+      "input_chars": 332,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BoNDFGCt8kJRmRWQSVbuHz",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent call last):\n  Fil...",
+      "output_chars": 1684,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HKR2q4diafNqt4PYevAL9i",
+      "name": "Bash",
+      "input": "git log --all --oneline -- 'test/*'; git ls-remote origin 2>&1 | head",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HKR2q4diafNqt4PYevAL9i",
+      "is_error": false,
+      "output": "f0be913 Import example service\nf0be9137d6ed1769cd15652ffba4bd517e856b3b\tHEAD\n093350486ff3efc5013d0416a70a4c6e1886778a\trefs/heads/fix/ci-test-discovery\nf0be9137d6ed1769cd15652ffba4bd517e856b3b\trefs/heads/main",
+      "output_chars": 207,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J7vVVgfPnrkcNZ2VR7TU5V",
+      "name": "Bash",
+      "input": "git --git-dir=.git/offline-origin.git log --oneline main..fix/ci-test-discovery && git --git-dir=.git/offline-origin.git show fix/ci-test-discovery",
+      "input_chars": 147,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J7vVVgfPnrkcNZ2VR7TU5V",
+      "is_error": false,
+      "output": "0933504 Use current test discovery\ncommit 093350486ff3efc5013d0416a70a4c6e1886778a\nAuthor: <redacted> <<email>>\nDate:   Thu Jan 1 00:00:00 2026 +0000\n\n    Use current test discovery\n\ndiff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex 6e07470..8d98749 100644\n--- a/.github/workflow...",
+      "output_chars": 589,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
