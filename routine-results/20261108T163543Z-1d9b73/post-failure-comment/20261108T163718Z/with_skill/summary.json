@@ -1,0 +1,474 @@
+{
+  "skill": "post-failure-comment",
+  "arm": "with_skill",
+  "timestamp": "20261108T163718Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.46054629999999996,
+    "num_turns": 8,
+    "duration_ms": 62330,
+    "usage": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 39061,
+      "cache_read_input_tokens": 241750,
+      "output_tokens": 4690,
+      "output_tokens_details": {
+        "thinking_tokens": 1768
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 39061
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 960,
+          "cache_read_input_tokens": 51351,
+          "cache_creation_input_tokens": 2196,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 2196,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "schedule-only-workflow-untouched",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/nightly-audit.yml)"
+    },
+    {
+      "id": "e2e-inline-block-removed",
+      "passed": true,
+      "detail": ".github/workflows/e2e-tests.yml matches"
+    },
+    {
+      "id": "e2e-post-step",
+      "passed": true,
+      "detail": "1 matching step(s): .github/workflows/e2e-tests.yml:e2e"
+    },
+    {
+      "id": "e2e-resolve-step",
+      "passed": true,
+      "detail": "1 matching step(s): .github/workflows/e2e-tests.yml:e2e"
+    },
+    {
+      "id": "visual-regression-report-job-shape",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=['always()', '!cancelled()'], job_needs_nonempty=True, if_contains=None, if_gates_on_outcome=None, with_present=None, with_equals=None, with_tag_ref=None, marker_not_html_comment=False, with_forbids_job_status=False, marker_pairs_with_mode=None) \u2014 found 0 of 4 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-post-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='failure', with_present=['log-file', 'marker', 'title'], with_equals={'mode': 'post'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='resolve') \u2014 found 0 of 4 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "visual-regression-resolve-step",
+      "passed": false,
+      "detail": "expected >= 1 step(s) matching (uses ending '/post-failure-comment', job=None, job_if_equals=None, job_needs_nonempty=True, if_contains='needs.', if_gates_on_outcome='success', with_present=['marker', 'title'], with_equals={'mode': 'resolve'}, with_tag_ref=None, marker_not_html_comment=True, with_forbids_job_status=True, marker_pairs_with_mode='post') \u2014 found 0 of 4 step(s) with a matching `uses:`"
+    },
+    {
+      "id": "post-failure-comment-reference-valid",
+      "passed": true,
+      "detail": "post-failure-comment resolved via the vendored local path or a tag-pinned remote ref, and any cms-platform checkout is tag-pinned"
+    },
+    {
+      "id": "markers-unique-per-workflow",
+      "passed": true,
+      "detail": "every 'marker' distinct across workflows (3 value(s) seen)"
+    },
+    {
+      "id": "no-event-or-input-interpolation-in-run",
+      "passed": true,
+      "detail": "no run: step interpolates github.event.* or inputs.*"
+    },
+    {
+      "id": "cms-platform-vendored-contract-unchanged",
+      "passed": true,
+      "detail": "unchanged (.cms-platform/.github/actions/post-failure-comment/action.yml)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "convention_fidelity",
+        "score": 6,
+        "rationale": "Gating is correctly caller-side with bare failure()/success(), a real log path, per-workflow (even per-job) markers, and neither forbidden pattern (job.status in with:, or gating inside the action) appears, but the multi-job visual-regression workflow was wired as in-job steps rather than a downstream job using needs.<job>.result as the convention prescribes for that shape."
+      },
+      {
+        "name": "gitleaks_explanation",
+        "score": 3,
+        "rationale": "The reply only mentions gitleaks in passing when noting the stub lacks it and calls the old step unscrubbed; it never explains that the composite scrubs every comment via its bundled gitleaks pass-through with no caller-side opt-out, nor that this is why no separate redaction step was added."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "nightly-audit.yml and the vendored .cms-platform/ action were untouched, only post/resolve modes were used, no new marker scheme or third mode was invented, and all edits (including the pipefail fix) stayed within the two Playwright workflows."
+      }
+    ],
+    "overall": 6.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 16,
+      "output_tokens": 4690,
+      "cache_read_input_tokens": 241750,
+      "cache_creation_input_tokens": 39061,
+      "canonical_model": "claude-opus-5-5"
+    },
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 2056,
+      "cache_read_input_tokens": 69153,
+      "cache_creation_input_tokens": 38216,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.27707698228627564,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "a107e7d3d6035db5741d1c7d8ab3870e373ed06f196d07a014ef40b1c72b7aad",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "with",
+  "context": {
+    "repository": "Adam-S-Daniel/adamdaniel.ai",
+    "revision": "2a994ee0219679ef85e908bbc1119f386dd33768",
+    "digest": "f95a12371888915a55bdbfcb93ac6066178d94728213e95825217af25e50f4a6",
+    "lock_digest": "6a57e6571be27aa87980cff6d9b99bc038164ae2dbc6b7db178e7d83b352f4da",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      },
+      {
+        "registry": "Adam-S-Daniel/cms-platform",
+        "revision": "fe2290a1c4e009c5dadc146dd86edafe0f0a27e2",
+        "digest": "730aa42530e23385e80dca4f7f1698b38e4fe0502f2eef9f53f669cfae7dd1f8",
+        "bundles": [
+          {
+            "name": "cms-platform",
+            "digest": "51c09e4f1832cf85b7ea37457fd0bd6752a6b40f25f20cbe5e47472120d03b7b"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "6a1ca565a57195c51a9d40cdf534a3f059ea1b89",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 14803,
+      "skill_payload_bytes": 875774
+    },
+    "fleet_hooks_digest": "db0c214831787f99084c1ad0e50a8be74fac798cf470eb57a441a006428c0ded"
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/cms-platform",
+    "bundle": "cms-platform",
+    "skill": "post-failure-comment",
+    "action": "removed",
+    "deployed_digest": "c4fd98edccd36946b9be3b7d2d0665d35a5291ba1a18ff110e3d0aa025d692d8",
+    "tested_digest": "c4fd98edccd36946b9be3b7d2d0665d35a5291ba1a18ff110e3d0aa025d692d8",
+    "bytes": 14188,
+    "subject_source": "main",
+    "subject_revision": "3e79df8390bf177eb21dbe3fd9df39ffdde55255"
+  },
+  "arm_context": {
+    "skills": 24,
+    "skills_digest": "b8767a7e4385e2a398d4866c436233e1c2a69e6a233c0e8e6cf75773ee592a07",
+    "others_digest": "b2d59e5d46637182c7547dd9f6e32e3a2f96f14723b8a6e4547a5fb8b5be35c4",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": true
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261108T163543Z-1d9b73",
+    "session_id": "cse_01SphsQDvmHp4MSMDooeNvRX",
+    "harness_commit": "a99787445fe708aca1141d1ef841aa4c69c7d1a3",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-08T16:37:18Z",
+    "ended_at": "2026-11-08T16:40:39Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-08T16:37:22.748Z",
+      "to_at": "2026-11-08T16:40:39.539Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.81,
+          "to": 0.81,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQDvmHp4MSMDooeNvRX",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 1.06646414,
+      "agent_usd": 0.79545914,
+      "judge_usd": 0.271005,
+      "guard_usd": 0,
+      "metered_usd": 0.9286428899999999,
+      "last_agent_call_usd": 0.33491284000000004,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-08T16:37:19Z",
+      "ended_at": "2026-11-08T16:40:17Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-08T16:37:19Z",
+          "ended_at": "2026-11-08T16:38:22Z",
+          "duration_ms": 63293,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-08T16:39:56Z",
+          "ended_at": "2026-11-08T16:40:17Z",
+          "duration_ms": 21242,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-08T16:37:22.748Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.81,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.81,
+                  "resetsAt": 1794243600,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-08T16:40:17.617Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed_warning",
+              "resetsAt": 1794243600,
+              "rateLimitType": "seven_day",
+              "utilization": 0.81,
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "surpassedThreshold": 0.75,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.81,
+                  "resetsAt": 1794243600,
+                  "status": "allowed_warning",
+                  "surpassedThreshold": 0.75
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.06,
+                  "resetsAt": 1794243600,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 63293,
+        "num_turns": 8,
+        "cost_usd": 0.46054629999999996,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 16,
+            "output_tokens": 4690,
+            "cache_read_input_tokens": 241750,
+            "cache_creation_input_tokens": 39061,
+            "cost_usd": 0.337519
+          },
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 2056,
+            "cache_read_input_tokens": 69153,
+            "cache_creation_input_tokens": 38216,
+            "cost_usd": 0.1230273
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 39061,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 21242,
+        "num_turns": 1,
+        "cost_usd": 0.13318375,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 2,
+            "output_tokens": 1465,
+            "cache_read_input_tokens": 3355,
+            "cache_creation_input_tokens": 4726,
+            "cost_usd": 0.13318375
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 4726,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
