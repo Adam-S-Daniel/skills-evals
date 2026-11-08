@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TPsCiVWMdV21B2pBjdpciW",
+      "name": "Bash",
+      "input": "ls -a && ls .github/workflows && cat .github/workflows/*.yml && git status --short | head",
+      "input_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TPsCiVWMdV21B2pBjdpciW",
+      "is_error": false,
+      "output": ".\n..\n.bash_profile\n.bashrc\n.claude\n.editorconfig\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nAGENTS.md\nREADME.md\nbin\ndocs\nmkdocs.yml\npackage-lock.json\npackage.json\nscripts\nsrc\ntest\ndocs-site.yml\nnightly-sweep.yml\ntests.yml\nname: Docs site\n\non:...",
+      "output_chars": 1639,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SXPLTAm9pTot9USSyo3bLb",
+      "name": "Bash",
+      "input": "cat package.json; ls src test bin scripts docs; head -30 test/* | head -60; grep -rn \"docs\\|mkdocs\" --include=*.js --include=*.json --include=*.sh -l . 2><path> | grep -v node_modules | head; cat mkdo...",
+      "input_chars": 209,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SXPLTAm9pTot9USSyo3bLb",
+      "is_error": false,
+      "output": "{\n  \"name\": \"example-service\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"main\": \"src/index.js\",\n  \"scripts\": {\n    \"start\": \"node src/index.js\",\n    \"test\": \"node --test test/\"\n  }\n}\nbin:\ngh\n\ndocs:\nguide.md\nindex.md\n\nscripts:\nsweep-stale.sh\n\nsrc:\nindex.js\nutil.js\n\ntest:\nutil.test.js\n\"use strict\";\n...",
+      "output_chars": 760,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016HVRJtiLfh9yiPD1qLkJyF",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\ndef detect(pattern, wf):\n    return f'''      - name: Detect salient changes\n        id: salient\n        run: |\n          # Required check: the job must always report, so the trigger...",
+      "input_chars": 3210,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016HVRJtiLfh9yiPD1qLkJyF",
+      "is_error": false,
+      "output": "name: Tests\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n        with:\n          fetch-depth: 0\n      - name: Detect salient changes\n...",
+      "output_chars": 1595,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012K5yNmMNBWQEY3RNs6VK2y",
+      "name": "Bash",
+      "input": "for f in tests docs-site; do python3 - $f <<'EOF'\nimport sys\np=f'.github/workflows/{sys.argv[1]}.yml'\ns=open(p).read()\ns=s.replace(\"          if git diff --name-only \\\"$base\\\" HEAD | grep -Eq '\",\"    ...",
+      "input_chars": 577,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012K5yNmMNBWQEY3RNs6VK2y",
+      "is_error": false,
+      "output": "      - name: Detect salient changes\n        id: salient\n        run: |\n          # Required check: the job must always report, so the trigger stays\n          # broad and later steps are gated on this output.\n          base=$(jq -r '.pull_request.base.sha // .before // \"\"' \"$GITHUB_EVENT_PATH\")\n    ...",
+      "output_chars": 751,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
