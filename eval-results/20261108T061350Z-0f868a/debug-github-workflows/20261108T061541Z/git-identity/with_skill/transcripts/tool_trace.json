@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014yd61uK7uJT4WqvmLKgRvR",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && ls -R | head -50 && cat test/run-tests.sh && ls .github/workflows && cat .github/workflows/*",
+      "input_chars": 138,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014yd61uK7uJT4WqvmLKgRvR",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n9b21774 initial commit\n.:\nREADME.md\nbin\nsrc\ntest\n\n./bin:\ngh\n\n./src:\nchangelog.py\n\n./test:\nrun-tests.sh\ntest_changelog.py\n#!<path> bash\n# Build a scratch reposito...",
+      "output_chars": 1247,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016KCBqbZcB3LZa6rpFnqfdC",
+      "name": "Bash",
+      "input": "cat README.md src/changelog.py test/test_changelog.py; cat bin/gh | head -30; cat .gitmodules",
+      "input_chars": 93,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016KCBqbZcB3LZa6rpFnqfdC",
+      "is_error": true,
+      "output": "Exit code 1\n# Example changelog\n\nTurns a repository's conventional commit subjects (`feat: ...`, `fix: ...`)\ninto the sections of a release changelog.\n\nRun the tests from the repository root:\n\n```bash\nbash test/run-tests.sh\n```\n\"\"\"Group a repository's conventional commit subjects into changelog sect...",
+      "output_chars": 3363,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QH4YojiE7DU2DSmCfgrbdy",
+      "name": "Bash",
+      "input": "export PATH=\"$PWD/bin:$PATH\"; gh run list --branch main --limit 5 2>&1 | head; echo \"GH_REPLAY_DIR=$GH_REPLAY_DIR\"",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QH4YojiE7DU2DSmCfgrbdy",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 52001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"4f2a9c1e5b7d3f8a0c6e2b4d9f1a3c5e7b9d0f2a\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\nGH_REPLAY_DIR=<path>",
+      "output_chars": 295,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019xpDnadhp78Me8aK9gjE1n",
+      "name": "Bash",
+      "input": "export PATH=\"$PWD/bin:$PATH\"; gh run view 52001 --log-failed 2>&1 | tail -40",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019xpDnadhp78Me8aK9gjE1n",
+      "is_error": false,
+      "output": "test\tRun tests\t2026-01-09T10:00:05Z Run bash test/run-tests.sh\ntest\tRun tests\t2026-01-09T10:00:05Z Testing changelog at 4f2a9c1\ntest\tRun tests\t2026-01-09T10:00:05Z Building a scratch repository for the changelog tests\ntest\tRun tests\t2026-01-09T10:00:05Z ##[error]Process completed with exit code 128.",
+      "output_chars": 300,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JYiXv3WQ8jX4wzLDvwca92",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env HOME=\"$h\" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=<path> XDG_CONFIG_HOME=\"$h\" bash test/run-tests.sh; echo \"exit=$?\"; bash test/run-tests.sh 2>&1 | tail -3",
+      "input_chars": 180,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JYiXv3WQ8jX4wzLDvwca92",
+      "is_error": false,
+      "output": "Testing changelog at 9b21774\nBuilding a scratch repository for the changelog tests\nexit=128\nTesting changelog at 9b21774\nBuilding a scratch repository for the changelog tests",
+      "output_chars": 174,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NUcaaRgjTZs9PxmYRtXjLE",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NUcaaRgjTZs9PxmYRtXjLE",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 91,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015dRZbbiZj1KAoru2GtAQii",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env HOME=\"$h\" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=<path> XDG_CONFIG_HOME=\"$h\" bash test/run-tests.sh; echo \"ci-like exit=$?\"; bash test/run-tests.sh; echo \"normal exit=$?\"; git d...",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015dRZbbiZj1KAoru2GtAQii",
+      "is_error": false,
+      "output": "Testing changelog at 9b21774\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.003s\n\nOK\nci-like exit=0\nTesting changelog at 9b21774\nBuilding a scratch repository for the changelog tests\n.\n-------------------...",
+      "output_chars": 470,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
