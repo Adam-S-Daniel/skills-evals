@@ -24,6 +24,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 import context as harness_context  # noqa: E402
+sys.path.insert(0, str(ROOT / "scripts"))
+import fixture_pr_gate  # noqa: E402
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
@@ -94,6 +96,8 @@ REVIEWED = ["evals/embeddable-tool-pages",
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
+#: How a fixture pull request's row's note starts (scripts/fixture_pr_gate.py).
+FIXTURE_PR_NOTE = fixture_pr_gate.FIXTURE_PR_NOTE
 
 
 def plan_week_literal(name):
@@ -120,14 +124,49 @@ def scope_paused():
     return {row["path"] for row in doc.get("rows") or []}
 
 
-def promoted_entries():
-    """Scheduled entries outside the reviewed list: each must be one
-    `scaffold_real_work.py promote` appended, carrying its readiness note and
-    naming a `draft: false` fixture. Anything else is not one."""
+def fixture_pr_problem(row, fixture):
+    """Why a scheduled row is not one a fixture pull request appended, or
+    None. Such a row (scripts/fixture_pr_gate.py, the guidance branch of
+    scripts/work_item_issues.py) names a guidance fixture with a valid
+    `origin:` whose `request` is the skills-evals issue its readiness note
+    names, and is not a draft; it needs no `context:` (a guidance fixture runs
+    its own arms against the guidance alone)."""
+    match = re.match(re.escape(FIXTURE_PR_NOTE) + r" for skills-evals#([1-9][0-9]*): \S",
+                     row["readiness"])
+    if match is None:
+        return "readiness note does not start with the fixture pull request note"
+    if fixture.get("subject") != "guidance" or "draft" in fixture:
+        return "not a guidance fixture, or a draft"
+    origin = fixture.get("origin")
+    if fixture_pr_gate.origin_problem(origin, int(match.group(1))) is not None:
+        return "origin is not valid for the issue the note names"
+    return None
+
+
+def fixture_pr_entries():
+    """Scheduled entries a fixture pull request appended (fixture_pr_problem)."""
     reviewed = set(REVIEWED)
     paths = []
     for row in scheduled_rows():
-        if row["path"] in reviewed:
+        if row["path"] in reviewed or not row["readiness"].startswith(FIXTURE_PR_NOTE):
+            continue
+        fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
+        problem = fixture_pr_problem(row, fixture)
+        if problem is not None:
+            raise AssertionError(f"{row['path']}: {problem}")
+        paths.append(row["path"])
+    return paths
+
+
+def promoted_entries():
+    """Scheduled entries outside the reviewed list and the fixture pull
+    requests' rows: each must be one `scaffold_real_work.py promote`
+    appended, carrying its readiness note and naming a `draft: false`
+    fixture. Anything else is not one."""
+    reviewed = set(REVIEWED)
+    paths = []
+    for row in scheduled_rows():
+        if row["path"] in reviewed or row["readiness"].startswith(FIXTURE_PR_NOTE):
             continue
         fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
         # A drafted skill's fixture (scripts/contextualize_fixtures.py) has no
@@ -159,7 +198,8 @@ def promoted_context_problem(fixture):
 #: plus any promoted ones (Adam, 2026-10-26: fixtures are promoted with no
 #: human in the loop; 2026-11-03: the scope pass pauses and resumes by rule,
 #: and a resume re-appends at the end, so order is the file's own).
-EXPECTED_SET = (set(REVIEWED) - scope_paused()) | set(promoted_entries())
+EXPECTED_SET = ((set(REVIEWED) - scope_paused()) | set(promoted_entries())
+                | set(fixture_pr_entries()))
 EXPECTED = [row["path"] for row in scheduled_rows()]
 #: The manual-dispatch default. It left the schedule on 2026-11-03 (listed in
 #: unscheduled.yml) but stays a committed fixture, which is all a dispatch needs.
@@ -185,6 +225,36 @@ def doc():
 
 def step(job, name):
     return next(s for s in doc()["jobs"][job]["steps"] if s["name"] == name)
+
+
+class TestFixturePullRequestRows(unittest.TestCase):
+    ORIGIN = {"kind": "invented", "source": None,
+              "request": f"{fixture_pr_gate.REQUEST_PREFIX}853"}
+
+    def fixture(self, **overrides):
+        return {"subject": "guidance", "section": "agent-contribution-markers",
+                "origin": dict(self.ORIGIN), **overrides}
+
+    def row(self, note=f"{FIXTURE_PR_NOTE} for skills-evals#853: a marker-less reply."):
+        return {"path": "evals/guidance/agent-contribution-markers/x", "readiness": note}
+
+    def test_a_guidance_fixture_with_its_issues_origin_is_accepted(self):
+        self.assertIsNone(fixture_pr_problem(self.row(), self.fixture()))
+
+    def test_the_rule_rejects_every_other_shape(self):
+        other = {**self.ORIGIN, "request": f"{fixture_pr_gate.REQUEST_PREFIX}852"}
+        for row, fixture in (
+                (self.row("Added by hand: a marker-less reply."), self.fixture()),
+                (self.row(f"{FIXTURE_PR_NOTE}: no issue named."), self.fixture()),
+                (self.row(), self.fixture(origin=other)),
+                (self.row(), self.fixture(origin=None)),
+                (self.row(), self.fixture(draft=False)),
+                (self.row(), {**self.fixture(subject="skill"), "skill": "writing-adrs"})):
+            with self.subTest(row=row["readiness"], fixture=fixture):
+                self.assertIsNotNone(fixture_pr_problem(row, fixture))
+
+    def test_every_fixture_pull_request_row_is_not_also_a_promoted_row(self):
+        self.assertFalse(set(fixture_pr_entries()) & set(promoted_entries()))
 
 
 class TestPromotedRowsCarryProvableContext(unittest.TestCase):

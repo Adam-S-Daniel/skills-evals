@@ -208,8 +208,11 @@ def scheduled() -> list[dict]:
     auto = yaml.safe_load((ROOT / "evals/scope-auto.yml").read_text(encoding="utf-8")) or {}
     rows = rows + [{"path": row["path"], "readiness": row["readiness"]}
                    for row in auto.get("rows") or []]
+    # A fixture pull request's row ("Added by a fixture pull request",
+    # scripts/fixture_pr_gate.py) is checked there too.
     return [row for row in rows
-            if not row["readiness"].startswith("Promoted automatically")]
+            if not row["readiness"].startswith(("Promoted automatically",
+                                                "Added by a fixture pull request"))]
 
 
 def all_fixtures() -> dict[str, dict]:

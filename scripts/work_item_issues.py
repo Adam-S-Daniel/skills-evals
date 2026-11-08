@@ -98,6 +98,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import draft_new_skill  # noqa: E402
+import fixture_pr_gate  # noqa: E402
 import regression_issue  # noqa: E402
 import retire_skill  # noqa: E402
 
@@ -231,8 +232,10 @@ def fixture_need_body(item: dict, key: str) -> tuple:
                   f"(one is held out), and train headroom {_headroom(item)}. "
                   "Add fixtures until it has at least four."]
     if section:
-        listing = ("- its path appended to `evals/scheduled.yml` with a `readiness` note, "
-                   "so the weekly sweep runs it;")
+        listing = ("- its path appended to `evals/scheduled.yml`, so the weekly sweep runs "
+                   "it, with a `readiness` note that starts exactly "
+                   f"\"{fixture_pr_gate.FIXTURE_PR_NOTE} for skills-evals#<this issue's "
+                   "number>:\" and then says what the fixture tests;")
     else:
         listing = ("- its path appended to `evals/unscheduled.yml` with exactly the reason "
                    f"\"{draft_new_skill.ISOLATION_REASON}\" (an isolation fixture, no "
