@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YH283geA9D6ozsYQuyR8y5",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 102,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YH283geA9D6ozsYQuyR8y5",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n0ad7274 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.github/workflows/sync-labels.yml\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/sync-labels.sh\n./.profil...",
+      "output_chars": 1501,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WyAJJCMeyCHEF1FtbxaaFm",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt; cat -A labels.txt; cat .gh/replay/run-view-61003.log; cat .gh/replay/api/repos/example-org/example-labels/check-runs/...",
+      "input_chars": 222,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WyAJJCMeyCHEF1FtbxaaFm",
+      "is_error": false,
+      "output": "# Example labels\n\nKeeps the shared issue labels in `labels.txt` on every repository in the\nexample-org organization. The nightly `Sync labels` workflow runs\n`scripts/sync-labels.sh`, which creates each label or updates it in place.\n\nAdd a label by adding a line to `labels.txt`; the next nightly run ...",
+      "output_chars": 1597,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UsVb9JJEcJW1nE5xnU2G47",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-6100{1,2}.log .gh/replay/run-list.json; cat bin/gh | head -60; cat .gh/replay/api/repos/example-org/example-labels.json | head -30",
+      "input_chars": 154,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UsVb9JJEcJW1nE5xnU2G47",
+      "is_error": false,
+      "output": "sync\tSync labels\t2026-01-05T03:00:06 Run bash scripts/sync-labels.sh\nsync\tSync labels\t2026-01-05T03:00:06 cannot use `--jq` without specifying `--json`\nsync\tSync labels\t2026-01-05T03:00:07 No repositories found in example-org; nothing to sync.\nsync\tSync labels\t2026-01-06T03:00:06 Run bash scripts/sy...",
+      "output_chars": 5626,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FLushMmtb7C9WHqBJmp1NB",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CRzs1xgsA91w1vnpa8SgQB",
+      "name": "Bash",
+      "input": "cat scripts/sync-labels.sh && cat README.md && ls tests; git status --short; ls scripts; cat labels.txt 2><path> | head",
+      "input_chars": 122,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CRzs1xgsA91w1vnpa8SgQB",
+      "is_error": false,
+      "output": "#!<path> bash\n# Create or update every label in labels.txt on every repository in $ORG.\nset -euo pipefail\n\n: \"${ORG:?ORG must name the organization}\"\nroot=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n\nmapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/la...",
+      "output_chars": 1134,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PDPUEDThu6pPg1StwfSGoM",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/sync-labels.sh'\ns=open(p).read()\ns=s.replace('''mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/labels.txt\"\n\nif [...",
+      "input_chars": 3689,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PDPUEDThu6pPg1StwfSGoM",
+      "is_error": false,
+      "output": "PASS a\nPASS b\nPASS c\nPASS d\n4 passed\nrc=0\nFAIL a\nFAIL b\nFAIL c\nFAIL d\n0 passed\nrevert_rc=1",
+      "output_chars": 90,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UjzgWGng51mrcbCV1cZBED",
+      "name": "Bash",
+      "input": "git diff --stat; git status --short; bash tests/sync-labels.test.sh; echo \"exit=$?\"",
+      "input_chars": 83,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UjzgWGng51mrcbCV1cZBED",
+      "is_error": false,
+      "output": " README.md              |  2 ++\n scripts/sync-labels.sh | 21 +++++++++++++++++----\n 2 files changed, 19 insertions(+), 4 deletions(-)\n M README.md\n M scripts/sync-labels.sh\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofil...",
+      "output_chars": 365,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P1UtTfQm4x3CAZRGzW6E82",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All three edits to `scripts/sync-labels.sh` are in. The new test `tests/sync-labels.test.sh` passes 4/4, and the README has the added sentence. Nothing was committed or pushed, and the re...",
+      "input_chars": 2030,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P1UtTfQm4x3CAZRGzW6E82",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FLushMmtb7C9WHqBJmp1NB",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a84ff1b2e7d57fcd1\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a84ff1b2e7d57fcd1 (use SendMessage with to: 'a84ff1b2e7d57fcd1', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XqYuVcEK39jE2sCNQiS9Cu",
+      "name": "Bash",
+      "input": "git diff && cat tests/sync-labels.test.sh && bash tests/sync-labels.test.sh; echo \"exit=$?\"",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XqYuVcEK39jE2sCNQiS9Cu",
+      "is_error": false,
+      "output": "diff --git a/README.md b/README.md\nindex 108cb03..e77f36c 100644\n--- a/README.md\n+++ b/README.md\n@@ -5,3 +5,5 @@ example-org organization. The nightly `Sync labels` workflow runs\n `scripts/sync-labels.sh`, which creates each label or updates it in place.\n \n Add a label by adding a line to `labels.tx...",
+      "output_chars": 3886,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
