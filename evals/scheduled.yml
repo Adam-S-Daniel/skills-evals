@@ -150,3 +150,9 @@ fixtures:
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/adam-agentskills at eccda739064b (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/writing-adrs/pr-body-outgrows-itself
     readiness: "Promoted automatically on 2026-11-07 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/cms-platform at a101cdd3301d (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/spaced-path-silent-exit
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/two-strikes-unreachable-host
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/tool-powershell/installer-exit-3010
+    readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
