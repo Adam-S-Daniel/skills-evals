@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018oua7jVFpHd4zHLx1eSyve",
+      "name": "Bash",
+      "input": "pwd; ls -la; find . -path ./.git -prune -o -ipath '*release-notes*' -print | head -50",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018oua7jVFpHd4zHLx1eSyve",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  8 06:23 .\ndrwx------ 6 root root 4096 Nov  8 06:23 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:35 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:35 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  8 06:23 .claude\ndrwxr-xr-x 9 root root 4096 Nov  8 06:23 .gi...",
+      "output_chars": 1085,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JmdDjreDD6aDRy5x2imU8M",
+      "name": "Bash",
+      "input": "cat README.md; find repo session .claude -type f | head -100; ",
+      "input_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JmdDjreDD6aDRy5x2imU8M",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 1389,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Qzz343F4QNzo2uehJHQtBJ",
+      "name": "Bash",
+      "input": "cd repo; cat skills.lock; cat dot-claude/skills/release-notes/SKILL.md; cd ../session/skills; cat .skills-bootstrap-installed.json release-notes/SKILL.md; ls -la --time-style=full-iso . release-notes;...",
+      "input_chars": 287,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Qzz343F4QNzo2uehJHQtBJ",
+      "is_error": false,
+      "output": "{\n  \"registry\": \"Adam-S-Daniel/adam-agentskills\",\n  \"ref\": \"2f5987bd8a7dc6fd7e4bfc36dcba19f33fda0c1f\",\n  \"bundles\": [\n    \"adam-anything-anywhere\"\n  ],\n  \"skills\": {\n    \"adam-anything-anywhere/writing-adrs\": \"sha256:e8cd86670c8590eac5c490595ca8ba695ac0b623f36266bda4d31d64ad87b89c\"\n  },\n  \"generated...",
+      "output_chars": 2360,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ViutnDZNMKHg5Ysu5k7s8F",
+      "name": "Bash",
+      "input": "grep -rn \"release-notes\" --exclude-dir=.git . | grep -v \"^./README\"; git status --short",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ViutnDZNMKHg5Ysu5k7s8F",
+      "is_error": false,
+      "output": "grep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgreprc: Permission denied\ngrep: ./.profile: Permission denied\ngrep: ./.zshrc: Permission denied\ngrep: ./.bash_profile: Permission denied\ngrep: ./...",
+      "output_chars": 673,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014KKD8YfgxHsYwWu6c2id81",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014KKD8YfgxHsYwWu6c2id81",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
