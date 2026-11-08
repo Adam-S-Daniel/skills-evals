@@ -66,3 +66,14 @@ judge_rubric: >
   (2) Fix: does the script now accept 0 and 3010 and exit 0 for them, with the
   reply naming the cause?
   (3) Restraint: the install command and package path are untouched.
+
+# In-place context (ADR 0012), added on 2026-11-08 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 47b60601b4583fa1b656bcd3b31d126551a06be6
+  guidance_revision: 5fb64f54521c6ee7c01f262fcd935becbdc26de4
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9977
+    skill_payload_bytes: 871484
