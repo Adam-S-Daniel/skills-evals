@@ -48,7 +48,11 @@ import gates  # noqa: E402
 import guidance  # noqa: E402
 import plan_week  # noqa: E402
 from test_issue_70_retirement import FLAT_JUDGE, TEST_POLICY, cell, series  # noqa: E402
-from test_issue_pooled_rest_guard import POOLED, StaleKeepTests, cell_of, verdict  # noqa: E402
+# The module, not the class: a TestCase bound to a name here is collected
+# again, and the suite's count check (build_suite) then fails.
+import test_issue_pooled_rest_guard as pooled_tests  # noqa: E402
+from test_issue_pooled_rest_guard import POOLED, cell_of, verdict  # noqa: E402
+
 
 NOW = datetime(2026, 11, 8, 12, 0, 0, tzinfo=timezone.utc)
 A, B = "claude-sonnet-5-5", "claude-opus-5-5"
@@ -181,14 +185,14 @@ class ProvisionalKeepTests(unittest.TestCase):
         return plan_week.pairs_to_verdict(cell_, plan_ctx([]))
 
     def test_a_provisional_keep_with_only_the_lapse_left_is_past_its_cap(self):
-        runs, _current = StaleKeepTests().noisy(20)
+        runs, _current = pooled_tests.StaleKeepTests().noisy(20)
         projection = self.projection(cell_of(runs))
         self.assertGreater(projection["keep"], projection["remaining"])
         self.assertGreater(projection["remove"], projection["remaining"])
         self.assertTrue(projection["past_cap"])
 
     def test_the_removal_that_overrides_it_is_projected_on_the_current_rest(self):
-        stale = StaleKeepTests()
+        stale = pooled_tests.StaleKeepTests()
         for n, decides in ((14, 22), (20, 22)):
             with self.subTest(current_pairs=n):
                 projection = self.projection(cell_of(stale.stale(n)))
@@ -198,7 +202,7 @@ class ProvisionalKeepTests(unittest.TestCase):
                 self.assertTrue(math.isinf(projection["keep"]))
 
     def test_the_spent_pooled_crossing_moves_nothing(self):
-        gate = cell_of(StaleKeepTests().stale(20))
+        gate = cell_of(pooled_tests.StaleKeepTests().stale(20))
         base = self.projection(gate)
         richer = {**gate, "objective": {**gate["objective"], "delta": 0.9}}
         self.assertEqual(self.projection(richer)["pairs"], base["pairs"])
@@ -206,7 +210,7 @@ class ProvisionalKeepTests(unittest.TestCase):
     def test_a_reported_route_p_reaches_the_full_keep_alpha(self):
         # gates doubles each route's p and runs it at half the alpha, so a
         # reported p at the cell's keep alpha is a rejected route.
-        gate = cell_of(StaleKeepTests().stale(20))
+        gate = cell_of(pooled_tests.StaleKeepTests().stale(20))
         alpha = 1 - POOLED["benefit_confidence"]
         cell_ = planner_cell(gate, section="sec", provisional_keep=False, keep_tests=[
             {"route": "objective", "p": 1.0},
@@ -224,7 +228,7 @@ class RunUtilityTests(unittest.TestCase):
         return dict(out)
 
     def test_a_provisional_keeps_runs_are_building(self):
-        runs = StaleKeepTests().stale(20)
+        runs = pooled_tests.StaleKeepTests().stale(20)
         self.assertIs(cell_of(runs)["rest_guard"]["keep_final"], False)
         self.assertEqual(self.classes(runs), {"building": 2 * 30})
 
