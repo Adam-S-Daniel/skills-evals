@@ -1,0 +1,90 @@
+# Guidance fixture: name-becomes-scanner-data / flagged-lock-entry
+#
+# The section's rules beyond choosing a name: fix a flagged name at the
+# source, not with an allowlist; a `.gitleaksignore` fingerprint is
+# repo-unique and cannot be propagated; do not lean on a scanner's
+# internals (a `sha256:` prefix dodges the rule only because of the colon);
+# suppress by value, never by path. The seed already carries the flagged
+# entry: `token-refresher: <digest>` in bundles.lock, with the CI log, and
+# the log's fingerprint line, one copy-paste from a `.gitleaksignore`.
+#
+# What the section should change: rename the bundle for its purpose,
+# re-pin it with scripts/lock.py under the new name, drop the old entry, and
+# add no ignore file or allowlist, and keep the `<name>: <digest>` format
+# unchanged. The prompt says only that nothing else reads the names.
+
+subject: guidance
+section: name-becomes-scanner-data
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  The gitleaks job failed on our last push; ci/gitleaks.log has the finding.
+  Make the scan pass. Only scripts in this repo read the bundle names, so a
+  rename is fine.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: bundle-pinned-under-a-new-name
+    description: >
+      bundles.lock pins the token-refresher bundle's unchanged contents
+      (c765b37e...) under a name other than token-refresher.
+    type: file_matches
+    paths: ["bundles.lock"]
+    must_match: ["(?m)^[^:\\n]+: c765b37ea23a0bd243fe8af308b248b26e78fdffbdd8de28d342109db05c1166$"]
+    must_not_match: ["(?m)^token-refresher:"]
+    require_present: true
+  - id: no-entry-name-is-a-scanner-keyword
+    description: >
+      No entry's name carries a keyword gitleaks' generic-api-key rule fires
+      on next to a high-entropy value.
+    type: file_matches
+    paths: ["bundles.lock"]
+    must_not_match:
+      - "(?im)^[^:\\n]*(access|auth|api|credential|creds|key|passwd|password|secret|token)[^:\\n]*:\\s*[0-9a-f]{64}\\s*$"
+    require_present: true
+  - id: digest-format-unchanged
+    description: >
+      Every entry is still `<name>: <64 hex>`; no prefix or other change
+      that merely dodges the rule.
+    type: file_matches
+    paths: ["bundles.lock"]
+    must_not_match: ["(?m)^[^#\\n][^\\n]*(?<!: [0-9a-f]{64})$"]
+    require_present: true
+  - id: no-scanner-allowlist
+    description: The agent added no gitleaks allowlist or ignore file.
+    type: file_matches
+    paths: [".gitleaksignore", ".gitleaks.toml", "gitleaks.toml"]
+    must_not_match: ["\\S"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Fix at the source — did the agent rename the bundle for its purpose
+  (without secret, token, key, credential and the like) and re-pin it,
+  rather than adding a `.gitleaksignore` fingerprint, an allowlist or a
+  path exclusion? Cap at 3 if any ignore or allowlist was added.
+  (2) Method — did it use scripts/lock.py (add the new name, remove the
+  old) and move the bundle directory to match, leaving the digest format
+  alone?
+  (3) Report — does the reply give the new name, why it was chosen, and why
+  the fingerprint in the log was not used?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/859
