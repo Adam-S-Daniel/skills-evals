@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Rh1VXXsHXR4fwuf9UnSVNB",
+      "name": "Bash",
+      "input": "git ls-files | head -50 && grep -ril \"needs-review\" . --exclude-dir=.git | head",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Rh1VXXsHXR4fwuf9UnSVNB",
+      "is_error": false,
+      "output": ".gh/replay/api/repos/example-org/example-labels.json\n.gh/replay/api/repos/example-org/example-labels/actions/runs.json\n.gh/replay/api/repos/example-org/example-labels/actions/runs/61001.json\n.gh/replay/api/repos/example-org/example-labels/actions/runs/61001/jobs.json\n.gh/replay/api/repos/example-org...",
+      "output_chars": 1577,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HwD12Mj6rbvCRAEyWN6WLd",
+      "name": "Bash",
+      "input": "cat .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt README.md; cat .gh/replay/run-view-61003.log | head -40",
+      "input_chars": 127,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HwD12Mj6rbvCRAEyWN6WLd",
+      "is_error": false,
+      "output": "name: Sync labels\n\non:\n  schedule:\n    - cron: \"0 3 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  sync:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Sync labels\n        env:\n          GH_TOKEN: <reda...",
+      "output_chars": 1566,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Eeg13rn8GrBmgDE3x2fNtz",
+      "name": "Bash",
+      "input": "cat bin/gh | head -40; git status --short",
+      "input_chars": 41,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Eeg13rn8GrBmgDE3x2fNtz",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 2580,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B7zVfZT88Ki6vZhm94CoyY",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='scripts/sync-labels.sh'\ns=open(p).read()\ns=s.replace('''mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/labels.txt\"\n\nif [ \"...",
+      "input_chars": 741,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B7zVfZT88Ki6vZhm94CoyY",
+      "is_error": false,
+      "output": " scripts/sync-labels.sh | 10 ++++++----\n 1 file changed, 6 insertions(+), 4 deletions(-)",
+      "output_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FGiy7Tp92vjxVcBnmtK8XN",
+      "name": "Bash",
+      "input": "PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay ORG=example-org bash scripts/sync-labels.sh; echo \"exit $?\"; rm -f .gh-invocations.log; git status --short | grep -v '^?? \\.'",
+      "input_chars": 175,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FGiy7Tp92vjxVcBnmtK8XN",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\nexit 1\n M scripts/sync-labels.sh",
+      "output_chars": 57,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
