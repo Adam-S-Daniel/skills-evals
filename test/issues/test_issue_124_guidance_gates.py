@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ISSUES))
 
 import compute_gates  # noqa: E402
+import fixture_pr_gate  # noqa: E402
 import gates  # noqa: E402
 import guidance  # noqa: E402
 import retire_skill as rs  # noqa: E402
@@ -56,6 +57,34 @@ from test_issue_70_retirement import (FLAT, FLAT_JUDGE, GAIN, LOSS,  # noqa: E40
 from test_issue_97 import REAL_GUIDANCE_DIR, make_guidance_checkout  # noqa: E402
 
 GUIDANCE_EVALS = ROOT / "evals" / "guidance"
+
+
+def without_origin_urls(text: str) -> str:
+    """`text` (a guidance fixture.yaml) with the URL values of its top-level
+    `origin:` mapping blanked, only when the fixture-PR gate accepts that
+    origin (fixture_pr_gate.origin_problem): `request` always names a
+    skills-evals issue and a real-work `source` a fleet pull request, so they
+    are the one place a fleet owner's name may appear. Only the whole value
+    on the mapping's own `source:`/`request:` line is blanked; the rest of the
+    file is still checked."""
+    doc = yaml.safe_load(text)
+    origin = doc.get("origin") if isinstance(doc, dict) else None
+    if origin is None or fixture_pr_gate.origin_problem(origin) is not None:
+        return text
+    urls = [(f"  {key}: ", origin[key]) for key in ("source", "request")
+            if isinstance(origin[key], str)]
+    lines = text.splitlines(keepends=True)
+    try:
+        start = lines.index("origin:\n")
+    except ValueError:
+        return text
+    for i in range(start + 1, min(start + 4, len(lines))):
+        for prefix, url in urls:
+            rest = lines[i][len(prefix) + len(url):]
+            # The URL must end the value: a trailing comment stays checked.
+            if lines[i].startswith(prefix + url) and (not rest.strip() or rest[0] in " \t"):
+                lines[i] = prefix + rest
+    return "".join(lines)
 SECTIONS = {"anything-you-name-gets-its-link", "watch-finished-is-not-ci-passed",
             "git-push-does-not-mean-commit-exists", "pinning-github-actions",
             "git-practices", "subagent-delegation", "automation-vs-branch-protection",
@@ -134,8 +163,9 @@ class FixtureLayoutTests(unittest.TestCase):
         for fixture in section_fixtures():
             by_section.setdefault(fixture.parent.name, []).append(fixture.name)
         self.assertEqual(set(by_section), SECTIONS)
-        # The improvement loop holds one fixture out, so one section has four.
-        self.assertEqual(len(by_section["anything-you-name-gets-its-link"]), 4)
+        # The improvement loop holds one fixture out, so one section has at
+        # least four (a fixture pull request may add more, scripts/fixture_pr_gate.py).
+        self.assertGreaterEqual(len(by_section["anything-you-name-gets-its-link"]), 4)
 
     def test_each_fixture_runs_both_pairs_in_one_fire_and_the_ablation_alone(self):
         for fixture in section_fixtures():
@@ -188,8 +218,36 @@ class FixtureLayoutTests(unittest.TestCase):
         for path in GUIDANCE_EVALS.glob("[!_]*/*/**/*"):
             if path.is_file():
                 text = path.read_text(encoding="utf-8")
+                if path.name == "fixture.yaml" and path.parent.parent.parent == GUIDANCE_EVALS:
+                    text = without_origin_urls(text)
                 for host in ("github.com/Adam-S-Daniel", "jodidaniel"):
                     self.assertNotIn(host, text, str(path))
+
+    def test_only_a_valid_origins_own_urls_are_exempt(self):
+        request = f"{fixture_pr_gate.REQUEST_PREFIX}853"
+        source = "https://github.com/jodidaniel/example-site/pull/7"
+        valid = (f"origin:\n  kind: real-work\n  source: {source}\n"
+                 f"  request: {request}\n")
+        self.assertEqual(without_origin_urls(valid),
+                         "origin:\n  kind: real-work\n  source: \n  request: \n")
+        # The issue body's example keeps its comments; only the URL goes.
+        commented = valid.replace(f"{source}\n", f"{source}   # null when invented\n")
+        self.assertEqual(without_origin_urls(commented), "origin:\n  kind: real-work\n"
+                         "  source:    # null when invented\n  request: \n")
+        for text in (
+                # The same URL elsewhere in the fixture stays checked.
+                valid + f"prompt: open {source} and reply\n",
+                # An origin the gate rejects exempts nothing.
+                f"origin:\n  kind: invented\n  source: {source}\n  request: {request}\n",
+                f"origin:\n  kind: real-work\n  source: {source}\n  request: {request}\n"
+                "  note: extra\n",
+                # A comment on the origin line is not the URL.
+                f"origin:\n  kind: invented\n  source: null\n"
+                f"  request: {request}  # see github.com/Adam-S-Daniel/private\n"):
+            with self.subTest(text=text):
+                stripped = without_origin_urls(text)
+                self.assertTrue("github.com/Adam-S-Daniel" in stripped
+                                or "jodidaniel" in stripped, stripped)
 
 
 class PushFixtureTests(unittest.TestCase):

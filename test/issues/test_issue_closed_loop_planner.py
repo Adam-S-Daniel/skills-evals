@@ -1623,11 +1623,15 @@ class ImproveValueTests(unittest.TestCase):
             doc = {"roster_models": ["m"], "guidance": {section: {"verdict": "keep"}}}
             self.assertEqual(plan_week.guidance_contexts(
                 ROOT / "evals", tree, "20261026T120000Z", doc, None), {})
-            # done-summary, handoff, no-url are train; waiting-on-review (last
-            # in name order) is the holdout and must not count.
+            # Every fixture but the last in name order is train; the last is
+            # the holdout and must not count. Read from disk, so a fixture
+            # pull request that adds one needs no edit here.
+            names = sorted(p.parent.name for p in
+                           (ROOT / "evals" / "guidance" / section).glob("*/fixture.yaml"))
+            holdout = names[-1]
             expected = {n: {"fixture_digest": f"fd-{n}", "tested_digest": "t",
                             "rest_digest": "rest"}
-                        for n in ("done-summary", "handoff", "no-url", "waiting-on-review")}
+                        for n in names}
 
             def run(name, role, checks):
                 return {"skill": section, "fixture": name, "model": "m", "role": role,
@@ -1639,8 +1643,8 @@ class ImproveValueTests(unittest.TestCase):
                     run("done-summary", "without", {"a": False, "b": False}),
                     run("handoff", "with", {"a": True, "b": True}),
                     run("handoff", "without", {"a": False, "b": True}),
-                    run("waiting-on-review", "with", {"a": False, "b": False}),
-                    run("waiting-on-review", "without", {"a": False, "b": False})]
+                    run(holdout, "with", {"a": False, "b": False}),
+                    run(holdout, "without", {"a": False, "b": False})]
             index = {"guidance_runs": runs + [{**runs[0], "pair": "alone"}]}
             with mock.patch.object(plan_week_compute_gates, "build_index",
                                    return_value=index), \
@@ -1648,8 +1652,9 @@ class ImproveValueTests(unittest.TestCase):
                                    return_value=expected):
                 got = plan_week.guidance_contexts(ROOT / "evals", tree, "20261026T120000Z",
                                                   doc, tree)
-        self.assertEqual(got[section]["fixtures"], 4)
-        self.assertEqual(got[section]["holdout"], "waiting-on-review")
+        self.assertEqual(got[section]["fixtures"], len(names))
+        self.assertGreaterEqual(len(names), 4)
+        self.assertEqual(got[section]["holdout"], holdout)
         self.assertEqual(got[section]["verdict"], "keep")
         # 3 of 4 train checks passed: headroom 0.25, the holdout's failures left out.
         self.assertAlmostEqual(got[section]["evidence"]["headroom"], 0.25)

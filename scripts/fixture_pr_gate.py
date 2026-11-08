@@ -113,6 +113,11 @@ _SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: `origin.kind` values (module docstring, ORIGIN).
 ORIGIN_KINDS = ("real-work", "invented")
+#: How the `readiness` note of a guidance fixture's evals/scheduled.yml row
+#: starts when a fix PR appends it. The schedule tests tell these rows from the
+#: reviewed list and from `scaffold_real_work.py promote` rows by this prefix
+#: and the fixture's valid `origin:` (test_issue_scheduled_fixtures.py).
+FIXTURE_PR_NOTE = "Added by a fixture pull request"
 #: `origin.request` is this prefix plus the answered issue's number.
 REQUEST_PREFIX = "https://github.com/Adam-S-Daniel/skills-evals/issues/"
 _REQUEST = re.compile(re.escape(REQUEST_PREFIX) + r"([1-9][0-9]{0,6})")
