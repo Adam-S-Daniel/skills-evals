@@ -3,12 +3,13 @@
    yet) turn into "decisive" runs. Built from each subject's `run_utility`,
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
+import { P } from './strings.js';
 import { fmtCount } from '../core/format.js';
 import { h } from '../core/h.js';
 import { legend } from '../core/charts.js';
-import { table } from './bits.js';
+import { table } from '../views/bits.js';
 import { DATA_REPO } from '../config.js';
-import { UTILITY_CLASSES, UTILITY_COLORS } from './utility.js';
+import { UTILITY_CLASSES, UTILITY_COLORS } from '../views/utility.js';
 
 /* A subject's distance to a verdict: m = max(helps, no_help) confidence. */
 export const NEAR = 0.65;
@@ -137,8 +138,8 @@ function shareChart(days) {
         y -= hgt;
       }
     }
-    const tip = total ? STRINGS.conversionTip(d.date, fmtCount(total), SEGMENTS.filter((k) => d[k])
-      .map((k) => STRINGS.conversionLegend[k].toLowerCase() + ' ' + pct(d[k], total)).join(', ')) : d.date + ': 0 runs';
+    const tip = total ? P.conversionTip(d.date, fmtCount(total), SEGMENTS.filter((k) => d[k])
+      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + pct(d[k], total)).join(', ')) : d.date + ': 0 runs';
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0, 'data-tip': tip }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
       kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), d.date.slice(5)));
@@ -150,11 +151,11 @@ function shareChart(days) {
     kids.push(h('line', { x1: x, x2: x, y1: T, y2: B, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'pointer-events': 'none' }));
     kids.push(h('text', Object.assign({ x: (Number(x) + 3).toFixed(1), y: T + 8, 'text-anchor': 'start' }, lab), '#' + PLANNER_CHANGE.pr));
   }
-  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': STRINGS.conversionChartAria(days.length) }, kids);
+  return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': P.conversionChartAria(days.length) }, kids);
 }
 
 function plannerShares(side) {
-  return GROUPS.filter((g) => g !== 'never' || side.never).map((g) => STRINGS.conversionPlannerShare(pct(side[g], side.total), g === 'never' ? 'never' : g === 'near' ? 'near a verdict' : g)).join(', ');
+  return GROUPS.filter((g) => g !== 'never' || side.never).map((g) => P.conversionPlannerShare(pct(side[g], side.total), P.conversionPlannerWords[g])).join(', ');
 }
 
 /* The panel body, or null when no subject carries a ledger. */
@@ -162,29 +163,29 @@ export function conversionView(doc) {
   const t = conversionTotals(doc);
   if (!t.decided.runs && !t.building.runs && !t.stranded.runs && !t.after.runs) return null;
   const lead = t.conversion === null
-    ? STRINGS.conversionLeadNone(fmtCount(t.building.runs), money(t.building))
-    : STRINGS.conversionLead(fmtCount(t.resolved.runs), fmtCount(t.decided.runs), Math.round(t.conversion * 100) + '%', fmtCount(t.stranded.runs),
+    ? P.conversionLeadNone(fmtCount(t.building.runs), money(t.building))
+    : P.conversionLead(fmtCount(t.resolved.runs), fmtCount(t.decided.runs), Math.round(t.conversion * 100) + '%', fmtCount(t.stranded.runs),
       t.strandedPerDecided === null ? '-' : t.strandedPerDecided.toFixed(1), fmtCount(t.building.runs), money(t.building));
   const cols = [
-    { label: STRINGS.conversionColDistance, cell: (r) => r.label },
-    { label: STRINGS.conversionColSubjects, num: true, sort: (r) => r.v.subjects, cell: (r) => fmtCount(r.v.subjects) },
-    { label: STRINGS.conversionColBuilding, num: true, sort: (r) => r.v.runs, cell: (r) => fmtCount(r.v.runs) + ' · ' + usd(r.v.cost) },
-    { label: STRINGS.conversionColExpected, num: true, sort: (r) => r.v.expected, cell: (r) => '~' + Math.round(r.v.expected) }
+    { label: P.conversionColDistance, cell: (r) => r.label },
+    { label: P.conversionColSubjects, num: true, sort: (r) => r.v.subjects, cell: (r) => fmtCount(r.v.subjects) },
+    { label: P.conversionColBuilding, num: true, sort: (r) => r.v.runs, cell: (r) => fmtCount(r.v.runs) + ' · ' + usd(r.v.cost) },
+    { label: P.conversionColExpected, num: true, sort: (r) => r.v.expected, cell: (r) => '~' + Math.round(r.v.expected) }
   ];
-  const rows = GROUPS.map((g) => ({ label: STRINGS.conversionGroups[g], v: t.groups[g] })).concat([{ label: STRINGS.conversionTotal, v: t.groupsTotal }]);
+  const rows = GROUPS.map((g) => ({ label: P.conversionGroups[g], v: t.groups[g] })).concat([{ label: P.conversionTotal, v: t.groupsTotal }]);
   const p = t.planner;
   const plannerLink = h('a', { href: PLANNER_CHANGE.url, rel: 'noopener', target: '_blank' }, DATA_REPO.split('/')[1] + '#' + PLANNER_CHANGE.pr);
   const plannerLine = p.since.total
-    ? h('p', { class: 'meta' }, STRINGS.conversionPlannerLead, plannerLink, STRINGS.conversionPlannerSince(fmtCount(p.since.total), plannerShares(p.since)),
-      p.before.total ? STRINGS.conversionPlannerBefore(fmtCount(p.before.total), plannerShares(p.before)) : null)
-    : h('p', { class: 'meta' }, STRINGS.conversionPlannerNone, plannerLink, STRINGS.conversionPlannerNoneEnd);
+    ? h('p', { class: 'meta' }, P.conversionPlannerLead, plannerLink, P.conversionPlannerSince(fmtCount(p.since.total), plannerShares(p.since)),
+      p.before.total ? P.conversionPlannerBefore(fmtCount(p.before.total), plannerShares(p.before)) : null)
+    : h('p', { class: 'meta' }, P.conversionPlannerNone, plannerLink, P.conversionPlannerNoneEnd);
   return h('div', { class: 'conversion' },
     h('p', { class: 'meta' }, lead),
-    legend(SEGMENTS.map((k) => ({ label: STRINGS.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
+    legend(SEGMENTS.map((k) => ({ label: P.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
     shareChart(t.days),
-    h('p', { class: 'meta' }, STRINGS.conversionCaption),
-    t.decisionsByDay.length ? h('p', { class: 'meta' }, STRINGS.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + ' ' + d.cells).join(', '))) : null,
+    h('p', { class: 'meta' }, P.conversionCaption),
+    t.decisionsByDay.length ? h('p', { class: 'meta' }, P.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + ' ' + d.cells).join(', '))) : null,
     table(cols, rows),
-    h('p', { class: 'meta' }, STRINGS.conversionNote),
+    h('p', { class: 'meta' }, P.conversionNote),
     plannerLine);
 }

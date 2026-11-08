@@ -54,5 +54,25 @@ export const P = {
   decisionsHeading: 'Your decisions', colDate: 'Date', colDecision: 'Decision', colRecord: 'Record', thread: 'Thread',
   threadsHeading: 'Project threads',
   ingestsHeading: 'Latest saved test runs', ingestsNote: 'Each row is a finished run saved to the results branch, read live.', colSaved: 'Saved',
-  byRepoHeading: 'Use by repo', byWeekHeading: 'Use by week'
+  byRepoHeading: 'Use by repo', byWeekHeading: 'Use by week',
+  conversionHeading: 'Building into decisive',
+  conversionLead: (resolved, decided, pct, stranded, ratio, building, cost) => 'Of ' + resolved + ' runs that have resolved, ' + decided + ' helped decide keep or remove (' + pct
+    + ') and ' + stranded + ' were stranded by a change first: ' + ratio + ' stranded for every one that decided. ' + building + ' runs (' + cost + ') are still building.',
+  conversionLeadNone: (building, cost) => 'No run has resolved yet. ' + building + ' runs (' + cost + ') are still building.',
+  conversionLegend: { decided: 'Decided', building: 'Building', stranded: 'Stranded', after: 'After the decision' },
+  conversionChartAria: (n) => 'Share of runs by where they stand now, per day, ' + n + (n === 1 ? ' day' : ' days'),
+  conversionTip: (day, n, parts) => day + ': ' + n + ' runs, ' + parts,
+  conversionCaption: "Runs by the day they ran, and where they stand now. A day's bar fills from decided toward building as its cells reach a verdict.",
+  conversionDecisionsByDay: (list) => 'Cells that reached a verdict, by day: ' + list + '.',
+  conversionColDistance: 'Distance', conversionColSubjects: 'Subjects', conversionColBuilding: 'Building runs · cost', conversionColExpected: 'Expected to decide',
+  conversionGroups: { near: 'Near a verdict (confidence 65% or more)', partway: 'Partway (30% to 65%)', far: 'Far (under 30%)', never: 'Never (subject no longer tested)' },
+  conversionTotal: 'Total',
+  conversionNote: 'Confidence is the subject\'s current chance of a keep or remove verdict. Expected to decide is a rough estimate: 70% of near, 30% of partway and 10% of far building runs.',
+  conversionPlannerLead: 'Since the deep-before-wide planner change (',
+  conversionPlannerSince: (n, list) => ', Nov 8 UTC): ' + n + ' runs, ' + list + '.',
+  conversionPlannerBefore: (n, list) => ' Before it: ' + n + ' runs, ' + list + '.',
+  conversionPlannerNone: 'No runs since the deep-before-wide planner change (',
+  conversionPlannerNoneEnd: ') yet.',
+  conversionPlannerShare: (pct, group) => pct + ' ' + group,
+  conversionPlannerWords: { near: 'near a verdict', partway: 'partway', far: 'far', never: 'never' }
 };

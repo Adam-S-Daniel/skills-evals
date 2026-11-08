@@ -20,7 +20,7 @@ import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
-import { conversionTotals, conversionView, PLANNER_CHANGE } from '../src/views/conversion.js';
+import { conversionTotals, conversionView, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
@@ -567,7 +567,8 @@ await test('conversion totals sum decided, building and stranded, group building
   eq(empty.conversion, null); eq(empty.strandedPerDecided, null);
 });
 await test('the summary shows building into decisive with its lead, table, planner link and stranded segments', () => {
-  const node = renderRoute(CDOC(), { name: 'summary' }, {});
+  const node = renderRoute(CDOC(), { name: 'summary' }, { ext: makeExt(fakeDash({})) });
+  ok(!textOf(renderRoute(CDOC(), { name: 'summary' }, {})).includes('Building into decisive'), 'public render has no panel');
   const text = textOf(node);
   ok(text.includes('Building into decisive'), text);
   ok(text.includes('Of 23 runs that have resolved, 15 helped decide keep or remove (65%) and 8 were stranded by a change first: 0.5 stranded for every one that decided. 46 runs ($4.60) are still building.'), text);
@@ -581,7 +582,7 @@ await test('the summary shows building into decisive with its lead, table, plann
 });
 await test('no building into decisive panel when no subject has run_utility', () => {
   ok(conversionView(doc({ skills: [{ name: 'a' }] })) === null, 'null view');
-  ok(!textOf(renderRoute(doc({ skills: [{ name: 'a' }] }), { name: 'summary' }, {})).includes('Building into decisive'), 'no heading');
+  ok(!textOf(renderRoute(doc({ skills: [{ name: 'a' }] }), { name: 'summary' }, { ext: makeExt(fakeDash({})) })).includes('Building into decisive'), 'no heading');
 });
 
 for (const f of failures) console.log('FAIL ' + f);
