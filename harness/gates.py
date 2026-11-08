@@ -391,6 +391,16 @@ for the harm evidence; and `current_objective`, the current rest's own
 `sequence_block`, which the explorer charts). `no_help_confidence`, `harm_confidence`,
 `remove_share_at` and `harm_share_at` still report the shares alone.
 
+CURRENT LOG WEALTH (reporting only). The levels and p-values above read a
+test's PEAK wealth, but a test rejects only when its running wealth crosses,
+and betting wealth can fall after a peak. So each `sequence_block` also
+reports `keep_log_wealth` and `no_help_log_wealth`, the keep and remove
+tests' last log wealth; each `keep_tests` entry its route's as `log_wealth`
+(on its p's scale: less log 2 for a doubled pooled route, None where its p
+is pinned to 1); and `rest_guard` its removal evidence's as
+`remove_evidence_log_wealth`. No decision reads them; scripts/plan_week.py's
+`pairs_to_verdict` projects from them.
+
 THE BET PRIOR (`bet_prior`). Each test's running estimate starts from
 pseudo-runs: by default NEUTRAL_BET_PRIOR (mean 0, variance 0.25, one run),
 so the first bet is 0. compute_gates may pass a LEARNED prior per cell
@@ -742,6 +752,14 @@ def ville_p(wealth: list) -> float:
     return min(1.0, math.exp(-max(wealth, default=0.0)))
 
 
+def last_wealth(wealth: list) -> float:
+    """A test's CURRENT log wealth: its last value, 0 before any pair.
+    Reporting only (the planner's projection starts here): `reached` and
+    `ville_p` read the peak, but a test rejects only when its running wealth
+    crosses (`first_crossing`), and betting wealth can fall after a peak."""
+    return wealth[-1] if wealth else 0.0
+
+
 def betting_bound(ds: list, alpha: float, side: str, bet_prior: dict | None = None) -> float:
     """One end of the betting confidence sequence at one-sided level 1 -
     `alpha`, for display: `lower`, the largest a whose keep-type test of
@@ -790,6 +808,9 @@ def sequence_block(ds: list, margin: float, keep_alpha: float, remove_alpha: flo
             "remove_at": first_crossing(remove, remove_alpha),
             "helps_confidence": reached(keep), "no_help_confidence": reached(remove),
             "keep_p": ville_p(keep),
+            # The tests' current (last) log wealth, beside the peak-based
+            # levels above: reporting only, no decision reads them.
+            "keep_log_wealth": last_wealth(keep), "no_help_log_wealth": last_wealth(remove),
             "benefit_lower": betting_bound(ds, keep_alpha, "lower", bet_prior) * scale,
             "retire_upper": betting_bound(ds, remove_alpha, "upper", bet_prior) * scale}
 
@@ -1116,7 +1137,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
     route_alpha = keep_alpha if rest is None else keep_alpha / 2
     objective = sequence_block(ds, margin, route_alpha, remove_alpha, bet_prior)
     out["objective"] = objective
-    out["keep_tests"] = [{"route": "objective", "p": objective["keep_p"]}]
+    out["keep_tests"] = [{"route": "objective", "p": objective["keep_p"],
+                          "log_wealth": objective["keep_log_wealth"]}]
     # The judge is reported, never decides (2026-11-03): a removal it had to
     # agree to was blocked for good wherever its call was skipped (the
     # review's M2), and its keep route was a second family member.
@@ -1320,11 +1342,17 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         # Each route's p is doubled (Bonferroni), so `1 - m x min p` still
         # reads the cell's keep level; the pooled one counts only from the
         # current-rest pair floor.
+        # Each route's `log_wealth` is its current log wealth on its p's
+        # scale (less log 2 for the doubled p), None where its p is pinned
+        # to 1 as no keep evidence; reporting only.
         out["keep_tests"] = [
             {"route": "objective", "p": min(1.0, 2 * objective["keep_p"])
-             if floor_at is not None else 1.0},
+             if floor_at is not None else 1.0,
+             "log_wealth": objective["keep_log_wealth"] - math.log(2)
+             if floor_at is not None else None},
             {"route": "objective-current-rest",
-             "p": min(1.0, 2 * ville_p(current_keep_wealth))}]
+             "p": min(1.0, 2 * ville_p(current_keep_wealth)),
+             "log_wealth": last_wealth(current_keep_wealth) - math.log(2)}]
         out["rest_guard"] = {
             "min_pairs": rest["min_pairs"], "usable_current_rest_pairs": len(current_usable),
             "met_pairs": len(current_usable) >= rest["min_pairs"],
@@ -1351,6 +1379,8 @@ def _classify(pairs: list, policy: dict, family: int = 1,
             # The level the removal evidence reached (Ville's 1 - 1/W), what
             # the planner's retire progress and the explorer read.
             "remove_evidence_confidence": reached(remove_evidence),
+            # Its current (last) log wealth, reporting only (`last_wealth`).
+            "remove_evidence_log_wealth": last_wealth(remove_evidence),
             # Round 4's M3: the harm evidence's crossing and level.
             "harm_evidence_at": harm_at,
             "harm_evidence_confidence": reached(harm_evidence)}
@@ -1387,7 +1417,7 @@ def _classify(pairs: list, policy: dict, family: int = 1,
         elif pooled_keep is not None:
             # Round 4's m(a): a pooled keep that a removal overrode or that
             # lapsed is no keep evidence, so its route reports p = 1.
-            out["keep_tests"][0]["p"] = 1.0
+            out["keep_tests"][0].update(p=1.0, log_wealth=None)
         keep_at = min(standing, default=None)
         out["rest_guard"]["keep_final"] = final
         keeps = keep_at is not None
@@ -2164,7 +2194,8 @@ def retirement(index: dict, models: list, skill: str, policy: dict,
                 # keep evidence, so its pooled route reports p = 1, as an
                 # overridden or lapsed one does.
                 cell = {**cell, "keep_tests": [
-                    {**t, "p": 1.0} if t.get("route") == "objective" else t
+                    {**t, "p": 1.0, "log_wealth": None}
+                    if t.get("route") == "objective" else t
                     for t in cell["keep_tests"]]}
             if provisional:
                 # RUN UTILITY: a parked provisional keep has not decided.

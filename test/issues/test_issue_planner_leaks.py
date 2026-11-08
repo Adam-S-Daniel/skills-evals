@@ -20,6 +20,15 @@ WIDE, #842), each pinned against harness/gates.py's own classification:
     from the pooled crossing; they are `building` until the keep is final.
   * A fire never carries a model whose cell is decided or held, also under
     PAIR_EVERY_FIRE.
+  * `pairs_to_verdict` started each test from its PEAK log wealth (Ville's
+    p and `reached`), but a test rejects only when its running wealth
+    crosses, and betting wealth falls after a peak: a cell that peaked and
+    fell read as near a verdict and was never flagged past its cap. gates
+    now reports each test's current log wealth, and the planner starts
+    there (the peak only for an older document without it).
+  * `partly_decided` counted a parked cell (ceiling, ceiling-unconfirmed,
+    paused) as settled, though it does not vote on removal, so a subject
+    whose only non-open cell was parked was finished first.
 
 Hermetic: canned runs and hand-built cells, `now` passed in, workflows
 parsed with PyYAML. No network, clock or sleep.
@@ -30,6 +39,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import math
+import statistics
 from pathlib import Path
 import sys
 import tempfile
@@ -47,7 +57,7 @@ sys.path.insert(0, str(ISSUES))
 import gates  # noqa: E402
 import guidance  # noqa: E402
 import plan_week  # noqa: E402
-from test_issue_70_retirement import FLAT_JUDGE, TEST_POLICY, cell, series  # noqa: E402
+from test_issue_70_retirement import FLAT, FLAT_JUDGE, TEST_POLICY, cell, series  # noqa: E402
 # The module, not the class: a TestCase bound to a name here is collected
 # again, and the suite's count check (build_suite) then fails.
 import test_issue_pooled_rest_guard as pooled_tests  # noqa: E402
@@ -342,6 +352,129 @@ class GuidanceParserTests(unittest.TestCase):
         self.assertTrue(installs)
         self.assertIn("markdown-it-py==4.2.0", " ".join(runs[i] for i in installs).split())
         self.assertIn("--guidance", runs[plan_at])
+
+
+#: Paired differences whose keep wealth peaks at about 1.11 (below the keep
+#: threshold, log 1/0.2 = 1.61) after four pairs and falls to about 0.15.
+PEAKED = [0.5] * 4 + [-0.5] * 2 + [0.2] * 2
+#: The mirror for the remove test: its wealth peaks, then falls.
+PEAKED_REMOVE = [-0.5] * 4 + [0.6] * 3
+
+
+def betting_cell(ds, *, current=True, **over):
+    """A skill cell over `ds`, as the planner receives it from gates; with
+    `current` False, an older verdict document with no current log wealth."""
+    block = gates.sequence_block(ds, TEST_POLICY["objective_margin"],
+                                 1 - TEST_POLICY["benefit_confidence"],
+                                 1 - TEST_POLICY["retire_confidence"], None)
+    route = {"route": "objective", "p": block["keep_p"],
+             "log_wealth": block["keep_log_wealth"]}
+    if not current:
+        block = {k: v for k, v in block.items() if not k.endswith("_log_wealth")}
+        route.pop("log_wealth")
+    base = {"skill": "s", "section": None, "fixture": "evals/s/a", "model": A,
+            "class": "insufficient", "verdict": "insufficient", "pairs": len(ds),
+            "objective": block, "keep_tests": [route], "keep_family": 1,
+            "bet_prior": None, "d_variance": statistics.variance(ds)}
+    base.update(over)
+    return base
+
+
+class CurrentWealthTests(unittest.TestCase):
+    """The projection starts from each test's current log wealth, not its
+    peak: only a running crossing rejects."""
+
+    def test_gates_reports_the_current_log_wealth_beside_the_peak(self):
+        margin = TEST_POLICY["objective_margin"]
+        keep = gates.keep_wealth(PEAKED)
+        remove = gates.remove_wealth(PEAKED_REMOVE, margin)
+        self.assertLess(keep[-1], max(keep))
+        self.assertLess(remove[-1], max(remove))
+        kept = gates.sequence_block(PEAKED, margin, 0.2, 0.1)
+        self.assertAlmostEqual(kept["keep_log_wealth"], keep[-1], places=12)
+        self.assertAlmostEqual(kept["keep_p"], math.exp(-max(keep)), places=12)
+        removed = gates.sequence_block(PEAKED_REMOVE, margin, 0.2, 0.1)
+        self.assertAlmostEqual(removed["no_help_log_wealth"], remove[-1], places=12)
+        self.assertAlmostEqual(removed["no_help_confidence"],
+                               1 - math.exp(-max(remove)), places=12)
+
+    def test_a_classified_cell_carries_its_routes_current_log_wealth(self):
+        gate = skill_cell(FLAT, 8)
+        self.assertEqual([set(t) for t in gate["keep_tests"]],
+                         [{"route", "p", "log_wealth"}])
+        self.assertAlmostEqual(gate["keep_tests"][0]["log_wealth"],
+                               gate["objective"]["keep_log_wealth"], places=12)
+        for key in ("keep_log_wealth", "no_help_log_wealth"):
+            self.assertTrue(plan_week._real(gate["objective"][key]), key)
+
+    def test_a_pooled_cell_carries_its_removal_evidences_current_log_wealth(self):
+        gate = cell_of(pooled_tests.StaleKeepTests().stale(20))
+        guard = gate["rest_guard"]
+        now = guard["remove_evidence_log_wealth"]
+        self.assertTrue(plan_week._real(now))
+        # Never above the peak the level was read from.
+        self.assertLessEqual(now, -math.log(1 - guard["remove_evidence_confidence"]) + 1e-9)
+        self.assertEqual([t["route"] for t in gate["keep_tests"]],
+                         ["objective", "objective-current-rest"])
+        for route in gate["keep_tests"]:
+            if route["log_wealth"] is not None:
+                # On its doubled p's scale: never above log 1/p.
+                self.assertLessEqual(route["log_wealth"], -math.log(route["p"]) + 1e-9)
+        self.assertIsNotNone(gate["keep_tests"][1]["log_wealth"])
+
+    def test_a_cell_that_peaked_and_fell_is_projected_further(self):
+        peak = plan_week.pairs_to_verdict(betting_cell(PEAKED, current=False), plan_ctx([]))
+        now = plan_week.pairs_to_verdict(betting_cell(PEAKED), plan_ctx([]))
+        self.assertGreater(now["keep"], peak["keep"] + 10)
+        # The same for the remove test.
+        peak = plan_week.pairs_to_verdict(betting_cell(PEAKED_REMOVE, current=False),
+                                          plan_ctx([]))
+        now = plan_week.pairs_to_verdict(betting_cell(PEAKED_REMOVE), plan_ctx([]))
+        self.assertGreater(now["remove"], peak["remove"])
+
+    def test_it_is_past_its_cap_when_the_gap_exceeds_the_pairs_left(self):
+        # 25 pairs held leaves 15 under the cap of 40: the peak reads about
+        # 9 pairs away, the current wealth about 27.
+        peak = plan_week.pairs_to_verdict(betting_cell(PEAKED, current=False, pairs=25),
+                                          plan_ctx([]))
+        now = plan_week.pairs_to_verdict(betting_cell(PEAKED, pairs=25), plan_ctx([]))
+        self.assertEqual(now["remaining"], 15)
+        self.assertLess(peak["pairs"], 15)
+        self.assertFalse(peak["past_cap"])
+        self.assertGreater(now["pairs"], 15)
+        self.assertTrue(now["past_cap"])
+
+    def test_a_crossed_peak_still_counts_as_crossed(self):
+        # A rejection is final: a keep route whose peak crossed projects 0
+        # however far its wealth fell since.
+        cell_ = betting_cell(PEAKED, keep_tests=[
+            {"route": "objective", "p": 0.1, "log_wealth": -1.0}])
+        self.assertEqual(plan_week.pairs_to_verdict(cell_, plan_ctx([]))["keep"], 0.0)
+
+
+class ParkedCellTests(unittest.TestCase):
+    """A parked cell does not vote on removal, so it settles nothing."""
+
+    def plain(self, fixture, cls, skill="s"):
+        return {"skill": skill, "section": None, "fixture": f"evals/{skill}/{fixture}",
+                "model": A, "class": cls}
+
+    def test_a_parked_cell_beside_open_ones_is_not_partly_decided(self):
+        for parked in plan_week.PARKED_CLASSES:
+            with self.subTest(parked=parked):
+                cells = [self.plain("a", parked), self.plain("b", "insufficient"),
+                         self.plain("c", "missing")]
+                self.assertEqual(plan_week.partly_decided(cells), set())
+
+    def test_a_settled_cell_still_counts_beside_a_parked_one(self):
+        cells = [self.plain("a", "ceiling"), self.plain("b", "no-benefit"),
+                 self.plain("c", "insufficient")]
+        self.assertEqual(plan_week.partly_decided(cells), {("skill", "s")})
+
+    def test_a_parked_provisional_keep_is_not_open_either(self):
+        cells = [{**self.plain("a", "paused"), "provisional_keep": True},
+                 self.plain("b", "no-benefit")]
+        self.assertEqual(plan_week.partly_decided(cells), set())
 
 
 if __name__ == "__main__":
