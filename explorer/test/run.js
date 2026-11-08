@@ -292,7 +292,8 @@ await test('no source file but config.js names the owner/repo', () => {
 
 // --- the public bundle -------------------------------------------------------------
 const publicJs = await bundle('public.js');
-const privateJs = await bundle('private.js');
+// Unminified, so the module path comments the leak checks look for survive.
+const privateJs = await bundle('private.js', { minifyWhitespace: false });
 await test('the leak check sees the dashboard adapter in the private bundle', () => {
   // The negative control: the same check must flag what it exists to keep out.
   const leaks = privateLeaks(privateJs);
@@ -344,6 +345,13 @@ await test('tool/index.html is one self-contained file', () => {
 await test('dashboard/page/index.html is a fresh build of explorer/src', async () => {
   const fresh = await buildPrivatePage();
   ok(fresh === fs.readFileSync(PRIVATE_PAGE, 'utf8'), 'dashboard/page/index.html differs from a build: run `npm run build` in explorer/ and commit both');
+});
+await test('the private page fits an ArtifactData document once JSON-serialized', async () => {
+  // The console stores the page as the `text` field of files/index.html, a
+  // document capped at 262,144 bytes of UTF-8 after JSON.stringify.
+  const page = await buildPrivatePage();
+  const size = Buffer.byteLength(JSON.stringify({ text: page }), 'utf8');
+  ok(size < 262144, 'serialized private page is ' + size + ' bytes, over the 262,144 limit');
 });
 await test('dashboard/page/index.html is one self-contained Dashboard fragment', () => {
   const html = fs.readFileSync(PRIVATE_PAGE, 'utf8');
