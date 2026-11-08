@@ -45,11 +45,11 @@ THE BANDS (rule D), in order:
      request's head, is not planned: routine arms run only the registries'
      default branches (ADR 0010 decision 1).
   2. missing evidence, at least 30%: cells with no run on their model,
-     cheaper model first, then heaviest model usage (usage/latest.json on the results branch;
-     equal weights without it).
-  3. near a decision, at least 20%: insufficient cells, fewest runs first,
-     then the cheaper model (every run can decide a cell: harness/gates.py
-     checks a confidence sequence after each one).
+     by DEEP BEFORE WIDE (below), then the cheaper model, then heaviest model
+     usage (usage/latest.json on the results branch; equal weights without it).
+  3. near a decision, at least 20%: insufficient cells, by DEEP BEFORE
+     WIDE, then fewest runs, then the cheaper model (every run can decide a
+     cell: harness/gates.py checks a confidence sequence after each one).
   Bands 2 and 3 skip every cell of a skill or guidance section whose
   verdict is already `keep` (one confident benefit decides it; band 6
   re-checks it), and order the cheaper model first within a tie (Adam,
@@ -84,7 +84,8 @@ THE BANDS (rule D), in order:
          `max_runs_per_cell` pairs (gates' `at_cap`). A ceiling or
          ceiling-unconfirmed cell does not block: it is not fired, and the
          section's other cells still are.
-     Within it the higher-scored section goes first, then its binding
+     Within it DEEP BEFORE WIDE goes first; where a cell has no
+     projection, the higher-scored section, then its binding
      cell: the lowest retire progress, or, when the section's score came
      from the keep side, the highest keep progress; then the cheaper
      model. The plan records the sections as
@@ -183,7 +184,48 @@ THE BANDS (rule D), in order:
      own; nothing is repeated on a clock.
   8. guidance rest: every other undecided guidance cell, with no minimum
      share, so only room every other band leaves, in band 3's order
-     (fewest runs, so missing cells first, then the cheaper model). When
+     (DEEP BEFORE WIDE, then fewest runs, then the cheaper model).
+  DEEP BEFORE WIDE (Adam, 2026-11-08: of 3,010 eval runs, 1,354 sat in
+     cells near zero confidence either way, because sweeps spread a few runs
+     over every subject; only 166 ever decided a standing verdict). In the
+     verdict-seeking bands 2, 3, 4 and 8 (BATCH_BANDS) every cell is ordered
+     first by (after high stakes) the key `depth_order`:
+       1. projected past its cap last: `pairs_to_verdict` exceeds the pairs
+          left under `max_runs_per_cell`, with at least
+          PROJECTION_MIN_PAIRS (3) pairs measured. It is still fired when
+          room is left, and is a `cell-projected-past-cap` work item.
+       2. a cell of a partly decided subject (`partly_decided`: some cell
+          settled, some open) first: a removal needs every cell, so
+          finishing a started subject is nearer a verdict than opening one.
+       3. fewest projected points to a verdict per use:
+          pairs_to_verdict x fire cost / (1 + use), use the skill's usage
+          weight or the guidance session rate (one value for every section,
+          so guidance cells compare on points alone). Improve value's
+          headroom term is left out: a cell near its ceiling already shows
+          a small D, hence more projected pairs, and counting it twice
+          would double the penalty. 1 + use keeps a skill nobody invoked in
+          four weeks ranked by its points.
+     pairs_to_verdict: each gate test (keep, remove) is a betting
+     confidence sequence that rejects when its log wealth reaches
+     log(1/alpha). The wealth so far is log(1/p) of the level it reached;
+     the rest grows per pair at the aGRAPA bet's expected gain,
+     lambda mu - lambda^2 (var + mu^2) / 2 at lambda = mu / (var + mu^2)
+     (capped), with mu and var of D (margin - D for the remove test) as the
+     gate's next bet sees them: the observed mean D and the arms' run-mean
+     variance pooled with the cell's bet prior. A pooled removal also
+     waits for the current rest's `rest_guard_min_pairs`. The projection is
+     the nearer test's pairs. A cell with no measured D (a missing cell)
+     has none and keeps its band's old order behind every projected cell.
+     There is no separate cap on open subjects: from its start THE BATCH
+     already funds only its members in these bands (a few subjects per
+     kind, fitted to the budget), and partly decided subjects now join it
+     ahead of the longest without a run.
+  SCOPE: a guidance section whose _agent-guidance eval-coverage.yml row
+     is `skipped` (no real sessions, or enforced elsewhere) is held
+     (`scope_holds`, HOLD_SCOPE) like a private cell: no band, probe or
+     batch funds it, even when its fixtures are on evals/scheduled.yml.
+     Skills are scoped by evals/scheduled.yml, stakes `none` and the
+     private hold, as before. When
      the 30-fire cap binds, a section outside the focus can wait weeks.
 
 THE BATCH (Adam's steady-state goal, 2026-11-02 18:57 UTC: at 25% of the
@@ -202,8 +244,10 @@ and only from the policy's `start`. `batch_state` decides it each plan:
     open, no removal pull request, no blocking cell, some cell would plan a
     fire). Carried members first; then the kinds take turns, skills ranked
     most used first, then high stakes, guidance sections (no per-section
-    use) high stakes first; then the longest without a run (never run
-    first), then name. Each cell with headroom is charged its remaining
+    use) high stakes first; then a partly decided subject (DEEP BEFORE
+    WIDE); then the longest without a run (never run first), then name. A
+    subject whose every projected open cell is projected past its cap
+    (DEEP BEFORE WIDE) ranks after all of these. Each cell with headroom is charged its remaining
     observations, min(`pairs_per_cell`, the gate's `max_runs_per_cell` -
     the observations it has), at its model's measured cost per observation
     (`pair_costs`: points per paired run); a subject that alone would
@@ -315,7 +359,8 @@ improvement nothing is attempted until a with-arm run of the new content
 lands (the gates pool only runs of the content on main).
 
 WORK ITEMS are not fires: `needs-fixtures`, `needs-harder-fixtures`,
-`fixture-ceiling` and `fixture-broken` (change type `fixture`), `cell-at-cap`
+`fixture-ceiling`, `fixture-broken` and `cell-projected-past-cap` (change
+type `fixture`; the last a cell DEEP BEFORE WIDE ranks last), `cell-at-cap`
 (change type None: an undecided cell whose pairs reached the cap, with its
 gates reason; none for a kept subject), `paused-unmeasured` (change type
 `fixture`: a subject the gate marked `unmeasured`, every cell parked and a
@@ -331,8 +376,8 @@ fire workflow refuses, see above). Every item carries `change_type`:
 DESCRIPTION TRIMS), `guidance-edit` for a guidance-improve fire, `fixture`,
 `trigger` for a trigger-only improve fire (THE TRIGGER LANE), or None for
 `routine-outage` and
-`routine-down`. `fixture-ceiling`, `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` are
-routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
+`routine-down`. `fixture-ceiling`, `cell-at-cap`, `cell-projected-past-cap`, `paused-unmeasured`
+and `paused-ceiling` are routed SUMMARY_ROUTE: the step summary counts them and the plan JSON lists
 them, but scripts/work_item_issues.py files no issue for them (round 4's
 m1). Lesson proposals of kind `agent-check` are not planned
 here: _agent-guidance's fleet worker reads them (its ADR 0027), so a
@@ -616,7 +661,8 @@ BLOCKING_MIN_RUNS = 3
 PARKED_CLASSES = ("ceiling", "ceiling-unconfirmed", "paused")
 #: The route of a work item listed only in the sweep's step summary (its
 #: kind and count, `summary_lines`) and the plan JSON: `fixture-ceiling`,
-#: `cell-at-cap`, `paused-unmeasured` and `paused-ceiling` (round 4's m1 and M1, round 6's M1). scripts/work_item_issues.py files issues
+#: `cell-at-cap`, `cell-projected-past-cap` (DEEP BEFORE WIDE), `paused-unmeasured`
+#: and `paused-ceiling` (round 4's m1 and M1, round 6's M1). scripts/work_item_issues.py files issues
 #: for its KINDS only, so routing these to `issue` promised one that never came.
 SUMMARY_ROUTE = "summary"
 IMPROVE_TRIALS = 3
@@ -1127,16 +1173,18 @@ def guidance_focus(ctx: dict) -> tuple:
 
 
 def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
-    """(band, order) for an undecided guidance cell's fire: `focus` for a
-    focused section, the higher-scored section first, then by the cell's
-    own progress on the side the section's score came from (the binding
-    cell first: lowest retire progress, or highest keep progress), then the
-    cheaper model. Sections go first because the two sides' progress do not
-    compare: a keep-side cell's would sort before every retire-side cell.
-    `guidance-rest` for any other section, in the near band's order
-    (`near_order`: fewest runs, then the cheaper model), so a missing cell
-    leads. High stakes first in both."""
-    rank, _least, price = near_order[:3]
+    """(band, order) for an undecided guidance cell's fire. `near_order` is
+    (rank, past cap, not partly decided, projected points per use, fewest
+    runs, cheaper model, heavier model), DEEP BEFORE WIDE's `depth_order`
+    after the stakes rank. `focus` for a focused section: the DEEP BEFORE
+    WIDE key first (it compares the keep and remove sides, both in pairs),
+    then, where the projection is unknown, the higher-scored section, then
+    the cell's own progress on the side the section's score came from (the
+    binding cell first: lowest retire progress, or highest keep progress),
+    then the cheaper model. `guidance-rest` for any other section, in
+    `near_order`, so a missing cell (no projection) keeps the fewest-runs
+    order behind the projected ones. High stakes first in both."""
+    rank, past_cap, opened, points, _least, price = near_order[:6]
     focus = focused.get(cell["section"])
     if focus is None:
         return "guidance-rest", near_order
@@ -1144,7 +1192,7 @@ def _guidance_band(cell: dict, focused: dict, near_order: tuple) -> tuple:
         progress = -keep_progress(cell, focus["benefit_level"])
     else:
         progress = retire_progress(cell, focus["retire_level"])
-    return "focus", (rank, focus["position"], progress, price)
+    return "focus", (rank, past_cap, opened, points, focus["position"], progress, price)
 
 
 # ---------------------------------------------------------------------------
@@ -1549,10 +1597,14 @@ def batch_subjects(ctx: dict) -> dict:
                every cell held or stakes `none`);
       open     otherwise.
     `rank` is 0 for a high-stakes subject, else 1; `newest` its newest run
-    on any cell (None for never run)."""
+    on any cell (None for never run); `partly` whether some cell is settled
+    and some still open (`partly_decided`); `past_cap` whether every open
+    cell it would fire that has a projection is projected past its cap
+    (`past_cap_subject`)."""
     private = set(ctx.get("private_skills") or ())
     removal_skills = set(ctx.get("removal_prs") or ())
     removal_sections = set(ctx.get("guidance_removal_prs") or ())
+    started = partly_decided(ctx["cells"])
     grouped: dict = {}
     for cell in ctx["cells"]:
         key = ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
@@ -1575,6 +1627,8 @@ def batch_subjects(ctx: dict) -> dict:
         stamps = [t for t in (_stamp_time(c.get("newest")) for c in cells) if t is not None]
         subjects[(kind, name)] = {
             "status": status, "newest": max(stamps) if stamps else None,
+            "partly": (kind, name) in started,
+            "past_cap": past_cap_subject(live, ctx),
             "rank": 0 if any(c.get("stakes") == "high" for c in cells) else 1}
     return subjects
 
@@ -1642,12 +1696,16 @@ def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) 
     wait."). Pure. Returns {carried, picks, waiting, fit}.
 
     Carried members stay whatever they cost, and their cost counts first.
-    The candidates, open subjects not carried, are ranked per kind. Skills:
+    The candidates, open subjects not carried, are ranked per kind, a
+    subject projected past its caps (`past_cap`, DEEP BEFORE WIDE) after
+    every other. Then skills:
     most used first (the usage weight, `neutral_weights` of
     ctx["skill_weights"]), then high stakes, then the longest without a run
     (never run first), then name. Guidance has no per-section use, so its
     sections rank high stakes first, then the longest without a run, then
-    name. The kinds take turns, so neither kind's list starves the other. A
+    name. In both, a partly decided subject (`partly`, DEEP BEFORE WIDE)
+    goes before the longest without a run. The kinds take turns, so
+    neither kind's list starves the other. A
     candidate joins while its kind is under its target size and its expected
     cost (`subject_cost`, the remaining observations of its cells with
     headroom up to the gate's `max_runs_per_cell`) fits the room the budget
@@ -1684,9 +1742,14 @@ def fit_batch(ctx: dict, subjects: dict, carry: list, sizes: dict, number: int) 
     for kind in BATCH_KINDS:
         # Skills: most used first, then stakes. Guidance has no per-section
         # use, so stakes stay first there.
-        ranked[kind] = [name for _w, _r, _n, name in sorted(
-            (-(weights.get(name, 0.0) if kind == "skill" else 0.0), info["rank"],
-             info["newest"] or floor_time, name)
+        # DEEP BEFORE WIDE: then a partly decided subject before one with
+        # nothing settled, ahead of the longest without a run.
+        # A subject projected not to decide before its caps waits behind
+        # every other (DEEP BEFORE WIDE: a batch slot is a verdict to reach).
+        ranked[kind] = [name for *_key, name in sorted(
+            (bool(info.get("past_cap")),
+             -(weights.get(name, 0.0) if kind == "skill" else 0.0), info["rank"],
+             not info.get("partly"), info["newest"] or floor_time, name)
             for (k, name), info in subjects.items()
             if k == kind and info["status"] == "open" and (k, name) not in taken)]
     room = {kind: sizes[kind] - sum(1 for m in carry if m["kind"] == kind)
@@ -1786,6 +1849,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     _focus, focused = guidance_focus(ctx)
     held = cheaper_first(ctx["cells"], costs)
     members = batch_members(ctx)
+    started = partly_decided(ctx["cells"])
     final_kept = {c["section"] for c in ctx["cells"]
                   if c.get("section") and c["class"] == "benefit"
                   and not c.get("provisional_keep")}
@@ -1806,6 +1870,9 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
         kept = cell.get("verdict") == "keep"
         due = newest is not None and now - newest >= recheck_after(cell)
         provisional = False
+        # DEEP BEFORE WIDE: read only by the verdict-seeking bands below.
+        depth = depth_order(cell, ctx, item["cost"], started)
+        near_order = (rank, *depth, least, price, -item["weight"])
         if not cell.get("section") and cell["skill"] in removal:
             band, order = "safety", ()
         elif cell["class"] in PARKED_CLASSES:
@@ -1849,7 +1916,7 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # above). In the recheck band, which has no share, a full focus
             # band starved it. A section with a final keep on another cell
             # is kept whatever this cell does.
-            band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
+            band, order = _guidance_band(cell, focused, near_order)
             provisional = True
         elif kept and cell["class"] in ("missing", "insufficient"):
             # More runs cannot change a keep, but its re-check still comes
@@ -1857,12 +1924,12 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             # tested again.
             band, order = ("recheck", (rank, newest.timestamp())) if due else (None, None)
         elif cell["class"] == "missing":
-            band, order = (_guidance_band(cell, focused, (rank, least, price, -item["weight"]))
-                           if cell.get("section") else ("missing", (rank, price, -item["weight"])))
+            band, order = (_guidance_band(cell, focused, near_order) if cell.get("section")
+                           else ("missing", (rank, *depth, price, -item["weight"])))
         elif cell["class"] == "insufficient" and cell.get("section"):
-            band, order = _guidance_band(cell, focused, (rank, least, price, -item["weight"]))
+            band, order = _guidance_band(cell, focused, near_order)
         elif cell["class"] == "insufficient":
-            band, order = "near", (rank, least, price, -item["weight"])
+            band, order = "near", near_order
         elif due:
             band, order = "recheck", (rank, newest.timestamp())
         else:
@@ -1891,6 +1958,20 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             work.append(broken)
         elif not cell.get("pending"):
             bands[band].append({**item, "band": band, "order": order})
+        if band in BATCH_BANDS and depth[0] \
+                and cell.get("empty_fires", 0) < BROKEN_AFTER_FIRES:
+            # DEEP BEFORE WIDE: still fired, last in its band, and counted
+            # in the step summary: only a fixture that discriminates more
+            # (or a person) can let it decide before its cap.
+            projection = pairs_to_verdict(cell, ctx)
+            ahead = {"kind": "cell-projected-past-cap", "change_type": "fixture",
+                     "skill": cell["skill"], "fixture": cell["fixture"],
+                     "model": cell["model"], "route": SUMMARY_ROUTE,
+                     "pairs": None if math.isinf(projection["pairs"])
+                     else projection["pairs"], "remaining": projection["remaining"]}
+            if cell.get("section"):
+                ahead["section"] = cell["section"]
+            work.append(ahead)
     # No fixture names: an outage is the routine's, not any fixture's, and
     # the step summary counts work items by kind.
     outages = [{"kind": "routine-outage", "change_type": None, "route": "issue",
@@ -1992,6 +2073,235 @@ def cheaper_first(cells: list, costs: dict) -> set:
                     for other in group if other is not cell):
                 held.add(id(cell))
     return held
+
+
+# ---------------------------------------------------------------------------
+# DEEP BEFORE WIDE (module docstring): the projection that orders bands 2, 3,
+# 4 and 8, and the guidance sections out of scope.
+
+#: harness/gates.py's betting constants, copied because this module imports
+#: gates only lazily (test_issue_deep_before_wide.py pins them equal): the
+#: bet cap, the neutral prior (mean, variance, pseudo-pairs) and the least
+#: variance a bet uses.
+BET_CAP = 0.9
+NEUTRAL_BET_PRIOR = (0.0, 0.25, 1.0)
+MIN_BET_VARIANCE = 1e-6
+#: A cell is projected past its cap, ranked last in its band and listed as a
+#: `cell-projected-past-cap` work item, only from this many pairs: the
+#: gate's learned bet prior weighs PRIOR_PSEUDO_RUNS (3) pairs, so before
+#: that the projection is mostly the prior's, not the cell's.
+PROJECTION_MIN_PAIRS = 3
+#: The cell classes a subject has settled (`partly_decided`): anything but
+#: still open. A provisional keep is open.
+OPEN_CELL_CLASSES = ("missing", "insufficient")
+
+
+def _real(value) -> bool:
+    """A finite number of either sign, not a bool (`_number` is >= 0)."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and math.isfinite(value)
+
+
+def d_variance(gate_cell: dict | None) -> float | None:
+    """The variance of a cell's paired difference D = with - without, from
+    its gates arm summaries' run means (the window the tests bet over): the
+    sum of the two arms' sample variances, since the arms are separate
+    sessions. None with fewer than two run means on either arm."""
+    total = 0.0
+    for role in ("with", "without"):
+        arm = (gate_cell or {}).get(role)
+        means = [m for m in (arm.get("run_means") or []) if _real(m)] \
+            if isinstance(arm, dict) else []
+        if len(means) < 2:
+            return None
+        total += statistics.variance(means)
+    return total
+
+
+def _growth(mu: float, var: float, worst: float) -> float:
+    """The expected log-wealth gain per pair of a betting test whose payoff
+    has mean `mu` and variance `var` and loses at most `worst`, at the bet
+    aGRAPA sizes from those moments (mu / (var + mu^2), capped at BET_CAP /
+    worst): lambda mu - lambda^2 (var + mu^2) / 2, the second-order
+    expansion of E[log(1 + lambda y)]. 0 when mu <= 0: that test never
+    rejects."""
+    if mu <= 0:
+        return 0.0
+    second = var + mu * mu
+    bet = min(mu / second, BET_CAP / worst)
+    return max(0.0, bet * mu - bet * bet * second / 2)
+
+
+def _to_cross(have: float, need: float, growth: float) -> float:
+    """Pairs until a log wealth of `have` grows to `need` at `growth` per pair."""
+    if have >= need:
+        return 0.0
+    return (need - have) / growth if growth > 0 else math.inf
+
+
+def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
+    """The projected extra pairs before `cell`'s keep or remove test rejects,
+    or None when the cell has no measured D yet (no `objective` block).
+    Returns {pairs, keep, remove, remaining, past_cap}.
+
+    Each test is a betting confidence sequence (harness/gates.py) that
+    rejects when its log wealth reaches log(1/alpha): keep at alpha =
+    (1 - benefit_confidence) / keep_family (halved for a pooled in-situ
+    cell's two routes), remove at 1 - retire_confidence. The wealth so far
+    is read off the level each test reached (log 1/p: the smallest keep p,
+    the remove test's no-help confidence, a pooled cell's removal evidence).
+    The rest grows at `_growth` per pair with D's mean and variance as the
+    gate's next bet sees them: the cell's observed mean D and `d_variance`
+    pooled with its bet prior's (mean, variance, pseudo-pairs), exactly how
+    aGRAPA starts each test. The keep test bets on D, the remove test on
+    margin - D. A pooled removal also waits for the current rest's
+    `rest_guard_min_pairs`. `pairs` is the nearer of the two, `remaining`
+    the pairs left under `max_runs_per_cell` (the current rest's, pooled),
+    and `past_cap` whether `pairs` exceeds it with at least
+    PROJECTION_MIN_PAIRS pairs measured. A provisional keep lapses at that
+    cap, so its `pairs` is at most `remaining` and it is never past it."""
+    objective = cell.get("objective")
+    if not isinstance(objective, dict) or not _real(objective.get("delta")):
+        return None
+    guidance = bool(cell.get("section"))
+    policy = (ctx.get("guidance_policy") if guidance else None) or ctx.get("policy") or {}
+    margin = policy.get("objective_margin", 0.15)
+    benefit = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
+    retire = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
+    pooled = isinstance(cell.get("rest_guard"), dict)
+    family = cell.get("keep_family") if isinstance(cell.get("keep_family"), int) \
+        and cell["keep_family"] >= 1 else 1
+    keep_alpha = (1 - benefit) / family / (2 if pooled else 1)
+    n = objective.get("pairs") if isinstance(objective.get("pairs"), int) else 0
+    prior = cell.get("bet_prior")
+    m0, v0, n0 = ((prior["mean"], prior["variance"], prior["n"])
+                  if isinstance(prior, dict) and _real(prior.get("mean"))
+                  and all(_number(prior.get(k)) for k in ("variance", "n"))
+                  else NEUTRAL_BET_PRIOR)
+    delta = objective["delta"]
+    var_d = cell.get("d_variance") if _number(cell.get("d_variance")) else v0
+    weight = n0 + n
+    mu = (m0 * n0 + delta * n) / weight if weight else 0.0
+    second = ((v0 + m0 * m0) * n0 + (var_d + delta * delta) * n) / weight if weight else v0
+    var = max(second - mu * mu, MIN_BET_VARIANCE)
+    ps = [t["p"] for t in (cell.get("keep_tests") or [])
+          if isinstance(t, dict) and _number(t.get("p")) and t["p"] > 0
+          and not (cell.get("provisional_keep") and t.get("route") == "objective")]
+    keep_p = min(ps) if ps else (objective["keep_p"] if _number(objective.get("keep_p"))
+                                 and objective["keep_p"] > 0 else 1.0)
+    no_help = _level(cell["rest_guard"], "remove_evidence_confidence") if pooled \
+        else _level(objective, "no_help_confidence")
+    keep = _to_cross(-math.log(min(keep_p, 1.0)), -math.log(keep_alpha),
+                     _growth(mu, var, 1.0))
+    remove = _to_cross(-math.log(max(1 - no_help, 1e-12)), -math.log(1 - retire),
+                       _growth(margin - mu, var, 1 - margin))
+    current = cell.get("current_rest_pairs") if pooled \
+        and isinstance(cell.get("current_rest_pairs"), int) else None
+    if pooled and current is not None:
+        floor = policy.get("rest_guard_min_pairs") or 0
+        remove = max(remove, floor - current)
+    pairs = min(keep, remove)
+    cap = gate_cap(ctx, "guidance" if guidance else "skill")
+    held = current if current is not None else (cell.get("pairs") or n)
+    remaining = None if cap is None else max(0, cap - held)
+    if cell.get("provisional_keep") and remaining is not None:
+        # A provisional keep lapses at the current rest's cap (gates' THE
+        # STALE KEEP), so the cap is its verdict: never past it.
+        pairs = min(pairs, remaining)
+    return {"pairs": pairs, "keep": keep, "remove": remove, "remaining": remaining,
+            "past_cap": remaining is not None and n >= PROJECTION_MIN_PAIRS
+            and pairs > remaining}
+
+
+def past_cap_subject(cells: list, ctx: dict) -> bool:
+    """Whether a subject cannot reach a verdict before its caps on the
+    current evidence: every cell of `cells` that would plan a fire
+    (`_produces_item`) and has a projection is projected past its cap, and
+    at least one has one. A subject with an unprojected open cell (no
+    measured D yet) is not."""
+    projections = [pairs_to_verdict(c, ctx) for c in cells if _produces_item(c)]
+    if any(p is None for p in projections) or not projections:
+        return False
+    return all(p["past_cap"] for p in projections)
+
+
+def _subject_of(cell: dict) -> tuple:
+    return ("guidance", cell["section"]) if cell.get("section") else ("skill", cell["skill"])
+
+
+def partly_decided(cells: list) -> set:
+    """The subjects (`_subject_of`) with at least one settled cell (a class
+    outside OPEN_CELL_CLASSES that is not a provisional keep), at least one
+    still open, and no BLOCKING cell (`_blocking`: then more runs cannot
+    finish it toward removal, so it is not a subject to finish first): the
+    ones DEEP BEFORE WIDE finishes first."""
+    settled, still_open, blocked = set(), set(), set()
+    for cell in cells:
+        if _blocking(cell):
+            blocked.add(_subject_of(cell))
+        if cell["class"] in OPEN_CELL_CLASSES or cell.get("provisional_keep"):
+            still_open.add(_subject_of(cell))
+        else:
+            settled.add(_subject_of(cell))
+    return (settled & still_open) - blocked
+
+
+def depth_order(cell: dict, ctx: dict, cost: float, started: set) -> tuple:
+    """The DEEP BEFORE WIDE key of a verdict-seeking cell, before each band's
+    own order as its tie-break: (projected past its cap, not of a partly
+    decided subject, projected points to a verdict per use). The last is
+    `pairs_to_verdict` x the cell's fire cost / (1 + its subject's use): a
+    skill's usage weight (`neutral_weights`), a guidance section's session
+    rate (ctx["guidance_use"], one value for every section); math.inf when
+    the projection is unknown or infinite, so those keep the band's old
+    order behind every known one."""
+    projection = pairs_to_verdict(cell, ctx)
+    if cell.get("section"):
+        use = ctx.get("guidance_use") or 0.0
+    else:
+        use = neutral_weights(ctx.get("skill_weights") or {}).get(cell["skill"], 0.0) \
+            if ctx.get("skill_weights") else 0.0
+    points = math.inf if projection is None or math.isinf(projection["pairs"]) \
+        else projection["pairs"] * cost / (1 + max(use, 0.0))
+    return (bool(projection and projection["past_cap"]),
+            _subject_of(cell) not in started, points)
+
+
+def guidance_skipped(guidance_dir: Path | None) -> frozenset | None:
+    """The ids of _agent-guidance's agents-md/eval-coverage.yml rows whose
+    status is `skipped` (out of scope: no real sessions, or enforced
+    elsewhere), or None when the file cannot be read."""
+    import yaml  # noqa: PLC0415
+    if guidance_dir is None:
+        return None
+    path = Path(guidance_dir) / BATCH_GUIDANCE_HISTORY
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return None
+    if not isinstance(doc, list):
+        return None
+    return frozenset(str(row["id"]) for row in doc
+                     if isinstance(row, dict) and row.get("status") == "skipped"
+                     and isinstance(row.get("id"), str))
+
+
+#: The hold reason of a cell whose guidance section is out of scope.
+HOLD_SCOPE = "out of scope: its eval-coverage.yml row is skipped"
+
+
+def scope_holds(ctx: dict) -> dict:
+    """ctx with every cell of a section in ctx["guidance_skipped"] held
+    (`schedulable` False, HOLD_SCOPE), so no band, probe or batch funds it.
+    It stays in the list for the cost statistics, as any held cell does."""
+    skipped = ctx.get("guidance_skipped") or ()
+    if not skipped:
+        return ctx
+    cells = [{**c, "schedulable": False, "hold_reason": HOLD_SCOPE}
+             if c.get("section") in skipped else c for c in ctx["cells"]]
+    return {**ctx, "cells": cells}
 
 
 def neutral_weights(raw: dict) -> dict:
@@ -2578,7 +2888,10 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     most one probe (`probe_items`): the first candidate that fits the room,
     else, with the guard's refresh, one that fits a reservation; none while
     `probe_blocked`. With no schedulable eval cell at all it plans normally
-    (`probe_only` False)."""
+    (`probe_only` False). A cell of a guidance section whose eval-coverage.yml
+    row is `skipped` is held first (`scope_holds`): no band, probe or batch
+    funds it."""
+    ctx = scope_holds(ctx)
     batch = batch_state(ctx, now)
     outside = 0
     if batch is not None:
@@ -3148,6 +3461,15 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # its window is full (`eval_items`).
                 "provisional_keep": provisional_keep(cell),
                 "at_cap": (cell or {}).get("at_cap") is True,
+                # DEEP BEFORE WIDE (`pairs_to_verdict`): the gate's own state
+                # the projection reads, the keep and remove tests so far, the
+                # bet prior its next bet starts from, the keep family, and
+                # the variance of D from the arms' run means.
+                "objective": (cell or {}).get("objective"),
+                "keep_tests": (cell or {}).get("keep_tests"),
+                "keep_family": (cell or {}).get("keep_family"),
+                "bet_prior": (cell or {}).get("bet_prior"),
+                "d_variance": d_variance(cell),
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),
@@ -3167,11 +3489,9 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 # counts every pooled run, skipped ones included).
                 arms = {role: (cell or {}).get(role) for role in ("with", "without")}
                 cells[-1].update({
-                    "objective": (cell or {}).get("objective"),
                     # A pooled cell's guard, whose removal evidence is its
                     # retire progress (`retire_progress`).
                     "rest_guard": (cell or {}).get("rest_guard"),
-                    "keep_tests": (cell or {}).get("keep_tests"),
                     "judge": (cell or {}).get("judge"),
                     "judge_carried": bool((cell or {}).get("judge_carried")),
                     "reason": (cell or {}).get("reason"),
@@ -3764,6 +4084,8 @@ def gather(args, now: datetime) -> dict:
                                           args.guidance, grecords, gprs, gremoval,
                                           evidence.get("guidance_on_hold", []), now),
             "guidance_gaps": guidance_gaps(args.guidance),
+            # Out of scope (`scope_holds`): sections whose row is skipped.
+            "guidance_skipped": guidance_skipped(args.guidance),
             "guidance_use": guidance_use(args.results_tree, now),
             "triggers": triggers,
             "trims": trim_busy(trim_contexts(registries), records, prs),
