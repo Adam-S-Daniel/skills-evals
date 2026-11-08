@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01T9ZnrNmd8YZrFwr5Xa4EaS",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git log --oneline | head; find . -path ./.git -prune -o -ipath '*release-notes*' -print | head -50",
+      "input_chars": 144,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01T9ZnrNmd8YZrFwr5Xa4EaS",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov  8 18:40 .\ndrwx------ 6 root root 4096 Nov  8 18:40 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  8 14:12 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  8 14:12 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  8 18:40 .claude\ndrwxr-xr-x 9 root root 4096 Nov  8 18:40 .git\ncrw-r...",
+      "output_chars": 1074,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WY8FVSvrtsoLZwb6urzsMf",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find . -path ./.git -prune -o -type f -print | grep -v '^./.git/'; find .claude -type f | head",
+      "input_chars": 147,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WY8FVSvrtsoLZwb6urzsMf",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 1539,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ATUUgUuahstXFdmfBkcXvN",
+      "name": "Bash",
+      "input": "cd <path>; cat session/skills/.skills-bootstrap-installed.json repo/skills.lock; echo ----; cat session/skills/release-notes/SKILL.md; echo ----; cat repo/dot-claude/skills/release-notes/SKILL.md; ls ...",
+      "input_chars": 272,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ATUUgUuahstXFdmfBkcXvN",
+      "is_error": false,
+      "output": "{\n  \"version\": 1,\n  \"installed\": [\n    {\n      \"name\": \"writing-adrs\",\n      \"registry\": \"https://github.com/Adam-S-Daniel/adam-agentskills.git\",\n      \"bundle\": \"adam-anything-anywhere\",\n      \"digest\": \"e8cd86670c8590eac5c490595ca8ba695ac0b623f36266bda4d31d64ad87b89c\"\n    }\n  ]\n}\n{\n  \"registry\": \"...",
+      "output_chars": 2012,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MbU3Tf1mwzJQfvESpfFA6Z",
+      "name": "Bash",
+      "input": "cd <path>; sha256sum session/skills/release-notes/SKILL.md; cat session/skills/writing-adrs/SKILL.md | head -5; grep -rn \"release-notes\" --include=* . 2><path> | grep -v '^./.git/' | head",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MbU3Tf1mwzJQfvESpfFA6Z",
+      "is_error": false,
+      "output": "6628e76a5a79ade33b5f4b623da2a4119fc5caec547af175895b75b9ccbc37d1  session/skills/release-notes/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n./README.md:28:Pull request 214 in example-app changed the repo's own `release-notes` skill\n./R...",
+      "output_chars": 517,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013wjThMtiribjWgcGqYAf4A",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013wjThMtiribjWgcGqYAf4A",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
