@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019d5B2vxXMvZQFUmwqmY8US",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls .github/workflows 2><path>",
+      "input_chars": 60,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019d5B2vxXMvZQFUmwqmY8US",
+      "is_error": false,
+      "output": ".github/workflows/release.yml\nREADME.md\npackage.json\nscripts/bump.sh\nscripts/collect.sh\nscripts/publish.sh\nrelease.yml",
+      "output_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JvbPsAhUhHo15MHKuJojgc",
+      "name": "Bash",
+      "input": "cat .github/workflows/release.yml; for f in scripts/*.sh package.json README.md; do echo \"=== $f\"; cat -A $f | sed 's/\\$$//' ; done",
+      "input_chars": 131,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JvbPsAhUhHo15MHKuJojgc",
+      "is_error": false,
+      "output": "name: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Collect changed packages\n        run: bash scripts/collec...",
+      "output_chars": 2225,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Q3Ln6udNJ2CvTm8PrchaC3",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\np='scripts/collect.sh'\ns=open(p).read()\ns=s.replace('''out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || true\n''','''# No `|| true`: on an HTTP error gh ...",
+      "input_chars": 1846,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Q3Ln6udNJ2CvTm8PrchaC3",
+      "is_error": false,
+      "output": "diff --git a/scripts/bump.sh b/scripts/bump.sh\nindex 27cd2ac..d1fc4db 100644\n--- a/scripts/bump.sh\n+++ b/scripts/bump.sh\n@@ -5,8 +5,10 @@ set -euo pipefail\n VERSION=$(jq -r '.version' package.json)\n NEXT_VERSION=\"${VERSION%.*}.$(( ${VERSION##*.} + 1 ))\"\n \n-sed -i \"s/\\\"version\\\": \\\"${VERSION}\\\"<path>...",
+      "output_chars": 669,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
