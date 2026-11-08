@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ACoya4d8yM8R1T36EZ6gXK",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ACoya4d8yM8R1T36EZ6gXK",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n910c0bd initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.github/workflows/sync-labels.yml\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/sync-labels.sh\n./.profil...",
+      "output_chars": 1501,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019uVkDkE5psk1WvcB7qTbVV",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt; cat .gh/replay/run-view-61003.log; cat .gh/replay/check-runs/*/annotations.json 2><path>; cat .gh/replay/api/repos/ex...",
+      "input_chars": 257,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019uVkDkE5psk1WvcB7qTbVV",
+      "is_error": false,
+      "output": "# Example labels\n\nKeeps the shared issue labels in `labels.txt` on every repository in the\nexample-org organization. The nightly `Sync labels` workflow runs\n`scripts/sync-labels.sh`, which creates each label or updates it in place.\n\nAdd a label by adding a line to `labels.txt`; the next nightly run ...",
+      "output_chars": 1575,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VPqj7pQWZQUVLCnvby7W3Q",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-6100{1,2}.log; cat .gh/replay/run-list.json | head -40; head -60 bin/gh; cat .gitmodules .mcp.json",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VPqj7pQWZQUVLCnvby7W3Q",
+      "is_error": true,
+      "output": "Exit code 1\nsync\tSync labels\t2026-01-05T03:00:06 Run bash scripts/sync-labels.sh\nsync\tSync labels\t2026-01-05T03:00:06 cannot use `--jq` without specifying `--json`\nsync\tSync labels\t2026-01-05T03:00:07 No repositories found in example-org; nothing to sync.\nsync\tSync labels\t2026-01-06T03:00:06 Run bas...",
+      "output_chars": 5538,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MfKkEjqgabk32SG59mxBCt",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/sync-labels.sh'\ns=open(p).read()\nold='''mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/labels.txt\"\n\nif [ \"${#REP...",
+      "input_chars": 3013,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MfKkEjqgabk32SG59mxBCt",
+      "is_error": false,
+      "output": "ok   syncs every label to every repo\nok   fails when gh repo list fails\nok   fails when the org lists no repositories\nall passed\nexit=0",
+      "output_chars": 135,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014vuNiryWTH5FzmYrFBvbJW",
+      "name": "Bash",
+      "input": "cp scripts/sync-labels.sh \"$TMPDIR/fixed.sh\" && git show HEAD:scripts/sync-labels.sh > scripts/sync-labels.sh && { bash tests/sync-labels.test.sh; echo \"exit=$?\"; }; cp \"$TMPDIR/fixed.sh\" scripts/sync...",
+      "input_chars": 229,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014vuNiryWTH5FzmYrFBvbJW",
+      "is_error": false,
+      "output": "ok   syncs every label to every repo\nFAIL label create calls: 0, want 4\nFAIL triage not created on example-org/b\nFAIL fails when gh repo list fails: exit 0, want 1\n  cannot use `--jq` without specifying `--json`\n  No repositories found in example-org; nothing to sync.\nFAIL fails when the org lists n...",
+      "output_chars": 542,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
