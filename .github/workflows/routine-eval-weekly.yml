@@ -119,8 +119,12 @@ jobs:
         uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.12"
-      - name: Install PyYAML
-        run: python3 -m pip install pyyaml==6.0.3
+      # markdown-it-py: compute_gates reads each guidance section's digests
+      # with it, and without it every guidance cell read "pooling key
+      # incomplete", so kept sections were fired for nothing (2026-11-08).
+      # plan_week.py now refuses to plan without it.
+      - name: Install PyYAML and markdown-it-py
+        run: python3 -m pip install pyyaml==6.0.3 markdown-it-py==4.2.0
       - name: Check out persistent/eval-results (the ingested runs)
         uses: actions/checkout@v7.0.1
         with:

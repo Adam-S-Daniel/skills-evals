@@ -320,7 +320,12 @@ with some cells settled goes before one of a fresh subject; a cell projected
 past its 40-pair cap, with at least three pairs measured, goes last and is a
 `cell-projected-past-cap` work item (a step summary count, not an issue). A
 cell with no measured difference yet keeps the band's old order behind the
-projected ones. The two-week batch already caps how many subjects are open
+projected ones. Only a route that can still decide counts: a provisional
+pooled keep is projected to the current rest's own keep test (its lapse at
+the cap is no keep), a cell whose without arm is too high to show the margin
+to its ceiling stop at 20 pairs (its remove test cannot decide it), and a
+crossed remove test still waiting for a second Claude Code version has no
+projection. The two-week batch already caps how many subjects are open
 at once; it now also takes a partly decided subject before the longest
 without a run, and a subject whose every projected cell is past its cap
 after all others. A guidance section whose `eval-coverage.yml` row in

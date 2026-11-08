@@ -124,9 +124,11 @@ class ProjectionTests(unittest.TestCase):
         self.assertGreater(projection["pairs"], projection["remaining"])
         self.assertFalse(projection["past_cap"])
 
-    def test_a_provisional_keep_is_never_past_the_cap(self):
+    def test_a_provisional_keep_with_only_its_lapse_left_is_past_the_cap(self):
+        # Its lapse at the cap is no keep (test_issue_planner_leaks.py): with
+        # neither route under the cap it ranks last, not as a near verdict.
         cell = measured_cell(NOISY, provisional_keep=True, **{"class": "benefit"})
-        self.assertFalse(plan_week.pairs_to_verdict(cell, ctx([]))["past_cap"])
+        self.assertTrue(plan_week.pairs_to_verdict(cell, ctx([]))["past_cap"])
 
     def test_the_betting_constants_match_the_gate(self):
         self.assertEqual(plan_week.BET_CAP, gates.BET_CAP)
