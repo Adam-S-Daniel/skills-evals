@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cm2WuDsScqYrUMjq7L6byF",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -10; git remote -v; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 104,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cm2WuDsScqYrUMjq7L6byF",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n399bdd1 initial commit\nf0be913 Import example service\norigin\t<path> (fetch)\norigin\t<path> (push)\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules...",
+      "output_chars": 493,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XpZBEVXn7fy43Us2RB6N6g",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; echo ---; cat README.md; echo ---; find bin src test .gh .claude -type f | head -50; git show --stat HEAD | head -30; git show --stat HEAD~1 | head -30",
+      "input_chars": 181,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XpZBEVXn7fy43Us2RB6N6g",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 3099,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RuMsvxuEN6FQTjK6AhGrwS",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay; for f in auth-status.txt run-list.json run-view-77001.log api/repos/example-org/example-service/actions/runs/77001/jobs.json api/repos/example-...",
+      "input_chars": 543,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RuMsvxuEN6FQTjK6AhGrwS",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n=== auth-status.txt\nexample.com\n  Lo...",
+      "output_chars": 5447,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CYSD7FAVkcvwJfh4hk698Z",
+      "name": "Bash",
+      "input": "cd <path> && python3 --version; echo \"== main's command\"; PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest test.test_legacy; echo \"exit=$?\"; echo \"== fix branch's command\"; PYTHONDONTWRITEBYTECODE=1 p...",
+      "input_chars": 478,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CYSD7FAVkcvwJfh4hk698Z",
+      "is_error": false,
+      "output": "Python 3.11.18\n== main's command\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceba...",
+      "output_chars": 999,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NTfPDS7C3aqf7JTHFNxhf6",
+      "name": "Bash",
+      "input": "PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest test.test_current 2>&1 | tail -3; echo \"exit=${PIPESTATUS[0]}\"",
+      "input_chars": 111,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NTfPDS7C3aqf7JTHFNxhf6",
+      "is_error": false,
+      "output": "Ran 1 test in 0.000s\n\nFAILED (errors=1)\nexit=1",
+      "output_chars": 46,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
