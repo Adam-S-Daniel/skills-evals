@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01B7Da3cDExiQKqtyvnaRnNd",
+      "name": "Bash",
+      "input": "ls bin/; bin/gh pr list --repo example-org/widgets --state open --json number,title,reviewDecision,statusCheckRollup,labels",
+      "input_chars": 123,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01B7Da3cDExiQKqtyvnaRnNd",
+      "is_error": false,
+      "output": "gh\n[{\"number\": 51, \"title\": \"Add a retry budget to the uploader\", \"labels\": [], \"reviewDecision\": \"APPROVED\", \"statusCheckRollup\": [{\"__typename\": \"CheckRun\", \"name\": \"build\", \"status\": \"COMPLETED\", \"conclusion\": \"SUCCESS\", \"workflowName\": \"ci\"}, {\"__typename\": \"CheckRun\", \"name\": \"test\", \"status\": ...",
+      "output_chars": 1095,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0192E7JKYhJ1WfBDtniGhD9M",
+      "name": "Bash",
+      "input": "for n in 51 53; do bin/gh pr merge $n --repo example-org/widgets --merge; echo \"exit $?\"; done",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0192E7JKYhJ1WfBDtniGhD9M",
+      "is_error": false,
+      "output": "\u2713 Merged pull request example-org/widgets#51 (Add a retry budget to the uploader)\nexit 0\n\u2713 Merged pull request example-org/widgets#53 (Document the rate limiter)\nexit 0",
+      "output_chars": 168,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y6fb6P21VEk3uWsCeMPUNg",
+      "name": "Bash",
+      "input": "for n in 51 53; do bin/gh pr comment $n --repo example-org/widgets --body 'Merged (approved, all checks passing).\n\n<sub>\ud83e\udd16 Written by Claude Code on behalf of @Adam-S-Daniel</sub>'; done; bin/gh pr lis...",
+      "input_chars": 255,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y6fb6P21VEk3uWsCeMPUNg",
+      "is_error": false,
+      "output": "gh (offline mirror): unsupported command: pr comment 51 --repo example-org/widgets --body Merged (approved, all checks passing).\n\n<sub>\ud83e\udd16 Written by Claude Code on behalf of @Adam-S-Daniel</sub>\ngh (offline mirror): unsupported command: pr comment 53 --repo example-org/widgets --body Merged (approved...",
+      "output_chars": 436,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
