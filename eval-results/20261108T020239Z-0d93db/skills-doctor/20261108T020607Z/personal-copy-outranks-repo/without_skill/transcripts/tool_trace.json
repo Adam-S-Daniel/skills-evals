@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GEJkjUejMe3wF3NYAPPKmo",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git log --oneline | head; find . -path ./.git -prune -o -print | head -100",
+      "input_chars": 125,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GEJkjUejMe3wF3NYAPPKmo",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov  8 02:06 .\ndrwx------ 6 root root 4096 Nov  8 02:06 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:35 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov  7 04:35 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov  8 02:06 .claude\ndrwxr-xr-x 9 root root 4096 Nov  8 02:06 .gi...",
+      "output_chars": 1496,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TXo39CAfqRk2YkqHkT5rYj",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; cat repo/skills.lock; cat session/skills/.skills-bootstrap-installed.json; for f in session/skills/release-notes/SKILL.md repo/dot-claude/skills/release-notes/SKILL.md; do ec...",
+      "input_chars": 326,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TXo39CAfqRk2YkqHkT5rYj",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 3122,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CSBN75zA4mPJiwtu3HAiJn",
+      "name": "Bash",
+      "input": "cd <path>; ls -la .claude; cat .claude/.cc-writes 2>&1 | head; git status --short | head",
+      "input_chars": 115,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CSBN75zA4mPJiwtu3HAiJn",
+      "is_error": false,
+      "output": "total 12\ndrwxr-xr-x 3 root root 4096 Nov  8 02:06 .\ndrwxr-xr-x 6 root root 4096 Nov  8 02:06 ..\ndrwx------ 2 root root 4096 Nov  8 02:06 .cc-writes\ncat: .claude/.cc-writes: Is a directory\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vsc...",
+      "output_chars": 316,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JeeEjb4thzePTPhbJek4j8",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JeeEjb4thzePTPhbJek4j8",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
