@@ -34,6 +34,7 @@ import run_eval  # noqa: E402
 from scorers import judge  # noqa: E402
 
 FLAG = "CLAUDE_CODE_DISABLE_AUTO_MEMORY"
+TTL = "CLAUDE_CODE_PROMPT_CACHE_TTL"
 
 STAND_IN = f"""#!{sys.executable}
 import json, os, pathlib
@@ -128,12 +129,12 @@ class AutoMemoryIsOffForEverySession(unittest.TestCase):
 
 class ForcedEnvIsSetNotInherited(unittest.TestCase):
     def test_the_forced_value_is_the_cli_off_switch(self):
-        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1"})
+        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1", TTL: "5m"})
 
     def test_cli_child_env_overrides_and_copies(self):
-        parent = {"PATH": "/bin", FLAG: "0"}
+        parent = {"PATH": "/bin", FLAG: "0", TTL: "1h"}
         env = guidance.cli_child_env(parent)
-        self.assertEqual(env, {"PATH": "/bin", FLAG: "1"})
+        self.assertEqual(env, {"PATH": "/bin", FLAG: "1", TTL: "5m"})
         self.assertEqual(parent[FLAG], "0")
 
     def test_cli_child_env_defaults_to_this_process(self):
@@ -145,7 +146,9 @@ class ForcedEnvIsSetNotInherited(unittest.TestCase):
     def test_local_eval_child_environment(self):
         for parent in ({}, {FLAG: "0"}, {"PATH": "/bin", "HOME": "/h"}):
             with self.subTest(parent=parent):
-                self.assertEqual(local_eval.child_environment(parent)[FLAG], "1")
+                child = local_eval.child_environment(parent)
+                self.assertEqual(child[FLAG], "1")
+                self.assertEqual(child[TTL], "5m")
 
 
 if __name__ == "__main__":

@@ -392,7 +392,16 @@ def check_env_block(env_spec, where: str) -> None:
 # child_environment — applies this mapping; `--version` calls load no
 # session and are left alone. The propagation probe builds its own scratch
 # HOME and allowlist (init_probe.build_env) and makes no model turn.
-CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+#
+# CLAUDE_CODE_PROMPT_CACHE_TTL=5m (2026-11-08): on a Claude subscription the
+# CLI writes its prompt cache at the 1-hour rate unless told otherwise, and
+# 1-hour writes cost twice the base input price against 1.25x for 5-minute
+# ones. A measured week of routine fires put cache writes at 63% of nested
+# spend, while no trial ran past 300 seconds and 90-94% of calls came
+# within 5 minutes of the previous call on the same model, so the longer
+# cache bought nothing. An ambient value cannot turn the 1-hour rate back on.
+CLI_FORCED_ENV = {"CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+                  "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m"}
 
 
 def cli_child_env(env=None) -> dict:
