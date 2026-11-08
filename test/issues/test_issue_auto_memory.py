@@ -35,6 +35,7 @@ from scorers import judge  # noqa: E402
 
 FLAG = "CLAUDE_CODE_DISABLE_AUTO_MEMORY"
 TTL = "CLAUDE_CODE_PROMPT_CACHE_TTL"
+SUBAGENT = "CLAUDE_CODE_SUBAGENT_MODEL"
 
 STAND_IN = f"""#!{sys.executable}
 import json, os, pathlib
@@ -136,6 +137,22 @@ class ForcedEnvIsSetNotInherited(unittest.TestCase):
         env = guidance.cli_child_env(parent)
         self.assertEqual(env, {"PATH": "/bin", FLAG: "1", TTL: "5m"})
         self.assertEqual(parent[FLAG], "0")
+
+    def test_the_subagent_model_never_reaches_a_child(self):
+        # Set in the cloud environments on 2026-11-08: forwarded, it would
+        # put an Opus arm's subagents on another model than earlier runs'.
+        self.assertEqual(guidance.CLI_DROPPED_ENV, (SUBAGENT,))
+        parent = {"PATH": "/bin", SUBAGENT: "sonnet"}
+        self.assertNotIn(SUBAGENT, guidance.cli_child_env(parent))
+        self.assertEqual(parent[SUBAGENT], "sonnet", "the caller's mapping was mutated")
+        with mock.patch.dict(os.environ, {SUBAGENT: "sonnet"}, clear=False):
+            self.assertNotIn(SUBAGENT, guidance.cli_child_env())
+            # a skill arm's allowlist forwards every CLAUDE_ name
+            forwarded = run_eval.agent_env(Path(tempfile.mkdtemp()), None)
+            self.assertEqual(forwarded[SUBAGENT], "sonnet")
+            arm = guidance.cli_child_env(forwarded)
+            self.assertNotIn(SUBAGENT, arm)
+            self.assertNotIn(SUBAGENT, local_eval.child_environment(dict(os.environ)))
 
     def test_cli_child_env_defaults_to_this_process(self):
         with mock.patch.dict(os.environ, {"AUTOMEM_PROBE": "x"}, clear=False):
