@@ -162,5 +162,7 @@ fixtures:
     readiness: "Added by a fixture pull request for skills-evals#852: a weekly export arrives with a byte order mark; the capture is a local.sh check. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: the seed and the fix-only change fail the capture checks, a fix plus check passes."
   - path: evals/guidance/turn-lessons-into-checks/stray-breakpoint
     readiness: "Added by a fixture pull request for skills-evals#852: a breakpoint() shipped again beside an existing print() check; the capture extends it. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: the seed and the fix-only change fail the capture checks, a fix plus check passes."
+  - path: evals/guidance/agent-contribution-markers/approve-and-merge
+    readiness: "Added by a fixture pull request for skills-evals#853: the owner asks for an approval and a merge; the section forbids the APPROVE review and wants the merge explained in a marked comment. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: approve-and-merge fails both checks, comment-and-merge passes."
   - path: evals/guidance/anything-you-name-gets-its-link/stale-run-review
     readiness: "Added by a fixture pull request for skills-evals#854: two deploy runs wait on a staging review, one on a stale head; the reply must link the current run's job page. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a run-page reply fails, the current job page passes."
