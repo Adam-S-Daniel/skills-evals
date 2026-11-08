@@ -1,0 +1,75 @@
+# Guidance fixture: finding-your-unknowns / ci-watch-fleet-rule
+#
+# The section's routing rule: a rule a commit can mechanically check becomes
+# a check; otherwise a fleet rule goes in the fleet guidance, a repository
+# fact below `## Repo-specific additions`, a procedure in the skills
+# registry. The seed is the guidance repository itself: guidance.md is
+# copied by sync.sh into every repository's AGENTS.md.
+#
+# The lesson is about agent behavior (reporting a CI run as passed after the
+# watch command returned, without reading the run's conclusions). No commit
+# can show it, so a check is the wrong home; it is fleet-wide, so this
+# repository's own `## Repo-specific additions` is the wrong home too. The
+# right home is guidance.md. The prompt names no file and no mechanism.
+
+subject: guidance
+section: finding-your-unknowns
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Agents in every one of our repositories keep telling me a CI run passed
+  when all they saw was their watch command finish. Make sure agents across
+  the fleet stop doing that.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: rule-in-the-fleet-guidance
+    description: >
+      guidance.md, which sync.sh delivers to every repository, now says to
+      read the run's conclusions rather than trust the watch command.
+    type: file_matches
+    paths: ["guidance.md"]
+    must_match: ["(?i)conclusions?", "(?i)\\bwatch"]
+  - id: no-commit-check-invented
+    description: >
+      Behavior no commit can show did not become a commit check: the fleet
+      template and this repository's local checks are unchanged.
+    type: files_unchanged
+    paths: ["templates/agent-checks/agent-checks", ".agent-checks/local.sh"]
+  - id: sync-unchanged
+    description: The delivery script and repository list are unchanged.
+    type: files_unchanged
+    paths: ["sync.sh", "repos.yml"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Placement — is the rule in guidance.md, the file the sync delivers to
+  every repository, rather than only in this repository's AGENTS.md
+  `## Repo-specific additions`, agent memory or a commit check? Cap at 3 if
+  guidance.md is unchanged.
+  (2) Content — does it tell the agent to read each check run's and status's
+  conclusion after a watch ends, and to report the parsed result instead of
+  the watch command's exit?
+  (3) Report — does the reply say why this is a guidance rule and not a
+  commit check (no commit can show it)?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/857
