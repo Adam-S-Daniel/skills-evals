@@ -216,6 +216,13 @@ THE BANDS (rule D), in order:
      waits for the current rest's `rest_guard_min_pairs`. The projection is
      the nearer test's pairs. A cell with no measured D (a missing cell)
      has none and keeps its band's old order behind every projected cell.
+     Only a route that can still decide counts (2026-11-08: a crossed test
+     projected 0 pairs and led every plan): a provisional keep's is the
+     current rest's own keep test (its lapse at the cap is no keep, so with
+     neither route under the cap it is past it); a high cell's is the
+     `ceiling-unconfirmed` stop at `max_runs_high_cell`, never the remove
+     test; a crossed remove test waiting for a second CLI version has no
+     projection (`blocked`), so it ranks behind the projected cells.
      There is no separate cap on open subjects: from its start THE BATCH
      already funds only its members in these bands (a few subjects per
      kind, fitted to the budget), and partly decided subjects now join it
@@ -771,6 +778,14 @@ BATCH_BUDGET_SLACK = 1e-9
 #: The PlanError for a malformed evals/unscheduled.yml or evals/scope-auto.yml
 #: (compute_gates raises ValueError for either; round 4's m4).
 SCHEDULE_FILES_MALFORMED = "evals/unscheduled.yml or evals/scope-auto.yml is malformed"
+#: `gather` refuses to plan with --guidance but no markdown parser. Without
+#: it compute_gates cannot read a section's digests, so every guidance cell
+#: reads "pooling key incomplete" (insufficient, no progress), and the sweep
+#: fired kept sections for nothing (2026-11-08: agent-contribution-markers,
+#: kept since 2026-11-07, about every 40 minutes, because the plan job
+#: installed PyYAML alone).
+GUIDANCE_PARSER_MISSING = ("--guidance needs markdown-it-py (pip install markdown-it-py==4.2.0): "
+                           "without it no guidance cell can be read")
 
 
 class PlanError(Exception):
@@ -2091,6 +2106,14 @@ MIN_BET_VARIANCE = 1e-6
 #: gate's learned bet prior weighs PRIOR_PSEUDO_RUNS (3) pairs, so before
 #: that the projection is mostly the prior's, not the cell's.
 PROJECTION_MIN_PAIRS = 3
+#: harness/gates.py's HIGH_STOP_MIN_WITHOUT (pinned equal by a test): a high
+#: cell is stopped `ceiling-unconfirmed` at `max_runs_high_cell` pairs only
+#: with a without arm averaging at least this.
+HIGH_STOP_MIN_WITHOUT = 0.90
+#: `pairs_to_verdict`'s `blocked` when a crossed remove test still waits for
+#: a second CLI version (`min_cli_versions`): more pairs on today's version
+#: cannot decide it, so the projection is unknown, not zero.
+BLOCKED_CLI_VERSIONS = "cli-versions"
 #: The cell classes a subject has settled (`partly_decided`): anything but
 #: still open. A provisional keep is open.
 OPEN_CELL_CLASSES = ("missing", "insufficient")
@@ -2142,12 +2165,14 @@ def _to_cross(have: float, need: float, growth: float) -> float:
 def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     """The projected extra pairs before `cell`'s keep or remove test rejects,
     or None when the cell has no measured D yet (no `objective` block).
-    Returns {pairs, keep, remove, remaining, past_cap}.
+    Returns {pairs, keep, remove, remaining, past_cap, blocked}.
 
     Each test is a betting confidence sequence (harness/gates.py) that
     rejects when its log wealth reaches log(1/alpha): keep at alpha =
-    (1 - benefit_confidence) / keep_family (halved for a pooled in-situ
-    cell's two routes), remove at 1 - retire_confidence. The wealth so far
+    (1 - benefit_confidence) / keep_family, remove at 1 - retire_confidence.
+    A pooled in-situ cell's two keep routes each run at half that alpha, but
+    gates reports each route's p doubled, so a reported p reaches the full
+    alpha exactly when its route rejects. The wealth so far
     is read off the level each test reached (log 1/p: the smallest keep p,
     the remove test's no-help confidence, a pooled cell's removal evidence).
     The rest grows at `_growth` per pair with D's mean and variance as the
@@ -2158,8 +2183,27 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     `rest_guard_min_pairs`. `pairs` is the nearer of the two, `remaining`
     the pairs left under `max_runs_per_cell` (the current rest's, pooled),
     and `past_cap` whether `pairs` exceeds it with at least
-    PROJECTION_MIN_PAIRS pairs measured. A provisional keep lapses at that
-    cap, so its `pairs` is at most `remaining` and it is never past it."""
+    PROJECTION_MIN_PAIRS pairs measured.
+
+    Only a route that can still decide counts (the over-fires of
+    2026-11-08, where a crossed test projected 0 pairs and led every plan):
+      * A PROVISIONAL KEEP (gates' THE STALE KEEP) is final only when the
+        current rest's own keep test rejects, so its keep is that route
+        alone; the pooled crossing is already spent. A removal on the
+        current rest's evidence still overrides it, so both routes bet with
+        the current rest's moments (`current_objective`). Its
+        lapse at the cap is no route to a keep, so when neither route
+        decides under the cap it is past it, ranked last like any other.
+      * A HIGH CELL (its without arm above 1 - margin, or the ceiling test
+        rejected; harness/gates.py rule 6) is never decided by the remove
+        test, crossed or not: its route is the `ceiling-unconfirmed` stop at
+        `max_runs_high_cell` pairs, when the without arm averages at least
+        HIGH_STOP_MIN_WITHOUT and the no-harm test has rejected or can
+        (mean D above -margin); otherwise only the cap, past which it is.
+      * A crossed remove test on an open cell that is neither waits for a
+        second CLI version (`min_cli_versions`), which no number of pairs
+        on today's version supplies: `blocked` is BLOCKED_CLI_VERSIONS and
+        the remove route unknown (inf), never past the cap on that alone."""
     objective = cell.get("objective")
     if not isinstance(objective, dict) or not _real(objective.get("delta")):
         return None
@@ -2169,26 +2213,41 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     benefit = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
     retire = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
     pooled = isinstance(cell.get("rest_guard"), dict)
+    provisional = bool(cell.get("provisional_keep"))
     family = cell.get("keep_family") if isinstance(cell.get("keep_family"), int) \
         and cell["keep_family"] >= 1 else 1
-    keep_alpha = (1 - benefit) / family / (2 if pooled else 1)
+    keep_alpha = (1 - benefit) / family
     n = objective.get("pairs") if isinstance(objective.get("pairs"), int) else 0
     prior = cell.get("bet_prior")
     m0, v0, n0 = ((prior["mean"], prior["variance"], prior["n"])
                   if isinstance(prior, dict) and _real(prior.get("mean"))
                   and all(_number(prior.get(k)) for k in ("variance", "n"))
                   else NEUTRAL_BET_PRIOR)
-    delta = objective["delta"]
     var_d = cell.get("d_variance") if _number(cell.get("d_variance")) else v0
-    weight = n0 + n
-    mu = (m0 * n0 + delta * n) / weight if weight else 0.0
-    second = ((v0 + m0 * m0) * n0 + (var_d + delta * delta) * n) / weight if weight else v0
-    var = max(second - mu * mu, MIN_BET_VARIANCE)
+
+    def moments(delta: float, count: int) -> tuple:
+        weight = n0 + count
+        mu = (m0 * n0 + delta * count) / weight if weight else 0.0
+        second = ((v0 + m0 * m0) * n0 + (var_d + delta * delta) * count) / weight \
+            if weight else v0
+        return mu, max(second - mu * mu, MIN_BET_VARIANCE)
+
+    mu, var = moments(objective["delta"], n)
+    own = (cell["rest_guard"].get("current_objective") if pooled else None) or {}
+    if provisional and _real(own.get("delta")) and isinstance(own.get("pairs"), int):
+        # Both of its routes read the current rest alone: its own keep test,
+        # and the removal that overrides the pooled keep.
+        mu, var = moments(own["delta"], own["pairs"])
     ps = [t["p"] for t in (cell.get("keep_tests") or [])
           if isinstance(t, dict) and _number(t.get("p")) and t["p"] > 0
-          and not (cell.get("provisional_keep") and t.get("route") == "objective")]
-    keep_p = min(ps) if ps else (objective["keep_p"] if _number(objective.get("keep_p"))
-                                 and objective["keep_p"] > 0 else 1.0)
+          and not (provisional and t.get("route") == "objective")]
+    if ps:
+        keep_p = min(ps)
+    else:
+        # The gate's own objective p, not doubled: a pooled route's alpha.
+        keep_p = objective["keep_p"] if _number(objective.get("keep_p")) \
+            and objective["keep_p"] > 0 else 1.0
+        keep_alpha /= 2 if pooled else 1
     no_help = _level(cell["rest_guard"], "remove_evidence_confidence") if pooled \
         else _level(objective, "no_help_confidence")
     keep = _to_cross(-math.log(min(keep_p, 1.0)), -math.log(keep_alpha),
@@ -2197,20 +2256,29 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
                        _growth(margin - mu, var, 1 - margin))
     current = cell.get("current_rest_pairs") if pooled \
         and isinstance(cell.get("current_rest_pairs"), int) else None
-    if pooled and current is not None:
-        floor = policy.get("rest_guard_min_pairs") or 0
-        remove = max(remove, floor - current)
+    floor = (policy.get("rest_guard_min_pairs") or 0) if pooled and current is not None else 0
+    held = current if current is not None else (cell.get("pairs") or n)
+    blocked = None
+    without = cell.get("without_mean")
+    high = (_real(without) and without > 1 - margin) or cell.get("ceiling_at") is not None
+    if high:
+        stop = policy.get("max_runs_high_cell")
+        can_stop = isinstance(stop, int) and _real(without) \
+            and without >= HIGH_STOP_MIN_WITHOUT \
+            and (cell.get("noharm_at") is not None or mu > -margin)
+        remove = max(0, stop - held) if can_stop else math.inf
+    else:
+        if current is not None:
+            remove = max(remove, floor - current)
+        if remove == 0 and (cell.get("class") in OPEN_CELL_CLASSES or provisional):
+            blocked, remove = BLOCKED_CLI_VERSIONS, math.inf
     pairs = min(keep, remove)
     cap = gate_cap(ctx, "guidance" if guidance else "skill")
-    held = current if current is not None else (cell.get("pairs") or n)
     remaining = None if cap is None else max(0, cap - held)
-    if cell.get("provisional_keep") and remaining is not None:
-        # A provisional keep lapses at the current rest's cap (gates' THE
-        # STALE KEEP), so the cap is its verdict: never past it.
-        pairs = min(pairs, remaining)
     return {"pairs": pairs, "keep": keep, "remove": remove, "remaining": remaining,
             "past_cap": remaining is not None and n >= PROJECTION_MIN_PAIRS
-            and pairs > remaining}
+            and pairs > remaining and not (blocked and math.isinf(pairs)),
+            "blocked": blocked}
 
 
 def past_cap_subject(cells: list, ctx: dict) -> bool:
@@ -2859,23 +2927,44 @@ def pair_fires(chosen: list, roster: list | None) -> list:
 PAIR_EVERY_FIRE = False
 
 
-def pair_every_fire(legs: list, roster: list | None) -> list:
+def settled_or_held(cell: dict | None) -> bool:
+    """Whether no fire may carry this cell, even as a pair fire's added
+    model (PAIR_EVERY_FIRE): unknown, decided (any class but
+    OPEN_CELL_CLASSES, unless a provisional keep), of a kept subject (more
+    runs cannot change a keep), or held by a rule no band lifts: not
+    schedulable, stakes `none`, parked, at its cap, or fixture-broken.
+    A pending or not-yet-due open cell is not: adding one is the switch's
+    purpose (Adam, 2026-11-07)."""
+    if cell is None:
+        return True
+    open_cell = cell["class"] in OPEN_CELL_CLASSES or bool(cell.get("provisional_keep"))
+    return not open_cell or not cell.get("schedulable", True) \
+        or cell.get("stakes", "normal") == "none" or cell["class"] in PARKED_CLASSES \
+        or cell.get("at_cap") is True or cell.get("empty_fires", 0) >= BROKEN_AFTER_FIRES \
+        or (cell.get("verdict") == "keep" and not cell.get("provisional_keep"))
+
+
+def pair_every_fire(legs: list, roster: list | None, cells: dict | None = None) -> list:
     """PAIR_EVERY_FIRE: each single `both`-arms eval leg on a skill fixture
     (not under evals/guidance/) whose model is on `roster` made a pair fire
     on the roster's first two models, in roster order. Its cost is
     unchanged: the added cell was not planned, so nothing reserved it, and
     the per-fire guard and the account stop still bound what it spends.
-    Every other leg, and every leg when `roster` has fewer than two
-    models, is kept as it is."""
+    With `cells` ({(fixture, model): cell}, as `build_plan` passes them),
+    a leg whose other model's cell is `settled_or_held` stays single: a
+    fire never carries a decided or held cell. Every other leg, and every
+    leg when `roster` has fewer than two models, is kept as it is."""
     if not roster or len(roster) < 2:
         return list(legs)
     pair = list(roster[:2])
     out = []
     for leg in legs:
+        other = next((m for m in pair if m != leg["model"]), None)
         if (leg["mode"] == "eval" and leg.get("arms") == "both"
                 and leg["model"] in pair and "," not in leg["model"]
                 and leg.get("fixture") and not leg["fixture"].startswith("evals/guidance/")
-                and all(PAIR_MODEL_RE.fullmatch(m) for m in pair)):
+                and all(PAIR_MODEL_RE.fullmatch(m) for m in pair)
+                and (cells is None or not settled_or_held(cells.get((leg["fixture"], other))))):
             leg = {**leg, "model": ",".join(pair),
                    "cells": [{"model": leg["model"], "band": leg["band"], "cost": leg["cost"]}]}
         out.append(leg)
@@ -2959,7 +3048,8 @@ def build_plan(ctx: dict, now: datetime, max_fires: int = 30) -> dict:
     # PAIR FIRES: one fire for a fixture's two model cells.
     legs = pair_fires(chosen, ctx.get("roster_models"))
     if PAIR_EVERY_FIRE:
-        legs = pair_every_fire(legs, ctx.get("roster_models"))
+        legs = pair_every_fire(legs, ctx.get("roster_models"),
+                               {(c["fixture"], c["model"]): c for c in ctx["cells"]})
     fires = [{"slot": slot, "band": i["band"], "mode": i["mode"], "arms": i["arms"],
               "fixture": i["fixture"],
               # Per fixture, never per model: a pair's two cells share it.
@@ -3470,6 +3560,11 @@ def eval_cells_and_outages(evals_dir: Path, gates_doc: dict, fire_runs: list,
                 "keep_family": (cell or {}).get("keep_family"),
                 "bet_prior": (cell or {}).get("bet_prior"),
                 "d_variance": d_variance(cell),
+                # A HIGH CELL's state (`pairs_to_verdict`): its remove test
+                # cannot decide it, only the ceiling stop or the cap can.
+                "without_mean": (cell or {}).get("without_mean"),
+                "ceiling_at": (cell or {}).get("ceiling_at"),
+                "noharm_at": (cell or {}).get("noharm_at"),
                 "schedulable": hold is None, "hold_reason": hold,
                 "stakes": stakes_mod.level_of(table, subject, ident),
                 "with_runs": len(runs.get("with", [])),
@@ -4014,8 +4109,22 @@ def trim_busy(trims: dict | None, records: list, prs: list) -> dict | None:
     return trims
 
 
+def require_guidance_parser(guidance_dir: Path | None) -> None:
+    """GUIDANCE_PARSER_MISSING as a PlanError when `guidance_dir` is given and
+    harness/guidance.py cannot load its markdown parser: compute_gates reads
+    that failure as "no digest", which hides every guidance verdict."""
+    if guidance_dir is None:
+        return
+    import guidance as guidance_mod  # noqa: PLC0415
+    try:
+        guidance_mod._markdown_it()
+    except guidance_mod.GuidanceError:
+        raise PlanError(GUIDANCE_PARSER_MISSING) from None
+
+
 def gather(args, now: datetime) -> dict:
     import compute_gates
+    require_guidance_parser(args.guidance)
     evals_dir = args.evals_dir
     registries = compute_gates.flag_registries(args.registry)
     limits = guard.budget_file.load_budget(args.budget)

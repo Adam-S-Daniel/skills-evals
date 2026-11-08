@@ -1696,8 +1696,10 @@ def cell_discards(with_runs: list, without_runs: list, policy: dict, cls: str,
 #
 # THE DECISION POINT (`_classify`'s `decided_at`, 1-based over the cell's
 # usable pairs, those in the window with a run mean on both arms): for
-# `benefit` the keep test's crossing that stands (`keep_at`; pooled, the
-# final current-rest keep or the provisional pooled one); for `no-benefit`
+# `benefit` the keep test's crossing that stands (`keep_at`), but for a
+# pooled keep the pair at which it became final (the current rest's own
+# keep, `rest_guard.current_keep_at`, when later): a provisional pooled keep
+# (`keep_final` false) has none yet, so its runs are `building`; for `no-benefit`
 # the remove or harm test's stopping time (`remove_decided_at`,
 # `harm_decided_at`); for `ceiling` the later of the ceiling and no-harm
 # crossings; for `ceiling-unconfirmed` the later of the no-harm crossing and
@@ -1793,6 +1795,17 @@ def cell_utility(with_runs: list, without_runs: list, policy: dict, cell: dict,
     the day of its decision point or None): RUN UTILITY's classes."""
     discards, usable = _cell_split(with_runs, without_runs, policy, cell["class"], rest)
     at = None if cell["class"] in UNDECIDED_CLASSES else cell.get("decided_at")
+    guard = cell.get("rest_guard")
+    if cell["class"] == "benefit" and isinstance(guard, dict) and at is not None:
+        # A pooled keep is not final until the current rest's own keep test
+        # rejects (THE STALE KEEP): until then its runs are building, and
+        # its decision point is where it became final, not the earlier
+        # pooled crossing. Reporting only: the class is the gate's.
+        final_at = guard.get("current_keep_at")
+        if guard.get("keep_final") is False:
+            at = None
+        elif isinstance(final_at, int) and not isinstance(final_at, bool) and final_at > at:
+            at = final_at
     out = [(r, "discarded", why) for r, why in discards]
     for i, pair in enumerate(usable, 1):
         cls = "building" if at is None else "decisive" if i <= at else "after_decision"
