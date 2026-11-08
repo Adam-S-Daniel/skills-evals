@@ -1,0 +1,515 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018EZMuCAP7szLMFJjkvefmn",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018EZMuCAP7szLMFJjkvefmn",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nbbf3fe2 initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.github/workflows/release.yml\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/collect.sh\n./scripts/bump.sh...",
+      "output_chars": 408,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FQrrLxTXD9NQFxi44XE63q",
+      "name": "Bash",
+      "input": "for f in .github/workflows/release.yml scripts/*.sh package.json README.md; do echo \"=== $f\"; cat -n \"$f\"; done; ls -la .idea .vscode",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FQrrLxTXD9NQFxi44XE63q",
+      "is_error": false,
+      "output": "=== .github/workflows/release.yml\n     1\tname: Release\n     2\t\n     3\ton:\n     4\t  push:\n     5\t    branches: [main]\n     6\t  workflow_dispatch:\n     7\t\n     8\tpermissions:\n     9\t  contents: write\n    10\t\n    11\tjobs:\n    12\t  release:\n    13\t    runs-on: ubuntu-latest\n    14\t    steps:\n    15\t    ...",
+      "output_chars": 2880,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WFUwSqJykxBV4mtYKu4u5H",
+      "name": "Bash",
+      "input": "which jq gh shellcheck bats actionlint git; bash --version | head -1; cd <path> && git remote -v; git branch -a",
+      "input_chars": 138,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WFUwSqJykxBV4mtYKu4u5H",
+      "is_error": false,
+      "output": "<path>\n<path>\n<path>\nGNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)\norigin\thttps://github.com/Adam-S-Daniel/cms-platform.git (fetch)\norigin\thttps://github.com/Adam-S-Daniel/cms-platform.git (push)\n* master",
+      "output_chars": 244,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NvjaCybE2yEb2igWQFDkdM",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SXiqYvCrx8ygsXadRwDTQz",
+      "name": "Bash",
+      "input": "cd <path>; pwd; for f in .github/workflows/release.yml scripts/*.sh package.json README.md; do echo \"=== $f\"; cat -A $f | sed 's/\\$$//' ; done; ls -la scripts; which jq",
+      "input_chars": 237,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SXiqYvCrx8ygsXadRwDTQz",
+      "is_error": true,
+      "output": "This agent is isolated in the worktree <path>, but this command names git in a form too complex to verify that it stays inside the worktree. Refusing to run it \u2014 a worktree-isolated agent's git operations must target its own worktree. Split it into plain, separate commands and run them from <path>",
+      "output_chars": 437,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H1vXrtEkRDDe8VTQwPAz7g",
+      "name": "Bash",
+      "input": "cat .github/workflows/release.yml scripts/collect.sh scripts/publish.sh scripts/bump.sh package.json README.md; ls -la scripts; which jq",
+      "input_chars": 136,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H1vXrtEkRDDe8VTQwPAz7g",
+      "is_error": false,
+      "output": "# Cut a cms-platform release.\n#\n# Releases are the platform's down-sync trigger: platform-bump.yml reads\n# `gh api repos/<repo><path>` (the latest RELEASE, not a bare tag)\n# to bump each site's platform_ref + platform.lock + the `uses:@<tag>` pins +\n# the theme gem, all atomically \u2014 Dependabot ignor...",
+      "output_chars": 29354,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018WfiYnLZAavqmd7Bid32ea",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -3; git branch -a | head; find . -name collect.sh -o -name publish.sh -o -name bump.sh -not -path './node_modules/*' | head; ls tests 2>&1 | head",
+      "input_chars": 190,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018WfiYnLZAavqmd7Bid32ea",
+      "is_error": false,
+      "output": "e97922a Merge pull request #975 from Adam-S-Daniel/skills-lock-bump/update\na101cdd Encode media-discovery output for each context it reaches (#978)\nbd3dc17 Release v0.1.172 (#977)\n+ master\n* worktree-agent-ac61adb37d0226993\n  remotes/origin/main\nls: cannot access 'tests': No such file or directory",
+      "output_chars": 298,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019R6fa8oZxkBDusVcc9v47L",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"BLOCKED: no changes made. The repo in this worktree does not match the one you described.\\n\\nWorktree: <path>\\nBranch: worktree-agent-ac61adb37d0226993, HEAD e97922a (\\\"Merge pull request...",
+      "input_chars": 1660,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019R6fa8oZxkBDusVcc9v47L",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NvjaCybE2yEb2igWQFDkdM",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"ac61adb37d0226993\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: ac61adb37d0226993 (use SendMessage with to: 'ac61adb37d0226993', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ANzde5hi2WHYuwfSf6JHTb",
+      "name": "Bash",
+      "input": "git worktree list; git rev-parse HEAD; git branch -a; git -C .claude/worktrees/agent-ac61adb37d0226993 log --oneline -1; git -C .claude/worktrees/agent-ac61adb37d0226993 status --short | head; git cat...",
+      "input_chars": 216,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ANzde5hi2WHYuwfSf6JHTb",
+      "is_error": false,
+      "output": "<path> bbf3fe2 [master]\nbbf3fe2bd0f4c927560073dc8e8c3ead9740672d\n* master\n  remotes/origin/main\nfatal: cannot change to '.claude/worktrees/agent-ac61adb37d0226993': No such file or directory\nfatal: cannot change to '.claude/worktrees/agent-ac61adb37d0226993': No such file or directory\ncommit",
+      "output_chars": 319,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RVQLRnsmt1BfVPdC4oNk4j",
+      "name": "Bash",
+      "input": "git worktree add -b fix/ci-shell-reliability .claude/worktrees/ci-shell-reliability master && cd .claude/worktrees/ci-shell-reliability && git log --oneline -1 && ls scripts",
+      "input_chars": 173,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RVQLRnsmt1BfVPdC4oNk4j",
+      "is_error": true,
+      "output": "Exit code 128\nPreparing worktree (new branch 'fix/ci-shell-reliability')\nfatal: could not create directory of '.git/worktrees/ci-shell-reliability': Read-only file system",
+      "output_chars": 170,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019AqguK8Dt5VBVcL6uxhX3c",
+      "name": "Bash",
+      "input": "git branch --list; git worktree list; touch scripts/.w && rm scripts/.w && echo writable",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019AqguK8Dt5VBVcL6uxhX3c",
+      "is_error": false,
+      "output": "  fix/ci-shell-reliability\n* master\n<path> bbf3fe2 [master]\nwritable",
+      "output_chars": 95,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CGyJH33dE4M3wEG4seMJ5s",
+      "name": "Bash",
+      "input": "git branch -D fix/ci-shell-reliability; git branch --list",
+      "input_chars": 57,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CGyJH33dE4M3wEG4seMJ5s",
+      "is_error": false,
+      "output": "error: could not lock config file .git/config\nwarning: update of config-file failed\nDeleted branch fix/ci-shell-reliability (was bbf3fe2).\n* master",
+      "output_chars": 147,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AAK45w3gUiN9TAzv4Tm8jH",
+      "name": "SendMessage",
+      "input": "{\"content\": \"Thanks, you were right to stop. Your isolation wo\\u2026\", \"message\": \"Thanks, you were right to stop. Your isolation worktree was branched from origin/main, which is a different repo's hi...",
+      "input_chars": 1201,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AAK45w3gUiN9TAzv4Tm8jH",
+      "is_error": false,
+      "output": "{\"success\":false,\"message\":\"Agent \\\"ac61adb37d0226993\\\" could not be resumed: No transcript found for agent ID: ac61adb37d0226993. If you read this id in a message from another Claude Code process (e.g. the lead's subagent, seen from a teammate pane), it never ran in this session \u2014 reply through \\\"t...",
+      "output_chars": 363,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VvJoSsnhTSyPoaM6qhU6Bk",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BRXgoMWsnHmb7keeuPw7RF",
+      "name": "Bash",
+      "input": "ls scripts tests 2>&1; wc -l .github/workflows/release.yml; for f in scripts/*.sh .github/workflows/release.yml package.json README.md; do echo \"=== $f\"; cat $f; done; git status --short",
+      "input_chars": 186,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BRXgoMWsnHmb7keeuPw7RF",
+      "is_error": false,
+      "output": "ls: cannot access 'tests': No such file or directory\nscripts:\nbump.sh\ncollect.sh\npublish.sh\n21 .github/workflows/release.yml\n=== scripts/bump.sh\n#!<path> bash\n# Bump the package version and commit the change.\nset -euo pipefail\n\nVERSION=$(jq -r '.version' package.json)\nNEXT_VERSION=\"${VERSION%.*}.$((...",
+      "output_chars": 2523,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CBkGdH44JudtxqzAYujCd3",
+      "name": "Bash",
+      "input": "cat > scripts/collect.sh <<'EOF'\n#!<path> bash\n# Collect the packages changed since the last release, via the GitHub API.\nset -euo pipefail\n\nREPO=\"example-org/example-repo\"\n\nif ! out=$(gh api \"repos/$...",
+      "input_chars": 7248,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CBkGdH44JudtxqzAYujCd3",
+      "is_error": false,
+      "output": "name: Release\n\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\npermissions:\n  contents: write\n  actions: read\n  pull-requests: read\n\nconcurrency:\n  group: release\n  cancel-in-progress: false\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc4...",
+      "output_chars": 1837,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KReBNixSNmVXvHS1XKU5RP",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"All requested changes are made. The verifier `bash tests/scripts.test.sh` exited 0 and printed `10 passed, 0 failed`. I did not check the workflow file with a YAML linter.\\n\\nPrecondition...",
+      "input_chars": 1998,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KReBNixSNmVXvHS1XKU5RP",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VvJoSsnhTSyPoaM6qhU6Bk",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"a6fb14f4057edd05f\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: a6fb14f4057edd05f (use SendMessage with to: 'a6fb14f4057edd05f', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012MoMivSWxySyToB7dBmLcE",
+      "name": "Bash",
+      "input": "ps -eo pid,etimes,cmd | grep '[s]cripts.test' ; git diff; cat -n tests/scripts.test.sh",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012MoMivSWxySyToB7dBmLcE",
+      "is_error": false,
+      "output": "      1       0 bwrap --new-session --die-with-parent --setenv GIT_CONFIG_KEY_9 safe.directory --setenv GIT_CONFIG_VALUE_9 <path> --setenv GIT_CONFIG_KEY_10 safe.directory --setenv GIT_CONFIG_VALUE_10 <path>* --setenv GIT_CONFIG_COUNT 11 --unshare-net --bind <path> <path> --setenv SANDBOX_RUNTIME 1 ...",
+      "output_chars": 24121,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MUysxR9RXMy63Gx9xX1tus",
+      "name": "Agent",
+      "input": "general-purpose",
+      "input_chars": 15,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FYbfywm4hK1YTUtAwp2nvT",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 55,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FYbfywm4hK1YTUtAwp2nvT",
+      "is_error": false,
+      "output": "1\t#!<path> bash\n2\t# Self-contained tests for scripts/*.sh. SCRIPTS_DIR overrides the scripts under test.\n3\tset -uo pipefail\n4\t\n5\tREPO_ROOT=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")/..\" && pwd)\"\n6\tSCRIPTS_DIR=\"${SCRIPTS_DIR:-$REPO_ROOT/scripts}\"\n7\tROOT=\"$(mktemp -d)\"\n8\ttrap 'rm -rf \"$ROOT\"' EXIT\n9\t\n10\tpa...",
+      "output_chars": 4433,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BfEPKyQTBwLqSqGWyfN7Dj",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 55,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BfEPKyQTBwLqSqGWyfN7Dj",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 161,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LeRcWA84FSMYmz9ZT5txXH",
+      "name": "Bash",
+      "input": "mkdir -p \"$TMPDIR/orig\" && for f in collect publish bump; do git -C <path> show HEAD:scripts/$f.sh > \"$TMPDIR/orig/$f.sh\"; done; SCRIPTS_DIR=\"$TMPDIR/orig\" bash <path>; echo \"exit=$?\"",
+      "input_chars": 259,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012cnXtqhFmy7RcMZUNrS44S",
+      "name": "Bash",
+      "input": "bash <path>; echo \"exit=$?\"",
+      "input_chars": 76,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LeRcWA84FSMYmz9ZT5txXH",
+      "is_error": false,
+      "output": "not ok - collect: API error fails without leaking body\nnot ok - collect: writes titles\nok - collect: empty output writes nothing\nnot ok - publish: missing or non-numeric run id fails\nnot ok - publish: watch failure fails\nnot ok - publish: non-success conclusion fails\nok - publish: missing marker fai...",
+      "output_chars": 473,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012cnXtqhFmy7RcMZUNrS44S",
+      "is_error": false,
+      "output": "ok - collect: API error fails without leaking body\nok - collect: writes titles\nok - collect: empty output writes nothing\nok - publish: missing or non-numeric run id fails\nok - publish: watch failure fails\nok - publish: non-success conclusion fails\nok - publish: missing marker fails\nok - publish: mar...",
+      "output_chars": 446,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UkseDAyuaEhvdzSDdsy9iz",
+      "name": "Bash",
+      "input": "bash <path>; echo \"exit=$?\"",
+      "input_chars": 76,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UkseDAyuaEhvdzSDdsy9iz",
+      "is_error": false,
+      "output": "ok - collect: API error fails without leaking body\nok - collect: writes titles\nok - collect: empty output writes nothing\nok - publish: missing or non-numeric run id fails\nok - publish: watch failure fails\nok - publish: non-success conclusion fails\nok - publish: missing marker fails\nok - publish: mar...",
+      "output_chars": 446,
+      "output_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LmNtuaWELYQAsHS3Ft5kwD",
+      "name": "SubagentHandback",
+      "input": "{\"message\": \"Edit applied to <path> (lines 87-91), exactly as specified. No git write commands were run.\\n\\nNegative control (scripts from HEAD via SCRIPTS_DIR=$TMPDIR/orig): exit code 1, \\\"3 passed, ...",
+      "input_chars": 650,
+      "input_incomplete": true,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LmNtuaWELYQAsHS3Ft5kwD",
+      "is_error": false,
+      "output": "{\"success\":true,\"message\":\"Report delivered to your caller.\"}",
+      "output_chars": 61,
+      "subagent": true
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MUysxR9RXMy63Gx9xX1tus",
+      "is_error": false,
+      "output": "  This agent's report was delivered to you as a message from \"aac4e3244aa73ec50\" (its SubagentHandback call). Read it there; it is not repeated here.\n  \nagentId: aac4e3244aa73ec50 (use SendMessage with to: 'aac4e3244aa73ec50', summary: '<5-10 word recap>' to continue this agent)\n<usage>subagent_toke...",
+      "output_chars": 349,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KZSbXKENGC5kK9rwBrKBvK",
+      "name": "Bash",
+      "input": "sed -n 86,93p tests/scripts.test.sh; for f in scripts/*.sh tests/scripts.test.sh; do bash -n \"$f\" || echo \"SYNTAX FAIL $f\"; done; python3 -c 'import yaml,sys; yaml.safe_load(open(\".github/workflows/re...",
+      "input_chars": 498,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KZSbXKENGC5kK9rwBrKBvK",
+      "is_error": false,
+      "output": "# ---- publish ----\nnew_case\nrun_script publish\nrc1=$RC out1=$OUT\nrun_script publish 'PUBLISH_RUN_ID=12;rm'\n[[ $rc1 -ne 0 && $RC -ne 0 && \"$out1\" == *\"PUBLISH_RUN_ID must be set\"* && \"$OUT\" == *\"PUBLISH_RUN_ID must be set\"* ]]\ncheck \"publish: missing or non-numeric run id fails\" $?\n\nyaml ok\n3 passed...",
+      "output_chars": 871,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
