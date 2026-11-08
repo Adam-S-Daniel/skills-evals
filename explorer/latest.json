@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-08T14:43:07Z",
+  "fetched_at": "2026-11-08T14:47:20Z",
   "issues": [
    {
     "created_at": "2026-11-08T13:48:58Z",
@@ -555,33 +555,43 @@
   "pulls": [
    {
     "created_at": "2026-11-08T14:43:17Z",
-    "merged_at": null,
+    "merged_at": "2026-11-08T14:47:12Z",
     "number": 487,
     "repo": "jodidaniel/jodidaniel.com",
-    "state": "open",
+    "state": "merged",
     "title": "Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
-    "updated_at": "2026-11-08T14:43:39Z",
+    "updated_at": "2026-11-08T14:47:29Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/pull/487"
    },
    {
-    "created_at": "2026-11-08T14:32:17Z",
+    "created_at": "2026-11-08T14:43:59Z",
     "merged_at": null,
-    "number": 486,
-    "repo": "jodidaniel/jodidaniel.com",
-    "state": "open",
-    "title": "Release candidate: cms-platform v0.1.174 (do not merge)",
-    "updated_at": "2026-11-08T14:37:00Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/pull/486"
-   },
-   {
-    "created_at": "2026-11-08T14:32:07Z",
-    "merged_at": null,
-    "number": 4718,
+    "number": 4720,
     "repo": "Adam-S-Daniel/adamdaniel.ai",
     "state": "open",
-    "title": "Release candidate: cms-platform v0.1.174 (do not merge)",
-    "updated_at": "2026-11-08T14:35:22Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4718"
+    "title": "Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:46:57Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4720"
+   },
+   {
+    "created_at": "2026-11-08T14:44:09Z",
+    "merged_at": null,
+    "number": 488,
+    "repo": "jodidaniel/jodidaniel.com",
+    "state": "open",
+    "title": "Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:21Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/pull/488"
+   },
+   {
+    "created_at": "2026-11-08T14:43:15Z",
+    "merged_at": null,
+    "number": 4719,
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "state": "open",
+    "title": "Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:40Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4719"
    },
    {
     "created_at": "2026-11-08T14:20:41Z",
@@ -3222,16 +3232,6 @@
     "title": "tools: sync Evals Explorer to 8529378",
     "updated_at": "2026-11-03T21:23:56Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4620"
-   },
-   {
-    "created_at": "2026-11-03T21:09:21Z",
-    "merged_at": "2026-11-03T21:21:33Z",
-    "number": 4619,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "state": "merged",
-    "title": "delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-03T21:21:59Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4619"
    },
    {
     "created_at": "2026-11-03T18:13:01Z",
@@ -7239,28 +7239,688 @@
   ],
   "runs": [
    {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:47:15Z",
+    "event": "push",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491510852,
+    "state": "completed",
+    "title": "push \u2014 main Adam-S-Daniel",
+    "updated_at": "2026-11-08T14:47:49Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491510852",
+    "workflow": "push \u2014 main Adam-S-Daniel"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:47:16Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491511674,
+    "state": "completed",
+    "title": "PR #487 \u2014 teardown",
+    "updated_at": "2026-11-08T14:47:32Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491511674",
+    "workflow": "PR #487 \u2014 teardown"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:47:15Z",
+    "event": "push",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491510843,
+    "state": "completed",
+    "title": "chore: sync pre-commit guard files from Adam-S-Daniel/cms-platformv0\u2026",
+    "updated_at": "2026-11-08T14:47:27Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491510843",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:47:16Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491511806,
+    "state": "completed",
+    "title": "reap PR #487 (closed)",
+    "updated_at": "2026-11-08T14:47:24Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491511806",
+    "workflow": "reap PR #487 (closed)"
+   },
+   {
     "conclusion": null,
+    "created_at": "2026-11-08T14:47:15Z",
+    "event": "dynamic",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491509866,
+    "state": "in_progress",
+    "title": "Push on main",
+    "updated_at": "2026-11-08T14:47:20Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491509866",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247857,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:47:15Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247857",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190209,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:46:56Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190209",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:21Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491192910,
+    "state": "completed",
+    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:46:48Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491192910",
+    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:45:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491353297,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-08T14:46:32Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491353297",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262498,
+    "state": "in_progress",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:59Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262498",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262447,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:55Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262447",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:45:27Z",
+    "event": "workflow_run",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491362161,
+    "state": "completed",
+    "title": "chained \u2014 after PR #488 \u2014 Bump cms-platform to v0.1.174 #665",
+    "updated_at": "2026-11-08T14:45:52Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491362161",
+    "workflow": "chained \u2014 after PR #488 \u2014 Bump cms-platform to v0.1.174 #665"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262391,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:49Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262391",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262370,
+    "state": "in_progress",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:49Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262370",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:45:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491353324,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-08T14:45:40Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491353324",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:45:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491353368,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-08T14:45:33Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491353368",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247848,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:33Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247848",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:45:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491353386,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-08T14:45:29Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491353386",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262426,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:24Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262426",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262406,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:24Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262406",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-08T14:37:54Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42490752679,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-08T14:45:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42490752679",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262417,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:21Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262417",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:45:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491353316,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-08T14:45:21Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491353316",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:56Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491317405,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-08T14:45:18Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491317405",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262375,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:17Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262375",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262445,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:16Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262445",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262474,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:15Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262474",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262392,
+    "state": "completed",
+    "title": "Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:11Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262392",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:16Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491265386,
+    "state": "completed",
+    "title": "PR #486 \u2014 teardown",
+    "updated_at": "2026-11-08T14:45:09Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491265386",
+    "workflow": "PR #486 \u2014 teardown"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:11Z",
+    "event": "dynamic",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491258702,
+    "state": "completed",
+    "title": "PR #488",
+    "updated_at": "2026-11-08T14:45:09Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491258702",
+    "workflow": "PR #488"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262371,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:45:05Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262371",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:01Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491245011,
+    "state": "completed",
+    "title": "PR #4720",
+    "updated_at": "2026-11-08T14:45:02Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491245011",
+    "workflow": "PR #4720"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247716,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247716",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:16Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491265492,
+    "state": "completed",
+    "title": "reap PR #486 (closed)",
+    "updated_at": "2026-11-08T14:44:56Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491265492",
+    "workflow": "reap PR #486 (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:48Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42491306588,
+    "state": "completed",
+    "title": "Eval results 20261108T144010Z-1beae4",
+    "updated_at": "2026-11-08T14:44:53Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491306588",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247749,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:48Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247749",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:27Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491280093,
+    "state": "completed",
+    "title": "chained \u2014 after PR #4720 \u2014 Bump cms-platform to v0.1.174 #16076",
+    "updated_at": "2026-11-08T14:44:47Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491280093",
+    "workflow": "chained \u2014 after PR #4720 \u2014 Bump cms-platform to v0.1.174 #16076"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:07Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491253889,
+    "state": "completed",
+    "title": "reap PR #4718 (closed)",
+    "updated_at": "2026-11-08T14:44:42Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491253889",
+    "workflow": "reap PR #4718 (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:07Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491253920,
+    "state": "completed",
+    "title": "PR #4718 \u2014 teardown",
+    "updated_at": "2026-11-08T14:44:37Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491253920",
+    "workflow": "PR #4718 \u2014 teardown"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247733,
+    "state": "in_progress",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:37Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247733",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247739,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:35Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247739",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247791,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:30Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247791",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247708,
+    "state": "completed",
+    "title": "Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:26Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247708",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247766,
+    "state": "in_progress",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:24Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247766",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247853,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:23Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247853",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247767,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:22Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247767",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247748,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:21Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247748",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:24Z",
+    "event": "workflow_dispatch",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491197073,
+    "state": "completed",
+    "title": "Platform bump",
+    "updated_at": "2026-11-08T14:44:18Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491197073",
+    "workflow": "Platform bump"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-08T14:44:14Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491262469,
+    "state": "completed",
+    "title": "PR #488 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:15Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491262469",
+    "workflow": "PR #488 \u2014 Bump cms-platform to v0.1.174"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "dynamic",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491190374,
+    "state": "completed",
+    "title": "PR #487",
+    "updated_at": "2026-11-08T14:44:15Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491190374",
+    "workflow": "PR #487"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T14:43:21Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
     "run_id": 42491193031,
-    "state": "queued",
+    "state": "completed",
     "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
-    "updated_at": "2026-11-08T14:44:04Z",
+    "updated_at": "2026-11-08T14:44:14Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491193031",
     "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
-    "conclusion": null,
+    "conclusion": "success",
     "created_at": "2026-11-08T14:43:42Z",
     "event": "workflow_run",
     "repo": "jodidaniel/jodidaniel.com",
     "run_id": 42491221169,
-    "state": "in_progress",
+    "state": "completed",
     "title": "chained \u2014 after PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173 #664",
-    "updated_at": "2026-11-08T14:44:03Z",
+    "updated_at": "2026-11-08T14:44:13Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491221169",
     "workflow": "chained \u2014 after PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173 #664"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:22Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491194383,
+    "state": "completed",
+    "title": "Platform bump",
+    "updated_at": "2026-11-08T14:44:10Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491194383",
+    "workflow": "Platform bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:21Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491192957,
+    "state": "completed",
+    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:44:09Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491192957",
+    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:17Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491187274,
+    "state": "completed",
+    "title": "PR #4719",
+    "updated_at": "2026-11-08T14:44:09Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491187274",
+    "workflow": "PR #4719"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:21Z",
+    "event": "pull_request",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42491193019,
+    "state": "completed",
+    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:44:08Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491193019",
+    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-08T14:44:03Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491247769,
+    "state": "completed",
+    "title": "PR #4720 \u2014 Bump cms-platform to v0.1.174",
+    "updated_at": "2026-11-08T14:44:04Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491247769",
+    "workflow": "PR #4720 \u2014 Bump cms-platform to v0.1.174"
    },
    {
     "conclusion": "success",
@@ -7275,28 +7935,16 @@
     "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:43:21Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42491192910,
-    "state": "in_progress",
-    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
-    "updated_at": "2026-11-08T14:43:56Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491192910",
-    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:43:21Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42491192957,
-    "state": "queued",
-    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
-    "updated_at": "2026-11-08T14:43:54Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491192957",
-    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:37Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491214460,
+    "state": "completed",
+    "title": "chained \u2014 after PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173 #16075",
+    "updated_at": "2026-11-08T14:43:52Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491214460",
+    "workflow": "chained \u2014 after PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173 #16075"
    },
    {
     "conclusion": "success",
@@ -7311,28 +7959,40 @@
     "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:43:21Z",
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
     "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42491193019,
-    "state": "queued",
-    "title": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190189,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
     "updated_at": "2026-11-08T14:43:49Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491193019",
-    "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190189",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:43:24Z",
-    "event": "workflow_dispatch",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42491197073,
-    "state": "in_progress",
-    "title": "Platform bump",
-    "updated_at": "2026-11-08T14:43:42Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491197073",
-    "workflow": "Platform bump"
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190143,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:46Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190143",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190291,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:43Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190291",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
     "conclusion": "success",
@@ -7360,6 +8020,18 @@
    },
    {
     "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190191,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:42Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190191",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T14:43:21Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
@@ -7372,6 +8044,30 @@
    },
    {
     "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190173,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:40Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190173",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190192,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:40Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190192",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T14:43:21Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
@@ -7381,6 +8077,42 @@
     "updated_at": "2026-11-08T14:43:38Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491192914",
     "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190210,
+    "state": "completed",
+    "title": "Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:36Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190210",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190135,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:35Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190135",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190159,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:33Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190159",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
     "conclusion": "success",
@@ -7407,16 +8139,28 @@
     "workflow": "Secrets scan"
    },
    {
-    "conclusion": null,
+    "conclusion": "success",
+    "created_at": "2026-11-08T14:31:07Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/cms-platform",
+    "run_id": 42490192441,
+    "state": "completed",
+    "title": "cut v0.1.174 \u2014 Adam-S-Daniel",
+    "updated_at": "2026-11-08T14:43:28Z",
+    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42490192441",
+    "workflow": "cut v0.1.174 \u2014 Adam-S-Daniel"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T14:43:19Z",
-    "event": "dynamic",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42491190374,
-    "state": "in_progress",
-    "title": "PR #487",
-    "updated_at": "2026-11-08T14:43:24Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42491190374",
-    "workflow": "PR #487"
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190207,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:28Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190207",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
     "conclusion": "skipped",
@@ -7431,6 +8175,18 @@
     "workflow": "PR #487 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
    },
    {
+    "conclusion": null,
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190280,
+    "state": "in_progress",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:22Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190280",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
     "conclusion": "success",
     "created_at": "2026-11-08T14:43:00Z",
     "event": "workflow_dispatch",
@@ -7443,14 +8199,26 @@
     "workflow": "Dev-hooks sync"
    },
    {
-    "conclusion": null,
+    "conclusion": "skipped",
+    "created_at": "2026-11-08T14:43:19Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42491190117,
+    "state": "completed",
+    "title": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173",
+    "updated_at": "2026-11-08T14:43:20Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491190117",
+    "workflow": "PR #4719 \u2014 Sync pre-commit guards from Adam-S-Daniel/cms-platformv0.1.173"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T14:42:58Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
     "run_id": 42491161823,
-    "state": "in_progress",
+    "state": "completed",
     "title": "Dev-hooks sync",
-    "updated_at": "2026-11-08T14:43:03Z",
+    "updated_at": "2026-11-08T14:43:19Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42491161823",
     "workflow": "Dev-hooks sync"
    },
@@ -7465,18 +8233,6 @@
     "updated_at": "2026-11-08T14:41:56Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42491031459",
     "workflow": "Site freshness"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:31:07Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/cms-platform",
-    "run_id": 42490192441,
-    "state": "in_progress",
-    "title": "cut v0.1.174 \u2014 Adam-S-Daniel",
-    "updated_at": "2026-11-08T14:41:45Z",
-    "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42490192441",
-    "workflow": "cut v0.1.174 \u2014 Adam-S-Daniel"
    },
    {
     "conclusion": "success",
@@ -7549,18 +8305,6 @@
     "updated_at": "2026-11-08T14:38:02Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42490752661",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-08T14:37:54Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42490752679,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-08T14:37:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42490752679",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -9016,18 +9760,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:14:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42484013554,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-08T14:06:18Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42484013554",
-    "workflow": "Weekly routine evals"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T14:05:09Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -9616,18 +10348,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:55:56Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487291173,
-    "state": "completed",
-    "title": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-08T14:00:14Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487291173",
-    "workflow": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T13:59:59Z",
     "event": "push",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -9649,18 +10369,6 @@
     "updated_at": "2026-11-08T14:00:08Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42487590198",
     "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044039,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T14:00:03Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044039",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "success",
@@ -9697,18 +10405,6 @@
     "updated_at": "2026-11-08T13:58:14Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42487378624",
     "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048770,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:58:09Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048770",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "success",
@@ -9867,18 +10563,6 @@
     "workflow": "CI"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044036,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:57:11Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044036",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
     "conclusion": "cancelled",
     "created_at": "2026-11-08T13:50:30Z",
     "event": "workflow_run",
@@ -9964,18 +10648,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:55:55Z",
-    "event": "dynamic",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487289184,
-    "state": "completed",
-    "title": "PR #484",
-    "updated_at": "2026-11-08T13:56:55Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487289184",
-    "workflow": "PR #484"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T13:56:29Z",
     "event": "workflow_run",
     "repo": "jodidaniel/jodidaniel.com",
@@ -9985,18 +10657,6 @@
     "updated_at": "2026-11-08T13:56:54Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487332838",
     "workflow": "chained \u2014 after PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance #661"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044109,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:56:50Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044109",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "success",
@@ -10021,18 +10681,6 @@
     "updated_at": "2026-11-08T13:56:47Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/42487353432",
     "workflow": "Vendor changelog merge"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:55:56Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487291165,
-    "state": "completed",
-    "title": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-08T13:56:46Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487291165",
-    "workflow": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance"
    },
    {
     "conclusion": "success",
@@ -10075,18 +10723,6 @@
     "created_at": "2026-11-08T13:55:56Z",
     "event": "pull_request",
     "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487291181,
-    "state": "completed",
-    "title": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-08T13:56:37Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487291181",
-    "workflow": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:55:56Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
     "run_id": 42487291256,
     "state": "completed",
     "title": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance",
@@ -10105,18 +10741,6 @@
     "updated_at": "2026-11-08T13:56:31Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487291176",
     "workflow": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048597,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:56:31Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048597",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "success",
@@ -10189,18 +10813,6 @@
     "updated_at": "2026-11-08T13:56:23Z",
     "url": "https://github.com/Adam-S-Daniel/rss-inator/actions/runs/42487238624",
     "workflow": "agent-checks"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:55:56Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487291213,
-    "state": "completed",
-    "title": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-08T13:56:22Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487291213",
-    "workflow": "PR #484 \u2014 chore: sync AGENTS.md from _agent-guidance"
    },
    {
     "conclusion": "success",
@@ -10707,18 +11319,6 @@
     "workflow": "agent-checks"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487043992,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:54:19Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487043992",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
     "conclusion": "skipped",
     "created_at": "2026-11-08T13:54:13Z",
     "event": "workflow_run",
@@ -10744,42 +11344,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:53:45Z",
-    "event": "workflow_run",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487118885,
-    "state": "completed",
-    "title": "chained \u2014 after PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge) #660",
-    "updated_at": "2026-11-08T13:54:01Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487118885",
-    "workflow": "chained \u2014 after PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge) #660"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048886,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:54:00Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048886",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:49Z",
-    "event": "dynamic",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487046198,
-    "state": "completed",
-    "title": "PR #483",
-    "updated_at": "2026-11-08T13:53:47Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487046198",
-    "workflow": "PR #483"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T13:51:33Z",
     "event": "dynamic",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -10789,54 +11353,6 @@
     "updated_at": "2026-11-08T13:53:46Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42486946233",
     "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048451,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:42Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048451",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:45Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487040904,
-    "state": "completed",
-    "title": "PR #4715",
-    "updated_at": "2026-11-08T13:53:37Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487040904",
-    "workflow": "PR #4715"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048422,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:31Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048422",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048682,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:25Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048682",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "success",
@@ -10852,90 +11368,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:52:48Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044441,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:17Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044441",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044035,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:17Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044035",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044224,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:16Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044224",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487043972,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:15Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487043972",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048425,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:14Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048425",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048412,
-    "state": "completed",
-    "title": "Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:12Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048412",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048407,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:11Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048407",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T13:51:33Z",
     "event": "push",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -10945,66 +11377,6 @@
     "updated_at": "2026-11-08T13:53:10Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42486945785",
     "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:48Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044758,
-    "state": "completed",
-    "title": "Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:10Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044758",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048870,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:09Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048870",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048599,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:08Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048599",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487043987,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:05Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487043987",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048524,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:03Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048524",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
    },
    {
     "conclusion": "failure",
@@ -11017,78 +11389,6 @@
     "updated_at": "2026-11-08T13:53:02Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42486962258",
     "workflow": "npm_and_yarn in /e2e for minimatch - Update #1687531936"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044350,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:53:02Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044350",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:48Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487044496,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:52:57Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487044496",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-08T13:52:47Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42487043994,
-    "state": "completed",
-    "title": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:52:54Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42487043994",
-    "workflow": "PR #4715 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-08T13:52:51Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42487048852,
-    "state": "completed",
-    "title": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)",
-    "updated_at": "2026-11-08T13:52:52Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42487048852",
-    "workflow": "PR #483 \u2014 Release candidate: cms-platform v0.1.173 (do not merge)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:08Z",
-    "event": "workflow_dispatch",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42486992561,
-    "state": "completed",
-    "title": "Platform bump",
-    "updated_at": "2026-11-08T13:52:51Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42486992561",
-    "workflow": "Platform bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:52:06Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42486989708,
-    "state": "completed",
-    "title": "Platform bump",
-    "updated_at": "2026-11-08T13:52:48Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42486989708",
-    "workflow": "Platform bump"
    },
    {
     "conclusion": "success",
@@ -11715,18 +12015,6 @@
     "workflow": "push \u2014 main Adam-S-Daniel"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:39:15Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42485979737,
-    "state": "completed",
-    "title": "reap PR #482 (closed)",
-    "updated_at": "2026-11-08T13:39:23Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42485979737",
-    "workflow": "reap PR #482 (closed)"
-   },
-   {
     "conclusion": "failure",
     "created_at": "2026-11-08T13:37:51Z",
     "event": "dynamic",
@@ -11752,18 +12040,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-08T13:37:05Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42485817046,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-08T13:38:24Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42485817046",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-08T13:37:41Z",
     "event": "push",
     "repo": "Adam-S-Daniel/cms-platform",
@@ -11785,54 +12061,6 @@
     "updated_at": "2026-11-08T13:37:50Z",
     "url": "https://github.com/Adam-S-Daniel/cms-platform/actions/runs/42485862779",
     "workflow": "push \u2014 main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:37:05Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42485817501,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-08T13:37:35Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42485817501",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:37:05Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42485817497,
-    "state": "completed",
-    "title": "Encode every Liquid output for where it prints (#4697)",
-    "updated_at": "2026-11-08T13:37:25Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42485817497",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:37:06Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42485818125,
-    "state": "completed",
-    "title": "PR #4697 \u2014 teardown",
-    "updated_at": "2026-11-08T13:37:22Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42485818125",
-    "workflow": "PR #4697 \u2014 teardown"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:37:05Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42485818091,
-    "state": "completed",
-    "title": "reap PR #4697 (closed)",
-    "updated_at": "2026-11-08T13:37:14Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42485818091",
-    "workflow": "reap PR #4697 (closed)"
    },
    {
     "conclusion": "success",
@@ -12043,84 +12271,12 @@
     "created_at": "2026-11-08T13:14:38Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42484013494,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-08T13:15:40Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42484013494",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:14:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42484013503,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-08T13:15:02Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42484013503",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:14:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
     "run_id": 42484013489,
     "state": "completed",
     "title": "Dispatch the fleet's skills.lock bump",
     "updated_at": "2026-11-08T13:14:47Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42484013489",
     "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:14:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42484013521,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-08T13:14:46Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42484013521",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:14:20Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42483992080,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-08T13:14:36Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42483992080",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:14:12Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42483982576,
-    "state": "completed",
-    "title": "Eval results 20261108T131045Z-c9535b",
-    "updated_at": "2026-11-08T13:14:18Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42483982576",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T13:10:35Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42483690205,
-    "state": "completed",
-    "title": "Fire eval routine: eval evals/debug-github-workflows/git-identity claude-opus-5-5",
-    "updated_at": "2026-11-08T13:11:22Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42483690205",
-    "workflow": "Fire eval routine: eval evals/debug-github-workflows/git-identity claude-opus-5-5"
    },
    {
     "conclusion": "success",
@@ -12133,162 +12289,6 @@
     "updated_at": "2026-11-08T12:54:01Z",
     "url": "https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/42482276078",
     "workflow": "Nightly drift report"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:42:16Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42481486721,
-    "state": "completed",
-    "title": "Push on main",
-    "updated_at": "2026-11-08T12:43:36Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42481486721",
-    "workflow": "Push on main"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:42:17Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42481487265,
-    "state": "completed",
-    "title": "push \u2014 main Adam-S-Daniel",
-    "updated_at": "2026-11-08T12:42:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42481487265",
-    "workflow": "push \u2014 main Adam-S-Daniel"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:42:18Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42481488364,
-    "state": "completed",
-    "title": "PR #4714 \u2014 teardown",
-    "updated_at": "2026-11-08T12:42:38Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42481488364",
-    "workflow": "PR #4714 \u2014 teardown"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:42:17Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42481487229,
-    "state": "completed",
-    "title": "publish: test(scheduled-publish): remove _posts/2099-12-31-e2e-schedu\u2026",
-    "updated_at": "2026-11-08T12:42:36Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42481487229",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:42:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42481488222,
-    "state": "completed",
-    "title": "reap PR #4714 (closed)",
-    "updated_at": "2026-11-08T12:42:24Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42481488222",
-    "workflow": "reap PR #4714 (closed)"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:47Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480681781,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:32:10Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480681781",
-    "workflow": "chained \u2014 after PR #4714 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:43Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480677824,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:58Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480677824",
-    "workflow": "chained \u2014 after PR #4714 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "cancelled",
-    "created_at": "2026-11-08T12:31:44Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480678368,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:48Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480678368",
-    "workflow": "chained \u2014 after PR #4714 \u2014 test(scheduled-publish): remove _posts/2099-12-31-e2e-scheduled-publish-1"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480649803,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:44Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480649803",
-    "workflow": null
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480650006,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:42Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480650006",
-    "workflow": null
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480649895,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:41Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480649895",
-    "workflow": null
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T12:31:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480649768,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:41Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480649768",
-    "workflow": null
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-08T12:31:22Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42480649745,
-    "state": "completed",
-    "title": null,
-    "updated_at": "2026-11-08T12:31:23Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42480649745",
-    "workflow": null
    },
    {
     "conclusion": "success",
@@ -27279,7 +27279,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-25T14:43:07Z"
+  "since": "2026-10-25T14:47:20Z"
  },
  "agent_made": {
   "items": [
@@ -28619,7 +28619,7 @@
     "fired_at": "2026-11-07T13:38:31Z",
     "fixture": "skills-doctor/personal-copy-outranks-repo",
     "model": "claude-opus-5-5",
-    "paired_at": "2026-11-08T08:36:07Z",
+    "paired_at": "2026-11-08T14:40:10Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T133831Z-1a75d6/skills-doctor/20261107T133933Z/report.md",
     "run_id": "20261107T133831Z-1a75d6",
     "skill": "skills-doctor",
@@ -29035,12 +29035,12 @@
     "fired_at": "2026-11-07T09:13:41Z",
     "fixture": "skills-doctor/personal-copy-outranks-repo",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-08T08:36:07Z",
+    "paired_at": "2026-11-08T14:40:10Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T091341Z-47aad3/skills-doctor/20261107T091436Z/report.md",
     "run_id": "20261107T091341Z-47aad3",
     "skill": "skills-doctor",
     "trials": 3,
-    "with_share": 1.0,
+    "with_share": 0.8333333333333334,
     "without_share": 1.0
    },
    {
@@ -29415,22 +29415,22 @@
   "bare_summary": [
    {
     "bare": 0.7399436441834103,
-    "bare_won": 14,
+    "bare_won": 15,
     "model": "All",
     "pairs": 54,
     "setup_lift": -0.012384215308192066,
-    "skill_lift": 0.1282005518847624,
-    "with": 0.8557599807599806,
+    "skill_lift": 0.12511413213167588,
+    "with": 0.8526735610068941,
     "without": 0.7275594288752182
    },
    {
     "bare": 0.7240925727015953,
-    "bare_won": 9,
+    "bare_won": 10,
     "model": "claude-sonnet-5-5",
     "pairs": 35,
     "setup_lift": -0.007732408221129918,
-    "skill_lift": 0.13253545118206764,
-    "with": 0.8488956156625331,
+    "skill_lift": 0.12777354642016284,
+    "with": 0.8441337109006283,
     "without": 0.7163601644804655
    },
    {
@@ -29445,6 +29445,28 @@
    }
   ],
   "latest": [
+   {
+    "checks": 6,
+    "fired_at": "2026-11-08T14:40:10Z",
+    "fixture": "skills-doctor/personal-copy-outranks-repo",
+    "model": "claude-opus-5-5",
+    "run_id": "20261108T144010Z-1beae4",
+    "with_share": 1.0,
+    "with_skill": 6,
+    "without_share": 0.8333333333333334,
+    "without_skill": 5
+   },
+   {
+    "checks": 6,
+    "fired_at": "2026-11-08T14:40:10Z",
+    "fixture": "skills-doctor/personal-copy-outranks-repo",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261108T144010Z-1beae4",
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_share": 1.0,
+    "without_skill": 6
+   },
    {
     "checks": 7,
     "fired_at": "2026-11-08T14:33:16Z",
@@ -29543,28 +29565,6 @@
     "with_skill": 5,
     "without_share": 0.7142857142857143,
     "without_skill": 5
-   },
-   {
-    "checks": 6,
-    "fired_at": "2026-11-08T08:36:07Z",
-    "fixture": "skills-doctor/personal-copy-outranks-repo",
-    "model": "claude-opus-5-5",
-    "run_id": "20261108T083607Z-bfe16a",
-    "with_share": 1.0,
-    "with_skill": 6,
-    "without_share": 0.8333333333333334,
-    "without_skill": 5
-   },
-   {
-    "checks": 6,
-    "fired_at": "2026-11-08T08:36:07Z",
-    "fixture": "skills-doctor/personal-copy-outranks-repo",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261108T083607Z-bfe16a",
-    "with_share": 1.0,
-    "with_skill": 6,
-    "without_share": 1.0,
-    "without_skill": 6
    },
    {
     "checks": 8,
@@ -31483,11 +31483,55 @@
   ],
   "latest_summary": {
    "helped": 74,
-   "hurt": 14,
+   "hurt": 15,
    "tests": 142,
-   "tied": 54
+   "tied": 53
   },
   "runs": [
+   {
+    "account_week_after": 78.0,
+    "checks": 6,
+    "cli": "2.1.319",
+    "cost_usd": 0.6859236,
+    "fired_at": "2026-11-08T14:40:10Z",
+    "fixture": "skills-doctor/personal-copy-outranks-repo",
+    "gain": 1,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T144010Z-1beae4/skills-doctor/20261108T144144Z/report.md",
+    "run_id": "20261108T144010Z-1beae4",
+    "skill": "skills-doctor",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 6,
+    "without_judge": null,
+    "without_share": 0.8333333333333334,
+    "without_skill": 5
+   },
+   {
+    "account_week_after": 79.0,
+    "checks": 6,
+    "cli": "2.1.319",
+    "cost_usd": 0.22851860000000002,
+    "fired_at": "2026-11-08T14:40:10Z",
+    "fixture": "skills-doctor/personal-copy-outranks-repo",
+    "gain": -1,
+    "judge": "not run",
+    "meter_points": 1.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T144010Z-1beae4/skills-doctor/20261108T144324Z/report.md",
+    "run_id": "20261108T144010Z-1beae4",
+    "skill": "skills-doctor",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 0.8333333333333334,
+    "with_skill": 5,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 6
+   },
    {
     "account_week_after": 78.0,
     "checks": 7,
@@ -56461,34 +56505,34 @@
   ],
   "summary": [
    {
-    "helped": 570,
-    "hurt": 120,
-    "lift": 0.12347519781028365,
+    "helped": 571,
+    "hurt": 121,
+    "lift": 0.1232361364398862,
     "model": "All",
-    "runs": 1031,
+    "runs": 1033,
     "tied": 341,
-    "with_avg": 0.8460501593063233,
-    "without_avg": 0.7225749614960396
+    "with_avg": 0.846186880520961,
+    "without_avg": 0.7229507440810747
    },
    {
-    "helped": 194,
+    "helped": 195,
     "hurt": 42,
-    "lift": 0.09850649041920001,
+    "lift": 0.09869070711176063,
     "model": "claude-opus-5-5",
-    "runs": 369,
+    "runs": 370,
     "tied": 133,
-    "with_avg": 0.8507921826136063,
-    "without_avg": 0.7522856921944063
+    "with_avg": 0.8511954469849208,
+    "without_avg": 0.7525047398731601
    },
    {
     "helped": 369,
-    "hurt": 77,
-    "lift": 0.13504902710989242,
+    "hurt": 78,
+    "lift": 0.13458698163703378,
     "model": "claude-sonnet-5-5",
-    "runs": 652,
+    "runs": 653,
     "tied": 206,
-    "with_avg": 0.8417323204516451,
-    "without_avg": 0.7066832933417527
+    "with_avg": 0.8417194582967931,
+    "without_avg": 0.7071324766597593
    },
    {
     "helped": 7,
@@ -56677,7 +56721,7 @@
     "without_pass_rate": 0.8910256410256411
    }
   ],
-  "generated_at": "2026-11-08T14:42:32Z",
+  "generated_at": "2026-11-08T14:46:52Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -56744,7 +56788,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-08T14:41:11Z",
+ "generated_at": "2026-11-08T14:45:43Z",
  "guidance": {
   "removed": [
    {
@@ -72315,7 +72359,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-08T14:35:16Z",
+ "newest_run": "2026-11-08T14:43:24Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -92355,11 +92399,11 @@
       "votes": true
      },
      {
-      "gain": 8.7,
-      "high": 24.3,
-      "low": -17.1,
+      "gain": 9.3,
+      "high": 23.8,
+      "low": -15.2,
       "model": "claude-opus-5-5",
-      "pairs": 14,
+      "pairs": 15,
       "status": "open",
       "task": "personal-copy-outranks-repo",
       "votes": true
@@ -92385,11 +92429,11 @@
       "votes": true
      },
      {
-      "gain": -3.6,
-      "high": 12.3,
-      "low": -23.5,
+      "gain": -4.3,
+      "high": 11.3,
+      "low": -23.2,
       "model": "claude-sonnet-5-5",
-      "pairs": 17,
+      "pairs": 18,
       "status": "open",
       "task": "personal-copy-outranks-repo",
       "votes": true
@@ -92397,8 +92441,8 @@
     ],
     "helps": 0.0,
     "keep_family": 6,
-    "keep_pairs": 14,
-    "max_pairs": 17,
+    "keep_pairs": 15,
+    "max_pairs": 18,
     "no_help": 0.0,
     "no_help_pairs": null
    },
@@ -92414,7 +92458,7 @@
      "to": "2026-11-08"
     }
    },
-   "current_text_runs": 51,
+   "current_text_runs": 53,
    "decisions": [
     {
      "class": "insufficient",
@@ -92764,23 +92808,65 @@
     {
      "class": "building",
      "cost_unknown": 0,
-     "cost_usd": 5.3000582000000005,
+     "cost_usd": 5.9859818,
      "date": "2026-11-08",
      "model": "claude-opus-5-5",
      "reason": null,
-     "runs": 16
+     "runs": 18
     },
     {
      "class": "building",
      "cost_unknown": 0,
-     "cost_usd": 2.2144119,
+     "cost_usd": 2.4429305,
      "date": "2026-11-08",
      "model": "claude-sonnet-5-5",
      "reason": null,
-     "runs": 18
+     "runs": 20
     }
    ],
    "runs": [
+    {
+     "at": "2026-11-08T14:43:24Z",
+     "cli_version": "2.1.319",
+     "fixture": "personal-copy-outranks-repo",
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T144010Z-1beae4/skills-doctor/20261108T144324Z/report.md",
+     "with": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.1346052,
+      "judge_mean": 5.9,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.0939134,
+      "judge_mean": 7.5,
+      "trials": 1
+     }
+    },
+    {
+     "at": "2026-11-08T14:41:44Z",
+     "cli_version": "2.1.319",
+     "fixture": "personal-copy-outranks-repo",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T144010Z-1beae4/skills-doctor/20261108T144144Z/report.md",
+     "with": {
+      "checks_passed": 6,
+      "checks_total": 6,
+      "cost_usd": 0.4650669999999999,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 5,
+      "checks_total": 6,
+      "cost_usd": 0.22085660000000001,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-08T08:39:40Z",
      "cli_version": "2.1.319",
@@ -102356,7 +102442,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "b21d91e32137563ecc3b6f30adeb175c49e0ac9f",
-  "results_commit": "a38a84272b7f584a4b0d33300152634d132201b3"
+  "results_commit": "b95aed453360f26c73e8942dc9f2f3a041218381"
  },
  "spend": {
   "generated_at": "2026-11-08T14:32:08Z",
