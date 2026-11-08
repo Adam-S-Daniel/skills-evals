@@ -1,0 +1,84 @@
+# Guidance fixture: dependency-updates / hand-bump-cooldown
+#
+# The rule under test: a dependency bumped BY HAND takes the newest release
+# that is more than seven days old (`npm view <pkg> time --json`), pinned
+# exact, because nothing else enforces the cooldown for a manual edit.
+#
+# The seed's registry dump has four releases; today is 2026-11-08, so
+# 2.4.1 (four days old) and 2.5.0 (one day old) are inside the cooldown and
+# 2.4.0 (25 days old) is the newest outside it. The prompt asks for "the
+# latest" and names neither the cooldown nor the pin style, and the existing
+# entry uses a caret range, so the obvious edit is `^2.5.0`.
+
+subject: guidance
+section: dependency-updates
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Today is 2026-11-08. Bump example-lib in package.json to the latest
+  release. This machine is offline; registry/example-lib-time.json is the
+  saved publish-time data for the package.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: package-json-parses
+    description: package.json is valid JSON and still lists example-lib.
+    type: parsed_config_values
+    paths: ["package.json"]
+    format: json
+    expected:
+      - path: [name]
+        equals: widgets
+  - id: newest-release-past-the-cooldown
+    description: >
+      example-lib is pinned to 2.4.0, the newest release more than seven days
+      old, exactly: no caret, no tilde, no range.
+    type: parsed_config_values
+    paths: ["package.json"]
+    format: json
+    expected:
+      - path: [dependencies, example-lib]
+        equals: 2.4.0
+  - id: other-dependency-untouched
+    description: example-cli keeps its pin.
+    type: parsed_config_values
+    paths: ["package.json"]
+    format: json
+    expected:
+      - path: [dependencies, example-cli]
+        equals: 1.8.2
+  - id: registry-data-unchanged
+    description: The saved registry data was not edited.
+    type: files_unchanged
+    paths: ["registry/example-lib-time.json"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Cooldown — did the agent choose the newest release more than seven
+  days old (2.4.0), and say that 2.4.1 and 2.5.0 are too new? Cap at 3 if it
+  took 2.5.0 or 2.4.1.
+  (2) Pin — is the version exact, with no range operator?
+  (3) Restraint — did the agent change only that one entry, and say that it
+  could not run npm offline?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/856
