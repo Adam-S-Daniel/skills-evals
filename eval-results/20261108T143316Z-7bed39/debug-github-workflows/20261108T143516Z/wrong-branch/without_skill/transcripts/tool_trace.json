@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013JwM4D1opiSVBPZpic9pZC",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -10; ls -la; git remote -v; ls .github/workflows 2><path>",
+      "input_chars": 105,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013JwM4D1opiSVBPZpic9pZC",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n568a099 initial commit\nf0be913 Import example service\ntotal 40\ndrwxr-xr-x  9 root root 4096 Nov  8 14:36 .\ndrwx------  6 root root 4096 Nov  8 14:36 ..\ncrw-rw-rw-  1 root ...",
+      "output_chars": 1384,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NAD52RsCrxdmqzsqdTj9sP",
+      "name": "Bash",
+      "input": "cat README.md; cat .github/workflows/ci.yml; ls bin src test .gh .claude; find .gh -type f | head -50",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NAD52RsCrxdmqzsqdTj9sP",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 1533,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012bfRJwCbizf2E4RoN1Vix1",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cat .gh/replay/run-view-77001.log; cat .gh/replay/run-list.json; cat .gh/replay/api/repos/example-org/example-service/check-runs/99001/annotations.json; cat ....",
+      "input_chars": 378,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012bfRJwCbizf2E4RoN1Vix1",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\ntest\tRun unit tests\t2026-01-07T07:00...",
+      "output_chars": 3037,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MgBXuAEBUCwEdcqAWtN9rY",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/example-org/example-service/branches.json .gh/replay/api/repos/example-org/example-service/branches/main.json .gh/replay/api/repos/example-org/example-service/branches/fix/ci-...",
+      "input_chars": 619,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MgBXuAEBUCwEdcqAWtN9rY",
+      "is_error": false,
+      "output": "[\n  {\n    \"name\": \"main\",\n    \"commit\": {\n      \"sha\": \"1111111111111111111111111111111111111111\",\n      \"url\": \"https://example.net/repos/example-org/example-service/commits/1111111111111111111111111111111111111111\"\n    },\n    \"protected\": true\n  },\n  {\n    \"name\": \"fix/ci-test-discovery\",\n    \"com...",
+      "output_chars": 3284,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CFkf7mQeUsEqTNpha8NTmY",
+      "name": "Bash",
+      "input": "git show --stat f0be913 | cat; git show 0933504 | cat; git show --stat 568a099 | head -30; git diff f0be913 568a099 --stat | cat; python3 -c \"import test; print(test.__file__)\"",
+      "input_chars": 176,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CFkf7mQeUsEqTNpha8NTmY",
+      "is_error": false,
+      "output": "commit f0be9137d6ed1769cd15652ffba4bd517e856b3b\nAuthor: <redacted> <<email>>\nDate:   Thu Jan 1 00:00:00 2026 +0000\n\n    Import example service\n\n .github/workflows/ci.yml | 18 ++++++++++++++++++\n README.md                |  9 +++++++++\n src/sequence.py          |  2 ++\n test/test_current.py     | 12 ...",
+      "output_chars": 3271,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AE6yKekzTHsAZhmmt8q3xC",
+      "name": "Bash",
+      "input": "git status && git log --oneline -10 && ls -la && git remote -v && ls .github/workflows 2><path>",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AE6yKekzTHsAZhmmt8q3xC",
+      "is_error": false,
+      "output": "On branch main\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n9fe50f9 ...",
+      "output_chars": 1547,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01D83WJx21QLNjLPzdy2frzV",
+      "name": "Bash",
+      "input": "cat README.md; cat .github/workflows/ci.yml; ls -R bin src test .gh .claude; head -100 bin/* src/* test/*",
+      "input_chars": 105,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01D83WJx21QLNjLPzdy2frzV",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 7478,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GBiTYhgigL4A8EXv9oea5E",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay; cat .gh/replay/run-list.json; echo; cat .gh/replay/run-view-77001.log; echo; cat .gh/replay/api/repos/example-org/example-service/check-runs/9...",
+      "input_chars": 500,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GBiTYhgigL4A8EXv9oea5E",
+      "is_error": false,
+      "output": "[\n  {\n    \"databaseId\": 77001,\n    \"name\": \"CI\",\n    \"workflowName\": \"CI\",\n    \"headBranch\": \"main\",\n    \"headSha\": \"1111111111111111111111111111111111111111\",\n    \"event\": \"push\",\n    \"status\": \"completed\",\n    \"conclusion\": \"failure\",\n    \"url\": \"https://example.com/example-org/example-service/act...",
+      "output_chars": 2831,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TSVGrRacQgKufodzbhV8ra",
+      "name": "Bash",
+      "input": "git rev-parse HEAD; git log --stat --format='%h %s' | head -30; echo ---; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo ---; python3 -m unittest discover -s test -v; echo \"exit=$?\"; echo ...",
+      "input_chars": 429,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TSVGrRacQgKufodzbhV8ra",
+      "is_error": false,
+      "output": "9fe50f92406d8e6127b52ea5e5428436de25290e\n9fe50f9 initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   ...",
+      "output_chars": 3754,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RXvmj3yVnp16dALVaD5j1R",
+      "name": "Bash",
+      "input": "export PATH=$PWD/bin:$PATH GH_REPLAY_DIR=$PWD/.gh/replay; gh pr list --head fix/ci-test-discovery --state all; echo \"exit=$?\"; cat .gh/replay/api/repos/example-org/example-service/branches.json",
+      "input_chars": 193,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RXvmj3yVnp16dALVaD5j1R",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\nexit=1\n[\n  {\n    \"name\": \"main\",\n    \"commit\": {\n      \"sha\": \"1111111111111111111111111111111111111111\",\n      \"url\": \"https://example.net/repos/example-org/example-service/commits/1111111111111111111111111111111111111111\"\n    },\n    \"protected\": true\n  },\n  {\n    \"name\": \"...",
+      "output_chars": 550,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
