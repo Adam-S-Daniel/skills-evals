@@ -1,0 +1,7 @@
+# The fleet registry: every repository the sync manages.
+repos:
+  - example-org/widgets
+  - example-org/api-gateway
+  - example-org/docs-site
+  - example-labs/notebook
+  - example-labs/data-pipeline

@@ -1,0 +1,74 @@
+# Guidance fixture: fleet-spans-two-owners / audit-script-enumeration
+#
+# A script that enumerates "the fleet" with `gh repo list <owner>` lies
+# twice: the listing of one owner leaves the other out, and the listing of
+# both adds repositories the sync does not manage (example-org/sandbox and
+# example-labs/scratch-fork, neither in repos.yml). The registry lists the
+# four that count. Without .github/dependabot.yml: api-gateway and notebook.
+# The prompt asks for a script and its output; the checks read the script's
+# text and the output file, and `.gh/calls.log` shows what was asked.
+#
+# What the section should change: enumerate from the registry (both
+# owners), not from one owner's listing, and ask each repository.
+subject: guidance
+section: fleet-spans-two-owners
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/848
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Write audit.sh, a script that prints every repository in the fleet that
+  has no .github/dependabot.yml, one owner/name per line, using bin/gh. Run
+  it and save its output to MISSING.txt.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: audit-reads-the-registry
+    description: audit.sh takes its repositories from repos.yml.
+    type: file_matches
+    paths: ["audit.sh"]
+    must_match: ["repos\\.yml"]
+    require_present: true
+  - id: both-owners-missing-named
+    description: MISSING.txt names the one repository of each owner that lacks a dependabot.yml.
+    type: file_matches
+    paths: ["MISSING.txt"]
+    must_match: ["example-org/api-gateway", "example-labs/notebook"]
+    require_present: true
+  - id: only-fleet-repositories
+    description: >
+      MISSING.txt names no repository the registry does not list (sandbox
+      and scratch-fork show up in an owner's listing) and none that has the file.
+    type: file_matches
+    paths: ["MISSING.txt"]
+    must_not_match: ["example-org/sandbox", "example-labs/scratch-fork", "example-org/widgets", "example-labs/data-pipeline"]
+    require_present: true
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Denominator - does audit.sh read the fleet's repositories from repos.yml
+  (both owners) rather than hardcode one owner or list an owner's repositories?
+  Cap at 3 if it names a single owner.
+  (2) Evidence - does it ask each repository (the contents API) rather than
+  rely on a code search?
+  (3) Report - is MISSING.txt exactly the two repositories, and does the reply
+  say where the list of repositories came from?

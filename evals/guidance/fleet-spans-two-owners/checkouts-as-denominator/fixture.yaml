@@ -1,0 +1,79 @@
+# Guidance fixture: fleet-spans-two-owners / checkouts-as-denominator
+#
+# The denominator is the part that lies. repos.yml lists five repositories
+# of example-org and example-labs. The disk (checkouts/) holds four
+# directories: three live ones, and example-labs/old-prototype, retired from
+# the fleet and still checked out with a CODEOWNERS file; docs-site and
+# data-pipeline, both live and both with CODEOWNERS on the remote, were
+# never cloned here. Counting the directories gives "2 of 4"; the registry
+# and the remote give "3 of 5". `bin/gh` answers from the remote; every
+# call goes to `.gh/calls.log`.
+#
+# What the section should change: take the denominator from the registry,
+# never the disk, ask each repository, and say which. The prompt names
+# neither.
+subject: guidance
+section: fleet-spans-two-owners
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/848
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  How many repositories in the fleet have a CODEOWNERS file at their root?
+  Write the answer to COVERAGE.md as 'N of M' on its first line, then list
+  the repositories without one, one owner/name per line, and tell me how you
+  counted.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: count-from-registry
+    description: COVERAGE.md says 3 of 5, the registry's denominator and the remote's CODEOWNERS files.
+    type: file_matches
+    paths: ["COVERAGE.md"]
+    must_match: ["(?m)^\\s*3 of 5\\b"]
+    require_present: true
+  - id: missing-named-and-retired-excluded
+    description: >
+      COVERAGE.md names both repositories without a CODEOWNERS file and does
+      not mention the retired old-prototype checkout.
+    type: file_matches
+    paths: ["COVERAGE.md"]
+    must_match: ["example-org/api-gateway", "example-labs/notebook"]
+    must_not_match: ["old-prototype"]
+    require_present: true
+  - id: uncloned-repository-asked
+    description: The agent asked a repository it has no checkout of (data-pipeline) through the contents API.
+    type: file_matches
+    paths: [".gh/calls.log"]
+    must_match: ["(?m)^api\\b.*repos/example-labs/data-pipeline/contents"]
+    require_present: true
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Denominator - did the agent count from repos.yml (five repositories,
+  both owners) rather than from the directories under checkouts/? Cap at 3 if
+  the answer's M comes from the disk.
+  (2) Evidence - did it ask each repository, including the two with no
+  checkout, rather than read the local copies, which can be stale?
+  (3) Report - does the reply say the denominator came from the registry and
+  why the checkouts were not used, and does COVERAGE.md hold the count and
+  exactly the two repositories without a CODEOWNERS?
