@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L8WNPq5cLKArZT4VBaA3hK",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -10; ls -la; git remote -v; ls .github/workflows 2><path>",
+      "input_chars": 105,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016kZVkZXHQY529iZjUq2usf",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:debug-github-workflows",
+      "input_chars": 43,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L8WNPq5cLKArZT4VBaA3hK",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n2215ba1 initial commit\nf0be913 Import example service\ntotal 40\ndrwxr-xr-x  9 root root 4096 Nov  8 11:01 .\ndrwx------  6 root root 4096 Nov  8 11:01 ..\ncrw-rw-rw-  1 root ...",
+      "output_chars": 1384,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016kZVkZXHQY529iZjUq2usf",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:debug-github-workflows",
+      "output_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NrUoBw3AkD7521AWVSFryf",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml; ls -la bin src test .gh .claude; find .gh -type f | head -50",
+      "input_chars": 100,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NrUoBw3AkD7521AWVSFryf",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 2232,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013eboKBxpfoj8uWk5oo9u4d",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; cd .gh/replay; for f in auth-status.txt run-list.json run-view-77001.json run-view-77001.log api/repos/example-org/example-service/actions/runs/77001/jobs.jso...",
+      "input_chars": 514,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013eboKBxpfoj8uWk5oo9u4d",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n=== auth-status.txt\nexample.com\n  Lo...",
+      "output_chars": 6247,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UVBmkBRFCyTY5kniGobVne",
+      "name": "Bash",
+      "input": "cd <path> && git log --stat --format='--- %h %s' ; git branch -a; echo \"== legacy:\"; python3 -m unittest test.test_legacy; echo \"exit=$?\"; echo \"== discover:\"; python3 -m unittest discover -s test -v;...",
+      "input_chars": 242,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UVBmkBRFCyTY5kniGobVne",
+      "is_error": false,
+      "output": "--- 2215ba1 initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   |   35 +\n .../example-org/example-ser...",
+      "output_chars": 2311,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P55QZuNapgJXJDEmZRLfeb",
+      "name": "Bash",
+      "input": "git log --oneline main..origin/fix/ci-test-discovery; git diff main origin/fix/ci-test-discovery; echo \"== tree on fix branch:\"; git ls-tree -r --name-only origin/fix/ci-test-discovery; echo \"== PRs:\"...",
+      "input_chars": 305,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P55QZuNapgJXJDEmZRLfeb",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (67.5KB). Full output saved to: <path>\n\nPreview (first 2KB):\n0933504 Use current test discovery\ndiff --git a/.gh/replay/api/repos/example-org/example-service.json b/.gh/replay/api/repos/example-org/example-service.json\ndeleted file mode 100644\nindex 7193476..00000...",
+      "output_chars": 2244,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Nw6qhR6QMXw24bneKNaVEk",
+      "name": "Bash",
+      "input": "git diff f0be913 origin/fix/ci-test-discovery; echo \"== PRs:\"; ./bin/gh pr list --repo example-org/example-service --state all >\"$TMPDIR/pr.txt\" 2>&1; echo \"rc=$?\"; head -20 \"$TMPDIR/pr.txt\"",
+      "input_chars": 190,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Nw6qhR6QMXw24bneKNaVEk",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex 6e07470..8d98749 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -15,4 +15,4 @@ jobs:\n     steps:\n       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n       - name: Run unit tests\n-   ...",
+      "output_chars": 435,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

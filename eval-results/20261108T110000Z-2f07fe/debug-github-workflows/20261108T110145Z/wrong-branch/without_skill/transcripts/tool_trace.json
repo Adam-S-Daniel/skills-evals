@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CK3s52y6WMQxLoWmSDdnuH",
+      "name": "Bash",
+      "input": "git log --oneline -10 && git status --short && git remote -v && ls -la && ls .github/workflows 2><path>",
+      "input_chars": 106,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CK3s52y6WMQxLoWmSDdnuH",
+      "is_error": false,
+      "output": "0d21819 initial commit\nf0be913 Import example service\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\norigin\t<path> (fetch)\norigin\t<path> (push)\ntotal 40\ndrwxr-xr-x  9 root root 4096 Nov  8 11:02 .\ndrwx------ ...",
+      "output_chars": 1394,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011nwzRGbJEBMZ1C4ec1j5PD",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/ci.yml && ls -la bin src test .gh .claude && find .gh .claude -type f | head -50",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011nwzRGbJEBMZ1C4ec1j5PD",
+      "is_error": false,
+      "output": "# Example service\n\nA small Python service with a utility for computing the next sequence value.\n\nRun the local tests from the repository root:\n\n```bash\npython3 -m unittest discover -s test\n```\nname: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: r...",
+      "output_chars": 2232,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016yjdtUXvYTvbqPUZdNLYYC",
+      "name": "Bash",
+      "input": "cat src/sequence.py test/test_current.py; git show --stat HEAD HEAD~1 | head -40; cd .gh/replay && for f in auth-status.txt run-list.json run-view-77001.json run-view-77001.log api/repos/example-org/e...",
+      "input_chars": 544,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016yjdtUXvYTvbqPUZdNLYYC",
+      "is_error": false,
+      "output": "def next_value(value):\n    return value + 1\nimport unittest\n\nfrom src.sequence import next_value\n\n\nclass SequenceTests(unittest.TestCase):\n    def test_next_value(self):\n        self.assertEqual(next_value(41), 42)\n\n\nif __name__ == \"__main__\":\n    unittest.main()\ncommit 0d2181913ee6c6d203eeb3096f7e5...",
+      "output_chars": 7451,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015K5fe1Hbag3gEEtKhg8Hff",
+      "name": "Bash",
+      "input": "cd <path> && export PYTHONDONTWRITEBYTECODE=1; python3 -m unittest test.test_legacy; echo \"legacy exit=$?\"; python3 -m unittest discover -s test -v; echo \"discover exit=$?\"; git log --all --oneline --...",
+      "input_chars": 398,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015K5fe1Hbag3gEEtKhg8Hff",
+      "is_error": false,
+      "output": "E\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (most recent call last):\n  Fil...",
+      "output_chars": 1526,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BFewLQD2suiDqTepJpVaka",
+      "name": "Bash",
+      "input": "cd <path> && python3 -B -c \"import test; print(test.__file__, getattr(test,'__path__',None))\"",
+      "input_chars": 120,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BFewLQD2suiDqTepJpVaka",
+      "is_error": false,
+      "output": "<path> ['<path>']",
+      "output_chars": 65,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

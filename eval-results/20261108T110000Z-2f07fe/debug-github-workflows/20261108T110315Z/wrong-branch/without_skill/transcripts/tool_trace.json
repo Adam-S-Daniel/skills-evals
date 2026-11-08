@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VzecTgwm82vmhukMKNxLAa",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -8; git remote -v; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 103,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VzecTgwm82vmhukMKNxLAa",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n2c3dff9 initial commit\nf0be913 Import example service\norigin\t<path> (fetch)\norigin\t<path> (push)\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules...",
+      "output_chars": 493,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UgQTy5DXYFeW56e6Xq7uWr",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml README.md; ls -R bin src test .gh | head -50",
+      "input_chars": 73,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UgQTy5DXYFeW56e6Xq7uWr",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 1338,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BD96pe96ZAiZrWr4JpnkYR",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-77001.log; cat .gh/replay/run-list.json | head -30; find bin src test -type f | head -30; git ls-files",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G6KCNNJUqWQG6CqK1mDTu7",
+      "name": "Bash",
+      "input": "python3 -m unittest test.test_legacy 2>&1 | tail -8; python3 -m unittest discover -s test 2>&1 | tail -8",
+      "input_chars": 104,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BD96pe96ZAiZrWr4JpnkYR",
+      "is_error": false,
+      "output": "test\tRun unit tests\t2026-01-07T07:00:03Z Run python3 -m unittest test.test_legacy\ntest\tRun unit tests\t2026-01-07T07:00:03Z E\ntest\tRun unit tests\t2026-01-07T07:00:03Z ERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\ntest\tRun unit tests\t2026-01-07T07:00:03Z ImportError: Failed to import te...",
+      "output_chars": 2099,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G6KCNNJUqWQG6CqK1mDTu7",
+      "is_error": false,
+      "output": "             ^^^^^^^^^^^^^^^^^^^^^^^\nModuleNotFoundError: No module named 'test.test_legacy'\n\n\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n\nFAILED (errors=1)\n.\n----------------------------------------------------------------------\nRan 1 test in 0.000s\n...",
+      "output_chars": 303,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N1W9X448bRuc8qo4XGphvJ",
+      "name": "Bash",
+      "input": "git log --stat --format='%h %s' | head -20; cat .gh/replay/api/repos/example-org/example-service/compare/*.json | head -40; cat .gh/replay/api/repos/example-org/example-service/branches/fix/*.json | h...",
+      "input_chars": 207,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N1W9X448bRuc8qo4XGphvJ",
+      "is_error": false,
+      "output": "2c3dff9 initial commit\n\n .../api/repos/example-org/example-service.json     |    6 +\n .../example-org/example-service/actions/runs.json  |   18 +\n .../example-service/actions/runs/77001.json        |   13 +\n .../example-service/actions/runs/77001/jobs.json   |   35 +\n .../example-org/example-service...",
+      "output_chars": 1465,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AUFh18kAmYABFMxffB64po",
+      "name": "Bash",
+      "input": "cat \".gh/replay/api/repos/example-org/example-service/compare/main...fix/ci-test-discovery.json\"; git show f0be913 --stat --format=%s | head",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AUFh18kAmYABFMxffB64po",
+      "is_error": false,
+      "output": "{\n  \"url\": \"https://example.net/repos/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"html_url\": \"https://example.com/example-org/example-service/compare/main...fix/ci-test-discovery\",\n  \"status\": \"ahead\",\n  \"ahead_by\": 1,\n  \"behind_by\": 0,\n  \"total_commits\": 1,\n  \"base_commit\"...",
+      "output_chars": 1270,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
