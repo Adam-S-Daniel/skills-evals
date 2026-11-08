@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-07T13:37:03Z",
+  "generated_at": "2026-11-08T13:56:34Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-14T00:00:00Z",
-      "to": "2026-11-07T13:37:03Z",
+      "to": "2026-11-08T13:56:34Z",
       "repos_scanned": 23
     }
   ],
@@ -4140,7 +4140,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 74,
+      "invocations": 82,
       "sessions": null,
       "blocked": 2,
       "overridden": 2,
@@ -4176,7 +4176,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 130,
+      "invocations": 152,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4212,7 +4212,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 38,
+      "invocations": 54,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4236,7 +4236,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 23,
+      "invocations": 24,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4284,7 +4284,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 366,
+      "invocations": 399,
       "sessions": null,
       "blocked": 8,
       "overridden": 8,
@@ -4320,7 +4320,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/jodidaniel.com",
       "surface": "ci",
-      "invocations": 22,
+      "invocations": 31,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4385,11 +4385,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 56,
-        "prs_merged": 57,
-        "prs_closed_unmerged": 1,
+        "prs_opened": 61,
+        "prs_merged": 60,
+        "prs_closed_unmerged": 2,
         "prs_reverted": 0,
-        "agent_prs_merged": 50,
+        "agent_prs_merged": 53,
         "ci_red_after": 5
       }
     },
@@ -4425,7 +4425,7 @@
       "outcome": {
         "prs_opened": 17,
         "prs_merged": 15,
-        "prs_closed_unmerged": 1,
+        "prs_closed_unmerged": 2,
         "prs_reverted": 0,
         "agent_prs_merged": 15,
         "ci_red_after": 1
@@ -4442,11 +4442,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 122,
-        "prs_merged": 107,
-        "prs_closed_unmerged": 15,
+        "prs_opened": 144,
+        "prs_merged": 127,
+        "prs_closed_unmerged": 16,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 3,
         "ci_red_after": 3
       }
     },
@@ -4499,12 +4499,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 29,
-        "prs_merged": 28,
+        "prs_opened": 34,
+        "prs_merged": 34,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 11,
-        "ci_red_after": 0
+        "agent_prs_merged": 16,
+        "ci_red_after": 3
       }
     },
     {
@@ -4537,8 +4537,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 18,
-        "prs_merged": 20,
+        "prs_opened": 19,
+        "prs_merged": 21,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 3,
@@ -4613,12 +4613,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 203,
-        "prs_merged": 190,
+        "prs_opened": 219,
+        "prs_merged": 213,
         "prs_closed_unmerged": 5,
         "prs_reverted": 0,
-        "agent_prs_merged": 182,
-        "ci_red_after": 32
+        "agent_prs_merged": 204,
+        "ci_red_after": 33
       }
     },
     {
@@ -4670,11 +4670,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 22,
-        "prs_merged": 19,
-        "prs_closed_unmerged": 2,
+        "prs_opened": 29,
+        "prs_merged": 24,
+        "prs_closed_unmerged": 3,
         "prs_reverted": 0,
-        "agent_prs_merged": 2,
+        "agent_prs_merged": 5,
         "ci_red_after": 0
       }
     },
