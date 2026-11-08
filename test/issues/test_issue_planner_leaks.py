@@ -308,6 +308,26 @@ class GuidanceParserTests(unittest.TestCase):
                 plan_week.gather(args, NOW)
         compute.assert_not_called()
 
+    def test_the_headroom_check_refuses_without_the_parser(self):
+        def missing():
+            raise guidance.GuidanceError("no markdown-it-py")
+        with mock.patch.object(guidance, "_markdown_it", missing), \
+                mock.patch("compute_gates.compute") as compute:
+            with self.assertRaises(plan_week.PlanError):
+                plan_week.guidance_headroom("example-section", Path(tempfile.mkdtemp()),
+                                            Path(tempfile.mkdtemp()),
+                                            Path(tempfile.mkdtemp()), "2026-11-08T00:00:00Z")
+        compute.assert_not_called()
+
+    def test_the_fire_job_installs_the_parser_before_the_headroom_check(self):
+        doc = yaml.safe_load((ROOT / ".github" / "workflows" / "routine-eval-fire.yml")
+                             .read_text(encoding="utf-8"))
+        runs = [str(s.get("run") or "") for job in doc["jobs"].values()
+                for s in job.get("steps", [])]
+        at = next(i for i, r in enumerate(runs) if "plan_week.py guidance-headroom" in r)
+        installs = " ".join(r for r in runs[:at] if "pip install" in r).split()
+        self.assertIn("markdown-it-py==4.2.0", installs)
+
     def test_the_plan_job_installs_the_parser_before_planning(self):
         doc = yaml.safe_load((ROOT / ".github" / "workflows" / "routine-eval-weekly.yml")
                              .read_text(encoding="utf-8"))

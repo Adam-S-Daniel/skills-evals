@@ -4559,6 +4559,7 @@ def guidance_headroom(section: str, tree: Path, evals_dir: Path, guidance_dir: P
                       as_of: str) -> tuple:
     """(ok, message) for the fire check (module docstring, FIRE CHECK)."""
     import compute_gates
+    require_guidance_parser(guidance_dir)
     gates_doc = compute_gates.compute(tree, evals_dir / "roster.yml",
                                       evals_dir / "gate-policy.yml", evals_dir,
                                       compute_gates.parse_as_of(as_of), {}, guidance_dir)
