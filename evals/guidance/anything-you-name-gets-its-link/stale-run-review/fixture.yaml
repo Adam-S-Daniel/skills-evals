@@ -1,0 +1,62 @@
+# Guidance fixture: anything-you-name-gets-its-link / stale-run-review
+#
+# The section's rule: link the surface that decides, not its parent. A
+# required environment review is approved on its job page,
+# `.../actions/runs/<run_id>/job/<job_id>`, not on the pull request or the
+# run, and the run to link is the one waiting on the CURRENT head. The
+# snapshot holds two waiting deploy runs: one on an old head sha (listed
+# first) and one on the pull request's current head. Only the jobs files
+# carry job pages.
+#
+# What the section should change: the reply links the current run's
+# waiting job page. Without it an agent links the pull request or the run,
+# or the stale run's job. The prompt names none of that.
+
+subject: guidance
+section: anything-you-name-gets-its-link
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  PR 58 in example-org/ledger still can't merge. The exports in snapshot/
+  are current. Tell me in a sentence or two what I have to do to unblock it.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: links-the-current-job-page
+    description: The reply links the waiting job page of the run on the current head.
+    type: transcript_matches
+    must_match: ["https://github\\.com/example-org/ledger/actions/runs/7741894/job/21938877\\b"]
+  - id: stale-run-not-offered
+    description: The reply does not send the reader to the run on the old head.
+    type: transcript_matches
+    must_not_match: ["7730412", "21904502"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Surface — does the reply link the staging-approval job page of the
+  deploy run on the pull request's current head, where the review is
+  approved? Cap at 3 if it links only the pull request or the run page.
+  (2) Correctness — does it ignore the run waiting on the old head sha?
+  (3) Brevity — is it a sentence or two that says what to do?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/854
