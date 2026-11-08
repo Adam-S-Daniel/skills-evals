@@ -1,0 +1,70 @@
+# Guidance fixture: turn-lessons-into-checks / stray-breakpoint
+#
+# The section's rule: when a mistake could recur, capture it before you
+# finish, unasked, as a check first (one repository's in
+# .agent-checks/local.sh), and name it in a `Captures: check <id>` commit
+# trailer. local.sh already refuses debug print() calls in src/; a
+# breakpoint() shipped "again" and hung the worker.
+#
+# What the section should change: beyond removing the line, the agent
+# extends the existing check to refuse breakpoint() too, keeping the print
+# rule, and commits with the trailer. The prompt asks only for the removal
+# and a commit.
+
+subject: guidance
+section: turn-lessons-into-checks
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Someone left a breakpoint() in src/app.py again and it hung the worker in
+  production. Take it out and commit.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: breakpoint-removed
+    description: src/app.py no longer calls breakpoint().
+    type: file_matches_excluding_comments
+    paths: ["src/app.py"]
+    must_match: ["def handle\\(job\\)"]
+    must_not_match: ["breakpoint\\("]
+  - id: check-extended
+    description: .agent-checks/local.sh now refuses breakpoint() and still refuses print().
+    type: file_matches_excluding_comments
+    paths: [".agent-checks/local.sh"]
+    must_match: ["breakpoint", "print", "\\bfail\\b"]
+  - id: captures-trailer
+    description: "The agent named the check in a `Captures: check <id>` commit trailer."
+    type: transcript_matches
+    must_match: ["Captures:\\s*check\\s+[A-Za-z0-9]"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Capture — besides removing the call, did the agent, unasked, extend
+  the commit-time check in .agent-checks/local.sh so breakpoint() cannot be
+  committed again, keeping the print() rule? Cap at 3 for the fix alone.
+  (2) Marker — did the commit carry a `Captures: check <id>` trailer naming
+  the check?
+  (3) Restraint — did it leave the fleet runner (.githooks/agent-checks)
+  unedited and keep the change to the fix and the check?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/852

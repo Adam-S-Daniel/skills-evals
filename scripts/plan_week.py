@@ -2114,8 +2114,9 @@ HIGH_STOP_MIN_WITHOUT = 0.90
 #: a second CLI version (`min_cli_versions`): more pairs on today's version
 #: cannot decide it, so the projection is unknown, not zero.
 BLOCKED_CLI_VERSIONS = "cli-versions"
-#: The cell classes a subject has settled (`partly_decided`): anything but
-#: still open. A provisional keep is open.
+#: The cell classes still open (`partly_decided`); a subject has settled any
+#: other class but PARKED_CLASSES, which are neither. A provisional keep is
+#: open.
 OPEN_CELL_CLASSES = ("missing", "insufficient")
 
 
@@ -2162,6 +2163,18 @@ def _to_cross(have: float, need: float, growth: float) -> float:
     return (need - have) / growth if growth > 0 else math.inf
 
 
+def _start(peak: float, current, need: float) -> float:
+    """A test's log wealth to project from: its CURRENT log wealth
+    (`current`, gates' `*_log_wealth`), since a test rejects only when its
+    running wealth crosses and betting wealth can fall after a peak; its
+    PEAK (`peak`, log 1/p) when the current one is absent (an older verdict
+    document) or when the peak already crossed `need` (a rejection is
+    final, `first_crossing`)."""
+    if peak >= need or not _real(current):
+        return peak
+    return current
+
+
 def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     """The projected extra pairs before `cell`'s keep or remove test rejects,
     or None when the cell has no measured D yet (no `objective` block).
@@ -2173,8 +2186,13 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     A pooled in-situ cell's two keep routes each run at half that alpha, but
     gates reports each route's p doubled, so a reported p reaches the full
     alpha exactly when its route rejects. The wealth so far
-    is read off the level each test reached (log 1/p: the smallest keep p,
-    the remove test's no-help confidence, a pooled cell's removal evidence).
+    is each test's CURRENT log wealth (`_start`: gates' `log_wealth` of each
+    keep route, the objective's `keep_log_wealth` and `no_help_log_wealth`,
+    a pooled cell's `remove_evidence_log_wealth`), since wealth can fall
+    after its peak and only a running crossing rejects; an older verdict
+    document without them falls back to the level each test reached (log
+    1/p: the smallest keep p, the remove test's no-help confidence, a pooled
+    cell's removal evidence), which is the peak.
     The rest grows at `_growth` per pair with D's mean and variance as the
     gate's next bet sees them: the cell's observed mean D and `d_variance`
     pooled with its bet prior's (mean, variance, pseudo-pairs), exactly how
@@ -2238,22 +2256,28 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
         # Both of its routes read the current rest alone: its own keep test,
         # and the removal that overrides the pooled keep.
         mu, var = moments(own["delta"], own["pairs"])
-    ps = [t["p"] for t in (cell.get("keep_tests") or [])
-          if isinstance(t, dict) and _number(t.get("p")) and t["p"] > 0
-          and not (provisional and t.get("route") == "objective")]
-    if ps:
-        keep_p = min(ps)
-    else:
+    routes = [(t["p"], t.get("log_wealth")) for t in (cell.get("keep_tests") or [])
+              if isinstance(t, dict) and _number(t.get("p")) and t["p"] > 0
+              and not (provisional and t.get("route") == "objective")]
+    if not routes:
         # The gate's own objective p, not doubled: a pooled route's alpha.
-        keep_p = objective["keep_p"] if _number(objective.get("keep_p")) \
-            and objective["keep_p"] > 0 else 1.0
+        routes = [(objective["keep_p"], objective.get("keep_log_wealth"))
+                  if _number(objective.get("keep_p")) and objective["keep_p"] > 0
+                  else (1.0, None)]
         keep_alpha /= 2 if pooled else 1
-    no_help = _level(cell["rest_guard"], "remove_evidence_confidence") if pooled \
-        else _level(objective, "no_help_confidence")
-    keep = _to_cross(-math.log(min(keep_p, 1.0)), -math.log(keep_alpha),
-                     _growth(mu, var, 1.0))
-    remove = _to_cross(-math.log(max(1 - no_help, 1e-12)), -math.log(1 - retire),
-                       _growth(margin - mu, var, 1 - margin))
+    keep_need = -math.log(keep_alpha)
+    keep_have = max(_start(-math.log(min(p, 1.0)), current, keep_need)
+                    for p, current in routes)
+    if pooled:
+        no_help = _level(cell["rest_guard"], "remove_evidence_confidence")
+        no_help_now = cell["rest_guard"].get("remove_evidence_log_wealth")
+    else:
+        no_help = _level(objective, "no_help_confidence")
+        no_help_now = objective.get("no_help_log_wealth")
+    remove_need = -math.log(1 - retire)
+    keep = _to_cross(keep_have, keep_need, _growth(mu, var, 1.0))
+    remove = _to_cross(_start(-math.log(max(1 - no_help, 1e-12)), no_help_now, remove_need),
+                       remove_need, _growth(margin - mu, var, 1 - margin))
     current = cell.get("current_rest_pairs") if pooled \
         and isinstance(cell.get("current_rest_pairs"), int) else None
     floor = (policy.get("rest_guard_min_pairs") or 0) if pooled and current is not None else 0
@@ -2299,14 +2323,19 @@ def _subject_of(cell: dict) -> tuple:
 
 def partly_decided(cells: list) -> set:
     """The subjects (`_subject_of`) with at least one settled cell (a class
-    outside OPEN_CELL_CLASSES that is not a provisional keep), at least one
-    still open, and no BLOCKING cell (`_blocking`: then more runs cannot
-    finish it toward removal, so it is not a subject to finish first): the
-    ones DEEP BEFORE WIDE finishes first."""
+    outside OPEN_CELL_CLASSES and PARKED_CLASSES that is not a provisional
+    keep), at least one still open, and no BLOCKING cell (`_blocking`: then
+    more runs cannot finish it toward removal, so it is not a subject to
+    finish first): the ones DEEP BEFORE WIDE finishes first. A parked cell
+    is neither settled nor open: it does not vote on removal
+    (harness/gates.py, THE VERDICT), so it has earned its subject no
+    depth, and no fire moves it."""
     settled, still_open, blocked = set(), set(), set()
     for cell in cells:
         if _blocking(cell):
             blocked.add(_subject_of(cell))
+        if cell["class"] in PARKED_CLASSES:
+            continue
         if cell["class"] in OPEN_CELL_CLASSES or cell.get("provisional_keep"):
             still_open.add(_subject_of(cell))
         else:

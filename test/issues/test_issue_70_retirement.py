@@ -551,7 +551,8 @@ class CellTests(unittest.TestCase):
         self.assertLess(result["objective"]["keep_p"], 0.2)
         self.assertGreater(result["objective"]["keep_p"], 0.05)
         self.assertEqual(result["keep_tests"],
-                         [{"route": "objective", "p": result["objective"]["keep_p"]}])
+                         [{"route": "objective", "p": result["objective"]["keep_p"],
+                           "log_wealth": result["objective"]["keep_log_wealth"]}])
         self.assertEqual(cell(series("with", GAIN * 2), series("without", LOSS * 2),
                               family=4)["objective"]["keep_at"], 11)
 
