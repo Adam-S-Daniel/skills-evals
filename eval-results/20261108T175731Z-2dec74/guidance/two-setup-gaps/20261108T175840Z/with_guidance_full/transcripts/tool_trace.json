@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PtKWJbfBgN5p3Z3e4MbrVD",
+      "name": "Bash",
+      "input": "echo \"entry=$CLAUDE_CODE_ENTRYPOINT remote=$CLAUDE_CODE_REMOTE_SESSION_ID proj=$CLAUDE_PROJECT_DIR\"; pwd; git rev-parse --show-toplevel; ls -a; ls -d <path>*/ 2>&1; for d in <path> <path>*/ ; do echo ...",
+      "input_chars": 323,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PtKWJbfBgN5p3Z3e4MbrVD",
+      "is_error": false,
+      "output": "entry=sdk-cli remote= proj=\n<path>\n<path>\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nrepo-a\nrepo-b\nls: cannot access '<path>': No such file or directory\n== <path>\nls: cannot access '<path>': No such file or directory\nls...",
+      "output_chars": 848,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017DTRkv6pr8BWWcpWNVoyKG",
+      "name": "Bash",
+      "input": "cd <path>; for d in . repo-a repo-b; do echo \"== $d\"; ls $d/skills.lock $d/.claude/settings.json $d/.claude/hooks/skills-bootstrap.sh 2>&1; done; cat .claude/settings.json 2><path> | head -30; cat .gi...",
+      "input_chars": 280,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017DTRkv6pr8BWWcpWNVoyKG",
+      "is_error": false,
+      "output": "== .\nls: cannot access './skills.lock': No such file or directory\nls: cannot access './.claude/settings.json': No such file or directory\nls: cannot access './.claude/hooks/skills-bootstrap.sh': No such file or directory\n== repo-a\nls: cannot access 'repo-a/.claude/settings.json': No such file or dire...",
+      "output_chars": 770,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
