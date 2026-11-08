@@ -1,0 +1,10 @@
+endpoints:
+  - path: /invoices
+    method: GET
+    summary: List invoices for the signed-in account.
+  - path: /invoices/{id}
+    method: GET
+    summary: Fetch one invoice.
+  - path: /refunds
+    method: POST
+    summary: Create a refund.
