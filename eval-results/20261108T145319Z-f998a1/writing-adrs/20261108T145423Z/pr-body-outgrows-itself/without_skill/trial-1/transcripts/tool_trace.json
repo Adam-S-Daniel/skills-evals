@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019WCLpSvuBfA41B1cdS5UJe",
+      "name": "Bash",
+      "input": "git status --short && git diff HEAD --stat && cat config/retry.yaml && git diff HEAD -- config/retry.yaml && head -30 CHANGELOG.md && git log --oneline | head",
+      "input_chars": 158,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019WCLpSvuBfA41B1cdS5UJe",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n# Retry policy for failed SMS sends.\nretry:\n  strategy: fixed\n  interval_seconds: 30\n  max_attempts: 10\n# Changelog\n\n## 2.3.0 - 2026-02-10\n\n- Sends are now retri...",
+      "output_chars": 427,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E6rL946jDLPqdZEUVUx41N",
+      "name": "Bash",
+      "input": "cat > PR_BODY.md <<'EOF'\n## Summary\n\nFailed SMS sends now retry on a fixed 30-second interval (up to 10 attempts) instead of backing off exponentially. The settings live in `config/retry.yaml`:\n\n```ya...",
+      "input_chars": 1878,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E6rL946jDLPqdZEUVUx41N",
+      "is_error": false,
+      "output": "# Changelog\n\n## Unreleased\n\n- Failed SMS sends are now retried on a fixed 30-second interval instead of exponential backoff, so retries after an outage don't burst and trigger the gateway's per-key rate limit.\n\n## 2.3.0 - 2026-02-10",
+      "output_chars": 232,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
