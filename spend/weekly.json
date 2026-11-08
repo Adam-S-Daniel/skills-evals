@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generated_at": "2026-11-08T06:31:34Z",
+ "generated_at": "2026-11-08T08:31:21Z",
  "weeks": [
   {
    "week": "2026-10-19",
@@ -20,11 +20,11 @@
   },
   {
    "week": "2026-11-02",
-   "eval_runs": 815,
+   "eval_runs": 831,
    "plan_meter_points": 129.0,
    "api_usd": 91.72496880500002,
-   "thread_spend_usd": 1837.4997688589651,
-   "cost_per_verdict": 728.6210813835714
+   "thread_spend_usd": 1841.9117507239653,
+   "cost_per_verdict": 730.6368730885714
   }
  ]
 }
