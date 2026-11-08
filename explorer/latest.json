@@ -1,23 +1,14 @@
 {
  "activity": {
-  "fetched_at": "2026-11-08T16:20:14Z",
+  "fetched_at": "2026-11-08T16:24:22Z",
   "issues": [
-   {
-    "created_at": "2026-11-03T16:21:28Z",
-    "number": 684,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "open",
-    "title": "Needs a harder fixture: skill vendor-release-impact-issues",
-    "updated_at": "2026-11-08T16:00:55Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/684"
-   },
    {
     "created_at": "2026-11-03T16:39:51Z",
     "number": 689,
     "repo": "Adam-S-Daniel/skills-evals",
     "state": "open",
     "title": "Workflow runs are failing (automated health audit)",
-    "updated_at": "2026-11-08T15:39:37Z",
+    "updated_at": "2026-11-08T16:22:27Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/689"
    },
    {
@@ -26,8 +17,17 @@
     "repo": "jodidaniel/jodidaniel.com",
     "state": "open",
     "title": "Workflow runs are failing (automated health audit)",
-    "updated_at": "2026-11-08T15:36:43Z",
+    "updated_at": "2026-11-08T16:22:24Z",
     "url": "https://github.com/jodidaniel/jodidaniel.com/issues/490"
+   },
+   {
+    "created_at": "2026-11-03T16:21:28Z",
+    "number": 684,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Needs a harder fixture: skill vendor-release-impact-issues",
+    "updated_at": "2026-11-08T16:00:55Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/684"
    },
    {
     "created_at": "2026-11-07T15:10:44Z",
@@ -7223,6 +7223,30 @@
   "runs": [
    {
     "conclusion": "success",
+    "created_at": "2026-11-08T16:21:45Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42499499955,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/skills-doctor/personal-copy-outranks-repo claude-opus-5-5,claude-sonnet-5-5",
+    "updated_at": "2026-11-08T16:22:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42499499955",
+    "workflow": "Fire eval routine: eval evals/skills-doctor/personal-copy-outranks-repo claude-opus-5-5,claude-sonne"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-08T16:20:18Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42499374145,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-08T16:21:33Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42499374145",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "success",
     "created_at": "2026-11-08T16:20:18Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -7256,18 +7280,6 @@
     "updated_at": "2026-11-08T16:20:28Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42499374116",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-08T16:20:18Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42499374145,
-    "state": "in_progress",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-08T16:20:22Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42499374145",
-    "workflow": "Refresh loop pull requests"
    },
    {
     "conclusion": null,
@@ -27274,7 +27286,7 @@
     "workflow": "Deploy to GitHub Pages"
    }
   ],
-  "since": "2026-10-25T16:20:14Z"
+  "since": "2026-10-25T16:24:22Z"
  },
  "agent_made": {
   "items": [
@@ -28654,13 +28666,13 @@
     "fired_at": "2026-11-07T13:31:22Z",
     "fixture": "debug-github-workflows/wrong-branch",
     "model": "claude-opus-5-5",
-    "paired_at": "2026-11-08T15:20:46Z",
+    "paired_at": "2026-11-08T16:14:59Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261107T133122Z-7583be/debug-github-workflows/20261107T133219Z/report.md",
     "run_id": "20261107T133122Z-7583be",
     "skill": "debug-github-workflows",
     "trials": 3,
-    "with_share": 0.7142857142857143,
-    "without_share": 0.7142857142857143
+    "with_share": 1.0,
+    "without_share": 1.0
    },
    {
     "bare": 4.0,
@@ -29418,13 +29430,13 @@
   "bare_summary": [
    {
     "bare": 0.7325507294406816,
-    "bare_won": 15,
+    "bare_won": 14,
     "model": "All",
     "pairs": 55,
-    "setup_lift": -0.014256949855036087,
-    "skill_lift": 0.1258696327595849,
-    "with": 0.8441634123452303,
-    "without": 0.7182937795856454
+    "setup_lift": -0.009062144660230781,
+    "skill_lift": 0.12586963275958477,
+    "with": 0.8493582175400355,
+    "without": 0.7234885847804507
    },
    {
     "bare": 0.7132381493858103,
@@ -29438,16 +29450,27 @@
    },
    {
     "bare": 0.7691429863867537,
-    "bare_won": 5,
+    "bare_won": 4,
     "model": "claude-opus-5-5",
     "pairs": 19,
-    "setup_lift": -0.020953333626463882,
-    "skill_lift": 0.12021521107393686,
-    "with": 0.8684048638342268,
-    "without": 0.7481896527602899
+    "setup_lift": -0.005915739641501436,
+    "skill_lift": 0.12021521107393678,
+    "with": 0.8834424578191891,
+    "without": 0.7632272467452523
    }
   ],
   "latest": [
+   {
+    "checks": 7,
+    "fired_at": "2026-11-08T16:14:59Z",
+    "fixture": "debug-github-workflows/wrong-branch",
+    "model": "claude-opus-5-5",
+    "run_id": "20261108T161459Z-2b2b70",
+    "with_share": 1.0,
+    "with_skill": 7,
+    "without_share": 1.0,
+    "without_skill": 7
+   },
    {
     "checks": 7,
     "fired_at": "2026-11-08T16:08:11Z",
@@ -29523,17 +29546,6 @@
     "with_share": 0.8333333333333334,
     "with_skill": 5,
     "without_share": 0.8333333333333334,
-    "without_skill": 5
-   },
-   {
-    "checks": 7,
-    "fired_at": "2026-11-08T15:20:46Z",
-    "fixture": "debug-github-workflows/wrong-branch",
-    "model": "claude-opus-5-5",
-    "run_id": "20261108T152046Z-e0ae7f",
-    "with_share": 0.7142857142857143,
-    "with_skill": 5,
-    "without_share": 0.7142857142857143,
     "without_skill": 5
    },
    {
@@ -31491,6 +31503,28 @@
    "tied": 55
   },
   "runs": [
+   {
+    "account_week_after": 81.0,
+    "checks": 7,
+    "cli": "2.1.319",
+    "cost_usd": 0.499919,
+    "fired_at": "2026-11-08T16:14:59Z",
+    "fixture": "debug-github-workflows/wrong-branch",
+    "gain": 0,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-opus-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T161459Z-2b2b70/debug-github-workflows/20261108T161733Z/report.md",
+    "run_id": "20261108T161459Z-2b2b70",
+    "skill": "debug-github-workflows",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 7,
+    "without_judge": null,
+    "without_share": 1.0,
+    "without_skill": 7
+   },
    {
     "account_week_after": 81.0,
     "checks": 7,
@@ -56730,22 +56764,22 @@
    {
     "helped": 575,
     "hurt": 121,
-    "lift": 0.12303618261381791,
+    "lift": 0.12291833186418781,
     "model": "All",
-    "runs": 1043,
-    "tied": 347,
-    "with_avg": 0.8467484819039037,
-    "without_avg": 0.7237122992900858
+    "runs": 1044,
+    "tied": 348,
+    "with_avg": 0.8468952745457583,
+    "without_avg": 0.7239769426815704
    },
    {
     "helped": 198,
     "hurt": 42,
-    "lift": 0.09881606596670235,
+    "lift": 0.09855464780276912,
     "model": "claude-opus-5-5",
-    "runs": 377,
-    "tied": 137,
-    "with_avg": 0.8525374034448447,
-    "without_avg": 0.7537213374781424
+    "runs": 378,
+    "tied": 138,
+    "with_avg": 0.852927516134144,
+    "without_avg": 0.7543728683313748
    },
    {
     "helped": 370,
@@ -56944,7 +56978,7 @@
     "without_pass_rate": 0.8910256410256411
    }
   ],
-  "generated_at": "2026-11-08T16:19:37Z",
+  "generated_at": "2026-11-08T16:23:53Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -57011,7 +57045,7 @@
    "requests_open": 0
   }
  },
- "generated_at": "2026-11-08T16:17:44Z",
+ "generated_at": "2026-11-08T16:22:45Z",
  "guidance": {
   "removed": [
    {
@@ -72591,7 +72625,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-08T16:09:50Z",
+ "newest_run": "2026-11-08T16:17:33Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -76694,11 +76728,11 @@
       "votes": true
      },
      {
-      "gain": 3.1,
-      "high": 19.7,
-      "low": -23.4,
+      "gain": 2.9,
+      "high": 18.5,
+      "low": -22.0,
       "model": "claude-opus-5-5",
-      "pairs": 14,
+      "pairs": 15,
       "status": "open",
       "task": "wrong-branch",
       "votes": true
@@ -76763,7 +76797,7 @@
      "to": "2026-11-08"
     }
    },
-   "current_text_runs": 123,
+   "current_text_runs": 124,
    "decisions": [
     {
      "class": "ceiling-unconfirmed",
@@ -77115,11 +77149,11 @@
     {
      "class": "building",
      "cost_unknown": 0,
-     "cost_usd": 16.083326030000002,
+     "cost_usd": 16.58324503,
      "date": "2026-11-08",
      "model": "claude-opus-5-5",
      "reason": null,
-     "runs": 42
+     "runs": 44
     },
     {
      "class": "decisive",
@@ -77141,6 +77175,27 @@
     }
    ],
    "runs": [
+    {
+     "at": "2026-11-08T16:17:33Z",
+     "cli_version": "2.1.319",
+     "fixture": "wrong-branch",
+     "model": "claude-opus-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261108T161459Z-2b2b70/debug-github-workflows/20261108T161733Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.3145038,
+      "judge_mean": 8.8,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.18541520000000003,
+      "judge_mean": 8.8,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-08T16:09:50Z",
      "cli_version": "2.1.319",
@@ -102938,7 +102993,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "a99787445fe708aca1141d1ef841aa4c69c7d1a3",
-  "results_commit": "b98310311fb5977229be3af17ae7e2cac1c9efd0"
+  "results_commit": "a42d226aa6f1b2e6c4ca20a305f4c2f477739a71"
  },
  "spend": {
   "generated_at": "2026-11-08T14:32:08Z",
