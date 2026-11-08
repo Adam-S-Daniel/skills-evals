@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012WFGot6Gdoj8gpMhTvVdmn",
+      "name": "Bash",
+      "input": "cat README.md && ls -R . | head -50 && cat scripts/mirror-exports.ps1",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012WFGot6Gdoj8gpMhTvVdmn",
+      "is_error": false,
+      "output": "# export-mirror\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/mirror-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. `scripts/mirror-exports.ps1`\nmirrors it into `<path>` with robocopy and is run by the nightly\ntask, which marks the night failed ...",
+      "output_chars": 542,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FMK632oF6SpkPrGxifGpYM",
+      "name": "Bash",
+      "input": "cat bin/pwsh; bash bin/pwsh -File scripts/mirror-exports.ps1; echo \"exit=$?\"",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FMK632oF6SpkPrGxifGpYM",
+      "is_error": false,
+      "output": "#!<path> bash\n# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as\n# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.\nlog=\".pwsh-invocations.log\"\nall=\"$*\"\nrec() { printf 'class=%s args=%s\\n' \"$1\" \"$all\" >> \"$log\"; }\ncase \"$all\" in\n  *mirror-exports.ps1*)\n    ...",
+      "output_chars": 1117,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Bs9GhQjvtQrYURbkL2mnGf",
+      "name": "Bash",
+      "input": "cat >> scripts/mirror-exports.ps1 <<'EOF'\n\n# robocopy exit codes 0-7 are success (bit flags: 1=copied, 2=extras, 4=mismatches);\n# 8 or higher means at least one failure.\nif ($LASTEXITCODE -ge 8) {\n   ...",
+      "input_chars": 358,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Bs9GhQjvtQrYURbkL2mnGf",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0",
+      "output_chars": 23,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

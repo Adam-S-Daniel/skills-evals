@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015KiEbg6Mw7yG4ja8kBvHHt",
+      "name": "Bash",
+      "input": "cat README.md && ls -R . | head -50 && cat scripts/mirror-exports.ps1 && cat bin/pwsh",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015KiEbg6Mw7yG4ja8kBvHHt",
+      "is_error": false,
+      "output": "# export-mirror\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/mirror-exports.ps1`.\n\n## Layout\n\nThe nightly export lands in `<path>`. `scripts/mirror-exports.ps1`\nmirrors it into `<path>` with robocopy and is run by the nightly\ntask, which marks the night failed ...",
+      "output_chars": 1653,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012mS9Cz4GWqmeJBKmYH1LX3",
+      "name": "Bash",
+      "input": "cat >> scripts/mirror-exports.ps1 <<'EOF'\n\n# robocopy exit codes 0-7 are success (bit flags: 1=files copied, 2=extras, 4=mismatches);\n# 8 and above mean real failures.\nif ($LASTEXITCODE -ge 8) {\n    W...",
+      "input_chars": 356,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012mS9Cz4GWqmeJBKmYH1LX3",
+      "is_error": false,
+      "output": "mirrored 3 files\nexit=0",
+      "output_chars": 23,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
