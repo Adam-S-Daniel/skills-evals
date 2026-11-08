@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FiUsgw5UqYtdtC5vogrvbj",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline -3; grep -rn \"0\\.1\\.170\" --exclude-dir=.git . | head -50; ls -a . .github/workflows 2><path>",
+      "input_chars": 140,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FiUsgw5UqYtdtC5vogrvbj",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\na328eac initial commit\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission ...",
+      "output_chars": 937,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R5mboUeNeqcnSi2PZNTpw3",
+      "name": "Bash",
+      "input": "cat plugin.json .claude-plugin/plugin.json; head -20 docs/VERSION-HISTORY.md; ls workflows docs; grep -rn \"0\\.1\\.17\" workflows README.md docs plugin.json",
+      "input_chars": 153,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R5mboUeNeqcnSi2PZNTpw3",
+      "is_error": false,
+      "output": "{\n  \"name\": \"example-platform\",\n  \"version\": \"0.1.171\"\n}\n{\n  \"name\": \"example-platform\",\n  \"version\": \"0.1.170\"\n}\n# Version history\n\n## v0.1.171\n- Example change for the release under review.\n\n## v0.1.170\n- Previous example release.\ndocs:\nVERSION-HISTORY.md\n\nworkflows:\nci.yml\nREADME.md:2:Release PR ...",
+      "output_chars": 467,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Cav58Pu7KSELAZvXqSiTs4",
+      "name": "Bash",
+      "input": "cat workflows/ci.yml README.md",
+      "input_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P2xpSgaAwNWEDy2sRYSLdV",
+      "name": "Bash",
+      "input": "cat .gitmodules; ls .claude",
+      "input_chars": 27,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Cav58Pu7KSELAZvXqSiTs4",
+      "is_error": false,
+      "output": "name: ci\non:\n  pull_request:\njobs:\n  pin-consistency:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@0000000000000000000000000000000000000000\n      - name: Every file that names the release agrees\n        run: |\n          want=$(sed -n 's/.*\"version\": \"\\(.*\\)\".*/\\1/p' plugin.js...",
+      "output_chars": 563,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P2xpSgaAwNWEDy2sRYSLdV",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018j5pyum7M6PrnjtKHbr3xu",
+      "name": "Bash",
+      "input": "sed -i 's/0\\.1\\.170/0.1.171/' AGENTS.md .claude-plugin/plugin.json && want=$(sed -n 's/.*\"version\": \"\\(.*\\)\".*/\\1/p' plugin.json) && grep -q \"Current release: \\`v$want\\`\" AGENTS.md && grep -q \"\\\"versi...",
+      "input_chars": 287,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018j5pyum7M6PrnjtKHbr3xu",
+      "is_error": false,
+      "output": "exit=0 want=0.1.171\n .claude-plugin/plugin.json | 2 +-\n AGENTS.md                  | 2 +-\n 2 files changed, 2 insertions(+), 2 deletions(-)",
+      "output_chars": 139,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016hQP6k8pdTgPZTjGxcKRvZ",
+      "name": "Bash",
+      "input": "git status --short | head; git log --oneline | head -5; grep -rIn \"0\\.1\\.170\\|0\\.1\\.171\" . --exclude-dir=.git | head -50; ls -a . .github/workflows 2><path>",
+      "input_chars": 159,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016hQP6k8pdTgPZTjGxcKRvZ",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n65132b2 initial commit\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission ...",
+      "output_chars": 1096,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019H5rLXNu7tFCcx8mYLBTzR",
+      "name": "Bash",
+      "input": "cat README.md docs/VERSION-HISTORY.md .claude-plugin/plugin.json plugin.json; ls workflows; grep -rn \"pin-consistency\\|version\" workflows | head -20",
+      "input_chars": 148,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019H5rLXNu7tFCcx8mYLBTzR",
+      "is_error": false,
+      "output": "# example-platform\nRelease PR #41 bumps the platform to v0.1.171. Its required check\n`pin-consistency` fails, so the PR is BLOCKED.\n# Version history\n\n## v0.1.171\n- Example change for the release under review.\n\n## v0.1.170\n- Previous example release.\n{\n  \"name\": \"example-platform\",\n  \"version\": \"0.1...",
+      "output_chars": 589,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X8QfXZ732JH1aMTgNxpyKK",
+      "name": "Bash",
+      "input": "sed -i 's/\"version\": \"0.1.170\"<path>\"version\": \"0.1.171\"/' .claude-plugin/plugin.json && sed -i 's/v0\\.1\\.170/v0.1.171/' AGENTS.md && cat workflows/ci.yml && git diff --stat -- AGENTS.md .claude-plugi...",
+      "input_chars": 253,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X8QfXZ732JH1aMTgNxpyKK",
+      "is_error": false,
+      "output": "name: ci\non:\n  pull_request:\njobs:\n  pin-consistency:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@0000000000000000000000000000000000000000\n      - name: Every file that names the release agrees\n        run: |\n          want=$(sed -n 's/.*\"version\": \"\\(.*\\)\".*/\\1/p' plugin.js...",
+      "output_chars": 689,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
