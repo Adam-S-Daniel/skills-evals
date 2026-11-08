@@ -258,7 +258,7 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    heaviest-used model first. A cell whose fires twice produced nothing
    becomes a "fixture broken" work item instead (a guidance cell too).
 3. **Near a decision** (at least 20%): undecided skill cells, nearest a
-   verdict first.
+   verdict first (deep before wide, below).
 4. **Guidance focus** (at least 15%): the undecided guidance cells (no run,
    or not yet decided) of the two sections nearest a verdict, below.
 5. **Improvements** (at least 20%): skills with four or more fixtures, train
@@ -307,6 +307,25 @@ model is fired only once the cheaper cell has decided without a keep. A
 cheaper cell that more runs cannot move (blocking, below), or that already
 has 10 pairs without a decision (`CHEAPER_FIRST_MAX_PAIRS`), holds nothing,
 so a stuck cheaper cell never starves the dearer one.
+
+**Deep before wide** (Adam, 2026-11-08: of 3,010 eval runs, 1,354 sat in
+cells near zero confidence either way, because sweeps spread a few runs over
+every subject). In the missing, near, focus and guidance-rest bands, after
+high stakes, a cell's place is set by its projected pairs to a verdict
+(`pairs_to_verdict`): how many more pairs the gate's keep or remove test
+needs to reach its level, from the level it has reached and D's mean and
+variance as the gate's next bet sees them. Fewest projected points per use
+(pairs x fire cost / (1 + the subject's use)) go first; a cell of a subject
+with some cells settled goes before one of a fresh subject; a cell projected
+past its 40-pair cap, with at least three pairs measured, goes last and is a
+`cell-projected-past-cap` work item (a step summary count, not an issue). A
+cell with no measured difference yet keeps the band's old order behind the
+projected ones. The two-week batch already caps how many subjects are open
+at once; it now also takes a partly decided subject before the longest
+without a run, and a subject whose every projected cell is past its cap
+after all others. A guidance section whose `eval-coverage.yml` row in
+_agent-guidance is `skipped` is never fired, even with fixtures on the
+schedule.
 7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
@@ -317,7 +336,8 @@ so a stuck cheaper cell never starves the dearer one.
    counts as done; a new roster model gets its own. Bare runs are listed
    apart (`bare_runs` in the verdict document) and never pooled into a cell.
 8. **Guidance rest** (no minimum share): every other undecided guidance
-   cell, cells with no run first. It gets only what every other band leaves,
+   cell, by deep before wide, then cells with no run first. It gets only
+   what every other band leaves,
    so when the 30-fire cap binds a section outside the focus can wait weeks.
 
 **The guidance focus** (`guidance_focus` in `scripts/plan_week.py`; Adam's
