@@ -623,10 +623,10 @@ BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "gu
 #: 40 (every section) until the 2026-11-09 17:00 UTC reset, while base.md
 #: is frozen so in-situ runs pool (Adam, 2026-11-07); restore 2 after it.
 GUIDANCE_FOCUS_SECTIONS = 40
-#: True until the 2026-11-09 17:00 UTC reset: no guidance-improve fire is
-#: planned, since an accepted one edits base.md and resets every section's
-#: in-situ evidence while base.md is frozen (Adam, 2026-11-07). False after.
-GUIDANCE_IMPROVE_HELD = True
+#: True holds every guidance-improve fire. It was True from 2026-11-07,
+#: while base.md was frozen (an accepted one edits base.md and resets every
+#: section's in-situ evidence); Adam ended the freeze 2026-11-08 19:21 UTC.
+GUIDANCE_IMPROVE_HELD = False
 #: The decision levels a cell's progress is normalized by when the verdict
 #: document carries no `guidance_policy` (evals/gate-policy.yml's).
 DEFAULT_RETIRE_CONFIDENCE = 0.90

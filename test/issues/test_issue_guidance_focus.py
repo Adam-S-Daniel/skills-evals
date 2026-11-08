@@ -100,14 +100,15 @@ STANDING_SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve
 
 class FinishWeekTests(unittest.TestCase):
     """The settings for the week ending 2026-11-09 17:00 UTC (Adam,
-    2026-11-07): guidance first, every section, no guidance-improve, and
-    unknown-cost cells reserved cheaply. Restore after the reset."""
+    2026-11-07): guidance first, every section, and unknown-cost cells
+    reserved cheaply. Restore after the reset. Guidance-improve fires were
+    held too until Adam ended the base.md freeze, 2026-11-08 19:21 UTC."""
 
     def test_the_week_settings(self):
         self.assertEqual(plan_week.SHARES[0][0], "focus")
         self.assertEqual(sorted(plan_week.SHARES), sorted(STANDING_SHARES))
         self.assertGreaterEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 31)
-        self.assertTrue(plan_week.GUIDANCE_IMPROVE_HELD)
+        self.assertFalse(plan_week.GUIDANCE_IMPROVE_HELD)
         ctx = {"reservation": 1.0, "points_per_usd": 0.0005, "overrun": 0.0005}
         self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 0.1)
         self.assertEqual(plan_week.fire_cost({"usd_per_fire": 100.0}, ctx), 0.05)
