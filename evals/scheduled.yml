@@ -156,3 +156,5 @@ fixtures:
     readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
   - path: evals/tool-powershell/installer-exit-3010
     readiness: "Promoted automatically on 2026-11-08 by contextualize_fixtures.py: a drafted isolation pair given an in-place context on Adam-S-Daniel/wsl-automation at 47b60601b458 (ADR 0012), budgets measured with 25% headroom; its isolation pair ran when it was drafted."
+  - path: evals/guidance/anything-you-name-gets-its-link/stale-run-review
+    readiness: "Added by a fixture pull request for skills-evals#854: two deploy runs wait on a staging review, one on a stale head; the reply must link the current run's job page. Isolation pair of four guidance arms, unpinned. No paid run yet; scored offline: a run-page reply fails, the current job page passes."
