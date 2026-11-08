@@ -2362,6 +2362,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       srcLine(src, refMs),
       h("div", { class: "tiles" }, tiles, extra),
       hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
+      ctx && ctx.ext && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
       alertsView(doc, "all")
     );
   }

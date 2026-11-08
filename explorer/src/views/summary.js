@@ -41,5 +41,6 @@ export function summaryView(doc, ctx) {
     srcLine(src, refMs),
     h('div', { class: 'tiles' }, tiles, extra),
     hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
+    ctx && ctx.ext && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
     alertsView(doc, 'all'));
 }

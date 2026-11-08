@@ -12,6 +12,7 @@ import { LOOP_TITLE } from '../views/loop.js';
 import { problemsToggle } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
+import { conversionView } from './conversion.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
@@ -147,6 +148,10 @@ export function makeExt(dash) {
       return false;
     },
     needs: (ctx) => needsView(dash, ctx),
+    summaryPanels(ctx, doc) {
+      const v = conversionView(doc);
+      return v ? panel(P.conversionHeading, v) : null;
+    },
     summaryTiles() {
       const out = [];
       const w = rowsOf(dash, 'waiting');
