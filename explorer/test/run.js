@@ -20,7 +20,7 @@ import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
-import { conversionTotals, conversionView, PLANNER_CHANGE } from '../src/private/conversion.js';
+import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
@@ -579,6 +579,22 @@ await test('the summary shows building into decisive with its lead, table, plann
   const a = findAll(node, (n) => n.tag === 'a' && n.attrs.href === PLANNER_CHANGE.url);
   eq(a.length, 1);
   ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-group'] === 'stranded').length === 2, 'stranded segments');
+});
+await test('building into decisive toggles between percent and run counts', () => {
+  const node = renderRoute(CDOC(), { name: 'summary' }, { ext: makeExt(fakeDash({})) });
+  const btns = findAll(node, (n) => n.tag === 'button' && n.attrs['data-mode']);
+  eq(btns.map((b) => b.attrs['data-mode'] + ':' + b.attrs['aria-pressed']).join(','), 'share:true,count:false');
+  const share = textOf(conversionBody(CDOC(), 'share'));
+  ok(share.includes('17 runs, 29% near a verdict, 59% partway'), share);
+  const count = textOf(conversionBody(CDOC(), 'count'));
+  ok(count.includes(', Nov 8 UTC): 17 runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
+  ok(count.includes('Before it: 54 runs: 30 near a verdict, 12 partway, 4 far, 8 never.'), count);
+  ok(count.includes('Runs by the day they ran, and where they stand now.') && !count.includes('fills from decided'), count);
+  // The busiest day (2026-11-05) has 30 runs, so the axis tops out there.
+  const top = findAll(conversionBody(CDOC(), 'count'), (n) => n.tag === 'text' && n.children[0] === '30');
+  eq(top.length, 1);
+  ok(findAll(conversionBody(CDOC(), 'count'), (n) => n.attrs && typeof n.attrs['data-tip'] === 'string' && n.attrs['data-tip'].includes('decided 10, building 20')).length === 1, 'count tooltip');
+  ok(findAll(conversionBody(CDOC(), 'share'), (n) => n.tag === 'text' && n.children[0] === '100%').length === 1, 'share axis');
 });
 await test('no building into decisive panel when no subject has run_utility', () => {
   ok(conversionView(doc({ skills: [{ name: 'a' }] })) === null, 'null view');

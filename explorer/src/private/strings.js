@@ -73,6 +73,11 @@ export const P = {
   conversionPlannerBefore: (n, list) => ' Before it: ' + n + ' runs, ' + list + '.',
   conversionPlannerNone: 'No runs since the deep-before-wide planner change (',
   conversionPlannerNoneEnd: ') yet.',
+  conversionModeLabel: 'Show', conversionModes: { share: 'Percent', count: 'Runs' },
+  conversionChartAriaCount: (n) => 'Runs by where they stand now, per day, ' + n + (n === 1 ? ' day' : ' days'),
+  conversionCaptionCount: 'Runs by the day they ran, and where they stand now.',
+  conversionPlannerSinceCount: (n, list) => ', Nov 8 UTC): ' + n + ' runs: ' + list + '.',
+  conversionPlannerBeforeCount: (n, list) => ' Before it: ' + n + ' runs: ' + list + '.',
   conversionPlannerShare: (pct, group) => pct + ' ' + group,
   conversionPlannerWords: { near: 'near a verdict', partway: 'partway', far: 'far', never: 'never' }
 };
