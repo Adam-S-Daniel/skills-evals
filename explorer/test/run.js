@@ -20,6 +20,7 @@ import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
+import { conversionTotals, conversionView, PLANNER_CHANGE } from '../src/views/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
@@ -535,6 +536,52 @@ await test('the summary shows run usefulness for every subject, skills and guida
   ok(text.includes('No use: 4 of 6 runs, $1.00 of $1.50.'), text);
   ok(text.includes('All subjects') && text.includes('Skills') && text.includes('Guidance'), text);
   ok(!textOf(renderRoute(doc({}), { name: 'summary' }, {})).includes('Run usefulness'), 'nothing without a ledger');
+});
+
+// Building into decisive (2026-11-08): building runs against decisive ones.
+const CDOC = () => doc({ generated_at: '2026-11-08T20:00:00Z',
+  skills: [
+    { name: 'a', status: 'covered', confidence: { helps: 0.7, no_help: 0.1 }, run_utility: [U('2026-11-05', 'decisive', 10, 1), U('2026-11-05', 'building', 20, 2), U('2026-11-08', 'building', 5, 0.5)],
+      decisions: [{ decided: '2026-11-05' }, { decided: '2026-11-05' }, { decided: null }] },
+    { name: 'b', status: 'covered', confidence: { helps: 0.4, no_help: 0.2 }, run_utility: [U('2026-11-06', 'decisive_superseded', 4, 0.4), U('2026-11-06', 'stranded', 6, 0.6),
+      U('2026-11-08', 'building', 10, 1), U('2026-11-06', 'discarded', 99, 9), U('2026-11-07', 'after_decision', 2, 0.2)], decisions: [{ decided: '2026-11-07' }] },
+    { name: 'c', status: 'covered', run_utility: [U('2026-11-07', 'building', 3, 0.3), U('2026-11-07', 'decisive', 1, 0.1)] }],
+  guidance: { sections: [{ id: 'g', status: 'skipped', confidence: { helps: 0.9, no_help: 0 }, run_utility: [U('2026-11-07', 'building', 8, 0.8), U('2026-11-08', 'stranded', 2, 0.2)] }] } });
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+await test('conversion totals sum decided, building and stranded, group building runs by distance, and ignore discarded rows', () => {
+  const t = conversionTotals(CDOC());
+  eq(t.decided.runs, 15); ok(near(t.decided.cost, 1.5), String(t.decided.cost));
+  eq(t.building.runs, 46); ok(near(t.building.cost, 4.6), String(t.building.cost));
+  eq(t.stranded.runs, 8); eq(t.after.runs, 2);
+  eq(t.resolved.runs, 23);
+  ok(near(t.conversion, 15 / 23) && near(t.strandedPerDecided, 8 / 15), 'ratios');
+  eq(['near', 'partway', 'far', 'never'].map((g) => t.groups[g].runs).join(','), '25,10,3,8');
+  eq(['near', 'partway', 'far', 'never'].map((g) => t.groups[g].subjects).join(','), '1,1,1,1');
+  ok(near(t.groups.near.expected, 17.5) && near(t.groups.partway.expected, 3) && near(t.groups.far.expected, 0.3) && t.groups.never.expected === 0, 'expected');
+  eq(t.groupsTotal.runs, 46); eq(t.groupsTotal.subjects, 4); ok(near(t.groupsTotal.expected, 20.8), String(t.groupsTotal.expected));
+  eq(t.days.map((d) => d.date + ':' + d.decided + '/' + d.building + '/' + d.stranded + '/' + d.after).join(' '), '2026-11-05:10/20/0/0 2026-11-06:4/0/6/0 2026-11-07:1/11/0/2 2026-11-08:0/15/2/0');
+  eq(JSON.stringify(t.decisionsByDay), JSON.stringify([{ date: '2026-11-05', cells: 2 }, { date: '2026-11-07', cells: 1 }]));
+  eq(['near', 'partway', 'far', 'never', 'total'].map((g) => t.planner.before[g]).join(','), '30,12,4,8,54');
+  eq(['near', 'partway', 'far', 'never', 'total'].map((g) => t.planner.since[g]).join(','), '5,10,0,2,17');
+  const empty = conversionTotals(doc({ skills: [{ name: 'x', run_utility: [U('2026-11-05', 'building', 3, 1)] }] }));
+  eq(empty.conversion, null); eq(empty.strandedPerDecided, null);
+});
+await test('the summary shows building into decisive with its lead, table, planner link and stranded segments', () => {
+  const node = renderRoute(CDOC(), { name: 'summary' }, {});
+  const text = textOf(node);
+  ok(text.includes('Building into decisive'), text);
+  ok(text.includes('Of 23 runs that have resolved, 15 helped decide keep or remove (65%) and 8 were stranded by a change first: 0.5 stranded for every one that decided. 46 runs ($4.60) are still building.'), text);
+  for (const l of ['Near a verdict (confidence 65% or more)', 'Partway (30% to 65%)', 'Far (under 30%)', 'Never (subject no longer tested)', 'Total']) ok(text.includes(l), l);
+  ok(text.includes('~18') && text.includes('~21'), 'expected counts');
+  ok(text.includes('Cells that reached a verdict, by day: 11-05 2, 11-07 1.'), text);
+  ok(text.includes('Since the deep-before-wide planner change (') && text.includes(', Nov 8 UTC): 17 runs, 29% near a verdict, 59% partway, 0% far, 12% never.') && text.includes('Before it: 54 runs, 56% near a verdict, 22% partway, 7% far, 15% never.'), text);
+  const a = findAll(node, (n) => n.tag === 'a' && n.attrs.href === PLANNER_CHANGE.url);
+  eq(a.length, 1);
+  ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-group'] === 'stranded').length === 2, 'stranded segments');
+});
+await test('no building into decisive panel when no subject has run_utility', () => {
+  ok(conversionView(doc({ skills: [{ name: 'a' }] })) === null, 'null view');
+  ok(!textOf(renderRoute(doc({ skills: [{ name: 'a' }] }), { name: 'summary' }, {})).includes('Building into decisive'), 'no heading');
 });
 
 for (const f of failures) console.log('FAIL ' + f);

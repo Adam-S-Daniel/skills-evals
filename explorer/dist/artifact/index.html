@@ -737,6 +737,27 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         missing: "no run"
       })[cls] || cls,
       utilityVersion: (n, current, what, decided, from, to) => "v" + n + (current ? " (current)" : "") + " " + what + (decided ? " on " + decided : "") + (from ? ", runs " + from + (to && to !== from ? " to " + to : "") : ""),
+      conversionHeading: "Building into decisive",
+      conversionLead: (resolved, decided, pct3, stranded, ratio, building, cost) => "Of " + resolved + " runs that have resolved, " + decided + " helped decide keep or remove (" + pct3 + ") and " + stranded + " were stranded by a change first: " + ratio + " stranded for every one that decided. " + building + " runs (" + cost + ") are still building.",
+      conversionLeadNone: (building, cost) => "No run has resolved yet. " + building + " runs (" + cost + ") are still building.",
+      conversionLegend: { decided: "Decided", building: "Building", stranded: "Stranded", after: "After the decision" },
+      conversionChartAria: (n) => "Share of runs by where they stand now, per day, " + n + (n === 1 ? " day" : " days"),
+      conversionTip: (day, n, parts) => day + ": " + n + " runs, " + parts,
+      conversionCaption: "Runs by the day they ran, and where they stand now. A day's bar fills from decided toward building as its cells reach a verdict.",
+      conversionDecisionsByDay: (list) => "Cells that reached a verdict, by day: " + list + ".",
+      conversionColDistance: "Distance",
+      conversionColSubjects: "Subjects",
+      conversionColBuilding: "Building runs · cost",
+      conversionColExpected: "Expected to decide",
+      conversionGroups: { near: "Near a verdict (confidence 65% or more)", partway: "Partway (30% to 65%)", far: "Far (under 30%)", never: "Never (subject no longer tested)" },
+      conversionTotal: "Total",
+      conversionNote: "Confidence is the subject's current chance of a keep or remove verdict. Expected to decide is a rough estimate: 70% of near, 30% of partway and 10% of far building runs.",
+      conversionPlannerLead: "Since the deep-before-wide planner change (",
+      conversionPlannerSince: (n, list) => ", Nov 8 UTC): " + n + " runs, " + list + ".",
+      conversionPlannerBefore: (n, list) => " Before it: " + n + " runs, " + list + ".",
+      conversionPlannerNone: "No runs since the deep-before-wide planner change (",
+      conversionPlannerNoneEnd: ") yet.",
+      conversionPlannerShare: (pct3, group) => pct3 + " " + group,
       colCopy: "Copy",
       colSurface: "Where",
       colVsMain: "Against main",
@@ -773,7 +794,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ageDays: (n) => n + " d",
       prState: (merged, n) => (merged ? "merged" : "open") + (n > 1 ? " (" + n + ")" : ""),
       funnelHeading: "Where lessons went",
-      funnelHeadline: (pct2, n) => pct2 + " of the " + n + " lessons with an outcome became git hook checks.",
+      funnelHeadline: (pct3, n) => pct3 + " of the " + n + " lessons with an outcome became git hook checks.",
       funnelNone: "This build does not report where lessons went.",
       funnelKinds: { check: "A git hook check", skill: "A skill", guidance: "Guidance text", nothing: "Nothing", open: "Still open", unknown: "Unknown" },
       funnelSources: { "hook-proposal": "Hook proposals", "lesson-check": "Lesson checks", memory: "Memory promotions", "draft-skill": "Drafted skills", "skill-proposal": "Skill proposals" },
@@ -1741,10 +1762,10 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function discardedLine(d) {
     if (!d || typeof d !== "object" || !Number.isInteger(d.total) || d.total <= 0) return null;
-    const usd5 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
+    const usd6 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
     const rows = Object.entries(d.by_reason && typeof d.by_reason === "object" ? d.by_reason : {}).filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0).sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([k, r]) => (Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k)) + " (" + r.runs + ")");
     const unknown = Number.isInteger(d.cost_unknown) ? d.cost_unknown : 0;
-    return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd5, unknown, rows.join(", ")));
+    return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd6, unknown, rows.join(", ")));
   }
   function usageLine(u, window2, refMs) {
     if (!u || typeof u.invocations !== "number" || !window2) return null;
@@ -2292,6 +2313,199 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return fleetGroups(doc)[0].rows.length > 0;
   }
 
+  // src/views/conversion.js
+  var NEAR = 0.65;
+  var PARTWAY = 0.3;
+  var EXPECTED_YIELD = { near: 0.7, partway: 0.3, far: 0.1, never: 0 };
+  var PLANNER_CHANGE = { day: "2026-11-08", pr: 842, url: "https://github.com/" + DATA_REPO + "/pull/842" };
+  var GROUPS2 = ["near", "partway", "far", "never"];
+  var DAY_MS2 = 864e5;
+  var isDay2 = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  var blank2 = () => ({ runs: 0, cost: 0, unknown: 0 });
+  var SEGMENTS = ["decided", "building", "stranded", "after"];
+  var SEGMENT_CLASS = { decisive: "decided", decisive_superseded: "decided", building: "building", stranded: "stranded", after_decision: "after" };
+  var SEGMENT_COLOR = { decided: UTILITY_COLORS.decisive, building: UTILITY_COLORS.building, stranded: UTILITY_COLORS.stranded, after: UTILITY_COLORS.after_decision };
+  function subjects(doc) {
+    const skills = Array.isArray(doc.skills) ? doc.skills : [];
+    const sections = doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : [];
+    return skills.concat(sections).filter(Boolean);
+  }
+  function groupOf2(s) {
+    if (s.status === "skipped") return "never";
+    const c = s.confidence || {};
+    const m = Math.max(Number(c.helps) || 0, Number(c.no_help) || 0);
+    return m >= NEAR ? "near" : m >= PARTWAY ? "partway" : "far";
+  }
+  function conversionTotals(doc) {
+    const sum = { decided: blank2(), building: blank2(), stranded: blank2(), after: blank2() };
+    const byDay = {};
+    const decisionDays = {};
+    const groups = {};
+    GROUPS2.forEach((g) => {
+      groups[g] = { subjects: 0, runs: 0, cost: 0, expected: 0 };
+    });
+    const planner = { before: { total: 0 }, since: { total: 0 } };
+    GROUPS2.forEach((g) => {
+      planner.before[g] = 0;
+      planner.since[g] = 0;
+    });
+    for (const s of subjects(doc)) {
+      const g = groupOf2(s);
+      let hasBuilding = false;
+      for (const r of Array.isArray(s.run_utility) ? s.run_utility : []) {
+        if (!r || !Number.isInteger(r.runs) || r.runs <= 0 || !UTILITY_CLASSES.includes(r.class)) continue;
+        const seg = SEGMENT_CLASS[r.class];
+        if (!seg) continue;
+        const t = sum[seg];
+        t.runs += r.runs;
+        if (typeof r.cost_usd === "number" && isFinite(r.cost_usd)) t.cost += r.cost_usd;
+        t.unknown += Number.isInteger(r.cost_unknown) ? r.cost_unknown : 0;
+        if (seg === "building") {
+          hasBuilding = true;
+          groups[g].runs += r.runs;
+          if (typeof r.cost_usd === "number" && isFinite(r.cost_usd)) groups[g].cost += r.cost_usd;
+        }
+        if (isDay2(r.date)) {
+          const d = byDay[r.date] = byDay[r.date] || { date: r.date, decided: 0, building: 0, stranded: 0, after: 0 };
+          d[seg] += r.runs;
+          const side = r.date < PLANNER_CHANGE.day ? planner.before : planner.since;
+          side[g] += r.runs;
+          side.total += r.runs;
+        }
+      }
+      if (hasBuilding) groups[g].subjects += 1;
+      for (const d of Array.isArray(s.decisions) ? s.decisions : []) {
+        if (d && isDay2(d.decided)) decisionDays[d.decided] = (decisionDays[d.decided] || 0) + 1;
+      }
+    }
+    const groupsTotal = { subjects: 0, runs: 0, cost: 0, expected: 0 };
+    for (const g of GROUPS2) {
+      groups[g].expected = groups[g].runs * EXPECTED_YIELD[g];
+      for (const k of Object.keys(groupsTotal)) groupsTotal[k] += groups[g][k];
+    }
+    const resolved = {
+      runs: sum.decided.runs + sum.stranded.runs,
+      cost: sum.decided.cost + sum.stranded.cost,
+      unknown: sum.decided.unknown + sum.stranded.unknown
+    };
+    const keys = Object.keys(byDay).sort();
+    const days = [];
+    if (keys.length) {
+      const end = Date.parse(keys[keys.length - 1] + "T00:00:00Z");
+      for (let t = Date.parse(keys[0] + "T00:00:00Z"); t <= end; t += DAY_MS2) {
+        const k = new Date(t).toISOString().slice(0, 10);
+        days.push(byDay[k] || { date: k, decided: 0, building: 0, stranded: 0, after: 0 });
+      }
+    }
+    return {
+      decided: sum.decided,
+      building: sum.building,
+      stranded: sum.stranded,
+      after: sum.after,
+      resolved,
+      conversion: resolved.runs > 0 ? sum.decided.runs / resolved.runs : null,
+      strandedPerDecided: sum.decided.runs > 0 ? sum.stranded.runs / sum.decided.runs : null,
+      days,
+      decisionsByDay: Object.keys(decisionDays).sort().map((date) => ({ date, cells: decisionDays[date] })),
+      groups,
+      groupsTotal,
+      planner
+    };
+  }
+  var usd2 = (x) => "$" + x.toFixed(2);
+  var money2 = (t) => usd2(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : "");
+  var pct = (p, t) => Math.round(p / t * 100) + "%";
+  function shareChart(days) {
+    if (!days.length) return null;
+    const W = 480, H = 132, L = 36, R = 474, T = 10, B = 108;
+    const step = (R - L) / days.length;
+    const bw = Math.max(2, Math.min(18, step - 3));
+    const lab = { "font-size": 11, fill: "var(--muted)" };
+    const kids = [
+      h("line", { x1: L, x2: R, y1: B, y2: B, stroke: "var(--axis)", "stroke-width": 1 }),
+      h("text", Object.assign({ x: L - 4, y: T + 4, "text-anchor": "end" }, lab), "100%"),
+      h("text", Object.assign({ x: L - 4, y: B, "text-anchor": "end" }, lab), "0")
+    ];
+    days.forEach((d, i) => {
+      const cx = L + step * i + step / 2;
+      const total = SEGMENTS.reduce((s, k) => s + d[k], 0);
+      if (total) {
+        let y = B;
+        for (const k of SEGMENTS) {
+          if (!d[k]) continue;
+          const hgt = d[k] / total * (B - T);
+          kids.push(h("rect", {
+            x: (cx - bw / 2).toFixed(1),
+            y: (y - hgt).toFixed(1),
+            width: bw,
+            height: Math.max(0.5, hgt - 1).toFixed(1),
+            fill: SEGMENT_COLOR[k],
+            "data-group": k,
+            "pointer-events": "none"
+          }));
+          y -= hgt;
+        }
+      }
+      const tip = total ? STRINGS.conversionTip(d.date, fmtCount(total), SEGMENTS.filter((k) => d[k]).map((k) => STRINGS.conversionLegend[k].toLowerCase() + " " + pct(d[k], total)).join(", ")) : d.date + ": 0 runs";
+      kids.push(h("rect", { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: "transparent", class: "mark", tabindex: 0, "data-tip": tip }));
+      if (days.length <= 8 || i === 0 || i === days.length - 1) {
+        kids.push(h("text", Object.assign({ x: cx.toFixed(1), y: B + 17, "text-anchor": "middle" }, lab), d.date.slice(5)));
+      }
+    });
+    const at = days.findIndex((d) => d.date === PLANNER_CHANGE.day);
+    if (at >= 0) {
+      const x = (L + step * at).toFixed(1);
+      kids.push(h("line", { x1: x, x2: x, y1: T, y2: B, stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "3 3", "pointer-events": "none" }));
+      kids.push(h("text", Object.assign({ x: (Number(x) + 3).toFixed(1), y: T + 8, "text-anchor": "start" }, lab), "#" + PLANNER_CHANGE.pr));
+    }
+    return h("svg", { viewBox: "0 0 " + W + " " + H, class: "chart weeks", role: "img", "aria-label": STRINGS.conversionChartAria(days.length) }, kids);
+  }
+  function plannerShares(side) {
+    return GROUPS2.filter((g) => g !== "never" || side.never).map((g) => STRINGS.conversionPlannerShare(pct(side[g], side.total), g === "never" ? "never" : g === "near" ? "near a verdict" : g)).join(", ");
+  }
+  function conversionView(doc) {
+    const t = conversionTotals(doc);
+    if (!t.decided.runs && !t.building.runs && !t.stranded.runs && !t.after.runs) return null;
+    const lead = t.conversion === null ? STRINGS.conversionLeadNone(fmtCount(t.building.runs), money2(t.building)) : STRINGS.conversionLead(
+      fmtCount(t.resolved.runs),
+      fmtCount(t.decided.runs),
+      Math.round(t.conversion * 100) + "%",
+      fmtCount(t.stranded.runs),
+      t.strandedPerDecided === null ? "-" : t.strandedPerDecided.toFixed(1),
+      fmtCount(t.building.runs),
+      money2(t.building)
+    );
+    const cols = [
+      { label: STRINGS.conversionColDistance, cell: (r) => r.label },
+      { label: STRINGS.conversionColSubjects, num: true, sort: (r) => r.v.subjects, cell: (r) => fmtCount(r.v.subjects) },
+      { label: STRINGS.conversionColBuilding, num: true, sort: (r) => r.v.runs, cell: (r) => fmtCount(r.v.runs) + " · " + usd2(r.v.cost) },
+      { label: STRINGS.conversionColExpected, num: true, sort: (r) => r.v.expected, cell: (r) => "~" + Math.round(r.v.expected) }
+    ];
+    const rows = GROUPS2.map((g) => ({ label: STRINGS.conversionGroups[g], v: t.groups[g] })).concat([{ label: STRINGS.conversionTotal, v: t.groupsTotal }]);
+    const p = t.planner;
+    const plannerLink = h("a", { href: PLANNER_CHANGE.url, rel: "noopener", target: "_blank" }, DATA_REPO.split("/")[1] + "#" + PLANNER_CHANGE.pr);
+    const plannerLine = p.since.total ? h(
+      "p",
+      { class: "meta" },
+      STRINGS.conversionPlannerLead,
+      plannerLink,
+      STRINGS.conversionPlannerSince(fmtCount(p.since.total), plannerShares(p.since)),
+      p.before.total ? STRINGS.conversionPlannerBefore(fmtCount(p.before.total), plannerShares(p.before)) : null
+    ) : h("p", { class: "meta" }, STRINGS.conversionPlannerNone, plannerLink, STRINGS.conversionPlannerNoneEnd);
+    return h(
+      "div",
+      { class: "conversion" },
+      h("p", { class: "meta" }, lead),
+      legend(SEGMENTS.map((k) => ({ label: STRINGS.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
+      shareChart(t.days),
+      h("p", { class: "meta" }, STRINGS.conversionCaption),
+      t.decisionsByDay.length ? h("p", { class: "meta" }, STRINGS.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + " " + d.cells).join(", "))) : null,
+      table(cols, rows),
+      h("p", { class: "meta" }, STRINGS.conversionNote),
+      plannerLine
+    );
+  }
+
   // src/views/summary.js
   function summaryView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
@@ -2343,6 +2557,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       srcLine(src, refMs),
       h("div", { class: "tiles" }, tiles, extra),
       hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
+      hasUtility(doc) ? panel(STRINGS.conversionHeading, conversionView(doc)) : null,
       alertsView(doc, "all")
     );
   }
@@ -2390,14 +2605,14 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/hooks.js
-  var pct = (x) => Math.round(x * 100) + "%";
+  var pct2 = (x) => Math.round(x * 100) + "%";
   function hookVerdict(it) {
     const label = it.verdict && Object.prototype.hasOwnProperty.call(STRINGS.hookVerdicts, it.verdict) ? STRINGS.hookVerdicts[it.verdict] : STRINGS.hookVerdictNone;
     return badge(label, "hv " + (it.verdict || "none"));
   }
   function overrides(it) {
     if (!it.measured) return h("span", { class: "muted", title: STRINGS.hookOverridesNote }, STRINGS.overridesNotCounted);
-    return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct(it.overrideRate) + ")" : "");
+    return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct2(it.overrideRate) + ")" : "");
   }
   function where(it) {
     return STRINGS.hookWhere[it.where] + (it.where === "repo" && it.repo ? ": " + clean(it.repo) : "");
@@ -2424,7 +2639,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       h("h2", null, STRINGS.hooksHeading),
       srcLine(STRINGS.srcDoc, refMs),
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
-      typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
+      typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct2(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
       Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h("p", { class: "note" }, STRINGS.hookUnlisted(hk.unlisted)) : null,
       hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
@@ -2545,7 +2760,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 
   // src/views/subject.js
   var share = (x) => typeof x === "number" && isFinite(x) ? Math.round(x * 100) + "%" : STRINGS.noValue;
-  var usd2 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd3 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
   var one = (x) => typeof x === "number" && isFinite(x) ? fmtCount(x) : STRINGS.noValue;
   function runsOf2(doc, kind, name) {
     const key = kind === "guidance" ? "guidance/" + name : name;
@@ -2564,7 +2779,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + " (" + share(r.without_share) + ")" },
       { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
       { label: STRINGS.colJudge, sort: (r) => r.judge, cell: (r) => typeof r.with_judge === "number" && typeof r.without_judge === "number" ? STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1)) : STRINGS.judgeNotNeeded },
-      { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd2(r.cost_usd) }
+      { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd3(r.cost_usd) }
     ];
     if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
     cols.push({ label: STRINGS.colReport, cell: (r) => link(r.report_url, STRINGS.report) });
@@ -2698,7 +2913,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/loop.js
-  var usd3 = (x) => "$" + (Number(x) || 0).toFixed(2);
+  var usd4 = (x) => "$" + (Number(x) || 0).toFixed(2);
   function stagesView() {
     return [
       h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
@@ -2723,7 +2938,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         { label: STRINGS.colPr, sort: (r) => r.prs, cell: (r) => r.prs ? link(r.prUrl, STRINGS.prState(r.merged, r.prs)) : "" },
         { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + " (" + r.realWork + ")" },
         { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
-        { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd3(r.costUsd) }
+        { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd4(r.costUsd) }
       ], fq.rows, { tall: true }) : null
     ];
   }
@@ -2735,11 +2950,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const c = (k) => Number.isInteger(f[k]) ? f[k] : 0;
     const decided = c("check") + c("skill") + c("guidance") + c("nothing");
     const all = FUNNEL_KEYS.reduce((s, k) => s + c(k), 0);
-    const pct2 = decided ? Math.round(c("check") / decided * 100) + "%" : "0%";
+    const pct3 = decided ? Math.round(c("check") / decided * 100) + "%" : "0%";
     const sources = f.by_source && typeof f.by_source === "object" ? Object.keys(f.by_source) : [];
     const missing = Array.isArray(f.sources_missing) ? f.sources_missing.filter((s) => STRINGS.funnelSources[s]) : [];
     return [
-      h("p", { class: "headline-num" }, STRINGS.funnelHeadline(pct2, fmtCount(decided))),
+      h("p", { class: "headline-num" }, STRINGS.funnelHeadline(pct3, fmtCount(decided))),
       barChart(FUNNEL_KEYS.filter((k) => c(k) > 0).map((k) => ({ label: STRINGS.funnelKinds[k], p: c(k), t: all, color: FUNNEL_COLORS[k] })), STRINGS.funnelHeading),
       sources.length ? table([{ label: STRINGS.colSource, sort: (s) => s, cell: (s) => STRINGS.funnelSources[s] || clean(s) }].concat(FUNNEL_KEYS.map((k) => ({ label: STRINGS.funnelKinds[k], num: true, sort: (s) => f.by_source[s][k], cell: (s) => fmtCount(f.by_source[s][k] || 0) }))), sources) : null,
       missing.length ? h("p", { class: "note" }, STRINGS.funnelMissing(missing.map((s) => STRINGS.funnelSources[s]).join(", "))) : null
@@ -2780,7 +2995,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/impact.js
-  var usd4 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd5 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
   var dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
   function hookWeeksView(doc, refMs) {
     const weeks = hookWeeks(doc);
@@ -2872,9 +3087,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
         { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
-        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) },
-        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd4(w.thread_spend_usd) },
-        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd4(w.cost_per_verdict) }
+        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd5(w.api_usd) },
+        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd5(w.thread_spend_usd) },
+        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd5(w.cost_per_verdict) }
       ], s.weeks)
     ];
   }
@@ -3052,12 +3267,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   // src/views/engineers.js
   function engineersView(doc, mode, url) {
     const guidance = mode === "guidance";
-    const subjects = guidance ? (doc.guidance && doc.guidance.sections || []).filter(Boolean).map((s) => ({ name: s.id, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason, alone: s.alone_verdict })) : (doc.skills || []).filter(Boolean).map((s) => ({ name: s.name, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason }));
+    const subjects2 = guidance ? (doc.guidance && doc.guidance.sections || []).filter(Boolean).map((s) => ({ name: s.id, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason, alone: s.alone_verdict })) : (doc.skills || []).filter(Boolean).map((s) => ({ name: s.name, runs: s.runs, verdict: s.verdict, reason: s.verdict_reason }));
     const refMs = parseTime(doc.generated_at);
     const cell = (a) => a ? fmtCount(a.passed) + "/" + fmtCount(a.total) : "";
     const head = [STRINGS.colName, STRINGS.colFixture, STRINGS.colModel, STRINGS.colWhen, STRINGS.colCli].concat(guidance ? [STRINGS.colSection, STRINGS.colNone, STRINGS.colFull, STRINGS.colAblated] : [STRINGS.colWith, STRINGS.colWithout]).concat([STRINGS.colReport]);
     const rows = [];
-    subjects.forEach((s) => (Array.isArray(s.runs) ? s.runs : []).forEach((raw) => {
+    subjects2.forEach((s) => (Array.isArray(s.runs) ? s.runs : []).forEach((raw) => {
       const r = normRun(raw, guidance ? "guidance" : "skills");
       if (!r) return;
       const l = link(r.url, STRINGS.report);
@@ -3073,7 +3288,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h("td", null, l)
       ));
     }));
-    const verdicts = subjects.filter((s) => s.verdict || s.reason).map((s) => h(
+    const verdicts = subjects2.filter((s) => s.verdict || s.reason).map((s) => h(
       "tr",
       null,
       h("td", null, clean(s.name)),

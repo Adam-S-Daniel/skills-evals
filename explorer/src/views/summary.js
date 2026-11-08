@@ -9,6 +9,7 @@ import { hashFor } from '../core/route.js';
 import { tile, srcTip, srcLine, panel } from './bits.js';
 import { alertsView } from './alerts.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
+import { conversionView } from './conversion.js';
 
 export function summaryView(doc, ctx) {
   const refMs = parseTime(doc.generated_at);
@@ -41,5 +42,6 @@ export function summaryView(doc, ctx) {
     srcLine(src, refMs),
     h('div', { class: 'tiles' }, tiles, extra),
     hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
+    hasUtility(doc) ? panel(STRINGS.conversionHeading, conversionView(doc)) : null,
     alertsView(doc, 'all'));
 }
