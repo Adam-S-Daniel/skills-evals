@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TbKPDAtpkcyvf3UA3Wxo9X",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -8 && ls -la && cat test/run-tests.sh && ls .github/workflows && cat .github/workflows/*.yml",
+      "input_chars": 132,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TbKPDAtpkcyvf3UA3Wxo9X",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nfd6ba60 initial commit\ntotal 40\ndrwxr-xr-x 9 root root 4096 Nov  8 07:51 .\ndrwx------ 6 root root 4096 Nov  8 07:51 ..\ncrw-rw-rw- 1 root root 1, 3 Nov  7 05:01 ....",
+      "output_chars": 2178,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018MTay59JDezCAqfSHPC31k",
+      "name": "Bash",
+      "input": "cat README.md; ls bin src test .gh -R | head -30; cat src/* test/*.py; cat bin/*",
+      "input_chars": 80,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018MTay59JDezCAqfSHPC31k",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (55.3KB). Full output saved to: <path>\n\nPreview (first 2KB):\n# Example changelog\n\nTurns a repository's conventional commit subjects (`feat: ...`, `fix: ...`)\ninto the sections of a release changelog.\n\nRun the tests from the repository root:\n\n```bash\nbash test/run-...",
+      "output_chars": 2184,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015t4oHaqQiv9ygE6HrcMcMX",
+      "name": "Bash",
+      "input": "ls bin; head -c 600 bin/* | head -40; echo; cat .gh/replay/run-list.json | head -40; tail -40 .gh/replay/run-view-52001.log",
+      "input_chars": 123,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015t4oHaqQiv9ygE6HrcMcMX",
+      "is_error": false,
+      "output": "gh\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network a...",
+      "output_chars": 1311,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012zGj8xuVGtSuY98LFiBoxd",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL HOME=\"$h\" GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOSYSTEM=1 bash test/run-tests.sh; echo \"exit=$?...",
+      "input_chars": 204,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012zGj8xuVGtSuY98LFiBoxd",
+      "is_error": false,
+      "output": "Testing changelog at fd6ba60\nBuilding a scratch repository for the changelog tests\nexit=128",
+      "output_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X7ZTezPKzMwJP36s8pBe9u",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 51,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Y8voNHuomf7pmAQuLKYqum",
+      "name": "Bash",
+      "input": "h=$(mktemp -d) && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL HOME=\"$h\" GIT_CONFIG_GLOBAL=<path> GIT_CONFIG_NOSYSTEM=1 bash test/run-tests.sh; echo \"ci-like...",
+      "input_chars": 276,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X7ZTezPKzMwJP36s8pBe9u",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully.",
+      "output_chars": 91,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Y8voNHuomf7pmAQuLKYqum",
+      "is_error": false,
+      "output": "Testing changelog at fd6ba60\nBuilding a scratch repository for the changelog tests\n.\n----------------------------------------------------------------------\nRan 1 test in 0.002s\n\nOK\nci-like exit=0\nTesting changelog at fd6ba60\nBuilding a scratch repository for the changelog tests\n.\n-------------------...",
+      "output_chars": 468,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
