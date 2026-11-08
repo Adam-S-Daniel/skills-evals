@@ -2,15 +2,15 @@
   "include_private_names": false,
   "problems": [],
   "publication": {
-    "as_of": "2026-11-07T14:57:16Z",
-    "guidance_revision": "7f553bc3adaf7c44f27c98a8f90faf1f9d7f7f13",
+    "as_of": "2026-11-08T15:22:13Z",
+    "guidance_revision": "37016a7c72a002b5f5644b258d0b661d5984cc4f",
     "public_registry_revisions": {
-      "adam-agentskills": "eccda739064bdf92f1b0d5e3018a911d54b0ae78",
-      "adamdaniel.ai": "776e07a374fddddbdae369dc4bc9e194dbcbb2ef",
-      "cms-platform": "caeff57f6501a71306fd8ca65027450da71e354e"
+      "adam-agentskills": "1ac882641e545f375c1dfa18f3777aff430bb791",
+      "adamdaniel.ai": "e5f653a8123bdf97833f35c4c04c7c79fbfe05b6",
+      "cms-platform": "3e79df8390bf177eb21dbe3fd9df39ffdde55255"
     },
-    "repository_revision": "972c7cca5d45660890485bee07060feaf1a9d897",
-    "run_id": "42383950616"
+    "repository_revision": "dfe73f5e3632e117b8b0bdaf3dc8e4dce9aef7cb",
+    "run_id": "42494406243"
   },
   "registries": [
     {
@@ -35,7 +35,7 @@
         },
         {
           "bundle": "adam-anything-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "writing-adrs",
@@ -75,7 +75,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 1,
+          "fixtures": 4,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "github-actions-repo-settings",
@@ -83,7 +83,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "red-ci-adamdaniel-ai",
@@ -99,7 +99,7 @@
         },
         {
           "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
+          "fixtures": 5,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "skills-doctor",
@@ -147,7 +147,7 @@
         },
         {
           "bundle": "adam-coding-local",
-          "fixtures": 5,
+          "fixtures": 8,
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "tool-powershell",
@@ -243,7 +243,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "staleness is the failure mode, not procedure quality",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
           "registry": "cms-platform",
           "skill": "aws-bootstrap",
           "status": "skipped"
@@ -323,7 +323,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "staleness is the failure mode, not procedure quality",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
           "registry": "cms-platform",
           "skill": "preview-environments",
           "status": "skipped"
@@ -331,7 +331,7 @@
         {
           "bundle": null,
           "fixtures": 0,
-          "reason": "internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the skill is a no-op marker, so a with arm has nothing to score) and criterion 5 (a verdict would change nothing); internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
           "registry": "cms-platform",
           "skill": "test-canary",
           "status": "skipped"
