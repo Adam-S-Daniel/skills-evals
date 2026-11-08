@@ -1,0 +1,16 @@
+name: nightly-report
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9459ac0c7a9a78b5ac15c6e471312de28ff87692
+      - run: python3 scripts/gen_report.py report.json
+      - run: bash scripts/publish_report.sh

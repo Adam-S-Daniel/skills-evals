@@ -1,0 +1,10 @@
+{
+  "name": "persistent",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": {"ref_name": {"include": ["refs/heads/persistent/**"], "exclude": []}},
+  "rules": [
+    {"type": "deletion"}
+  ]
+}
