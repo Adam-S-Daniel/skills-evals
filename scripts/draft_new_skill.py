@@ -80,7 +80,8 @@ values only):
   name-check --subject NAME --registry NAME=DIR [...]
             (full-history clones of adam-agentskills, adam-agentskills-private
             and every federated repository; exit 1 when the name is reserved,
-            upstream, or in any registry now or in its history)
+            upstream, or in any registry now, in its history or in its
+            scripts/shipped_names.json ledger)
             -> names=clear, registries=N
   apply     --staged DIR --tree DIR         (in an adam-agentskills checkout)
   fixtures-apply --staged DIR --tree DIR    (in a skills-evals checkout)
@@ -675,6 +676,8 @@ PRIVATE_REGISTRY_NAME = "adam-agentskills-private"
 #: along with every repository their marketplaces federate.
 REQUIRED_REGISTRIES = (REGISTRY_NAME, PRIVATE_REGISTRY_NAME)
 MARKETPLACE_PATH = ".claude-plugin/marketplace.json"
+SHIPPED_NAMES_PATH = "scripts/shipped_names.json"
+MAX_SHIPPED_NAMES = 1024 * 1024
 MAX_MARKETPLACE = 256 * 1024
 FEDERATED_REPO_RE = re.compile(
     r"(?P<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]{0,99})")
@@ -729,7 +732,32 @@ def registry_names(registry: Path) -> tuple[set[str], set[str]]:
         return out
 
     current = names(head)
-    return current, current | names(log)
+    return current, current | names(log) | shipped_ledger_names(registry)
+
+
+def shipped_ledger_names(registry: Path) -> set[str]:
+    """Skill names in the registry's append-only shipped-names ledger
+    (adam-agentskills#133: `skills` lists every `<plugin>/<skill>` that ever
+    shipped), name_key()ed. A registry without the file adds nothing; a file
+    of any other shape is refused rather than skipped."""
+    listed = _registry_git(registry, "ls-tree", "--name-only", "HEAD", "--",
+                           SHIPPED_NAMES_PATH)
+    if not listed.strip():
+        return set()
+    raw = _registry_git(registry, "cat-file", "blob", f"HEAD:{SHIPPED_NAMES_PATH}")
+    if len(raw) > MAX_SHIPPED_NAMES:
+        raise Refused("a registry's shipped-names ledger is over its size cap")
+    try:
+        doc = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise Refused("a registry's shipped-names ledger is not JSON") from None
+    skills = doc.get("skills") if isinstance(doc, dict) else None
+    if not isinstance(skills, list) or not all(
+            isinstance(e, str) and e.count("/") == 1 and all(e.split("/"))
+            for e in skills):
+        raise Refused("a registry's shipped-names ledger has no "
+                      "`<plugin>/<skill>` skills list")
+    return {name_key(e.split("/")[1]) for e in skills}
 
 
 def federated_repos(registry: Path) -> list[str]:

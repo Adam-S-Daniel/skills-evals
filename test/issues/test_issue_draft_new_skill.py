@@ -1333,6 +1333,27 @@ class NameCheck(Case):
         self.assertEqual(code, 0, err)
         self.assertEqual(out, "fed-repo Example-Owner/fed-repo\n")
 
+    def test_a_name_in_the_shipped_names_ledger_is_refused(self):
+        """adam-agentskills#133's append-only ledger counts as history even
+        for a name git history no longer shows."""
+        regs = self.fleet()
+        private = Path(regs[1].split("=", 1)[1])
+        self.write(private / "scripts" / "shipped_names.json",
+                   {"marketplace": "m", "plugins": ["p"],
+                    "skills": ["p/other-skill", f"p/{SUBJECT}"]})
+        git(private, "add", "-A")
+        git(private, "commit", "-q", "-m", "ledger")
+        code, _, err = self.check(SUBJECT, regs)
+        self.assertEqual(code, 1, err)
+        self.assertIn("once shipped in adam-agentskills-private", err)
+        code, _, err = self.check("brand-new-name", regs)
+        self.assertEqual(code, 0, err)
+        self.write(private / "scripts" / "shipped_names.json", {"skills": "p/x"})
+        git(private, "commit", "-q", "-am", "bad ledger")
+        code, _, err = self.check("brand-new-name", regs)
+        self.assertEqual(code, 2)
+        self.assertIn("shipped-names ledger", err)
+
     def test_reserved_names_fold_like_the_install_directory(self):
         self.assertTrue(dns.reserved_name("Synced. "))
         self.assertFalse(dns.reserved_name("synced-notes"))
