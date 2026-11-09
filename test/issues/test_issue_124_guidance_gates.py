@@ -1887,10 +1887,19 @@ class FakeGh:
         if args[:2] == ["api", "--paginate"] and "/pulls?" in args[2]:
             return "\n".join(json.dumps(p) for p in self.prs)
         if args[:2] == ["pr", "create"]:
+            self.body = stdin
             return f"https://github.com/{rs.GUIDANCE_REPO}/pull/9\n"
+        if args[:2] == ["pr", "view"] and "body" in args:  # the review's read-back (#917)
+            return getattr(self, "body", "") + "\n"
         if args[:2] == ["pr", "view"]:
             return f"{self.merge_method}\n"
         return ""
+
+
+def passing_review(subject, checkout, base, verdict, dirs):
+    """A stand-in for removal_review.review that passes (skills-evals#917)."""
+    return {"outcome": "pass", "rounds": [{"round": 1, "new": 0}, {"round": 2, "new": 0}],
+            "findings": [], "why": "2 consecutive rounds found nothing new"}
 
 
 class GuidancePlanTests(unittest.TestCase):
@@ -2045,7 +2054,8 @@ def guidance_repo(test) -> Path:
 
 
 AUTO_ENV = {"GITHUB_EVENT_NAME": "schedule", "GITHUB_ACTIONS": "true",
-            "GITHUB_REF": "refs/heads/main"}
+            "GITHUB_REF": "refs/heads/main", "GITHUB_RUN_ID": "77",
+            "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals"}
 
 
 @unittest.skipUnless(shutil.which("node"), "node is needed for the coverage script")
@@ -2068,7 +2078,7 @@ class GuidanceRemovalTests(unittest.TestCase):
             with mock.patch.object(rs.guidance_merge_window, "window_open",
                                    return_value=True):
                 rc = rs.main(argv, env=env, gh=gh, push=lambda c, b, *_: pushed.append(b),
-                             registry_gh=self.registry, out=out)
+                             registry_gh=self.registry, review=passing_review, out=out)
         finally:
             os.environ.clear()
             os.environ.update(old)
@@ -2082,8 +2092,11 @@ class GuidanceRemovalTests(unittest.TestCase):
         # Every write to _agent-guidance goes through registry_gh: the
         # workflow's own token cannot write another repository.
         self.assertEqual([c[0][:2] for c in self.registry.calls],
-                         [["pr", "create"], ["api", "-X"], ["pr", "merge"], ["pr", "view"]])
-        create, label, merge, _view = self.registry.calls
+                         [["pr", "create"], ["api", "-X"], ["pr", "view"], ["pr", "merge"],
+                          ["pr", "view"]])
+        create, label, _body, merge, _view = self.registry.calls
+        self.assertIn("\nAdversarial-review: pass https://github.com/Adam-S-Daniel/skills-evals/"
+                      "actions/runs/77\n", create[1])
         self.assertEqual(label[0][-1], f"labels[]={rs.AGENT_LABEL}")
         self.assertIn(f"repos/{rs.GUIDANCE_REPO}/issues/9/labels", label[0][3])
         head = sh(root, "git", "rev-parse", "HEAD").stdout.strip()
@@ -2158,7 +2171,7 @@ class GuidanceRemovalTests(unittest.TestCase):
                 rc = rs.main(["--gates", str(path), "--target", "guidance", "--guidance",
                               str(root), "--allow-mode", "auto"], env=AUTO_ENV, gh=FakeGh(),
                              push=lambda c, b, *_: None, registry_gh=registry,
-                             out=io.StringIO())
+                             review=passing_review, out=io.StringIO())
         finally:
             os.environ.clear()
             os.environ.update(old)
@@ -2253,8 +2266,9 @@ class GuidanceWorkflowTests(unittest.TestCase):
         self.assertIn("--target guidance", guidance_act["run"])
         self.assertNotIn("--target guidance", acts[0]["run"])
         self.assertIn("modes=(--allow-mode proposal)", guidance_act["run"])
-        self.assertIn('if [ -n "$REGISTRY_TOKEN" ]; then\n  modes+=(--allow-mode auto)',
-                      guidance_act["run"])
+        # Auto needs the review's bearer too (#917).
+        self.assertIn('if [ -n "$REGISTRY_TOKEN" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then'
+                      '\n  modes+=(--allow-mode auto)', guidance_act["run"])
         self.assertIn("modes+=(--fallback-to-proposal)", guidance_act["run"])
         self.assertIn('"${modes[@]}"', guidance_act["run"])
         self.assertEqual(guidance_act["env"], {
@@ -2280,7 +2294,7 @@ class GuidanceWorkflowTests(unittest.TestCase):
         self.assertLess(steps.index(checkout), steps.index(compute))
         self.assertIs(checkout["with"]["persist-credentials"], False)
         self.assertEqual(doc["jobs"]["retirement"]["permissions"],
-                         {"contents": "read", "issues": "write"})
+                         {"contents": "read", "issues": "write", "id-token": "write"})
 
 
 def _real_checkout_ready() -> bool:

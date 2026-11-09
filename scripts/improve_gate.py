@@ -798,16 +798,65 @@ def auto_refusal(tree: Path, plugin: str, skill: str) -> str | None:
     return None
 
 
-def effective_mode(tree: Path, plugin: str, skill: str, policy: Path = POLICY) -> dict:
+#: SKILL.md frontmatter keys that make a skill run code or widen what it may
+#: do without asking. adam-agentskills' plugin-runtime-review does not read
+#: frontmatter, but its one-way-door check (adam-agentskills#134, #135)
+#: fails an armed loop pull request that sets or changes one, and nothing in
+#: the loop would disarm it, so it would hold the one loop slot. An
+#: improvement cannot change them (`apply` refuses any frontmatter change
+#: but the description); a drafted skill can set them.
+RUNTIME_FRONTMATTER = ("hooks", "allowed-tools")
+
+
+def frontmatter_refusal(before: str | None, after: str) -> str | None:
+    """Why a SKILL.md going from `before` (None: a new skill) to `after`
+    may not be auto-merged, or None: it adds, changes or removes a
+    RUNTIME_FRONTMATTER key. Unreadable frontmatter is a refusal too."""
+    try:
+        old = _frontmatter(before, "SKILL.md") if before is not None else {}
+        new = _frontmatter(after, "SKILL.md")
+    except Rejected:
+        return "the SKILL.md frontmatter cannot be read, so its runtime keys cannot be checked"
+    changed = [k for k in RUNTIME_FRONTMATTER
+               if (k in old, old.get(k)) != (k in new, new.get(k))]
+    if changed:
+        return (f"the SKILL.md frontmatter sets or changes {', '.join(changed)}, which "
+                "adam-agentskills' one-way-door check holds for a person")
+    return None
+
+
+def staged_skill_md(staged: Path, plugin: str, skill: str) -> str:
+    """The SKILL.md a draft-skill staging directory's new-files patch adds
+    (draft_new_skill.validate's `skill.patch`), or Rejected."""
+    import draft_new_skill  # noqa: PLC0415 - it imports this module
+    prefix = draft_new_skill.skill_prefix(plugin, skill)
+    try:
+        text = (staged / "skill.patch").read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise Rejected("the staged skill.patch cannot be read") from None
+    files = draft_new_skill.parse_new_files_patch(text, prefix)
+    if "SKILL.md" not in files:
+        raise Rejected("the staged skill.patch adds no SKILL.md")
+    return files["SKILL.md"].decode("utf-8")
+
+
+def effective_mode(tree: Path, plugin: str, skill: str, policy: Path = POLICY,
+                   skill_md: str | None = None) -> dict:
     """The merge mode for a loop pull request that changes `skill` of
     `plugin` in the registry checkout `tree`: the policy's, lowered to
-    `draft` (with the reason) when `auto_refusal` gives one. The one switch for
+    `draft` (with the reason) when `auto_refusal` gives one, or, given the
+    proposed SKILL.md text `skill_md`, when `frontmatter_refusal` does
+    against the tree's current copy (none for a new skill). The one switch for
     every loop gate that writes adam-agentskills: this gate's `prepare` and
-    routine-draft-skill-gate.yml's `merge-mode` step."""
+    routine-draft-skill-gate.yml's `merge-mode` step (with `--staged`)."""
     if not NAME_RE.fullmatch(plugin):
         raise Rejected("plugin is not a plugin name")
     mode = merge_mode(policy)
     reason = auto_refusal(tree, plugin, skill) if mode == "auto" else None
+    if mode == "auto" and reason is None and skill_md is not None:
+        current = _no_symlink(tree, f"plugins/{plugin}/skills/{skill}/SKILL.md")
+        reason = frontmatter_refusal(
+            current.read_text(encoding="utf-8") if current.is_file() else None, skill_md)
     return {"mode": "draft", "mode_reason": reason} if reason \
         else {"mode": mode}
 
@@ -1378,6 +1427,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--plugin", required=True)
     p.add_argument("--skill", required=True)
     p.add_argument("--policy", type=Path, default=POLICY)
+    p.add_argument("--staged", type=Path, default=None,
+                   help="a draft-skill staging directory: the SKILL.md its skill.patch "
+                        "adds is checked for runtime frontmatter keys")
     p = sub.add_parser("pr-body")
     p.add_argument("--staged", required=True, type=Path)
     p.add_argument("--run-id", required=True)
@@ -1403,7 +1455,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "apply":
             result = apply(args.staged, args.tree, args.skill_md)
         elif args.command == "merge-mode":
-            result = effective_mode(args.tree, args.plugin, args.skill, args.policy)
+            result = effective_mode(args.tree, args.plugin, args.skill, args.policy,
+                                    staged_skill_md(args.staged, args.plugin, args.skill)
+                                    if args.staged is not None else None)
         elif args.command == "prepare":
             result = prepare(args.staged, args.tree, args.skill_md,
                              args.registry_sha, args.run_id, args.policy)

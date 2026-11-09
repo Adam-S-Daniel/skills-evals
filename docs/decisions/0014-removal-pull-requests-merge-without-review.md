@@ -1663,3 +1663,49 @@ The round 5 review found four minor problems.
   `max_pairs` all count a pooled cell's usable current-rest pairs. A pooled
   cell with no current-rest figure, or a malformed guard, gives no chart
   row; the chart never falls back to the pooled block.
+
+## Adversarial review addendum (2026-11-09)
+
+Adam, 2026-11-09: removals stay autonomous, and the "adversarial round"
+adam-agentskills requires for one-way doors may be agent-generated
+([#917](https://github.com/Adam-S-Daniel/skills-evals/issues/917)). The
+verdict answers "does this subject help"; nothing checked what a removal
+breaks elsewhere.
+
+- **Every automatic removal is reviewed before it is armed.**
+  `scripts/retire_skill.py` prepares the branch, then
+  `scripts/removal_review.py` checks it: first mechanically (every changed
+  path inside adam-agentskills ADR 0021 Decision 3 for a skill, or the files
+  the guidance removal writes; anything else blocks and no reviewer starts),
+  then with rounds of a fresh-context reviewer (Claude Code, Opus, a new
+  process each round, read-only tools over the checked-out repositories, no
+  settings, hooks, MCP or GitHub token). It looks for references elsewhere
+  that will dangle, consumer `skills.lock` keys the removal drops, records
+  keyed by the name, and scope.
+- **Stop rule.** Rounds continue while one finds something new; two
+  consecutive rounds with no new finding of equal or higher severity end
+  them with `pass`. A `blocker` ends them with `block`. Five rounds that
+  never settle, or any round that fails or answers in the wrong shape, is
+  `block`.
+- **The record is a line in the pull request body**, written before the
+  pull request opens so the registry's first CI run reads it: an
+  `## Adversarial review` section ending in `Adversarial-review: pass <run
+  url>` or `Adversarial-review: block <run url>`. adam-agentskills'
+  one-way-door check (adam-agentskills#133) and _agent-guidance's lock-bump
+  hold (_agent-guidance#488) accept the pass line.
+- **Auto-merge is armed only on a pass read back from the pull request
+  body.** A block leaves the pull request open and unarmed with the
+  findings (the withdrawal pass reads an unarmed removal as a person's
+  hold), and the removal notice is filed as "Blocked:", asking Adam to merge
+  by hand or close.
+- **Credential.** The retirement job mints the reviewer's Anthropic bearer
+  through the same workload identity federation eval.yml uses
+  (`id-token: write`, main only); no stored secret. With no bearer or no
+  CLI the act steps do not allow `auto`, and a `retire` verdict files the
+  issue instead.
+- **Ledger.** A skill removal also adds `<plugin>/<skill>` to adam-agentskills'
+  append-only `scripts/shipped_names.json` when it is not listed yet.
+
+Findings are model text in a public pull request body: each is flattened to
+one line, cut to 500 characters and HTML-escaped with `@` encoded, so it can
+neither mention anyone nor start a line that forges the record.

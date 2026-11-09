@@ -230,12 +230,22 @@ jobs:
   # Unknown verdicts withdraw nothing (ADR 0014). loop-pr-refresh.yml runs the same pass
   # after every ingest, so a verdict an ingest changes is acted on within
   # that run.
+  #
+  # The adversarial review (skills-evals#917, scripts/removal_review.py): a
+  # removal pull request is opened unarmed, a fresh-context Opus reviewer
+  # (Claude Code, read-only tools) checks its downstream effects, and
+  # auto-merge is armed only once the body carries `Adversarial-review: pass
+  # <run url>`. The reviewer authenticates with a WIF bearer minted here
+  # exactly as eval.yml mints one (`id-token: write`; the federation rule
+  # matches main only), never a stored secret. With no bearer, or no CLI,
+  # auto mode is not allowed and a retire verdict files the issue instead.
   retirement:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       issues: write
+      id-token: write
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@v7.0.1
@@ -320,6 +330,53 @@ jobs:
           path: ${{ runner.temp }}/gates/
           if-no-files-found: error
 
+      # The reviewer's CLI and credential (#917). Both under
+      # continue-on-error: a failure leaves the bearer file absent, and the
+      # act steps then do not allow auto mode. The exchange's response body
+      # is never printed, only its HTTP status.
+      - name: Install Claude Code for the adversarial review
+        id: review-cli
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          latest="$(npm view @anthropic-ai/claude-code version)"
+          [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::npm reported no usable latest Claude Code version"; exit 1; }
+          bash "$GITHUB_WORKSPACE/skills-evals/scripts/install_claude_code.sh" "$latest"
+          echo "review harness: Claude Code $latest (npm latest), model $(python3 -c 'import sys; sys.path.insert(0, "skills-evals/scripts"); import removal_review; print(removal_review.MODEL)')"
+
+      - name: Mint the Anthropic bearer for the adversarial review
+        id: review-bearer
+        if: ${{ !cancelled() && steps.verdicts.outcome == 'success' && steps.review-cli.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          resp=$(curl -sS --fail \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fapi.anthropic.com")
+          jwt=$(jq -r .value <<<"$resp")
+          [ -n "$jwt" ] && [ "$jwt" != null ]
+          body=$(jq -n --arg jwt "$jwt" '{
+            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            assertion: $jwt,
+            federation_rule_id: "fdrl_012TsUrCbGZKH17uCUpgqMxf",
+            organization_id: "0905256d-aaf8-45ad-892b-9d2867c67c4e",
+            service_account_id: "svac_01DVDm1YuUembqV2LScAjsGz",
+            workspace_id: "wrkspc_017pHomopHiJ7nRzZJS6NhV4"
+          }')
+          xresp="$RUNNER_TEMP/review-exchange.json"
+          code=$(curl -sS -o "$xresp" -w "%{http_code}" -X POST https://api.anthropic.com/v1/oauth/token \
+            -H "content-type: application/json" -d "$body")
+          if [ "$code" != "200" ]; then
+            rm -f "$xresp"
+            echo "::warning::the adversarial review's token exchange failed: HTTP $code; auto removal is not allowed this run"
+            exit 1
+          fi
+          tok=$(jq -re .access_token < "$xresp")
+          rm -f "$xresp"
+          echo "::add-mask::$tok"
+          printf '%s' "$tok" > "$RUNNER_TEMP/review-bearer"
+
       - name: Are the GitHub App's secrets configured?
         id: credential
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}
@@ -377,10 +434,15 @@ jobs:
         run: |
           set -euo pipefail
           modes=(--allow-mode proposal)
-          if [ -n "$REGISTRY_TOKEN" ]; then
+          # The review's bearer, exported here only (#917): no bearer, no auto.
+          if [ -s "$RUNNER_TEMP/review-bearer" ]; then
+            ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/review-bearer")"
+            export ANTHROPIC_AUTH_TOKEN
+          fi
+          if [ -n "$REGISTRY_TOKEN" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
             modes+=(--allow-mode auto)
           else
-            echo "::notice::no adam-agentskills write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
+            echo "::notice::no adam-agentskills write token or no adversarial review credential (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
           python3 scripts/retire_skill.py \
@@ -434,10 +496,15 @@ jobs:
         run: |
           set -euo pipefail
           modes=(--allow-mode proposal)
-          if [ -n "$REGISTRY_TOKEN" ]; then
+          # The review's bearer, exported here only (#917): no bearer, no auto.
+          if [ -s "$RUNNER_TEMP/review-bearer" ]; then
+            ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/review-bearer")"
+            export ANTHROPIC_AUTH_TOKEN
+          fi
+          if [ -n "$REGISTRY_TOKEN" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
             modes+=(--allow-mode auto)
           else
-            echo "::notice::no _agent-guidance write token (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
+            echo "::notice::no _agent-guidance write token or no adversarial review credential (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
             modes+=(--fallback-to-proposal)
           fi
           python3 scripts/retire_skill.py --target guidance \

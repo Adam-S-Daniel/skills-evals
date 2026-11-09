@@ -637,6 +637,8 @@ class GateTests(unittest.TestCase):
         decide = steps[ids.index("mode")]
         self.assertIn("improve_gate.py merge-mode", decide["run"])
         self.assertIn("--tree ../adam-agentskills", decide["run"])
+        # The drafted SKILL.md's runtime frontmatter keys lower it to a draft.
+        self.assertIn('--staged "$RUNNER_TEMP/staged"', decide["run"])
         self.assertNotIn("--policy", decide["run"])
         self.assertNotIn("secrets.", json.dumps(decide))
         skill = step(self.doc, "skill-pr", "Open the skill's pull request in adam-agentskills")
