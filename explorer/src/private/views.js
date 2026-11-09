@@ -8,6 +8,7 @@ import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, srcLine, tile, badge } from '../views/bits.js';
 import { alertText } from '../views/alerts.js';
+import { trendingView } from '../views/trending.js';
 import { LOOP_TITLE } from '../views/loop.js';
 import { problemsToggle } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
@@ -76,12 +77,14 @@ export function attentionRows(dash, doc) {
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
+    // A regression is trending toward removal, not an item that needs attention: its own table.
+    if (a.kind === 'regression') continue;
     const k = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : a.kind;
-    rows.push({ kind: P.kindAlert(k), severity: a.kind === 'regression' ? 'high' : 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null });
+    rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null });
   }
   const f = doc.fires_without_results;
   if (f && Number.isInteger(f.without_results) && (f.without_results || f.rejected) && typeof f.since === 'string') {
-    rows.push({ kind: P.kindFires, severity: 'medium', what: STRINGS.firesLine(f.without_results, at(f.since), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected || 0), url: null, where: null, age: null });
+    rows.push({ kind: P.kindFires, severity: 'medium', what: STRINGS.firesLine(f.without_results, Number.isInteger(f.counted) ? f.counted : null, at(f.since), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected || 0), url: null, where: null, age: null });
   }
   const q = doc.fixture_queue;
   for (const x of q && Array.isArray(q.findings) ? q.findings : []) {
@@ -115,6 +118,7 @@ function needsView(dash, ctx) {
       { label: P.colWhere, sort: (r) => r.where || '', cell: (r) => clean(r.where || '') },
       { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att, { tall: true })
       : h('p', null, P.attentionNone)]),
+    trendingView(doc, 'all'),
     cap ? panel(P.allowanceHeading, [srcLine(src('eval_allowance'), parseTime(cap.readingAt)),
       h('p', null, P.allowanceUse(cap.spent.toFixed(1), cap.cap.toFixed(0))), meter(cap.spent, cap.cap),
       cap.accountUsed !== null && cap.accountUsed !== undefined ? [h('p', null, P.allowanceAccount(Math.round(cap.accountUsed), cap.stop.toFixed(0))), meter(cap.accountUsed, 100, cap.stop)] : null,

@@ -2,9 +2,10 @@
 import { STRINGS } from '../core/strings.js';
 import { fmtDay, fmtGain } from '../core/format.js';
 import { h } from '../core/h.js';
+import { chartTitle } from '../core/charts.js';
 
 /* compact: on a list card, where the reading guide carries the caption. */
-export function trendChart(points, refMs, compact) {
+export function trendChart(points, refMs, compact, kind) {
   if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
   if (points.length === 1) {
     const p = points[0];
@@ -39,7 +40,7 @@ export function trendChart(points, refMs, compact) {
     kids.push(h('circle', { cx, cy, r: 10, fill: 'transparent', class: 'mark', tabindex: 0,
       'data-tip': STRINGS.trendTip(fmtDay(p.start + 1000, refMs), fmtGain(p.gain)), 'data-tip-pos': 'below' }));
   });
-  return h('div', null,
+  return h('div', null, chartTitle(STRINGS.trendTitle[kind] || STRINGS.trendTitle.skills),
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
     compact ? null : h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
 }

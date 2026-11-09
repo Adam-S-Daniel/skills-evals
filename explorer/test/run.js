@@ -170,16 +170,25 @@ await test('placeholder rows never reach a panel, and an empty dataset hides it'
   eq(ext.covers('runs'), false, 'no run_stream: the public panel stays');
   eq(ext.covers('cost'), false);
 });
-await test('the Needs you list merges half-built issues, document alerts and fires without results, high first', () => {
+await test('the Needs you list merges half-built issues, document alerts and fires without results, medium first', () => {
   const dash = fakeDash({ half_built_issues: okData([{ key: 'k1', state: 'open', kind: 'partial', severity: 'low', title: 'Low one', url: 'https://github.com/example-owner/r/issues/1' },
     { key: 'k2', state: 'closed', kind: 'broken', severity: 'high', title: 'Closed', url: null }]) });
-  const d = doc({ alerts: [{ kind: 'regression', name: 'example-skill', subject: 'skill', text: 'got worse' }],
-    fires_without_results: { without_results: 2, rejected: 0, since: '2026-10-30T00:00:00Z', sweeps: [] } });
+  const d = doc({ alerts: [{ kind: 'retire', name: 'example-skill', subject: 'skill', text: 'due for removal' }],
+    fires_without_results: { without_results: 2, rejected: 0, counted: 9, since: '2026-10-30T00:00:00Z', sweeps: [] } });
   const rows = attentionRows(dash, d);
   eq(rows.length, 3, 'the closed issue is left out');
-  eq(rows[0].severity, 'high');
+  eq(rows[0].severity, 'medium');
   ok(rows.map((r) => r.what).join(' | ').includes('Low one'), 'the half-built issue');
+  ok(rows.map((r) => r.what).join(' | ').includes('2 of 9 fires'), 'the fires line says out of how many');
   eq(attentionRows(fakeDash({}), doc()).length, 0);
+});
+await test('a regression alert is not a Needs attention row: it is trending toward removal, in its own table', () => {
+  const d = doc({ alerts: [{ kind: 'regression', name: 'example-skill', subject: 'skill', model: 'claude-opus-5-5', fixture: 'fx-one', verdict: 'regressed', measure: 'judge',
+    previous: 7.5, current: 6.0000000000000009, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/r/issues/5' }] });
+  eq(attentionRows(fakeDash({}), d).length, 0, 'not an attention row');
+  const t = textOf(renderRoute(d, { name: 'needs', id: null }, { ext: makeExt(fakeDash({})) }));
+  ok(t.includes(STRINGS.trendingHeading) && t.includes('fell by 1.50 (alert threshold 1.00, typical noise 0.47)'), t);
+  ok(!/\d\.\d{3,}/.test(t), 'no long decimal on the page: ' + t);
 });
 await test('the allowance and routine health come from their datasets', () => {
   const cap = capUse([{ points: 40.5, account_week_used: 70, pace_room_points: 3, account_reading_at: '2026-11-04T03:30:10Z', week_resets_at: '2026-11-09T17:00:00Z' }],

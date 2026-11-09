@@ -25,6 +25,11 @@ import { prWeeks } from '../views/impact.js';
 import { runsOf } from '../views/subject.js';
 import { LOOP_TITLE } from '../views/loop.js';
 import { buildFailure } from '../views/failure.js';
+import { trendingRows, trendingView, changeNodes } from '../views/trending.js';
+import { firesFigures, firesNode } from '../views/alerts.js';
+import { asOfLine, skillStates } from '../views/summary.js';
+import { term, defn, closeDef, installDefs } from '../core/terms.js';
+import { fmt2, fmtSigned2, roundDecimals } from '../core/format.js';
 
 /* What tool/test/run.js reads from the built page, run in a Node sandbox
    that defines `module`. */
@@ -36,5 +41,6 @@ export const EXPORTS = {
   poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
   useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, blockedThisWeek, mondayOf, checkWeeks,
-  fixtureQueue, searchItems, filterItems, prWeeks, runsOf, LOOP_TITLE
+  fixtureQueue, searchItems, filterItems, prWeeks, runsOf, LOOP_TITLE,
+  trendingRows, trendingView, changeNodes, firesFigures, firesNode, asOfLine, skillStates, term, defn, closeDef, installDefs, fmt2, fmtSigned2, roundDecimals
 };

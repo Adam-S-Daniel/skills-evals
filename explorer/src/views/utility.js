@@ -5,7 +5,8 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, fmtCount } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
-import { legend } from '../core/charts.js';
+import { legend, chartTitle } from '../core/charts.js';
+import { term } from '../core/terms.js';
 import { table } from './bits.js';
 
 /* The classes in the order they are drawn, and their colors. "No use" is
@@ -117,7 +118,7 @@ export function utilityBody(groups, period, refMs) {
   const main = totals[0].t;
   if (!main.total.runs) return h('div', { class: 'utility-body' }, h('p', { class: 'note' }, STRINGS.utilityNone));
   const cell = (t) => fmtCount(t.runs) + ' · ' + money(t);
-  const cols = [{ label: STRINGS.utilityColClass, cell: (r) => h('span', null, h('span', { class: 'sw', style: 'background:' + (UTILITY_COLORS[r.key] || 'transparent') }), ' ', r.label) }]
+  const cols = [{ label: STRINGS.utilityColClass, cell: (r) => h('span', null, h('span', { class: 'sw', style: 'background:' + (UTILITY_COLORS[r.key] || 'transparent') }), ' ', STRINGS.utilityDefs[r.key] ? term(r.label, STRINGS.utilityDefs[r.key]) : r.label) }]
     .concat(totals.map((g, i) => ({ label: g.label, num: true, sort: (r) => r.values[i].runs, cell: (r) => cell(r.values[i]) })));
   const rows = UTILITY_CLASSES.map((c) => ({ key: c, label: STRINGS.utilityClasses[c], values: totals.map((g) => g.t.classes[c]) }))
     .filter((r) => r.values.some((v) => v.runs))
@@ -128,7 +129,7 @@ export function utilityBody(groups, period, refMs) {
     h('p', { class: 'meta' }, STRINGS.utilityLead(fmtCount(main.noUse.runs), usd(main.noUse.cost), fmtCount(main.total.runs), usd(main.total.cost))),
     table(cols, rows),
     reasons.length ? h('p', { class: 'meta' }, STRINGS.utilityReasons(reasons.map(([k, t]) => reasonName(k) + ' ' + fmtCount(t.runs) + ' (' + usd(t.cost) + ')').join(', '))) : null,
-    main.days.length ? [legend(UTILITY_CLASSES.filter((c) => main.classes[c].runs).map((c) => ({ label: STRINGS.utilityClasses[c], color: UTILITY_COLORS[c] }))),
+    main.days.length ? [chartTitle(STRINGS.dayTitle), legend(UTILITY_CLASSES.filter((c) => main.classes[c].runs).map((c) => ({ label: STRINGS.utilityClasses[c], color: UTILITY_COLORS[c], def: STRINGS.utilityDefs[c] }))),
       dayChart(main.days)] : null);
 }
 

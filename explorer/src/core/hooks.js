@@ -53,6 +53,13 @@ export function hookWeeks(doc) {
 export function blockedThisWeek(doc) {
   if (!doc || !doc.hooks || !doc.hooks.totals) return null;
   const week = mondayOf(parseTime(doc.generated_at));
-  const row = hookWeeks(doc).find((w) => w.week === week);
-  return { week, local: row ? row.local.blocked : 0, ci: row ? row.ci.blocked : 0 };
+  const weeks = hookWeeks(doc);
+  const row = weeks.find((w) => w.week === week);
+  // The data holds weekly totals only, so the week so far sits beside the
+  // week before it; that one is shown only when the data reaches back to it.
+  const before = isFinite(parseTime(doc.generated_at)) ? mondayOf(parseTime(doc.generated_at) - 7 * 24 * 3600 * 1000) : null;
+  const prevRow = weeks.find((w) => w.week === before);
+  const reaches = weeks.some((w) => w.week <= before);
+  return { week, local: row ? row.local.blocked : 0, ci: row ? row.ci.blocked : 0,
+    prev: reaches ? { week: before, local: prevRow ? prevRow.local.blocked : 0, ci: prevRow ? prevRow.ci.blocked : 0 } : null };
 }

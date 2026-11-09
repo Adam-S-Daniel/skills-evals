@@ -99,7 +99,7 @@ export function hookPage(doc, name, ctx) {
       it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote)),
     panel(STRINGS.hookByWeek, weeks.length ? [
       weekChart(weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked, b: w.ciBlocked })),
-        [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek),
+        [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => day(w.week) },
         { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.localRuns, cell: (w) => fmtCount(w.localRuns) },

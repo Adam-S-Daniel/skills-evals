@@ -38,9 +38,11 @@ function buildGlosses(you) {
   };
 }
 export const GLOSSES = {};
+export const TERMS = {};
 export function useGlossVoice(v) {
   for (const k of Object.keys(GLOSSES)) delete GLOSSES[k];
   Object.assign(GLOSSES, buildGlosses(v === 'you'));
+  if (typeof useTermVoice === 'function') useTermVoice(v);
 }
 useGlossVoice('owner');
 export const GLOSS_MISSING = 'A plain-language description of this section has not been written yet.';
@@ -59,3 +61,39 @@ export const HOOK_GLOSSES = {
   'staged-index': 'Refuses a push while staged changes sit in no commit, so a commit a hook refused cannot slip out with the one before it.',
   'repo-local': 'Runs a repo\'s own checks (.agent-checks/local.sh) and refuses when they do.'
 };
+
+/* One definition per term the page uses, so each concept has one word and one
+   meaning. `label` is the term as the page words it; `text` is what the
+   definition box says. Keyed by the id `defn()` takes. */
+function buildTerms(you) {
+  const whose = you ? 'your' : 'the owner\'s';
+  return {
+  skill: { label: 'Skill', text: 'A page of instructions Claude reads before a certain kind of task. The improvement loop tests each skill and keeps, revises or removes it by the results.' },
+  section: { label: 'Guidance section', text: 'One topic, under its own heading, in the guidance Claude reads at the start of every working session on ' + whose + ' projects.' },
+  subject: { label: 'Subject', text: 'Whatever is being tested: a skill or a guidance section.' },
+  fixture: { label: 'Fixture', text: 'One small, fixed practice task used for testing. The same task is used every time so results can be compared.' },
+  arm: { label: 'Arm', text: 'One way of running a task, such as with the skill or without it. Each run compares arms.' },
+  run: { label: 'Run', text: 'One test of one subject on one fixture and one model. It attempts the task several times in each arm and saves the results together.' },
+  comparisonRun: { label: 'Comparison run', text: 'A run in which both arms of a comparison, such as with and without the skill, were scored together. Only these count toward a decision.' },
+  trial: { label: 'Trial', text: 'A single attempt at a task by one model. A run is made of several trials.' },
+  check: { label: 'Check', text: 'A yes-or-no test a computer scores without opinion, such as "did it create this file". The "checks passed" counts on this page are these.' },
+  judge: { label: 'Judge', text: 'A separate AI model that reads each attempt and scores it from 0 to 10. It never takes part in the task.' },
+  verdict: { label: 'Verdict', text: 'The improvement loop\'s decision about a subject: keep it, remove it, or not decided yet. The colored label on each card shows it.' },
+  fire: { label: 'Fire', text: 'One scheduled start of a run: the loop launches a test of one subject on one model. Its results should come back to the results branch within 2 hours.' },
+  sweep: { label: 'Sweep', text: 'A group of fires with no results that started within an hour of each other. A sweep usually means one outage rather than separate failures.' },
+  decisive: { label: 'Decisive', text: 'A run that counted toward the point where its model-and-fixture comparison reached a keep-or-remove decision.' },
+  building: { label: 'Building', text: 'A run that counts toward a model-and-fixture comparison which has not reached a decision yet.' },
+  stranded: { label: 'Stranded', text: 'A usable run that a change to the text, fixture or model dropped before its comparison reached a decision.' },
+  gain: { label: 'Gain', text: 'Checks passed with the subject minus checks passed without it, as a share of all checks. Plus means it helped.' },
+  advantage: { label: 'Advantage', text: 'The average score with the subject minus the average score without it, on a scale from 0 to 1. Plus means it helped.' },
+  trending: { label: 'Trending toward removal', text: 'Recent runs score below the runs before them, or the subject stopped beating the arm without it. This is expected and the system acts on it: if the trend holds, the loop removes the subject automatically.' },
+  dataBuilt: { label: 'Results data built', text: 'When the script that turns saved runs into this page\'s data last ran, in US Eastern time. It is not when the page itself was published.' },
+  newestRun: { label: 'newest run', text: 'When the most recent run recorded in the data started, in US Eastern time.' },
+  blockedHooks: { label: 'Stopped', text: 'A git hook check refused a commit or push (on a local computer), or failed a pull request check in CI.' }
+  };
+}
+export function useTermVoice(v) {
+  for (const k of Object.keys(TERMS)) delete TERMS[k];
+  Object.assign(TERMS, buildTerms(v === 'you'));
+}
+useTermVoice('owner');

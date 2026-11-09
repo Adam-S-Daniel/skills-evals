@@ -59,7 +59,13 @@
 /* Tiles */
 .ex .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 12px; margin: 12px 0; }
 .ex .tile { display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--ring); border-radius: 12px; padding: 14px; color: var(--ink); text-decoration: none; min-width: 0; }
-.ex a.tile:hover { border-color: var(--axis); }
+.ex .tile { position: relative; }
+.ex .tile.linked:hover { border-color: var(--axis); }
+.ex .tile-link { color: var(--ink-2); text-decoration: none; }
+.ex .tile-link::after { content: ''; position: absolute; inset: 0; border-radius: 12px; }
+.ex .tile-link:focus-visible { outline: none; }
+.ex .tile-link:focus-visible::after { outline: 2px solid var(--s1); outline-offset: 2px; }
+.ex .tile .term, .ex .tile-note { position: relative; z-index: 1; }
 .ex .tile-label { font-size: 0.8rem; color: var(--ink-2); }
 .ex .tile-num { font-family: var(--ex-serif, Georgia, "Times New Roman", serif); font-size: 1.7rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .ex .tile-num[data-tip] { cursor: help; }
@@ -77,7 +83,7 @@
 .ex .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
 .ex .card h3 a, .ex a.nav-link { text-decoration: none; }
 .ex .card h3 a:hover, .ex a.nav-link:hover { text-decoration: underline; }
-.ex .model { font-size: 0.85rem; font-weight: 600; margin: 8px 0 0; color: var(--ink-2); }
+.ex .model { font-size: 0.85rem; font-weight: normal; margin: 8px 0 0; color: var(--ink-2); }
 .ex .chip { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; flex: none; font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--chip-bg); color: var(--ink); border: 1px solid var(--ring); cursor: help; }
 .ex .chip .ic { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--axis); }
 .ex .chip.helps .ic { background: var(--good); }
@@ -148,3 +154,26 @@
 .ex details.guide > p { margin: 6px 0; max-width: 80ch; }
 .ex details.history > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
 .ex td.when { white-space: nowrap; }
+/* Tap-for-definition: a term is a real button that reads as inline text. */
+.ex .term { font: inherit; text-transform: inherit; letter-spacing: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: inherit;
+  text-decoration: underline dotted var(--axis); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.ex .term:hover { color: var(--link); text-decoration-style: solid; }
+.ex .term[aria-expanded="true"] { color: var(--link); text-decoration-style: solid; }
+.ex .term:focus-visible, .ex .defbox-close:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; border-radius: 3px; }
+.ex .term.name { font-weight: inherit; }
+.ex .chip.term { cursor: pointer; text-decoration: none; padding: 2px 8px; font: inherit; font-size: 0.78rem; font-weight: 600; }
+.ex .chip.term:hover { border-color: var(--axis); color: var(--ink); }
+.ex .legend .term { color: var(--ink-2); }
+.ex .defbox { position: fixed; z-index: 20; display: block; box-sizing: border-box; width: min(340px, calc(100vw - 16px)); max-width: calc(100vw - 16px);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--axis); border-radius: 10px; padding: 10px 12px 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25); font-size: 0.85rem; line-height: 1.45; font-weight: normal; text-align: left; white-space: normal; }
+.ex .defbox:focus { outline: 2px solid var(--s1); outline-offset: 1px; }
+.ex .defbox-title { display: block; margin-bottom: 4px; }
+.ex .defbox-text { display: block; color: var(--ink-2); }
+.ex .defbox-close { display: block; margin: 8px 0 0 auto; font: inherit; font-size: 0.82rem; padding: 4px 12px; min-height: 32px; border: 1px solid var(--base);
+  border-radius: 8px; background: var(--surface); color: var(--ink); cursor: pointer; }
+.ex .defbox-close:hover { background: var(--hover); }
+.ex .chart-title { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 10px 0 2px; }
+.ex .asof-line { margin: 0 0 8px; }
+.ex .trending-table td ul { margin: 0; padding-left: 0; }
+@media (forced-colors: active) { .ex .term { text-decoration: underline; } .ex .defbox { border-color: CanvasText; } }

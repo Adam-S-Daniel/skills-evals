@@ -11,7 +11,7 @@ export function context(doc) {
 
 /* Skill cards, most helpful first: the loop's keep, then an early sign of
    help, then the test cannot tell, then not enough data, then removal, then
-   getting worse; by pooled gain
+   trending toward removal; by pooled gain
    within each group. */
 export const SKILL_RANK = ['helps', 'early', 'canttell', 'insufficient', 'none', 'worse'];
 export const SECTION_RANK = ['helps', 'alone', 'early', 'canttell', 'insufficient', 'none', 'worse'];

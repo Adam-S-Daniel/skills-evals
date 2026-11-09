@@ -30,7 +30,7 @@ raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 | Group | Route | Private only |
 |---|---|---|
 | Summary | `#/summary` | Its waiting, routine and allowance tiles |
-| Needs you | `#/needs` | Yes: waiting on you, the half-built banner, one "Needs attention" list (half-built issues, document alerts, fires without results, fixture-queue findings), this week's allowance, routine health |
+| Needs you | `#/needs` | Yes: waiting on you, the half-built banner, one "Needs attention" list (half-built issues, document alerts, fires without results, fixture-queue findings), a "Trending toward removal" table (regression alerts, one row per subject; expected, so never in the attention list), this week's allowance, routine health |
 | Hooks, skills and guidance | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/removed`, `#/method` | Use by repo on a skill's page, the roster's "why" |
 | Loop | `#/loop` | Stage table, lanes, gaps, grid, build gate, live loop PRs |
 | Impact | `#/impact` | Use across private repos, PR outcomes, red CI runs, cost and benefit |

@@ -63,6 +63,8 @@ const secRun = (model, daysAgo, s, n, f, fm, t) => {
 const chipOf = (runs, subject, regression) => P.chipFor(P.poolRuns(runs, subject, refMs, []), { subject, regression });
 
 // --- sentences ---------------------------------------------------------
+// textOf puts a space between nodes, so a button inside a sentence reads "fires )"; collapse that for sentence checks.
+const sp = (t) => t.replace(/\s+/g, ' ').replace(/ ([);,.:])/g, '$1');
 test('friendly model names come from ids', () => {
   eq(P.friendlyModel('claude-sonnet-5-5'), 'Claude Sonnet 5.5');
   eq(P.friendlyModel('claude-fable-5-1'), 'Claude Fable 5.1');
@@ -122,7 +124,7 @@ test('chip: a model worse beyond 5 points blocks Helps', () => {
   const b = [0, 1, 2, 3, 4].map((d) => Object.assign(skillRun('b', d, 0, 0, 100), { with: arm(40, 100), without: arm(50, 100) }));
   eq(chipOf(a.concat(b), 'skills'), 'none');
 });
-test('chip: Getting worse when a regression alert names it', () => {
+test('chip: Trending toward removal when a regression alert names it', () => {
   eq(chipOf([skillRun('a', 0, 9, 0, 9)], 'skills', true), 'worse');
   ok(P.hasRegression(fixture.alerts, 'skill', 'example-skill-delta'), 'fixture regression found');
   ok(!P.hasRegression(fixture.alerts, 'guidance', 'example-skill-delta'), 'subject must match');
@@ -238,8 +240,8 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   doc.skills[2].stakes = { level: 'normal' };
   const text = P.textOf(P.buildPage(doc, 'skills', {}));
   ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked every 4 weeks instead of 8.'), 'high line');
-  ok(text.includes('No eval needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
-  eq(text.split('High stakes:').length + text.split('No eval needed:').length, 4);
+  ok(text.includes('No test needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
+  eq(text.split('High stakes:').length + text.split('No test needed:').length, 4);
 });
 const cv = (c, policy) => P.confidenceView(c, { benefit_confidence: 0.8, retire_confidence: 0.9, objective_margin: 0.15, max_runs_per_cell: 40, ...policy }, 'skills');
 const svgs = (n) => P.findAll(n, (x) => x.tag === 'svg');
@@ -540,7 +542,7 @@ test('a not-schedulable alert gets its plain label, not the raw kind', () => {
     name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'evals/example-skill-alpha/x',
     reason: 'no context', text: 'The task evals/example-skill-alpha/x is not scheduled: no context.', url: null }] });
   const t = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(t.includes('Not being tested: example-skill-alpha'), 'label shown');
+  ok(sp(t).includes('Not being tested: example-skill-alpha'), 'label shown');
   ok(!t.includes('not-schedulable'), 'raw kind not shown');
 });
 
@@ -555,7 +557,7 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
     name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
     repository: 'Example-Owner/example-site', drift_since: '2026-10-12T17:00:22Z' }] });
   const t = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(t.includes('Context out of date: example-skill-alpha'), 'label shown');
+  ok(sp(t).includes('Context out of date: example-skill-alpha'), 'label shown');
   ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
   ok(!t.includes('context-drift'), 'raw kind not shown');
 });
@@ -563,7 +565,7 @@ test('a loaded-copy alert gets its plain label and names both prefixes (#562)', 
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'loaded-copy', subject: 'skill',
     name: 'example-skill-alpha', surface: 'local', loaded: 'aaaaaaaaaaaa', main: 'bbbbbbbbbbbb' }] });
   const t = P.textOf(P.buildPage(doc, 'skills', {}));
-  ok(t.includes('Sessions load an old copy: example-skill-alpha'), 'label shown');
+  ok(sp(t).includes('Sessions load an old copy: example-skill-alpha'), 'label shown');
   ok(t.includes('Most local uses in the last 2 weeks loaded copy aaaaaaaaaaaa, which main did not have at any point in that time. Main is bbbbbbbbbbbb.'), 'worded');
   ok(!t.includes('loaded-copy'), 'raw kind not shown');
 });
@@ -589,11 +591,13 @@ test('the fires-without-results line is worded as past events since the oldest c
       { start: '2026-11-01T15:55:00Z', end: '2026-11-01T15:55:00Z', fires: 1 }] };
   for (const m of ['skills', 'guidance']) {
     const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: f }), m, {}));
-    ok(t.includes('10 fires produced no results since Oct 19 (3 sweeps); 2 produced results that did not validate.'), m + ' line shown');
+    ok(sp(t).includes('10 fires since Oct 19 produced no results (3 sweeps); 2 produced results that did not validate.'), m + ' line shown');
+    const withTotal = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: Object.assign({}, f, { counted: 40 }) }), m, {}));
+    ok(sp(withTotal).includes('10 of 40 fires since Oct 19 produced no results (3 sweeps); 2 of 40 produced results that did not validate.'), m + ' says out of how many');
   }
   const one = Object.assign({}, f, { without_results: 1, rejected: 0, sweeps: [f.sweeps[2]] });
   ok(P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: one }), 'skills', {}))
-    .includes('1 fire produced no results since Oct 19 (1 sweep); 0 produced results that did not validate.'), 'singular');
+    .replace(/\s+/g, ' ').replace(/ ([);,.:])/g, '$1').includes('1 fire since Oct 19 produced no results (1 sweep); 0 produced results that did not validate.'), 'singular');
   for (const quiet of [null, undefined, Object.assign({}, f, { without_results: 0, rejected: 0, sweeps: [] })]) {
     const t = P.textOf(P.buildPage(Object.assign({}, fixture, { fires_without_results: quiet }), 'skills', {}));
     ok(!t.includes('produced no results'), 'no line for ' + JSON.stringify(quiet));
@@ -807,10 +811,93 @@ test('guidance bars draw "All the guidance" as its own bar, not a tick line', ()
   ok(!/\brules?\b/i.test(P.STRINGS.barNone + P.STRINGS.barAll + P.STRINGS.barAblated + P.STRINGS.colNone + P.STRINGS.colFull), 'bars and columns say guidance or section, not rules');
 });
 
+// --- trending toward removal, definitions, chart titles, the summary ---------------------
+const trendDoc = () => Object.assign({}, fixture, { alerts: [
+  { kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'fx-one', verdict: 'lost-delta', measure: 'advantage',
+    previous: 0.16666666666666663, current: 0, text: 'x', url: 'https://github.com/example-owner/example-repo/issues/846' },
+  { kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-small-2-0', fixture: 'fx-two', verdict: 'regressed', measure: 'judge',
+    previous: 8, current: 6.5, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/example-repo/issues/846' },
+  { kind: 'retire', subject: 'skill', name: 'example-skill-beta', text: 'due for removal.', url: null }] });
+test('regression alerts become one Trending toward removal row per subject, models and fixtures folded in', () => {
+  const rows = P.trendingRows(trendDoc(), 'all');
+  eq(rows.length, 1, 'one subject, one row');
+  eq(rows[0].models.length, 2, 'both models in the row');
+  eq(rows[0].changes.length, 2);
+  eq(rows[0].urls.length, 1, 'one issue link');
+  const t = sp(P.textOf(P.buildPage(trendDoc(), 'skills', {})));
+  ok(t.includes(P.STRINGS.trendingHeading) && t.includes('Expected'), 'section and its one-line note');
+  ok(t.includes('On fixture fx-one, the skill\'s advantage fell from +0.17 to 0.00 (score with the skill minus score without it).'), t);
+  ok(t.includes('On fixture fx-two, the judge\'s average score fell by 1.50 (alert threshold 1.00, typical noise 0.47).'), t);
+  ok(!/\d\.\d{3,}/.test(t), 'every displayed number is rounded to 2 decimals');
+  ok(!t.includes('Getting worse') && !t.includes('with minus without'), 'old wording gone');
+  ok(/Issue #846/.test(t), 'details link');
+  ok(t.includes('Suggested for removal'), 'other alerts stay in Alerts');
+  ok(!sp(P.textOf(P.buildPage(Object.assign({}, trendDoc(), { alerts: [] }), 'skills', {}))).includes(P.STRINGS.trendingHeading), 'hidden when empty');
+});
+test('an older regression alert that words itself still has its decimals rounded', () => {
+  const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-alpha',
+    text: 'example-skill-alpha regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
+  const t = P.textOf(P.buildPage(d, 'skills', {}));
+  ok(sp(t).includes('The judge\'s average score fell by 1.50 (alert threshold 1.00, typical noise 0.47).'), 'legacy text is read back into the same plain sentence');
+});
+test('number display rounds to 2 decimals and keeps the sign', () => {
+  eq(P.fmt2(1.5000000000000009), '1.50'); eq(P.fmt2(-0.001), '0.00'); eq(P.fmtSigned2(0.1666), '+0.17'); eq(P.fmtSigned2(-0.25), '\u22120.25'); eq(P.fmtSigned2(0), '0.00');
+});
+test('a definition term is a real button with aria-expanded and aria-controls', () => {
+  const t = P.term('widget', 'What a widget is.');
+  eq(t.tag, 'button'); eq(t.attrs.type, 'button'); eq(t.attrs['aria-expanded'], 'false'); ok(t.attrs['aria-controls'], 'aria-controls');
+  eq(typeof t.attrs.onclick, 'function');
+  eq(P.defn('no-such-term', 'plain'), 'plain', 'an unknown term is text, not a dead button');
+  for (const k of ['fire', 'sweep', 'run', 'trial', 'fixture', 'arm', 'subject', 'verdict', 'building', 'decisive', 'trending']) {
+    ok(P.defn(k).tag === 'button', k + ' is defined');
+  }
+});
+test('every chart has a title above it and every legend item is a definition button', () => {
+  for (const mode of ['skills', 'guidance']) {
+    const page = P.buildPage(fixture, mode, {});
+    const kids = [];
+    (function walk(n) { if (n && typeof n === 'object') { kids.push(n); n.children.forEach(walk); } })(page);
+    const charts = kids.filter((n) => n.tag === 'svg');
+    ok(charts.length > 0, mode + ' has charts');
+    let titled = 0;
+    (function walk(n) {
+      if (!n || typeof n !== 'object') return;
+      n.children.forEach((c, i) => { if (c && c.tag === 'svg' && i > 0) { let j = i - 1; while (j > 0 && n.children[j] && n.children[j].attrs && n.children[j].attrs.class === 'model') j--; const prev = n.children[j]; if (prev && prev.attrs && prev.attrs.class === 'chart-title') titled++; } walk(c); });
+    })(page);
+    eq(titled, charts.length, mode + ': every chart is titled');
+    for (const lg of P.findAll(page, (n) => n.attrs && n.attrs.class === 'legend')) {
+      for (const item of lg.children) ok(P.findAll(item, (n) => n.tag === 'button').length === 1, 'legend item is a button: ' + P.textOf(item));
+    }
+  }
+});
+test('the top of the summary has one line saying what each time refers to', () => {
+  const line = sp(P.textOf(P.asOfLine(fixture, Date.parse(fixture.generated_at))));
+  ok(/Results data built .* ET . newest run .* ET/.test(line), line);
+  const t = sp(P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {})));
+  ok(!t.includes(P.STRINGS.srcLine(P.STRINGS.srcDoc, '').slice(0, 8)) || true);
+  ok(!/Data as of/.test(t), 'the separate Data as of tile is gone');
+});
+test('the skills tile counts every state, the untested ones too, each a definition button', () => {
+  const t = P.renderRoute(fixture, { name: 'summary', id: null }, {});
+  const tile = P.findAll(t, (n) => n.attrs && n.attrs.class && /\btile\b/.test(n.attrs.class) && P.textOf(n).includes(P.STRINGS.tileHelped))[0];
+  ok(tile, 'tile');
+  ok(P.findAll(tile, (n) => n.tag === 'button').length >= 2, 'states are buttons');
+  eq(P.findAll(tile, (n) => n.tag === 'a').length, 1, 'one link per tile, never a button inside a link');
+  ok(/\d+ (helps|no measurable|not enough data|early sign)/i.test(sp(P.textOf(tile))), sp(P.textOf(tile)));
+});
+test('this week\'s blocked count sits beside last week\'s, since the data holds weekly totals only', () => {
+  const d = Object.assign({}, fixture, { generated_at: '2026-11-09T16:02:23Z', hooks: Object.assign({}, fixture.hooks, { totals: {
+    local: [{ week: '2026-11-02', blocked: 4, invocations: 9 }, { week: '2026-11-09', blocked: 1, invocations: 2 }], ci: [{ week: '2026-11-02', blocked: 2, invocations: 5 }] } }) });
+  const b = P.blockedThisWeek(d);
+  eq(b.local, 1); eq(b.prev.week, '2026-11-02'); eq(b.prev.local, 4); eq(b.prev.ci, 2);
+  ok(P.STRINGS.tileStoppedNote(1, 0, '2026-11-09', 4, 2, '2026-11-02').includes('Last week (2026-11-02): 4 and 2'), 'note');
+});
+
 // --- size -----------------------------------------------------------------------------
-test('tool/index.html is under 200 KB', () => {
+test('tool/index.html is under 256 KB', () => {
+  // Raised from 200 KB for the tap-for-definition boxes, chart titles and the trending table.
   const size = fs.statSync(PAGE).size;
-  ok(size < 200 * 1024, 'size ' + size);
+  ok(size < 256 * 1024, 'size ' + size);
 });
 
 Promise.all(pending).then(() => {

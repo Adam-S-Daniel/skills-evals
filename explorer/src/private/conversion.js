@@ -6,7 +6,7 @@ import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
 import { fmtCount } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
-import { legend } from '../core/charts.js';
+import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';
 import { DATA_REPO } from '../config.js';
 import { UTILITY_CLASSES, UTILITY_COLORS } from '../views/utility.js';
@@ -184,6 +184,7 @@ export function conversionBody(doc, mode) {
       p.before.total ? before(fmtCount(p.before.total), plannerShares(p.before, mode)) : null)
     : h('p', { class: 'meta' }, P.conversionPlannerNone, plannerLink, P.conversionPlannerNoneEnd);
   return h('div', { class: 'conversion-body' },
+    t.days.length ? chartTitle(count ? P.conversionTitleCount : P.conversionTitle) : null,
     dayChart(t.days, mode),
     h('p', { class: 'meta' }, count ? P.conversionCaptionCount : P.conversionCaption),
     t.decisionsByDay.length ? h('p', { class: 'meta' }, P.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + ' ' + d.cells).join(', '))) : null,
@@ -210,6 +211,6 @@ export function conversionView(doc) {
   return h('div', { class: 'conversion' },
     h('p', { class: 'meta' }, lead),
     h('div', { class: 'seg', role: 'group', 'aria-label': P.conversionModeLabel }, buttons),
-    legend(SEGMENTS.map((k) => ({ label: P.conversionLegend[k], color: SEGMENT_COLOR[k] }))),
+    legend(SEGMENTS.map((k) => ({ label: P.conversionLegend[k], color: SEGMENT_COLOR[k], def: P.conversionDefs[k] }))),
     conversionBody(doc, DEFAULT_MODE));
 }

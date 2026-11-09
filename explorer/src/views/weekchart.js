@@ -2,10 +2,10 @@
    the left, hand-drawn like the other charts. */
 import { h } from '../core/h.js';
 import { fmtCount } from '../core/format.js';
-import { legend } from '../core/charts.js';
+import { legend, chartTitle } from '../core/charts.js';
 
 /* weeks: [{label, a, b}] oldest first; names: [aName, bName]. */
-export function weekChart(weeks, names, aria) {
+export function weekChart(weeks, names, aria, title, defs) {
   if (!weeks.length || !weeks.some((w) => (w.a || 0) + (w.b || 0) > 0)) return null;
   // Between the phone and desktop widths it shows at, so labels stay readable at both.
   const W = 480, H = 142, L = 36, R = 474, T = 10, B = 118;
@@ -31,6 +31,6 @@ export function weekChart(weeks, names, aria) {
       kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), w.short || w.label));
     }
   });
-  return h('div', null, legend([{ label: names[0], color: 'var(--s1)' }, { label: names[1], color: 'var(--s2)' }]),
+  return h('div', null, chartTitle(title || aria), legend([{ label: names[0], color: 'var(--s1)', def: defs && defs[0] }, { label: names[1], color: 'var(--s2)', def: defs && defs[1] }]),
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': aria }, kids));
 }

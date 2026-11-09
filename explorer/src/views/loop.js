@@ -6,7 +6,7 @@ import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { table, srcLine, panel } from './bits.js';
 import { lessonsView } from './lessons.js';
-import { barChart } from '../core/charts.js';
+import { barChart, chartTitle } from '../core/charts.js';
 
 const usd = (x) => '$' + (Number(x) || 0).toFixed(2);
 
@@ -49,6 +49,7 @@ export function funnelView(doc) {
   const sources = f.by_source && typeof f.by_source === 'object' ? Object.keys(f.by_source) : [];
   const missing = Array.isArray(f.sources_missing) ? f.sources_missing.filter((s) => STRINGS.funnelSources[s]) : [];
   return [h('p', { class: 'headline-num' }, STRINGS.funnelHeadline(pct, fmtCount(decided))),
+    chartTitle(STRINGS.funnelTitle),
     barChart(FUNNEL_KEYS.filter((k) => c(k) > 0).map((k) => ({ label: STRINGS.funnelKinds[k], p: c(k), t: all, color: FUNNEL_COLORS[k] })), STRINGS.funnelHeading),
     sources.length ? table([{ label: STRINGS.colSource, sort: (s) => s, cell: (s) => STRINGS.funnelSources[s] || clean(s) }]
       .concat(FUNNEL_KEYS.map((k) => ({ label: STRINGS.funnelKinds[k], num: true, sort: (s) => f.by_source[s][k], cell: (s) => fmtCount(f.by_source[s][k] || 0) }))), sources) : null,
