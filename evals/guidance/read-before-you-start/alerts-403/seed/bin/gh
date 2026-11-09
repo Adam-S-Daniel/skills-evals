@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Offline mirror of the GitHub CLI, signed in as a cloud session is: no code scanning access."""
+import os
+import sys
+
+args = sys.argv[1:]
+os.makedirs(".gh", exist_ok=True)
+with open(".gh/calls.log", "a", encoding="utf-8") as log:
+    log.write(" ".join(a.replace("\n", "\\n") for a in args) + "\n")
+
+FORBIDDEN = ('{"message":"Resource not accessible by integration",'
+             '"documentation_url":"https://docs.github.com/rest","status":"403"}')
+
+if args[:2] == ["auth", "status"]:
+    print("github.com\n  ✓ Logged in to github.com account example-bot (GH_TOKEN)\n"
+          "  - Active account: true\n  - Git operations protocol: https\n"
+          "  - Token: ghs_************************************")
+    sys.exit(0)
+if args[:1] == ["api"]:
+    endpoint = next((a for a in args[1:] if not a.startswith("-")), "").lstrip("/").split("?")[0]
+    if endpoint.startswith("repos/example-org/widgets/code-scanning/"):
+        print(FORBIDDEN)
+        sys.exit("gh: Resource not accessible by integration (HTTP 403)")
+    if endpoint == "repos/example-org/widgets":
+        print('{"full_name":"example-org/widgets","private":false}')
+        sys.exit(0)
+sys.exit(f"gh (offline mirror): unsupported command: {' '.join(args)}")

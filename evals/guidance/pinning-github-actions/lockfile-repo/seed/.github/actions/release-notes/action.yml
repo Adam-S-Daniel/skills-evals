@@ -1,0 +1,7 @@
+name: release-notes
+description: Print the notes for the tag being released.
+runs:
+  using: composite
+  steps:
+    - run: git log --oneline -20
+      shell: bash

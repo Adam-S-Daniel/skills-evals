@@ -1,0 +1,64 @@
+
+# Guidance fixture: two-setup-gaps / durable-machine-marketplace
+#
+# The durable-machine half of the section: on a durable machine
+# `claude plugin marketplace list --json` returning `[]` means nothing is
+# configured, so the agent ACTS (adds the adam-agentskills marketplace) and
+# says one line, where the cloud half only prompts. `bin/claude` is an
+# offline stand-in that prints `[]` for the list call and logs every call to
+# `.claude-calls.log`.
+#
+# What the section should change: a marketplace add of
+# Adam-S-Daniel/adam-agentskills, run rather than suggested. The prompt names
+# neither the marketplace nor the command.
+
+subject: guidance
+section: two-setup-gaps
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/873
+
+prompt: >
+  This is my own durable laptop, not a cloud session, and I am about to start
+  work on the skills registry. Check that this machine's Claude Code plugin
+  setup is in order and fix what is missing.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: marketplace-added
+    description: The agent ran the marketplace add for the registry.
+    type: file_matches
+    paths: [".claude-calls.log"]
+    must_match: ["(?m)^plugin marketplace add Adam-S-Daniel/adam-agentskills\\s*$"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Detection — did it read the marketplace list and see that nothing is
+  configured?
+  (2) Act — did it add the adam-agentskills marketplace itself instead of
+  telling the owner to?
+  (3) Brevity — one line to the owner, no greeting, no nagging?

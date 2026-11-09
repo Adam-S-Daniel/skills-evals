@@ -1,0 +1,84 @@
+# Guidance fixture: pinning-github-actions / lockfile-repo
+#
+# The section's target form, offline: a repository that already carries
+# .github/workflows/actions.lock covering ci.yml, whose `uses:` line names
+# an exact release tag. The request adds one workflow that needs a
+# third-party action and a local composite action. No network, so no
+# `gh actions-lock` run and no tag lookups; the section still decides the
+# form of every `uses:`. Names and the repository are invented.
+#
+# What the section should change: a lockfile repo takes the exact tag as
+# written, not a bare SHA (the legacy form) and not a floating major tag,
+# and the local action is written `$/<path>`, not `./<path>`. The prompt
+# names none of it.
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/860
+
+subject: guidance
+section: pinning-github-actions
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add .github/workflows/release-notes.yml: on push of a v* tag, check out
+  the repo with actions/checkout v4.2.2, then run the local composite
+  action in .github/actions/release-notes. Give it read-only contents
+  permission. There is no network here.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: release-notes-workflow-parses
+    description: The new workflow is valid YAML.
+    type: yaml_parses
+    paths: [".github/workflows/release-notes.yml"]
+  - id: checkout-names-the-exact-tag
+    description: >
+      actions/checkout is written as the exact tag v4.2.2 (lockfile form),
+      not a commit SHA and not a floating major tag.
+    type: file_matches
+    paths: [".github/workflows/release-notes.yml"]
+    must_match:
+      - "actions/checkout@v4\\.2\\.2"
+    must_not_match:
+      - "actions/checkout@[0-9a-f]{40}"
+      - "actions/checkout@v4\\s*$"
+    require_present: true
+  - id: local-action-uses-dollar-form
+    description: >
+      The local action is written `$/.github/actions/release-notes`, the
+      lockfile form, not `./.github/actions/release-notes`.
+    type: file_matches
+    paths: [".github/workflows/release-notes.yml"]
+    must_match:
+      - "uses:\\s*\\$/\\.github/actions/release-notes"
+    must_not_match:
+      - "uses:\\s*\\./\\.github/actions/release-notes"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Forms — does release-notes.yml name actions/checkout by its exact tag
+  and the local action as `$/<path>`, as a lockfile repository requires?
+  Cap at 3 if checkout is a bare SHA or the local action starts with `./`.
+  (2) Workflow — does it trigger on a v* tag push, check out, run the local
+  action and set contents: read?
+  (3) Restraint — did the agent leave ci.yml and actions.lock alone, or
+  explain that `gh actions-lock` must regenerate the lockfile?

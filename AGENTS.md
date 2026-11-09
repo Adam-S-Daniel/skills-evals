@@ -59,8 +59,7 @@ read; only in replies to the user.
 
 - **A new `evals/<skill>/` directory needs a line in `README.md`'s layout
   block** in the same commit. `test_every_eval_directory_is_named_in_the_readmes_layout`
-  (`test/run_tests.py`) fails CI otherwise; this check turned the first CI run
-  red on each of the trigger-set PRs skills-evals#785 to #792.
+  (`test/run_tests.py`) fails CI otherwise.
 
 - **Guidance loop merges wait for _agent-guidance's weekly window** (Monday
   17:00 to 19:00 UTC; the bounds live only in its
