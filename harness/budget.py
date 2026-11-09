@@ -30,7 +30,12 @@ KEYS = ("weekly_cap", "per_run_cap", "per_run_overrun", "stop_when_account_above
 #: `per_run_cap` with the run's own calls' dollars at that rate instead of
 #: the account-wide meter, which reads whole points and moves with Adam's
 #: other use too. Absent, `per_run_cap` reads the meter as before.
-OPTIONAL_KEYS = ("points_per_usd",)
+#: `stop_when_session_above` (skills-evals#921) is the same kind of stop as
+#: `stop_when_account_above`, read from the CLI's 5-hour window
+#: (`unifiedWindows.five_hour.utilization`): a smaller plan's sweep can use up
+#: a whole 5-hour window long before the week's meter moves much. Absent, the
+#: 5-hour window is not read.
+OPTIONAL_KEYS = ("points_per_usd", "stop_when_session_above")
 
 
 class BudgetError(ValueError):
