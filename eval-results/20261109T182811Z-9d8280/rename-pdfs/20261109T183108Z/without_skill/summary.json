@@ -1,0 +1,427 @@
+{
+  "skill": "rename-pdfs",
+  "arm": "without_skill",
+  "timestamp": "20261109T183108Z",
+  "error": null,
+  "agent": null,
+  "objective_checks": null,
+  "judge": null,
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.319 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-1"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 42,
+      "output_tokens": 7161,
+      "cache_read_input_tokens": 789990,
+      "cache_creation_input_tokens": 39751,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture_digest": "e61b9f5fbcc6be5eb05ef3af7e6f3bed79302132be375f159874a60fd7b1874f",
+  "n": 3,
+  "errors": 0,
+  "scored": 3,
+  "trial_errors": [],
+  "aggregate": {
+    "objective": {
+      "n": 3,
+      "passed": 12,
+      "total": 24,
+      "mean_passed": 4.0,
+      "mean_total": 8.0,
+      "checks": [
+        {
+          "id": "inbox-renamed-per-convention",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "inbox-content-preserved",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "statement-date-ranged",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "invoice-dated-from-body",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "receipt-left-alone",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "image-only-scan-left-alone",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        },
+        {
+          "id": "duplicate-bills-disambiguated",
+          "n": 3,
+          "passed": 0,
+          "pass_rate": 0.0
+        },
+        {
+          "id": "nothing-outside-inbox",
+          "n": 3,
+          "passed": 3,
+          "pass_rate": 1.0
+        }
+      ]
+    },
+    "judge": {
+      "n": 3,
+      "errors": 0,
+      "overall": {
+        "n": 3,
+        "mean": 4.0,
+        "min": 3.9000000000000004,
+        "max": 4.2,
+        "sum": 12.0
+      },
+      "dimensions": [
+        {
+          "name": "convention_fidelity",
+          "n": 3,
+          "mean": 3.0,
+          "min": 3,
+          "max": 3,
+          "sum": 9
+        },
+        {
+          "name": "date_priority",
+          "n": 3,
+          "mean": 4.333333333333333,
+          "min": 4,
+          "max": 5,
+          "sum": 13
+        },
+        {
+          "name": "restraint",
+          "n": 3,
+          "mean": 6.0,
+          "min": 6,
+          "max": 6,
+          "sum": 18
+        }
+      ]
+    },
+    "cost_usd": {
+      "n": 3,
+      "mean": 0.16671366666666668,
+      "min": 0.1595292,
+      "max": 0.1713038,
+      "sum": 0.5001410000000001
+    },
+    "cost_unknown_trials": 0,
+    "efficiency": {
+      "cost_usd": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.16671366666666668,
+        "median": 0.169308,
+        "min": 0.1595292,
+        "max": 0.1713038,
+        "sum": 0.5001410000000001
+      },
+      "num_turns": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 7.0,
+        "median": 7,
+        "min": 7,
+        "max": 7,
+        "sum": 21
+      },
+      "duration_ms": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 28393.666666666668,
+        "median": 28857,
+        "min": 26189,
+        "max": 30135,
+        "sum": 85181
+      },
+      "input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 14.0,
+        "median": 14,
+        "min": 14,
+        "max": 14,
+        "sum": 42
+      },
+      "output_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 2387.0,
+        "median": 2498,
+        "min": 2163,
+        "max": 2500,
+        "sum": 7161
+      },
+      "cache_creation_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 13250.333333333334,
+        "median": 13306,
+        "min": 12725,
+        "max": 13720,
+        "sum": 39751
+      },
+      "cache_read_input_tokens": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 263330.0,
+        "median": 263439,
+        "min": 262941,
+        "max": 263610,
+        "sum": 789990
+      },
+      "tool_errors": {
+        "n": 3,
+        "n_missing": 0,
+        "mean": 0.3333333333333333,
+        "median": 0,
+        "min": 0,
+        "max": 1,
+        "sum": 1
+      }
+    },
+    "model_tokens": {
+      "claude-opus-5-5": {
+        "input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 14.0,
+          "median": 14,
+          "min": 14,
+          "max": 14,
+          "sum": 42
+        },
+        "output_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 2387.0,
+          "median": 2498,
+          "min": 2163,
+          "max": 2500,
+          "sum": 7161
+        },
+        "cache_read_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 263330.0,
+          "median": 263439,
+          "min": 262941,
+          "max": 263610,
+          "sum": 789990
+        },
+        "cache_creation_input_tokens": {
+          "n": 3,
+          "n_missing": 0,
+          "mean": 13250.333333333334,
+          "median": 13306,
+          "min": 12725,
+          "max": 13720,
+          "sum": 39751
+        }
+      }
+    },
+    "cross_model": {
+      "model": "claude-opus-5-5",
+      "threshold": 0.5,
+      "n": 3,
+      "n_unknown": 0,
+      "flagged_trials": 0,
+      "other_share": 0.0,
+      "flagged": false
+    }
+  },
+  "judge_selection": {
+    "model": "claude-fable-5-1",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261109T182811Z-9d8280",
+    "session_id": "cse_01SphsQDRKFbPHdUQEvVwha2",
+    "harness_commit": "41da41b1613dfb5e9268adc0a24785eac8dbb53d",
+    "cli_version": "2.1.319 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-09T18:31:08Z",
+    "ended_at": "2026-11-09T18:33:30Z",
+    "meter": {
+      "snapshot_count": 9,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-09T18:31:12.520Z",
+      "to_at": "2026-11-09T18:33:30.255Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.03,
+          "to": 0.03,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQDRKFbPHdUQEvVwha2",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.7946547500000001,
+      "agent_usd": 0.5001410000000001,
+      "judge_usd": 0.29451375,
+      "guard_usd": 0,
+      "metered_usd": 0.7046960000000001,
+      "last_agent_call_usd": 0.029104400000000002,
+      "calls_with_cost": 9,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "arm",
+      "calls": null,
+      "meter": null,
+      "started_at": "2026-11-09T18:31:08Z",
+      "ended_at": "2026-11-09T18:33:30Z",
+      "agent": {
+        "calls": 6,
+        "duration_ms": 94137,
+        "num_turns": 21,
+        "cost_usd": 0.5001410000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 42,
+            "output_tokens": 7161,
+            "cache_read_input_tokens": 789990,
+            "cache_creation_input_tokens": 39751,
+            "cost_usd": 0.5001410000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 39751,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 3,
+        "duration_ms": 47095,
+        "num_turns": 3,
+        "cost_usd": 0.29451375,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-1": {
+            "input_tokens": 6,
+            "output_tokens": 3424,
+            "cache_read_input_tokens": 10065,
+            "cache_creation_input_tokens": 9659,
+            "cost_usd": 0.29451375
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 9659,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {
+        "calls": "listed in each trial's own summary",
+        "meter": "listed in each trial's own summary"
+      }
+    }
+  }
+}
