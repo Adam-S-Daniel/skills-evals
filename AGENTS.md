@@ -37,8 +37,9 @@ read; only in replies to the user.
 - **Evals programme handoff.** Read [`HANDOFF.md`](HANDOFF.md) first: the whole
   systematic-evals effort (skills and fleet guidance, six epics), where it
   stands, what is parked on Adam and why, and how to resume it. The live
-  operational state is the status board,
-  [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
+  operational state is HANDOFF.md's "Current state" section. The old status
+  board, [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126),
+  is closed and not updated.
 
 - **Running tests in a fresh or cloud session.** Run `bash scripts/dev_setup.sh`
   first: it installs what `ci.yml`'s `test` job installs (the pip pins, the fixture
