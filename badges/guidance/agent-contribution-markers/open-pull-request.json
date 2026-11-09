@@ -1,6 +1,6 @@
 {
   "color": "green",
   "label": "guidance eval: agent-contribution-markers/open-pull-request",
-  "message": "with 3.8/4 vs without 1/4 \u00b7 n=5 \u00b7 2026-11-09",
+  "message": "with 3.6/4 vs without 1/4 \u00b7 n=5 \u00b7 2026-11-09",
   "schemaVersion": 1
 }
