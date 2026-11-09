@@ -1,110 +1,6 @@
 {
-  "generated_at": "2026-11-08T17:37:16Z",
+  "generated_at": "2026-11-09T17:37:31Z",
   "rows": [
-    {
-      "blocked": null,
-      "invocations": null,
-      "kind": "guidance",
-      "name": "full",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 10,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": null,
-      "kind": "guidance",
-      "name": "unknown",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 5,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": null,
-      "kind": "listing",
-      "name": "full",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 14,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": null,
-      "kind": "listing",
-      "name": "unknown",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 1,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": 1,
-      "kind": "skill",
-      "name": "disarm-inherited-reach",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 1,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": 1,
-      "kind": "skill",
-      "name": "fastmail",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 1,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": 1,
-      "kind": "skill",
-      "name": "other",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 1,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
-    {
-      "blocked": null,
-      "invocations": 2,
-      "kind": "skill",
-      "name": "writing-adrs",
-      "outcome": null,
-      "overridden": null,
-      "repo": null,
-      "runner": null,
-      "sessions": 2,
-      "surface": "local",
-      "week": "2026-09-14"
-    },
     {
       "blocked": null,
       "invocations": null,
@@ -1076,7 +972,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 647,
+      "sessions": 669,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1089,7 +985,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 129,
+      "sessions": 186,
       "surface": "local",
       "week": "2026-11-02"
     },
@@ -1102,7 +998,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 363,
+      "sessions": 381,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1115,7 +1011,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 276,
+      "sessions": 280,
       "surface": "cloud",
       "week": "2026-11-02"
     },
@@ -1186,7 +1082,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -1407,7 +1303,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -1589,7 +1485,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -1823,7 +1719,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -2005,7 +1901,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -2187,7 +2083,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -2369,7 +2265,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 68,
+      "invocations": 196,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -2428,7 +2324,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 126,
+      "sessions": 183,
       "surface": "local",
       "week": "2026-11-02"
     },
@@ -2460,7 +2356,7 @@
     },
     {
       "blocked": null,
-      "digest": "0be479e716d5",
+      "digest": "unknown:unverified-commit",
       "invocations": 3,
       "kind": "skill-digest",
       "name": "disarm-inherited-reach",
@@ -2471,44 +2367,213 @@
       "sessions": 2,
       "surface": "cloud",
       "week": "2026-11-02"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance",
+      "name": "full",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 28,
+      "surface": "cloud",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance",
+      "name": "full",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 1,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance-check",
+      "name": "absent",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 24,
+      "surface": "cloud",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance-check",
+      "name": "match",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 3,
+      "surface": "cloud",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "guidance-check",
+      "name": "unknown",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 1,
+      "surface": "cloud",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "all",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "persistent-delete",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "push-to-default",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "rules-dir",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "secret-file",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "skill-shell",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": 0,
+      "invocations": 146,
+      "kind": "hook",
+      "name": "staged-index",
+      "outcome": null,
+      "overridden": null,
+      "repo": "other",
+      "runner": "8e1e49bb5c75",
+      "sessions": null,
+      "surface": "local",
+      "week": "2026-11-09"
+    },
+    {
+      "blocked": null,
+      "invocations": null,
+      "kind": "listing",
+      "name": "full",
+      "outcome": null,
+      "overridden": null,
+      "repo": null,
+      "runner": null,
+      "sessions": 1,
+      "surface": "local",
+      "week": "2026-11-09"
     }
   ],
   "schema": 1,
   "sources": [
     {
-      "from": "2026-09-14T00:00:00Z",
+      "from": "2026-09-21T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2837,
+      "sessions_scanned": 2895,
       "surface": "local",
-      "to": "2026-11-08T17:37:16Z"
+      "to": "2026-11-09T17:37:31Z"
     },
     {
-      "from": "2026-09-14T00:00:00Z",
-      "runs_scanned": 4319,
+      "from": "2026-09-21T00:00:00Z",
+      "runs_scanned": 4593,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-08T17:37:16Z"
+      "to": "2026-11-09T17:37:31Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
-      "records_scanned": 728,
+      "records_scanned": 778,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-08T17:37:16Z"
+      "to": "2026-11-09T17:37:31Z"
     },
     {
       "events_scanned": 0,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-08T17:37:16Z"
+      "to": "2026-11-09T17:37:31Z"
     },
     {
       "events_scanned": 3,
       "from": "2026-11-02T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-08T17:37:16Z"
+      "to": "2026-11-09T17:37:31Z"
     }
   ]
 }
