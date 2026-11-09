@@ -1,6 +1,6 @@
 {
   "color": "green",
   "label": "guidance eval: data-exposure-in-ci/recipient-in-vars",
-  "message": "with 3/3 vs without 2/3 \u00b7 n=2 \u00b7 2026-11-09",
+  "message": "with 3/3 vs without 2.3/3 \u00b7 n=3 \u00b7 2026-11-09",
   "schemaVersion": 1
 }
