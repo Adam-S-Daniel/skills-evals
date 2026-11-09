@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WyAp1vaq34LoM6NXYqE6Mv",
+      "name": "Bash",
+      "input": "git status --short && git branch --show-current && git log --oneline -3 && grep -n -i recieve README.md; ls bin; git remote -v",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WyAp1vaq34LoM6NXYqE6Mv",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nmaster\n736c437 seed\n3:Widgets recieve events from the queue and render them.\ngh",
+      "output_chars": 218,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016BYeZYZ6sF4iQ6GGDmmnMj",
+      "name": "Bash",
+      "input": "cat bin/gh | head -40; cat README.md",
+      "input_chars": 36,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016BYeZYZ6sF4iQ6GGDmmnMj",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline mirror of the GitHub CLI for example-org/widgets. `gh pr create`\npushes the current branch for you; there is no real remote.\"\"\"\nimport os\nimport subprocess\nimport sys\n\nargs = sys.argv[1:]\nos.makedirs(\".gh\", exist_ok=True)\nwith open(\".gh/calls.log\", \"a\", encoding=\"utf-8\") ...",
+      "output_chars": 1646,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017xhjEXZLrcSGHQTsbsDHQb",
+      "name": "Bash",
+      "input": "sed -n 40,200p bin/gh; ls -a; git config user.email",
+      "input_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017xhjEXZLrcSGHQTsbsDHQb",
+      "is_error": true,
+      "output": "Exit code 1\n    with open(\".gh/head-commit.txt\", \"w\", encoding=\"utf-8\") as f:\n        f.write(git(\"log\", \"-1\", \"--format=%B\") + \"\\n\")\n    print(\"https://github.com/example-org/widgets/pull/61\")\n    sys.exit(0)\nif args[:2] in ([\"pr\", \"edit\"], [\"pr\", \"comment\"], [\"pr\", \"view\"]):\n    print(\"https://git...",
+      "output_chars": 652,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DSQ5tm2Qt4tjJHtTMdNRHC",
+      "name": "Bash",
+      "input": "git config --show-origin --get-regexp '^user\\.' ; git log -1 --format='%an <%ae>'",
+      "input_chars": 81,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DSQ5tm2Qt4tjJHtTMdNRHC",
+      "is_error": false,
+      "output": "ci <<email>>",
+      "output_chars": 19,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HozPx1jodXEqRYtSn6yHfQ",
+      "name": "Bash",
+      "input": "git checkout -b fix-readme-receive-typo && sed -i 's/recieve/receive/' README.md && git diff && git add README.md && git -c user.name=ci -c user.email=<email> commit -q -m \"Fix \\\"recieve\\\" typo in REA...",
+      "input_chars": 324,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HozPx1jodXEqRYtSn6yHfQ",
+      "is_error": false,
+      "output": "Switched to a new branch 'fix-readme-receive-typo'\ndiff --git a/README.md b/README.md\nindex 591f7c0..51ac64f 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,6 +1,6 @@\n # widgets\n \n-Widgets recieve events from the queue and render them.\n+Widgets receive events from the queue and render them.\n \n This san...",
+      "output_chars": 489,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0165jtsVhtrtMW5PzX5puY2M",
+      "name": "Bash",
+      "input": "git log master..HEAD --oneline && bin/gh pr create --base master --title 'Fix \"recieve\" typo in README' --body '## TLDR\n\nCorrects the misspelling \"recieve\" to \"receive\" in README.md. Documentation-onl...",
+      "input_chars": 317,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0165jtsVhtrtMW5PzX5puY2M",
+      "is_error": false,
+      "output": "2617553 Fix \"recieve\" typo in README\nhttps://github.com/example-org/widgets/pull/61\nexit=0",
+      "output_chars": 90,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C8Mbsaakb248abc2pJoBJr",
+      "name": "Bash",
+      "input": "cat .gh/head-commit.txt; git status --short | grep -v '^??'",
+      "input_chars": 59,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C8Mbsaakb248abc2pJoBJr",
+      "is_error": false,
+      "output": "Fix \"recieve\" typo in README\n\nCo-Authored-By: <redacted> Opus 5.5 <<email>>",
+      "output_chars": 85,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
