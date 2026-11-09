@@ -923,6 +923,33 @@ test('this week\'s blocked count sits beside last week\'s, since the data holds 
   ok(P.STRINGS.tileStoppedNote(1, 0, '2026-11-09', 4, 2, '2026-11-02').includes('Last week (2026-11-02): 4 and 2'), 'note');
 });
 
+// --- git hook table: runs, blocks and verdict words ---------------------------------------
+function hooksDoc() {
+  const use = (surface, runs, blocked) => [{ week: '2026-11-02', surface, repo: 'Adam-S-Daniel/example', invocations: runs, blocked, overridden: null }];
+  const chk = (name, uses, totals, verdict, reason) => ({ name, where: 'fleet', repo: null, source_url: null, use: uses, window_totals: totals, verdict, verdict_reason: reason, overrides_measured: false });
+  return Object.assign({}, fixture, { hooks: { window: { weeks: 8, from: '2026-09-14', to: '2026-11-09' }, policy: { max_override_rate: 0.2, min_private_repos: 3 }, unlisted: 0, private_repos_shown: false, totals: null, checks: [
+    chk('pr-tldr', use('ci', null, 4), { invocations: null, invocations_counted: 0, blocked: 4, overridden: null, override_rate: null }, 'earning', 'blocked in 8 weeks; no source counts its overrides'),
+    chk('dated-phrasing', use('local', 40, 0), { invocations: 40, invocations_counted: 40, blocked: 0, overridden: null, override_rate: null }, 'never-blocked', 'ran 40 times in 8 weeks, blocked none'),
+    chk('counted-block', use('local', 30, 4), { invocations: 30, invocations_counted: 30, blocked: 4, overridden: null, override_rate: null }, 'earning', 'blocked in 8 weeks; no source counts its overrides'),
+    chk('agents-md-size', [], { invocations: 0, invocations_counted: 0, blocked: 0, overridden: null, override_rate: null }, 'never-ran', 'no recorded runs in 8 weeks')
+  ] } });
+}
+test('the git hook table never shows a run count below its block count, and says what is not counted', () => {
+  const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));
+  ok(t.includes('Runs, 8 weeks'), 'the header names the window');
+  ok(t.includes('4 of 30 runs'), 'blocked of runs where runs are counted: ' + t);
+  ok(t.includes('not counted'), 'unknown runs are said to be not counted');
+  ok(!/pr-tldr\s*Fleet template\s*0\b/.test(t), 'pr-tldr is not shown with 0 runs');
+  ok(t.includes('hook telemetry'), 'the note says where local runs come from');
+});
+test('the git hook verdicts say never blocked and never ran, not never fires', () => {
+  const t = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: null }, {})));
+  ok(t.includes('Never blocked') && t.includes('Never ran'), t);
+  ok(!t.includes('Never fires'), 'the old words are gone');
+  const page = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: 'dated-phrasing' }, {})));
+  ok(page.includes('ran 40 times in 8 weeks, blocked none'), page);
+});
+
 // --- size -----------------------------------------------------------------------------
 test('tool/index.html is under 256 KB', () => {
   // Raised from 200 KB for the tap-for-definition boxes, chart titles and the trending table.

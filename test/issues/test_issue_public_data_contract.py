@@ -298,7 +298,7 @@ class HookUseTests(unittest.TestCase):
         self.assertEqual((beta["verdict"], beta["overrides_measured"]), ("earning", False))
         self.assertEqual(beta["verdict_reason"], "blocked in 8 weeks; no source counts its overrides")
         self.assertIsNone(beta["window_totals"]["override_rate"])
-        self.assertEqual(self.check(h, "rules-dir")["verdict"], "never-fires")
+        self.assertEqual(self.check(h, "rules-dir")["verdict"], "never-ran")
         self.assertEqual(h["window"], {"weeks": 8, "from": "2026-09-07", "to": "2026-10-31"})
         stricter = self.hooks(local, policy={**POLICY, "max_override_rate": 0.05})
         self.assertEqual(self.check(stricter, "secret-file")["verdict"], "overridden-often")
@@ -306,15 +306,59 @@ class HookUseTests(unittest.TestCase):
     def test_the_ci_files_overridden_is_not_an_override_count(self):
         # The CI file repeats `blocked` as `overridden`; read as a rate it would
         # call every blocking check overridden-often.
-        ci = [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 10, 4, 4, "ci"),
+        ci = [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 0, 4, 4, "ci"),
               hook_row("2026-10-26", "agent-checks", "Adam-S-Daniel/open-one", 9, 3, 3, "ci")]
         h = self.hooks([], ci)
         secret = self.check(h, "secret-file")
         self.assertEqual((secret["verdict"], secret["overrides_measured"]), ("earning", False))
         self.assertIsNone(secret["use"][0]["overridden"])
+        # The per-check CI row says which check refused, not how often it
+        # ran: published as unknown, never as a count below the blocks.
+        self.assertIsNone(secret["use"][0]["invocations"])
+        self.assertIsNone(secret["window_totals"]["invocations"])
+        self.assertEqual(secret["window_totals"]["blocked"], 4)
         self.assertEqual(h["totals"]["ci"], [
             {"week": "2026-10-26", "surface": "ci", "repo": "Adam-S-Daniel/open-one",
              "invocations": 9, "blocked": 3, "overridden": None}])
+
+    def test_a_zero_or_null_per_check_ci_count_is_unknown_not_zero(self):
+        # What the CI producer writes today (0) and what it may write (null).
+        for runs in (0, None):
+            h = self.hooks([], [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one",
+                                         runs, 4, 4, "ci")])
+            secret = self.check(h, "secret-file")
+            self.assertIsNone(secret["use"][0]["invocations"])
+            self.assertIsNone(secret["window_totals"]["invocations"])
+            self.assertEqual(secret["verdict"], "earning")
+
+    def test_a_local_row_beside_unknown_ci_runs_keeps_its_own_count(self):
+        h = self.hooks([hook_row("2026-10-26", "secret-file", None, 30, 0)],
+                       [hook_row("2026-10-26", "secret-file", "Adam-S-Daniel/open-one", 0, 4, 4, "ci")])
+        totals = self.check(h, "secret-file")["window_totals"]
+        self.assertEqual((totals["invocations"], totals["invocations_counted"]), (None, 30))
+
+    def test_a_check_that_ran_and_never_blocked_says_how_often(self):
+        h = self.hooks([hook_row("2026-10-26", "rules-dir", None, 33, 0),
+                        hook_row("2026-10-19", "rules-dir", None, 7, 0)])
+        c = self.check(h, "rules-dir")
+        self.assertEqual((c["verdict"], c["verdict_reason"]),
+                         ("never-blocked", "ran 40 times in 8 weeks, blocked none"))
+        self.assertEqual(c["window_totals"]["invocations"], 40)
+        one = self.hooks([hook_row("2026-10-26", "rules-dir", None, 1, 0)])
+        self.assertEqual(self.check(one, "rules-dir")["verdict_reason"],
+                         "ran 1 time in 8 weeks, blocked none")
+
+    def test_a_check_with_no_counted_runs_and_no_block_never_ran(self):
+        h = self.hooks([hook_row("2026-10-26", "secret-file", None, 5, 1)])
+        c = self.check(h, "rules-dir")
+        self.assertEqual(c["verdict"], "never-ran")
+        self.assertIn("no recorded runs in 8 weeks", c["verdict_reason"])
+
+    def test_uncounted_runs_with_no_block_say_so(self):
+        h = self.hooks([], [hook_row("2026-10-26", "rules-dir", "Adam-S-Daniel/open-one", None, 0, 0, "ci")])
+        c = self.check(h, "rules-dir")
+        self.assertEqual((c["verdict"], c["verdict_reason"]),
+                         ("never-blocked", "runs not counted; no block in 8 weeks"))
 
     def test_no_usage_file_is_unknown_and_an_unknown_name_is_only_counted(self):
         h = pub.build_hooks(self.t.tree, NOW, self.t.root / "ac", {}, PUBLIC, POLICY)

@@ -38,13 +38,13 @@ function skillUseView(doc, refMs) {
 }
 
 function checkUseView(doc) {
-  const items = hookItems(doc).filter((it) => it.runs !== null);
+  const items = hookItems(doc).filter((it) => it.runs !== null || it.blocked);
   if (!items.length) return null;
   return table([
     { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor('hooks', it.name), clean(it.name)) },
-    { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => fmtCount(it.runs) },
+    { label: STRINGS.colRuns, num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: (it) => (it.runs !== null ? fmtCount(it.runs) : STRINGS.runsNotCounted) },
     { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => fmtCount(it.blocked || 0) }
-  ], items.slice().sort((a, b) => b.runs - a.runs));
+  ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
 }
 
 /* Pull requests opened and merged per UTC week, from the document's activity. */

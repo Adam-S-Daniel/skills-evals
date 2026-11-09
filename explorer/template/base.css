@@ -131,6 +131,11 @@
 .ex th { position: sticky; top: 0; background: var(--surface); cursor: pointer; font-weight: 600; white-space: nowrap; }
 .ex th[aria-sort="ascending"]::after { content: " \25B4"; }
 .ex th[aria-sort="descending"]::after { content: " \25BE"; }
+.ex table.hooks th { white-space: normal; }
+@media (max-width: 560px) {
+  .ex table.hooks th, .ex table.hooks td { padding: 4px 3px; font-size: 0.78rem; }
+  .ex table.hooks td.num, .ex table.hooks th.num { white-space: normal; }
+}
 .ex td.num, .ex th.num { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .ex .block { min-width: 0; }
 .ex table.console { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
@@ -148,7 +153,8 @@
 .ex .chart.range { max-width: 420px; margin-top: 4px; }
 .ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
 .ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
-.ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
+.ex .badge.hv { white-space: normal; text-align: center; line-height: 1.25; }
+.ex .badge.hv.never-blocked, .ex .badge.hv.never-ran, .ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
 .ex details.guide { border: 1px solid var(--base); border-radius: 9px; background: var(--surface); padding: 8px 12px; margin: 0 0 12px; font-size: 0.88rem; color: var(--ink-2); }
 .ex details.guide > summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 28px; display: flex; align-items: center; }
 .ex details.guide > p { margin: 6px 0; max-width: 80ch; }
