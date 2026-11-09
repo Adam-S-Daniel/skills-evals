@@ -496,6 +496,7 @@ class GateTests(unittest.TestCase):
         self.assertEqual(perms, {
             "validate": {"contents": "read"},
             "credential": {},
+            "names": {"contents": "read"},
             "skill-pr": {"contents": "read"},
             "fixtures-pr": {"contents": "write", "pull-requests": "write"},
             "hook-issue": {"contents": "read", "issues": "write"},
@@ -508,7 +509,12 @@ class GateTests(unittest.TestCase):
         self.assertEqual(needs("credential"), ["validate"])
         self.assertEqual(self.jobs["credential"]["if"],
                          "needs.validate.outputs.decision == 'accepted'")
-        self.assertEqual(needs("skill-pr"), ["credential", "validate"])
+        # skills-evals#918: no pull request until the name is clear in
+        # every registry.
+        self.assertEqual(needs("names"), ["validate"])
+        self.assertEqual(self.jobs["names"]["if"],
+                         "needs.validate.outputs.decision == 'accepted'")
+        self.assertEqual(needs("skill-pr"), ["credential", "names", "validate"])
         self.assertIn("needs.validate.outputs.decision == 'accepted'", self.jobs["skill-pr"]["if"])
         self.assertIn("needs.credential.outputs.present == 'true'", self.jobs["skill-pr"]["if"])
         # Fixtures only after the skill's pull request was opened.
@@ -524,6 +530,8 @@ class GateTests(unittest.TestCase):
                     if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
         roster = next(i for i, s in enumerate(self.jobs["fixtures-pr"]["steps"])
                       if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
+        reader = next(i for i, s in enumerate(self.jobs["names"]["steps"])
+                      if str(s.get("uses", "")).startswith("actions/create-github-app-token@"))
         self.assertEqual(refs, sorted([
             (("jobs", "credential", "steps", "0", "env", "PR_CREDENTIAL_SET"),
              "${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID != '' && secrets.EVAL_IMPROVE_APP_PEM != '' }}"),
@@ -533,7 +541,13 @@ class GateTests(unittest.TestCase):
              "${{ secrets.EVAL_IMPROVE_APP_PEM }}"),
             (("jobs", "fixtures-pr", "steps", str(roster), "with", "private-key"),
              "${{ secrets.ROSTER_APP_PRIVATE_KEY }}"),
+            (("jobs", "names", "steps", str(reader), "with", "private-key"),
+             "${{ secrets.REGISTRY_READ_APP_PEM }}"),
         ]))
+        read = self.jobs["names"]["steps"][reader]["with"]
+        self.assertEqual(read["repositories"], "adam-agentskills-private")
+        self.assertEqual({k: v for k, v in read.items() if k.startswith("permission-")},
+                         {"permission-contents": "read"})
         with_ = self.jobs["skill-pr"]["steps"][mint]["with"]
         self.assertEqual(with_["repositories"], "adam-agentskills")
         self.assertEqual({k: v for k, v in with_.items() if k.startswith("permission-")},
@@ -565,6 +579,22 @@ class GateTests(unittest.TestCase):
         gate = next(s for s in validate if s.get("id") == "gate")
         self.assertIn("draft_new_skill.py validate", gate["run"])
         self.assertIn("--registry adam-agentskills=../adam-agentskills", gate["run"])
+
+    def test_the_name_check_reads_every_registry_with_full_history(self):
+        """skills-evals#918: public, private and every federated repository,
+        cloned whole-history (a shallow clone is refused by name-check), the
+        token only on the private clone and never persisted."""
+        run = step(self.doc, "names", "Check the name against every registry")
+        self.assertEqual(run["env"]["SUBJECT"], "${{ needs.validate.outputs.subject }}")
+        body = run["run"]
+        self.assertNotIn("--depth", body)
+        self.assertIn("draft_new_skill.py federated-sources", body)
+        self.assertIn('draft_new_skill.py name-check --subject "$SUBJECT" "${args[@]}"', body)
+        for repo in ("adam-agentskills", "adam-agentskills-private"):
+            self.assertIn(f'--registry "{repo}=$regs/{repo}"', body)
+        self.assertEqual(body.count("http.extraHeader"), 1)
+        self.assertIn('-c "http.extraHeader=Authorization: basic $auth" clone', body)
+        self.assertNotIn("--config", body)
 
     def test_checkouts_are_default_branches(self):
         for name, job in self.jobs.items():

@@ -1124,7 +1124,14 @@ Other unattributed failures stay records with no proposal, and the subject
    The record says why the lesson was not a hook (`triage`).
 4. **Gate** (`routine-draft-skill-gate.yml`). The routine always pushes
    `claude/draft-skill-<run id>`; the gate validates it from the default
-   branch without running it. Accepted: a draft pull request in
+   branch without running it. Before any pull request, its `names` job
+   checks the drafted name against every registry: adam-agentskills,
+   adam-agentskills-private (read with the read-only registry App token)
+   and every repository their marketplaces federate, each with its full
+   history, plus the reserved name `synced` and Anthropic's skills. A name
+   any of them holds or ever shipped is refused, because the bootstrap hook
+   installs neither copy of a name two locks give different digests
+   (#918). Accepted: a draft pull request in
    adam-agentskills with the skill, then a draft pull request here with
    only `evals/<subject>/` and its README layout line (merge the skill
    first). In `improve_merge_mode: auto` both are ready instead. The
