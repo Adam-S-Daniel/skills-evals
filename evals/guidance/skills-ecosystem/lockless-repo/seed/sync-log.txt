@@ -1,0 +1,18 @@
+$ gh run view 1001 --repo example-org/agent-guidance --log   # nightly sync, owners in SYNC_OWNERS
+sync: example-org/widgets listed in repos.yml
+sync: example-org/widgets AGENTS.md updated (managed block)
+sync: example-org/widgets .claude/hooks/skills-bootstrap.sh present
+sync: example-org/widgets skills.lock not touched
+sync: done, 1 repo, 0 errors
+
+$ ls widgets
+AGENTS.md  README.md  src  .claude
+
+$ ls widgets/.claude/hooks
+skills-bootstrap.sh
+
+$ git -C widgets ls-files | grep -c skills.lock
+0
+
+$ # cloud session start in widgets
+skills: no skills.lock; nothing to install
