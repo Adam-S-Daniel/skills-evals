@@ -244,7 +244,7 @@ class Base(unittest.TestCase):
         return path
 
     def run_main(self, doc, *extra, env=SCHEDULE, fake=None, registries=None,
-                 review=passing_review):
+                 review=passing_review, doors=None):
         fake = fake or FakeGitHub()
         argv = ["--gates", str(self.write_gates(doc))]
         for flag in registries or [f"adam-agentskills={self.registry}"]:
@@ -252,7 +252,8 @@ class Base(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stderr(err):
             code = retire_skill.main([*argv, *extra], env=env, gh=fake.gh,
-                                     push=fake.push, review=review, out=out)
+                                     push=fake.push, review=review, doors=doors,
+                                     out=out)
         return code, out.getvalue(), err.getvalue(), fake
 
     def assertUntouched(self):

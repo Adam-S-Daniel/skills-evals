@@ -328,6 +328,8 @@ jobs:
     outputs:
       opened: ${{ steps.open.outputs.opened }}
       auto: ${{ steps.open.outputs.auto }}
+      door: ${{ steps.open.outputs.door }}
+      door_errors: ${{ steps.open.outputs.door_errors }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -375,9 +377,10 @@ jobs:
       # The loop's one merge switch (evals/improve-policy.yml), lowered to
       # draft when plugin-runtime-review would hold the skill's change,
       # exactly as the improvement gate decides it, or when the drafted
-      # SKILL.md's frontmatter sets `hooks` or `allowed-tools` (`--staged`;
-      # adam-agentskills' one-way-door check holds that for a person). No
-      # credential is held yet.
+      # SKILL.md's frontmatter sets `hooks` or `allowed-tools` (`--staged`).
+      # adam-agentskills' one-way-door check (#134) fails such a pull
+      # request even as a draft, so the open step's door check routes it to
+      # an issue instead (door-issue). No credential is held yet.
       - name: Decide the merge mode
         id: mode
         working-directory: skills-evals
@@ -513,6 +516,25 @@ jobs:
                 && python3 -m pytest -q -p no:cacheprovider scripts/test_check_consistency.py); then
             grep -E '^  \[' "$RUNNER_TEMP/check_skills.out" | grep -v '\[british-spelling\]' || true
             echo "::error::the drafted ${SUBJECT} skill fails adam-agentskills' own checks; no pull request is opened"
+            exit 1
+          fi
+          # adam-agentskills#134: its required check fails a draft-skill/
+          # pull request, draft or not, that ships anything but Markdown or
+          # sets hooks or allowed-tools, and a red one would hold the loop's
+          # one slot. The same check, read from the base commit, judges the
+          # finished branch here; a failure files an issue (door-issue) and
+          # nothing is pushed.
+          door_rc=0
+          python3 scripts/loop_door_check.py check --tree "$reg" \
+            --base "refs/remotes/origin/${base}" --head HEAD --branch "$target" \
+            > "$RUNNER_TEMP/door.out" || door_rc=$?
+          if [ "$door_rc" -eq 1 ]; then
+            echo "door=fail" >> "$GITHUB_OUTPUT"
+            echo "door_errors=$(base64 -w0 < "$RUNNER_TEMP/door.out")" >> "$GITHUB_OUTPUT"
+            echo "::notice::adam-agentskills' one-way-door check would fail the drafted ${SUBJECT} skill's pull request; an issue is filed instead and nothing is pushed"
+            exit 0
+          elif [ "$door_rc" -ne 0 ]; then
+            echo "::error::adam-agentskills' one-way-door check could not run; no pull request is opened"
             exit 1
           fi
           commit="$(git -C "$reg" rev-parse HEAD)"
@@ -737,6 +759,43 @@ jobs:
             echo "- Run id: \`${RUN_ID}\`"
             echo "- Branch: \`${target}\` at \`${commit}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # adam-agentskills#134 would fail the drafted skill's pull request, so
+  # skill-pr pushed nothing: one issue here per subject records why
+  # (scripts/loop_door_check.py; a closed one is not filed again).
+  door-issue:
+    needs: [validate, skill-pr]
+    if: needs.skill-pr.outputs.door == 'fail'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: File the issue
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUBJECT: ${{ needs.validate.outputs.subject }}
+          DOOR_ERRORS: ${{ needs.skill-pr.outputs.door_errors }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          base64 -d <<<"$DOOR_ERRORS" > "$RUNNER_TEMP/door.out"
+          python3 scripts/loop_door_check.py issue --lane draft-skill \
+            --subject "$SUBJECT" --errors-file "$RUNNER_TEMP/door.out" --source "$SOURCE"
 
   hook-issue:
     needs: validate

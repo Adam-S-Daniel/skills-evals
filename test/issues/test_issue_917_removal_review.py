@@ -3,8 +3,9 @@
 review of its downstream effects before auto-merge is armed.
 
 Pins: no `Adversarial-review: pass <url>` line, no armed auto-merge; a
-`block` (or a review that fails) leaves the pull request open and unarmed
-with the findings; the stop rule; the mechanical scope check; findings can
+`block` (or a review that fails), or a removal adam-agentskills' own
+one-way-door check would fail (#134), is never pushed: the skill's
+proposal issue holds it, with the findings, until a person closes it; the stop rule; the mechanical scope check; findings can
 neither mention anyone nor forge the line; the reviewer's process gets no
 GitHub token and only read-only tools; a removal appends to the registry's
 shipped-names ledger.
@@ -287,23 +288,113 @@ class RemovalPathTests(t70.Base):
         self.assertIn(f"\nAdversarial-review: pass {URL}\n", opened)
         self.assertTrue(any(a[:2] == ["pr", "merge"] for a, _ in fake.calls))
 
-    def test_no_pass_line_no_armed_auto_merge(self):
+    def held(self, fake):
+        """The one skills-evals issue write a held removal makes."""
+        return [(a, b) for a, b in fake.calls if a[:1] == ["issue"]]
+
+    def assertNothingPushedOrOpened(self, fake):
+        self.assertEqual(fake.pushes, [])
+        self.assertFalse(any(a[:1] == ["pr"] for a, _ in fake.calls))
+        self.assertFalse(any(a[:3] == ["api", "-X", "POST"] for a, _ in fake.calls))
+
+    def test_no_pass_holds_the_removal_in_an_issue_and_pushes_nothing(self):
+        # adam-agentskills#134 fails a retire-skill/ pull request with a block
+        # line, so a red one would hold the loop's slot: none is opened.
         for review in (blocking_review, raising_review):
             with self.subTest(review=review.__name__):
                 self.setUp()
                 code, out, err, fake = self.run_auto(review)
                 self.assertEqual(code, 0, err)
-                self.assertIn("unarmed", out)
-                self.assertFalse(any(a[:2] == ["pr", "merge"] for a, _ in fake.calls))
-                opened = next(s for a, s in fake.calls if a[:2] == ["pr", "create"])
-                self.assertIn(f"\nAdversarial-review: block {URL}\n", opened)
-                self.assertNotIn("secret model text", opened)
-                notice = next((a, s) for a, s in fake.calls if a[:2] == ["issue", "create"])
-                self.assertTrue(notice[0][notice[0].index("--title") + 1].startswith("Blocked: "))
-                self.assertIn("blocked this removal", notice[1])
-                self.assertIn("/pull/999", notice[1])
-                # Still labeled, so the withdrawal pass knows it is the loop's.
-                self.assertTrue(any(a[:3] == ["api", "-X", "POST"] for a, _ in fake.calls))
+                self.assertIn("held the removal", out)
+                self.assertNothingPushedOrOpened(fake)
+                [(args, body)] = self.held(fake)
+                self.assertEqual(args[:2], ["issue", "create"])
+                self.assertIn("held for a person", args[args.index("--title") + 1])
+                for marker in (rs.ISSUE_MARKER.format(skill=t70.SKILL), rs.PROPOSAL_STAMP,
+                               rs.HELD_MARKER, f"\nAdversarial-review: block {URL}\n",
+                               "close this issue, which declines"):
+                    self.assertIn(marker, body)
+                self.assertNotIn(rs.HELD_SLOT, body)
+                self.assertNotIn("secret model text", body)
+
+    def test_an_open_proposal_issue_is_updated_not_duplicated(self):
+        issue = {"number": 41, "author": rs.ISSUE_AUTHOR, "state": "open", "closed_at": "",
+                 "body": rs.ISSUE_MARKER.format(skill=t70.SKILL) + "\n" + rs.PROPOSAL_STAMP}
+        code, out, err, fake = self.run_auto(blocking_review,
+                                             fake=t70.FakeGitHub(issues=[issue]))
+        self.assertEqual(code, 0, err)
+        [(args, body)] = self.held(fake)
+        self.assertEqual(args[:3], ["issue", "edit", "41"])
+        self.assertIn(rs.HELD_MARKER, body)
+
+    def test_an_open_held_issue_stops_the_next_pass_before_the_review(self):
+        issue = {"number": 42, "author": rs.ISSUE_AUTHOR, "state": "open", "closed_at": "",
+                 "body": "\n".join([rs.ISSUE_MARKER.format(skill=t70.SKILL),
+                                    rs.PROPOSAL_STAMP, rs.HELD_MARKER])}
+
+        def no_review(*args):
+            raise AssertionError("the review ran while the removal is held")
+        code, out, err, fake = self.run_auto(no_review, fake=t70.FakeGitHub(issues=[issue]))
+        self.assertEqual(code, 0, err)
+        self.assertIn("held for a person: issue #42", out)
+        self.assertEqual(fake.writes(), [])
+        self.assertUntouched()
+
+    def test_a_closed_held_issue_declines(self):
+        issue = {"number": 43, "author": rs.ISSUE_AUTHOR, "state": "closed",
+                 "closed_at": "2026-11-01T00:00:00Z",
+                 "body": "\n".join([rs.ISSUE_MARKER.format(skill=t70.SKILL),
+                                    rs.PROPOSAL_STAMP, rs.HELD_MARKER])}
+        code, out, err, fake = self.run_auto(t70.passing_review,
+                                             fake=t70.FakeGitHub(issues=[issue]))
+        self.assertEqual(code, 0, err)
+        self.assertIn("declines", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_the_door_check_sees_the_branch_and_the_pass_line_before_the_push(self):
+        seen = []
+
+        def doors(checkout, base, head, branch, body):
+            seen.append((base, head, branch, body))
+            return []
+        code, out, err, fake = self.run_main(t70.gates_doc("auto"), "--allow-mode", "auto",
+                                             env=t70.AUTO_ENV, review=t70.passing_review,
+                                             doors=doors)
+        self.assertEqual(code, 0, err)
+        [(base, head, branch, body)] = seen
+        self.assertEqual(base, t70.git(self.registry, "rev-parse", "main").strip())
+        self.assertEqual(head, t70.git(self.registry, "rev-parse", "HEAD").strip())
+        self.assertEqual(branch, f"retire-skill/{t70.SKILL}")
+        self.assertIn(f"\nAdversarial-review: pass {URL}\n", body)
+        self.assertTrue(any(a[:2] == ["pr", "merge"] for a, _ in fake.calls))
+
+    def test_a_door_failure_holds_the_removal_in_an_issue(self):
+        def doors(*args):
+            return ['"scripts/x.py" is outside the skill <b>@someone</b>', "~~~ fence"]
+        code, out, err, fake = self.run_main(t70.gates_doc("auto"), "--allow-mode", "auto",
+                                             env=t70.AUTO_ENV, review=t70.passing_review,
+                                             doors=doors)
+        self.assertEqual(code, 0, err)
+        self.assertIn("one-way-door check would fail it", out)
+        self.assertNothingPushedOrOpened(fake)
+        [(args, body)] = self.held(fake)
+        self.assertIn("## One-way-door check", body)
+        fence = body.split("~~~text\n", 1)[1].split("\n~~~", 1)[0]
+        self.assertIn('"scripts/x.py" is outside the skill', fence)
+        self.assertNotIn("~~~", fence)
+
+    def test_a_door_check_that_cannot_run_pushes_nothing(self):
+        import loop_door_check
+
+        def doors(*args):
+            raise loop_door_check.DoorError("the check could not run (exit 2)")
+        code, out, err, fake = self.run_main(t70.gates_doc("auto"), "--allow-mode", "auto",
+                                             env=t70.AUTO_ENV, review=t70.passing_review,
+                                             doors=doors)
+        self.assertEqual(code, 2)
+        self.assertIn("one-way-door check could not run", err)
+        self.assertEqual(fake.pushes, [])
+        self.assertEqual(fake.writes(), [])
 
     def test_a_pass_the_body_does_not_read_back_is_not_armed(self):
         class Lost(t70.FakeGitHub):
@@ -336,7 +427,10 @@ class RemovalPathTests(t70.Base):
         self.assertEqual(code, 0, err)
         lines = [" ".join(c) for c in json.loads(out)["would_run"]]
         review = next(i for i, c in enumerate(lines) if c.startswith("claude -p"))
+        doors = next(i for i, c in enumerate(lines) if "check_one_way_doors.py" in c)
         push = next(i for i, c in enumerate(lines) if c.startswith("git push"))
+        self.assertLess(review, doors)
+        self.assertLess(doors, push)
         merge = next(i for i, c in enumerate(lines) if c.startswith("gh pr merge"))
         self.assertLess(review, push)
         self.assertIn("only on Adversarial-review: pass", lines[merge - 1])

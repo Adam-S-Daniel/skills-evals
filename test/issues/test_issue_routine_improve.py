@@ -1185,12 +1185,16 @@ class WorkflowShapeTests(unittest.TestCase):
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.gate["permissions"], {})
-        self.assertEqual(set(self.jobs), {"validate", "credential", "registry-pr"})
+        self.assertEqual(set(self.jobs), {"validate", "credential", "registry-pr",
+                                          "door-issue"})
         self.assertEqual(self.jobs["validate"]["permissions"],
                          {"contents": "read"})
         self.assertEqual(self.jobs["credential"]["permissions"], {})
         self.assertEqual(self.jobs["registry-pr"]["permissions"],
                          {"contents": "read"})
+        # adam-agentskills#134: the door check's issue, on the job token.
+        self.assertEqual(self.jobs["door-issue"]["permissions"],
+                         {"contents": "read", "issues": "write"})
         for doc in (self.gate, self.signal):
             self.assertNotIn("env", doc)
             for job in doc["jobs"].values():

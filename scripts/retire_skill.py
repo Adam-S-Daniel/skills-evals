@@ -373,6 +373,7 @@ import guidance  # noqa: E402
 import skill_usage  # noqa: E402
 import improve_gate  # noqa: E402
 import removal_review  # noqa: E402
+import loop_door_check  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
@@ -1412,6 +1413,11 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     decline = declined(issues, skill, mode, "skill")
     if decline:
         return decline
+    held = [n for n in issues.get("held", []) if n in issues["open"]]
+    if held:
+        return {"action": "none", "mode": mode, "skill": skill, "issue": held[0],
+                "reason": f"{skill}'s removal is held for a person: issue #{held[0]} "
+                          "is open, so no removal is reviewed or opened again"}
     capped = len(paused) >= MAX_LOOP_PAUSES
     if capped and not cap_owed(issues):  # R11-1: else the open issue gets it first
         if issues["closed"]:
@@ -1431,6 +1437,10 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
             "paused_heads": paused_heads(paused),
             "impact_entry": entry, "repin": repin,
             "notice": skill_notice(gates, skill, location, run_url),
+            "held_issue": issues["open"][0] if issues["open"] else None,
+            "held_title": f"Retire skill {skill}: held for a person (#70)",
+            "held_body": _issue_body(gates, skill, location, None, run_url, usage,
+                                     HELD_REASON) + f"\n{HELD_MARKER}\n{HELD_SLOT}\n",
             "run_url": run_url,
             "verdict": (f"retire as of {gates['as_of']}: "
                         f"{gates['skills'][skill].get('reason')}"),
@@ -1572,6 +1582,7 @@ def commands(action: dict) -> list:
                    ["python3", LOCK_GENERATOR, "--check-current"],
                    ["git", "commit"]] if action.get("repin") else []),
                 REVIEW_COMMAND,
+                DOOR_COMMAND,
                 *_push_commands(action),
                 ["git", "merge-base", "--is-ancestor", "HEAD",
                  f"refs/remotes/origin/{action['branch']}"],
@@ -1656,11 +1667,12 @@ def _proposal_note(gh, marker: str, subject: str, url: str, target: str) -> str:
 
 # ---------------------------------------------------------------------------
 # The adversarial review (skills-evals#917; scripts/removal_review.py). Both
-# removal paths open their pull request unarmed, run the review, write its
-# section into the body, read the body back, and arm auto-merge only on a
-# `Adversarial-review: pass <run url>` line. Anything else leaves it open and
-# unarmed, which the withdrawal pass reads as a person's hold, and the
-# removal notice says it waits for Adam.
+# removal paths review the prepared branch before the push, open the pull
+# request with the review's section in its body, read the body back, and arm
+# auto-merge only on a `Adversarial-review: pass <run url>` line. A guidance
+# removal the review does not pass is opened unarmed, which the withdrawal
+# pass reads as a person's hold, and the removal notice says it waits for
+# Adam. A skill removal is held before the push instead (`_hold`, below).
 
 #: The line a block puts in the removal notice in place of "auto-merges".
 BLOCKED_NOTE = ("**The adversarial review blocked this removal**, so auto-merge is off "
@@ -1680,6 +1692,63 @@ def review_commands(repo: str) -> list:
 #: before the push, so the body is opened with its section.
 REVIEW_COMMAND = ["claude", "-p", "--model", removal_review.MODEL, "--tools",
                   removal_review.TOOLS, "<one fresh reviewer per round, until the stop rule>"]
+
+
+#: The dry run's line for adam-agentskills' one-way-door check, run on the
+#: prepared branch after a passing review and before the push.
+DOOR_COMMAND = ["python3", "<base>:" + loop_door_check.CHECK, "--base", "<base>", "--head",
+                "<removal head sha>", "<as the loop pull request; only a pass is pushed>"]
+
+# adam-agentskills#134: the registry's required `pytest` job fails a
+# `retire-skill/` pull request that carries an `Adversarial-review: block`
+# line, or steps outside ADR 0021, and a red loop pull request holds the
+# loop's one slot. So a removal the review does not pass, or that the
+# registry's own check (run here from its default branch) would fail, is
+# never pushed: the skill's proposal issue says why and waits for a person.
+# While it is open no removal is reviewed or opened again (`plan`); closing
+# it declines the removal, as closing any proposal issue does.
+HELD_MARKER = "<!-- skills-evals:retirement-held -->"
+HELD_SLOT = "<!-- skills-evals:retirement-held-details -->"
+HELD_REASON = ("a check run before the push held the removal (the adversarial review, "
+               "or adam-agentskills' one-way-door check; details below)")
+HELD_HOW = ("**To remove it anyway:** remove it by hand on a branch outside `retire-skill/` "
+            "in adam-agentskills, then close this issue. **To keep it:** close this "
+            "issue, which declines the removal. While this issue is open, no removal "
+            "is reviewed or opened again.")
+
+
+def held_details(result: dict | None, errors: list, run_url: str) -> str:
+    """The issue's details: the review's section, or the door check's
+    messages in a fence (paths and names only, flattened and capped)."""
+    if result is not None:
+        return removal_review.section(result, run_url) + "\n" + HELD_HOW
+    return ("## One-way-door check\n\nadam-agentskills' "
+            "`scripts/check_one_way_doors.py` (adam-agentskills#134) would fail the "
+            "removal pull request:\n\n" + loop_door_check.fenced(errors)
+            + "\n\n" + HELD_HOW)
+
+
+def _hold(gh, action: dict, details: str, why: str) -> str:
+    """Record the held removal on the skill's proposal issue; nothing is pushed."""
+    body = action["held_body"].replace(HELD_SLOT, details)
+    if action.get("held_issue"):
+        gh(["issue", "edit", str(action["held_issue"]), "-R", EVALS_REPO,
+            "--body-file", "-"], body)
+        return (f"held the removal of {action['skill']}: {why}; updated issue "
+                f"#{action['held_issue']}, nothing pushed")
+    gh(["issue", "create", "-R", EVALS_REPO, "--title", action["held_title"],
+        "--label", AGENT_LABEL, "--body-file", "-"], body)
+    return f"held the removal of {action['skill']}: {why}; filed an issue, nothing pushed"
+
+
+def door_errors(doors, checkout: Path, base: str, head: str, branch: str,
+                body: str) -> list:
+    """adam-agentskills' own check on the prepared branch, as the loop pull
+    request; RetireError (nothing pushed) when it cannot run."""
+    try:
+        return doors(checkout, base, head, branch, body)
+    except loop_door_check.DoorError as exc:
+        raise RetireError(f"the one-way-door check could not run: {exc}") from None
 
 
 def reviewer(review, env):
@@ -1745,11 +1814,13 @@ def _file_notice(gh, notice: dict, url: str) -> None:
 
 
 def execute(action: dict, registries: dict, gh, push, env, registry_gh=None,
-            review=None) -> str:
+            review=None, doors=None) -> str:
     """Make the plan's writes: skills-evals issues through `gh`,
     adam-agentskills writes through `registry_gh` (default `gh`). A removal
-    is armed only after `review` (default: removal_review's) passes."""
+    is pushed only after `review` (default: removal_review's) passes and
+    `doors` (default: adam-agentskills' own check) finds nothing."""
     registry_gh = registry_gh or gh
+    doors = doors or loop_door_check.check
     kind = action["action"]
     if kind == "none":
         return action["reason"]
@@ -1772,6 +1843,13 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None,
     dirs = {**{name: Path(r["path"]) for name, r in registries.items()},
             "skills-evals": REPO_ROOT}
     result = run_review(action, review, subject, checkout, base, dirs)
+    if result["outcome"] != "pass":
+        return _hold(gh, action, held_details(result, [], action["run_url"]),
+                     f"the adversarial review did not pass ({result['why']})")
+    errors = door_errors(doors, checkout, base, head, action["branch"], result["body"])
+    if errors:
+        return _hold(gh, action, held_details(None, errors, action["run_url"]),
+                     "adam-agentskills' one-way-door check would fail it")
     push(checkout, action["branch"], action.get("paused_heads") or [])
     url = registry_gh(["pr", "create", "-R", REGISTRY_REPO, "--base", "main",
                        "--head", action["branch"], "--title", action["title"],
@@ -1893,7 +1971,7 @@ def guidance_issues(gh, marker: str) -> dict:
                        "{number: .number, body: (.body // \"\"), "
                        "author: .user.login, state: .state, "
                        "closed_at: (.closed_at // \"\")}"])
-    found = {"open": [], "closed": [], "proposals": [], "capped": []}
+    found = {"open": [], "closed": [], "proposals": [], "capped": [], "held": []}
     closed_at = {}
     for item in _json_lines(text):
         if item.get("author") != ISSUE_AUTHOR or not isinstance(item.get("body"), str) \
@@ -1909,6 +1987,8 @@ def guidance_issues(gh, marker: str) -> dict:
             found["proposals"].append(number)
         if CAP_PREFIX in item["body"]:
             found["capped"].append(number)
+        if HELD_MARKER in item["body"]:
+            found["held"].append(number)
     return {**{state: sorted(numbers) for state, numbers in found.items()},
             "closed_at": closed_at}
 
@@ -3394,7 +3474,8 @@ def _refresh_verdict(gates, gh, target, spec, subject) -> tuple:
 
 
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
-         registry_gh=None, delete=None, review=None, out=sys.stdout) -> int:
+         registry_gh=None, delete=None, review=None, doors=None,
+         out=sys.stdout) -> int:
     env = os.environ if env is None else env
     token = env.get(REGISTRY_TOKEN_ENV) or None
     if push is None:
@@ -3480,7 +3561,7 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
             print(f"retire_skill: auto lowered to proposal: {action['mode_reason']}",
                   file=sys.stderr)
         out.write(execute(action, registries, gh, push, env, registry_gh,
-                          review=review) + "\n")
+                          review=review, doors=doors) + "\n")
     except (RetireError, ValueError) as exc:
         print(f"retire_skill: {exc}", file=sys.stderr)
         return 2
