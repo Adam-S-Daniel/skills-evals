@@ -257,11 +257,14 @@ function buildStrings(you) {
   trendingIssue: (n) => n ? 'Issue #' + n : 'Details',
   trendingAll: 'every fixture',
   // Numbers are rounded to 2 decimals by the caller, never here.
-  trendAdvantage: (what, a, b) => 'the ' + what + '\'s advantage fell from ' + a + ' to ' + b + ' (score with the ' + what + ' minus score without it).',
   trendOnFixture: 'On fixture ',
   trendKindNoun: { skill: 'skill', guidance: 'section' },
-  trendFell: (measure, drop, thr, noise) => measure + ' fell by ' + drop + ' (alert threshold ' + thr + ', typical noise ' + noise + ').',
-  trendMeasure: { judge: 'the judge\'s average score', objective: 'the average share of checks passed' },
+  // Sentence pieces for a "Trending toward removal" row. The caller formats
+  // every number and builds the sentence, so a term can be a button.
+  trendJudgeNeeds: (thr, noise) => 'An alert needs a drop of at least ' + thr + ' that is also bigger than the usual run-to-run variation (' + noise + ').',
+  trendChecksNeeds: (thr, noise) => 'An alert needs a drop of at least ' + thr + ' percentage points that is also bigger than the usual run-to-run variation (' + noise + ' points).',
+  trendOf: (p, t) => p + ' of ' + t,
+  trendShareOf: (share, p, t) => share + ' (' + p + ' of ' + t + ')',
   trendModelSuffix: (m) => ' (' + m + ')',
   // #555: past events, worded from counts; `since` is the oldest counted fire.
   // `total` is every fire the window counted; null when an older document does not say.
@@ -396,7 +399,7 @@ function buildStrings(you) {
   subjectNotFound: 'Nothing by that name is in this build.',
   runsHeading: 'Every scored run',
   runsNone: 'No scored runs in this build.',
-  colStarted: 'Started', colChecks: 'Checks', colJudge: 'Judge', colCost: 'List-price cost', colPoints: 'Points',
+  colStarted: 'Started', colChecks: 'Checks', colJudge: 'Judge score, out of 10 (with vs without)', colCost: 'List-price cost', colPoints: 'Points',
   judgeRan: (a, b) => a + ' vs ' + b,
   judgeNotNeeded: 'not needed',
   bareHeading: 'Bare model vs the full setup',

@@ -366,6 +366,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       trial: { label: "Trial", text: "A single attempt at a task by one model. A run is made of several trials." },
       check: { label: "Check", text: 'A yes-or-no test a computer scores without opinion, such as "did it create this file". The "checks passed" counts on this page are these.' },
       judge: { label: "Judge", text: "A separate AI model that reads each attempt and scores it from 0 to 10. It never takes part in the task." },
+      judgeScore: { label: "Judge score", text: "A grade from 0 to 10 that the judge, a separate AI model, gives after reading a transcript of the attempt. Ten is the best. It is not a pass count: the checks are scored separately." },
+      percentagePoint: { label: "Percentage point", text: "One point on the 0 to 100 percent scale of checks passed. Going from 75% to 25% is a drop of 50 percentage points." },
       verdict: { label: "Verdict", text: "The improvement loop's decision about a subject: keep it, remove it, or not decided yet. The colored label on each card shows it." },
       fire: { label: "Fire", text: "One scheduled start of a run: the loop launches a test of one subject on one model. Its results should come back to the results branch within 2 hours." },
       sweep: { label: "Sweep", text: "A group of fires with no results that started within an hour of each other. A sweep usually means one outage rather than separate failures." },
@@ -634,17 +636,20 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       trendingIssue: (n) => n ? "Issue #" + n : "Details",
       trendingAll: "every fixture",
       // Numbers are rounded to 2 decimals by the caller, never here.
-      trendAdvantage: (what, a, b) => "the " + what + "'s advantage fell from " + a + " to " + b + " (score with the " + what + " minus score without it).",
       trendOnFixture: "On fixture ",
       trendKindNoun: { skill: "skill", guidance: "section" },
-      trendFell: (measure, drop, thr, noise) => measure + " fell by " + drop + " (alert threshold " + thr + ", typical noise " + noise + ").",
-      trendMeasure: { judge: "the judge's average score", objective: "the average share of checks passed" },
+      // Sentence pieces for a "Trending toward removal" row. The caller formats
+      // every number and builds the sentence, so a term can be a button.
+      trendJudgeNeeds: (thr, noise) => "An alert needs a drop of at least " + thr + " that is also bigger than the usual run-to-run variation (" + noise + ").",
+      trendChecksNeeds: (thr, noise) => "An alert needs a drop of at least " + thr + " percentage points that is also bigger than the usual run-to-run variation (" + noise + " points).",
+      trendOf: (p, t) => p + " of " + t,
+      trendShareOf: (share2, p, t) => share2 + " (" + p + " of " + t + ")",
       trendModelSuffix: (m) => " (" + m + ")",
       // #555: past events, worded from counts; `since` is the oldest counted fire.
       // `total` is every fire the window counted; null when an older document does not say.
       firesLine: (n, total, day, m, k) => {
-        const of = total === null || total === void 0 ? "" : " of " + total;
-        return n + of + (total === null || total === void 0 ? n === 1 ? " fire" : " fires" : total === 1 ? " fire" : " fires") + " since " + day + " produced no results (" + m + (m === 1 ? " sweep" : " sweeps") + "); " + k + of + " produced results that did not validate.";
+        const of2 = total === null || total === void 0 ? "" : " of " + total;
+        return n + of2 + (total === null || total === void 0 ? n === 1 ? " fire" : " fires" : total === 1 ? " fire" : " fires") + " since " + day + " produced no results (" + m + (m === 1 ? " sweep" : " sweeps") + "); " + k + of2 + " produced results that did not validate.";
       },
       firesParts: { fire: "fire", fires: "fires", sweep: "sweep", sweeps: "sweeps" },
       lessonsHeading: "Lessons from " + W.whose + " sessions",
@@ -805,7 +810,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       runsNone: "No scored runs in this build.",
       colStarted: "Started",
       colChecks: "Checks",
-      colJudge: "Judge",
+      colJudge: "Judge score, out of 10 (with vs without)",
       colCost: "List-price cost",
       colPoints: "Points",
       judgeRan: (a, b) => a + " vs " + b,
@@ -917,7 +922,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ageDays: (n) => n + " d",
       prState: (merged, n) => (merged ? "merged" : "open") + (n > 1 ? " (" + n + ")" : ""),
       funnelHeading: "Where lessons went",
-      funnelHeadline: (pct2, n) => pct2 + " of the " + n + " lessons with an outcome became git hook checks.",
+      funnelHeadline: (pct3, n) => pct3 + " of the " + n + " lessons with an outcome became git hook checks.",
       funnelNone: "This build does not report where lessons went.",
       funnelKinds: { check: "A git hook check", skill: "A skill", guidance: "Guidance text", nothing: "Nothing", open: "Still open", unknown: "Unknown" },
       funnelSources: { "hook-proposal": "Hook proposals", "lesson-check": "Lesson checks", memory: "Memory promotions", "draft-skill": "Drafted skills", "skill-proposal": "Skill proposals" },
@@ -2200,19 +2205,65 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (fell) return { fixture: fixture ? fixture[1] : null, measure: fell[1], drop: Number(fell[2]), threshold: Number(fell[3]), noise: Number(fell[4]) };
     return {};
   }
+  var pct = (x) => Math.round(x * 100) + "%";
+  var pointsOf = (x) => {
+    const n = Math.round(x * 100);
+    return n < 0 ? "−" + -n : String(n);
+  };
+  function windowOf(counts, arm, when) {
+    const w = counts && counts[arm] && counts[arm][when];
+    return w && isNum(w.checks_passed) && isNum(w.checks_total) && w.checks_total > 0 && isNum(w.runs) ? w : null;
+  }
+  var judgeOf = (counts, when) => {
+    const w = counts && counts.with && counts.with[when];
+    return w && isNum(w.judge_mean) ? w.judge_mean : null;
+  };
+  var of = (w) => STRINGS.trendOf(fmtCount(w.checks_passed), fmtCount(w.checks_total));
+  var earlierRuns = (w) => ["the earlier ", fmtCount(w.runs), " ", defn("run", w.runs === 1 ? "run" : "runs")];
+  var latestRuns = (w) => ["the latest ", fmtCount(w.runs)];
+  function sentence(a, noun, up) {
+    const U = (t) => up ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+    const counts = a.counts && typeof a.counts === "object" ? a.counts : null;
+    const wp = windowOf(counts, "with", "previous"), wc = windowOf(counts, "with", "current");
+    const judge = (label) => defn("judgeScore", U(label));
+    const checks = (label) => defn("check", label);
+    const points = defn("percentagePoint", "percentage points");
+    const hasFromTo = isNum(a.previous) && isNum(a.current);
+    if (a.measure === "judge") {
+      const nodes2 = [judge("judge score"), hasFromTo ? " (out of 10) fell from " + fmt2(a.previous) + " to " + fmt2(a.current) + ", a drop of " + fmt2(a.drop) + ". " : " (out of 10) fell by " + fmt2(a.drop) + ". ", STRINGS.trendJudgeNeeds(fmt2(a.threshold), fmt2(a.noise))];
+      if (wp && wc) nodes2.push(" ", checks("Checks"), " passed: ", of(wp), " in ", earlierRuns(wp), ", ", of(wc), " in ", latestRuns(wc), ".");
+      return nodes2;
+    }
+    const jp = judgeOf(counts, "previous"), jc = judgeOf(counts, "current");
+    const judgeMoved = (what) => isNum(jp) && isNum(jc) ? [" ", defn("judgeScore", "Judge score"), " (out of 10)" + what + ": " + fmt2(jp) + " earlier, " + fmt2(jc) + " lately."] : [];
+    if (a.measure === "objective") {
+      const nodes2 = hasFromTo && wp && wc ? [checks(U("checks")), " passed fell from ", pct(a.previous), " (" + of(wp) + ") in ", earlierRuns(wp), " to ", pct(a.current), " (" + of(wc) + ") in ", latestRuns(wc), "."] : hasFromTo ? [checks(U("checks")), " passed fell from " + pct(a.previous) + " to " + pct(a.current) + "."] : [checks(U("checks")), " passed fell by " + pointsOf(a.drop) + " ", points, "."];
+      nodes2.push(" ", STRINGS.trendChecksNeeds(pointsOf(a.threshold), pointsOf(a.noise)));
+      return nodes2.concat(judgeMoved(""));
+    }
+    const lead = [" The " + noun + "'s lead fell from " + pointsOf(a.previous) + " to " + pointsOf(a.current) + " ", points, "."];
+    if (!(wp && wc)) {
+      return [U("the " + noun + "'s lead"), " over running without it (the share of ", checks("checks"), " passed with it minus without it) fell from " + pointsOf(a.previous) + " to " + pointsOf(a.current) + " ", points, "."];
+    }
+    const op = windowOf(counts, "without", "previous"), oc = windowOf(counts, "without", "current");
+    const nodes = [U("with the " + noun + ", ") + of(wp) + " ", checks("checks"), " passed (" + pct(wp.checks_passed / wp.checks_total) + ") earlier and " + of(wc) + " (" + pct(wc.checks_passed / wc.checks_total) + ") lately"];
+    if (op && oc) nodes.push("; without it, " + of(op) + " (" + pct(op.checks_passed / op.checks_total) + ") and " + of(oc) + " (" + pct(oc.checks_passed / oc.checks_total) + ")");
+    nodes.push(".");
+    return nodes.concat(lead, judgeMoved(" with the " + noun));
+  }
   function changeNodes(alert) {
     const a = alert.measure ? alert : Object.assign({}, alert, legacyFields(alert));
     const noun = STRINGS.trendKindNoun[a.subject] || "subject";
     const fixture = typeof a.fixture === "string" && a.fixture ? fixtureTerm(a.fixture) : null;
     let rest;
     if (a.measure === "advantage" && isNum(a.previous) && isNum(a.current)) {
-      rest = STRINGS.trendAdvantage(noun, fmtSigned2(a.previous), fmtSigned2(a.current));
+      rest = sentence(a, noun, !fixture);
     } else if ((a.measure === "judge" || a.measure === "objective") && isNum(a.drop) && isNum(a.threshold) && isNum(a.noise)) {
-      rest = STRINGS.trendFell(STRINGS.trendMeasure[a.measure], fmt2(a.drop), fmt2(a.threshold), fmt2(a.noise));
+      rest = sentence(a, noun, !fixture);
     } else {
       return [clean(roundDecimals(a.text || ""))];
     }
-    return fixture ? [STRINGS.trendOnFixture, fixture, ", ", rest] : cap([rest]);
+    return fixture ? [STRINGS.trendOnFixture, fixture, ", "].concat(rest) : rest;
   }
   function subjectCell(r) {
     const label = r.subject === "guidance" ? sectionTerm(r.name) : skillTerm(r.name);
@@ -2268,16 +2319,16 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function firesNode(x) {
     const P = STRINGS.firesParts;
-    const of = x.total === null ? "" : " of " + x.total;
+    const of2 = x.total === null ? "" : " of " + x.total;
     const many = x.total === null ? x.n !== 1 : x.total !== 1;
     return h(
       "p",
       { class: "note" },
-      x.n + of + " ",
+      x.n + of2 + " ",
       defn("fire", many ? P.fires : P.fire),
       " since " + x.day + " produced no results (" + x.sweeps + " ",
       defn("sweep", x.sweeps === 1 ? P.sweep : P.sweeps),
-      "); " + x.rejected + of + " produced results that did not validate."
+      "); " + x.rejected + of2 + " produced results that did not validate."
     );
   }
   function alertsView(doc, mode) {
@@ -2885,14 +2936,14 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/hooks.js
-  var pct = (x) => Math.round(x * 100) + "%";
+  var pct2 = (x) => Math.round(x * 100) + "%";
   function hookVerdict(it) {
     const label = it.verdict && Object.prototype.hasOwnProperty.call(STRINGS.hookVerdicts, it.verdict) ? STRINGS.hookVerdicts[it.verdict] : STRINGS.hookVerdictNone;
     return badge(label, "hv " + (it.verdict || "none"));
   }
   function overrides(it) {
     if (!it.measured) return h("span", { class: "muted", title: STRINGS.hookOverridesNote }, STRINGS.overridesNotCounted);
-    return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct(it.overrideRate) + ")" : "");
+    return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct2(it.overrideRate) + ")" : "");
   }
   function where(it) {
     return STRINGS.hookWhere[it.where] + (it.where === "repo" && it.repo ? ": " + clean(it.repo) : "");
@@ -2920,7 +2971,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       h("h2", null, STRINGS.hooksHeading),
       srcLine(STRINGS.srcDoc, refMs),
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
-      typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
+      typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct2(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
       items.length && !anyMeasured ? h("p", { class: "note" }, STRINGS.hookOverridesNote) : null,
       Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h("p", { class: "note" }, STRINGS.hookUnlisted(hk.unlisted)) : null,
@@ -3234,11 +3285,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const c = (k) => Number.isInteger(f[k]) ? f[k] : 0;
     const decided = c("check") + c("skill") + c("guidance") + c("nothing");
     const all = FUNNEL_KEYS.reduce((s, k) => s + c(k), 0);
-    const pct2 = decided ? Math.round(c("check") / decided * 100) + "%" : "0%";
+    const pct3 = decided ? Math.round(c("check") / decided * 100) + "%" : "0%";
     const sources = f.by_source && typeof f.by_source === "object" ? Object.keys(f.by_source) : [];
     const missing = Array.isArray(f.sources_missing) ? f.sources_missing.filter((s) => STRINGS.funnelSources[s]) : [];
     return [
-      h("p", { class: "headline-num" }, STRINGS.funnelHeadline(pct2, fmtCount(decided))),
+      h("p", { class: "headline-num" }, STRINGS.funnelHeadline(pct3, fmtCount(decided))),
       chartTitle(STRINGS.funnelTitle),
       barChart(FUNNEL_KEYS.filter((k) => c(k) > 0).map((k) => ({ label: STRINGS.funnelKinds[k], p: c(k), t: all, color: FUNNEL_COLORS[k] })), STRINGS.funnelHeading),
       sources.length ? table([{ label: STRINGS.colSource, sort: (s) => s, cell: (s) => STRINGS.funnelSources[s] || clean(s) }].concat(FUNNEL_KEYS.map((k) => ({ label: STRINGS.funnelKinds[k], num: true, sort: (s) => f.by_source[s][k], cell: (s) => fmtCount(f.by_source[s][k] || 0) }))), sources) : null,

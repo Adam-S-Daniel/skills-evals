@@ -826,8 +826,9 @@ test('regression alerts become one Trending toward removal row per subject, mode
   eq(rows[0].urls.length, 1, 'one issue link');
   const t = sp(P.textOf(P.buildPage(trendDoc(), 'skills', {})));
   ok(t.includes(P.STRINGS.trendingHeading) && t.includes('Expected'), 'section and its one-line note');
-  ok(t.includes('On fixture fx-one, the skill\'s advantage fell from +0.17 to 0.00 (score with the skill minus score without it).'), t);
-  ok(t.includes('On fixture fx-two, the judge\'s average score fell by 1.50 (alert threshold 1.00, typical noise 0.47).'), t);
+  ok(t.includes('On fixture fx-one, the skill\'s lead over running without it (the share of checks passed with it minus without it) fell from 17 to 0 percentage points.'), t);
+  ok(t.includes('On fixture fx-two, judge score (out of 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), t);
+  ok(!t.includes('Checks passed:'), 'no counts, no counts sentence');
   ok(!/\d\.\d{3,}/.test(t), 'every displayed number is rounded to 2 decimals');
   ok(!t.includes('Getting worse') && !t.includes('with minus without'), 'old wording gone');
   ok(/Issue #846/.test(t), 'details link');
@@ -838,7 +839,36 @@ test('an older regression alert that words itself still has its decimals rounded
   const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-alpha',
     text: 'example-skill-alpha regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
   const t = P.textOf(P.buildPage(d, 'skills', {}));
-  ok(sp(t).includes('The judge\'s average score fell by 1.50 (alert threshold 1.00, typical noise 0.47).'), 'legacy text is read back into the same plain sentence');
+  ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), 'legacy text is read back into the same plain sentence');
+});
+const win = (passed, total, judge, runs) => ({ runs: runs || 4, trials: 12, checks_passed: passed, checks_total: total, judge_mean: judge === undefined ? null : judge });
+const countsDoc = (alert) => Object.assign({}, fixture, { alerts: [Object.assign({ kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-large-2-0', verdict: 'regressed', text: 'x', url: null }, alert)] });
+const trendText = (alert) => sp(P.textOf(P.buildPage(countsDoc(alert), 'skills', {})));
+test('a judge row says from, to, the 0 to 10 scale and checks passed out of checks run per window', () => {
+  const t = trendText({ measure: 'judge', previous: 7.0666666, current: 5.5666666, drop: 1.5, threshold: 1, noise: 0.472,
+    counts: { with: { previous: win(40, 48, 7.0666666), current: win(38, 48, 5.5666666) }, without: null } });
+  ok(t.includes('Judge score (out of 10) fell from 7.07 to 5.57, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47). Checks passed: 40 of 48 in the earlier 4 runs, 38 of 48 in the latest 4.'), t);
+});
+test('an objective row gives the share and the checks behind it, plus the judge scores when present', () => {
+  const t = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05,
+    counts: { with: { previous: win(36, 48, 7.5), current: win(12, 48, 6) }, without: null } });
+  ok(t.includes('Checks passed fell from 75% (36 of 48) in the earlier 4 runs to 25% (12 of 48) in the latest 4. An alert needs a drop of at least 15 percentage points that is also bigger than the usual run-to-run variation (5 points). Judge score (out of 10): 7.50 earlier, 6.00 lately.'), t);
+  const bare = trendText({ measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 });
+  ok(trendText({ fixture: 'fx-one', measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.05 }).includes('On fixture fx-one, checks passed fell from 75% to 25%.'), 'lowercase after a fixture');
+  ok(bare.includes('Checks passed fell from 75% to 25%.') && !bare.includes('36 of 48'), bare);
+});
+test('an advantage row gives checks passed with and without the subject and the lead in percentage points', () => {
+  const t = trendText({ verdict: 'lost-delta', measure: 'advantage', previous: 1 / 6, current: 0,
+    counts: { with: { previous: win(30, 36, 8, 3), current: win(24, 36, 7, 3) }, without: { previous: win(24, 36, null, 3), current: win(24, 36, null, 3) } } });
+  ok(t.includes('With the skill, 30 of 36 checks passed (83%) earlier and 24 of 36 (67%) lately; without it, 24 of 36 (67%) and 24 of 36 (67%). The skill\'s lead fell from 17 to 0 percentage points. Judge score (out of 10) with the skill: 8.00 earlier, 7.00 lately.'), t);
+});
+test('the trending terms are tappable definitions', () => {
+  const kids = [];
+  (function walk(n) { if (n && typeof n === 'object') { kids.push(n); (n.children || []).forEach(walk); } })(P.buildPage(countsDoc({ measure: 'advantage', previous: 0.2, current: 0,
+    counts: { with: { previous: win(30, 36, 8, 3), current: win(24, 36, 7, 3) }, without: null } }), 'skills', {}));
+  const labels = kids.filter((n) => n.tag === 'button' && n.attrs && n.attrs['data-def']).map((n) => n.attrs['data-def-title']);
+  for (const k of ['Judge score', 'Check', 'Percentage point']) ok(labels.includes(k), k + ' is a term');
+  for (const k of ['judgeScore', 'percentagePoint']) ok(P.defn(k).tag === 'button', k);
 });
 test('number display rounds to 2 decimals and keeps the sign', () => {
   eq(P.fmt2(1.5000000000000009), '1.50'); eq(P.fmt2(-0.001), '0.00'); eq(P.fmtSigned2(0.1666), '+0.17'); eq(P.fmtSigned2(-0.25), '\u22120.25'); eq(P.fmtSigned2(0), '0.00');

@@ -135,6 +135,29 @@ class VerdictTests(unittest.TestCase):
                          {"measure": "advantage", "previous": 0.16666666666666663, "current": 0.0})
         self.assertIsNone(regression.bad_detail({"verdict": "stable", "numbers": {}}, POLICY))
 
+    def test_rows_count_the_checks_behind_each_window(self):
+        row = verdict_of(series("a", [4] * 6, [2, 2, 2, 4, 4, 4], judge=[8, 8, 8, 6, 6, 6]))
+        counts = row["numbers"]["counts"]
+        window = lambda passed, judge, runs=3: {"runs": runs, "trials": runs, "checks_passed": passed,
+                                                "checks_total": runs * 4, "judge_mean": judge}
+        self.assertEqual(counts["with"], {"previous": window(12, 8.0), "current": window(12, 6.0)})
+        self.assertEqual(counts["without"], {"previous": window(6, None), "current": window(12, None)})
+
+    def test_counts_are_null_without_a_delta_or_enough_runs(self):
+        row = verdict_of(series("a", [4] * 6))
+        self.assertIsNone(row["numbers"]["counts"]["without"])
+        self.assertEqual(row["numbers"]["counts"]["with"]["current"]["checks_total"], 12)
+        self.assertIsNone(verdict_of(series("a", [4, 4]))["numbers"]["counts"])
+
+    def test_bad_detail_carries_the_counts(self):
+        row = verdict_of(series("a", [4, 4, 4, 2, 2, 2]))
+        detail = regression.bad_detail(row, POLICY)
+        self.assertEqual(detail["counts"], row["numbers"]["counts"])
+        row = verdict_of(series("a", [4] * 6, [2, 2, 2, 4, 4, 4]))
+        self.assertEqual(regression.bad_detail(row, POLICY)["counts"]["without"]["current"]["checks_passed"], 12)
+        old = {"verdict": "lost-delta", "numbers": {"delta": {"previous": 0.5, "current": 0.0}}}
+        self.assertNotIn("counts", regression.bad_detail(old, POLICY))
+
     def test_reasons_round_float_noise_but_numbers_keep_it(self):
         # The dashboard showed "went from 0.16666666666666663 to 0.0" and
         # "fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795)".

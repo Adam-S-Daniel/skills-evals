@@ -187,7 +187,7 @@ await test('a regression alert is not a Needs attention row: it is trending towa
     previous: 7.5, current: 6.0000000000000009, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/r/issues/5' }] });
   eq(attentionRows(fakeDash({}), d).length, 0, 'not an attention row');
   const t = textOf(renderRoute(d, { name: 'needs', id: null }, { ext: makeExt(fakeDash({})) }));
-  ok(t.includes(STRINGS.trendingHeading) && t.includes('fell by 1.50 (alert threshold 1.00, typical noise 0.47)'), t);
+  ok(t.includes(STRINGS.trendingHeading) && /fell from 7\.50 to 6\.00, a drop of 1\.50\.\s+An alert needs a drop of at least 1\.00/.test(t.replace(/\s+/g, ' ')), t);
   ok(!/\d\.\d{3,}/.test(t), 'no long decimal on the page: ' + t);
 });
 await test('the allowance and routine health come from their datasets', () => {

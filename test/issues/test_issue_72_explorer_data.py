@@ -639,6 +639,25 @@ class AlertTests(unittest.TestCase):
         self.assertEqual((by["sec-one"]["measure"], by["sec-one"]["previous"], by["sec-one"]["current"]),
                          ("advantage", 0.16666666666666663, 0.0))
 
+    def test_regression_alerts_pass_the_counts_through_and_validate(self):
+        window = {"runs": 4, "trials": 12, "checks_passed": 36, "checks_total": 48, "judge_mean": None}
+        counts = {"with": {"previous": window, "current": dict(window, checks_passed=12, judge_mean=5.5)},
+                  "without": None}
+        policy = {"objective_drop": 0.15, "judge_drop": 1.0}
+        regressions = {"policy": {"skills": policy, "guidance": policy}, "rows": [
+            {"subject": "skill", "id": "alpha", "fixture": "fx", "model": "model-a", "verdict": "regressed",
+             "reason": "r", "numbers": {"objective": {"previous": 0.75, "current": 0.25, "change": -0.5, "noise": 0.0},
+                                        "judge": None, "delta": None, "counts": counts}}]}
+        alerts = explorer_data.build_alerts(self.GATES, regressions, {}, {"alpha"}, {"sec-one"})
+        self.assertEqual([a["counts"] for a in alerts if a["kind"] == "regression"], [counts])
+        import json, jsonschema
+        schema = json.loads(explorer_data.SCHEMA_PATH.read_text(encoding="utf-8"))
+        alert = next(a for a in alerts if a["kind"] == "regression")
+        jsonschema.validate(alert, {"$defs": schema["$defs"], "$ref": "#/$defs/alert"})
+        alert["counts"]["with"]["current"]["checks_total"] = "many"
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(alert, {"$defs": schema["$defs"], "$ref": "#/$defs/alert"})
+
     def test_alerts_about_unlisted_subjects_are_dropped(self):
         self.assertFalse([a for a in self.alerts() if a["name"] == "hidden"])
 
