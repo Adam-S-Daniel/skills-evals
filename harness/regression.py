@@ -32,7 +32,12 @@ NOISE is the pooled within-window standard deviation of run means: the square
 root of the summed squared deviations from each window's own mean over
 (n_previous + n_current - 2), 0 when that denominator is not above 0. The
 judge figure is the same over the runs' judge means, read only when both
-windows hold at least `min_window_runs` judged runs. A drop must clear the
+windows hold at least `min_window_runs` judged runs and were judged by the
+same model (a run's `judge_models`; a window that names none matches any).
+Two judges do not score on one scale, so a judge change, such as the roster's
+judge moving to a newer model, leaves the judge figure out and is reported as
+the suspect `judge model changed`; the objective figure is still compared.
+A drop must clear the
 noise as well as its threshold, so a noisy fixture does not alarm on noise.
 
 VERDICTS, the first that matches:
@@ -227,6 +232,8 @@ def _suspects(subject: str, previous: list, current: list) -> list:
                    else "section content changed")
     if differs("cli_versions"):
         out.append("CLI version changed")
+    if _judge_changed(previous, current):
+        out.append("judge model changed")
     # An alone-pair run's arm context is the section payload; every other
     # run's is the rest of the guidance (or the skill's arm context). The two
     # are different quantities, so compare only runs of one kind: a window
@@ -239,6 +246,22 @@ def _suspects(subject: str, previous: list, current: list) -> list:
            for kind in (False, True)):
         out.append("arm context changed")
     return out
+
+
+def _judges(runs: list) -> set:
+    """The judge models of `runs` that carry a judge figure."""
+    return {m for r in runs if r["numbers"]["judge_mean"] is not None
+            for m in r.get("judge_models") or []}
+
+
+def _judge_changed(previous: list, current: list) -> bool:
+    """Whether the two windows' judge figures came from different judge
+    models (both known). Scores from two judges are not on one scale, so the
+    judge figure is not compared across such a change (ADR 0013, "The judge
+    for an arm moves when the roster does"); the objective figure still is.
+    Runs recorded before `judge_models` existed name none and change nothing."""
+    before, after = _judges(previous), _judges(current)
+    return bool(before) and bool(after) and before != after
 
 
 def _ordered(runs: list, role: str) -> list:
@@ -278,7 +301,8 @@ def _row(subject: str, ident: str, fixture, model: str, pair, runs: list,
     judge_before, judge_after = _figures(previous, "judge_mean"), \
         _figures(current, "judge_mean")
     judge = (_compare(judge_before, judge_after)
-             if len(judge_before) >= least and len(judge_after) >= least else None)
+             if len(judge_before) >= least and len(judge_after) >= least
+             and not _judge_changed(previous, current) else None)
     before_out, after_out = _windows(_ordered(counted, "without"), size)
     means_before, means_after = _figures(before_out, "run_mean"), \
         _figures(after_out, "run_mean")

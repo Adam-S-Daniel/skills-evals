@@ -362,6 +362,7 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
     clis = sorted({doc["harness"]["version"] for doc in (summary, *trials)
                    if isinstance(doc.get("harness"), dict)
                    and _string(doc["harness"].get("version"))})
+    judges = _judge_models((summary, *trials))
     return {"skill": skill, "fixture": fixture, "model": model, "role": role,
             "timestamp": timestamp, "path": run_dir, "report": report,
             "in_place": summary.get("pairing") == "in_place",
@@ -369,6 +370,7 @@ def _validate(tree: Path, key: tuple, entry: dict, evals_dir: Path):
                               if isinstance(subject, dict) else None),
             "fixture_digest": summary.get("fixture_digest"),
             "arm_context_digest": context_digest, "pair_key": pair_key, "cli_versions": clis,
+            "judge_models": judges,
             "fleet_hooks_digest": hooks,
             "run": summary["run"],
             # Judged unconditionally only when every trial says so (#70).
@@ -456,10 +458,21 @@ def _validate_guidance(tree: Path, key: tuple, entry: dict, evals_dir: Path):
             "tested_digest": digests["section"],
             "fixture_digest": summary["fixture_digest"],
             "arm_context_digest": context, "pair_key": pair_key,
-            "fleet_hooks_digest": hooks, "cli_versions": clis, "run": summary["run"],
+            "fleet_hooks_digest": hooks, "cli_versions": clis,
+            "judge_models": _judge_models((summary,)), "run": summary["run"],
             "judge_conditional": summary.get("judge_conditional") is not False,
             "judge_carried": carried, "fixture_checks": has_checks,
             "trials": records, "content": _content(raw, [])}, None
+
+
+def _judge_models(docs) -> list:
+    """The sorted model ids the docs' `judge_models_used` name: which judge
+    gave a run's judge scores, so harness/regression.py can tell a judge
+    change (a roster judge moving from one model to the next) from a change
+    in the work. Empty for an unjudged run or one recorded before the field
+    existed."""
+    return sorted({m for doc in docs if isinstance(doc.get("judge_models_used"), list)
+                   for m in doc["judge_models_used"] if _string(m)})
 
 
 def _content(summary: bytes, trials: list) -> tuple:
