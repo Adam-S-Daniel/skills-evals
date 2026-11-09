@@ -1,0 +1,318 @@
+{
+  "arm": "with_guidance_section",
+  "timestamp": "20261109T234140Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.043171799999999996,
+    "num_turns": 3,
+    "duration_ms": 9885,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 10958,
+      "cache_read_input_tokens": 58048,
+      "output_tokens": 996,
+      "output_tokens_details": {
+        "thinking_tokens": 243
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 10958
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 351,
+          "cache_read_input_tokens": 22916,
+          "cache_creation_input_tokens": 607,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 607,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "workflows-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "no-concurrency-group",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    },
+    {
+      "id": "required-test-off-labeled",
+      "passed": false,
+      "detail": ".github/workflows/ci.yml contains /\\blabeled\\b/"
+    },
+    {
+      "id": "e2e-label-still-runs",
+      "passed": true,
+      "detail": ".github/workflows/ci.yml matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Required check",
+        "score": 4,
+        "rationale": "No concurrency group was added, but the trigger sets are not disjoint: `labeled` still triggers the workflow and a job-level `if` only skips `test`. That skipped run posts a new `test` check on the same head SHA, which GitHub treats as passing, so labeling a PR can mask an earlier failing `test` run instead of keeping the triggers separate (for example, a separate workflow file for label events)."
+      },
+      {
+        "name": "Behavior",
+        "score": 9,
+        "rationale": "Adding the `e2e` label still starts the end-to-end suite, an unrelated label on an `e2e` PR no longer re-runs it, and `test` still runs on opened, synchronize and reopened, although the unchanged `on:` block isn't shown in the diff."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "Only `.github/workflows/ci.yml` was changed; the ruleset and the rest of the repository were left alone, and the agent said plainly that the change is untested and the live ruleset unchecked."
+      }
+    ],
+    "overall": 7.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.321 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 996,
+      "cache_read_input_tokens": 58048,
+      "cache_creation_input_tokens": 10958,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "automation-vs-branch-protection",
+  "mode": "section",
+  "bytes": 2917,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v7d20360f, 2917 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "WSRIQUSV-3393"
+  },
+  "fixture_name": "required-check-concurrency",
+  "guidance_digests": {
+    "section": "016bc78adde52d86e5b5700753bc199c02d19dbfcc1b13b10a32ca0d932b08b8",
+    "rest": "938e0c808f17e61607b58056cf5f5ae4b55a410b36802594a3e8cb66fd75c4e1",
+    "section_payload": "7cc1efdf909d7e6f3d693a2b5eae2def4923dd4139d833c0f288bb4feea3602e"
+  },
+  "fixture_digest": "f5c856ca9211b37f956dc81e64d4ff5450ab05b209f92fb8de04ce8d76c3f5e4",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 2782,
+        "sha256": "8511fb31f395782017303c0010f9eeb71593180bd94fc79cdb3251dfef6f185c"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "42718601638",
+    "session_id": null,
+    "harness_commit": "323763cfd82e5b3a8225aa2eb68c62744e21539d",
+    "cli_version": "2.1.321 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-09T23:41:40Z",
+    "ended_at": "2026-11-09T23:42:47Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.35751530000000004,
+      "agent_usd": 0.2217087,
+      "judge_usd": 0.04747899999999999,
+      "guard_usd": 0.0883276,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.06481390000000001,
+      "calls_with_cost": 10,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-09T23:41:41Z",
+      "ended_at": "2026-11-09T23:42:40Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-09T23:41:41Z",
+          "ended_at": "2026-11-09T23:41:42Z",
+          "duration_ms": 1658,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-09T23:41:42Z",
+          "ended_at": "2026-11-09T23:41:53Z",
+          "duration_ms": 10846,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-09T23:42:30Z",
+          "ended_at": "2026-11-09T23:42:40Z",
+          "duration_ms": 9669,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 10846,
+        "num_turns": 3,
+        "cost_usd": 0.043171799999999996,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 996,
+            "cache_read_input_tokens": 58048,
+            "cache_creation_input_tokens": 10958,
+            "cost_usd": 0.043171799999999996
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 10958,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 9669,
+        "num_turns": 1,
+        "cost_usd": 0.026462,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 861,
+            "cache_read_input_tokens": 1445,
+            "cache_creation_input_tokens": 1789,
+            "cost_usd": 0.026462
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1789,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1658,
+        "num_turns": 1,
+        "cost_usd": 0.0115319,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8504,
+            "cache_creation_input_tokens": 4219,
+            "cost_usd": 0.0115319
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 4219,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
