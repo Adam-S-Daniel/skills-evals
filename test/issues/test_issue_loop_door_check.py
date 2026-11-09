@@ -98,7 +98,8 @@ class CheckTests(Registry):
         self.assertEqual(seen["pr"]["body"], "B")
         self.assertEqual(seen["pr"]["head"], {"ref": "eval-improve/x",
                                               "repo": {"full_name": ldc.REGISTRY_REPO}})
-        self.assertEqual(seen["pr"]["base"], {"repo": {"full_name": ldc.REGISTRY_REPO}})
+        self.assertEqual(seen["pr"]["base"], {"ref": "main", "repo": {
+            "full_name": ldc.REGISTRY_REPO, "default_branch": "main"}})
         self.assertEqual((seen["base"], seen["head"]), (self.base, head))
         self.assertEqual(Path(seen["cwd"]).resolve(), self.reg.resolve())
         self.assertTrue(set(seen["env"]) <= {"PATH", "HOME", "LANG", "LC_CTYPE",

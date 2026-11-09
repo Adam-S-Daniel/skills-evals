@@ -46,6 +46,10 @@ from pathlib import Path
 
 CHECK = "scripts/check_one_way_doors.py"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
+#: The registry branch every loop pull request targets. The check refuses a
+#: loop pull request whose base is not the default branch, so the simulated
+#: one names both (adam-agentskills#138).
+REGISTRY_BRANCH = "main"
 EVALS_REPO = "Adam-S-Daniel/skills-evals"
 #: The App every loop pull request is opened under (retire_skill.LOOP_AUTHOR;
 #: adam-agentskills scripts/loop_prs.json).
@@ -93,7 +97,8 @@ def check(tree: Path, base: str, head: str, branch: str, body: str = "") -> list
     pr = {"number": None, "draft": False, "body": body,
           "user": {"login": LOOP_AUTHOR, "type": "Bot"},
           "head": {"ref": branch, "repo": {"full_name": REGISTRY_REPO}},
-          "base": {"repo": {"full_name": REGISTRY_REPO}}}
+          "base": {"ref": REGISTRY_BRANCH,
+                   "repo": {"full_name": REGISTRY_REPO, "default_branch": REGISTRY_BRANCH}}}
     git_dir = subprocess.run(["git", "-C", str(tree), "rev-parse", "--absolute-git-dir"],
                              capture_output=True, text=True)
     if git_dir.returncode != 0 or not git_dir.stdout.strip():
