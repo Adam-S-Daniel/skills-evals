@@ -41,3 +41,8 @@ rows:
     since: "2026-11-09"
     fixture_digest: "f24eea38ea433be35fc21f226b413441dfe2b3b64ec9bd0488303592c9121af1"
     readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
+  - path: evals/guidance/finding-your-unknowns/changelog-check
+    rule: "ceiling"
+    since: "2026-11-09"
+    fixture_digest: "49276dbfa6ba3b6678ccfa6ff256846ab275b97a1eb4057d9ffa6eab5188fbf5"
+    readiness: "Isolation pair of four guidance arms (section vs none, full vs full-minus-section), unpinned (the committed roster then named arm claude-sonnet-5-5 and judge claude-fable-5-1). No paid run yet; hermetic: the seed's trap fails its checks and the fix passes them (test_issue_124_guidance_gates.py, 2026-10-27)."
