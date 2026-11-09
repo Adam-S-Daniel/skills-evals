@@ -77,7 +77,7 @@ export function table(cols, rows, opts) {
     'aria-sort': 'none', title: STRINGS.sortHint, onclick: sorter(i), onkeydown: sorter(i) }, c.label)));
   const body = rows.map((r) => h('tr', o.rowAttrs ? o.rowAttrs(r) : null, cols.map((c) => {
     const v = c.sort ? c.sort(r) : null;
-    return h('td', { class: c.num ? 'num' : null, 'data-sort': v === null || v === undefined ? null : String(v) }, c.cell(r));
+    return h('td', { class: [c.num ? 'num' : null, c.cls || null].filter(Boolean).join(' ') || null, 'data-sort': v === null || v === undefined ? null : String(v) }, c.cell(r));
   })));
   return h('div', { class: 'tablewrap' + (o.tall ? ' tall' : '') },
     h('table', { class: o.cls || null }, h('thead', null, head), h('tbody', null, body)));

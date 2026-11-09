@@ -3,7 +3,8 @@ import { STRINGS } from '../core/strings.js';
 import { fmtDay, fmtGain } from '../core/format.js';
 import { h } from '../core/h.js';
 
-export function trendChart(points, refMs) {
+/* compact: on a list card, where the reading guide carries the caption. */
+export function trendChart(points, refMs, compact) {
   if (!points.length) return h('p', { class: 'trend-cap' }, STRINGS.trendNone);
   if (points.length === 1) {
     const p = points[0];
@@ -40,5 +41,5 @@ export function trendChart(points, refMs) {
   });
   return h('div', null,
     h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'spark', role: 'img', 'aria-label': STRINGS.trendCaption }, kids),
-    h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
+    compact ? null : h('p', { class: 'trend-cap' }, STRINGS.trendCaption));
 }

@@ -117,6 +117,19 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(row["verdict"], "lost-delta")
         self.assertEqual(row["numbers"]["delta"], {"previous": 0.5, "current": 0.0})
 
+    def test_reasons_round_float_noise_but_numbers_keep_it(self):
+        # The dashboard showed "went from 0.16666666666666663 to 0.0" and
+        # "fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795)".
+        objective = {"previous": 1.0, "current": 1.0, "change": 0.0, "noise": 0.0}
+        delta = {"previous": 0.16666666666666663, "current": 0.0}
+        verdict, reason = regression._verdict(objective, None, delta, POLICY)
+        self.assertEqual((verdict, reason), ("lost-delta", "with minus without went from 0.17 to 0"))
+        judge = {"previous": 8.0, "current": 6.4999999999999991, "change": -1.5000000000000009,
+                 "noise": 0.472189541352795}
+        verdict, reason = regression._verdict(objective, judge, None, POLICY)
+        self.assertEqual(reason, "the judge mean fell by 1.5 (threshold 1, noise 0.47)")
+        self.assertEqual(judge["change"], -1.5000000000000009)
+
     def test_lost_delta_needs_the_without_windows(self):
         row = verdict_of(series("a", [4] * 6, [2, 4]))
         self.assertEqual(row["verdict"], "stable")

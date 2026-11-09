@@ -31,20 +31,24 @@ export function hooksList(doc) {
   const items = hookItems(doc);
   const w = hk.window || {};
   const day = (d) => fmtUtcDay(Date.parse(d + 'T00:00:00Z'), refMs);
+  // Overrides are not counted for any check yet: drop the column of
+  // "not counted" cells and say so once under the table.
+  const anyMeasured = items.some((it) => it.measured);
   const rows = table([
     { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor('hooks', it.name), clean(it.name)) },
     { label: STRINGS.colWhere, sort: (it) => it.where, cell: where },
     { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => it.runs === null ? STRINGS.noValue : fmtCount(it.runs) },
     { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked) },
-    { label: STRINGS.colOverrides, num: true, sort: (it) => (it.measured ? it.overridden : -1), cell: overrides },
+    anyMeasured ? { label: STRINGS.colOverrides, num: true, sort: (it) => (it.measured ? it.overridden : -1), cell: overrides } : null,
     { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || '', cell: hookVerdict }
-  ], items);
+  ].filter(Boolean), items);
   const policy = hk.policy || {};
   return h('section', { class: 'block' }, h('h2', null, STRINGS.hooksHeading),
     srcLine(STRINGS.srcDoc, refMs),
     w.from ? h('p', { class: 'note' }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
     typeof policy.max_override_rate === 'number' ? h('p', { class: 'note' }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
     items.length ? rows : h('p', null, STRINGS.hooksNone),
+    items.length && !anyMeasured ? h('p', { class: 'note' }, STRINGS.hookOverridesNote) : null,
     Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h('p', { class: 'note' }, STRINGS.hookUnlisted(hk.unlisted)) : null,
     hk.private_repos_shown ? h('p', { class: 'note' }, STRINGS.hookPrivateFold) : null);
 }

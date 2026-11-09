@@ -143,3 +143,8 @@
 .ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
 .ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
 .ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
+.ex details.guide { border: 1px solid var(--base); border-radius: 9px; background: var(--surface); padding: 8px 12px; margin: 0 0 12px; font-size: 0.88rem; color: var(--ink-2); }
+.ex details.guide > summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 28px; display: flex; align-items: center; }
+.ex details.guide > p { margin: 6px 0; max-width: 80ch; }
+.ex details.history > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.ex td.when { white-space: nowrap; }

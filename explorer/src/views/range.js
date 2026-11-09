@@ -88,21 +88,44 @@ export function rangeChart(rows, margin, cap) {
     'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
 }
 
-export function confidenceView(c, policy, subject) {
+/* The decision rules the policy sets, shared by every card on a list. */
+function policyFigures(policy) {
+  const ok = (x) => typeof x === 'number' && isFinite(x);
+  return {
+    margin: policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN),
+    keep: policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT,
+    remove: policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT,
+    versions: policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : 2,
+    cap: policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0 ? policy.max_runs_per_cell : null
+  };
+}
+
+const whole = (x) => Math.round(x * 100) + '%';
+
+/* One "How to read each card" block above a list of cards, so the rules
+   every card shares are said once instead of on every card. */
+export function readingGuide(policy, subject) {
+  const f = policyFigures(policy);
+  return h('details', { class: 'guide' }, h('summary', null, STRINGS.guideHeading),
+    h('p', null, STRINGS.trendCaption),
+    h('p', null, STRINGS.rangeWhat),
+    h('p', null, STRINGS.rangeRule(f.margin)),
+    h('p', null, STRINGS.rangeLevels(whole(f.keep), whole(f.remove), subject, f.versions)),
+    f.cap ? h('p', null, STRINGS.confidenceCap(f.cap)) : null,
+    h('p', null, STRINGS.confPace));
+}
+
+/* compact: a card on a list, where readingGuide says the shared rules once. */
+export function confidenceView(c, policy, subject, compact) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
-  const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
-  const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
-  const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
-  const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0
-    ? policy.min_cli_versions : 2;
-  const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0
-    ? policy.max_runs_per_cell : null;
-  const whole = (x) => Math.round(x * 100) + '%';
+  const { margin, keep, remove, versions, cap } = policyFigures(policy);
   const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
   const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
   if (chart) {
     kids.push(chart);
+  }
+  if (chart && !compact) {
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeRule(margin)));
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
@@ -115,8 +138,8 @@ export function confidenceView(c, policy, subject) {
     removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
     kids.push(removeEst.node);
   }
-  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
-  else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
-  if (keepEst.projected || removeEst.projected) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
+  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, compact ? STRINGS.confRunsShort(c.max_pairs, cap) : STRINGS.confRuns(c.max_pairs, cap)));
+  else if (cap && !compact) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
+  if (!compact && (keepEst.projected || removeEst.projected)) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
   return h('div', { class: 'conf' }, kids);
 }
