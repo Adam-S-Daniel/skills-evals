@@ -18,20 +18,20 @@ schema: 1
 arms:
   - id: "claude-sonnet-5-5"
     reason: >-
-      vendor default for the sonnet tier per claude-code-cli 2.1.310 (probed
-      2026-10-26T00:30:32Z), seated with no cooling-off; held over from the
+      vendor default for the sonnet tier per claude-code-cli 2.1.319 (probed
+      2026-11-09T19:18:52Z), seated with no cooling-off; held over from the
       previous roster: the sonnet tier's combined share — every `sonnet`
       model in it, which is what a seated default's exit check measures — is
-      still 9.6% of rankable census usage over the last 2 weeks (at or above
+      still 8.3% of rankable census usage over the last 2 weeks (at or above
       the 2% exit bar)
   - id: "claude-opus-5-5"
     reason: >-
-      vendor default for the opus tier per claude-code-cli 2.1.310 (probed
-      2026-10-26T00:30:32Z), seated with no cooling-off; the tier qualifies
-      by usage: `claude-opus-5-5` carries 90.4% of rankable census usage
+      vendor default for the opus tier per claude-code-cli 2.1.319 (probed
+      2026-11-09T19:18:52Z), seated with no cooling-off; the tier qualifies
+      by usage: `claude-opus-5-5` carries 91.4% of rankable census usage
       over the last 2 weeks (at or above the 10% entry bar)
 judge:
-  id: "claude-fable-5-1"
+  id: "claude-fable-5-2"
   reason: >-
     most capable available model at least one tier above the strongest arm
     model (fable/mythos over opus), and not itself an arm
@@ -50,33 +50,35 @@ preflight:
 # (human-reviewed, or CI-gated-automatic under `roster_mode: auto`).
 catalogue_seen:
   - id: "claude-fable-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-fable-5-1"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
+  - id: "claude-fable-5-2"
+    last_seen: "2026-11-09"
   - id: "claude-haiku-4-5-20251001"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-haiku-5-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-4-5-20251101"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-4-6"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-4-7"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-4-8"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-opus-5-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-sonnet-4-5-20250929"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-sonnet-4-6"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-sonnet-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
   - id: "claude-sonnet-5-5"
-    last_seen: "2026-10-26"
+    last_seen: "2026-11-09"
 
 provenance:
   seeded: >-
@@ -86,10 +88,10 @@ provenance:
     roster_mode: auto), per ADR 0001 and ADR 0003
   from: >-
     the committed evals/roster.yml, the Models API catalogue fetched at
-    2026-10-26T00:30:35Z, and the usage census published at
-    2026-10-25T16:37:11Z; rendered from harness/roster.py's proposal
-  run_id: "40249673369"
-  eval_results_commit: "8791bcecea628081e3ffa12a81b3c715e02e6a50"
-  models_api_at: "2026-10-26T00:30:35Z"
-  census_at: "2026-10-25T16:37:11Z"
-generated_at: "2026-10-26T00:30:35Z"
+    2026-11-09T19:18:54Z, and the usage census published at
+    2026-11-09T17:37:31Z; rendered from harness/roster.py's proposal
+  run_id: "42680911395"
+  eval_results_commit: "816c8213dd80306d42821bc9abc89d74e0cb95b9"
+  models_api_at: "2026-11-09T19:18:54Z"
+  census_at: "2026-11-09T17:37:31Z"
+generated_at: "2026-11-09T19:18:55Z"
