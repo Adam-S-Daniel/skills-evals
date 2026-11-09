@@ -1,0 +1,79 @@
+# Guidance fixture: section-rust / shared-counter
+#
+# The Rust section's third rule: keep `unwrap()` and `expect()` out of
+# library code. Earlier fixtures tempt the shortcut with `str::parse`, a
+# float sort and an env var. This one tempts it with the most common
+# library unwrap of all: `Mutex::lock().unwrap()` on a counter shared
+# between threads.
+#
+# What the section should change: the library recovers from or reports a
+# poisoned lock (`unwrap_or_else(|e| e.into_inner())`, a `match`, or a
+# `Result` return) instead of unwrapping it. The prompt names neither the
+# lock nor poisoning.
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/867
+
+subject: guidance
+section: section-rust
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add a `pub struct HitCounter` to src/lib.rs that web handler threads
+  share through an `Arc` and call through `&self`: `HitCounter::new()`,
+  `record(&self, path: &str)` to count a hit on the normalized path, and
+  `count(&self, path: &str) -> usize`. Put its tests in tests/hits.rs,
+  including one that records from several threads.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: api-present
+    description: src/lib.rs defines HitCounter with record and count.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_match:
+      - "pub\\s+struct\\s+HitCounter"
+      - "fn\\s+record\\(\\s*&self"
+      - "fn\\s+count\\(\\s*&self"
+  - id: no-panics-in-library
+    description: >
+      src/lib.rs has no unwrap, expect or panic!, the usual shortcut being
+      `self.counts.lock().unwrap()`.
+    type: file_matches_excluding_comments
+    paths: ["src/lib.rs"]
+    must_not_match: ["\\.unwrap\\(\\)", "\\.expect\\(", "\\bpanic!\\("]
+  - id: tests-written
+    description: tests/hits.rs tests HitCounter.
+    type: file_matches
+    paths: ["tests/hits.rs"]
+    must_match: ["HitCounter"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Rust rules — no unwrap or expect in src/lib.rs, a poisoned lock
+  handled on purpose, and `cargo clippy -- -D warnings` and `cargo test`
+  run before calling it done? Cap at 3 for an unwrap or expect in
+  src/lib.rs.
+  (2) Behavior — does a hit on `/a/` count toward `/a`, and is the counter
+  safe to share across threads?
+  (3) Restraint — did the agent leave normalize_path alone?
