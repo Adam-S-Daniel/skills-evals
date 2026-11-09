@@ -1,0 +1,239 @@
+{
+  "due_at": "2026-11-23T17:02:37Z",
+  "fit": {
+    "budget": 0.5,
+    "floor": false,
+    "pair_costs": {
+      "claude-opus-5-5": 0.0033137121113823173,
+      "claude-sonnet-5-5": 0.0010389419036419727
+    },
+    "pairs_per_cell": 15.0,
+    "priced": true,
+    "total": 0.49115022469365566
+  },
+  "members": [
+    {
+      "cost": 0.1647011735668339,
+      "joined": 1,
+      "kind": "skill",
+      "subject": "debug-github-workflows"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "joined": 1,
+      "kind": "skill",
+      "subject": "embeddable-tool-pages"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "joined": 1,
+      "kind": "guidance",
+      "subject": "security"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "joined": 1,
+      "kind": "guidance",
+      "subject": "pinning-github-actions"
+    }
+  ],
+  "multiplier": 3.0,
+  "number": 1,
+  "previous": null,
+  "rate_basis": {
+    "guidance": {
+      "added": 4,
+      "rate": 1.0,
+      "since": "2026-10-12T17:02:37Z",
+      "source": "measured",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 4,
+      "rate": 1.9900476549154726,
+      "since": "2026-10-26T11:21:48Z",
+      "source": "measured",
+      "weeks": 2.01000211734623
+    }
+  },
+  "rates": {
+    "guidance": 1.0,
+    "skill": 1.9900476549154726
+  },
+  "schema_version": 1,
+  "sizes": {
+    "guidance": 3,
+    "skill": 6
+  },
+  "started_at": "2026-11-09T17:02:37Z",
+  "waiting": [
+    {
+      "cost": 0.06528981022536436,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "cms-stuck-pr-triage"
+    },
+    {
+      "cost": 0.2611592409014574,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "data-exposure-in-ci"
+    },
+    {
+      "cost": 0.32644905112682177,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "fan-out-triage"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "name-becomes-scanner-data"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "platform-release-and-bump"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "test-that-can-signal-kills-every-session"
+    },
+    {
+      "cost": 0.32644905112682177,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "ci-job-performance"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "agent-contribution-markers"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "github-actions-repo-settings"
+    },
+    {
+      "cost": 0.19586943067609308,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "watch-finished-is-not-ci-passed"
+    },
+    {
+      "cost": 0.19586943067609308,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "red-ci-adamdaniel-ai"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "subagent-delegation"
+    },
+    {
+      "cost": 0.2611592409014574,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "vendor-release-impact-issues"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "automation-vs-branch-protection"
+    },
+    {
+      "cost": 0.19586943067609308,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "skills-doctor"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "finding-your-unknowns"
+    },
+    {
+      "cost": 0.2611592409014574,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "tool-powershell"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "fleet-spans-two-owners"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "post-failure-comment"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "git-practices"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "git-push-does-not-mean-commit-exists"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "github-404-means-not-authorized"
+    },
+    {
+      "cost": 0.2611592409014574,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "turn-lessons-into-checks"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-github-connectors"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-setup-gaps"
+    },
+    {
+      "cost": 0.1305796204507287,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "dependency-updates"
+    },
+    {
+      "cost": 0.06528981022536436,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "working-in-these-repos"
+    },
+    {
+      "cost": 0.32644905112682177,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "anything-you-name-gets-its-link"
+    }
+  ]
+}
