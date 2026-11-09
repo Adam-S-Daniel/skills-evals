@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-09T22:54:42Z",
+  "fetched_at": "2026-11-09T23:01:50Z",
   "issues": [
    {
     "created_at": "2026-11-08T16:52:07Z",
@@ -770,14 +770,44 @@
   ],
   "pulls": [
    {
-    "created_at": "2026-11-09T22:51:17Z",
+    "created_at": "2026-11-09T23:01:50Z",
     "merged_at": null,
-    "number": 4753,
+    "number": 4754,
     "repo": "Adam-S-Daniel/adamdaniel.ai",
     "state": "open",
+    "title": "Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:51Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4754"
+   },
+   {
+    "created_at": "2026-11-09T22:51:17Z",
+    "merged_at": "2026-11-09T23:01:03Z",
+    "number": 4753,
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "state": "merged",
     "title": "delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-09T22:51:51Z",
+    "updated_at": "2026-11-09T23:01:22Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4753"
+   },
+   {
+    "created_at": "2026-11-09T19:56:04Z",
+    "merged_at": null,
+    "number": 138,
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "state": "open",
+    "title": "Close round 11's gaps in the one-way-door check",
+    "updated_at": "2026-11-09T22:57:11Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/138"
+   },
+   {
+    "created_at": "2026-11-09T22:56:57Z",
+    "merged_at": null,
+    "number": 941,
+    "repo": "Adam-S-Daniel/skills-evals",
+    "state": "open",
+    "title": "Describe the simulated loop pull request as targeting the default branch",
+    "updated_at": "2026-11-09T22:57:03Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/941"
    },
    {
     "created_at": "2026-11-09T22:38:16Z",
@@ -798,16 +828,6 @@
     "title": "Update E2E Canary \u201ccanary-post\u201d",
     "updated_at": "2026-11-09T22:37:25Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4751"
-   },
-   {
-    "created_at": "2026-11-09T19:56:04Z",
-    "merged_at": null,
-    "number": 138,
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "state": "open",
-    "title": "Close round 11's gaps in the one-way-door check",
-    "updated_at": "2026-11-09T22:32:39Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/138"
    },
    {
     "created_at": "2026-11-09T22:15:13Z",
@@ -3090,16 +3110,6 @@
     "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/799"
    },
    {
-    "created_at": "2026-11-06T23:24:20Z",
-    "merged_at": "2026-11-06T23:29:47Z",
-    "number": 800,
-    "repo": "Adam-S-Daniel/skills-evals",
-    "state": "merged",
-    "title": "Add trigger eval set for vendor-release-impact-issues (#716)",
-    "updated_at": "2026-11-06T23:29:48Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/pull/800"
-   },
-   {
     "created_at": "2026-11-06T21:03:18Z",
     "merged_at": "2026-11-06T21:12:30Z",
     "number": 4689,
@@ -3628,16 +3638,6 @@
     "title": "Require task repo settings instead of falling back to built-in repos",
     "updated_at": "2026-11-04T20:10:18Z",
     "url": "https://github.com/Adam-S-Daniel/wsl-automation/pull/92"
-   },
-   {
-    "created_at": "2026-11-04T19:52:26Z",
-    "merged_at": "2026-11-04T20:04:58Z",
-    "number": 4652,
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "state": "merged",
-    "title": "chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-04T20:05:11Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/pull/4652"
    },
    {
     "created_at": "2026-11-04T19:52:48Z",
@@ -7466,6 +7466,510 @@
   "runs": [
    {
     "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028837,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:59Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028837",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028572,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:59Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028572",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028693,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:59Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028693",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028748,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:59Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028748",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028770,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:59Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028770",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:54Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717030018,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717030018",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028838,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028838",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028649,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028649",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028279,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028279",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028453,
+    "state": "in_progress",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:58Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028453",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028432,
+    "state": "in_progress",
+    "title": "Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:57Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028432",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:52Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717025052,
+    "state": "in_progress",
+    "title": "PR #4754",
+    "updated_at": "2026-11-09T23:01:57Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717025052",
+    "workflow": "PR #4754"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028692,
+    "state": "completed",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:55Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028692",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:53Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42717028730,
+    "state": "queued",
+    "title": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d",
+    "updated_at": "2026-11-09T23:01:53Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42717028730",
+    "workflow": "PR #4754 \u2014 Update Post \u201c2024-01-02-e2e-unpublish-canary\u201d"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:00:21Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716800835,
+    "state": "completed",
+    "title": "Refresh loop pull requests",
+    "updated_at": "2026-11-09T23:01:48Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716800835",
+    "workflow": "Refresh loop pull requests"
+   },
+   {
+    "conclusion": "failure",
+    "created_at": "2026-11-09T22:56:47Z",
+    "event": "schedule",
+    "repo": "jodidaniel/jodidaniel.com",
+    "run_id": 42716313979,
+    "state": "completed",
+    "title": "scheduled \u2014 0 13 * * 1",
+    "updated_at": "2026-11-09T23:01:41Z",
+    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42716313979",
+    "workflow": "scheduled \u2014 0 13 * * 1"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:01:06Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42716916607,
+    "state": "completed",
+    "title": "push \u2014 main Adam-S-Daniel",
+    "updated_at": "2026-11-09T23:01:41Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42716916607",
+    "workflow": "push \u2014 main Adam-S-Daniel"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:01:09Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42716922513,
+    "state": "completed",
+    "title": "publish: delete: published entry via Decap (auto-merge)",
+    "updated_at": "2026-11-09T23:01:29Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42716922513",
+    "workflow": "Secrets scan"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:01:07Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42716918786,
+    "state": "completed",
+    "title": "PR #4753 \u2014 teardown",
+    "updated_at": "2026-11-09T23:01:27Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42716918786",
+    "workflow": "PR #4753 \u2014 teardown"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:01:06Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42716915664,
+    "state": "in_progress",
+    "title": "Push on main",
+    "updated_at": "2026-11-09T23:01:20Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42716915664",
+    "workflow": "Push on main"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:01:08Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42716922160,
+    "state": "completed",
+    "title": "reap PR #4753 (closed)",
+    "updated_at": "2026-11-09T23:01:17Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42716922160",
+    "workflow": "reap PR #4753 (closed)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:00:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716800576,
+    "state": "completed",
+    "title": "Scope the evals",
+    "updated_at": "2026-11-09T23:00:43Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716800576",
+    "workflow": "Scope the evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:00:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716800531,
+    "state": "completed",
+    "title": "Dispatch the fleet's skills.lock bump",
+    "updated_at": "2026-11-09T23:00:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716800531",
+    "workflow": "Dispatch the fleet's skills.lock bump"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T23:00:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716800506,
+    "state": "completed",
+    "title": "Follow drafted-skill fixtures",
+    "updated_at": "2026-11-09T23:00:31Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716800506",
+    "workflow": "Follow drafted-skill fixtures"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T23:00:20Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716800499,
+    "state": "pending",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-09T23:00:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716800499",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "cancelled",
+    "created_at": "2026-11-09T22:53:04Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42715782765,
+    "state": "completed",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-09T23:00:22Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42715782765",
+    "workflow": "Weekly routine evals"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:59:57Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716742573,
+    "state": "completed",
+    "title": "Ingest routine eval results",
+    "updated_at": "2026-11-09T23:00:18Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716742573",
+    "workflow": "Ingest routine eval results"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:51:21Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42715542050,
+    "state": "completed",
+    "title": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)",
+    "updated_at": "2026-11-09T23:00:09Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42715542050",
+    "workflow": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:59:46Z",
+    "event": "push",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716718147,
+    "state": "completed",
+    "title": "Eval results 20261109T225647Z-231c0c",
+    "updated_at": "2026-11-09T22:59:54Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716718147",
+    "workflow": "Routine eval results pushed"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:58:28Z",
+    "event": "schedule",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716543018,
+    "state": "completed",
+    "title": "Fixture supply",
+    "updated_at": "2026-11-09T22:59:02Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716543018",
+    "workflow": "Fixture supply"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:56:59Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716340661,
+    "state": "completed",
+    "title": "PR #941",
+    "updated_at": "2026-11-09T22:59:02Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716340661",
+    "workflow": "PR #941"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:57:13Z",
+    "event": "dynamic",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "run_id": 42716374510,
+    "state": "completed",
+    "title": "PR #138",
+    "updated_at": "2026-11-09T22:58:01Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42716374510",
+    "workflow": "PR #138"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:56:36Z",
+    "event": "workflow_dispatch",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716287934,
+    "state": "completed",
+    "title": "Fire eval routine: eval evals/embeddable-tool-pages claude-sonnet-5-5",
+    "updated_at": "2026-11-09T22:57:46Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716287934",
+    "workflow": "Fire eval routine: eval evals/embeddable-tool-pages claude-sonnet-5-5"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:57:14Z",
+    "event": "pull_request_target",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "run_id": 42716376586,
+    "state": "completed",
+    "title": "Close round 11's gaps in the one-way-door check",
+    "updated_at": "2026-11-09T22:57:35Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42716376586",
+    "workflow": "Plugin runtime review"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T22:57:15Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "run_id": 42716380080,
+    "state": "in_progress",
+    "title": "Close round 11's gaps in the one-way-door check",
+    "updated_at": "2026-11-09T22:57:28Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42716380080",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:57:16Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "run_id": 42716380424,
+    "state": "completed",
+    "title": "Close round 11's gaps in the one-way-door check",
+    "updated_at": "2026-11-09T22:57:25Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42716380424",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-09T22:57:15Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adam-agentskills",
+    "run_id": 42716380110,
+    "state": "completed",
+    "title": "PR #138 \u2014 Close round 11's gaps in the one-way-door check",
+    "updated_at": "2026-11-09T22:57:23Z",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42716380110",
+    "workflow": "PR #138 \u2014 Close round 11's gaps in the one-way-door check"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:57:01Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716346662,
+    "state": "completed",
+    "title": "Describe the simulated loop pull request as targeting the default branch",
+    "updated_at": "2026-11-09T22:57:14Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716346662",
+    "workflow": "agent-checks"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:57:01Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716345539,
+    "state": "completed",
+    "title": "PR #941 \u2192 site preview (opened)",
+    "updated_at": "2026-11-09T22:57:12Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716345539",
+    "workflow": "PR #941 \u2192 site preview (opened)"
+   },
+   {
+    "conclusion": null,
+    "created_at": "2026-11-09T22:57:01Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716347029,
+    "state": "in_progress",
+    "title": "Describe the simulated loop pull request as targeting the default branch",
+    "updated_at": "2026-11-09T22:57:07Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716347029",
+    "workflow": "CI"
+   },
+   {
+    "conclusion": "skipped",
+    "created_at": "2026-11-09T22:57:01Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42716346660,
+    "state": "completed",
+    "title": "PR #941 \u2014 Describe the simulated loop pull request as targeting the default branch",
+    "updated_at": "2026-11-09T22:57:03Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42716346660",
+    "workflow": "PR #941 \u2014 Describe the simulated loop pull request as targeting the default branch"
+   },
+   {
+    "conclusion": "success",
+    "created_at": "2026-11-09T22:51:21Z",
+    "event": "pull_request",
+    "repo": "Adam-S-Daniel/adamdaniel.ai",
+    "run_id": 42715542126,
+    "state": "completed",
+    "title": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)",
+    "updated_at": "2026-11-09T22:55:19Z",
+    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42715542126",
+    "workflow": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)"
+   },
+   {
+    "conclusion": null,
     "created_at": "2026-11-09T22:28:02Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -7547,18 +8051,6 @@
     "updated_at": "2026-11-09T22:53:12Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42715782612",
     "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-09T22:53:04Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42715782765,
-    "state": "pending",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-09T22:53:05Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42715782765",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "cancelled",
@@ -7813,18 +8305,6 @@
     "workflow": "Push on main"
    },
    {
-    "conclusion": null,
-    "created_at": "2026-11-09T22:51:21Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42715542126,
-    "state": "in_progress",
-    "title": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-09T22:51:35Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42715542126",
-    "workflow": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-09T22:51:21Z",
     "event": "pull_request",
@@ -7834,18 +8314,6 @@
     "title": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)",
     "updated_at": "2026-11-09T22:51:33Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42715541955",
-    "workflow": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-09T22:51:21Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42715542050,
-    "state": "in_progress",
-    "title": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)",
-    "updated_at": "2026-11-09T22:51:26Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42715542050",
     "workflow": "PR #4753 \u2014 delete: published entry via Decap (auto-merge)"
    },
    {
@@ -8858,18 +9326,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182164,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:26:07Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182164",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T22:24:23Z",
     "event": "schedule",
     "repo": "Adam-S-Daniel/rss-inator",
@@ -8990,18 +9446,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182291,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:19:13Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182291",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T22:16:26Z",
     "event": "workflow_dispatch",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -9011,18 +9455,6 @@
     "updated_at": "2026-11-09T22:17:42Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42710365446",
     "workflow": "Fire eval routine: eval evals/debug-github-workflows/secret-name claude-opus-5-5,claude-sonnet-5-5"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:15Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710177917,
-    "state": "completed",
-    "title": "PR #4750",
-    "updated_at": "2026-11-09T22:16:11Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710177917",
-    "workflow": "PR #4750"
    },
    {
     "conclusion": "success",
@@ -9050,42 +9482,6 @@
    },
    {
     "conclusion": "cancelled",
-    "created_at": "2026-11-09T22:15:38Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710241855,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d #16158",
-    "updated_at": "2026-11-09T22:15:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710241855",
-    "workflow": "chained \u2014 after PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d #16158"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:36Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710236963,
-    "state": "completed",
-    "title": "chained \u2014 after PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d #16157",
-    "updated_at": "2026-11-09T22:15:49Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710236963",
-    "workflow": "chained \u2014 after PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d #16157"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710181830,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:48Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710181830",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "cancelled",
     "created_at": "2026-11-09T22:15:39Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/adamdaniel.ai",
@@ -9095,150 +9491,6 @@
     "updated_at": "2026-11-09T22:15:47Z",
     "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710243955",
     "workflow": "chained \u2014 after PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d #16159"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710181682,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:47Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710181682",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:23Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710199248,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:42Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710199248",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182154,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:42Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182154",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182498,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:42Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182498",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182160,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:40Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182160",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710181870,
-    "state": "completed",
-    "title": "Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:36Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710181870",
-    "workflow": "Secrets scan"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:19Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710188583,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:35Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710188583",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182030,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:34Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182030",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182033,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:34Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182033",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:16Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710181749,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:32Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710181749",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182151,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:28Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182151",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T22:15:17Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710182220,
-    "state": "completed",
-    "title": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d",
-    "updated_at": "2026-11-09T22:15:26Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710182220",
-    "workflow": "PR #4750 \u2014 Update E2E Canary \u201ccanary-post\u201d"
    },
    {
     "conclusion": "success",
@@ -9302,18 +9554,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T22:14:19Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adamdaniel.ai",
-    "run_id": 42710033321,
-    "state": "completed",
-    "title": "reap PR #4749 (closed)",
-    "updated_at": "2026-11-09T22:14:27Z",
-    "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai/actions/runs/42710033321",
-    "workflow": "reap PR #4749 (closed)"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T22:14:04Z",
     "event": "push",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -9323,18 +9563,6 @@
     "updated_at": "2026-11-09T22:14:12Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42709994631",
     "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "failure",
-    "created_at": "2026-11-09T21:36:17Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42704067783,
-    "state": "completed",
-    "title": "Real eval",
-    "updated_at": "2026-11-09T22:12:48Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42704067783",
-    "workflow": "Real eval"
    },
    {
     "conclusion": "success",
@@ -9431,18 +9659,6 @@
     "updated_at": "2026-11-09T22:03:14Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42708014215",
     "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:28:25Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702819856,
-    "state": "completed",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-09T22:02:31Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702819856",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": "success",
@@ -9818,30 +10034,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T21:29:01Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702910710,
-    "state": "completed",
-    "title": "Routine eval watchdog",
-    "updated_at": "2026-11-09T21:42:03Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702910710",
-    "workflow": "Routine eval watchdog"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:40:50Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42704774917,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-09T21:41:15Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42704774917",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T21:40:50Z",
     "event": "workflow_run",
     "repo": "Adam-S-Daniel/skills-evals",
@@ -9866,42 +10058,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T21:40:26Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42704709903,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-09T21:40:47Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42704709903",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:40:13Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42704674930,
-    "state": "completed",
-    "title": "Eval results 20261109T213621Z-08aa9a",
-    "updated_at": "2026-11-09T21:40:21Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42704674930",
-    "workflow": "Routine eval results pushed"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:36:08Z",
-    "event": "workflow_dispatch",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42704044937,
-    "state": "completed",
-    "title": "Fire eval routine: eval evals/debug-github-workflows/wrong-branch claude-opus-5-5",
-    "updated_at": "2026-11-09T21:37:29Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42704044937",
-    "workflow": "Fire eval routine: eval evals/debug-github-workflows/wrong-branch claude-opus-5-5"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T21:21:41Z",
     "event": "pull_request",
     "repo": "Adam-S-Daniel/adam-agentskills",
@@ -9911,78 +10067,6 @@
     "updated_at": "2026-11-09T21:33:24Z",
     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42701763789",
     "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:28:25Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702819963,
-    "state": "completed",
-    "title": "Refresh loop pull requests",
-    "updated_at": "2026-11-09T21:29:42Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702819963",
-    "workflow": "Refresh loop pull requests"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:28:25Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702819927,
-    "state": "completed",
-    "title": "Scope the evals",
-    "updated_at": "2026-11-09T21:28:46Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702819927",
-    "workflow": "Scope the evals"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:28:25Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702819887,
-    "state": "completed",
-    "title": "Dispatch the fleet's skills.lock bump",
-    "updated_at": "2026-11-09T21:28:37Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702819887",
-    "workflow": "Dispatch the fleet's skills.lock bump"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:28:25Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702819867,
-    "state": "completed",
-    "title": "Follow drafted-skill fixtures",
-    "updated_at": "2026-11-09T21:28:36Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702819867",
-    "workflow": "Follow drafted-skill fixtures"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:27:59Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702751400,
-    "state": "completed",
-    "title": "Ingest routine eval results",
-    "updated_at": "2026-11-09T21:28:21Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702751400",
-    "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T21:27:50Z",
-    "event": "push",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42702726882,
-    "state": "completed",
-    "title": "Eval results 20261109T212241Z-6c7559",
-    "updated_at": "2026-11-09T21:27:57Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42702726882",
-    "workflow": "Routine eval results pushed"
    },
    {
     "conclusion": "success",
@@ -12445,18 +12529,6 @@
     "workflow": "PR #134 \u2014 Enforce the one-way-door rule and ADR 0021's limits in CI"
    },
    {
-    "conclusion": "failure",
-    "created_at": "2026-11-09T18:43:57Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "run_id": 42676598491,
-    "state": "completed",
-    "title": "Enforce the one-way-door rule and ADR 0021's limits in CI",
-    "updated_at": "2026-11-09T18:53:53Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676598491",
-    "workflow": "CI"
-   },
-   {
     "conclusion": "success",
     "created_at": "2026-11-09T18:52:50Z",
     "event": "schedule",
@@ -12578,30 +12650,6 @@
    },
    {
     "conclusion": "success",
-    "created_at": "2026-11-09T18:43:54Z",
-    "event": "dynamic",
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "run_id": 42676591039,
-    "state": "completed",
-    "title": "PR #134",
-    "updated_at": "2026-11-09T18:44:52Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676591039",
-    "workflow": "PR #134"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-09T18:43:55Z",
-    "event": "pull_request_target",
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "run_id": 42676594031,
-    "state": "completed",
-    "title": "Enforce the one-way-door rule and ADR 0021's limits in CI",
-    "updated_at": "2026-11-09T18:44:20Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676594031",
-    "workflow": "Plugin runtime review"
-   },
-   {
-    "conclusion": "success",
     "created_at": "2026-11-09T18:43:53Z",
     "event": "schedule",
     "repo": "jodidaniel/jodidaniel.com",
@@ -12613,18 +12661,6 @@
     "workflow": "scheduled \u2014 17 8 * * *"
    },
    {
-    "conclusion": "success",
-    "created_at": "2026-11-09T18:43:57Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "run_id": 42676598539,
-    "state": "completed",
-    "title": "Enforce the one-way-door rule and ADR 0021's limits in CI",
-    "updated_at": "2026-11-09T18:44:08Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676598539",
-    "workflow": "agent-checks"
-   },
-   {
     "conclusion": "skipped",
     "created_at": "2026-11-09T18:43:57Z",
     "event": "pull_request",
@@ -12634,18 +12670,6 @@
     "title": "PR #134 \u2014 Enforce the one-way-door rule and ADR 0021's limits in CI",
     "updated_at": "2026-11-09T18:43:57Z",
     "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676598370",
-    "workflow": "PR #134 \u2014 Enforce the one-way-door rule and ADR 0021's limits in CI"
-   },
-   {
-    "conclusion": "skipped",
-    "created_at": "2026-11-09T18:43:48Z",
-    "event": "pull_request",
-    "repo": "Adam-S-Daniel/adam-agentskills",
-    "run_id": 42676576597,
-    "state": "completed",
-    "title": "PR #134 \u2014 Enforce the one-way-door rule and ADR 0021's limits in CI",
-    "updated_at": "2026-11-09T18:43:56Z",
-    "url": "https://github.com/Adam-S-Daniel/adam-agentskills/actions/runs/42676576597",
     "workflow": "PR #134 \u2014 Enforce the one-way-door rule and ADR 0021's limits in CI"
    },
    {
@@ -15851,18 +15875,6 @@
     "updated_at": "2026-11-08T19:38:40Z",
     "url": "https://github.com/Adam-S-Daniel/claude-memory-map/actions/runs/42515935946",
     "workflow": "CI"
-   },
-   {
-    "conclusion": "success",
-    "created_at": "2026-11-08T19:38:22Z",
-    "event": "pull_request",
-    "repo": "jodidaniel/jodidaniel.com",
-    "run_id": 42516033693,
-    "state": "completed",
-    "title": "PR #492 \u2014 chore: sync AGENTS.md from _agent-guidance",
-    "updated_at": "2026-11-08T19:38:38Z",
-    "url": "https://github.com/jodidaniel/jodidaniel.com/actions/runs/42516033693",
-    "workflow": "PR #492 \u2014 chore: sync AGENTS.md from _agent-guidance"
    },
    {
     "conclusion": "success",
@@ -27661,7 +27673,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-10-26T22:54:42Z"
+  "since": "2026-10-26T23:01:50Z"
  },
  "agent_made": {
   "items": [
@@ -30124,7 +30136,7 @@
     "fired_at": "2026-10-28T06:53:53Z",
     "fixture": "embeddable-tool-pages",
     "model": "claude-sonnet-5-5",
-    "paired_at": "2026-11-09T22:09:02Z",
+    "paired_at": "2026-11-09T22:56:47Z",
     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261028T065353Z-1f1f13/embeddable-tool-pages/20261028T065441Z/report.md",
     "run_id": "20261028T065353Z-1f1f13",
     "skill": "embeddable-tool-pages",
@@ -30199,6 +30211,17 @@
   ],
   "latest": [
    {
+    "checks": 7,
+    "fired_at": "2026-11-09T22:56:47Z",
+    "fixture": "embeddable-tool-pages",
+    "model": "claude-sonnet-5-5",
+    "run_id": "20261109T225647Z-231c0c",
+    "with_share": 1.0,
+    "with_skill": 7,
+    "without_share": 0.8571428571428571,
+    "without_skill": 6
+   },
+   {
     "checks": 8,
     "fired_at": "2026-11-09T22:44:06Z",
     "fixture": "debug-github-workflows/secret-name",
@@ -30228,17 +30251,6 @@
     "run_id": "20261109T222314Z-df4eb4",
     "with_share": 0.8571428571428571,
     "with_skill": 6,
-    "without_share": 0.8571428571428571,
-    "without_skill": 6
-   },
-   {
-    "checks": 7,
-    "fired_at": "2026-11-09T22:09:02Z",
-    "fixture": "embeddable-tool-pages",
-    "model": "claude-sonnet-5-5",
-    "run_id": "20261109T220902Z-95eedf",
-    "with_share": 1.0,
-    "with_skill": 7,
     "without_share": 0.8571428571428571,
     "without_skill": 6
    },
@@ -32263,6 +32275,28 @@
    "tied": 56
   },
   "runs": [
+   {
+    "account_week_after": 12.0,
+    "checks": 7,
+    "cli": "2.1.321",
+    "cost_usd": 0.2275276,
+    "fired_at": "2026-11-09T22:56:47Z",
+    "fixture": "embeddable-tool-pages",
+    "gain": 1,
+    "judge": "not run",
+    "meter_points": 0.0,
+    "model": "claude-sonnet-5-5",
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261109T225647Z-231c0c/embeddable-tool-pages/20261109T225847Z/report.md",
+    "run_id": "20261109T225647Z-231c0c",
+    "skill": "embeddable-tool-pages",
+    "trials": 1,
+    "with_judge": null,
+    "with_share": 1.0,
+    "with_skill": 7,
+    "without_judge": null,
+    "without_share": 0.8571428571428571,
+    "without_skill": 6
+   },
    {
     "account_week_after": 11.0,
     "checks": 8,
@@ -59194,14 +59228,24 @@
   ],
   "summary": [
    {
-    "helped": 599,
+    "helped": 600,
     "hurt": 124,
-    "lift": 0.12179554565681228,
+    "lift": 0.12181493939272425,
     "model": "All",
-    "runs": 1085,
+    "runs": 1086,
     "tied": 362,
-    "with_avg": 0.8495811717858774,
-    "without_avg": 0.7277856261290652
+    "with_avg": 0.8497196789941778,
+    "without_avg": 0.7279047396014535
+   },
+   {
+    "helped": 384,
+    "hurt": 78,
+    "lift": 0.1342471181816582,
+    "model": "claude-sonnet-5-5",
+    "runs": 677,
+    "tied": 215,
+    "with_avg": 0.8457303883817905,
+    "without_avg": 0.7114832702001324
    },
    {
     "helped": 209,
@@ -59212,16 +59256,6 @@
     "tied": 145,
     "with_avg": 0.8539102068352828,
     "without_avg": 0.7574098136787751
-   },
-   {
-    "helped": 383,
-    "hurt": 78,
-    "lift": 0.13423438145876543,
-    "model": "claude-sonnet-5-5",
-    "runs": 676,
-    "tied": 215,
-    "with_avg": 0.8455021788971482,
-    "without_avg": 0.7112677974383828
    },
    {
     "helped": 7,
@@ -59236,9 +59270,9 @@
   ]
  },
  "fires_without_results": {
-  "counted": 871,
+  "counted": 872,
   "rejected": 0,
-  "since": "2026-11-03T03:46:45Z",
+  "since": "2026-11-03T03:47:58Z",
   "sweeps": [
    {
     "end": "2026-11-03T07:15:09Z",
@@ -59721,7 +59755,7 @@
     "without_pass_rate": 0.8910256410256411
    }
   ],
-  "generated_at": "2026-11-09T22:54:00Z",
+  "generated_at": "2026-11-09T23:01:24Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -59833,7 +59867,7 @@
    "requests_open": 4
   }
  },
- "generated_at": "2026-11-09T22:53:07Z",
+ "generated_at": "2026-11-09T23:00:12Z",
  "guidance": {
   "removed": [
    {
@@ -85375,7 +85409,7 @@
    "private": 7
   }
  },
- "newest_run": "2026-11-09T22:51:14Z",
+ "newest_run": "2026-11-09T22:58:47Z",
  "policy": {
   "benefit_confidence": 0.8,
   "max_runs_per_cell": 40,
@@ -94927,19 +94961,19 @@
     "cells": [
      {
       "gain": 14.3,
-      "high": 35.3,
-      "low": -13.7,
+      "high": 33.4,
+      "low": -11.2,
       "model": "claude-sonnet-5-5",
-      "pairs": 9,
+      "pairs": 10,
       "status": "open",
       "task": null,
       "votes": true
      }
     ],
-    "helps": 0.32660709823418077,
+    "helps": 0.40332274527079304,
     "keep_family": 2,
-    "keep_pairs": 9,
-    "max_pairs": 9,
+    "keep_pairs": 10,
+    "max_pairs": 10,
     "no_help": 0.0,
     "no_help_pairs": null
    },
@@ -94955,7 +94989,7 @@
      "to": "2026-11-09"
     }
    },
-   "current_text_runs": 9,
+   "current_text_runs": 10,
    "decisions": [
     {
      "class": "insufficient",
@@ -95260,14 +95294,35 @@
     {
      "class": "building",
      "cost_unknown": 0,
-     "cost_usd": 1.8606395,
+     "cost_usd": 2.0881670999999997,
      "date": "2026-11-09",
      "model": "claude-sonnet-5-5",
      "reason": null,
-     "runs": 18
+     "runs": 20
     }
    ],
    "runs": [
+    {
+     "at": "2026-11-09T22:58:47Z",
+     "cli_version": "2.1.321",
+     "fixture": null,
+     "model": "claude-sonnet-5-5",
+     "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261109T225647Z-231c0c/embeddable-tool-pages/20261109T225847Z/report.md",
+     "with": {
+      "checks_passed": 7,
+      "checks_total": 7,
+      "cost_usd": 0.15014729999999998,
+      "judge_mean": null,
+      "trials": 1
+     },
+     "without": {
+      "checks_passed": 6,
+      "checks_total": 7,
+      "cost_usd": 0.0773803,
+      "judge_mean": null,
+      "trials": 1
+     }
+    },
     {
      "at": "2026-11-09T22:13:28Z",
      "cli_version": "2.1.321",
@@ -116833,7 +116888,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "93a382b24e874d4f3365f57545cdd3c8ffd81e48",
-  "results_commit": "d858ee9c67cef904a97a535e965949941b92cb28"
+  "results_commit": "2ad9514927c7da68d1db94f788f45ec9ecb40e1c"
  },
  "spend": {
   "generated_at": "2026-11-09T20:30:56Z",
