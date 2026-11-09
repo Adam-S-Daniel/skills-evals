@@ -606,11 +606,7 @@ OUTAGE_REPORT_WINDOW = timedelta(hours=24)
 #: provisional trip. An eval run lands in 4 to 12 minutes; FIRE_RESULT_WINDOW
 #: still decides whether a fire was empty.
 PROBE_WAIT = timedelta(minutes=45)
-#: The guidance focus takes its share first until the 2026-11-09 17:00 UTC
-#: reset (Adam, 2026-11-07: guidance verdicts first while base.md is frozen),
-#: so the --max-fires cap cannot fill with cheaper bands before it. Restore
-#: the order missing, near, focus, improve after that reset.
-SHARES = (("focus", 0.15), ("missing", 0.30), ("near", 0.20), ("improve", 0.20))
+SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
 #: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
 #: 18:42 UTC: remove a section at 90% confidence it does not improve results
@@ -620,12 +616,10 @@ BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "gu
 #: refuses `--trials > 1` for a guidance fixture, and trials collapse into
 #: one run mean, so three cost as much per verdict (2026-11-02 design
 #: review).
-#: 40 (every section) until the 2026-11-09 17:00 UTC reset, while base.md
-#: is frozen so in-situ runs pool (Adam, 2026-11-07); restore 2 after it.
-GUIDANCE_FOCUS_SECTIONS = 40
-#: True holds every guidance-improve fire. It was True from 2026-11-07,
-#: while base.md was frozen (an accepted one edits base.md and resets every
-#: section's in-situ evidence); Adam ended the freeze 2026-11-08 19:21 UTC.
+GUIDANCE_FOCUS_SECTIONS = 2
+#: True holds every guidance-improve fire, for a week when base.md is
+#: frozen: an accepted one edits base.md and resets every section's in-situ
+#: evidence.
 GUIDANCE_IMPROVE_HELD = False
 #: The decision levels a cell's progress is normalized by when the verdict
 #: document carries no `guidance_policy` (evals/gate-policy.yml's).
@@ -698,12 +692,9 @@ PAIR_MODEL_RE = re.compile(r"claude-[a-z0-9][a-z0-9.-]{0,62}")
 #: hour, and at 10 a pair fire (20 minutes) would cap pairs at one every two
 #: minutes. The routine's fire limit (about 20 fires an hour) now paces the
 #: sweep first. A routine eval run takes
-#: p50 3.5 and p90 17 minutes per model (471 runs). Restore 3 and 20 minutes
-#: with evals/budget.yml's restore after that reset. Restored early, on
-#: 2026-11-07 at 20:00 UTC: Adam asked at 17:51 UTC to slow evals, and the
-#: weekly sweep's 400-second spacing did not, since every re-plan starts a
-#: fresh sweep whose first leg fires at once. Three slots held 20 minutes
-#: each cap fires near 9 an hour whatever starts the sweep.
+#: p50 3.5 and p90 17 minutes per model (471 runs). Three slots held 20
+#: minutes each cap fires near 9 an hour whatever starts the sweep, since
+#: every re-plan starts a fresh sweep whose first leg fires at once.
 MAX_IN_FLIGHT = 3
 #: plan --max-fires: the most cells one sweep may plan. 60 lets a sweep
 #: pick both models' cells of a fixture so they pair (PAIR FIRES); the
@@ -961,12 +952,10 @@ def with_run_after(cells: dict, moment: datetime) -> bool:
 # ---------------------------------------------------------------------------
 # Rule D: the bands.
 
-#: Until the 2026-11-09 17:00 UTC reset, a cell with no cost history is
-#: reserved at this many points instead of a full reservation: every guidance
-#: cell lost its history when base.md last changed (2026-11-04), and at one
-#: point each they filled the room (Adam, 2026-11-07). The per-fire guard
-#: still checks the full reservation. None after that reset.
-UNKNOWN_FIRE_POINTS = 0.1
+#: Points a cell with no cost history is planned at instead of a full
+#: reservation; None plans it at the full reservation. The per-fire guard
+#: always checks the full reservation.
+UNKNOWN_FIRE_POINTS = None
 
 
 def fire_cost(cell: dict, ctx: dict) -> float:
