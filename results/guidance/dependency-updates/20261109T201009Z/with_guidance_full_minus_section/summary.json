@@ -1,0 +1,286 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20261109T201009Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0650028,
+    "num_turns": 3,
+    "duration_ms": 6065,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 20250,
+      "cache_read_input_tokens": 76958,
+      "output_tokens": 667,
+      "output_tokens_details": {
+        "thinking_tokens": 58
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 20250
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 289,
+          "cache_read_input_tokens": 32345,
+          "cache_creation_input_tokens": 470,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 470,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "config-parses",
+      "passed": true,
+      "detail": "parsed_config_values: all values satisfy typed constraints"
+    },
+    {
+      "id": "both-ecosystems",
+      "passed": true,
+      "detail": ".github/dependabot.yml matches"
+    },
+    {
+      "id": "seven-day-cooldown",
+      "passed": false,
+      "detail": ".github/dependabot.yml lacks /(?s)package-ecosystem:\\s*[\"']?npm\\b((?!package-ecosystem).)*default-days:\\s*7\\b/; .github/dependabot.yml lacks /(?s)package-ecosystem:\\s*[\"']?github-actions\\b((?!package-ecosystem).)*default-days:\\s*7\\b/"
+    },
+    {
+      "id": "major-cooldown-where-supported",
+      "passed": false,
+      "detail": ".github/dependabot.yml lacks /(?s)package-ecosystem:\\s*[\"']?npm\\b((?!package-ecosystem).)*semver-major-days:\\s*30\\b/"
+    }
+  ],
+  "judge": {
+    "status": "skipped",
+    "reason": "objective-decided"
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.321 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 667,
+      "cache_read_input_tokens": 76958,
+      "cache_creation_input_tokens": 20250,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "dependency-updates",
+  "mode": "full-minus-section",
+  "bytes": 26048,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (vb07cffa5, 26048 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "NNDIOBUO-5354"
+  },
+  "fixture_name": "dependabot-cooldown",
+  "guidance_digests": {
+    "section": "2ee396f8b74d81236c5b27765ed392dbd16ff0bfd8efc8702b861142658fe9c1",
+    "rest": "cb454ef1ea7aaf6b31aeb7f25c4a330f110d826cbdd820b295bab973fe8ed4c0",
+    "section_payload": "517747e0f28c26c1291d1c3f9001e6a8fe600b160ef9658f3acc1c81fff0992f"
+  },
+  "fixture_digest": "f1ec011c21d373cb6873ad73f8547d12a868217b2da2eb07a3ab5ecfd503ffa7",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 25913,
+        "sha256": "f7e055bd3220d97f4e6530d1a24516de8d5c547f9a3493075683a6c145358f4f"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "42686615747",
+    "session_id": null,
+    "harness_commit": "3482456d9f26d165f39ac506623d04f9858d3ab1",
+    "cli_version": "2.1.321 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-09T20:10:09Z",
+    "ended_at": "2026-11-09T20:10:46Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.29337030000000003,
+      "agent_usd": 0.2050827,
+      "judge_usd": 0,
+      "guard_usd": 0.0882876,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0650028,
+      "calls_with_cost": 8,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-09T20:10:37Z",
+      "ended_at": "2026-11-09T20:10:46Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-09T20:10:37Z",
+          "ended_at": "2026-11-09T20:10:39Z",
+          "duration_ms": 1644,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-09T20:10:39Z",
+          "ended_at": "2026-11-09T20:10:46Z",
+          "duration_ms": 6995,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 6995,
+        "num_turns": 3,
+        "cost_usd": 0.0650028,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 667,
+            "cache_read_input_tokens": 76958,
+            "cache_creation_input_tokens": 20250,
+            "cost_usd": 0.0650028
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 20250,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no judge call was made"
+        }
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1644,
+        "num_turns": 1,
+        "cost_usd": 0.0344844,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8504,
+            "cache_creation_input_tokens": 13400,
+            "cost_usd": 0.0344844
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13400,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
