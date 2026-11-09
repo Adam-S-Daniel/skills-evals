@@ -685,6 +685,28 @@
    ],
    "additionalProperties": false
   },
+  "trend_window": {
+   "type": "object",
+   "description": "One window of runs behind a regression figure: run count, scored trials, checks passed out of checks run, and the mean judge score (0 to 10, null when no run was judged).",
+   "properties": {
+    "runs": { "type": "integer", "minimum": 0 },
+    "trials": { "type": "integer", "minimum": 0 },
+    "checks_passed": { "type": "integer", "minimum": 0 },
+    "checks_total": { "type": "integer", "minimum": 0 },
+    "judge_mean": { "anyOf": [{ "type": "number" }, { "type": "null" }] }
+   },
+   "required": ["runs", "trials", "checks_passed", "checks_total", "judge_mean"],
+   "additionalProperties": false
+  },
+  "trend_windows": {
+   "type": "object",
+   "properties": {
+    "previous": { "$ref": "#/$defs/trend_window" },
+    "current": { "$ref": "#/$defs/trend_window" }
+   },
+   "required": ["previous", "current"],
+   "additionalProperties": false
+  },
   "alert": {
    "type": "object",
    "properties": {
@@ -794,6 +816,14 @@
     },
     "noise": {
      "type": "number"
+    },
+    "counts": {
+     "type": "object",
+     "description": "What the figures rest on: checks passed out of checks run, per window, for the with arm and (when the delta was computed) the without arm.",
+     "properties": {
+      "with": { "$ref": "#/$defs/trend_windows" },
+      "without": { "oneOf": [{ "$ref": "#/$defs/trend_windows" }, { "type": "null" }] }
+     }
     }
    },
    "required": [

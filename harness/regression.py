@@ -56,6 +56,15 @@ checkout HEADs the runs recorded, NOT proof that `harness/` changed between
 them (a workstation run may name a non-main sha). They feed no verdict and no
 suspect and are not rendered in issues.
 
+COUNTS. `numbers["counts"]` says what each figure rests on, so a reader can
+see checks passed out of checks run. It holds `with` and `without`, each
+`{"previous": window, "current": window}`; `without` is null when the delta
+was not computed. A window is `{"runs", "trials", "checks_passed",
+"checks_total", "judge_mean"}`: the run count, the sums of each run's
+`scored_trials`, `passed` and `total`, and the mean of the runs' judge means
+(null when none was judged). Full precision; `counts` is null on a row that is
+`insufficient`.
+
 A subject's verdict (one per skill or section) is `regressed` if any row
 regressed, else `lost-delta`, else `improved`, else `stable`, else
 `insufficient`. Deterministic: sorted rows, no NaN or infinity.
@@ -175,6 +184,16 @@ def _compare(previous: list, current: list) -> dict:
             "noise": _noise(previous, current)}
 
 
+def _window_counts(runs: list) -> dict:
+    """What one window of runs rests on (module docstring, COUNTS)."""
+    def total(field):
+        return sum(r["numbers"][field] or 0 for r in runs)
+    judged = _figures(runs, "judge_mean")
+    return {"runs": len(runs), "trials": total("scored_trials"),
+            "checks_passed": total("passed"), "checks_total": total("total"),
+            "judge_mean": _mean(judged) if judged else None}
+
+
 def _entry(run: dict) -> dict:
     return {"timestamp": run["timestamp"], "path": run["path"],
             "report": gates._link(run["report"]), "tested_digest": run["tested_digest"],
@@ -240,7 +259,7 @@ def _row(subject: str, ident: str, fixture, model: str, pair, runs: list,
     previous, current = _windows(_ordered(counted, "with"), size)
     out = {"subject": subject, "id": ident, "fixture": fixture, "model": model,
            "pair": pair, "verdict": "insufficient", "reason": None,
-           "numbers": {"objective": None, "judge": None, "delta": None},
+           "numbers": {"objective": None, "judge": None, "delta": None, "counts": None},
            "windows": {"previous": [_entry(r) for r in previous],
                        "current": [_entry(r) for r in current]},
            "suspects": _suspects(subject, previous, current),
@@ -264,11 +283,16 @@ def _row(subject: str, ident: str, fixture, model: str, pair, runs: list,
     means_before, means_after = _figures(before_out, "run_mean"), \
         _figures(after_out, "run_mean")
     delta = None
+    without_counts = None
     if len(before_out) >= least and len(after_out) >= least \
             and means_before and means_after:
         delta = {"previous": objective["previous"] - _mean(means_before),
                  "current": objective["current"] - _mean(means_after)}
-    out["numbers"] = {"objective": objective, "judge": judge, "delta": delta}
+        without_counts = {"previous": _window_counts(before_out),
+                          "current": _window_counts(after_out)}
+    counts = {"with": {"previous": _window_counts(previous), "current": _window_counts(current)},
+              "without": without_counts}
+    out["numbers"] = {"objective": objective, "judge": judge, "delta": delta, "counts": counts}
     out["verdict"], out["reason"] = _verdict(objective, judge, delta, policy)
     return out
 
@@ -316,8 +340,17 @@ def bad_detail(row: dict, policy: dict):
     precision (a display rounds them), or None for any other row. `measure` is
     `objective` or `judge` (a mean that fell: `previous`, `current`, `drop`,
     `threshold`, `noise`) or `advantage` (with minus without: `previous`,
-    `current`). It follows the same order `_verdict` decides in."""
+    `current`). It follows the same order `_verdict` decides in. When the row
+    has `numbers["counts"]` the detail carries it as `counts` (module
+    docstring, COUNTS)."""
     numbers = row.get("numbers") or {}
+    detail = _bad_figures(row, policy, numbers)
+    if detail is not None and numbers.get("counts"):
+        detail["counts"] = numbers["counts"]
+    return detail
+
+
+def _bad_figures(row: dict, policy: dict, numbers: dict):
     if row.get("verdict") == "regressed":
         for name, key in (("objective", "objective_drop"), ("judge", "judge_drop")):
             figure = numbers.get(name)
