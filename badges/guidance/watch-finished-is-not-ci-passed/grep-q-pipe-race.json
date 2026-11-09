@@ -1,6 +1,6 @@
 {
-  "color": "green",
+  "color": "yellow",
   "label": "guidance eval: watch-finished-is-not-ci-passed/grep-q-pipe-race",
-  "message": "with 2/2 vs without 1/2 \u00b7 n=2 \u00b7 2026-11-09",
+  "message": "with 1.7/2 vs without 1/2 \u00b7 n=3 \u00b7 2026-11-09",
   "schemaVersion": 1
 }
