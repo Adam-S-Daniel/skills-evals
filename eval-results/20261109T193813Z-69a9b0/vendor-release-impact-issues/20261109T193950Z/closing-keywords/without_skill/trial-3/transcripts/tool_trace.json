@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VSEeKHdW1YWjDvB2sqktEN",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 161,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VSEeKHdW1YWjDvB2sqktEN",
+      "is_error": true,
+      "output": "Exit code 2\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to t...",
+      "output_chars": 774,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014KW6trTZUEubg7vY6NkRzE",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat README.md .example-cli/settings.json hooks/warm-cache.sh; echo ----; ls -la .idea .vscode; cat .mcp.json .gitmodules",
+      "input_chars": 192,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014KW6trTZUEubg7vY6NkRzE",
+      "is_error": true,
+      "output": "Exit code 1\n# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-le...",
+      "output_chars": 1649,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DCXBZLMUozHHC3AcBoN1Tr",
+      "name": "Bash",
+      "input": "grep -rn -- \"--config\\|telemetry\\|statusLine\\|status\" --exclude-dir=.git . 2><path>; git show --stat HEAD | head -30",
+      "input_chars": 119,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DCXBZLMUozHHC3AcBoN1Tr",
+      "is_error": false,
+      "output": "./.example-cli/settings.json:2:  \"telemetryOptOut\": true,\n./.git/hooks/pre-applypatch.sample:6:# The hook should exit with non-zero status after issuing an\n./.git/hooks/pre-push.sample:4:# push\" after it has checked the remote status, but before anything has been\n./.git/hooks/pre-push.sample:5:# pus...",
+      "output_chars": 2190,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E3da9bedcVPLWCGjCKV1SH",
+      "name": "Bash",
+      "input": "mkdir -p issues && echo '| 4.4.0 | 2026-11-09 | 2 filed |' >> docs/vendor-tracking.md\ncat > issues/01-sessionstart-hook-timeout-enforced.md <<'EOF'\n# SessionStart warm-cache hook will be killed by its...",
+      "input_chars": 4474,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E3da9bedcVPLWCGjCKV1SH",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? commit-message.txt\n?? issues/\n?? pr-body.md\n# ExampleCLI release reviews\n\n| Version | Reviewed | Issues |\n|---|---|---|\n| 4.2.0 | 2...",
+      "output_chars": 384,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

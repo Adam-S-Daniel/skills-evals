@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C672cPCz7FJGK6GXG7AR9V",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -100 && cat docs/vendor-tracking.md && ls vendor issues 2><path>",
+      "input_chars": 161,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C672cPCz7FJGK6GXG7AR9V",
+      "is_error": true,
+      "output": "Exit code 2\nOn branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to t...",
+      "output_chars": 774,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CRfTUQENgymz8eXsGcyDEe",
+      "name": "Bash",
+      "input": "cat vendor/RELEASES.md; echo ----; cat vendor/releases.json; echo ----; cat README.md AGENTS.md hooks/warm-cache.sh .example-cli/settings.json; echo ---; cat .mcp.json .gitmodules; ls -la .idea .vscod...",
+      "input_chars": 201,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CRfTUQENgymz8eXsGcyDEe",
+      "is_error": false,
+      "output": "# ExampleCLI release notes\n\n## v4.4.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.4.0](https://github.com/example-vendor/example-cli/releases/tag/v4.4.0)\n\n### Bug Fixes\n\n- **hooks:** honor `timeout` for SessionStart hooks, fixes #88\n- **config:** reject unknown top-level keys ins...",
+      "output_chars": 1839,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JvXYfAKHy9c4nFikaCGSTF",
+      "name": "Bash",
+      "input": "grep -rn \"telemetryOptOut\\|statusLine\\|config\" --exclude-dir=.git . 2><path> | grep -v \"^./\\.\\(bash\\|zsh\\|profile\\)\" | head; git show --stat HEAD | head -30",
+      "input_chars": 159,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JvXYfAKHy9c4nFikaCGSTF",
+      "is_error": false,
+      "output": "./.example-cli/settings.json:2:  \"telemetryOptOut\": true,\n./README.md:4:development. `.example-cli/settings.json` holds the hook configuration;\n./vendor/RELEASES.md:10:- **config:** reject unknown top-level keys instead of ignoring them, closes #91\n./vendor/RELEASES.md:11:- **windows:** handle netwo...",
+      "output_chars": 800,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FP1V71M94REzQyhTznkcC5",
+      "name": "Bash",
+      "input": "mkdir -p issues && echo '| 4.4.0 | 2026-11-09 | 2 filed |' >> docs/vendor-tracking.md\ncat > issues/01-sessionstart-hook-timeout.md <<'EOF'\n# ExampleCLI 4.4.0: SessionStart hook timeout now enforced, w...",
+      "input_chars": 4474,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FP1V71M94REzQyhTznkcC5",
+      "is_error": false,
+      "output": " M docs/vendor-tracking.md\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n?? commit-message.txt\n?? issues/\n?? pr-body.md\n| 4.2.0 | 2026-07-15 | 2 filed |\n| 4.3.0 | 2026-08-26 | none |\n| 4.4.0 | 2026-11-09 | 2...",
+      "output_chars": 308,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
