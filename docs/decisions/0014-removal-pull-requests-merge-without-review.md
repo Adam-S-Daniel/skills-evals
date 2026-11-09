@@ -1,10 +1,12 @@
 # ADR 0014: A skill removal pull request merges automatically, with no human review
 
 - **Status:** accepted (2026-10-26); auto mode is wired (second addendum
-  below), but both blocks of `evals/gate-policy.yml` commit
-  `retirement_mode: proposal` since Adam's 2026-11-03 "Resume, auto-removal
-  off", pending his decision on the betting-bound rule (last addendum
-  below). In `auto`, a removal merges only once the improvement gate's
+  below), and both blocks of `evals/gate-policy.yml` commit
+  `retirement_mode: auto` again. Adam set them to `proposal` on 2026-11-03
+  ("Resume, auto-removal off") and pre-approved setting them back once a
+  loop withdrawal was hardened (#740), which it now is; the comment above
+  `retirement_mode` in that file is the record. The later addenda that say
+  `proposal` describe that interval. In `auto`, a removal merges only once the improvement gate's
   GitHub App secrets are set in skills-evals; until then the workflow falls
   back to `proposal`.
 - **Issue:** [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)

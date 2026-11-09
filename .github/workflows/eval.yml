@@ -200,10 +200,6 @@
 #   name or value the OS itself will not take (`guidance.check_env_block`),
 #   which bounds what a fixture may SPELL rather than what is inherited.
 #
-# * The weekly badge commit doubles as cron keep-alive: GitHub disables
-#   scheduled workflows after ~60 days without repo activity, and each run
-#   commits fresh results, so the schedule keeps itself alive.
-#
 # * Results + badge live on the `persistent/eval-results` branch, not main: main's
 #   branch-protection ruleset requires changes go through a pull request
 #   (this repo's fleet repo-settings baseline), so a bot direct-pushing
