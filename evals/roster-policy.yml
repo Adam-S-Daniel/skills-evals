@@ -100,6 +100,12 @@ tiers:
 
 # A model becomes an arm if it carries at least this share of census usage
 # over the trailing window...
+# `judge_exclude_tiers` (optional, #920): family words from `tiers` whose
+# models may not take the judge seat. A Pro subscription bills Fable as usage
+# credits from the first call, so an adopter on Pro sets
+# `judge_exclude_tiers: [fable, mythos]` and the judge comes from the strongest
+# remaining non-arm model. Absent here: the owner's plan includes Fable.
+
 arm_enter_usage_pct: 10
 # Shortened from 4 to 2 by the owner on 2026-10-25 so tier qualification
 # reflects current use.

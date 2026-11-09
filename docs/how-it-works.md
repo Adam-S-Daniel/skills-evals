@@ -139,6 +139,7 @@ weekly allowance):
 | `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
 | `points_per_usd` | 0.0005 | the allowance one dollar of the CLI's reported call cost uses: $20 per point, the low end of the rate measured on 2026-11-04 (about $24, range $20 to $35), so charges err high. `per_run_cap` and the weekly total both charge a run its own spend at this rate (was 0.00214, fitted to the account meter's movement, which other use inflated; 2026-11-06) |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
+| `stop_when_session_above` | not set | optional: a run stops, and no fire starts, once the CLI's 5-hour window reads this (`unifiedWindows.five_hour`), for a smaller plan whose sweep could use up a whole window; absent, the 5-hour window is not read (#921) |
 
 Three layers enforce it:
 

@@ -373,6 +373,16 @@ def validate_policy(policy: dict) -> None:
     tiers = policy["tiers"]
     if not (isinstance(tiers, list) and tiers and all(_valid_tier_rung(r) for r in tiers)):
         raise ValueError(f"roster policy `tiers` is invalid: {tiers!r}")
+    # Optional (skills-evals#920): family words whose models may not be the
+    # judge, for a subscription plan that does not include them (Pro bills
+    # Fable as usage credits from the first call). Absent or empty: no change.
+    if "judge_exclude_tiers" in policy:
+        excluded = policy["judge_exclude_tiers"]
+        words = set(tier_words(policy))
+        if not (isinstance(excluded, list)
+                and all(isinstance(w, str) and w.lower() in words for w in excluded)):
+            raise ValueError("roster policy `judge_exclude_tiers` is invalid: "
+                             f"{excluded!r} (a list of family words from `tiers`)")
 
 
 def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
@@ -3008,7 +3018,16 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # field as well as in words: run_eval.py refuses such a judge for an
     # unpinned fixture, and it cannot read prose.
     strongest_arm_rung = max((rung_of(a, rungs) for a in arm_ids), default=None)
-    non_arms = [m for m in available if m["id"] not in arm_ids]
+    # `judge_exclude_tiers` (skills-evals#920) takes models of those families
+    # out of every judge rung below, so a plan that does not include them
+    # never gets a judge it cannot call.
+    judge_excluded = {str(w).lower() for w in policy.get("judge_exclude_tiers") or ()}
+    judge_pool = [m for m in available
+                  if family_of(m["id"], rungs) not in judge_excluded]
+    exclusion_words = (f"; models of the {', '.join(sorted(judge_excluded))} "
+                       f"tier(s) are not eligible (`judge_exclude_tiers`)"
+                       if judge_excluded and len(judge_pool) < len(available) else "")
+    non_arms = [m for m in judge_pool if m["id"] not in arm_ids]
     above = ([m for m in non_arms if rung_of(m["id"], rungs) > strongest_arm_rung]
              if strongest_arm_rung is not None else [])
 
@@ -3027,8 +3046,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                           if strongest_arm_rung is not None else "")
         judge = {"id": pick["id"],
                  "reason": f"strongest available model that is not an arm{arm_tier_words}"}
-    elif available:
-        pick = available[-1]
+    elif judge_pool:
+        pick = judge_pool[-1]
         judge = {"id": pick["id"],
                  "reason": ("strongest available model — every available model is "
                             "currently an arm, so no non-arm judge exists; do not "
@@ -3036,6 +3055,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     else:
         judge = {"id": None,
                  "reason": "the Models API returned no model this policy can rank"}
+    if judge["id"] is not None:
+        judge["reason"] += exclusion_words
     judge["is_arm"] = judge["id"] in arm_ids
 
     # --- preflight ---------------------------------------------------------

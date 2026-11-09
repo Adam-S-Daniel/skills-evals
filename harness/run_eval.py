@@ -4694,8 +4694,19 @@ def _seven_day(info) -> tuple | None:
     return week["utilization"], week.get("resetsAt")
 
 
+def _five_hour(info) -> float | None:
+    """The 5-hour window's utilization in one meter snapshot, or None when
+    the snapshot does not carry a readable one (skills-evals#921)."""
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    session = windows.get("five_hour") if isinstance(windows, dict) else None
+    if not isinstance(session, dict) or _token_count(session.get("utilization")) is None:
+        return None
+    return session["utilization"]
+
+
 def budget_stop_reading(readings: list, limits: dict,
-                        own_usd: float | None = None) -> dict | None:
+                        own_usd: float | None = None,
+                        session: float | None = None) -> dict | None:
     """The budget stop (#68) a run's weekly-window readings call for, oldest
     first, or None. `limits` is `budget.load_budget()`'s.
 
@@ -4720,8 +4731,14 @@ def budget_stop_reading(readings: list, limits: dict,
     rate = limits.get("points_per_usd")
     if rate is not None and own_usd is not None:
         moved = round(own_usd * rate, 6)
+    session_limit = limits.get("stop_when_session_above")
     if latest >= limits["stop_when_account_above"]:
         reason, limit = "account_above", limits["stop_when_account_above"]
+    elif session_limit is not None and session is not None and session >= session_limit:
+        # `session` is the latest 5-hour reading (skills-evals#921); the
+        # stop records it as the utilization that reached its limit.
+        return {"reason": "session_above", "utilization": session,
+                "moved": moved, "limit": session_limit}
     elif moved >= limits["per_run_cap"]:
         reason, limit = "per_run_cap", limits["per_run_cap"]
     else:
@@ -4830,6 +4847,7 @@ class _RunTelemetry:
             event["info"] for group in self.pending for call in group["calls"]
             for event in call.get("events") or ()]
         readings = [r for r in map(_seven_day, infos) if r is not None]
+        sessions = [r for r in map(_five_hour, infos) if r is not None]
         own_usd = None
         if self.budget.get("points_per_usd") is not None:
             # Queued calls get their duration when flushed; cost ignores it.
@@ -4838,7 +4856,8 @@ class _RunTelemetry:
                     group["role"], [{**call, "duration_ms": 0}
                                     for call in group["calls"]], group["results"])]
             own_usd = None if None in costs else sum(costs)
-        self.stop = budget_stop_reading(readings, self.budget, own_usd)
+        self.stop = budget_stop_reading(readings, self.budget, own_usd,
+                                        session=sessions[-1] if sessions else None)
         return self.stop
 
     def _call_snapshots(self, events: list, role: str, index: int,

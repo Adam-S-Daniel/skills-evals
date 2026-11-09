@@ -824,7 +824,7 @@ USAGE_KEYS = ("schema_version", "started_at", *USAGE_NULLABLE,
 #: ingests. run_eval.budget_stop_reading's keys and reasons.
 USAGE_OPTIONAL = ("budget_stop", "cost_estimate")
 BUDGET_STOP_KEYS = ("reason", "utilization", "moved", "limit")
-BUDGET_STOP_REASONS = ("per_run_cap", "account_above")
+BUDGET_STOP_REASONS = ("per_run_cap", "account_above", "session_above")
 METER_KEYS = ("snapshot_count", "unreadable_events", "not_sampled")
 NOT_SAMPLED = ("judge", "guard", "run_end")
 TRIAL_METER_KEYS = ("snapshots", "omitted")
@@ -1035,7 +1035,8 @@ def check_budget_stop(stop, where: str, billing) -> None:
     _number(stop["limit"], f"{where}.limit", 0, 1)
     if stop["limit"] == 0:
         raise Rejected(f"{where}.limit must be above 0")
-    reached = stop["utilization"] if stop["reason"] == "account_above" else stop["moved"]
+    reached = (stop["utilization"] if stop["reason"] in ("account_above", "session_above")
+               else stop["moved"])
     if reached < stop["limit"]:
         raise Rejected(f"{where}: the reading does not reach its limit")
 

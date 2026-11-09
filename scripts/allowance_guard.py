@@ -295,6 +295,11 @@ IMPROVE_CAP_REFUSAL = ("::error::improve cap: share allows {allowed}, used {used
                        "(this kind {mine}); nothing was fired (#572)")
 
 
+#: The 5-hour stop's refusal (skills-evals#921): no number, only which limit.
+SESSION_REFUSAL = ("::error::the account's 5-hour window is at or above "
+                   "stop_when_session_above; nothing was fired (evals/budget.yml, #921)")
+
+
 class GuardError(Exception):
     """The guard could not tell what has been spent. Its message is fixed
     text and, for an API failure, a status code: never a response body."""
@@ -601,6 +606,25 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     return room, float(used), elapsed
 
 
+def session_hold(runs: list[Path], limits: dict, now: datetime) -> bool:
+    """Whether the newest snapshot's 5-hour window reads at or above
+    `stop_when_session_above` and has not reset yet (skills-evals#921).
+    False when the budget sets no such stop or no snapshot carries a
+    readable 5-hour window: the weekly checks still apply."""
+    limit = limits.get("stop_when_session_above")
+    found = newest_snapshot(runs) if limit is not None else None
+    if found is None:
+        return False
+    info = found[1].get("info")
+    windows = info.get("unifiedWindows") if isinstance(info, dict) else None
+    session = windows.get("five_hour") if isinstance(windows, dict) else None
+    used = session.get("utilization") if isinstance(session, dict) else None
+    resets = session.get("resetsAt") if isinstance(session, dict) else None
+    if not _number(used) or not _number(resets):
+        return False
+    return used >= limit and resets > now.timestamp()
+
+
 def account(tree: Path, limits: dict, now: datetime,
             fires: tuple[int, int], improve: tuple[int, int] = (0, 0),
             since: datetime | None = None,
@@ -731,7 +755,8 @@ def account(tree: Path, limits: dict, now: datetime,
     if improve_started:
         finished = min(improve_7d - covered, max(0, sum(
             1 for start in improve_started if start + IMPROVE_MAX_RUN <= now) - covered))
-    return {"spent": spent, "pending": pending, "committed": committed,
+    return {"session_hold": session_hold(runs, limits, now),
+            "spent": spent, "pending": pending, "committed": committed,
             "bound": bound, "stop_left": stop_left,
             "stop": limits["stop_when_account_above"], "runs": len(runs),
             "fires": fires_7d, "recent": recent, "reservation": reserve,
@@ -796,6 +821,8 @@ def fits(state: dict) -> int:
     week the pace room can exceed it (Adam, 2026-10-25). Pending comes off
     both: the snapshot behind the pace room may predate those fires, and
     without it every fire would fit until the next snapshot is ingested."""
+    if state.get("session_hold"):
+        return 0
     left = room(state) + EPSILON
     if left < state["reservation"]:
         return 0
@@ -893,7 +920,10 @@ def describe(state: dict) -> str:
 def check(state: dict, mode: str = "eval") -> str | None:
     """None when one more fire, reserved in full (an improve fire at
     `improve_charge`), stays within the cap and, for an improve mode, the
-    improve cap (#572); otherwise the one refusal line `main` prints."""
+    improve cap (#572); otherwise the one refusal line `main` prints. A 5-hour
+    window at its stop (`session_hold`, #921) refuses every mode first."""
+    if state.get("session_hold"):
+        return SESSION_REFUSAL
     if mode in IMPROVE_MODES:
         if not improve_cap(state, mode):
             allowed, used, mine = improve_numbers(state, mode)
