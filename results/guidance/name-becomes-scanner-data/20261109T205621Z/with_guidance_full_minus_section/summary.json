@@ -1,0 +1,318 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20261109T205621Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.0771774,
+    "num_turns": 4,
+    "duration_ms": 10731,
+    "usage": {
+      "input_tokens": 8,
+      "cache_creation_input_tokens": 21923,
+      "cache_read_input_tokens": 110739,
+      "output_tokens": 1128,
+      "output_tokens_details": {
+        "thinking_tokens": 418
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 21923
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 415,
+          "cache_read_input_tokens": 33752,
+          "cache_creation_input_tokens": 736,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 736,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "bundle-pinned-under-a-new-name",
+      "passed": true,
+      "detail": "bundles.lock matches"
+    },
+    {
+      "id": "no-entry-name-is-a-scanner-keyword",
+      "passed": true,
+      "detail": "bundles.lock matches"
+    },
+    {
+      "id": "digest-format-unchanged",
+      "passed": true,
+      "detail": "bundles.lock matches"
+    },
+    {
+      "id": "no-scanner-allowlist",
+      "passed": true,
+      "detail": "no file matched ['.gitleaksignore', '.gitleaks.toml', 'gitleaks.toml'] matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Fix at the source",
+        "score": 8,
+        "rationale": "The agent renamed the bundle to `refresher`, which drops the trigger word, and re-pinned it without adding any ignore, allowlist or path exclusion; however, the reply recommends adding the log's fingerprint to `.gitleaksignore` for history, which undercuts the fix-at-source approach, and `refresher` is only a loose description of the bundle's purpose."
+      },
+      {
+        "name": "Method",
+        "score": 10,
+        "rationale": "The agent used `scripts/lock.py` remove then add, moved `bundles/token-refresher` to `bundles/refresher` so the directory matches the lock entry, and left the digest format and value unchanged."
+      },
+      {
+        "name": "Report",
+        "score": 6,
+        "rationale": "The reply gives the new name and explains that 'token' plus a high-entropy digest tripped `generic-api-key`, but it never says why `refresher` was chosen over a more purpose-specific name, and instead of explaining why the fingerprint was not used it suggests the user add it, giving only a deferral reason for not doing so itself."
+      }
+    ],
+    "overall": 8.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.321 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 8,
+      "output_tokens": 1128,
+      "cache_read_input_tokens": 110739,
+      "cache_creation_input_tokens": 21923,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "name-becomes-scanner-data",
+  "mode": "full-minus-section",
+  "bytes": 25579,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v09ef2d52, 25579 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "TKUKCIFJ-6189"
+  },
+  "fixture_name": "flagged-lock-entry",
+  "guidance_digests": {
+    "section": "f96472eb8d0151180cdc42c16fd508dc454feacab5ded6dafe311ffff6dc7a65",
+    "rest": "b4e23b73fade5816b4b92d84ae2c0ead45f0a3478340065bd7cacd7fb833c1b7",
+    "section_payload": "df3f5f72d74dd86656f4e531469d04edd36268a8282b5395816cf7f6a9c882b3"
+  },
+  "fixture_digest": "eff25019a5c6f2081426825dd02fb8302374a1c568af02ed22b5146d047ad7e0",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 25444,
+        "sha256": "a6b78bc11ce0aee809a5c7c661482cd49f3e4167d15012a67a15d66dbd9acaa2"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "42692774598",
+    "session_id": null,
+    "harness_commit": "ee2bf84465faaf280509497acca8c6d038c114e0",
+    "cli_version": "2.1.321 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-09T20:56:21Z",
+    "ended_at": "2026-11-09T20:57:41Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.41265809999999997,
+      "agent_usd": 0.24523249999999996,
+      "judge_usd": 0.079078,
+      "guard_usd": 0.0883476,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0771774,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-09T20:57:01Z",
+      "ended_at": "2026-11-09T20:57:27Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-09T20:57:01Z",
+          "ended_at": "2026-11-09T20:57:03Z",
+          "duration_ms": 1754,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-09T20:57:03Z",
+          "ended_at": "2026-11-09T20:57:15Z",
+          "duration_ms": 11635,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-09T20:57:19Z",
+          "ended_at": "2026-11-09T20:57:27Z",
+          "duration_ms": 8161,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 11635,
+        "num_turns": 4,
+        "cost_usd": 0.0771774,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 8,
+            "output_tokens": 1128,
+            "cache_read_input_tokens": 110739,
+            "cache_creation_input_tokens": 21923,
+            "cost_usd": 0.0771774
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 21923,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 8161,
+        "num_turns": 1,
+        "cost_usd": 0.023461999999999997,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 713,
+            "cache_read_input_tokens": 1445,
+            "cache_creation_input_tokens": 1781,
+            "cost_usd": 0.023461999999999997
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1781,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1754,
+        "num_turns": 1,
+        "cost_usd": 0.034071899999999995,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 14,
+            "cache_read_input_tokens": 8504,
+            "cache_creation_input_tokens": 13231,
+            "cost_usd": 0.034071899999999995
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13231,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
