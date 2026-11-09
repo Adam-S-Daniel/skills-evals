@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018crsq5tbrXKCChGChXoXNn",
+      "name": "Bash",
+      "input": "git status -sb | head; git log --oneline -10; ls -a; ls .github/workflows 2><path>; git remote -v",
+      "input_chars": 100,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018crsq5tbrXKCChGChXoXNn",
+      "is_error": false,
+      "output": "## main\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n5ba8f1a initial commit\nf0be913 Import example service\n.\n..\n.bash_profile\n.bashrc\n.claude\n.gh\n.git\n.gitconfig\n.github\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zp...",
+      "output_chars": 488,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012NuMiHKd2NKVdicKmEBV8k",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; cat README.md; find bin src test .gh -type f | head -50; git show --stat HEAD | head -40",
+      "input_chars": 118,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012NuMiHKd2NKVdicKmEBV8k",
+      "is_error": false,
+      "output": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Run unit tests\n        run: python3 -m unittest te...",
+      "output_chars": 2734,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CRj4v7zzA6jcd44k5fE17Q",
+      "name": "Bash",
+      "input": "which gh; git show --stat HEAD~1 | head; cat src/sequence.py test/test_current.py; git log --all --oneline -- test/ ; gh run list --branch main 2>&1 | head; gh run view 77001 --log-failed 2>&1 | head ...",
+      "input_chars": 203,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CRj4v7zzA6jcd44k5fE17Q",
+      "is_error": false,
+      "output": "<path>\ncommit f0be9137d6ed1769cd15652ffba4bd517e856b3b\nAuthor: <redacted> <<email>>\nDate:   Thu Jan 1 00:00:00 2026 +0000\n\n    Import example service\n\n .github/workflows/ci.yml | 18 ++++++++++++++++++\n README.md                |  9 +++++++++\n src/sequence.py          |  2 ++\n test/test_current.py   ...",
+      "output_chars": 1512,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K3LYmGidCPN1xhYvw8apWx",
+      "name": "Bash",
+      "input": "R=.gh/replay/api/repos/example-org/example-service; cat $R/branches/main.json $R/branches/fix/ci-test-discovery.json $R/compare/main...fix/ci-test-discovery.json $R/check-runs/99001/annotations.json $...",
+      "input_chars": 298,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K3LYmGidCPN1xhYvw8apWx",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"commit\": {\n    \"sha\": \"1111111111111111111111111111111111111111\",\n    \"url\": \"https://example.net/repos/example-org/example-service/commits/1111111111111111111111111111111111111111\"\n  },\n  \"protected\": true\n}\n{\n  \"name\": \"fix/ci-test-discovery\",\n  \"commit\": {\n    \"sha\": \"22222...",
+      "output_chars": 3509,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017RHSQWxNLXY1Hw6q5WjhVn",
+      "name": "Bash",
+      "input": "gh pr list --head fix/ci-test-discovery --state all 2>&1 | head; echo ---; python3 -m unittest test.test_legacy; echo \"legacy exit=$?\"; python3 -m unittest discover -s test; echo \"discover exit=$?\"",
+      "input_chars": 197,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017RHSQWxNLXY1Hw6q5WjhVn",
+      "is_error": false,
+      "output": "gh: Not Found (HTTP 404)\n---\nE\n======================================================================\nERROR: test_legacy (unittest.loader._FailedTest.test_legacy)\n----------------------------------------------------------------------\nImportError: Failed to import test module: test_legacy\nTraceback (...",
+      "output_chars": 774,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
