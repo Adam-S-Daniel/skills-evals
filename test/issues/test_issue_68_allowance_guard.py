@@ -3,7 +3,8 @@
 
 Adam's standing decision (2026-10-10,
 https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979):
-all automated evals stay within 30% of the weekly subscription allowance.
+all automated evals stay within a share of the weekly subscription allowance
+(30% then; 25% since 2026-11-02).
 Three layers enforce it, all reading `evals/budget.yml`:
 
   * the budget file itself: exactly four keys, each above 0 and at most 1,
@@ -106,16 +107,14 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # 100 points a week and a 90% account stop (95% until Adam asked
-        # to slow evals, 2026-11-07 17:51 UTC; 85% until he raised it 5
-        # points, 2026-11-08 19:21 UTC; 96% from 2026-11-09 15:50 UTC to use the
-        # last of the week) for the allowance week ending
-        # 2026-11-09 17:00 UTC only (Adam, 2026-11-02, finish-week push); after that reset, 25 points and 80%. 2026-11-01 (permanent):
+        # 25 points a week and an 80% account stop (Adam's steady state from
+        # the 2026-11-09 17:00 UTC reset, after the finish week's raise).
+        # 2026-11-01 (permanent):
         # the per-run cap is 1 point, the overrun the p95 of a run's largest
         # call.
         self.assertEqual(budget.load_budget(),
-                         {**LIMITS, "weekly_cap": 1.00,
-                          "stop_when_account_above": 0.96,
+                         {**LIMITS, "weekly_cap": 0.25,
+                          "stop_when_account_above": 0.80,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
                           "points_per_usd": 0.0005})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")

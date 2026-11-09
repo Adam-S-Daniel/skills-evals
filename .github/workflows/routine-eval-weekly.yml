@@ -260,7 +260,7 @@ jobs:
             private+=(--lessons "$GITHUB_WORKSPACE/private-lessons/lessons/proposals")
           fi
           python3 scripts/plan_week.py plan --results-tree eval-results-branch \
-            --as-of "$as_of" --max-fires 60 \
+            --as-of "$as_of" --max-fires 30 \
             --registry "adam-agentskills=$GITHUB_WORKSPACE/registry-agentskills" \
             --registry "cms-platform=$GITHUB_WORKSPACE/registry-cms" \
             --registry "adamdaniel.ai=$GITHUB_WORKSPACE/registry-site" \
@@ -545,12 +545,10 @@ jobs:
       # held for 14 hours (2026-11-03) never drew a 429, while one a minute
       # drew 429s after about 52 fires in 98 minutes (2026-11-07, and 59 in
       # 97 on 2026-10-26), so the API refills about 20 fires an hour from a
-      # small burst. 200 seconds is 18 an hour; 400, 9 an hour, since Adam
-      # asked on 2026-11-07 17:51 UTC to slow evals down until the
-      # 2026-11-09 17:00 UTC reset. Restore 200 after it.
+      # small burst. 200 seconds is 18 an hour.
       - name: Space the next fire
         if: steps.slot.outputs.open == 'true'
-        run: sleep 400
+        run: sleep 200
 
   # Arms the re-plan timer (routine-eval-watchdog.yml) at every sweep's end,
   # whatever the plan or dispatch concluded: a fire that never pushes results

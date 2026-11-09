@@ -16,8 +16,8 @@ September pause, and is not updated any more.
   [ADR 0010](docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md)
   describes, fired by `routine-eval-fire.yml`. Results land under
   `routine-results/` on `persistent/eval-results`. `scripts/allowance_guard.py`
-  holds every fire to the weekly cap in `evals/budget.yml`. The cap is 30% of
-  the weekly allowance, at most 3% per run, and nothing fires once the
+  holds every fire to the weekly cap in `evals/budget.yml`. The cap is 25% of
+  the weekly allowance, at most 1% per run, and nothing fires once the
   account reaches 80%. When the account is under pace late in the week, the
   guard allows more ([#400](https://github.com/Adam-S-Daniel/skills-evals/pull/400)).
   A successful fire with no results holds a full reservation for 90

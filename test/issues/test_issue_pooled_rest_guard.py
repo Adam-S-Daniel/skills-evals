@@ -912,6 +912,8 @@ class PlannerTests(unittest.TestCase):
                 self.assertEqual([(c["class"], c["provisional_keep"]) for c in mine],
                                  [("benefit", want)])
 
+    # A full focus band needs more focus sections than the standing 2.
+    @mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 40)
     def test_a_pooled_keep_is_fired_with_a_full_focus_band(self):
         # Round 4's M1: in the recheck band, which has no share, sixty
         # undecided sections filling the focus band starved the provisional
