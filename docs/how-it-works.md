@@ -330,7 +330,9 @@ at once; it now also takes a partly decided subject before the longest
 without a run, and a subject whose every projected cell is past its cap
 after all others. A guidance section whose `eval-coverage.yml` row in
 _agent-guidance is `skipped` is never fired, even with fixtures on the
-schedule.
+schedule, and the weekly sweep files no `needs-fixtures` or
+`needs-harder-fixtures` request for it, since a new fixture would never run
+(2026-11-09, skills-evals#862).
 7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id

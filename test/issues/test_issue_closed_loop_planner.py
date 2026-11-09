@@ -1514,6 +1514,20 @@ class ImproveValueTests(unittest.TestCase):
         self.assertFalse(any(s["eligible"] for s in status.values()))
         self.assertEqual(plan["fires"], [])
 
+    def test_an_out_of_scope_section_gets_no_fixture_work(self):
+        # Its cells are held (`scope_holds`), so a new fixture would never
+        # run; a paused section still gets one (skills-evals#862).
+        sections = {"lang": gsection(headroom=0.05), "few": gsection(fixtures=2, headroom=0.5),
+                    "paused": {**gsection(headroom=0.05), "pause": "an attempt is in flight"}}
+        plan = plan_week.build_plan(ctx(
+            guidance=sections, guidance_skipped=frozenset({"lang", "few"}),
+            guidance_use=10.0, room=1.0), NOW)
+        self.assertEqual([(w["kind"], w["section"]) for w in plan["work"]],
+                         [("needs-harder-fixtures", "paused")])
+        self.assertEqual(sorted(plan["guidance"]), ["few", "lang", "paused"])
+        plan = plan_week.build_plan(ctx(guidance=sections, guidance_use=10.0, room=1.0), NOW)
+        self.assertEqual(sorted(w["section"] for w in plan["work"]), ["few", "lang", "paused"])
+
     def test_a_tracked_section_with_no_fixtures_asks_for_its_first(self):
         plan = plan_week.build_plan(ctx(
             guidance={"few": gsection(fixtures=2, headroom=0.5)},
