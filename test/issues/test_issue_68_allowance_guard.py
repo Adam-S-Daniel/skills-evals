@@ -108,13 +108,14 @@ class BudgetFileTests(unittest.TestCase):
     def test_the_committed_budget_is_adams_current_cap(self):
         # 100 points a week and a 90% account stop (95% until Adam asked
         # to slow evals, 2026-11-07 17:51 UTC; 85% until he raised it 5
-        # points, 2026-11-08 19:21 UTC) for the allowance week ending
+        # points, 2026-11-08 19:21 UTC; 96% from 2026-11-09 15:50 UTC to use the
+        # last of the week) for the allowance week ending
         # 2026-11-09 17:00 UTC only (Adam, 2026-11-02, finish-week push); after that reset, 25 points and 80%. 2026-11-01 (permanent):
         # the per-run cap is 1 point, the overrun the p95 of a run's largest
         # call.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 1.00,
-                          "stop_when_account_above": 0.90,
+                          "stop_when_account_above": 0.96,
                           "per_run_cap": 0.01, "per_run_overrun": 0.0005,
                           "points_per_usd": 0.0005})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")

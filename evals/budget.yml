@@ -71,5 +71,8 @@ points_per_usd: 0.0005
 # (Adam, 2026-11-02); 85 from 2026-11-07 17:51 UTC, when Adam asked to slow
 # evals so his other work keeps room before the reset; 90 from 2026-11-08
 # 19:21 UTC (Adam: "Increase this week's (already high) cap by 5 further
-# percentage points"). Restore to 0.80 after that reset.
-stop_when_account_above: 0.90
+# percentage points"); 96 from 2026-11-09 15:50 UTC, so the last of the week's
+# allowance runs evals before the reset (Adam, 2026-11-09 15:34 UTC: "get some
+# more routines in before the last few weekly tokens reset"), leaving 4 points
+# for his own work. Restore to 0.80 after that reset.
+stop_when_account_above: 0.96
