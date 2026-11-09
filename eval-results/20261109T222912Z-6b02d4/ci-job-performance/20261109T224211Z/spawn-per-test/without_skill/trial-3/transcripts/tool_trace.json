@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RfhnLpsM2fuSui5vGs6KVR",
+      "name": "Bash",
+      "input": "git log --oneline | head -5 && ls -a && cat .github/workflows/*.yml | head -150",
+      "input_chars": 79,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RfhnLpsM2fuSui5vGs6KVR",
+      "is_error": false,
+      "output": "3a40540 initial commit\n.\n..\n.bash_profile\n.bashrc\n.claude\n.git\n.gitconfig\n.github\n.gitignore\n.gitmodules\n.idea\n.mcp.json\n.profile\n.ripgreprc\n.vscode\n.zprofile\n.zshrc\nREADME.md\npages\nsitelint\ntests\nname: ci\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\njobs:\n  lint...",
+      "output_chars": 739,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01G2fUVcJr2dhqxk1NWAT8AF",
+      "name": "Bash",
+      "input": "cat README.md .gitmodules; ls tests sitelint pages | head -50; wc -l tests/*.py; nproc; python3 --version; python3 -c \"import xdist\" 2>&1",
+      "input_chars": 137,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01G2fUVcJr2dhqxk1NWAT8AF",
+      "is_error": true,
+      "output": "Exit code 1\n# sitelint\n\nHouse-style checks for the example.com marketing pages: alt text, titles,\nheadings, links, inline styles and the words the style guide asks us to avoid.\nThis repository is private to the example-org web team.\n\n```bash\npython3 -m sitelint pages/*.html          # one line per f...",
+      "output_chars": 1040,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GWvaDRBjQzCJkF3nP5c7kE",
+      "name": "Bash",
+      "input": "cat tests/test_cli.py; sed -n 1,80p tests/test_pages.py; time python3 -m unittest discover -s tests 2>&1 | tail -5",
+      "input_chars": 114,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FZv5CdrnZ9GPkrYBLSSiCB",
+      "name": "Bash",
+      "input": "python3 -m unittest discover -s tests -v 2>&1 | tail -5; python3 - <<'E'\nimport unittest,time,sys\nsys.path.insert(0,'.')\ns=unittest.defaultTestLoader.discover('tests')\nimport collections\nt=collections...",
+      "input_chars": 499,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GWvaDRBjQzCJkF3nP5c7kE",
+      "is_error": false,
+      "output": "\"\"\"The sitelint command line's contract: exit codes and output shapes.\"\"\"\n\nimport json\nimport subprocess\nimport sys\nimport unittest\nfrom pathlib import Path\n\nROOT = Path(__file__).resolve().parents[1]\n\n\ndef sitelint(*args):\n    return subprocess.run([sys.executable, \"-m\", \"sitelint\", *args],\n       ...",
+      "output_chars": 4350,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FZv5CdrnZ9GPkrYBLSSiCB",
+      "is_error": false,
+      "output": "----------------------------------------------------------------------\nRan 172 tests in 5.604s\n\nOK\n0.043 test_pages.LegalPageTests.test_empty_link\n0.043 test_pages.AboutPageTests.test_long_description\n0.042 test_pages.DocsPageTests.test_empty_link\n0.042 test_pages.AboutPageTests.test_missing_alt\n0.0...",
+      "output_chars": 743,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xsw21o7oZHV7eRWBjMPTy1",
+      "name": "Bash",
+      "input": "cat sitelint/__init__.py sitelint/__main__.py; wc -l sitelint/rules.py; sed -n 1,40p sitelint/rules.py; python3 -X importtime -m sitelint pages/home.html 2>&1 | sort -t'|' -k2 -n | tail -5; time pytho...",
+      "input_chars": 309,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xsw21o7oZHV7eRWBjMPTy1",
+      "is_error": false,
+      "output": "\"\"\"sitelint: house-style checks for the example.com marketing pages.\"\"\"\n\nfrom sitelint.rules import Finding, lint_file, lint_text\n\n__all__ = [\"Finding\", \"lint_file\", \"lint_text\"]\n__version__ = \"0.4.2\"\n\"\"\"Command line: python3 -m sitelint [--json] PAGE...\n\nExit status is 0 when no page has a finding,...",
+      "output_chars": 3925,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QmmdHFQxBFP8A88E751KKa",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='tests/test_pages.py'\ns=open(p).read()\ns=s.replace('''import subprocess\nimport sys\nimport unittest\nfrom pathlib import Path\n''','''import functools\nimport subprocess\nimport sys\nimpor...",
+      "input_chars": 1589,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QmmdHFQxBFP8A88E751KKa",
+      "is_error": false,
+      "output": " tests/test_pages.py | 17 ++++++++++++++---\n 1 file changed, 14 insertions(+), 3 deletions(-)\n<path>: line 79: <path>: No such file or directory \n<path>: line 79: <path>: No such file or directory \n<path>: line 79: <path>: No such file or directory \nRan 172 tests in 0.537s\n\nFAILED (failures=1)\n M te...",
+      "output_chars": 486,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GkmEYLcpj1dif9UnPaYGFF",
+      "name": "Bash",
+      "input": "for i in 1 2 3; do ( time python3 -m unittest discover -s tests 2>&1 | tail -3 | tr '\\n' ' ' ) 2>&1 | grep -E \"Ran|real\" | tr '\\n' ' '; echo; done\ngit stash -q; echo BEFORE; for i in 1 2 3; do ( time ...",
+      "input_chars": 401,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GkmEYLcpj1dif9UnPaYGFF",
+      "is_error": false,
+      "output": "Ran 172 tests in 0.562s  OK  real\t0m0.612s \nRan 172 tests in 0.521s  OK  real\t0m0.576s \nRan 172 tests in 0.524s  OK  real\t0m0.592s \nBEFORE\nreal\t0m5.563s\nreal\t0m5.873s\nreal\t0m5.567s\n\nWARNING: There was an error checking the latest version of pip.",
+      "output_chars": 245,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012imSPgo8hGGrdffmPHPLtF",
+      "name": "Bash",
+      "input": "git stash -q; echo \"xdist -n 8, original tests, 4 cores:\"; for i in 1 2; do ( time $TMPDIR/v/bin/python -m pytest -q -n 8 tests 2>&1 | tail -1 ) 2>&1 | grep -E \"passed|real\" | tr '\\n' ' '; echo; done;...",
+      "input_chars": 253,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012imSPgo8hGGrdffmPHPLtF",
+      "is_error": false,
+      "output": "xdist -n 8, original tests, 4 cores:\nreal\t0m0.017s \nreal\t0m0.017s \n M tests/test_pages.py",
+      "output_chars": 89,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JSxs6tevxBSW11NJh3LP2R",
+      "name": "Bash",
+      "input": "ls $TMPDIR/v/bin | head; $TMPDIR/v/bin/python -m pytest --version 2>&1 | tail -2",
+      "input_chars": 80,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JSxs6tevxBSW11NJh3LP2R",
+      "is_error": false,
+      "output": "Activate.ps1\nactivate\nactivate.csh\nactivate.fish\npip\npip3\npip3.11\npython\npython3\npython3.11\n<path>: No module named pytest",
+      "output_chars": 142,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

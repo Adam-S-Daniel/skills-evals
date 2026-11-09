@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TmG3XTPvthGYeMgjg1AbhD",
+      "name": "Bash",
+      "input": "git log --oneline | head -5 && ls -la && cat .github/workflows/*.yml && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 128,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TmG3XTPvthGYeMgjg1AbhD",
+      "is_error": false,
+      "output": "062741e initial commit\ntotal 40\ndrwxr-xr-x  8 root root 4096 Nov  9 22:35 .\ndrwxrwxrwt 10 root root 4096 Nov  9 22:35 ..\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:35 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov  7 04:35 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov  9 22:35 .claude\ndrwxr-xr-x  9 root root...",
+      "output_chars": 2159,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Vpn9ruLeaZUEkSzGY4VdyG",
+      "name": "Bash",
+      "input": "cat README.md .gitignore sitelint/*.py tests/*.py; wc -c pages/*",
+      "input_chars": 64,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Vpn9ruLeaZUEkSzGY4VdyG",
+      "is_error": false,
+      "output": "# sitelint\n\nHouse-style checks for the example.com marketing pages: alt text, titles,\nheadings, links, inline styles and the words the style guide asks us to avoid.\nThis repository is private to the example-org web team.\n\n```bash\npython3 -m sitelint pages/*.html          # one line per finding\npytho...",
+      "output_chars": 28201,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011GvjqPqbHFUQGXN9Nos4kk",
+      "name": "Bash",
+      "input": "python3 --version && nproc && for i in 1 2 3; do <path> -f \"%e s wall\" python3 -m unittest discover -s tests 2>&1 | tail -4; done; python3 -X importtime -c \"import sitelint.__main__\" 2>&1 | sort -t'|'...",
+      "input_chars": 284,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011GvjqPqbHFUQGXN9Nos4kk",
+      "is_error": true,
+      "output": "Exit code 1\nPython 3.11.18\n4\n<path>: line 1: <path>: No such file or directory\n<path>: line 1: <path>: No such file or directory\n<path>: line 1: <path>: No such file or directory\nimport time:      2857 |      16354 |     sitelint.rules\nimport time:      1638 |      17991 |   sitelint\nimport time:   ...",
+      "output_chars": 412,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FDHmRCMi8VjYqsNYRUSCBy",
+      "name": "Bash",
+      "input": "for i in 1 2 3; do s=$(date +%s.%N); python3 -m unittest discover -s tests 2>&1 | tail -3 | head -1; e=$(date +%s.%N); echo \"wall $(echo \"$e-$s\"|bc)\"; done; python3 -m unittest discover -s tests -v 2>...",
+      "input_chars": 219,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FDHmRCMi8VjYqsNYRUSCBy",
+      "is_error": false,
+      "output": "Ran 172 tests in 4.994s\nwall 5.046014055\nRan 172 tests in 5.158s\nwall 5.222448691\nRan 172 tests in 5.448s\nwall 5.498168272\n172",
+      "output_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018Pf9S2UWzjgZ7bu5wATBz5",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport subprocess,sys,time\nt=time.perf_counter()\nfor _ in range(50): subprocess.run([sys.executable,\"-m\",\"sitelint\",\"--json\",\"pages/home.html\"],capture_output=True)\nprint(\"per CLI ca...",
+      "input_chars": 527,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018Pf9S2UWzjgZ7bu5wATBz5",
+      "is_error": false,
+      "output": "per CLI call ms 32.21424501999991\nper in-process lint ms 0.15882943999940835\n172",
+      "output_chars": 80,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017DG3FJoYAq6i5QtBkJGTE9",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np=\"tests/test_pages.py\"\ns=open(p).read()\ns=s.replace('''Each test runs the sitelint command line on one page, the way CI and the\npre-publish hook run it, and checks the lines one rul...",
+      "input_chars": 2086,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017DG3FJoYAq6i5QtBkJGTE9",
+      "is_error": false,
+      "output": " tests/test_pages.py | 17 +++++++++++++----\n 1 file changed, 13 insertions(+), 4 deletions(-)\nRan 172 tests in 0.481s\nwall .552362369\nRan 172 tests in 0.479s\nwall .531106532\nRan 172 tests in 0.499s\nwall .557966951\nsame 172 tests pass",
+      "output_chars": 233,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RKXD6xekVLoMGzHKZzzJ7y",
+      "name": "Bash",
+      "input": "git show HEAD:tests/test_pages.py > $TMPDIR/old_test_pages.py\nrun(){ python3 -m unittest discover -s tests -v 2>&1 | grep -E ' (FAIL|ERROR)$' | sort; }\nfor m in 's/TITLE_MAX = 60/TITLE_MAX = 70/' 's/\"...",
+      "input_chars": 1007,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RKXD6xekVLoMGzHKZzzJ7y",
+      "is_error": false,
+      "output": "s/TITLE_MAX = 60/TITLE_MAX = 70/: old=0 new=0 identical\ns/\"seamless\", //: old=2 new=2 identical\ns/level > previous + 1/level > previous + 2/: old=3 new=3 identical\ns/href.startswith(\"http:\\/\\/\")<path>: old=4 new=4 identical\n14\nUpdated 1 path from the index\n M tests/test_pages.py\n?? .bash_profile\n?? ...",
+      "output_chars": 419,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PmR25SgwxJ5Ho8dpov2hN3",
+      "name": "Bash",
+      "input": "git diff",
+      "input_chars": 8,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PmR25SgwxJ5Ho8dpov2hN3",
+      "is_error": false,
+      "output": "diff --git a/tests/test_pages.py b/tests/test_pages.py\nindex c5532c1..6cde9fc 100644\n--- a/tests/test_pages.py\n+++ b/tests/test_pages.py\n@@ -1,9 +1,12 @@\n \"\"\"What sitelint reports for each page under pages/.\n \n Each test runs the sitelint command line on one page, the way CI and the\n-pre-publish hoo...",
+      "output_chars": 1655,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
