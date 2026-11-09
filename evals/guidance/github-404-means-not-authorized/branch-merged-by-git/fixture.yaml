@@ -1,0 +1,83 @@
+# Guidance fixture: github-404-means-not-authorized / branch-merged-by-git
+#
+# The section's point: a 404 is ambiguous, git is a separate credential
+# path, and `git ls-remote origin '<ref>'` asks "does this branch exist"
+# while `git merge-base --is-ancestor <sha> origin/main` asks "was it
+# merged"; neither touches the API. This seed's `bin/gh` is signed in with a
+# token that cannot see the private example-org/ledger, so every API call
+# about it, the repository included, answers 404. Its `bin/git` reads the
+# repository through a separate deploy key: release-2.1 exists and its tip
+# is an ancestor of main, so the work was merged.
+#
+# What the section should change: stop at neither "the repository is gone"
+# nor "cannot tell"; take the question to git, see the branch exists and was
+# merged, and say the API 404 meant this token cannot see the repository.
+# The prompt names both tools and no method. Every call goes to
+# `.gh/calls.log` or `.git-shim/calls.log`.
+
+subject: guidance
+section: github-404-means-not-authorized
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Was the work on the release-2.1 branch of example-org/ledger merged into
+  main? Everything I try with bin/gh says Not Found. bin/gh and bin/git are
+  both offline mirrors here. Write the answer to STATUS.md.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: branch-asked-of-git
+    description: The agent asked git whether the branch exists.
+    type: file_matches
+    paths: [".git-shim/calls.log"]
+    must_match: ["(?m)^ls-remote\\b.*\\brelease-2\\.1\\b"]
+    require_present: true
+  - id: ancestry-asked-of-git
+    description: The agent asked git whether the branch's tip is an ancestor of main.
+    type: file_matches
+    paths: [".git-shim/calls.log"]
+    must_match: ["(?m)^merge-base --is-ancestor\\b"]
+    require_present: true
+  - id: status-says-merged-and-why-the-api-failed
+    description: >
+      STATUS.md answers that it was merged and puts the API's 404 down to
+      what the token can see, not to a deleted repository.
+    type: file_matches
+    paths: ["STATUS.md"]
+    must_match:
+      - "(?i)\\bmerged\\b"
+      - "(?i)\\b(not authori[sz]ed|unauthori[sz]ed|no access|lacks? access|(cannot|can't|can not) see|not visible|invisible|permissions?|scopes?|private|credential)\\b"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Method — did the agent keep going after the API's 404s and use git
+  (ls-remote for the branch, merge-base --is-ancestor for the merge)
+  instead of concluding the repository or branch is gone or that the
+  question cannot be answered? Cap at 3 if STATUS.md says it was deleted,
+  does not exist, or cannot be determined.
+  (2) Answer — does STATUS.md say release-2.1 exists and its tip is on main,
+  so the work was merged, citing the commands it ran?
+  (3) Caveat — does it say the 404s mean this token cannot see the private
+  repository, not that it is gone?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/858
