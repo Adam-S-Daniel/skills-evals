@@ -1198,6 +1198,146 @@ class Validate(Case):
 # ---------------------------------------------------------------------------
 # apply / fixtures-apply / bodies.
 
+class NameCheck(Case):
+    """skills-evals#918: a drafted name is refused when any registry holds it
+    now or ever shipped it, when a federated repository holds it, or when it
+    is reserved; the refusal never names another registry's skills."""
+
+    def registry(self, root: Path, name: str, skills=(), retired=(),
+                 marketplace=None, layout="plugins") -> Path:
+        repo = root / name
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        self.write(repo / "README.md", "registry\n")
+
+        def path(skill):
+            return (repo / "skills" / skill if layout == "skills"
+                    else repo / "plugins" / "p" / "skills" / skill) / "SKILL.md"
+
+        for skill in retired:
+            self.write(path(skill), "---\nname: x\n---\n")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "-m", "first")
+        for skill in retired:
+            shutil.rmtree(path(skill).parent)
+        for skill in skills:
+            self.write(path(skill), "---\nname: x\n---\n")
+        if marketplace is not None:
+            self.write(repo / ".claude-plugin" / "marketplace.json",
+                       {"name": name, "plugins": marketplace})
+        git(repo, "add", "-A")
+        git(repo, "commit", "-q", "--allow-empty", "-m", "second")
+        return repo
+
+    def fleet(self, public=(), private=(), federated=(), retired=()) -> list[str]:
+        market = [{"name": "p", "source": "./plugins/p"},
+                  {"name": "fed", "source": {"source": "github",
+                                             "repo": "Example-Owner/fed-repo"}}]
+        root = Path(tempfile.mkdtemp(dir=self.tmp))
+        regs = {"adam-agentskills": self.registry(root, "adam-agentskills", public,
+                                                  retired, market),
+                "adam-agentskills-private": self.registry(
+                    root, "adam-agentskills-private", private),
+                "fed-repo": self.registry(root, "fed-repo", federated,
+                                          layout="skills")}
+        return [f"{k}={v}" for k, v in regs.items()]
+
+    def check(self, subject: str, regs: list[str]) -> tuple[int, str, str]:
+        argv = ["name-check", "--subject", subject]
+        for reg in regs:
+            argv += ["--registry", reg]
+        return run_main(*argv)
+
+    def test_a_clean_name_passes(self):
+        code, out, err = self.check(SUBJECT, self.fleet(public=["other-skill"]))
+        self.assertEqual(code, 0, err)
+        self.assertEqual(outputs(out), {"names": "clear", "registries": "3"})
+
+    def test_each_source_of_clash_is_refused(self):
+        cases = {
+            "public": ({"public": [SUBJECT]}, "is a skill in adam-agentskills"),
+            "private": ({"private": [SUBJECT]},
+                        "is a skill in adam-agentskills-private"),
+            "federated": ({"federated": [SUBJECT]}, "is a skill in fed-repo"),
+            "retired": ({"retired": [SUBJECT]},
+                        "once shipped in adam-agentskills"),
+        }
+        for label, (kwargs, message) in cases.items():
+            with self.subTest(source=label):
+                code, out, err = self.check(SUBJECT, self.fleet(**kwargs))
+                self.assertEqual(code, 1, err)
+                self.assertIn(message, err)
+                self.assertEqual(out, "")
+
+    def test_the_comparison_folds_case_like_the_install_directory(self):
+        code, _, err = self.check(SUBJECT, self.fleet(private=[SUBJECT.upper() + "."]))
+        self.assertEqual(code, 1)
+        self.assertIn("adam-agentskills-private", err)
+
+    def test_reserved_and_upstream_names_are_refused(self):
+        regs = self.fleet()
+        code, _, err = self.check("synced", regs)
+        self.assertEqual(code, 1)
+        self.assertIn("reserved name", err)
+        code, _, err = self.check("pdf", regs)
+        self.assertEqual(code, 1)
+        self.assertIn(dns.UPSTREAM_REFUSAL, err)
+
+    def test_the_refusal_never_names_another_skill(self):
+        secret = "private-only-skill"
+        code, out, err = self.check(SUBJECT, self.fleet(private=[secret, SUBJECT]))
+        self.assertEqual(code, 1)
+        self.assertNotIn(secret, out + err)
+        code, out, err = self.check(SUBJECT, self.fleet(private=[secret]))
+        self.assertEqual(code, 0, err)
+        self.assertNotIn(secret, out + err)
+
+    def test_every_required_and_federated_registry_must_be_given(self):
+        regs = self.fleet()
+        for drop in ("adam-agentskills-private", "fed-repo"):
+            with self.subTest(dropped=drop):
+                code, _, err = self.check(
+                    SUBJECT, [r for r in regs if not r.startswith(drop + "=")])
+                self.assertEqual(code, 2)
+                self.assertIn(drop, err)
+
+    def test_a_shallow_clone_is_refused(self):
+        regs = self.fleet()
+        shallow = self.tmp / "shallow"
+        source = regs[1].split("=", 1)[1]
+        subprocess.run(["git", "clone", "-q", "--depth", "1",
+                        Path(source).as_uri(), str(shallow)], check=True,
+                       capture_output=True, env={**os.environ, **GIT_ENV})
+        regs[1] = f"adam-agentskills-private={shallow}"
+        code, _, err = self.check(SUBJECT, regs)
+        self.assertEqual(code, 2)
+        self.assertIn("shallow", err)
+
+    def test_an_unknown_marketplace_source_is_refused(self):
+        regs = self.fleet()
+        public = Path(regs[0].split("=", 1)[1])
+        self.write(public / ".claude-plugin" / "marketplace.json",
+                   {"plugins": [{"name": "u", "source": {"source": "url",
+                                                         "url": "https://example.com/x.git"}}]})
+        git(public, "commit", "-q", "-am", "url source")
+        code, _, err = self.check(SUBJECT, regs)
+        self.assertEqual(code, 2)
+        self.assertIn("unknown shape", err)
+
+    def test_federated_sources_lists_the_clones_to_make(self):
+        regs = self.fleet()
+        argv = ["federated-sources"]
+        for reg in regs:
+            argv += ["--registry", reg]
+        code, out, err = run_main(*argv)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(out, "fed-repo Example-Owner/fed-repo\n")
+
+    def test_reserved_names_fold_like_the_install_directory(self):
+        self.assertTrue(dns.reserved_name("Synced. "))
+        self.assertFalse(dns.reserved_name("synced-notes"))
+
+
 def sibling_registry() -> Path | None:
     entry = run_eval.resolve_registries(
         None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,

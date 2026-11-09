@@ -75,6 +75,13 @@ values only):
   validate  --repo DIR --base REF --source REF --branch NAME
             [--expect-sha SHA] --registry adam-agentskills=DIR --out DIR
             -> decision=, subject=, plugin=, run_id=, sha=
+  federated-sources --registry NAME=DIR [...]
+            -> `<name> <owner>/<repo>` per GitHub-sourced marketplace plugin
+  name-check --subject NAME --registry NAME=DIR [...]
+            (full-history clones of adam-agentskills, adam-agentskills-private
+            and every federated repository; exit 1 when the name is reserved,
+            upstream, or in any registry now or in its history)
+            -> names=clear, registries=N
   apply     --staged DIR --tree DIR         (in an adam-agentskills checkout)
   fixtures-apply --staged DIR --tree DIR    (in a skills-evals checkout)
   pr-body   --staged DIR --run-id ID --sha SHA --branch NAME [--mode draft|auto]
@@ -647,6 +654,157 @@ def skill_exists(registry: Path, subject: str) -> bool:
     return any(p.is_file() for p in registry.glob(f"plugins/*/skills/{subject}/SKILL.md"))
 
 
+# ---------------------------------------------------------------------------
+# name-check / federated-sources: a new skill's name against every registry.
+#
+# A skill's directory basename never changes once it ships, and the bootstrap
+# hook installs every lock's skills into ONE flat directory: when two locks
+# give one name two digests it installs neither copy. So a drafted name that
+# any registry holds, or ever shipped, drops both skills in every session that
+# loads both registries (skills-evals#918). The gate's `names` job runs
+# `name-check` before any pull request is opened. Names are compared the way
+# that directory resolves them: case-folded, trailing dots and spaces dropped
+# (the hook's own `synced` guard, adam-agentskills' skills-bootstrap.sh).
+
+#: Names no skill may take. `synced` is the claude.ai account store's own
+#: directory under ~/.claude/skills/; the hook refuses a skill that would
+#: install over it.
+RESERVED_NAMES = frozenset({"synced"})
+PRIVATE_REGISTRY_NAME = "adam-agentskills-private"
+#: The registries fleet locks name; `name-check` refuses unless each is given,
+#: along with every repository their marketplaces federate.
+REQUIRED_REGISTRIES = (REGISTRY_NAME, PRIVATE_REGISTRY_NAME)
+MARKETPLACE_PATH = ".claude-plugin/marketplace.json"
+MAX_MARKETPLACE = 256 * 1024
+FEDERATED_REPO_RE = re.compile(
+    r"(?P<owner>[A-Za-z0-9][A-Za-z0-9-]{0,38})/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]{0,99})")
+#: Where a registry keeps skills: the marketplace layout and a single
+#: plugin's own root (cms-platform's federated plugin).
+SKILL_PATHSPECS = (":(glob)plugins/*/skills/*/**", ":(glob)skills/*/**")
+
+
+def name_key(name: str) -> str:
+    """A skill name as the install directory resolves it."""
+    return name.rstrip(". ").lower()
+
+
+def reserved_name(subject: str) -> bool:
+    return name_key(subject) in RESERVED_NAMES
+
+
+def skill_basename(path: str) -> str | None:
+    """The skill directory a registry path lies in, or None."""
+    parts = path.split("/")
+    if len(parts) >= 5 and parts[0] == "plugins" and parts[2] == "skills":
+        return parts[3]
+    if len(parts) >= 3 and parts[0] == "skills":
+        return parts[1]
+    return None
+
+
+def _registry_git(registry: Path, *args: str) -> bytes:
+    try:
+        return ingest.git(str(registry), *args)
+    except Rejected:
+        raise Refused("a registry clone cannot be read") from None
+
+
+def registry_names(registry: Path) -> tuple[set[str], set[str]]:
+    """(names at HEAD, names anywhere in HEAD's history), name_key()ed,
+    through git plumbing only, so a no-checkout or sparse clone reads whole.
+    A shallow clone is refused: its history would hide a retired name."""
+    if _registry_git(registry, "rev-parse", "--is-shallow-repository").strip() != b"false":
+        raise Refused("a registry clone is shallow; clone its full history")
+    # ls-tree takes no glob pathspec; skill_basename() filters its listing.
+    head = _registry_git(registry, "ls-tree", "-r", "-z", "--name-only", "HEAD")
+    log = _registry_git(registry, "log", "-z", "--format=", "--name-only",
+                        "--no-renames", "HEAD", "--", *SKILL_PATHSPECS)
+
+    def names(raw: bytes) -> set[str]:
+        out = set()
+        for path in raw.decode("utf-8", "replace").replace("\n", "\0").split("\0"):
+            name = skill_basename(path.strip())
+            if name:
+                out.add(name_key(name))
+        return out
+
+    current = names(head)
+    return current, current | names(log)
+
+
+def federated_repos(registry: Path) -> list[str]:
+    """`owner/repo` of every plugin the registry's marketplace sources from
+    GitHub. A source of any other shape is refused rather than skipped, so a
+    new federation kind cannot slip past the check."""
+    listed = _registry_git(registry, "ls-tree", "--name-only", "HEAD", "--",
+                           MARKETPLACE_PATH)
+    if not listed.strip():
+        return []
+    raw = _registry_git(registry, "cat-file", "blob", f"HEAD:{MARKETPLACE_PATH}")
+    if len(raw) > MAX_MARKETPLACE:
+        raise Refused("a registry's marketplace.json is over its size cap")
+    try:
+        doc = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise Refused("a registry's marketplace.json is not JSON") from None
+    plugins = doc.get("plugins") if isinstance(doc, dict) else None
+    if not isinstance(plugins, list):
+        raise Refused("a registry's marketplace.json has no plugins list")
+    repos = []
+    for entry in plugins:
+        source = entry.get("source") if isinstance(entry, dict) else None
+        if isinstance(source, str) and source.startswith("./"):
+            continue
+        repo = source.get("repo") if isinstance(source, dict) \
+            and source.get("source") == "github" else None
+        if not isinstance(repo, str) or not FEDERATED_REPO_RE.fullmatch(repo):
+            raise Refused("a registry's marketplace has a plugin source of "
+                          "unknown shape")
+        if repo not in repos:
+            repos.append(repo)
+    return repos
+
+
+def federated_sources(registries: dict[str, Path]) -> list[str]:
+    """`<name> <owner>/<repo>` lines for the clones `name-check` needs."""
+    lines = []
+    for registry in registries.values():
+        for repo in federated_repos(registry):
+            line = f"{repo.split('/')[1]} {repo}"
+            if line not in lines:
+                lines.append(line)
+    return lines
+
+
+def name_check(subject: str, registries: dict[str, Path]) -> dict:
+    """Refuse (Rejected) a subject whose name is reserved, upstream, or held
+    by any registry now or in its history. The fixed messages name the
+    registry but never another skill, so a private registry's names stay out
+    of public logs."""
+    if not SUBJECT_RE.fullmatch(subject) or subject == UNATTRIBUTED_SUBJECT:
+        raise Refused("--subject is not a subject name")
+    missing = [n for n in REQUIRED_REGISTRIES if n not in registries]
+    if missing:
+        raise Refused("name-check needs --registry for " + ", ".join(missing))
+    for registry in list(registries.values()):
+        for repo in federated_repos(registry):
+            if repo.split("/")[1] not in registries:
+                raise Refused("name-check needs --registry for every federated "
+                              "repository: " + repo)
+    if reserved_name(subject):
+        raise Rejected("the subject is a reserved name")
+    if upstream_skills.upstream_source(subject):
+        raise Rejected(UPSTREAM_REFUSAL)
+    key = name_key(subject)
+    for name in sorted(registries):
+        current, ever = registry_names(registries[name])
+        if key in current:
+            raise Rejected(f"the subject's name is a skill in {name}")
+        if key in ever:
+            raise Rejected(f"the subject's name once shipped in {name}")
+    return {"names": "clear", "registries": str(len(registries))}
+
+
 # Unmeasured rejections a subject may collect before it is retired anyway,
 # so a proposal no drafter can stage correctly stops costing a fire a day.
 MAX_UNMEASURED = 3
@@ -779,7 +937,7 @@ def select(lessons: Path, registries: dict[str, Path], evals: Path,
             subject = doc["subject"]
             eligible, via_decline = eligibility(subject, drafted, declined)
             if not eligible or any(skill_exists(r, subject) for r in registries.values()) \
-                    or (evals / subject).exists() \
+                    or (evals / subject).exists() or reserved_name(subject) \
                     or upstream_skills.upstream_source(subject, upstream):
                 continue
             candidates.append(((-doc["evidence_count"],
@@ -1317,6 +1475,8 @@ def measure(staging: Path, registry_flag: str, ref: str, payload_path: Path,
             raise Refused("the registry checkout cannot archive that commit") from None
         if upstream_skills.upstream_source(subject):
             return finish([UPSTREAM_REFUSAL])
+        if reserved_name(subject):
+            return finish(["the subject is a reserved name"])
         if skill_exists(archived, subject):
             return finish(["the subject already exists as a skill in the "
                            "registry at that commit"])
@@ -1555,6 +1715,8 @@ def validate(repo: str, base: str, source: str, branch: str,
         if upstream_skills.upstream_source(subject):
             raise Rejected(f"{UPSTREAM_REFUSAL}: "
                            f"{upstream_skills.upstream_source(subject)}")
+        if reserved_name(subject):
+            raise Rejected("the subject is a reserved name")
         if skill_exists(registry, subject) or any(
                 registry.glob(f"plugins/*/skills/{subject}")):
             raise Rejected(f"the subject already exists in {REGISTRY_NAME}")
@@ -1960,6 +2122,11 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
     p.add_argument("--expect-sha", default="")
     p.add_argument("--registry", default=None)
     p.add_argument("--out", required=True, type=Path)
+    p = sub.add_parser("federated-sources")
+    p.add_argument("--registry", action="append", required=True)
+    p = sub.add_parser("name-check")
+    p.add_argument("--subject", required=True)
+    p.add_argument("--registry", action="append", required=True)
     for name in ("apply", "fixtures-apply"):
         p = sub.add_parser(name)
         p.add_argument("--staged", required=True, type=Path)
@@ -1999,7 +2166,13 @@ def main(argv: list[str] | None = None, runner: Runner | None = None) -> int:
                 if args.command == "pr-body"
                 else issue_body(args.staged, args.run_id, args.sha, args.branch))
             return 0
-        if args.command == "select":
+        if args.command == "federated-sources":
+            for line in federated_sources(parse_registries(args.registry)):
+                print(line)
+            return 0
+        if args.command == "name-check":
+            result = name_check(args.subject, parse_registries(args.registry))
+        elif args.command == "select":
             result = select(args.lessons, parse_registries(args.registry),
                             args.evals, args.drafted, args.hook_declined,
                             args.issue_proposals)

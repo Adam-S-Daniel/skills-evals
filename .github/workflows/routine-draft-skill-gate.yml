@@ -75,6 +75,11 @@ name: Gate routine skill draft
 #                  is not held. Without the App token it falls back to the
 #                  job token and warns that the checks wait for
 #                  draft-fixtures-follow.yml to restart them.
+#     names        contents: read; mints the read-only registry App token
+#                  (REGISTRY_READ_APP, contents: read on
+#                  adam-agentskills-private alone) and checks the drafted
+#                  name against every registry (skills-evals#918), below.
+#                  skill-pr waits on it, so a clash opens nothing.
 #     hook-issue   contents: read and issues: write on the job token.
 # * One proposal per subject: an existing `draft-skill/<subject>` branch in
 #   adam-agentskills, `draft-skill-fixtures/<subject>` branch here or
@@ -237,8 +242,84 @@ jobs:
             echo "The draft passed the gate. The skill and fixtures pull requests are skipped because repository secrets \`EVAL_IMPROVE_APP_CLIENT_ID\` and \`EVAL_IMPROVE_APP_PEM\` are not both set (see routine-improve-gate.yml's header for the App this needs)."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # skills-evals#918: the drafted name against every registry, before any
+  # pull request. A skill's directory basename never changes once it ships,
+  # and the bootstrap hook installs every lock's skills into one flat
+  # directory, installing NEITHER copy of a name two locks give different
+  # digests. `name-check` reads full-history, no-checkout clones of
+  # adam-agentskills, adam-agentskills-private and every repository their
+  # marketplaces federate (cms-platform), and refuses a name any of them
+  # holds now or ever shipped, an upstream name or a reserved one (`synced`).
+  # It prints `names=clear` or a fixed refusal naming the registry, never
+  # another skill's name, so the private registry's names stay out of this
+  # public log. A shallow clone, a missing registry or a federated source of
+  # unknown shape fails the job, so the check cannot pass by reading less.
+  names:
+    needs: validate
+    if: needs.validate.outputs.decision == 'accepted'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the validator's one dependency
+        run: python3 -m pip install pyyaml==6.0.3
+
+      - name: Mint the read-only token for the private registry
+        id: registry-token
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.REGISTRY_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.REGISTRY_READ_APP_PEM }}
+          owner: Adam-S-Daniel
+          repositories: adam-agentskills-private
+          permission-contents: read
+
+      # The public clones are blobless (name-check reads trees, and the one
+      # blob it reads, marketplace.json, is fetched lazily without a
+      # credential). The private one is whole, so nothing fetches later
+      # without the token; `git -c` on the clone keeps the header off disk.
+      - name: Check the name against every registry
+        working-directory: skills-evals
+        env:
+          SUBJECT: ${{ needs.validate.outputs.subject }}
+          PRIVATE_TOKEN: ${{ steps.registry-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          regs="${RUNNER_TEMP:?}/registries"
+          mkdir -p "$regs"
+          git clone -q --filter=blob:none --no-checkout \
+            https://github.com/Adam-S-Daniel/adam-agentskills.git "$regs/adam-agentskills"
+          auth="$(printf 'x-access-token:%s' "$PRIVATE_TOKEN" | base64 -w0)"
+          git -c "http.extraHeader=Authorization: basic $auth" clone -q --no-checkout \
+            https://github.com/Adam-S-Daniel/adam-agentskills-private.git \
+            "$regs/adam-agentskills-private"
+          args=(--registry "adam-agentskills=$regs/adam-agentskills"
+                --registry "adam-agentskills-private=$regs/adam-agentskills-private")
+          # `<name> <owner>/<repo>` lines, each matched to a strict pattern.
+          python3 scripts/draft_new_skill.py federated-sources "${args[@]}" \
+            > "$RUNNER_TEMP/federated.txt"
+          while read -r name repo; do
+            git clone -q --filter=blob:none --no-checkout \
+              "https://github.com/${repo}.git" "$regs/$name"
+            args+=(--registry "$name=$regs/$name")
+          done < "$RUNNER_TEMP/federated.txt"
+          python3 scripts/draft_new_skill.py name-check --subject "$SUBJECT" "${args[@]}"
+
   skill-pr:
-    needs: [validate, credential]
+    needs: [validate, credential, names]
     if: needs.validate.outputs.decision == 'accepted' && needs.credential.outputs.present == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
