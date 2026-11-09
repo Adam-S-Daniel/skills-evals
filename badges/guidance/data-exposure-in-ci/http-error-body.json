@@ -1,5 +1,5 @@
 {
-  "color": "green",
+  "color": "yellow",
   "label": "guidance eval: data-exposure-in-ci/http-error-body",
   "message": "with 3/3 vs without 2.4/3 \u00b7 n=5 \u00b7 2026-11-09",
   "schemaVersion": 1
