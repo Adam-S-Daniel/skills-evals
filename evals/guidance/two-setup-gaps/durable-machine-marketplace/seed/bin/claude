@@ -1,0 +1,9 @@
+#!/bin/sh
+# Offline stand-in for the claude CLI on a machine with nothing configured.
+# Every call is appended to .claude-calls.log for the checks to read.
+echo "$*" >> "$(dirname "$0")/../.claude-calls.log"
+case "$*" in
+  "plugin marketplace list --json") echo '[]' ;;
+  *) : ;;
+esac
+exit 0
