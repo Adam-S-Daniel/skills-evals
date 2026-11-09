@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DG5eguEToZ4PEbbhQxcXZW",
+      "name": "Bash",
+      "input": "ls .github/workflows && wc -l .github/workflows/* && git ls-files | head -80",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DG5eguEToZ4PEbbhQxcXZW",
+      "is_error": false,
+      "output": "ci.yml\ndocs-site.yml\nnightly-audit.yml\n  46 .github/workflows/ci.yml\n  21 .github/workflows/docs-site.yml\n  19 .github/workflows/nightly-audit.yml\n  86 total\n.editorconfig\n.github/workflows/ci.yml\n.github/workflows/docs-site.yml\n.github/workflows/nightly-audit.yml\n.gitignore\nREADME.md\nbin/gh\ndocs/de...",
+      "output_chars": 428,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PvsEfQqCqbjSRE51FSY8WA",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat package.json mkdocs.yml; head -20 bin/gh; cat README.md",
+      "input_chars": 121,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PvsEfQqCqbjSRE51FSY8WA",
+      "is_error": false,
+      "output": "=== .github/workflows/ci.yml\nname: CI\n\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"eslint.config.js\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/ci.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"src/**\"\n    ...",
+      "output_chars": 3386,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FJ3Ppmg5w2dMLnBexyfMoE",
+      "name": "Bash",
+      "input": "sed -n 15,80p bin/gh",
+      "input_chars": 20,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FJ3Ppmg5w2dMLnBexyfMoE",
+      "is_error": false,
+      "output": "REPO = \"example-org/example-app\"\nOWNER, NAME = REPO.split(\"<path>\")\nRULESETS = [{\"id\": 6031448, \"name\": \"main-protection\", \"checks\": [\"lint\", \"unit\"]}]\nBASE_RULES = [{\"type\": \"deletion\"}, {\"type\": \"non_fast_forward\"},\n              {\"type\": \"pull_request\",\n               \"parameters\": {\"required_app...",
+      "output_chars": 2437,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HPUhD1LByHgKEV9gckHUm4",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='.github/workflows/ci.yml'\ns=open(p).read()\nhead,rest=s.split(\"permissions:\",1)\nhead=\"\"\"name: CI\n\n# No path filters: lint and unit are required status checks on main\n# (ruleset main-...",
+      "input_chars": 857,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HPUhD1LByHgKEV9gckHUm4",
+      "is_error": false,
+      "output": " .github/workflows/ci.yml        | 17 +++--------------\n .github/workflows/docs-site.yml |  9 +++++++++\n 2 files changed, 12 insertions(+), 14 deletions(-)",
+      "output_chars": 155,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

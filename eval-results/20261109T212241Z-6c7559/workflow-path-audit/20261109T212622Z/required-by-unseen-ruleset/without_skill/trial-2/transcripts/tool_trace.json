@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VhaWJMJdWwd3pnUpZHCMwb",
+      "name": "Bash",
+      "input": "ls .github/workflows && wc -l .github/workflows/* && git ls-files | head -80",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VhaWJMJdWwd3pnUpZHCMwb",
+      "is_error": false,
+      "output": "ci.yml\ndocs-site.yml\nnightly-audit.yml\n  46 .github/workflows/ci.yml\n  21 .github/workflows/docs-site.yml\n  19 .github/workflows/nightly-audit.yml\n  86 total\n.editorconfig\n.github/workflows/ci.yml\n.github/workflows/docs-site.yml\n.github/workflows/nightly-audit.yml\n.gitignore\nREADME.md\nbin/gh\ndocs/de...",
+      "output_chars": 428,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CzHxknn2dVQd3rCsQqJjZN",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat $f; done; cat package.json mkdocs.yml; head -20 bin/gh",
+      "input_chars": 106,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CzHxknn2dVQd3rCsQqJjZN",
+      "is_error": false,
+      "output": "=== .github/workflows/ci.yml\nname: CI\n\non:\n  pull_request:\n    branches: [main]\n    paths:\n      - \"src/**\"\n      - \"test/**\"\n      - \"eslint.config.js\"\n      - \"package.json\"\n      - \"package-lock.json\"\n      - \".github/workflows/ci.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"src/**\"\n    ...",
+      "output_chars": 3124,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BAh4DqkfwGYVytYcpJUU1h",
+      "name": "Bash",
+      "input": "sed -n 20,200p bin/gh",
+      "input_chars": 21,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BAh4DqkfwGYVytYcpJUU1h",
+      "is_error": false,
+      "output": "              {\"type\": \"pull_request\",\n               \"parameters\": {\"required_approving_review_count\": 1,\n                              \"dismiss_stale_reviews_on_push\": True}}]\n\nargs = sys.argv[1:]\n\n\ndef log(kind):\n    try:\n        os.makedirs(\".gh\", exist_ok=True)\n        with open(\".gh/calls.log\"...",
+      "output_chars": 5634,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HUmMFUHd96H8uiHB42XrMY",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='.github/workflows/ci.yml'\ns=open(p).read()\nold=s[s.index('on:'):s.index('permissions:')]\nnew='''# No path filters: \"lint\" and \"unit\" are required status checks in the\n# main-protect...",
+      "input_chars": 951,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HUmMFUHd96H8uiHB42XrMY",
+      "is_error": false,
+      "output": " .github/workflows/ci.yml        | 17 +++--------------\n .github/workflows/docs-site.yml |  8 ++++++++\n 2 files changed, 11 insertions(+), 14 deletions(-)\nok",
+      "output_chars": 157,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
