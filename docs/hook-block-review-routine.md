@@ -1,6 +1,7 @@
 # Routine: weekly git hook block review
 
-**Fires:** weekly, Tuesday 18:23 UTC, from a claude.ai scheduled task in
+**Fires:** weekly, Tuesday 2:23 PM US Eastern (`CRON_TZ=America/New_York 23 14 * * 2`:
+19:23 UTC in winter, 18:23 UTC in summer), from a claude.ai scheduled task in
 Adam's account named `Weekly git hook block review`
 (`trig_01EdhriC21o7QigCHktTTaBx`). Each fire starts a new thread in the
 "Automatic Continuous Self Improvement and Evals" project, with that

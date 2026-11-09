@@ -102,8 +102,9 @@ delivery guard runs on the fixture's own model.
 
 ## 3. When it runs, and what it costs to run
 
-`.github/workflows/eval.yml` runs every Tuesday at 07:00 UTC and on manual
-dispatch (`gh workflow run eval.yml --ref main`, optional input `fixture=`).
+`.github/workflows/eval.yml` runs on manual dispatch only (`gh workflow run
+eval.yml --ref main`, optional input `fixture=`); its Tuesday schedule was
+retired on 2026-10-06, and the weekly sweep is `routine-eval-weekly.yml`.
 It runs isolation pairs only: its `plan` job refuses every in-place fixture
 (a top-level `context:` mapping) before any credential is minted and lists it
 in the step summary, because only the cloud routine hosts in-place delivery
@@ -1145,9 +1146,9 @@ Other unattributed failures stay records with no proposal, and the subject
 **The decline path.** When the agent-checks lane finds a hook proposal
 cannot be checked at commit time, it closes the issue as not planned. The
 picker then re-admits that subject with `hook_declined`, and the routine
-skips triage and drafts a skill. The routine's saved prompt for this mode
-is in [`routine-prompt-draft-mode.md`](routine-prompt-draft-mode.md); Adam
-approves changes to it.
+skips triage and drafts a skill. The routine's instructions for this mode
+are [`routine/modes/draft.md`](routine/modes/draft.md), read from
+`origin/main` on each fire, so a change to them is a pull request.
 
 ### Fixture requests (2026-11-03)
 
