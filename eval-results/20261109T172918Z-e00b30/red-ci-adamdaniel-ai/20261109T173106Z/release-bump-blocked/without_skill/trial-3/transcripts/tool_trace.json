@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HpyVHhJhAhWAfuiUnv5Lnt",
+      "name": "Bash",
+      "input": "git status --short | head; grep -rn \"0\\.1\\.17[0-9]\" --exclude-dir=.git . | head -50; ls -a; ls .github/workflows 2><path>",
+      "input_chars": 124,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HpyVHhJhAhWAfuiUnv5Lnt",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ngrep: ./.idea: Permission denied\ngrep: ./.bashrc: Permission denied\ngrep: ./.gitconfig: Permission denied\ngrep: ./.zprofile: Permission denied\ngrep: ./.ripgrep...",
+      "output_chars": 1070,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VzVbtE5gJtGWabVYug3hRo",
+      "name": "Bash",
+      "input": "cat README.md docs/VERSION-HISTORY.md; ls workflows; cat workflows/*; cat .claude-plugin/plugin.json plugin.json",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VzVbtE5gJtGWabVYug3hRo",
+      "is_error": false,
+      "output": "# example-platform\nRelease PR #41 bumps the platform to v0.1.171. Its required check\n`pin-consistency` fails, so the PR is BLOCKED.\n# Version history\n\n## v0.1.171\n- Example change for the release under review.\n\n## v0.1.170\n- Previous example release.\nci.yml\nname: ci\non:\n  pull_request:\njobs:\n  pin-c...",
+      "output_chars": 803,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Du924okG4jSzC6ZJ5e4kW9",
+      "name": "Bash",
+      "input": "sed -i 's/0\\.1\\.170/0.1.171/' AGENTS.md .claude-plugin/plugin.json && git diff --stat -- AGENTS.md .claude-plugin && want=0.1.171 && grep -q \"Current release: \\`v$want\\`\" AGENTS.md && grep -q \"\\\"versi...",
+      "input_chars": 254,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Du924okG4jSzC6ZJ5e4kW9",
+      "is_error": false,
+      "output": " .claude-plugin/plugin.json | 2 +-\n AGENTS.md                  | 2 +-\n 2 files changed, 2 insertions(+), 2 deletions(-)\nOK",
+      "output_chars": 122,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
