@@ -1,6 +1,6 @@
 {
   "color": "yellow",
   "label": "guidance eval: finding-your-unknowns/migration-rollback-note",
-  "message": "with 1.6/2 vs without 1.2/2 \u00b7 n=5 \u00b7 2026-11-09",
+  "message": "with 1.4/2 vs without 1.2/2 \u00b7 n=5 \u00b7 2026-11-09",
   "schemaVersion": 1
 }
