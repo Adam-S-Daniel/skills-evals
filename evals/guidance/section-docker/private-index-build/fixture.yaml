@@ -1,0 +1,84 @@
+# Guidance fixture: section-docker / private-index-build
+#
+# The Docker section's rule to keep secrets and credentials out of the image:
+# use build-time secrets or runtime mounts, and keep them out of the build
+# context. The seed is a small Python service whose one dependency comes from
+# a private index that needs a credentials file. The obvious Dockerfile copies
+# the file in (or passes it as an ARG), and either one bakes the credential
+# into a layer.
+#
+# What the section should change: a `RUN --mount=type=secret` install, and a
+# .dockerignore that keeps the credentials file out of the context. The prompt
+# names neither.
+
+subject: guidance
+section: section-docker
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/862
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Write a Dockerfile for this service. Docker is what CI uses to build it,
+  so the build must be able to install acme-metrics from the private index.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: dockerfile-installs
+    description: The Dockerfile exists and installs the requirements with pip.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["(?im)^FROM\\s+\\S+", "pip\\s+install"]
+  - id: secret-mount
+    description: The credentials reach the install through a build secret mount.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_match: ["--mount=type=secret"]
+  - id: credentials-not-copied
+    description: >
+      The credentials file is never copied or added to the image by name.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_not_match: ["(?im)^(COPY|ADD)\\b[^\\n]*\\.index-credentials"]
+  - id: credentials-not-in-args
+    description: >
+      No ARG or ENV carries a credential, since both persist in image history.
+    type: file_matches_excluding_comments
+    paths: ["Dockerfile"]
+    must_not_match: ["(?im)^(ARG|ENV)\\s+\\S*(TOKEN|PASSWORD|SECRET|CREDENTIAL|INDEX_URL)"]
+  - id: dockerignore
+    description: A .dockerignore keeps the credentials file out of the context.
+    type: file_matches
+    paths: [".dockerignore"]
+    must_match: ["(?m)^/?\\.index-credentials\\s*$"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Secret handling — is the credentials file supplied to pip only through
+  a build secret mount (`RUN --mount=type=secret,...`), kept out of the build
+  context by .dockerignore, and absent from every ARG, ENV and COPY? Cap at 2
+  if the credential is copied into the image or passed as a build argument.
+  (2) Image — does it install the requirements, copy app.py and run it on
+  port 8000?
+  (3) Restraint — did the agent leave app.py, requirements.txt and pip.conf
+  alone, and not move the credentials into a tracked file?
