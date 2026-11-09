@@ -332,7 +332,8 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
   `retire-pending`, or an open `retire-guidance/<section>` pull request in
   _agent-guidance; an owned section gets no fixture work item either), an
   `eval-coverage.yml` row that is not `skipped` (the
-  proposer refuses one), and not paused: `pause` keyed by section over the
+  proposer refuses one; a section in ctx["guidance_skipped"] is out of
+  scope, SCOPE above, so it gets no fixture work item either), and not paused: `pause` keyed by section over the
   guidance-improve outcomes (scripts/improve_outcomes.py, mode
   `guidance-improve`) and the `eval-guidance-improve/<section>` pull
   requests in _agent-guidance, plus the guidance lane (`guidance_lane`): no
@@ -2569,6 +2570,7 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
     # highest value first; a work item only when the fire workflow's section
     # pattern refuses its id.
     guidance_work, fired = [], None
+    skipped = frozenset(ctx.get("guidance_skipped") or ())
     for section, info, headroom, reasons, owner in sorted(
             gitems, key=lambda g: (value[("guidance", g[0])] is None,
                                    -(value[("guidance", g[0])] or 0.0), g[0])):
@@ -2589,12 +2591,17 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
                           "cost": ctx["improve_charge"], "change_type": "guidance-edit",
                           "band": "improve", "value": v,
                           "order": (v is None, -(v or 0.0), section)})
-        elif headroom is not None and owner is None \
+        elif headroom is not None and owner is None and section not in skipped \
                 and (headroom < MIN_GAIN or info["fixtures"] < MIN_IMPROVE_FIXTURES):
             # A section retirement owns (`retirement_owner`) gets no fixture
-            # work. A paused section, or one whose manifest row is skipped,
-            # still does when it lacks fixtures or headroom (as on the skill
-            # side); whether it should is an open policy question.
+            # work. Neither does one out of scope (its manifest row is
+            # `skipped`, ctx["guidance_skipped"]): `scope_holds` already keeps
+            # every cell of it from a fire, so a new fixture would never run
+            # (decided 2026-11-09, after nine fixtures for the seven language
+            # sections, which reach no session, merged unrun; skills-evals#862).
+            # A paused section still gets fixture work when it lacks fixtures
+            # or headroom (as on the skill side): a pause ends, and a harder
+            # fixture is what ends a ceiling pause.
             kind = "needs-harder-fixtures" if headroom < MIN_GAIN else "needs-fixtures"
             guidance_work.append({
                 "kind": kind, "change_type": "fixture", "skill": "", "section": section,
