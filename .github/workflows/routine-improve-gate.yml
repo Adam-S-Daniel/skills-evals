@@ -197,6 +197,9 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
+    outputs:
+      door: ${{ steps.build.outputs.door }}
+      door_errors: ${{ steps.build.outputs.door_errors }}
     steps:
       - name: Check out the default branch
         uses: actions/checkout@v7.0.1
@@ -213,6 +216,11 @@ jobs:
 
       - name: Install the validator's one dependency
         run: python3 -m pip install pyyaml==6.0.3
+
+      # adam-agentskills' scripts/check_one_way_doors.py imports it when a
+      # name is lost; the version adam-agentskills' requirements-dev.txt pins.
+      - name: Install the one-way-door check's other dependency
+        run: python3 -m pip install markdown-it-py==4.2.0
 
       # The same validator, on the sha `validate` judged: this job stages its
       # own copy of the files instead of trusting an artifact, and fails if
@@ -245,6 +253,7 @@ jobs:
           RUN_ID: ${{ needs.validate.outputs.run_id }}
           REGISTRY_SHA: ${{ needs.validate.outputs.registry_sha }}
           SKILL_MD: ${{ needs.validate.outputs.skill_md }}
+          TARGET_BRANCH: ${{ needs.validate.outputs.target_branch }}
         run: |
           set -euo pipefail
           reg="$RUNNER_TEMP/registry"
@@ -277,12 +286,30 @@ jobs:
             echo "base=${base}"
             cat "$RUNNER_TEMP/prepare.out"
           } >> "$GITHUB_OUTPUT"
+          # adam-agentskills#134: its required check fails an eval-improve/
+          # pull request, draft or not, outside ADR 0021, and a red one would
+          # hold the loop's one slot. The same check, read from the base
+          # commit, judges the built branch; a failure files an issue
+          # (door-issue) and nothing is pushed.
+          door_rc=0
+          python3 scripts/loop_door_check.py check --tree "$reg" \
+            --base "refs/remotes/origin/${base}" --head HEAD --branch "$TARGET_BRANCH" \
+            > "$RUNNER_TEMP/door.out" || door_rc=$?
+          if [ "$door_rc" -eq 1 ]; then
+            echo "door=fail" >> "$GITHUB_OUTPUT"
+            echo "door_errors=$(base64 -w0 < "$RUNNER_TEMP/door.out")" >> "$GITHUB_OUTPUT"
+            echo "::notice::adam-agentskills' one-way-door check would fail this candidate's pull request; an issue is filed instead and nothing is pushed"
+          elif [ "$door_rc" -ne 0 ]; then
+            echo "::error::adam-agentskills' one-way-door check could not run; no pull request is opened"
+            exit 1
+          fi
 
       # Minted only now, after re-validation and the build: an installation
       # token for adam-agentskills alone, with contents and pull-requests
       # write only.
       - name: Mint the GitHub App token for adam-agentskills
         id: app-token
+        if: steps.build.outputs.door != 'fail'
         uses: actions/create-github-app-token@v3.3.0
         with:
           client-id: ${{ secrets.EVAL_IMPROVE_APP_CLIENT_ID }}
@@ -293,6 +320,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Open the pull request in adam-agentskills
+        if: steps.build.outputs.door != 'fail'
         working-directory: skills-evals
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -401,3 +429,40 @@ jobs:
               echo "- Auto-merge (merge commit) is enabled; it merges once the required checks pass."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # adam-agentskills#134 would fail the candidate's pull request, so
+  # registry-pr pushed nothing: one issue here per skill records why
+  # (scripts/loop_door_check.py; a closed one is not filed again).
+  door-issue:
+    needs: [validate, registry-pr]
+    if: needs.registry-pr.outputs.door == 'fail'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the default branch
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: File the issue
+        working-directory: skills-evals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SKILL: ${{ needs.validate.outputs.skill }}
+          DOOR_ERRORS: ${{ needs.registry-pr.outputs.door_errors }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          base64 -d <<<"$DOOR_ERRORS" > "$RUNNER_TEMP/door.out"
+          python3 scripts/loop_door_check.py issue --lane eval-improve \
+            --subject "$SKILL" --errors-file "$RUNNER_TEMP/door.out" --source "$SOURCE"

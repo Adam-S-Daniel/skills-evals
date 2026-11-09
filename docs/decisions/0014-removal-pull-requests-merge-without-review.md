@@ -1694,10 +1694,23 @@ breaks elsewhere.
   one-way-door check (adam-agentskills#133) and _agent-guidance's lock-bump
   hold (_agent-guidance#488) accept the pass line.
 - **Auto-merge is armed only on a pass read back from the pull request
-  body.** A block leaves the pull request open and unarmed with the
-  findings (the withdrawal pass reads an unarmed removal as a person's
-  hold), and the removal notice is filed as "Blocked:", asking Adam to merge
-  by hand or close.
+  body.** For a guidance section, a block leaves the pull request open and
+  unarmed with the findings (the withdrawal pass reads an unarmed removal as
+  a person's hold), and the removal notice is filed as "Blocked:", asking
+  Adam to merge by hand or close. A skill removal is held before the push
+  instead (next item).
+- **A skill removal adam-agentskills would fail is never pushed**
+  (adam-agentskills#134, added the same day). The registry's required
+  check fails a `retire-skill/` pull request carrying a block line or
+  stepping outside ADR 0021, and a red loop pull request would hold the
+  loop's one slot. So after a passing review, `scripts/loop_door_check.py`
+  runs that check, read from the registry's base commit, on the prepared
+  branch as the App's pull request. A block, or a check failure, pushes
+  nothing: the skill's proposal issue (stamped, with the findings or the
+  check's messages) holds it. While that issue is open no removal is
+  reviewed or opened again; closing it declines the removal. The draft and
+  improvement lanes run the same check before their push and file a
+  `Loop change needs a person:` issue instead of a pull request.
 - **Credential.** The retirement job mints the reviewer's Anthropic bearer
   through the same workload identity federation eval.yml uses
   (`id-token: write`, main only); no stored secret. With no bearer or no

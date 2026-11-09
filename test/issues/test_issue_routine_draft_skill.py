@@ -500,6 +500,7 @@ class GateTests(unittest.TestCase):
             "skill-pr": {"contents": "read"},
             "fixtures-pr": {"contents": "write", "pull-requests": "write"},
             "hook-issue": {"contents": "read", "issues": "write"},
+            "door-issue": {"contents": "read", "issues": "write"},
         })
 
     def test_jobs_run_by_decision_and_in_order(self):
