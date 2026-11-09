@@ -37,10 +37,12 @@ STUB = '''import json, os, subprocess, sys
 args = sys.argv[1:]
 base, head, pr = args[args.index("--base") + 1], args[args.index("--head") + 1], \\
     args[args.index("--pr-json") + 1]
-with open(os.path.join(os.getcwd(), ".seen.json"), "w") as fh:
-    json.dump({"pr": json.load(open(pr)), "env": sorted(os.environ), "cwd": os.getcwd(),
+tree = os.environ["GIT_WORK_TREE"]
+with open(os.path.join(tree, ".seen.json"), "w") as fh:
+    json.dump({"pr": json.load(open(pr)), "env": sorted(os.environ), "cwd": tree,
                "base": base, "head": head, "copy": "MARK"}, fh)
-code = int(open(os.path.join(os.getcwd(), ".exit")).read()) if os.path.exists(".exit") else None
+exit_file = os.path.join(tree, ".exit")
+code = int(open(exit_file).read()) if os.path.exists(exit_file) else None
 if code is not None:
     sys.exit(code)
 names = subprocess.run(["git", "diff", "--name-only", base, head], capture_output=True,
@@ -99,8 +101,9 @@ class CheckTests(Registry):
         self.assertEqual(seen["pr"]["base"], {"repo": {"full_name": ldc.REGISTRY_REPO}})
         self.assertEqual((seen["base"], seen["head"]), (self.base, head))
         self.assertEqual(Path(seen["cwd"]).resolve(), self.reg.resolve())
-        self.assertTrue(set(seen["env"]) <= {"PATH", "HOME", "LANG", "LC_CTYPE"},
-                        seen["env"])
+        self.assertTrue(set(seen["env"]) <= {"PATH", "HOME", "LANG", "LC_CTYPE",
+                                             "GIT_DIR", "GIT_WORK_TREE",
+                                             "PYTHONDONTWRITEBYTECODE"}, seen["env"])
 
     def test_a_failure_returns_the_messages(self):
         head = self.commit("bad")

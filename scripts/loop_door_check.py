@@ -94,15 +94,25 @@ def check(tree: Path, base: str, head: str, branch: str, body: str = "") -> list
           "user": {"login": LOOP_AUTHOR, "type": "Bot"},
           "head": {"ref": branch, "repo": {"full_name": REGISTRY_REPO}},
           "base": {"repo": {"full_name": REGISTRY_REPO}}}
+    git_dir = subprocess.run(["git", "-C", str(tree), "rev-parse", "--absolute-git-dir"],
+                             capture_output=True, text=True)
+    if git_dir.returncode != 0 or not git_dir.stdout.strip():
+        raise DoorError("the registry clone is not a git repository")
     env = {k: os.environ[k] for k in ("PATH", "HOME", "LANG") if k in os.environ}
+    env.update({"GIT_DIR": git_dir.stdout.strip(), "GIT_WORK_TREE": str(Path(tree).resolve()),
+                "PYTHONDONTWRITEBYTECODE": "1"})
     with tempfile.TemporaryDirectory(prefix="skills-evals-door-check-") as tmp:
-        script = Path(tmp) / "check_one_way_doors.py"
-        script.write_text(source, encoding="utf-8")
+        # The base's copy, in a directory holding nothing else but the pull
+        # request, run from there: its name is spelled literally at the call
+        # so the suite's spawn audit (test/run_tests.py, S-B-a-2) can prove
+        # it is not the test runner, and git finds the registry through
+        # GIT_DIR and GIT_WORK_TREE.
+        (Path(tmp) / "check_one_way_doors.py").write_text(source, encoding="utf-8")
         path = Path(tmp) / "pr.json"
         path.write_text(json.dumps(pr), encoding="utf-8")
         try:
-            proc = subprocess.run([sys.executable, "-I", str(script), "--base", base,
-                                   "--head", head, "--pr-json", str(path)], cwd=tree,
+            proc = subprocess.run([sys.executable, "check_one_way_doors.py", "--base", base,
+                                   "--head", head, "--pr-json", str(path)], cwd=tmp,
                                   env=env, capture_output=True, text=True,
                                   timeout=CHECK_TIMEOUT)
         except (OSError, subprocess.TimeoutExpired) as exc:
