@@ -1,6 +1,6 @@
 {
   "color": "yellow",
   "label": "guidance eval: turn-lessons-into-checks/recurring-debug-flag",
-  "message": "with 2/3 vs without 1/3 \u00b7 n=2 \u00b7 2026-11-09",
+  "message": "with 2.3/3 vs without 1.3/3 \u00b7 n=3 \u00b7 2026-11-09",
   "schemaVersion": 1
 }
