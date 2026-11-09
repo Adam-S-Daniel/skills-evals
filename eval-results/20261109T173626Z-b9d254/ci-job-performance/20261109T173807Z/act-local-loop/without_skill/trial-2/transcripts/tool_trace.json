@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018boc3sZ2pTajheGsh1Yir3",
+      "name": "Bash",
+      "input": "git log --oneline | head -5; ls -R . | grep -v '^./.git/' | head -50; cat scripts/*.sh; ls tools; cat .github/workflows/ci.yml",
+      "input_chars": 126,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018boc3sZ2pTajheGsh1Yir3",
+      "is_error": false,
+      "output": "2ce3dec initial commit\n.:\nREADME.md\npages\nscripts\ntools\n\n./pages:\nguide.md\nindex.md\n\n./scripts:\nbuild.sh\ncheck-links.sh\ninstall-act.sh\nlocal-ci.sh\n\n./tools:\nact-releases.txt\nrunner-images.txt\n#!<path>\nset -eu\nmkdir -p dist\ncp pages/*.md dist/\n#!<path>\n# Fails when a page links to a page that does no...",
+      "output_chars": 1665,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JVcrHXvgZSKjy9uR2oC4Vd",
+      "name": "Bash",
+      "input": "cat tools/*; cat README.md; which act docker; uname -m",
+      "input_chars": 54,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JVcrHXvgZSKjy9uR2oC4Vd",
+      "is_error": false,
+      "output": "# nektos/act releases as listed on 2026-11-07 (mirror: example.com/act/releases).\n# Each line: version, published date, tarball URL, sha256 of the linux x86_64 tarball.\nv0.2.90  2026-11-05  https://example.com/act/releases/download/v0.2.90/act_Linux_x86_64.tar.gz  71c0e5b9a3d84f2166b0c8e4a9d7f13520b...",
+      "output_chars": 1592,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01F5X7AbUmGYRKZQck91341Y",
+      "name": "Bash",
+      "input": "cat > scripts/install-act.sh <<'EOF'\n#!<path>\n# Installs a pinned nektos/act into <path> so `scripts/local-ci.sh` can run.\n# The version and checksum come from tools/act-releases.txt (our mirror's lis...",
+      "input_chars": 1454,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01F5X7AbUmGYRKZQck91341Y",
+      "is_error": false,
+      "output": " scripts/install-act.sh | 19 +++++++++++++++----\n scripts/local-ci.sh    | 10 +++++++++-\n 2 files changed, 24 insertions(+), 5 deletions(-)\nHTTP/1.1 403 host is not on the allow list\r\npermission denied while trying to connect to the docker API at unix:///var/run/docker.sock\n<sandbox_violations>\ndeny...",
+      "output_chars": 387,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
