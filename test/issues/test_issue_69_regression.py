@@ -117,6 +117,24 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(row["verdict"], "lost-delta")
         self.assertEqual(row["numbers"]["delta"], {"previous": 0.5, "current": 0.0})
 
+    def test_bad_detail_gives_the_figures_as_fields_at_full_precision(self):
+        objective = {"previous": 1.0, "current": 0.5, "change": -0.5, "noise": 0.0}
+        judge = {"previous": 8.0, "current": 6.4999999999999991, "change": -1.5000000000000009,
+                 "noise": 0.472189541352795}
+        row = {"verdict": "regressed", "numbers": {"objective": objective, "judge": judge, "delta": None}}
+        self.assertEqual(regression.bad_detail(row, POLICY),
+                         {"measure": "objective", "previous": 1.0, "current": 0.5, "drop": 0.5,
+                          "threshold": POLICY["objective_drop"], "noise": 0.0})
+        row["numbers"]["objective"] = {"previous": 1.0, "current": 1.0, "change": 0.0, "noise": 0.0}
+        detail = regression.bad_detail(row, POLICY)
+        self.assertEqual((detail["measure"], detail["drop"], detail["noise"]),
+                         ("judge", 1.5000000000000009, 0.472189541352795))
+        lost = {"verdict": "lost-delta", "numbers": {"objective": objective, "judge": None,
+                                                    "delta": {"previous": 0.16666666666666663, "current": 0.0}}}
+        self.assertEqual(regression.bad_detail(lost, POLICY),
+                         {"measure": "advantage", "previous": 0.16666666666666663, "current": 0.0})
+        self.assertIsNone(regression.bad_detail({"verdict": "stable", "numbers": {}}, POLICY))
+
     def test_reasons_round_float_noise_but_numbers_keep_it(self):
         # The dashboard showed "went from 0.16666666666666663 to 0.0" and
         # "fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795)".

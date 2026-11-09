@@ -3,7 +3,7 @@
 import { STRINGS } from '../core/strings.js';
 import { parseTime } from '../core/format.js';
 import { h } from '../core/h.js';
-import { skillItems, sectionItems, wholeGuidance } from '../core/items.js';
+import { skillItems, sectionItems, wholeGuidance, purposeOf } from '../core/items.js';
 import { groupOf, GROUPS, hashFor } from '../core/route.js';
 import { DEFAULT_DATA_URL } from '../adapters/web.js';
 import { wholeView } from './whole.js';
@@ -20,6 +20,8 @@ import { opsView } from './ops.js';
 import { methodView, removedPage } from './method.js';
 import { searchView } from './search.js';
 import { navLink, srcLine } from './bits.js';
+import { indexDoc } from '../core/terms.js';
+import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
 
 /* The Skills or the Guidance list: every card, the coverage and that kind's
    alerts. */
@@ -68,6 +70,7 @@ function isSearching(q) {
    the private build's overlays; the public build passes none. */
 export function renderRoute(doc, route, opts) {
   const o = opts || {};
+  indexDoc(doc, (d) => purposeOf(d), (id) => (Object.prototype.hasOwnProperty.call(GLOSSES, id) ? GLOSSES[id] : GLOSS_MISSING));
   const ctx = { doc, route, url: o.url || DEFAULT_DATA_URL, ext: o.ext || null, onFilter: o.onFilter, onClear: o.onClear };
   if (isSearching(o.search)) return h('div', null, searchView(doc, o.search, ctx));
   const group = groupOf(route.name);

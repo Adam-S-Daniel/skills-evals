@@ -7,6 +7,7 @@ import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, purposeOf } from '../core/items.js';
 import { fixtureQueue } from '../core/fixtures.js';
+import { fixtureTerm, defn, termify, SENTENCE_TERMS } from '../core/terms.js';
 import { hashFor } from '../core/route.js';
 import { table, srcLine, navLink, panel, badge } from './bits.js';
 import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine } from './cards.js';
@@ -35,7 +36,7 @@ export function runsTable(runs, refMs) {
   const points = runs.some((r) => typeof r.meter_points === 'number');
   const cols = [
     { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => fmtDateTime(parseTime(r.fired_at)) },
-    { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => clean(r.fixture) },
+    { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => fixtureTerm(clean(r.fixture)) },
     { label: STRINGS.colModel, sort: (r) => r.model, cell: (r) => friendlyModel(r.model) },
     { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + ' (' + share(r.with_share) + ')' },
     { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + ' (' + share(r.without_share) + ')' },
@@ -53,7 +54,7 @@ export function bareTable(bare) {
   if (!bare.length) return null;
   return [h('p', { class: 'note' }, STRINGS.bareNote), table([
     { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => fmtDay(parseTime(r.fired_at)) },
-    { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => clean(r.fixture) },
+    { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => fixtureTerm(clean(r.fixture)) },
     { label: STRINGS.colModel, sort: (r) => r.model, cell: (r) => friendlyModel(r.model) },
     { label: STRINGS.colBare, num: true, sort: (r) => r.bare_share, cell: (r) => share(r.bare_share) },
     { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => share(r.without_share) },
@@ -85,7 +86,7 @@ function fixturesPanel(doc, runs, name, refMs) {
   const rows = listed.concat(fromRuns);
   if (!rows.length) return h('p', { class: 'note' }, STRINGS.fixturesNone);
   return table([
-    { label: STRINGS.colFixturePath, sort: (f) => f.path, cell: (f) => clean(f.path) },
+    { label: STRINGS.colFixturePath, sort: (f) => f.path, cell: (f) => fixtureTerm(clean(f.path)) },
     { label: STRINGS.colOrigin, sort: (f) => f.origin_kind || '', cell: (f) => clean(f.origin_kind || STRINGS.unknown) },
     { label: STRINGS.colRuns, num: true, sort: (f) => f.runs, cell: (f) => (f.runs === null || f.runs === undefined ? STRINGS.noValue : fmtCount(f.runs)) }
   ], rows);
@@ -137,14 +138,14 @@ export function subjectPage(doc, kind, name, ctx) {
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,
       nextLine(raw.next_test, refMs, guidance ? 'section' : 'skill'),
       stakesLine(raw.stakes),
-      h('h3', null, STRINGS.verdictHeading),
+      h('h3', null, defn('verdict', STRINGS.verdictHeading)),
       verdictLine(raw.verdict) || h('p', { class: 'meta' }, STRINGS.verdict.insufficient),
       raw.verdict_reason ? h('p', { class: 'meta' }, clean(raw.verdict_reason)) : null,
       discardedLine(raw.discarded_runs),
-      h('p', { class: 'sent' }, clean(it.sentence)),
+      h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
       guidance && hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null),
     panel(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
-      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs))) : null]),
+      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs, false, subj))) : null]),
     Array.isArray(raw.run_utility) && raw.run_utility.length
       ? panel(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
         decisionsView(raw.decisions, friendlyModel)]) : null,
@@ -152,6 +153,6 @@ export function subjectPage(doc, kind, name, ctx) {
     panel(STRINGS.bareHeading, bareTable(bare)),
     guidance ? null : panel(STRINGS.useHeading, [usageLine(raw.usage, doc.usage, refMs), ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null]),
     guidance ? null : panel(STRINGS.copiesHeading, [copiesLine(raw.copies), copiesTable(raw.copies)]),
-    panel(STRINGS.fixturesHeading, fixturesPanel(doc, runs, name, refMs)),
+    panel(defn('fixture', STRINGS.fixturesHeading), fixturesPanel(doc, runs, name, refMs)),
     panel(STRINGS.lessonsAbout, lessonsAbout(doc, kind, name, refMs)));
 }

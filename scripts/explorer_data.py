@@ -109,7 +109,8 @@ summary of the last FIRE_WINDOW_DAYS of successful eval fires
 fire), `without_results` (fires no results came back for), `rejected`
 (results came back but none validated; per fixture when an arm summary's
 model cannot be read) and `sweeps` (the without-results fires grouped by
-starts at most FIRE_SWEEP_GAP apart: start, end, count). Only fires on
+starts at most FIRE_SWEEP_GAP apart: start, end, count). `counted` is how many
+fires the window counted in all, so a reader can say "N of M". Only fires on
 the SCOPE FILTER's fixtures count (`fire_scope`: public, non-private,
 scheduled skill fixtures and manifest guidance sections), so a private fire
 moves nothing; no name, title or run id is published. None is unknown (no
@@ -261,6 +262,7 @@ import lesson_evidence  # noqa: E402
 import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
+import regression  # noqa: E402  (harness/, via compute_gates)
 import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
@@ -575,8 +577,11 @@ def build_alerts(gates_doc: dict, regressions: dict | None, issues: dict,
         listed = skill_names if subject == "skill" else section_ids
         if subject not in ("skill", "guidance") or name not in listed:
             continue
+        policy = ((regressions or {}).get("policy") or {}).get("skills" if subject == "skill" else "guidance")
+        detail = regression.bad_detail(row, policy) if isinstance(policy, dict) else None
         alert = {"kind": "regression", "subject": subject, "name": name,
-                 "model": row.get("model"),
+                 "model": row.get("model"), "fixture": row.get("fixture"),
+                 "verdict": row["verdict"], **(detail or {}),
                  "text": f"{name} {row['verdict']}"
                          + (f" on {row['fixture']}" if row.get("fixture") else "")
                          + (f": {row['reason']}" if row.get("reason") else "") + ".",
@@ -1354,6 +1359,7 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
     sweeps = [[s[0], s[-1], len(s)] for s in plan_week.fire_sweeps(without, FIRE_SWEEP_GAP)]
     return {"window_days": FIRE_WINDOW_DAYS,
             "since": plan_week._iso(min(c[0] for c in counted)) if counted else None,
+            "counted": len(counted),
             "without_results": len(without), "rejected": rejected,
             "sweeps": [{"start": plan_week._iso(a), "end": plan_week._iso(b), "fires": n}
                        for a, b, n in sweeps]}

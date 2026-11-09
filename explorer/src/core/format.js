@@ -87,3 +87,23 @@ export function wordsFor(bytes) {
   const w = Math.max(10, Math.round((Number(bytes) || 0) / 6 / 10) * 10);
   return w;
 }
+
+/* A figure to 2 decimals for display only (the data keeps full precision);
+   a real minus sign, and never "-0.00". */
+export function fmt2(x) {
+  if (typeof x !== 'number' || !isFinite(x)) return STRINGS.noValue;
+  const s = Math.abs(x).toFixed(2);
+  return x < 0 && Number(s) !== 0 ? '−' + s : s;
+}
+
+/* The same with an explicit plus sign for a gain: +0.17, 0.00, −0.10. */
+export function fmtSigned2(x) {
+  const s = fmt2(x);
+  return typeof x === 'number' && isFinite(x) && x > 0 && s !== '0.00' ? '+' + s : s;
+}
+
+/* Text from outside the page with every long decimal rounded to 2 places,
+   for sentences the data still words itself. */
+export function roundDecimals(text) {
+  return String(text).replace(/\d+\.\d{3,}/g, (m) => Number(m).toFixed(2));
+}

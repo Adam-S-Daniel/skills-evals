@@ -16,8 +16,8 @@ function buildStrings(you) {
   voice: you ? 'you' : 'owner',
   loading: 'Loading the latest results…',
   dataAsOf: (when) => 'Data as of ' + when + '.',
-  newestRun: (when) => 'Newest test run: ' + when + '.',
-  noRunsYet: 'No test runs have been recorded yet.',
+  newestRun: (when) => 'Newest run: ' + when + '.',
+  noRunsYet: 'No runs have been recorded yet.',
   modeLabel: 'Show results for',
   modeSkills: 'Skills',
   modeGuidance: 'Guidance',
@@ -41,11 +41,14 @@ function buildStrings(you) {
     ['Fixture', 'One small, fixed practice task used for testing. The same task is used every time so results can be compared.'],
     ['Arm', 'One way of running the task, such as "with the skill" or "without it". Each test compares two or more arms.'],
     ['Trial', 'A single attempt at the task. A run is made of several trials.'],
+    ['Run', 'One test of one subject on one fixture and one model. It attempts the task several times in each arm and saves the results together. A comparison run is one in which both arms were scored together.'],
+    ['Fire', 'One scheduled start of a run. Its results should come back to the results branch within 2 hours; a sweep is a group of fires with no results that started within an hour of each other, usually one outage.'],
+    ['Subject', 'Whatever is being tested: a skill or a guidance section.'],
     ['Judge', 'A separate AI model that reads each attempt and gives it a score from 0 to 10. It never takes part in the task itself.'],
     ['Objective check', 'A yes-or-no test that a computer can score without opinion, such as "did it create this file". The counts on this page are these checks.'],
     ['Roster', 'The list of AI models the tests run on, and the judge that scores them, with the reason each one was chosen.'],
     ['Improvement loop', 'The automated system that runs these tests on a schedule, proposes edits, keeps the changes that measurably help, and removes what doesn\'t. ' + W.Who + ' set' + W.s + ' its thresholds and budget; day to day, it runs without ' + W.obj + '.'],
-    ['Regression', 'A result that has become worse than it used to be. A regression alert means something needs a closer look.']
+    ['Trending toward removal', 'Recent runs score below the runs before them, or the subject stopped beating the arm without it. This is expected: the loop detects it, and if the trend holds it removes the subject automatically.']
   ],
   glossaryGuidance: [
     ['Section', 'One topic within the guidance, under its own heading.'],
@@ -58,7 +61,7 @@ function buildStrings(you) {
     helps: 'Helps',
     alone: 'Helps only on its own',
     none: 'No measurable difference',
-    worse: 'Getting worse',
+    worse: 'Trending toward removal',
     early: 'Early sign: helps',
     canttell: 'Test cannot tell',
     insufficient: 'Not enough data'
@@ -68,7 +71,7 @@ function buildStrings(you) {
     alone: 'It helps when it\'s the only section present, but the loop found it adds less than ' + pts(HELPS_MIN_GAIN) + ' percentage points once the rest of the guidance is there too.',
     none: 'On every model and task with room to show a gain, the range its gain likely falls in sits entirely below the margin shown on each card, at the certainty shown there, so the loop decided to remove it. When only one task and model had room, or a test ran out of runs without a clear answer, it proposes the removal for a person to make instead.',
     canttell: 'Claude already passes this test without it, so the test can\'t show whether it helps. It needs a harder test.',
-    worse: 'An automatic alert says recent results are worse than they used to be — worth a closer look.',
+    worse: 'Recent results are worse than they used to be, or it stopped beating the arm without it. This is expected and needs no action from ' + W.obj + ': if the trend holds, the loop removes it automatically.',
     early: 'The loop hasn\'t decided yet, but every model tried so far passed at least ' + pts(HELPS_MIN_GAIN) + ' percentage points more checks with it than without it.',
     insufficient: 'The loop hasn\'t decided yet. The range its gain likely falls in is still too wide to say the skill helps or that it doesn\'t, and the early results don\'t clearly lean either way.'
   },
@@ -76,7 +79,7 @@ function buildStrings(you) {
 
   skillsHeading: 'Does each skill help?',
   purposeMissing: 'No description of what this skill is for was found.',
-  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any getting worse, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
+  skillsNote: 'One card per tested skill, in the order the loop will test them: first the ones queued for the next round of tests, in queue order, then the ones waiting on a later re-check, soonest first, then the ones with no test planned. Ties go to the one faring best: skills that help, then early signs of help, then ones the test can\'t judge, then ones without enough data, then ones the loop decided to remove, then any trending toward removal, and within each of those the biggest gain in checks passed. How far down the queue a round gets depends on that week\'s budget. Under each name is what the skill is for. Numbers pool every comparison run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart shows, week by week, how many more checks Claude passed with the skill than without it; a dot above the 0 line means it helped that week.',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One card per section, in the order the loop will test them unless you pick another order below (ties go to the one faring best). Numbers pool every run from the last ' + WINDOW_WEEKS + ' weeks. The small line chart on each card shows, week by week, how many more checks Claude passed with all the guidance than with all of it but that section; a dot above the 0 line means it helped that week.',
   sortLabel: 'Order sections by',
@@ -100,7 +103,7 @@ function buildStrings(you) {
   nextNone: 'Next test: none planned right now.',
   nextUnscheduled: 'Next test: none. It has no task on the test schedule yet.',
   stakesHigh: (reason) => 'High stakes: ' + reason + '. It is tested first and re-checked every 4 weeks instead of 8.',
-  stakesNone: (reason, check) => 'No eval needed: ' + reason + '. A check enforces it: ' + check + '.',
+  stakesNone: (reason, check) => 'No test needed: ' + reason + '. A check enforces it: ' + check + '.',
   confidenceCap: (n) => 'Testing a task and model stops at ' + n + ' comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for ' + W.obj + ' to decide.',
   confHeading: 'How close is a decision?',
   confKeepWord: 'Keep',
@@ -140,6 +143,39 @@ function buildStrings(you) {
   barWholeNone: 'No guidance',
   barTip: (label, a, b, rate) => label + ': ' + a + ' of ' + b + ' checks (' + rate + ')',
   chartLabel: (m) => 'Checks passed by ' + m,
+  // One title above every chart: what it plots, and in what unit.
+  barTitle: { skills: (m) => 'Checks passed on ' + m + ': with this skill vs without it',
+    guidance: (m) => 'Checks passed on ' + m + ', by arm',
+    whole: (m) => 'Checks passed on ' + m + ': all the guidance vs none' },
+  barDefs: {
+    with: 'The normal setup, including this skill. The bar is the share of checks passed in these runs.',
+    without: 'The same setup with only this skill taken out. The bar is the share of checks passed in these runs.',
+    section: 'Claude had this section and no other guidance. The bar is the share of checks passed in these runs.',
+    none: 'Claude had no guidance at all. The bar is the share of checks passed in these runs.',
+    all: 'The full guidance, every section. The bar is the share of checks passed in these runs.',
+    ablated: 'The full guidance with only this section taken out. The bar is the share of checks passed in these runs.'
+  },
+  trendTitle: { skills: 'Weekly gain: checks passed with the skill minus without it, in percentage points',
+    guidance: 'Weekly gain: checks passed with all the guidance minus all but this section, in percentage points',
+    whole: 'Weekly gain: checks passed with all the guidance minus none, in percentage points' },
+  rangeTitle: 'Likely range of the gain per model and task, in percentage points of checks passed',
+  weekTitles: { hooks: 'Commits and pushes stopped per week, on local computers and in CI', prs: 'Pull requests opened and merged per week' },
+  weekDefs: {
+    local: 'Commits and pushes refused by git hook checks on local computers in that week.',
+    ci: 'Pull requests whose git hook checks failed in CI in that week.',
+    opened: 'Pull requests opened in that week, in the repos listed above the chart.',
+    merged: 'Pull requests merged in that week, in the repos listed above the chart.'
+  },
+  dayTitle: 'Runs per day (UTC), by how they helped decide',
+  utilityDefs: {
+    decisive: 'A run that counted toward the point where its model-and-fixture comparison reached a keep-or-remove decision.',
+    decisive_superseded: 'The same, for a version of the text, fixture or model that has since changed.',
+    building: 'A run that counts toward a comparison which has not reached a decision yet.',
+    after_decision: 'A run that took place after its comparison had already decided.',
+    stranded: 'A usable run that a change dropped before its comparison reached a decision.',
+    discarded: 'A run that could never count toward a decision, for a recorded reason.'
+  },
+  funnelTitle: 'Lessons by where they ended up, as a share of all lessons',
   trendCaption: 'Week by week: how many percentage points more of its checks Claude passed with it than without it. Above 0, it helped that week.',
   trendOne: (when, gain) => 'Week by week: only one week of comparisons so far (week of ' + when + '): ' + gain + '.',
   trendNone: 'No weekly trend yet.',
@@ -169,7 +205,7 @@ function buildStrings(you) {
     helps: 'Yes. With the guidance, Claude passed measurably more checks.',
     alone: 'Yes. With the guidance, Claude passed measurably more checks.',
     none: 'Not clearly. The difference so far is too small to count.',
-    worse: 'Results are getting worse and need a closer look.',
+    worse: 'Results are trending toward removal: recent runs score below earlier ones.',
     early: 'Early results say yes, but there are not enough runs yet for a final answer.',
     insufficient: 'Too early to say. There are not enough runs yet.'
   },
@@ -190,14 +226,15 @@ function buildStrings(you) {
   noneListed: 'None.',
 
   alertsHeading: 'Alerts',
+  asOfLine: 'Data times',
   removedHeading: 'Removed sections',
-  removedNote: 'Sections the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
+  removedNote: 'Sections the improvement loop removed automatically. Each link opens its removal pull request, whose Revert button restores the section.',
   removedLink: 'removal and revert',
   removedSkillsHeading: 'Removed skills',
-  removedSkillsNote: 'Skills the evals removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
+  removedSkillsNote: 'Skills the improvement loop removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.',
   alertsNone: 'No open alerts.',
   alertsNoneOther: 'No other open alerts.',
-  alertKinds: { regression: 'Getting worse', retire: 'Suggested for removal', retired: 'Removed',
+  alertKinds: { regression: 'Trending toward removal', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date',
     'loaded-copy': 'Sessions load an old copy' },
   // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
@@ -205,8 +242,35 @@ function buildStrings(you) {
   // #545: this alert carries fields, not text, so the page words it.
   alertDrift: (task, repo, day) => 'The other skills deployed beside the task ' + task + ' in ' + repo + ' have changed since ' + day + ', so it no longer tests what is deployed there. It needs a new pin.',
   alertDetails: 'Details',
+  defClose: 'Close',
+  chipTap: 'Tap for what it means.',
+  noDescription: 'No description recorded.',
+  noDescriptionFixture: 'No description of this fixture was recorded in the data.',
+  fixtureOrigin: (k) => 'Origin: ' + k + '.',
+  fixtureRuns: (n) => n + (n === 1 ? ' run' : ' runs') + ' recorded.',
+  // "Trending toward removal": the system working as designed, not an alert that needs action.
+  trendingHeading: 'Trending toward removal',
+  trendingNote: 'Expected: the loop saw these subjects score worse in recent runs and acts on it by itself. If the trend continues, it removes the subject automatically; nothing is needed from ' + W.obj + '.',
+  trendingNone: 'Nothing is trending toward removal.',
+  trendingCols: { subject: 'Subject', models: 'Models', what: 'What changed', details: 'Details' },
+  trendingKinds: { skill: 'skill', guidance: 'guidance section' },
+  trendingIssue: (n) => n ? 'Issue #' + n : 'Details',
+  trendingAll: 'every fixture',
+  // Numbers are rounded to 2 decimals by the caller, never here.
+  trendAdvantage: (what, a, b) => 'the ' + what + '\'s advantage fell from ' + a + ' to ' + b + ' (score with the ' + what + ' minus score without it).',
+  trendOnFixture: 'On fixture ',
+  trendKindNoun: { skill: 'skill', guidance: 'section' },
+  trendFell: (measure, drop, thr, noise) => measure + ' fell by ' + drop + ' (alert threshold ' + thr + ', typical noise ' + noise + ').',
+  trendMeasure: { judge: 'the judge\'s average score', objective: 'the average share of checks passed' },
+  trendModelSuffix: (m) => ' (' + m + ')',
   // #555: past events, worded from counts; `since` is the oldest counted fire.
-  firesLine: (n, day, m, k) => n + (n === 1 ? ' fire' : ' fires') + ' produced no results since ' + day + ' (' + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + ' produced results that did not validate.',
+  // `total` is every fire the window counted; null when an older document does not say.
+  firesLine: (n, total, day, m, k) => {
+    const of = total === null || total === undefined ? '' : ' of ' + total;
+    return n + of + (total === null || total === undefined ? (n === 1 ? ' fire' : ' fires') : total === 1 ? ' fire' : ' fires') + ' since ' + day + ' produced no results ('
+      + m + (m === 1 ? ' sweep' : ' sweeps') + '); ' + k + of + ' produced results that did not validate.';
+  },
+  firesParts: { fire: 'fire', fires: 'fires', sweep: 'sweep', sweeps: 'sweeps' },
 
   lessonsHeading: 'Lessons from ' + W.whose + ' sessions',
   lessonsLead: (day) => 'Every day a script reads the transcripts of ' + W.whose + ' local Claude Code sessions' + ' and turns repeated trouble into proposals: a new skill, a change to a skill or to the guidance, or a test idea. These are the proposals from ' + day + ', followed by facts Claude\'s auto-memory turned up that belong in a repo and skills ' + W.who + ' proposed.',
@@ -281,18 +345,26 @@ function buildStrings(you) {
   searchNone: 'Nothing matches.',
   searchClear: 'Clear search',
   filterRegistry: 'Registry', filterVerdict: 'Verdict', filterModel: 'Model', filterStakes: 'Stakes', filterAny: 'Any',
-  stakesWords: { high: 'High stakes', none: 'No eval needed', normal: 'Normal' },
+  stakesWords: { high: 'High stakes', none: 'No test needed', normal: 'Normal' },
   kinds: { skill: 'Skill', section: 'Guidance section', check: 'Git hook check', pr: 'Pull request', issue: 'Issue' },
   colWhat: 'What', colDetail: 'Detail',
 
-  tileStopped: 'Commits and pushes git hook checks stopped this week',
-  tileStoppedNote: (l, c, week) => l + ' on ' + W.whose + ' computers and ' + c + ' in CI, in the week of ' + week + ' (weeks start Monday, UTC).',
+  tileStopped: 'Commits and pushes stopped by git hook checks, this week so far',
+  tileTrendingNote: (n) => ' ' + n + (n === 1 ? ' subject trending toward removal is' : ' subjects trending toward removal are') + ' listed separately.',
+  // The data holds weekly totals only, so this is the calendar week so far (it starts Monday, UTC) beside the last full week.
+  tileStoppedNote: (l, c, week, pl, pc, prev) => l + ' on ' + W.whose + ' computers and ' + c + ' in CI so far in the week starting Monday ' + week + ' (UTC)'
+    + (prev ? '. Last week (' + prev + '): ' + pl + ' and ' + pc + '.' : '.'),
   tileStoppedNone: 'No git hook counts in this build.',
   tileHelped: 'Skills that help',
-  tileHelpedNote: (n) => 'of ' + n + ' tested skills, by the loop\'s own keep decision',
+  tileHelpedNote: (n, all) => 'of ' + n + ' tested skills, by the loop\'s own keep decision. All ' + all + ' skills:',
+  skillStateExtra: { skipped: 'Left out on purpose', gap: 'Not yet tested' },
+  skillStateDefs: {
+    skipped: 'Deliberately not tested. Each has a recorded reason, such as a task a self-contained fixture cannot exercise.',
+    gap: 'Should be tested but has no test yet.'
+  },
+  skillStatesAll: 'No other skills.',
   tileWhole: 'Does the guidance help at all?',
-  tileAsOf: 'Data as of',
-  tileNewest: 'Newest test run',
+  tileNewest: 'Newest run',
   tileAlerts: 'Open alerts',
   tileAlertsNote: 'From the results document\'s own checks',
   summaryLead: 'What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.',
@@ -426,7 +498,7 @@ function buildStrings(you) {
   impactRedNone: 'No failed runs in this window.',
   impactSpend: 'Cost',
   impactSpendNote: 'Weekly totals. Dollars are API-equivalent, not what is paid; points are the account\'s usage meter.',
-  colEvalRuns: 'Eval runs', colMeter: 'Meter points', colApi: 'API $', colThreads: 'Thread spend $', colPerVerdict: 'Per verdict $', colPlan: 'Plan',
+  colEvalRuns: 'Runs', colMeter: 'Meter points', colApi: 'API $', colThreads: 'Thread spend $', colPerVerdict: 'Per verdict $', colPlan: 'Plan',
 
   opsRuns: 'Workflow and routine runs',
   opsRunsNote: (since) => 'GitHub Actions runs in the public repos since ' + since + ', newest first.',
@@ -439,7 +511,7 @@ function buildStrings(you) {
   noneYet: 'Nothing here yet.',
 
   methodLead: 'How every number on this page is made.',
-  removedNone: 'Nothing has been removed by the evals.',
+  removedNone: 'Nothing has been removed by the improvement loop.',
   sortHint: 'Select a column heading to sort.'
 };
 }

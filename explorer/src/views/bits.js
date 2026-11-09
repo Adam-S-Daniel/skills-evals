@@ -26,10 +26,14 @@ export function badge(text, kind) {
 
 /* tile({label, value, note, tip, href, small}); `small` for a long value such as a time. */
 export function tile(t) {
-  const kids = [h('span', { class: 'tile-label' }, t.label),
-    h('span', { class: 'tile-num' + (t.small ? ' small' : ''), tabindex: t.tip ? 0 : null, 'data-tip': t.tip || null }, t.value),
+  // A tile that links stretches its label's link over the whole tile, so the
+  // definition buttons inside it stay real buttons, never nested in a link.
+  const label = t.href ? h('a', { class: 'tile-label tile-link', href: t.href }, t.label) : h('span', { class: 'tile-label' }, t.label);
+  const plain = typeof t.value === 'string';
+  const kids = [label,
+    h('span', { class: 'tile-num' + (t.small ? ' small' : ''), tabindex: t.tip && plain ? 0 : null, 'data-tip': t.tip && plain ? t.tip : null }, t.value),
     t.note ? h('span', { class: 'tile-note' }, t.note) : null];
-  return t.href ? h('a', { class: 'tile', href: t.href }, kids) : h('div', { class: 'tile' }, kids);
+  return h('div', { class: 'tile' + (t.href ? ' linked' : '') }, kids);
 }
 
 /* A section with a heading, or null when it has nothing to show, so an empty

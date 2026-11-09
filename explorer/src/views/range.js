@@ -3,6 +3,7 @@ import { HELPS_MIN_GAIN, KEEP_AT, REMOVE_AT, pts } from '../core/rules.js';
 import { STRINGS } from '../core/strings.js';
 import { clean, friendlyModel } from '../core/format.js';
 import { h } from '../core/h.js';
+import { chartTitle } from '../core/charts.js';
 
 /* Runs still needed to move a level from `conf` to `level`, assuming the
    evidence (-ln(1 - level)) grows in step with the pair count. Returns
@@ -123,7 +124,7 @@ export function confidenceView(c, policy, subject, compact) {
   const kids = [h('p', { class: 'conf-h' }, STRINGS.confHeading)];
   const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
   if (chart) {
-    kids.push(chart);
+    kids.push(chartTitle(STRINGS.rangeTitle), chart);
   }
   if (chart && !compact) {
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));

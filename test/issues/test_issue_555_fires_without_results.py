@@ -166,7 +166,7 @@ class ClassificationTests(unittest.TestCase):
         summaries = {(f"routine-results/R2/pub/{when}", "pub", when, "fx", "with_skill"):
                      {"summary": path, "trials": []}}
         out = counts(self.w, [delivered, rejected, without], index, summaries)
-        self.assertEqual(out, {"window_days": 14, "since": iso(at(10)),
+        self.assertEqual(out, {"window_days": 14, "since": iso(at(10)), "counted": 3,
                                "without_results": 1, "rejected": 1,
                                "sweeps": [{"start": iso(at(3)), "end": iso(at(3)), "fires": 1}]})
 

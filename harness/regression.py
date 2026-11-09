@@ -311,6 +311,27 @@ def _verdict(objective: dict, judge, delta, policy: dict) -> tuple:
     return "stable", "no figure moved past its threshold and its noise"
 
 
+def bad_detail(row: dict, policy: dict):
+    """The figures behind a `regressed` or `lost-delta` row as fields, at full
+    precision (a display rounds them), or None for any other row. `measure` is
+    `objective` or `judge` (a mean that fell: `previous`, `current`, `drop`,
+    `threshold`, `noise`) or `advantage` (with minus without: `previous`,
+    `current`). It follows the same order `_verdict` decides in."""
+    numbers = row.get("numbers") or {}
+    if row.get("verdict") == "regressed":
+        for name, key in (("objective", "objective_drop"), ("judge", "judge_drop")):
+            figure = numbers.get(name)
+            if _moved(figure, policy[key], -1):
+                return {"measure": name, "previous": figure["previous"],
+                        "current": figure["current"], "drop": -figure["change"],
+                        "threshold": policy[key], "noise": figure["noise"]}
+    if row.get("verdict") == "lost-delta" and numbers.get("delta"):
+        delta = numbers["delta"]
+        return {"measure": "advantage", "previous": delta["previous"],
+                "current": delta["current"]}
+    return None
+
+
 def subject_verdict(verdicts) -> str:
     """One verdict from a subject's rows (module docstring)."""
     verdicts = set(verdicts)

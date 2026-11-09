@@ -2,6 +2,7 @@
 import { STRINGS } from './strings.js';
 import { fmtCount, fmtRate } from './format.js';
 import { h } from './h.js';
+import { term } from './terms.js';
 
 export function barPath(x, y, w, hgt, r) {
   // square at the baseline (left), 4px rounded data end (right)
@@ -32,14 +33,22 @@ export function barChart(rows, label) {
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img', 'aria-label': label }, kids);
 }
 
+/* The status label on a card, as a button that opens its rule. */
 export function chip(kind, ruleText) {
   const rule = ruleText || STRINGS.chipRules[kind];
-  return h('span', { class: 'chip ' + kind, title: STRINGS.chips[kind] + ': ' + rule, tabindex: 0,
-    'aria-label': STRINGS.chips[kind] + '. ' + rule },
-    h('span', { class: 'ic', 'aria-hidden': 'true' }), STRINGS.chips[kind]);
+  return term([h('span', { class: 'ic', 'aria-hidden': 'true' }), STRINGS.chips[kind]], rule,
+    { cls: 'chip ' + kind, title: STRINGS.chips[kind], aria: STRINGS.chips[kind] + '. ' + STRINGS.chipTap });
 }
 
+/* The title above a chart: what it plots, in one line. */
+export function chartTitle(text) {
+  return h('p', { class: 'chart-title' }, text);
+}
+
+/* items: [{label, color, def}]. An item with a `def` is a button that opens
+   its definition. */
 export function legend(items) {
   return h('div', { class: 'legend' }, items.map((it) =>
-    h('span', null, h('span', { class: 'sw', style: 'background:' + it.color }), it.label)));
+    h('span', null, h('span', { class: 'sw', style: 'background:' + it.color }),
+      it.def ? term(it.label, it.def) : it.label)));
 }

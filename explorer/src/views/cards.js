@@ -3,6 +3,7 @@ import { STRINGS } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
 import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor } from '../core/format.js';
 import { h } from '../core/h.js';
+import { termify, SENTENCE_TERMS } from '../core/terms.js';
 import { chip } from '../core/charts.js';
 import { purposeOf } from '../core/items.js';
 import { hashFor } from '../core/route.js';
@@ -76,8 +77,8 @@ export function skillCard(it, refMs, doc) {
     copiesLine(it.raw.copies),
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs, true)] : null,
+    h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs, true, 'skills')] : null,
     confidenceView(it.raw.confidence, doc && doc.policy, 'skills', true),
     verdictLine(it.raw.verdict));
 }
@@ -90,9 +91,9 @@ export function sectionCard(it, refMs, doc) {
     h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
     nextLine(it.raw.next_test, refMs, 'section'),
     stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, clean(it.sentence)),
+    h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
     hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null,
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs, true)] : null,
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs, true, 'guidance')] : null,
     confidenceView(it.raw.confidence, doc && doc.policy, 'guidance', true),
     verdictLine(it.raw.verdict));
 }

@@ -16,7 +16,7 @@ function hookWeeksView(doc, refMs) {
   const weeks = hookWeeks(doc);
   if (!weeks.length) return null;
   const old = weeks.slice().reverse();
-  return [weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks),
+  return [weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
       { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
@@ -72,7 +72,7 @@ function prOutcomesView(doc, refMs) {
   if (!a || !weeks.length) return null;
   const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split('/').pop())).join(', ');
   return [h('p', { class: 'note' }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
-    weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs),
+    weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs, STRINGS.weekTitles.prs, [STRINGS.weekDefs.opened, STRINGS.weekDefs.merged]),
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
       { label: STRINGS.colOpened, num: true, sort: (w) => w.opened, cell: (w) => fmtCount(w.opened) },

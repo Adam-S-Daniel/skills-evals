@@ -766,6 +766,34 @@
     },
     "main": {
      "type": "string"
+    },
+    "verdict": {
+     "enum": [
+      "regressed",
+      "lost-delta"
+     ]
+    },
+    "measure": {
+     "enum": [
+      "objective",
+      "judge",
+      "advantage"
+     ]
+    },
+    "previous": {
+     "type": "number"
+    },
+    "current": {
+     "type": "number"
+    },
+    "drop": {
+     "type": "number"
+    },
+    "threshold": {
+     "type": "number"
+    },
+    "noise": {
+     "type": "number"
     }
    },
    "required": [
@@ -1582,6 +1610,10 @@
        "type": "null"
       }
      ]
+    },
+    "counted": {
+     "type": "integer",
+     "minimum": 0
     },
     "without_results": {
      "type": "integer",

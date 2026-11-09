@@ -620,6 +620,25 @@ class AlertTests(unittest.TestCase):
         self.assertIn("lost-delta", regression["text"])
         self.assertTrue(all(a["url"] is None for a in alerts))
 
+    def test_regression_alerts_carry_their_figures_as_fields(self):
+        policy = {"objective_drop": 0.15, "judge_drop": 1.0}
+        regressions = {"policy": {"skills": policy, "guidance": policy}, "rows": [
+            {"subject": "skill", "id": "alpha", "fixture": "fx", "model": "model-a", "verdict": "regressed",
+             "reason": "r", "numbers": {"objective": None, "delta": None,
+                                        "judge": {"previous": 8.0, "current": 6.5, "change": -1.5000000000000009,
+                                                  "noise": 0.472189541352795}}},
+            {"subject": "guidance", "id": "sec-one", "fixture": "fy", "model": "model-b", "verdict": "lost-delta",
+             "reason": "r", "numbers": {"objective": None, "judge": None,
+                                        "delta": {"previous": 0.16666666666666663, "current": 0.0}}}]}
+        alerts = explorer_data.build_alerts(self.GATES, regressions, {}, {"alpha"}, {"sec-one"})
+        by = {a["name"]: a for a in alerts if a["kind"] == "regression"}
+        self.assertEqual((by["alpha"]["verdict"], by["alpha"]["measure"], by["alpha"]["fixture"]),
+                         ("regressed", "judge", "fx"))
+        self.assertEqual((by["alpha"]["drop"], by["alpha"]["threshold"], by["alpha"]["noise"]),
+                         (1.5000000000000009, 1.0, 0.472189541352795))
+        self.assertEqual((by["sec-one"]["measure"], by["sec-one"]["previous"], by["sec-one"]["current"]),
+                         ("advantage", 0.16666666666666663, 0.0))
+
     def test_alerts_about_unlisted_subjects_are_dropped(self):
         self.assertFalse([a for a in self.alerts() if a["name"] == "hidden"])
 

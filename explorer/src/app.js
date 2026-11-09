@@ -8,6 +8,7 @@ import { parseRoute, hashFor, groupOf } from './core/route.js';
 import { renderRoute } from './views/page.js';
 import { buildFailure } from './views/failure.js';
 import { DEFAULT_DATA_URL } from './adapters/web.js';
+import { installDefs } from './core/terms.js';
 
 /* opts: { groups (the top-level groups this build has, in order), ext
    (state -> the private overlays, or null), rootId, tipId, onRoute(hash) }. */
@@ -120,6 +121,7 @@ export function boot(source, opts) {
   root.addEventListener('focusout', () => { tip.hidden = true; });
   window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
+  installDefs(document);
   markNav();
   source.start({
     onDoc(doc, url) {
