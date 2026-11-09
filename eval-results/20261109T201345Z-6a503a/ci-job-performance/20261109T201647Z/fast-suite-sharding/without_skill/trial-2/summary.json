@@ -1,0 +1,350 @@
+{
+  "skill": "ci-job-performance",
+  "arm": "without_skill",
+  "timestamp": "20261109T201647Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.2806016,
+    "num_turns": 8,
+    "duration_ms": 39019,
+    "usage": {
+      "input_tokens": 16,
+      "cache_creation_input_tokens": 28421,
+      "cache_read_input_tokens": 354563,
+      "output_tokens": 3376,
+      "output_tokens_details": {
+        "thinking_tokens": 1027
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 28421
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 964,
+          "cache_read_input_tokens": 57082,
+          "cache_creation_input_tokens": 224,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 224,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "suite-is-not-sharded",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "installs-only-chromium",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "tests-not-pinned-to-one-worker",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "required-e2e-check-is-published",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "only-the-workflow-changed",
+      "passed": true,
+      "detail": "unchanged (README.md, ci-runs/run-93001.json, ci-runs/run-93001.log, ci-runs/run-93002.json, ci-runs/run-93002.log, ci-runs/run-93003.json, ci-runs/run-93003.log, ci-runs/run-93004.json, ci-runs/run-93004.log, ci-runs/run-93101.json, ci-runs/run-93101.log, ci-runs/run-93102.json, ci-runs/run-93102.log, ci-runs/runs.json, e2e/package-lock.json, e2e/package.json, e2e/playwright.config.ts, e2e/tests/about.spec.ts, e2e/tests/blog.spec.ts, e2e/tests/contact.spec.ts, e2e/tests/docs.spec.ts, e2e/tests/home.spec.ts, e2e/tests/pricing.spec.ts)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 8,
+        "rationale": "Keeps a single unsharded `e2e` job, installs only Chromium with its deps (headless shell, valid for the headless-only config) and drops the one-worker pin, with the case built on step timings across all four main runs and both shard runs; minor deductions for hard-coding `--workers=4` on a 4-vCPU runner rather than a measured or default setting, for apparently attributing the late third shard to the 83s run rather than the 117s one, and for the change being unverified on a runner."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "The diff touches only .github/workflows/e2e.yml, leaves tests, config and exported runs alone, preserves the `e2e` job name so the required check still reports, and declines the unnecessary browser cache; the only additions are short comments and the slightly opinionated `--only-shell` and `--workers=4` choices."
+      },
+      {
+        "name": "explanation",
+        "score": 7,
+        "rationale": "Clearly tabulates the ~15s/~50s fixed cost against the 32-37s of tests with the runs they came from, explains that each shard re-paid the install and that a late third shard held one run up, names the unused-browser install and the single worker as the removed costs, and gives an honestly hedged 40-55s estimate; but it omits the split-by-count point, the tripled runner minutes and the noise between the two shard samples, and understates that one sharded run was slower than not sharding at all."
+      }
+    ],
+    "overall": 8.0
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.321 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-2"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 16,
+      "output_tokens": 3376,
+      "cache_read_input_tokens": 354563,
+      "cache_creation_input_tokens": 28421,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "fast-suite-sharding",
+  "trial": 2,
+  "judge_selection": {
+    "model": "claude-fable-5-2",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "2dd5fb785a6073908a9cb907b25a036c7dcb3527ed75870327deac91619b9613",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261109T201345Z-6a503a",
+    "session_id": "cse_01SphsQC3WYEKknpfPv5pc31",
+    "harness_commit": "09e95b70fad429d98f1e45698785efbda458aba3",
+    "cli_version": "2.1.321 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-09T20:16:47Z",
+    "ended_at": "2026-11-09T20:19:37Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-09T20:16:50.255Z",
+      "to_at": "2026-11-09T20:19:37.284Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.08,
+          "to": 0.08,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQC3WYEKknpfPv5pc31",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 1.2589468,
+      "agent_usd": 1.0107702,
+      "judge_usd": 0.24817660000000002,
+      "guard_usd": 0,
+      "metered_usd": 1.1798914,
+      "last_agent_call_usd": 0.272631,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-09T20:17:49Z",
+      "ended_at": "2026-11-09T20:18:43Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-09T20:17:49Z",
+          "ended_at": "2026-11-09T20:18:29Z",
+          "duration_ms": 40171,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-09T20:18:30Z",
+          "ended_at": "2026-11-09T20:18:43Z",
+          "duration_ms": 13374,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-09T20:17:52.341Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.08,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-09T20:18:42.997Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.08,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.01,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 40171,
+        "num_turns": 8,
+        "cost_usd": 0.2806016,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 16,
+            "output_tokens": 3376,
+            "cache_read_input_tokens": 354563,
+            "cache_creation_input_tokens": 28421,
+            "cost_usd": 0.2806016
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 28421,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 13374,
+        "num_turns": 1,
+        "cost_usd": 0.0784354,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-2": {
+            "input_tokens": 2,
+            "output_tokens": 1081,
+            "cache_read_input_tokens": 2997,
+            "cache_creation_input_tokens": 3458,
+            "cost_usd": 0.0784354
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3458,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
