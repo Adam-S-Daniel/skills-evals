@@ -1,0 +1,11 @@
+Finding:     token-refresher: REDACTED
+Secret:      REDACTED
+RuleID:      generic-api-key
+Entropy:     3.9
+File:        bundles.lock
+Line:        4
+Commit:      5e0c1d7a9b3f4a6c8e2d0b1f3a5c7e9d1b3f5a7c
+Fingerprint: 5e0c1d7a9b3f4a6c8e2d0b1f3a5c7e9d1b3f5a7c:bundles.lock:generic-api-key:4
+
+1 leaks found
+Error: process completed with exit code 1
