@@ -58,6 +58,15 @@ function meter(value, max, mark) {
     mark !== undefined ? h('div', { class: 'meter-mark', style: 'left:' + Math.min(100, mark).toFixed(1) + '%' }) : null);
 }
 
+/* An alert's line: its text, led by its name unless the text already
+   starts with it ("tool-powershell: tool-powershell regressed ..."). */
+export function alertWhat(a) {
+  const name = clean(a.name);
+  const text = a.text ? clean(a.text) : alertText(a) || '';
+  if (!text) return name;
+  return text.startsWith(name + ' ') ? text : name + ': ' + text;
+}
+
 /* One list of what needs attention, with a kind column. */
 export function attentionRows(dash, doc) {
   const rows = [];
@@ -68,7 +77,7 @@ export function attentionRows(dash, doc) {
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
     const k = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : a.kind;
-    rows.push({ kind: P.kindAlert(k), severity: a.kind === 'regression' ? 'high' : 'medium', what: clean(a.name) + (a.text ? ': ' + clean(a.text) : alertText(a) ? ': ' + alertText(a) : ''), url: a.url, where: a.subject, age: null });
+    rows.push({ kind: P.kindAlert(k), severity: a.kind === 'regression' ? 'high' : 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null });
   }
   const f = doc.fires_without_results;
   if (f && Number.isInteger(f.without_results) && (f.without_results || f.rejected) && typeof f.since === 'string') {
@@ -190,13 +199,15 @@ export function makeExt(dash) {
       const threads = new Map((some(dash, 'threads') || []).map((t) => [t.title, t]));
       const lanes = some(dash, 'loop_lanes');
       return [
-        panel(P.lanesHeading, lanes ? table([
+        // The lanes are built; their builder threads are history, so the
+        // table starts folded under the gaps it closed.
+        panel(P.lanesHeading, lanes ? h('details', { class: 'history' }, h('summary', null, P.lanesShow(lanes.length)), table([
           { label: P.colLane, sort: (r) => r.lane, cell: (r) => clean(r.lane) },
           { label: P.colThread, sort: (r) => r.thread, cell: (r) => plink(r.link, clean(r.thread)) },
           { label: P.colBuilds, cell: (r) => clean(r.does) },
           { label: P.colLatest, cell: (r) => plink(r.latest_link, clean(r.latest)) },
           { label: P.colState, sort: (r) => (threads.get(r.thread) || {}).state || '', cell: (r) => pill((threads.get(r.thread) || {}).state || '') },
-          { label: P.colActive, sort: (r) => (threads.get(r.thread) || {}).last_active || '', cell: (r) => at((threads.get(r.thread) || {}).last_active) }], lanes) : null),
+          { label: P.colActive, sort: (r) => (threads.get(r.thread) || {}).last_active || '', cell: (r) => at((threads.get(r.thread) || {}).last_active) }], lanes)) : null),
         panel(P.gapsHeading, ok('loop_gaps') ? table([
           { label: P.colGap, sort: (r) => r.gap, cell: (r) => clean(r.gap) },
           { label: STRINGS.colTitle, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title)) },
@@ -306,7 +317,7 @@ export function makeExt(dash) {
         : v >= 3600 ? Math.floor(v / 3600) + 'h ' + String(Math.floor((v % 3600) / 60)).padStart(2, '0') + 'm'
           : Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's');
       return panel(P.runsHeading, [h('p', { class: 'note' }, P.runsNote), srcLine(src('run_stream'), NaN), problemsToggle(), table([
-        { label: P.colWhen, sort: (r) => r.at, cell: (r) => at(r.at) },
+        { label: P.colWhen, cls: 'when', sort: (r) => r.at, cell: (r) => at(r.at) },
         { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
         { label: P.colWhere, sort: (r) => r.source, cell: (r) => clean(r.source || '') },
         { label: P.colJob, sort: (r) => r.name, cell: (r) => clean(r.name || '') },

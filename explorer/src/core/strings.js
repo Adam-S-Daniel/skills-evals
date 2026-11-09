@@ -111,6 +111,8 @@ function buildStrings(you) {
   confMore: (which, n) => which + ': at this pace, about ' + n + ' more run' + (n === 1 ? '' : 's') + '.',
   confNoRoom: (margin) => 'Removal: no task leaves room for a ' + margin + '-point gain (Claude already passes without it), so this needs a harder test.',
   confRuns: (n, cap) => 'Runs that count toward a decision, busiest task and model: ' + n + ' of ' + cap + '. Testing stops at ' + cap + ' runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for ' + W.obj + ' to decide.',
+  confRunsShort: (n, cap) => 'Runs counted, busiest task and model: ' + n + ' of ' + cap + '.',
+  guideHeading: 'How to read each card',
   confPace: 'The run estimates project how fast certainty has grown per run so far; they are rough.',
   rangeAria: (n, margin) => 'The range the gain likely falls in, for ' + n + (n === 1 ? ' task and model' : ' tasks and models') + ', from \u2212100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +' + margin + '.',
   rangeAxis: 'Gain, points',

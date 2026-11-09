@@ -282,6 +282,13 @@ def _moved(figure, threshold: float, sign: int) -> bool:
     return change >= threshold and change > figure["noise"]
 
 
+def _num(x) -> str:
+    """A figure for a reason sentence: two decimals at most, so float noise
+    such as 1.5000000000000009 reads as 1.5. The unrounded value stays in
+    `numbers`; this is display only."""
+    return f"{x:.2f}".rstrip("0").rstrip(".") if isinstance(x, float) else str(x)
+
+
 def _verdict(objective: dict, judge, delta, policy: dict) -> tuple:
     """(verdict, reason) of a cell that has both windows (module docstring)."""
     need = policy["lost_delta_min_previous"]
@@ -289,18 +296,18 @@ def _verdict(objective: dict, judge, delta, policy: dict) -> tuple:
                ("judge", judge, policy["judge_drop"]))
     for name, figure, threshold in figures:
         if _moved(figure, threshold, -1):
-            return "regressed", (f"the {name} mean fell by {-figure['change']} "
-                                 f"(threshold {threshold}, noise {figure['noise']})")
+            return "regressed", (f"the {name} mean fell by {_num(-figure['change'])} "
+                                 f"(threshold {_num(threshold)}, noise {_num(figure['noise'])})")
     if delta is not None and delta["previous"] >= need and delta["current"] <= 0:
-        return "lost-delta", (f"with minus without went from {delta['previous']} "
-                              f"to {delta['current']}")
+        return "lost-delta", (f"with minus without went from {_num(delta['previous'])} "
+                              f"to {_num(delta['current'])}")
     for name, figure, threshold in figures:
         if _moved(figure, threshold, 1):
-            return "improved", (f"the {name} mean rose by {figure['change']} "
-                                f"(threshold {threshold}, noise {figure['noise']})")
+            return "improved", (f"the {name} mean rose by {_num(figure['change'])} "
+                                f"(threshold {_num(threshold)}, noise {_num(figure['noise'])})")
     if delta is not None and delta["previous"] <= 0 and delta["current"] >= need:
-        return "improved", (f"with minus without went from {delta['previous']} "
-                            f"to {delta['current']}")
+        return "improved", (f"with minus without went from {_num(delta['previous'])} "
+                            f"to {_num(delta['current'])}")
     return "stable", "no figure moved past its threshold and its noise"
 
 

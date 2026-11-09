@@ -223,6 +223,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 .ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
 .ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
 .ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
+.ex details.guide { border: 1px solid var(--base); border-radius: 9px; background: var(--surface); padding: 8px 12px; margin: 0 0 12px; font-size: 0.88rem; color: var(--ink-2); }
+.ex details.guide > summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 28px; display: flex; align-items: center; }
+.ex details.guide > p { margin: 6px 0; max-width: 80ch; }
+.ex details.history > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.ex td.when { white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -418,6 +423,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       confMore: (which, n) => which + ": at this pace, about " + n + " more run" + (n === 1 ? "" : "s") + ".",
       confNoRoom: (margin) => "Removal: no task leaves room for a " + margin + "-point gain (Claude already passes without it), so this needs a harder test.",
       confRuns: (n, cap) => "Runs that count toward a decision, busiest task and model: " + n + " of " + cap + ". Testing stops at " + cap + " runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for " + W.obj + " to decide.",
+      confRunsShort: (n, cap) => "Runs counted, busiest task and model: " + n + " of " + cap + ".",
+      guideHeading: "How to read each card",
       confPace: "The run estimates project how fast certainty has grown per run so far; they are rough.",
       rangeAria: (n, margin) => "The range the gain likely falls in, for " + n + (n === 1 ? " task and model" : " tasks and models") + ", from −100 to +100 percentage points. Keep needs a bar entirely right of 0; removal needs every counted bar entirely left of +" + margin + ".",
       rangeAxis: "Gain, points",
@@ -1303,7 +1310,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/trend.js
-  function trendChart(points, refMs) {
+  function trendChart(points, refMs, compact) {
     if (!points.length) return h("p", { class: "trend-cap" }, STRINGS.trendNone);
     if (points.length === 1) {
       const p = points[0];
@@ -1363,7 +1370,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "div",
       null,
       h("svg", { viewBox: "0 0 " + W + " " + H, class: "spark", role: "img", "aria-label": STRINGS.trendCaption }, kids),
-      h("p", { class: "trend-cap" }, STRINGS.trendCaption)
+      compact ? null : h("p", { class: "trend-cap" }, STRINGS.trendCaption)
     );
   }
 
@@ -1590,7 +1597,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     }, c.label)));
     const body = rows.map((r) => h("tr", o.rowAttrs ? o.rowAttrs(r) : null, cols.map((c) => {
       const v = c.sort ? c.sort(r) : null;
-      return h("td", { class: c.num ? "num" : null, "data-sort": v === null || v === void 0 ? null : String(v) }, c.cell(r));
+      return h("td", { class: [c.num ? "num" : null, c.cls || null].filter(Boolean).join(" ") || null, "data-sort": v === null || v === void 0 ? null : String(v) }, c.cell(r));
     })));
     return h(
       "div",
@@ -1707,19 +1714,41 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "aria-label": STRINGS.rangeAria(rows.length, margin)
     }, kids);
   }
-  function confidenceView(c, policy, subject) {
+  function policyFigures(policy) {
+    const ok = (x) => typeof x === "number" && isFinite(x);
+    return {
+      margin: policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN),
+      keep: policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT,
+      remove: policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT,
+      versions: policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : 2,
+      cap: policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0 ? policy.max_runs_per_cell : null
+    };
+  }
+  var whole = (x) => Math.round(x * 100) + "%";
+  function readingGuide(policy, subject) {
+    const f = policyFigures(policy);
+    return h(
+      "details",
+      { class: "guide" },
+      h("summary", null, STRINGS.guideHeading),
+      h("p", null, STRINGS.trendCaption),
+      h("p", null, STRINGS.rangeWhat),
+      h("p", null, STRINGS.rangeRule(f.margin)),
+      h("p", null, STRINGS.rangeLevels(whole(f.keep), whole(f.remove), subject, f.versions)),
+      f.cap ? h("p", null, STRINGS.confidenceCap(f.cap)) : null,
+      h("p", null, STRINGS.confPace)
+    );
+  }
+  function confidenceView(c, policy, subject, compact) {
     const ok = (x) => typeof x === "number" && isFinite(x);
     if (!c || !ok(c.helps)) return h("p", { class: "meta" }, STRINGS.confidenceNone);
-    const margin = policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN);
-    const keep = policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT;
-    const remove = policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT;
-    const versions = policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : 2;
-    const cap = policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0 ? policy.max_runs_per_cell : null;
-    const whole = (x) => Math.round(x * 100) + "%";
+    const { margin, keep, remove, versions, cap } = policyFigures(policy);
     const kids = [h("p", { class: "conf-h" }, STRINGS.confHeading)];
     const chart = Array.isArray(c.cells) && c.cells.length ? rangeChart(c.cells, margin, cap) : null;
     if (chart) {
       kids.push(chart);
+    }
+    if (chart && !compact) {
       kids.push(h("p", { class: "meta" }, STRINGS.rangeWhat));
       kids.push(h("p", { class: "meta" }, STRINGS.rangeRule(margin)));
       kids.push(h("p", { class: "meta" }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
@@ -1732,9 +1761,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
       kids.push(removeEst.node);
     }
-    if (cap && Number.isInteger(c.max_pairs)) kids.push(h("p", { class: "meta" }, STRINGS.confRuns(c.max_pairs, cap)));
-    else if (cap) kids.push(h("p", { class: "meta" }, STRINGS.confidenceCap(cap)));
-    if (keepEst.projected || removeEst.projected) kids.push(h("p", { class: "meta" }, STRINGS.confPace));
+    if (cap && Number.isInteger(c.max_pairs)) kids.push(h("p", { class: "meta" }, compact ? STRINGS.confRunsShort(c.max_pairs, cap) : STRINGS.confRuns(c.max_pairs, cap)));
+    else if (cap && !compact) kids.push(h("p", { class: "meta" }, STRINGS.confidenceCap(cap)));
+    if (!compact && (keepEst.projected || removeEst.projected)) kids.push(h("p", { class: "meta" }, STRINGS.confPace));
     return h("div", { class: "conf" }, kids);
   }
 
@@ -1797,8 +1826,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       nextLine(it.raw.next_test, refMs, "skill"),
       stakesLine(it.raw.stakes),
       h("p", { class: "sent" }, clean(it.sentence)),
-      hasData(it.pooled) ? [legendFor("skills", it.pooled), modelCharts(it.pooled, "skills"), trendChart(it.trend, refMs)] : null,
-      confidenceView(it.raw.confidence, doc && doc.policy, "skills"),
+      hasData(it.pooled) ? [legendFor("skills", it.pooled), modelCharts(it.pooled, "skills"), trendChart(it.trend, refMs, true)] : null,
+      confidenceView(it.raw.confidence, doc && doc.policy, "skills", true),
       verdictLine(it.raw.verdict)
     );
   }
@@ -1814,8 +1843,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       stakesLine(it.raw.stakes),
       h("p", { class: "sent" }, clean(it.sentence)),
       hasAlone(it.pooled) ? h("p", { class: "meta" }, STRINGS.aloneShown) : null,
-      hasData(it.pooled) ? [legendFor("guidance", it.pooled), modelCharts(it.pooled, "guidance"), trendChart(it.trend, refMs)] : null,
-      confidenceView(it.raw.confidence, doc && doc.policy, "guidance"),
+      hasData(it.pooled) ? [legendFor("guidance", it.pooled), modelCharts(it.pooled, "guidance"), trendChart(it.trend, refMs, true)] : null,
+      confidenceView(it.raw.confidence, doc && doc.policy, "guidance", true),
       verdictLine(it.raw.verdict)
     );
   }
@@ -2019,7 +2048,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/whole.js
-  function wholeView(whole, refMs) {
+  function wholeView(whole2, refMs) {
     return h(
       "section",
       { class: "headline" },
@@ -2030,14 +2059,14 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h(
           "div",
           { class: "head", style: "display:flex;gap:8px;justify-content:space-between;align-items:flex-start" },
-          h("p", { class: "answer" }, STRINGS.wholeAnswer[whole.chip]),
-          chip(whole.chip, STRINGS.wholeRule)
+          h("p", { class: "answer" }, STRINGS.wholeAnswer[whole2.chip]),
+          chip(whole2.chip, STRINGS.wholeRule)
         ),
         h("p", { class: "note" }, STRINGS.wholeNote),
-        h("p", { class: "sent" }, clean(whole.sentence)),
-        legendFor("whole", whole.pooled),
-        h("div", { class: "cols" }, modelCharts(whole.pooled, "whole")),
-        trendChart(whole.trend, refMs)
+        h("p", { class: "sent" }, clean(whole2.sentence)),
+        legendFor("whole", whole2.pooled),
+        h("div", { class: "cols" }, modelCharts(whole2.pooled, "whole")),
+        trendChart(whole2.trend, refMs)
       )
     );
   }
@@ -2334,13 +2363,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       value: fmtCount(tested.filter((s) => s.chip === "helps").length),
       note: STRINGS.tileHelpedNote(tested.length)
     }));
-    const whole = wholeGuidance(doc);
+    const whole2 = wholeGuidance(doc);
     tiles.push(tile({
       label: STRINGS.tileWhole,
       href: hashFor("guidance"),
       tip,
-      value: chip(whole.chip, STRINGS.wholeRule),
-      note: STRINGS.wholeAnswer[whole.chip]
+      value: chip(whole2.chip, STRINGS.wholeRule),
+      note: STRINGS.wholeAnswer[whole2.chip]
     }));
     const newest = parseTime(doc.newest_run);
     tiles.push(tile({
@@ -2429,14 +2458,15 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const items = hookItems(doc);
     const w = hk.window || {};
     const day = (d) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
+    const anyMeasured = items.some((it) => it.measured);
     const rows = table([
       { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor("hooks", it.name), clean(it.name)) },
       { label: STRINGS.colWhere, sort: (it) => it.where, cell: where },
       { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => it.runs === null ? STRINGS.noValue : fmtCount(it.runs) },
       { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked) },
-      { label: STRINGS.colOverrides, num: true, sort: (it) => it.measured ? it.overridden : -1, cell: overrides },
+      anyMeasured ? { label: STRINGS.colOverrides, num: true, sort: (it) => it.measured ? it.overridden : -1, cell: overrides } : null,
       { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || "", cell: hookVerdict }
-    ], items);
+    ].filter(Boolean), items);
     const policy = hk.policy || {};
     return h(
       "section",
@@ -2446,6 +2476,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
       typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
+      items.length && !anyMeasured ? h("p", { class: "note" }, STRINGS.hookOverridesNote) : null,
       Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h("p", { class: "note" }, STRINGS.hookUnlisted(hk.unlisted)) : null,
       hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
     );
@@ -3311,6 +3342,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           h("h2", null, STRINGS.sectionsHeading),
           h("p", { class: "note" }, STRINGS.sectionsNote),
           chipSummary(items2, mode),
+          items2.length ? readingGuide(doc.policy, "guidance") : null,
           h(
             "div",
             { class: "toolbar" },
@@ -3342,6 +3374,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h("p", { class: "note" }, STRINGS.skillsNote),
         u && typeof u.sessions_scanned === "number" ? h("p", { class: "note" }, STRINGS.usageNote(u.sessions_scanned.toLocaleString("en-US"))) : null,
         chipSummary(items, mode),
+        items.length ? readingGuide(doc.policy, "skills") : null,
         items.length ? h("div", { class: "cards" }, items.map((it) => skillCard(it, refMs, doc))) : h("p", null, STRINGS.noCards)
       ),
       coverageView(doc, mode),

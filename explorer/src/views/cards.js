@@ -77,8 +77,8 @@ export function skillCard(it, refMs, doc) {
     nextLine(it.raw.next_test, refMs, 'skill'),
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs)] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'skills'),
+    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs, true)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'skills', true),
     verdictLine(it.raw.verdict));
 }
 
@@ -92,8 +92,8 @@ export function sectionCard(it, refMs, doc) {
     stakesLine(it.raw.stakes),
     h('p', { class: 'sent' }, clean(it.sentence)),
     hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null,
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs)] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance'),
+    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs, true)] : null,
+    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance', true),
     verdictLine(it.raw.verdict));
 }
 

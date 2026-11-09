@@ -8,6 +8,7 @@ import { groupOf, GROUPS, hashFor } from '../core/route.js';
 import { DEFAULT_DATA_URL } from '../adapters/web.js';
 import { wholeView } from './whole.js';
 import { skillCard, sectionCard, chipSummary } from './cards.js';
+import { readingGuide } from './range.js';
 import { coverageView } from './coverage.js';
 import { alertsView } from './alerts.js';
 import { summaryView } from './summary.js';
@@ -33,6 +34,7 @@ export function buildPage(doc, mode, opts) {
       wholeView(wholeGuidance(doc), refMs),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
+        items.length ? readingGuide(doc.policy, 'guidance') : null,
         h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
           h('div', { class: 'seg', role: 'group', 'aria-label': STRINGS.sortLabel },
             h('button', { type: 'button', 'aria-pressed': o.sortBy !== 'size' && o.sortBy !== 'value' ? 'true' : 'false', onclick: hd.sortNext || null }, STRINGS.sortNext),
@@ -48,6 +50,7 @@ export function buildPage(doc, mode, opts) {
     h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
+      items.length ? readingGuide(doc.policy, 'skills') : null,
       items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
     coverageView(doc, mode), alertsView(doc, mode));
 }

@@ -21,5 +21,5 @@ window.dash={colors:['#36c','#c63'],loader(){},calc(id,o){calcs[id]=o;},
  onData(f){cb=f;}, params(){return params;}, setParams(p){Object.assign(params,p); cb&&cb();}, setLink(){}};
 </script>""" % json.dumps(ds)
 with open(os.path.join(work, "test.html"), "w") as f:
-    f.write('<!doctype html><html><body><div id="dash-root">' + mock + open(page).read()
+    f.write('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="dash-root">' + mock + open(page).read()
             + "<script>setTimeout(()=>cb&&cb(),0)</script></div></body></html>")
