@@ -1,8 +1,9 @@
 # The weekly allowance budget for every automated eval (#68).
 #
-# Adam's standing decision (2026-10-10,
+# Adam's standing decision (25% since 2026-11-02, his steady-state goal; 30%
+# from 2026-10-10,
 # https://github.com/Adam-S-Daniel/skills-evals/issues/68#issuecomment-6097945979):
-# all automated evals together stay within 30% of the Claude subscription's
+# all automated evals together stay within 25% of the Claude subscription's
 # weekly allowance. Every value below is a fraction of that allowance, as the
 # CLI's meter reports it (`unifiedWindows.seven_day.utilization`, 0 to 1), so
 # 0.01 is one point, and points = percent of the weekly allowance.
@@ -22,13 +23,11 @@
 # number above 0 and at most 1, and `per_run_cap` no larger than
 # `weekly_cap`. A change here is a spending decision: it is Adam's.
 
-# 100 points for the allowance week ending Mon 2026-11-09 17:00 UTC only
-# (Adam, 2026-11-02, finish-week push). Restore to 0.25 after that reset
-# (Adam's steady-state goal, 2026-11-02). Normally: all automated evals
-# together, in each allowance week of the account (Monday 17:00 UTC to the
-# next; Adam, 2026-10-26), so a sanctioned push in one week is not charged to
-# the next.
-weekly_cap: 1.00
+# 25 points: all automated evals together, in each allowance week of the
+# account (Monday 17:00 UTC to the next; Adam, 2026-10-26), so a sanctioned
+# push in one week is not charged to the next. 100 for the finish week that
+# ended 2026-11-09 17:00 UTC (Adam, 2026-11-02).
+weekly_cap: 0.25
 
 # 1 point: one run stops starting new work once its own calls have cost this
 # much at `points_per_usd` (below); before 2026-11-03, once the meter had
@@ -46,7 +45,8 @@ per_run_cap: 0.01
 # about 0.0003 at the rate below. It also covers each run's last call (agent
 # or judge), which the meter delta never includes: 0.180 points at p95 over
 # 258 metered runs (Adam, 2026-11-01: "Use p95 now and in the future";
-# 0.311 at most). Was 0.5 points, then 0.2, then 0.18.
+# 0.311 at most). Was 0.5 points, then 0.2, then 0.18; 0.05 since
+# 2026-11-06 (docs/how-it-works.md, "The weekly allowance guard").
 per_run_overrun: 0.0005
 
 # The allowance one dollar of API-equivalent spend uses: $20 per point, the
@@ -67,12 +67,6 @@ points_per_usd: 0.0005
 # starting new work, whatever it has spent, so evals never take the last of
 # the allowance from Adam's own work. Since 2026-11-01 it is also the fire
 # limit: scripts/allowance_guard.py starts no fire past it (Adam, "Unify the
-# limit"). 95 points for the allowance week ending 2026-11-09 17:00 UTC only
-# (Adam, 2026-11-02); 85 from 2026-11-07 17:51 UTC, when Adam asked to slow
-# evals so his other work keeps room before the reset; 90 from 2026-11-08
-# 19:21 UTC (Adam: "Increase this week's (already high) cap by 5 further
-# percentage points"); 96 from 2026-11-09 15:50 UTC, so the last of the week's
-# allowance runs evals before the reset (Adam, 2026-11-09 15:34 UTC: "get some
-# more routines in before the last few weekly tokens reset"), leaving 4 points
-# for his own work. Restore to 0.80 after that reset.
-stop_when_account_above: 0.96
+# limit"). The finish week that ended 2026-11-09 17:00 UTC ran at 85 to 96
+# (Adam, 2026-11-02 to 2026-11-09).
+stop_when_account_above: 0.80

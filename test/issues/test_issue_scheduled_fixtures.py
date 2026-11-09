@@ -759,7 +759,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
         self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
                       plan_step["run"])
-        self.assertIn("--max-fires 60", plan_step["run"])
+        self.assertIn("--max-fires 30", plan_step["run"])
         # The planner refuses a cap above MAX_FIRES_CAP, which failed every
         # plan when the flag was raised alone (2026-11-07).
         cap = int(re.search(r"--max-fires (\d+)", plan_step["run"]).group(1))
@@ -772,7 +772,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 400")
+        self.assertEqual(steps[order[3]]["run"], "sleep 200")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share

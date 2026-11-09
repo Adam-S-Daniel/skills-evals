@@ -94,28 +94,26 @@ def focus_of(**over):
     return [f["section"] for f in plan_week.guidance_focus(ctx(**over))[0]]
 
 
-#: SHARES outside the 2026-11-09 week (plan_week restores it after the reset).
+#: The standing band order and shares.
 STANDING_SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
 
 
-class FinishWeekTests(unittest.TestCase):
-    """The settings for the week ending 2026-11-09 17:00 UTC (Adam,
-    2026-11-07): guidance first, every section, and unknown-cost cells
-    reserved cheaply. Restore after the reset. Guidance-improve fires were
-    held too until Adam ended the base.md freeze, 2026-11-08 19:21 UTC."""
+class StandingSettingsTests(unittest.TestCase):
+    """The planner's standing settings, restored at the 2026-11-09 17:00 UTC
+    reset after the finish week's guidance-first plan (Adam, 2026-11-07)."""
 
-    def test_the_week_settings(self):
-        self.assertEqual(plan_week.SHARES[0][0], "focus")
-        self.assertEqual(sorted(plan_week.SHARES), sorted(STANDING_SHARES))
-        self.assertGreaterEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 31)
+    def test_the_standing_settings(self):
+        self.assertEqual(plan_week.SHARES, STANDING_SHARES)
+        self.assertEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 2)
         self.assertFalse(plan_week.GUIDANCE_IMPROVE_HELD)
+        self.assertIsNone(plan_week.UNKNOWN_FIRE_POINTS)
         ctx = {"reservation": 1.0, "points_per_usd": 0.0005, "overrun": 0.0005}
-        self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 0.1)
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 1.0)
         self.assertEqual(plan_week.fire_cost({"usd_per_fire": 100.0}, ctx), 0.05)
 
 
-# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
-# these pin the standing rule.
+# GUIDANCE_FOCUS_SECTIONS is patched to 2 so a later change to it
+# does not change what these pin.
 @mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ScoreTests(unittest.TestCase):
 
@@ -295,8 +293,8 @@ class CeilingDoesNotBlockTests(unittest.TestCase):
         self.assertFalse(plan_week._blocking(cells[1]))
 
 
-# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
-# these pin the standing rule.
+# GUIDANCE_FOCUS_SECTIONS is patched to 2 so a later change to it
+# does not change what these pin.
 @mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 @mock.patch.object(plan_week, "SHARES", STANDING_SHARES)
 class BandTests(unittest.TestCase):
@@ -417,8 +415,8 @@ class EvalCellsTests(unittest.TestCase):
         self.assertNotIn("with_counted", skill)
 
 
-# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
-# these pin the standing rule.
+# GUIDANCE_FOCUS_SECTIONS is patched to 2 so a later change to it
+# does not change what these pin.
 @mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class GatherTests(unittest.TestCase):
     """The plan command passes the guidance policy and the open removal pull
@@ -464,8 +462,8 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(len(plan["guidance_focus"]), plan_week.GUIDANCE_FOCUS_SECTIONS)
 
 
-# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
-# these pin the standing rule.
+# GUIDANCE_FOCUS_SECTIONS is patched to 2 so a later change to it
+# does not change what these pin.
 @mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ExplorerQueueTests(unittest.TestCase):
 
