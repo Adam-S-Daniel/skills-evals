@@ -33,7 +33,8 @@ improvement to a draft):
     or one a hook of its plugin names a path in;
   * the caller has no write credential for adam-agentskills this run
     (`--fallback-to-proposal` without `--allow-mode auto`): the scheduled
-    workflow passes it when the GitHub App token was not minted.
+    workflow passes it when the GitHub App token, or the adversarial
+    review's Anthropic bearer (skills-evals#917), was not minted.
 
 The issue says why, and a human removes.
 
@@ -47,9 +48,13 @@ The issue says why, and a human removes.
     0021): a branch `retire-skill/<skill>` is prepared in the
     adam-agentskills checkout; it is pushed (and the push verified with
     `git merge-base --is-ancestor`), a ready pull request is opened, labeled
-    `agent-authored`, and auto-merge (merge commit, `--match-head-commit`)
-    is enabled and read back. No human review, so the branch must pass the
-    registry's required checks on its own. Its first commit deletes
+    `agent-authored`, reviewed by a fresh-context agent
+    (scripts/removal_review.py, skills-evals#917: the section and its
+    `Adversarial-review: pass|block <run url>` line are written into the
+    body and read back), and only on a pass is auto-merge (merge commit,
+    `--match-head-commit`) enabled and read back; a block leaves it open and
+    unarmed, and the removal notice says it waits for Adam. No human review,
+    so the branch must pass the registry's required checks on its own. Its first commit deletes
     `plugins/<plugin>/skills/<skill>/`, raises the plugin's MAJOR version in
     both manifests (adam-agentskills ADR 0009 requires a raise; removing a
     skill breaks every consumer that calls it, which the registry has bumped
@@ -367,6 +372,7 @@ import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
 import improve_gate  # noqa: E402
+import removal_review  # noqa: E402
 
 TARGET = "adam-agentskills"
 REGISTRY_REPO = "Adam-S-Daniel/adam-agentskills"
@@ -386,15 +392,15 @@ REGISTRY_ADR = improve_gate.REGISTRY_ADR
 #: skills-evals GitHub App's installation token, minted by the workflow).
 REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
 PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
-GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance reached this run "
-                         "(the GitHub App token was not minted)")
+GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance, or no credential for "
+                          "the adversarial review, reached this run (a token was not minted)")
 #: The cell classes a `retire` verdict may hold, and those with headroom,
 #: of which it needs one (harness/gates.py, THE VERDICT).
 RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "cannot-discriminate",
                        *sorted(gates.PARKED_CLASSES))
 HEADROOM_CLASSES = ("no-benefit", "no-clear-effect")
-NO_CREDENTIAL = ("no write credential for adam-agentskills reached this run (the "
-                 "GitHub App token was not minted)")
+NO_CREDENTIAL = ("no write credential for adam-agentskills, or no credential for the "
+                 "adversarial review, reached this run (a token was not minted)")
 DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 ISSUE_MARKER = "<!-- skills-evals:retire-skill:{skill} -->"
 #: Which path filed a retirement issue (R8-1), stamped in its body beside
@@ -415,6 +421,9 @@ LOCK_FILE = "skills.lock"
 README_GENERATOR = "scripts/generate_readme_table.py"
 LOCK_GENERATOR = "scripts/generate_skills_lock.py"
 WAIVERS_FILE = "scripts/skills_waivers.yml"
+#: adam-agentskills' append-only ledger of every shipped name, which its
+#: one-way-door check reads (adam-agentskills#133).
+SHIPPED_LEDGER = "scripts/shipped_names.json"
 MANIFESTS = ("plugin.json", ".claude-plugin/plugin.json")
 ADR = ("https://github.com/Adam-S-Daniel/skills-evals/blob/main/docs/decisions/"
        "0014-removal-pull-requests-merge-without-review.md")
@@ -1422,6 +1431,9 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
             "paused_heads": paused_heads(paused),
             "impact_entry": entry, "repin": repin,
             "notice": skill_notice(gates, skill, location, run_url),
+            "run_url": run_url,
+            "verdict": (f"retire as of {gates['as_of']}: "
+                        f"{gates['skills'][skill].get('reason')}"),
             "title": f"Remove {location['plugin']}/{skill}: no benefit (skills-evals#70)",
             "body": _pr_body(gates, skill, location, versions, run_url, repin)}
 
@@ -1457,6 +1469,30 @@ def skill_notice(gates: dict, skill: str, location: dict, run_url: str | None) -
                        "\n\n" + AGENT_MARKER + "\n")}
 
 
+def record_shipped(checkout: Path, name: str) -> list:
+    """Add `<plugin>/<skill>` to adam-agentskills' append-only ledger of
+    shipped names (`SHIPPED_LEDGER`, adam-agentskills#133) when it is not
+    listed yet, in that file's own form (sorted lists, two-space JSON, one
+    trailing newline). The paths to stage: none when the registry has no
+    ledger or already lists the name."""
+    path = checkout / SHIPPED_LEDGER
+    if not path.exists():
+        return []
+    contained(checkout, ["scripts", SHIPPED_LEDGER])
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        raise RetireError(f"cannot read {SHIPPED_LEDGER}") from None
+    if not isinstance(doc, dict) or not isinstance(doc.get("skills"), list) \
+            or not all(isinstance(n, str) for n in doc["skills"]):
+        raise RetireError(f"{SHIPPED_LEDGER} has no list of skills")
+    if name in doc["skills"]:
+        return []
+    doc["skills"] = sorted([*doc["skills"], name])
+    path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    return [SHIPPED_LEDGER]
+
+
 def prepare_branch(checkout: Path, action: dict) -> None:
     """The removal commit, and the lock re-pin when the plugin is locked, on
     a new branch of `checkout`, which must be clean."""
@@ -1487,8 +1523,10 @@ def prepare_branch(checkout: Path, action: dict) -> None:
         raise RetireError(f"cannot read {IMPACT_FILE}") from None
     impact.write_text(insert_entry(text, action["impact_entry"]), encoding="utf-8")
     (checkout / LAYOUT_FILE).write_text(layout, encoding="utf-8")
+    ledger = record_shipped(checkout, f"{action['plugin']}/{action['skill']}")
     run_registry_script(checkout, README_GENERATOR)
-    _git(checkout, "add", "--", IMPACT_FILE, LAYOUT_FILE, README_FILE, *action["versions"])
+    _git(checkout, "add", "--", IMPACT_FILE, LAYOUT_FILE, README_FILE, *action["versions"],
+         *ledger)
     _commit(checkout,
             f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
             "skills-evals#70's scheduled retirement found no benefit in every cell at "
@@ -1533,6 +1571,7 @@ def commands(action: dict) -> list:
                 *([["python3", LOCK_GENERATOR, "--repin"],
                    ["python3", LOCK_GENERATOR, "--check-current"],
                    ["git", "commit"]] if action.get("repin") else []),
+                REVIEW_COMMAND,
                 *_push_commands(action),
                 ["git", "merge-base", "--is-ancestor", "HEAD",
                  f"refs/remotes/origin/{action['branch']}"],
@@ -1541,6 +1580,7 @@ def commands(action: dict) -> list:
                 ["gh", "api", "-X", "POST",
                  f"repos/{REGISTRY_REPO}/issues/<new pull request number>/labels",
                  "-f", f"labels[]={AGENT_LABEL}"],
+                *review_commands(REGISTRY_REPO),
                 ["gh", "pr", "merge", "<new pull request url>", "-R", REGISTRY_REPO,
                  "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
                 ["gh", "pr", "view", "<new pull request url>", "-R", REGISTRY_REPO,
@@ -1614,9 +1654,101 @@ def _proposal_note(gh, marker: str, subject: str, url: str, target: str) -> str:
     return open_proposal_note(gh, found, subject, url, target)
 
 
-def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> str:
+# ---------------------------------------------------------------------------
+# The adversarial review (skills-evals#917; scripts/removal_review.py). Both
+# removal paths open their pull request unarmed, run the review, write its
+# section into the body, read the body back, and arm auto-merge only on a
+# `Adversarial-review: pass <run url>` line. Anything else leaves it open and
+# unarmed, which the withdrawal pass reads as a person's hold, and the
+# removal notice says it waits for Adam.
+
+#: The line a block puts in the removal notice in place of "auto-merges".
+BLOCKED_NOTE = ("**The adversarial review blocked this removal**, so auto-merge is off "
+                "and the pull request waits for you: its `## Adversarial review` section "
+                "lists the findings. Merge it by hand to accept the removal, or close it "
+                "to decline.\n\n")
+
+
+def review_commands(repo: str) -> list:
+    """The dry run's lines after the pull request opens: the body's
+    read-back. Auto-merge follows only on a pass."""
+    return [["gh", "pr", "view", "<new pull request url>", "-R", repo, "--json", "body"],
+            ["only on Adversarial-review: pass"]]
+
+
+#: The dry run's line for the review, which runs on the prepared branch
+#: before the push, so the body is opened with its section.
+REVIEW_COMMAND = ["claude", "-p", "--model", removal_review.MODEL, "--tools",
+                  removal_review.TOOLS, "<one fresh reviewer per round, until the stop rule>"]
+
+
+def reviewer(review, env):
+    """`review`, or the real one once a reviewer can run (a RetireError
+    before anything is written when it cannot)."""
+    if review is not None:
+        return review
+    try:
+        removal_review.check_ready(env)
+    except removal_review.ReviewError as exc:
+        raise RetireError(str(exc)) from exc
+
+    def run(subject, checkout, base, verdict, dirs):
+        return removal_review.review(subject, checkout, base, verdict, dirs,
+                                     lambda text: removal_review.claude_round(text, dirs, env))
+    return run
+
+
+def check_review_url(action: dict) -> None:
+    """The review's line links the run, so a removal needs its URL."""
+    url = action.get("run_url") or ""
+    if not removal_review.LINE_RE.fullmatch(f"{removal_review.LINE_PREFIX} pass {url}"):
+        raise RetireError("no workflow run URL for the adversarial review's line")
+
+
+def run_review(action: dict, review, subject: dict, checkout: Path, base: str,
+               dirs: dict) -> dict:
+    """Review the prepared branch before anything is pushed, and return the
+    result with the pull request body that carries its section, so the
+    registry's first CI run already reads the `Adversarial-review:` line
+    (adam-agentskills#133 reads the body from the API). A review that
+    raises is a block."""
+    try:
+        result = review(subject, checkout, base, action["verdict"], dirs)
+    except Exception as exc:  # noqa: BLE001 - its text may quote model output
+        result = {"outcome": "block", "rounds": [], "findings": [],
+                  "why": f"the review failed ({type(exc).__name__})"}
+    body = removal_review.with_section(action["body"],
+                                       removal_review.section(result, action["run_url"]))
+    return {**result, "body": body}
+
+
+def review_passed(result: dict, url: str, repo: str, registry_gh) -> bool:
+    """The opened pull request's body, read back, carries exactly one
+    `Adversarial-review:` line and it is a pass, and the review passed."""
+    read = registry_gh(["pr", "view", url, "-R", repo, "--json", "body", "--jq", ".body"])
+    return result["outcome"] == "pass" and removal_review.has_pass(read)
+
+
+def blocked_notice(notice: dict) -> dict:
+    """The removal notice for a removal the review blocked."""
+    marker, _, rest = notice["body"].partition("\n")
+    rest = rest.replace("(auto-merges once its checks pass)",
+                        "(not armed: the adversarial review blocked it)")
+    return {**notice, "title": "Blocked: " + notice["title"],
+            "body": f"{marker}\n{BLOCKED_NOTE}{rest}"}
+
+
+def _file_notice(gh, notice: dict, url: str) -> None:
+    gh(["issue", "create", "-R", EVALS_REPO, "--title", notice["title"],
+        "--label", AGENT_LABEL, "--body-file", "-"],
+       notice["body"].replace("{removal_pr}", url))
+
+
+def execute(action: dict, registries: dict, gh, push, env, registry_gh=None,
+            review=None) -> str:
     """Make the plan's writes: skills-evals issues through `gh`,
-    adam-agentskills writes through `registry_gh` (default `gh`)."""
+    adam-agentskills writes through `registry_gh` (default `gh`). A removal
+    is armed only after `review` (default: removal_review's) passes."""
     registry_gh = registry_gh or gh
     kind = action["action"]
     if kind == "none":
@@ -1629,13 +1761,21 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
         gh(commands(action)[-1][1:], action["body"])
         return f"updated issue #{action['issue']} for {action['skill']}" + commented
     check_auto_env(env)
+    check_review_url(action)
+    review = reviewer(review, env)
     checkout = Path(registries[TARGET]["path"])
+    base = _git(checkout, "rev-parse", "HEAD").strip()
     prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
+    subject = {"target": "skill", "name": action["skill"], "path": action["path"],
+               "plugin": action["plugin"]}
+    dirs = {**{name: Path(r["path"]) for name, r in registries.items()},
+            "skills-evals": REPO_ROOT}
+    result = run_review(action, review, subject, checkout, base, dirs)
     push(checkout, action["branch"], action.get("paused_heads") or [])
     url = registry_gh(["pr", "create", "-R", REGISTRY_REPO, "--base", "main",
                        "--head", action["branch"], "--title", action["title"],
-                       "--body-file", "-"], action["body"]).strip()
+                       "--body-file", "-"], result["body"]).strip()
     match = PR_URL_RE.fullmatch(url)
     if not match:
         raise RetireError("creating the pull request printed no pull request URL")
@@ -1643,6 +1783,10 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
     # the loop's stays open for a person instead of merging.
     registry_gh(["api", "-X", "POST", f"repos/{REGISTRY_REPO}/issues/{match.group(1)}/labels",
                  "-f", f"labels[]={AGENT_LABEL}"])
+    if not review_passed(result, url, REGISTRY_REPO, registry_gh):
+        _file_notice(gh, blocked_notice(action["notice"]), url)
+        return (f"opened {url} unarmed: the adversarial review did not pass "
+                f"({result['why']}); filed the removal notice")
     registry_gh(["pr", "merge", url, "-R", REGISTRY_REPO, "--auto", "--merge",
                  "--match-head-commit", head])
     method = registry_gh(["pr", "view", url, "-R", REGISTRY_REPO, "--json",
@@ -1652,10 +1796,7 @@ def execute(action: dict, registries: dict, gh, push, env, registry_gh=None) -> 
         raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
     # The notice goes out once the removal is armed, through the job's own
     # token (skills-evals issues), never the registry one (#557).
-    notice = action["notice"]
-    gh(["issue", "create", "-R", EVALS_REPO, "--title", notice["title"],
-        "--label", AGENT_LABEL, "--body-file", "-"],
-       notice["body"].replace("{removal_pr}", url))
+    _file_notice(gh, action["notice"], url)
     # R9-1: an open proposal issue said no removal is opened (existing_issues).
     told = _proposal_note(gh, ISSUE_MARKER.format(skill=action["skill"]), action["skill"],
                           url, "skill")
@@ -2030,6 +2171,8 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     verdict = guidance_block(gates)[section]
     return {"action": "guidance-removal", "mode": mode, "section": section,
             "notice": guidance_notice(gates, section, row, run_url),
+            "run_url": run_url,
+            "verdict": f"retire as of {gates['as_of']}: {verdict.get('reason')}",
             "file": row["file"], "heading": row["heading"],
             "branch": f"{GUIDANCE_BRANCH_PREFIX}{section}",
             "paused_heads": paused_heads(paused),
@@ -2128,6 +2271,7 @@ def guidance_commands(action: dict) -> list:
                 ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
                 ["git", "commit"],
+                REVIEW_COMMAND,
                 *_push_commands(action),
                 ["git", "merge-base", "--is-ancestor", "HEAD",
                  f"refs/remotes/origin/{action['branch']}"],
@@ -2136,6 +2280,7 @@ def guidance_commands(action: dict) -> list:
                 ["gh", "api", "-X", "POST",
                  f"repos/{GUIDANCE_REPO}/issues/<new pull request number>/labels",
                  "-f", f"labels[]={AGENT_LABEL}"],
+                *review_commands(GUIDANCE_REPO),
                 ["gh", "pr", "merge", "<new pull request url>", "-R", GUIDANCE_REPO,
                  "--auto", "--merge", "--match-head-commit", "<removal head sha>"],
                 ["gh", "pr", "view", "<new pull request url>", "-R", GUIDANCE_REPO,
@@ -2155,7 +2300,7 @@ WINDOW_CLOSED = ("no removal pull request is opened: the weekly guidance merge w
 
 
 def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
-                     registry_gh=None, window_open=None) -> str:
+                     registry_gh=None, window_open=None, review=None) -> str:
     """Make the plan's writes: skills-evals issues through `gh`,
     _agent-guidance writes through `registry_gh` (default `gh`). A removal
     pull request is opened only while the weekly merge window is open
@@ -2175,12 +2320,19 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
     if checkout is None or not window_open(checkout):
         return WINDOW_CLOSED
     check_auto_env(env)
+    check_review_url(action)
+    review = reviewer(review, env)
+    base = _git(checkout, "rev-parse", "HEAD").strip()
     guidance_prepare_branch(checkout, action)
     head = _git(checkout, "rev-parse", "HEAD").strip()
+    subject = {"target": "guidance", "name": action["section"], "path": action["file"],
+               "heading": action["heading"]}
+    dirs = {"_agent-guidance": Path(checkout), "skills-evals": REPO_ROOT}
+    result = run_review(action, review, subject, Path(checkout), base, dirs)
     push(checkout, action["branch"], action.get("paused_heads") or [])
     url = registry_gh(["pr", "create", "-R", GUIDANCE_REPO, "--base", "main",
                        "--head", action["branch"], "--title", action["title"],
-                       "--body-file", "-"], action["body"]).strip()
+                       "--body-file", "-"], result["body"]).strip()
     match = GUIDANCE_PR_URL_RE.fullmatch(url)
     if not match:
         raise RetireError("creating the pull request printed no pull request URL")
@@ -2188,6 +2340,10 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
     # could not be marked as the loop's stays open for a person.
     registry_gh(["api", "-X", "POST", f"repos/{GUIDANCE_REPO}/issues/{match.group(1)}/labels",
                  "-f", f"labels[]={AGENT_LABEL}"])
+    if not review_passed(result, url, GUIDANCE_REPO, registry_gh):
+        _file_notice(gh, blocked_notice(action["notice"]), url)
+        return (f"opened {url} unarmed: the adversarial review did not pass "
+                f"({result['why']}); filed the removal notice")
     registry_gh(["pr", "merge", url, "-R", GUIDANCE_REPO, "--auto", "--merge",
                  "--match-head-commit", head])
     method = registry_gh(["pr", "view", url, "-R", GUIDANCE_REPO, "--json",
@@ -2197,10 +2353,7 @@ def guidance_execute(action: dict, checkout: Path | None, gh, push, env,
         raise RetireError(f"auto-merge (merge commit) is not enabled on {url}")
     # The notice goes out once the removal is armed, through the job's own
     # token (skills-evals issues), never the _agent-guidance one.
-    notice = action["notice"]
-    gh(["issue", "create", "-R", EVALS_REPO, "--title", notice["title"],
-        "--label", AGENT_LABEL, "--body-file", "-"],
-       notice["body"].replace("{removal_pr}", url))
+    _file_notice(gh, action["notice"], url)
     told = _proposal_note(gh, GUIDANCE_ISSUE_MARKER.format(section=action["section"]),
                           action["section"], url, "guidance")
     return f"opened {url} with auto-merge, and filed the removal notice" + told
@@ -3241,7 +3394,7 @@ def _refresh_verdict(gates, gh, target, spec, subject) -> tuple:
 
 
 def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
-         registry_gh=None, delete=None, out=sys.stdout) -> int:
+         registry_gh=None, delete=None, review=None, out=sys.stdout) -> int:
     env = os.environ if env is None else env
     token = env.get(REGISTRY_TOKEN_ENV) or None
     if push is None:
@@ -3311,7 +3464,7 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
                 print(f"retire_skill: auto lowered to proposal: {action['mode_reason']}",
                       file=sys.stderr)
             out.write(guidance_execute(action, args.guidance, gh, push, env,
-                                       registry_gh) + "\n")
+                                       registry_gh, review=review) + "\n")
             return 0
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)
@@ -3326,7 +3479,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
         if action.get("mode_reason"):
             print(f"retire_skill: auto lowered to proposal: {action['mode_reason']}",
                   file=sys.stderr)
-        out.write(execute(action, registries, gh, push, env, registry_gh) + "\n")
+        out.write(execute(action, registries, gh, push, env, registry_gh,
+                          review=review) + "\n")
     except (RetireError, ValueError) as exc:
         print(f"retire_skill: {exc}", file=sys.stderr)
         return 2

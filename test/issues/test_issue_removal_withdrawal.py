@@ -958,7 +958,7 @@ class WorkflowTests(unittest.TestCase):
         # cancelled, so a failed skill withdrawal still lets the skill act
         # step and both guidance steps run; the failed step still fails the job.
         later = _steps_after(self.steps, "Upload the verdicts")
-        self.assertEqual(len(later), 7)
+        self.assertEqual(len(later), 9)  # the review's CLI and bearer (#917) included
         for step in later:
             with self.subTest(step=step.get("name")):
                 cond = step.get("if", "")
@@ -1510,7 +1510,8 @@ class ReopenAfterWithdrawalTests(t70.Base):
                 *extra]
         out, err = io.StringIO(), io.StringIO()
         with redirect_stderr(err):
-            code = rs.main(argv, env=t70.AUTO_ENV, gh=fake.gh, push=fake.push, out=out)
+            code = rs.main(argv, env=t70.AUTO_ENV, gh=fake.gh, push=fake.push,
+                           review=t70.passing_review, out=out)
         return code, out.getvalue(), err.getvalue(), fake
 
     def test_a_withdrawn_removal_is_opened_again(self):
@@ -2908,14 +2909,16 @@ class GuidancePushHeadsTests(unittest.TestCase):
         with mock.patch.object(rs, "guidance_row", return_value={
                 "file": "agents-md/base.md", "heading": "Example heading"}):
             plan = rs.guidance_plan(doc(guidance={SECTION: gretire()}), Path("."),
-                                    FakeGh(closed=[withdrawn]), allowed=("auto",))
+                                    FakeGh(closed=[withdrawn]), run_url=t70.RUN_URL,
+                                    allowed=("auto",))
         pushed = []
         with mock.patch.object(rs, "guidance_prepare_branch", lambda *a: None), \
                 mock.patch.object(rs, "_git", lambda *a: SHA_B + "\n"):
             with self.assertRaises(rs.RetireError):  # FakeGh prints no pull request URL
                 rs.guidance_execute(plan, Path("."), FakeGh(),
                                     lambda c, b, heads=(): pushed.append((b, list(heads))),
-                                    AUTO_ENV, window_open=lambda tree: True)
+                                    AUTO_ENV, window_open=lambda tree: True,
+                                    review=t70.passing_review)
         self.assertEqual(pushed, [(f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", [SHA_A])])
 
 
@@ -3573,19 +3576,27 @@ class RoundTenTests(t70.Base):
         base = FakeGh(issues=[stamped(900, rs.PROPOSAL_STAMP, subject=SECTION,
                                       marker=rs.GUIDANCE_ISSUE_MARKER, state="open")])
 
+        edited = {}
+
         def gh(args, stdin=None):
             if args[:2] == ["pr", "create"]:
                 base.calls.append((list(args), stdin))
+                edited["body"] = stdin  # opened with the review's section (#917)
                 return GUIDANCE_URL + "\n"
+            if args[:2] == ["pr", "view"] and "body" in args:
+                return edited.get("body", "") + "\n"
             return base(args, stdin)
 
         action = {"action": "guidance-removal", "section": SECTION,
                   "branch": f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}", "title": "t",
-                  "body": "b", "notice": {"title": "n", "body": "{removal_pr}"}}
+                  "body": "b", "notice": {"title": "n", "body": "{removal_pr}"},
+                  "run_url": t70.RUN_URL, "verdict": "retire", "file": "agents-md/base.md",
+                  "heading": "Example heading"}
         with mock.patch.object(rs, "guidance_prepare_branch"), \
                 mock.patch.object(rs, "_git", return_value="a" * 40 + "\n"):
             out = rs.guidance_execute(action, Path("."), gh, lambda *a: None, AUTO_ENV, gh,
-                                       window_open=lambda tree: True)
+                                       window_open=lambda tree: True,
+                                       review=t70.passing_review)
         self.assertIn("commented on its open proposal issue #900", out)
         note = next(s for a, s in base.calls if a[:3] == ["issue", "comment", "900"])
         self.assertIn("guidance removal pull request", note)

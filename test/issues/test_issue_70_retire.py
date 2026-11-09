@@ -38,7 +38,15 @@ import compute_gates  # noqa: E402
 import retire_skill  # noqa: E402
 
 SCHEDULE = {"GITHUB_EVENT_NAME": "schedule"}
-AUTO_ENV = {**SCHEDULE, "GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/main"}
+AUTO_ENV = {**SCHEDULE, "GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/main",
+            "GITHUB_RUN_ID": "77", "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals"}
+RUN_URL = "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/77"
+
+
+def passing_review(subject, checkout, base, verdict, dirs):
+    """A stand-in for removal_review.review that passes (skills-evals#917)."""
+    return {"outcome": "pass", "rounds": [{"round": 1, "new": 0}, {"round": 2, "new": 0}],
+            "findings": [], "why": "2 consecutive rounds found nothing new"}
 BOT = "github-actions[bot]"
 MODELS = ["claude-opus-5-5", "claude-sonnet-5-5"]
 SKILL = "example-skill"
@@ -199,6 +207,10 @@ class FakeGitHub:
             # The listing never carries `closed_by`: only the issue read does.
             return "".join(json.dumps({k: v for k, v in p.items() if k != "closed_by"}) + "\n"
                            for p in prs)
+        if args[:2] == ["pr", "create"]:
+            self.body = stdin
+        if args[:2] == ["pr", "view"] and "body" in args:
+            return getattr(self, "body", "") + "\n"
         if args[:2] == ["pr", "view"]:
             return self.merge_method + "\n"
         if args[0] == "api" and "/issues/" in args[1]:
@@ -231,7 +243,8 @@ class Base(unittest.TestCase):
         path.write_text(json.dumps(doc))
         return path
 
-    def run_main(self, doc, *extra, env=SCHEDULE, fake=None, registries=None):
+    def run_main(self, doc, *extra, env=SCHEDULE, fake=None, registries=None,
+                 review=passing_review):
         fake = fake or FakeGitHub()
         argv = ["--gates", str(self.write_gates(doc))]
         for flag in registries or [f"adam-agentskills={self.registry}"]:
@@ -239,7 +252,7 @@ class Base(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with redirect_stderr(err):
             code = retire_skill.main([*argv, *extra], env=env, gh=fake.gh,
-                                     push=fake.push, out=out)
+                                     push=fake.push, review=review, out=out)
         return code, out.getvalue(), err.getvalue(), fake
 
     def assertUntouched(self):
@@ -368,12 +381,20 @@ class AutoTests(Base):
         self.assertEqual(writes[1], ["api", "-X", "POST",
                                      "repos/Adam-S-Daniel/adam-agentskills/issues/999/labels",
                                      "-f", "labels[]=agent-authored"])
-        self.assertEqual(writes[2], ["pr", "merge", url, "-R", "Adam-S-Daniel/adam-agentskills",
+        # The adversarial review (#917): the body is opened with its section
+        # and read back before auto-merge is armed.
+        self.assertEqual(writes[2], ["pr", "view", url, "-R", "Adam-S-Daniel/adam-agentskills",
+                                     "--json", "body", "--jq", ".body"])
+        opened = next(stdin for args, stdin in fake.calls if args[:2] == ["pr", "create"])
+        self.assertIn(f"\nAdversarial-review: pass {RUN_URL}\n", opened)
+        self.assertIn("## Adversarial review", opened)
+        self.assertTrue(opened.endswith(retire_skill.AGENT_MARKER + "\n"))
+        self.assertEqual(writes[3], ["pr", "merge", url, "-R", "Adam-S-Daniel/adam-agentskills",
                                      "--auto", "--merge", "--match-head-commit", head])
-        self.assertEqual(writes[3][:3], ["pr", "view", url])
+        self.assertEqual(writes[4][:3], ["pr", "view", url])
         # Then the removal notice to Adam here (#557), naming the pull request.
-        self.assertEqual(writes[4][:4], ["issue", "create", "-R", "Adam-S-Daniel/skills-evals"])
-        self.assertIn("agent-authored", writes[4])
+        self.assertEqual(writes[5][:4], ["issue", "create", "-R", "Adam-S-Daniel/skills-evals"])
+        self.assertIn("agent-authored", writes[5])
         notice = next(stdin for args, stdin in fake.calls if args[:2] == ["issue", "create"])
         self.assertTrue(notice.startswith(
             retire_skill.SKILL_NOTICE_MARKER.format(skill=SKILL)))
@@ -381,7 +402,7 @@ class AutoTests(Base):
         self.assertIn(url, notice)
         self.assertIn("**Revert**", notice)
         self.assertTrue(notice.rstrip().endswith(retire_skill.AGENT_MARKER))
-        self.assertEqual(len(writes), 5)
+        self.assertEqual(len(writes), 6)
         body = next(stdin for args, stdin in fake.calls if args[:2] == ["pr", "create"])
         self.assertIn("no human review", body)
         self.assertIn("0014-removal-pull-requests-merge-without-review.md", body)
@@ -558,7 +579,8 @@ class AutoTests(Base):
         argv = ["--gates", str(self.write_gates(gates_doc("auto"))),
                 "--registry", f"adam-agentskills={self.registry}", "--allow-mode", "auto"]
         code = retire_skill.main(argv, env=AUTO_ENV, gh=reads.gh, push=reads.push,
-                                 registry_gh=writes.gh, out=io.StringIO())
+                                 registry_gh=writes.gh, review=passing_review,
+                                 out=io.StringIO())
         self.assertEqual(code, 0)
         # The one write on the job's own token is the removal notice here (#557).
         self.assertEqual([args[:4] for args in reads.writes()],
@@ -566,7 +588,8 @@ class AutoTests(Base):
         self.assertTrue(all(args[:2] in (["api", "--paginate"], ["issue", "create"])
                             for args, _ in reads.calls))
         self.assertEqual([args[:2] for args, _ in writes.calls],
-                         [["pr", "create"], ["api", "-X"], ["pr", "merge"], ["pr", "view"]])
+                         [["pr", "create"], ["api", "-X"], ["pr", "view"], ["pr", "merge"],
+                          ["pr", "view"]])
 
     def test_the_date_flag_dates_the_impact_entry(self):
         code, _, err, _ = self.run_main(gates_doc("auto"), "--date", "2026-10-27")
@@ -1303,7 +1326,7 @@ class SkillImpactTests(unittest.TestCase):
                  "--allow-mode", "auto"],
                 env={**AUTO_ENV, "GITHUB_RUN_ID": "77",
                      "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals"},
-                gh=fake.gh, push=fake.push, out=io.StringIO())
+                gh=fake.gh, push=fake.push, review=passing_review, out=io.StringIO())
             self.assertEqual(code, 0)
             text = (registry / "docs" / "skill-impact.md").read_text()
             self.assertIn(f"\n---\n\n## 2026-10-25 — {PLUGIN}/{SKILL} — remove\n", text)
@@ -1356,7 +1379,8 @@ class GitHubCallTests(unittest.TestCase):
             with redirect_stderr(err):
                 code = retire_skill.main(
                     ["--gates", str(path), "--registry", f"adam-agentskills={registry}",
-                     "--allow-mode", "auto"], env=AUTO_ENV, gh=reads.gh, out=io.StringIO())
+                     "--allow-mode", "auto"], env=AUTO_ENV, gh=reads.gh,
+                    review=passing_review, out=io.StringIO())
             self.assertEqual(code, 2)
             self.assertIn("no REGISTRY_TOKEN to push with", err.getvalue())
 
@@ -1788,7 +1812,9 @@ class WorkflowTests(unittest.TestCase):
 
     def test_minimal_permissions(self):
         self.assertEqual(self.doc["permissions"], {})
-        self.assertEqual(self.job["permissions"], {"contents": "read", "issues": "write"})
+        # id-token: the adversarial review's WIF bearer (#917), as eval.yml mints it.
+        self.assertEqual(self.job["permissions"], {"contents": "read", "issues": "write",
+                                                   "id-token": "write"})
 
     def test_pins_checkouts_and_no_interpolation_in_run(self):
         for step in self.job["steps"]:
@@ -1809,8 +1835,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(act["env"], {"GH_TOKEN": "${{ github.token }}",
                                       "REGISTRY_TOKEN": "${{ steps.app-token.outputs.token }}"})
         self.assertIn("modes=(--allow-mode proposal)", act["run"])
-        self.assertIn('if [ -n "$REGISTRY_TOKEN" ]; then\n  modes+=(--allow-mode auto)',
-                      act["run"])
+        # Auto needs the review's bearer too (#917).
+        self.assertIn('if [ -n "$REGISTRY_TOKEN" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then'
+                      '\n  modes+=(--allow-mode auto)', act["run"])
         self.assertIn("modes+=(--fallback-to-proposal)", act["run"])
         self.assertIn('--date "$(date -u +%F)"', act["run"])
         self.assertNotIn("--dry-run", act["run"])
