@@ -94,79 +94,81 @@ def focus_of(**over):
     return [f["section"] for f in plan_week.guidance_focus(ctx(**over))[0]]
 
 
+#: SHARES outside the 2026-11-09 week (plan_week restores it after the reset).
+STANDING_SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
+
+
+class FinishWeekTests(unittest.TestCase):
+    """The settings for the week ending 2026-11-09 17:00 UTC (Adam,
+    2026-11-07): guidance first, every section, and unknown-cost cells
+    reserved cheaply. Restore after the reset. Guidance-improve fires were
+    held too until Adam ended the base.md freeze, 2026-11-08 19:21 UTC."""
+
+    def test_the_week_settings(self):
+        self.assertEqual(plan_week.SHARES[0][0], "focus")
+        self.assertEqual(sorted(plan_week.SHARES), sorted(STANDING_SHARES))
+        self.assertGreaterEqual(plan_week.GUIDANCE_FOCUS_SECTIONS, 31)
+        self.assertFalse(plan_week.GUIDANCE_IMPROVE_HELD)
+        ctx = {"reservation": 1.0, "points_per_usd": 0.0005, "overrun": 0.0005}
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": None}, ctx), 0.1)
+        self.assertEqual(plan_week.fire_cost({"usd_per_fire": 100.0}, ctx), 0.05)
+
+
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ScoreTests(unittest.TestCase):
 
     def score(self, cells, **over):
         focus = plan_week.guidance_focus(ctx(cells=cells, **over))[0]
         return focus[0]["score"] if focus else None
 
-    def test_a_judge_carried_cell_reads_its_judge_mind_its_objective(self):
-        # Judge alone when it has no objective block.
-        self.assertAlmostEqual(self.score([gcell("s", "a", carried=True,
-                                                 judge=conf(0.45))]), 0.45 / 0.90, 12)
-        # The smaller of the two when it has one.
+    def test_a_judge_carried_cell_reads_its_objective_too(self):
+        # The judge does not vote (2026-11-03), so a judge-carried cell's
+        # progress is its objective's, and a judge block alone is 0.
+        self.assertEqual(self.score([gcell("s", "a", carried=True,
+                                           judge=conf(0.45))]), 0.0)
         self.assertAlmostEqual(self.score([gcell("s", "a", carried=True, judge=conf(0.72),
                                                  objective=conf(0.36))]), 0.36 / 0.90, 12)
-        # No judge block: 0.
-        self.assertEqual(self.score([gcell("s", "a", carried=True,
-                                           objective=conf(0.8))]), 0.0)
+        self.assertAlmostEqual(self.score([gcell("s", "a", carried=True,
+                                                 objective=conf(0.8))]), 0.8 / 0.90, 12)
 
-    def test_a_cell_that_is_not_judge_carried_needs_a_judge_to_retire(self):
-        # A tight objective with no judge block, whose reason says the judge
-        # is still needed, cannot retire (gates._classify), so it scores 0.
-        needed = plan_week.JUDGE_NEEDED_REASON + ": the judge figure needs ..."
-        self.assertEqual(self.score([gcell("s", "a", objective=conf(0.89),
-                                           reason=needed)]), 0.0)
+    def test_retire_progress_reads_the_objective_alone(self):
+        # The judge no longer has to agree to a removal (gates._classify,
+        # 2026-11-03), so a cell with a tight objective and a loose judge is
+        # as near to retiring as its objective.
         self.assertAlmostEqual(self.score([gcell("s", "a", objective=conf(0.81),
-                                                 judge=conf(0.63))]), 0.63 / 0.90, 12)
+                                                 judge=conf(0.63))]), 0.81 / 0.90, 12)
+        self.assertAlmostEqual(self.score([gcell("s", "a", objective=conf(0.89))]),
+                               0.89 / 0.90, 12)
         # An absent field in a present block counts as 0.
         self.assertEqual(self.score([gcell("s", "a", objective={}, judge=conf(0.63))]), 0.0)
-
-    def test_a_with_ahead_judge_skip_is_decided_on_the_objective(self):
-        # #557: every missing judge figure was a with-ahead skip, so
-        # gates._classify decides on the objective and gives the plain
-        # "not tight enough" reason; retire progress reads the objective.
-        self.assertAlmostEqual(self.score([gcell(
-            "s", "a", objective=conf(0.72),
-            reason="the interval is not tight enough yet")]), 0.72 / 0.90, 12)
-
-    def test_the_judge_needed_reason_is_gates_own_text(self):
-        # The planner matches gates._classify's reason by its start, so the
-        # literal must still be in harness/gates.py (read with ast, so a
-        # comment or docstring does not count).
-        import ast
-        source = (Path(plan_week.__file__).resolve().parent.parent
-                  / "harness" / "gates.py").read_text(encoding="utf-8")
-        texts = []
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, ast.JoinedStr):
-                texts.append("".join(v.value for v in node.values
-                                     if isinstance(v, ast.Constant)))
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                texts.append(node.value)
-        self.assertTrue(any(t.startswith(plan_week.JUDGE_NEEDED_REASON) for t in texts))
 
     def test_retire_is_the_weakest_cell_and_keep_the_strongest(self):
         cells = [near("s", 0.8, "a"), near("s", 0.3, "b")]
         self.assertAlmostEqual(self.score(cells), 0.3, 12)
         cells.append(gcell("s", "c", objective=conf(helps=0.68)))
-        # The new cell has no judge: retire progress 0, keep 0.68 / 0.85.
-        self.assertAlmostEqual(self.score(cells), 0.68 / 0.85, 12)
-        cells.append(gcell("s", "d", objective=conf(helps=0.1), judge=conf(helps=0.765)))
-        self.assertAlmostEqual(self.score(cells), 0.765 / 0.85, 12)
+        # The new cell has no no-help level: retire progress 0, keep
+        # 0.68 / 0.80.
+        self.assertAlmostEqual(self.score(cells), 0.68 / 0.80, 12)
+        # A judge's helps level is not read; the objective's is.
+        cells.append(gcell("s", "d", objective=conf(helps=0.1), judge=conf(helps=0.79)))
+        self.assertAlmostEqual(self.score(cells), 0.68 / 0.80, 12)
+        cells.append(gcell("s", "e", objective=conf(helps=0.76)))
+        self.assertAlmostEqual(self.score(cells), 0.76 / 0.80, 12)
 
     def test_the_levels_come_from_the_guidance_policy(self):
         retire = [near("r", 0.95)]  # no-help 0.855 on both figures
-        keep = [gcell("k", "a", objective=conf(helps=0.8))]
-        # Defaults (0.90, 0.85): r 0.95, k 0.941..., so r leads.
+        keep = [gcell("k", "a", objective=conf(helps=0.72))]
+        # Defaults (0.90, 0.80): r 0.95, k 0.9, so r leads.
         focus = plan_week.guidance_focus(ctx(cells=retire + keep))[0]
         self.assertEqual([f["section"] for f in focus], ["r", "k"])
         self.assertAlmostEqual(focus[0]["score"], 0.855 / 0.90, 12)
-        self.assertAlmostEqual(focus[1]["score"], 0.8 / 0.85, 12)
-        policy = {"retire_confidence": 0.99, "benefit_confidence": 0.80}
+        self.assertAlmostEqual(focus[1]["score"], 0.72 / 0.80, 12)
+        policy = {"retire_confidence": 0.99, "benefit_confidence": 0.75}
         focus = plan_week.guidance_focus(ctx(cells=retire + keep, guidance_policy=policy))[0]
         self.assertEqual([f["section"] for f in focus], ["k", "r"])
-        self.assertAlmostEqual(focus[0]["score"], 1.0, 12)
+        self.assertAlmostEqual(focus[0]["score"], 0.72 / 0.75, 12)
         self.assertAlmostEqual(focus[1]["score"], 0.855 / 0.99, 12)
         # The plan document records the focus at full precision.
         plan = plan_week.build_plan(ctx(cells=retire + keep, guidance_policy=policy), NOW)
@@ -205,13 +207,23 @@ class EligibilityTests(unittest.TestCase):
         cells = [near("s", 0.9), gcell("s", "b", reason=reason)]
         self.assertEqual(focus_of(cells=cells), [])
 
-    def test_ceiling_and_cannot_discriminate_block_only_at_three_counted_runs(self):
+    def test_cannot_discriminate_blocks_only_at_three_counted_runs(self):
+        # A ceiling cell never blocks (round 1's M2), whatever its counts.
         for cls in ("ceiling", "cannot-discriminate"):
             for counted, blocked in (((3, 3), True), ((2, 3), False), ((3, 2), False),
                                      ((9, 4), True)):
                 with self.subTest(cls=cls, counted=counted):
                     cells = [near("s", 0.5), gcell("s", "b", cls=cls, counted=counted)]
-                    self.assertEqual(focus_of(cells=cells), [] if blocked else ["s"])
+                    self.assertEqual(focus_of(cells=cells),
+                                     [] if blocked and cls == "cannot-discriminate"
+                                     else ["s"])
+
+    def test_an_errored_no_clear_effect_blocks_too(self):
+        # Round 1's m4: gates keeps such a cell insufficient, and more runs
+        # past the cap cannot move it.
+        reason = ("no-clear-effect on the numbers, but the cell has 1 agent-errored "
+                  "trial(s) or a run skipped as anomalous, so it cannot retire")
+        self.assertEqual(focus_of(cells=[near("s", 0.9), gcell("s", "b", reason=reason)]), [])
 
     def test_a_held_cell_produces_no_item_but_still_blocks(self):
         held = {"schedulable": False, "hold_reason": "no context"}
@@ -219,8 +231,9 @@ class EligibilityTests(unittest.TestCase):
         self.assertEqual(focus_of(cells=[near("s", 0.9, **held),
                                          gcell("s", "b", cls="no-benefit")]), [])
         # A held blocking cell still blocks a section with a fireable cell.
-        self.assertEqual(focus_of(cells=[near("s", 0.9), gcell("s", "b", cls="ceiling",
-                                                               counted=(3, 3), **held)]), [])
+        self.assertEqual(focus_of(cells=[near("s", 0.9),
+                                         gcell("s", "b", cls="cannot-discriminate",
+                                               counted=(3, 3), **held)]), [])
         # A stakes `none` section plans nothing at all.
         self.assertEqual(focus_of(cells=[near("s", 0.9, stakes="none")]), [])
 
@@ -260,7 +273,7 @@ class EligibilityTests(unittest.TestCase):
 
     def test_nothing_eligible_leaves_the_focus_empty(self):
         cells = [near("s", 0.9, verdict="keep"), near("t", 0.9, verdict="shorten-or-merge"),
-                 near("u", 0.9), gcell("u", "b", cls="ceiling", counted=(3, 3))]
+                 near("u", 0.9), gcell("u", "b", cls="cannot-discriminate", counted=(3, 3))]
         plan = plan_week.build_plan(ctx(cells=cells), NOW)
         self.assertEqual(plan["guidance_focus"], [])
         self.assertEqual({f["band"] for f in plan["fires"]}, {"guidance-rest"})
@@ -270,6 +283,22 @@ class EligibilityTests(unittest.TestCase):
                          ["evals/guidance/t/a", "evals/guidance/u/a"])
 
 
+class CeilingDoesNotBlockTests(unittest.TestCase):
+
+    def test_a_ceiling_cell_leaves_its_section_focused(self):
+        # Round 1's M2: a parked cell does not vote and is not fired, and the
+        # section's other cells must stay measured.
+        cells = [near("u", 0.9), gcell("u", "b", cls="ceiling", counted=(18, 18))]
+        self.assertEqual(focus_of(cells=cells), ["u"])
+        plan = plan_week.build_plan(ctx(cells=cells), NOW)
+        self.assertEqual([f["fixture"] for f in plan["fires"]], ["evals/guidance/u/a"])
+        self.assertFalse(plan_week._blocking(cells[1]))
+
+
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
+@mock.patch.object(plan_week, "SHARES", STANDING_SHARES)
 class BandTests(unittest.TestCase):
 
     def test_focused_sections_go_to_focus_the_rest_to_guidance_rest(self):
@@ -288,21 +317,28 @@ class BandTests(unittest.TestCase):
         self.assertTrue(all(f["section"] == "" for f in plan["fires"]))
 
     def test_focus_goes_binding_cell_first_then_the_cheaper_model(self):
-        # Retire side: lowest retire progress first; within a cell, the
-        # cheaper model (the one with the lower known cost per arm trial).
+        # Retire side: lowest retire progress first. Within a fixture, the
+        # cheaper model (the lower known cost per arm trial) fires and the
+        # dearer one waits until the cheaper cell has decided without a
+        # keep (plan_week.cheaper_first, 2026-11-03).
         cells = [{**near("s", 0.7, "a", model="heavy"), "usd_per_arm_trial": 2.0},
                  {**near("s", 0.7, "a", model="light"), "usd_per_arm_trial": 1.0},
                  near("s", 0.4, "b", model="heavy")]
         plan = plan_week.build_plan(ctx(cells=cells), NOW)
         self.assertEqual([(f["fixture"][-1], f["model"]) for f in plan["fires"]],
-                         [("b", "heavy"), ("a", "light"), ("a", "heavy")])
+                         [("b", "heavy"), ("a", "light")])
+        # Once the light cell has no benefit, the heavy one fires.
+        cells[1] = {**cells[1], "class": "no-benefit"}
+        plan = plan_week.build_plan(ctx(cells=cells), NOW)
+        self.assertEqual([(f["fixture"][-1], f["model"]) for f in plan["fires"]],
+                         [("b", "heavy"), ("a", "heavy")])
 
     def test_a_keep_side_section_orders_by_keep_progress_descending(self):
         cells = [gcell("k", "a", objective=conf(helps=0.2)),
-                 gcell("k", "b", objective=conf(helps=0.8)),
+                 gcell("k", "b", objective=conf(helps=0.75)),
                  gcell("k", "c", objective=conf(0.85, helps=0.5), judge=conf(0.85))]
         plan = plan_week.build_plan(ctx(cells=cells), NOW)
-        self.assertAlmostEqual(plan["guidance_focus"][0]["score"], 0.8 / 0.85, 12)
+        self.assertAlmostEqual(plan["guidance_focus"][0]["score"], 0.75 / 0.80, 12)
         self.assertEqual([f["fixture"][-1] for f in plan["fires"]], ["b", "c", "a"])
 
     def test_a_kept_section_is_still_only_rechecked(self):
@@ -381,6 +417,9 @@ class EvalCellsTests(unittest.TestCase):
         self.assertNotIn("with_counted", skill)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class GatherTests(unittest.TestCase):
     """The plan command passes the guidance policy and the open removal pull
     requests to the focus."""
@@ -425,6 +464,9 @@ class GatherTests(unittest.TestCase):
         self.assertEqual(len(plan["guidance_focus"]), plan_week.GUIDANCE_FOCUS_SECTIONS)
 
 
+# The 2026-11-09 week runs every section (GUIDANCE_FOCUS_SECTIONS 40);
+# these pin the standing rule.
+@mock.patch.object(plan_week, "GUIDANCE_FOCUS_SECTIONS", 2)
 class ExplorerQueueTests(unittest.TestCase):
 
     def test_a_focused_section_gets_a_queue_place_before_the_rest(self):
@@ -438,9 +480,9 @@ class ExplorerQueueTests(unittest.TestCase):
                          tuple(b for b in plan_week.BANDS if b not in ("improve", "bare")))
 
     def test_the_queue_uses_the_guidance_policy(self):
-        cells = [near("r", 0.95), gcell("k", "a", objective=conf(helps=0.8)),
+        cells = [near("r", 0.95), gcell("k", "a", objective=conf(helps=0.72)),
                  gcell("z", "a")]
-        policy = {"retire_confidence": 0.99, "benefit_confidence": 0.80}
+        policy = {"retire_confidence": 0.99, "benefit_confidence": 0.75}
         default = explorer_data.test_queue(cells, {"heavy": 1.0}, NOW)
         tuned = explorer_data.test_queue(cells, {"heavy": 1.0}, NOW, policy)
         self.assertEqual((default[("guidance", "r")]["position"],
@@ -457,6 +499,70 @@ class DocsTests(unittest.TestCase):
         for phrase in ("4. **Guidance focus**", "8. **Guidance rest**", "BLOCKING",
                        "one trial"):
             self.assertIn(phrase, doc)
+
+
+class AlonePairTests(unittest.TestCase):
+    """THE ALONE PAIR (owner, 2026-11-03): a guidance eval fire runs the
+    section-alone pair (`arms: both`) only for a section leaning toward
+    removal; every other guidance fire is `arms: in-situ`. Skill fires are
+    `both` as before."""
+
+    def arms_of(self, cells, **over):
+        plan = plan_week.build_plan(ctx(cells=cells, **over), NOW)
+        return {(f["fixture"], f["model"]): f["arms"] for f in plan["fires"]
+                if f["mode"] == "eval"}
+
+    def test_a_section_far_from_removal_fires_only_its_in_situ_pair(self):
+        cells = [near("s", 0.49, "a"), near("s", 0.9, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+        for c in cells:
+            self.assertEqual(plan_week.eval_item(c, ctx(cells=cells))["arms"], "in-situ")
+
+    def test_from_the_threshold_on_every_cell_fires_both_pairs(self):
+        # The section's progress is its LOWEST cell's: both cells at least
+        # halfway, so the alone pair runs beside the in-situ pair.
+        at = plan_week.ALONE_PAIR_FROM_PROGRESS
+        self.assertEqual(at, 0.5)
+        cells = [near("s", at, "a"), near("s", 0.8, "b")]
+        self.assertEqual(set(self.arms_of(cells).values()), {"both"})
+        self.assertAlmostEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"),
+                               at, 12)
+
+    def test_a_missing_cell_holds_the_section_below_the_threshold(self):
+        # A removal needs every cell, so one with no run keeps it at 0.
+        cells = [near("s", 0.95, "a"), missing("s", "b")]
+        self.assertEqual(plan_week.section_retire_progress(ctx(cells=cells), "s"), 0.0)
+        self.assertEqual(set(self.arms_of(cells).values()), {"in-situ"})
+
+    def test_an_in_situ_retire_fires_both_pairs_whatever_the_progress(self):
+        c = ctx()
+        for over in ({"in_situ_verdict": "retire"}, {"verdict": "retire"},
+                     {"verdict": "shorten-or-merge"}):
+            with self.subTest(**over):
+                cell = gcell("s", "a", **over)
+                self.assertTrue(plan_week.leans_to_removal(cell, ctx(cells=[cell])))
+                self.assertEqual(plan_week.eval_item(cell, ctx(cells=[cell]))["arms"], "both")
+        self.assertEqual(plan_week.eval_item(gcell("s", "a"), c)["arms"], "in-situ")
+
+    def test_the_policy_retire_level_scales_the_progress(self):
+        cell = near("s", 0.5)  # 0.45 no-help confidence
+        self.assertEqual(plan_week.fire_arms(cell, ctx(cells=[cell])), "both")
+        tight = ctx(cells=[cell], guidance_policy={"retire_confidence": 0.95})
+        self.assertEqual(plan_week.fire_arms(cell, tight), "in-situ")
+
+    def test_skill_cells_stay_both(self):
+        cells = [scell("a-skill", "missing"), near("s", 0.1)]
+        arms = self.arms_of(cells)
+        self.assertEqual(arms[("evals/a-skill", "heavy")], "both")
+        self.assertEqual(arms[(f"evals/guidance/s/a", "heavy")], "in-situ")
+
+    def test_an_in_situ_fire_is_a_paired_eval_fire_for_the_probe(self):
+        # While the routine is down the probe ranks banded paired fires;
+        # an in-situ fire is one, as `both` is.
+        cells = [near("s", 0.1)]
+        plan = plan_week.build_plan(ctx(cells=cells, routine_down=NOW), NOW)
+        evals = [f for f in plan["fires"] if f["mode"] == "eval"]
+        self.assertEqual([(f["band"], f["arms"]) for f in evals], [("focus", "in-situ")])
 
 
 if __name__ == "__main__":

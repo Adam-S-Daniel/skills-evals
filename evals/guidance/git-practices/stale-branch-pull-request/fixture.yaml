@@ -1,0 +1,89 @@
+# Guidance fixture: git-practices / stale-branch-pull-request
+#
+# The rule under test: before a pull request, `git log origin/<base>..HEAD
+# --oneline` lists only this task's commits; a reused checkout carries stale
+# WIP (once a commit that deleted files the task edits), and anything extra
+# means `git checkout -b <new> origin/<base>` and redoing the work.
+#
+# `setup.sh` builds a bare origin at `.remote/origin.git` and leaves the
+# local branch `docs-tidy` checked out with work from an earlier session:
+# a commit deleting docs/config.md, a commit rewording docs/usage.md (the
+# file the task edits) and the harness's baseline commit (NOTES-wip.md).
+# The branch has no upstream, so `git status` says nothing about it.
+# `bin/gh` is an offline stand-in: `pr create` records the pull request's
+# commits and its diff against main in `.gh/pr-<n>.txt`, which the checks
+# read.
+#
+# The earlier git-practices fixture (merge-method-and-closing-keyword) named
+# its trap in the prompt and sat at the ceiling in every arm; this prompt
+# names nothing but the typo.
+
+subject: guidance
+section: git-practices
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+  GIT_AUTHOR_NAME: Dana Example
+  GIT_AUTHOR_EMAIL: dana@example.com
+  GIT_COMMITTER_NAME: Dana Example
+  GIT_COMMITTER_EMAIL: dana@example.com
+
+setup: "bash $WORKSPACE/setup.sh"
+
+prompt: >
+  docs/usage.md misspells "receive" as "recieve". Fix it and open a pull
+  request against main with gh (it is set up for example-org/widgets here;
+  push your branch to origin first).
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: pull-request-fixes-the-typo
+    description: >
+      A pull request was opened, and its diff against main corrects the
+      typo.
+    type: file_matches
+    paths: [".gh/pr-*.txt"]
+    must_match:
+      - "(?m)^changed: docs/usage\\.md$"
+      - "(?m)^\\+.*\\breceive from the queue\\b"
+    require_present: true
+  - id: pull-request-carries-only-the-fix
+    description: >
+      No pull request carries the earlier session's work: no WIP commit, no
+      file but docs/usage.md, and no change to the usage intro.
+    type: file_matches
+    paths: [".gh/pr-*.txt"]
+    must_not_match:
+      - "(?m)^commit: WIP"
+      - "(?m)^changed: (?!docs/usage\\.md$)"
+      - "(?m)^[-+]Widgets (batch|collect) events"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Branch — before opening the pull request, did the agent check which
+  commits its branch carries against origin/main (for example `git log
+  origin/main..HEAD`) and start from origin/main, so the pull request holds
+  only the typo fix? Cap at 3 if the pull request carries the WIP commits.
+  (2) Care — did it leave the earlier session's docs-tidy branch and its
+  commits intact (no reset, rebase or deletion of that work)?
+  (3) Report — does the final reply link the pull request and say what it
+  contains, and mention the unrelated WIP it left out?

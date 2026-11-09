@@ -825,7 +825,10 @@ class TestIssue66Trials(_HarnessCase):
         self.assertEqual(len(self._calls("agents")), 3)
         self.assertEqual(len(self._calls("judges")), 3)
         workspaces = [c["cwd"] for c in self._calls("agents")]
-        self.assertEqual(len(set(workspaces)), 3, workspaces)
+        # One path for every trial of the arm, so the agent's first request
+        # can be read from the prompt cache; fresh content each time, which
+        # the marker check below proves.
+        self.assertEqual(len(set(workspaces)), 1, workspaces)
         for workspace in workspaces:
             # Under this test's own scratch dir, and gone once scored.
             self.assertEqual(Path(workspace).parent, self.tmp / "scratch")
@@ -1252,7 +1255,7 @@ class TestIssue66Timeouts(_HarnessCase):
                     def poll(self):
                         return self.returncode
 
-                def materialize(_seed, _fixture):
+                def materialize(_seed, _fixture, **_trial_slot):
                     workspace = case_dir / f"workspace-{len(workspaces) + 1}"
                     workspace.mkdir()
                     workspaces.append(workspace)

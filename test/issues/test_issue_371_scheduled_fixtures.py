@@ -208,8 +208,11 @@ def scheduled() -> list[dict]:
     auto = yaml.safe_load((ROOT / "evals/scope-auto.yml").read_text(encoding="utf-8")) or {}
     rows = rows + [{"path": row["path"], "readiness": row["readiness"]}
                    for row in auto.get("rows") or []]
+    # A fixture pull request's row ("Added by a fixture pull request",
+    # scripts/fixture_pr_gate.py) is checked there too.
     return [row for row in rows
-            if not row["readiness"].startswith("Promoted automatically")]
+            if not row["readiness"].startswith(("Promoted automatically",
+                                                "Added by a fixture pull request"))]
 
 
 def all_fixtures() -> dict[str, dict]:
@@ -225,15 +228,15 @@ def fixtures() -> dict[str, dict]:
 
 
 class ScheduledFixturesFollowTheRoster(unittest.TestCase):
-    def test_the_schedule_names_twenty_seven_skill_and_twenty_two_guidance_fixtures(self):
+    def test_the_schedule_names_twenty_seven_skill_and_twenty_eight_guidance_fixtures(self):
         paths = [row["path"] for row in scheduled()]
-        self.assertEqual(len(paths), 49)
-        self.assertEqual(len(set(paths)), 49)
+        self.assertEqual(len(paths), 55)
+        self.assertEqual(len(set(paths)), 55)
         self.assertEqual(len(fixtures()), 27)
         # Guidance fixtures off the schedule (2026-11-03 scope decision) need
         # no unscheduled.yml row; they are simply not scheduled.
         scheduled_guidance = sorted(set(all_fixtures()) - set(fixtures()))
-        self.assertEqual(len(scheduled_guidance), 22)
+        self.assertEqual(len(scheduled_guidance), 28)
         on_disk = {str(p.parent.relative_to(ROOT)) for p in
                    (ROOT / "evals/guidance").glob("[!_]*/*/fixture.yaml")}
         self.assertLessEqual(set(scheduled_guidance), on_disk)

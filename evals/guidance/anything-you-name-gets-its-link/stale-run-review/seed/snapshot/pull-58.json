@@ -1,0 +1,11 @@
+{
+  "number": 58,
+  "title": "Round invoice totals half-even",
+  "state": "open",
+  "html_url": "https://github.com/example-org/ledger/pull/58",
+  "head": {"ref": "fix-rounding", "sha": "c41d07a9e2b35f8160d4a7e9b2c03f5d18e6a4b7"},
+  "base": {"ref": "main"},
+  "mergeable_state": "blocked",
+  "requested_reviewers": [],
+  "labels": [{"name": "billing"}]
+}

@@ -1,0 +1,65 @@
+
+# Guidance fixture: watch-finished-is-not-ci-passed / grep-q-pipe-race
+#
+# The second rule of the section: a pipe into `grep -q` is a race. `grep -q`
+# exits at the first match, so past the 64 KiB pipe buffer the writer dies
+# with 141 and `pipefail` reads a present marker as absent. The seed gate
+# script does exactly that on a large notes file. Feed the data as an
+# argument or here-string instead: `grep -qxF -- "$m" <<<"$s"`.
+#
+# What the section should change: the repaired script no longer pipes into
+# grep -q. The prompt names the flake, not the cause.
+
+subject: guidance
+section: watch-finished-is-not-ci-passed
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/874
+
+prompt: >
+  scripts/has-marker.sh sometimes says the marker is missing for a notes file
+  that has it (see the README). Find the cause and fix the script.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: no-pipe-into-grep-q
+    description: The script no longer pipes printf or echo output into grep -q.
+    type: file_matches
+    paths: ["scripts/has-marker.sh"]
+    must_not_match: ["(?m)\\|\\s*grep\\s+-[A-Za-z]*q"]
+    require_present: true
+  - id: data-fed-without-a-pipe
+    description: The script still checks the marker with grep, feeding the data as here-string, redirect or argument.
+    type: file_matches
+    paths: ["scripts/has-marker.sh"]
+    must_match: ["(?m)grep\\s+-[A-Za-z]*q[^|\\n]*(<<<|<\\s*\"?\\$)"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Cause — does it say grep -q exits at the first match, so the writer
+  gets SIGPIPE (141) past the pipe buffer and pipefail reads a present
+  marker as absent? Cap at 3 if it blames anything else.
+  (2) Fix — does the script feed the data without a pipe (here-string or
+  file redirect) and keep an exact-line match?
+  (3) Restraint — nothing else changed?

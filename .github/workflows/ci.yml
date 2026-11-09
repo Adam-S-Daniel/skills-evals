@@ -21,7 +21,9 @@ name: CI
 # .github/workflows/** and .github/actions/** are here for the "Verify action
 # lockfile" step: any change to a workflow, a local action or the lockfile
 # must re-verify the pins (ADR 0024), so this list also names files no test
-# reads. README.md and DESIGN.md are
+# reads. explorer/** is here because tool/index.html is its build output:
+# the suite runs explorer/test/run.js, and the drift step rebuilds the page
+# from it. README.md and DESIGN.md are
 # included too: TestIssue80::test_readme_lists_the_writing_adrs_eval_directory
 # reads the former and test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate
 # reads the latter, so a change that drops the README's writing-adrs/ line or
@@ -81,6 +83,7 @@ on:
       - scripts/**
       - test/**
       - tool/**
+      - explorer/**
       - README.md
       - DESIGN.md
       - docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
@@ -156,6 +159,7 @@ jobs:
             scripts/**
             test/**
             tool/**
+            explorer/**
             README.md
             DESIGN.md
             docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
@@ -296,7 +300,7 @@ jobs:
         # step deliberately:
         # TestIssue63::test_parallel_pins_agree_with_agentskills_requirements
         # fails the whole suite when the two repos' pins disagree.
-        run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0
+        run: pip install pyyaml==6.0.3 markdown-it-py==4.2.0 tree-sitter==0.26.0 tree-sitter-bash==0.25.1 pytest==9.1.1 pytest-xdist==3.8.0 jsonschema==4.26.0
       - name: Set up Node for the browser-testing AST fixture
         if: steps.salient.outputs.run == 'true'
         uses: actions/setup-node@v7.1.0
@@ -306,6 +310,21 @@ jobs:
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals/evals/browser-testing/seed
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # tool/index.html is the build output of explorer/src (esbuild, pinned
+      # in explorer/package-lock.json). The suite's explorer tests import the
+      # build, so every shard installs it; esbuild's binary comes from its
+      # platform package, so --ignore-scripts still leaves it runnable.
+      - name: Install explorer build dependencies
+        if: steps.salient.outputs.run == 'true'
+        working-directory: skills-evals/explorer
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      # Rebuilds the page and fails when the committed tool/index.html differs,
+      # so the published page is always what explorer/src says. One shard is
+      # enough: the build does not depend on the shard.
+      - name: Explorer page matches its source
+        if: steps.salient.outputs.run == 'true' && matrix.shard == 1
+        working-directory: skills-evals/explorer
+        run: npm run check
       # The real-work fixtures' checkers (test/issues/test_issue_real_work_fixtures.py)
       # run each seed's own tests, which need the seed's npm dependencies,
       # installed here from the seed's committed lockfile as a run's `deps:`

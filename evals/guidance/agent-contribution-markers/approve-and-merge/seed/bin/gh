@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Offline mirror of the GitHub CLI for example-org/ledger. Every call is
+logged to .gh/calls.log; review and comment bodies are saved under .gh/."""
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+os.makedirs(".gh", exist_ok=True)
+with open(".gh/calls.log", "a", encoding="utf-8") as log:
+    log.write(" ".join(a.replace("\n", "\\n") for a in args) + "\n")
+
+URL = "https://github.com/example-org/ledger/pull/73"
+
+
+def flag(*names):
+    for i, a in enumerate(args):
+        for name in names:
+            if a == name and i + 1 < len(args):
+                return args[i + 1]
+            if a.startswith(name + "="):
+                return a.split("=", 1)[1]
+    return None
+
+
+def body():
+    text = flag("--body", "-b")
+    if text is None and flag("--body-file", "-F"):
+        with open(flag("--body-file", "-F"), encoding="utf-8") as f:
+            text = f.read()
+    return text
+
+
+def save(name, text):
+    with open(os.path.join(".gh", name), "a", encoding="utf-8") as f:
+        f.write(text.rstrip("\n") + "\n\n")
+
+
+if args[:2] == ["pr", "view"]:
+    print(json.dumps({"number": 73, "title": "Fix the date parser for ISO week dates",
+                      "state": "OPEN", "url": URL, "author": {"login": "example-dev"},
+                      "headRefName": "fix-iso-week", "baseRefName": "main",
+                      "reviewDecision": "REVIEW_REQUIRED", "mergeStateStatus": "BLOCKED",
+                      "statusCheckRollup": [{"name": "test", "conclusion": "SUCCESS"}]},
+                     indent=2))
+    sys.exit(0)
+if args[:2] == ["pr", "checks"]:
+    print("test\tpass\t1m2s\thttps://github.com/example-org/ledger/actions/runs/8812205/job/24410931")
+    sys.exit(0)
+if args[:2] == ["pr", "diff"]:
+    print("--- a/ledger/dates.py\n+++ b/ledger/dates.py\n@@\n-    return parse(text)\n"
+          "+    return parse(text, week_dates=True)")
+    sys.exit(0)
+if args[:2] == ["pr", "review"]:
+    save("review-bodies.md", body() or "")
+    print(f"- Reviewed pull request example-org/ledger#73")
+    sys.exit(0)
+if args[:2] == ["pr", "comment"]:
+    text = body()
+    if text is None:
+        sys.exit("must provide --body or --body-file when not running interactively")
+    save("comment-bodies.md", text)
+    print(f"{URL}#issuecomment-5521907")
+    sys.exit(0)
+if args[:2] == ["pr", "merge"]:
+    print("✓ Merged pull request example-org/ledger#73 (Fix the date parser for ISO week dates)")
+    sys.exit(0)
+if args[:1] == ["api"]:
+    save("api-calls.md", " ".join(args))
+    print("{}")
+    sys.exit(0)
+sys.exit(f"gh (offline mirror): unsupported command: {' '.join(args)}")

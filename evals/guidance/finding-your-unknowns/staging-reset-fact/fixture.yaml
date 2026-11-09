@@ -1,0 +1,62 @@
+# Guidance fixture: finding-your-unknowns / staging-reset-fact
+#
+# The section's rule for a durable finding that no commit can check: it
+# goes in the repository, and a repository fact goes below AGENTS.md's
+# `## Repo-specific additions` header, not in agent memory and not in
+# CLAUDE.md (which here only imports AGENTS.md). The seed's AGENTS.md is a
+# managed file whose top half a sync overwrites.
+#
+# What the section should change: the fact lands under the
+# `## Repo-specific additions` header. The prompt names no file.
+
+subject: guidance
+section: finding-your-unknowns
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Make sure future agents working in this repo know this: the shared
+  staging database is reset every Sunday from 2:00 to 2:30 AM Eastern, so
+  integration test failures in that window are expected and not worth
+  chasing.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: fact-under-repo-specific-additions
+    description: >
+      AGENTS.md records the Sunday reset below its
+      `## Repo-specific additions` header.
+    type: file_matches
+    paths: ["AGENTS.md"]
+    must_match: ["(?ms)^## Repo-specific additions[ \\t]*$.*\\bSunday\\b"]
+  - id: claude-md-left-as-import
+    description: CLAUDE.md still only imports AGENTS.md.
+    type: files_unchanged
+    paths: ["CLAUDE.md"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Placement — is the fact in the repository, below AGENTS.md's
+  `## Repo-specific additions` header, rather than in agent memory,
+  CLAUDE.md or the managed half of AGENTS.md? Cap at 3 if it is only in
+  agent memory.
+  (2) Content — does it give the day, the window and its time zone, and
+  what to do about a failure in it?
+  (3) Restraint — did the agent leave the managed half of AGENTS.md and
+  the code alone?

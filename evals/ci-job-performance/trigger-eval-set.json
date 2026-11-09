@@ -1,0 +1,82 @@
+[
+  {
+    "query": "our CI e2e job takes 14 minutes and I don't know why. can you work out which steps are slow and speed it up?",
+    "should_trigger": true
+  },
+  {
+    "query": "the CI job is failing with a timeout error on the integration tests, find the failing test and fix it",
+    "should_trigger": false
+  },
+  {
+    "query": "the playwright browser download step takes about a minute on every run. should we cache it?",
+    "should_trigger": true
+  },
+  {
+    "query": "write a GitHub Actions workflow that runs eslint on every pull request",
+    "should_trigger": false
+  },
+  {
+    "query": "my GitHub Actions test job is slow, how do I tell whether it's CPU-bound or just waiting on something?",
+    "should_trigger": true
+  },
+  {
+    "query": "my workflow is skipped on docs-only changes but the required check never reports. how do I fix the merge block?",
+    "should_trigger": false
+  },
+  {
+    "query": "should I shard our jest suite across 4 jobs? how do I decide, and what happens to the required check?",
+    "should_trigger": true
+  },
+  {
+    "query": "pin all the actions in our workflows to full commit SHAs",
+    "should_trigger": false
+  },
+  {
+    "query": "we bumped playwright workers from 2 to 8 on a 2-core runner and it got slower. what's going on?",
+    "should_trigger": true
+  },
+  {
+    "query": "why is the cache step reporting a cache miss on a fresh branch? I just want to know if the key is wrong",
+    "should_trigger": false
+  },
+  {
+    "query": "why does the 'Install dependencies' step take 90 seconds? measure it from the job logs before changing anything",
+    "should_trigger": true
+  },
+  {
+    "query": "my Python function is slow, profile it and make it faster",
+    "should_trigger": false
+  },
+  {
+    "query": "is nektos/act worth setting up in WSL as a local loop for our workflows?",
+    "should_trigger": true
+  },
+  {
+    "query": "our Docker image takes forever to build locally, how do I shrink the layers?",
+    "should_trigger": false
+  },
+  {
+    "query": "speed up this workflow: it runs pytest serially and checkout plus setup takes longer than the tests themselves",
+    "should_trigger": true
+  },
+  {
+    "query": "set up Dependabot for npm and github-actions with a 7 day cooldown",
+    "should_trigger": false
+  },
+  {
+    "query": "add actions/cache for the apt packages our CI installs on every run, and check it actually pays for itself",
+    "should_trigger": true
+  },
+  {
+    "query": "read the logs of run 12345 and tell me why the deploy step failed",
+    "should_trigger": false
+  },
+  {
+    "query": "I split the test job into 3 shards but now branch protection waits on a check name that doesn't exist. how do I keep it green?",
+    "should_trigger": true
+  },
+  {
+    "query": "add a matrix build for Node 18, 20 and 22 to the test workflow",
+    "should_trigger": false
+  }
+]

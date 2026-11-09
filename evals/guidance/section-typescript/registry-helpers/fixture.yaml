@@ -1,0 +1,83 @@
+# Guidance fixture: section-typescript / registry-helpers
+#
+# The TypeScript section's rules away from untyped input: `as const` instead
+# of a type annotation or cast for a literal list, and a generic helper whose
+# parameters carry real constraint bounds instead of a bare `<T>`. The
+# existing parse-event fixture covers `unknown` versus `any`; this one asks
+# for a constant list, a type derived from it, and a grouping helper, where
+# the shortcut is `string[]`, a hand-written duplicate union, and `<T>` with
+# `any` inside. Names are invented.
+#
+# What the section should change: the list is `as const`, the kind type is
+# derived from it, and the generic parameters are bounded. The prompt names
+# none of these.
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/868
+
+subject: guidance
+section: section-typescript
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add src/registry.ts. It exports the supported event kinds (created,
+  deleted, archived), a type for one kind that stays in sync with that
+  list, and groupBy(items, key) which groups a list of objects by the value
+  of one of their properties and returns a Map from that value to the
+  items. Keep it strict-mode clean.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: registry-exports
+    description: src/registry.ts exports groupBy.
+    type: file_matches_excluding_comments
+    paths: ["src/registry.ts"]
+    must_match: ["export\\s+function\\s+groupBy\\b"]
+    require_present: true
+  - id: kinds-as-const
+    description: The kind list is an `as const` assertion, not an annotation.
+    type: file_matches_excluding_comments
+    paths: ["src/registry.ts"]
+    must_match: ["\\bas\\s+const\\b"]
+    require_present: true
+  - id: no-any
+    description: No `any` annotation or cast.
+    type: file_matches_excluding_comments
+    paths: ["src/registry.ts"]
+    must_not_match: ["(:\\s*any\\b|\\bas\\s+any\\b|<any>|any\\[\\])"]
+    require_present: true
+  - id: generics-bounded
+    description: groupBy's type parameters carry a bound, not a bare `<T>`.
+    type: file_matches_excluding_comments
+    paths: ["src/registry.ts"]
+    must_match: ["function\\s+groupBy\\s*<[^>]*\\bextends\\b"]
+    must_not_match: ["function\\s+groupBy\\s*<\\s*[A-Z]\\w*\\s*(,\\s*[A-Z]\\w*\\s*)*>"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Types — is the kind list `as const` with the kind type derived from it
+  (typeof list[number]), no `any`, and groupBy's type parameters bounded
+  (for example T extends object, K extends keyof T)? Cap at 3 for `any` or
+  an unbounded `<T>`.
+  (2) Behavior — does groupBy return a Map from each key value to the items
+  that carry it, in input order?
+  (3) Restraint — did the agent leave events.ts and tsconfig.json alone?

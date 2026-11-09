@@ -62,8 +62,9 @@ is defined). The same contract holds, and the keys are just as
 untrusted: a `Skill` tool call's `input.skill` and a typed
 `<command-name>` are free strings, so a name becomes a key ONLY when it is
 in `skill_allowlist()` — skills that already appear by name in this public
-repo, as a fixture or a non-coverage row whose registry is not private — and
-matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
+repo, as a fixture or a non-coverage row whose registry is not private, or
+that the published coverage census lists for a public registry
+(`--coverage-census`) — and matches `SKILL_KEY_RE`. Every other Skill tool call counts under `other`; a
 typed slash command that is not an allowlisted skill (`/clear`, `/model`)
 is not a skill invocation and is not counted at all.
 
@@ -302,14 +303,52 @@ SKILL_KEY_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 _COMMAND_NAME_RE = re.compile(r"<command-name>([^<]{0,200})</command-name>")
 
 
-def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
+def coverage_skills(path: Path | None, registries: dict) -> set[str]:
+    """The skill names the published coverage census (`coverage/latest.json`
+    on `persistent/eval-results`, skill-coverage.yml's redacted census) lists
+    for a registry that is `private: false` both there and in
+    harness/registries.yml and whose names are not withheld: a public
+    registry's skill that has neither a fixture nor a non-coverage row yet (a
+    gap) is still a public name. Nothing for no path or an unreadable or
+    malformed file: this source only adds names."""
+    import eval_coverage
+    if path is None:
+        return set()
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return set()
+    entries = doc.get("registries") if isinstance(doc, dict) else None
+    if not isinstance(entries, list):
+        return set()
+    names = set()
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("private") is not False \
+                or entry.get("names_withheld") is not False \
+                or not isinstance(entry.get("skills"), list):
+            continue
+        registry = entry.get("name")
+        config = registries.get(registry) if isinstance(registry, str) else None
+        if not config or config.get("private") is not False \
+                or registry in eval_coverage.PRIVATE_REGISTRIES:
+            continue
+        names |= {skill["skill"] for skill in entry["skills"]
+                  if isinstance(skill, dict) and skill.get("registry") == registry
+                  and isinstance(skill.get("skill"), str)}
+    return names
+
+
+def skill_allowlist(root: Path = REPO_ROOT,
+                    coverage: Path | None = None) -> frozenset[str]:
     """The skill names that may become published keys.
 
     A name qualifies when this public repo already carries it: a skill
     fixture `scripts/eval_coverage.py` counts under `root/evals`, or a row
     of `root/evals/non-coverage.yml`, in either case only when its registry
     is not private (a private skill's name must not become a public key; its
-    calls count under `other`).
+    calls count under `other`). With `coverage`, a public registry's skill
+    the published coverage census lists qualifies too (`coverage_skills`),
+    so a gap is counted by name before its first fixture lands.
     Both are read by eval_coverage's own `count_fixtures`/`load_skips`, so
     "is a fixture" means the same here as in the coverage census. Raises
     `eval_coverage.CensusRefusal` or ValueError when either cannot be read;
@@ -327,6 +366,7 @@ def skill_allowlist(root: Path = REPO_ROOT) -> frozenset[str]:
              if registry not in eval_coverage.PRIVATE_REGISTRIES}
     names |= {skill for registry, skill in skips
               if registry not in eval_coverage.PRIVATE_REGISTRIES}
+    names |= coverage_skills(coverage, registries)
     return frozenset(name for name in names if SKILL_KEY_RE.fullmatch(name))
 
 
@@ -816,6 +856,33 @@ def guidance_state(texts: list[str] | None) -> str:
     return GUIDANCE_NEITHER
 
 
+#: How a session's first skill listing read (skills-evals#668). Claude Code
+#: keeps the listing under a character budget and, over it, lists the last
+#: skills by name alone. A plugin skill always has a description (the spec
+#: requires one), so a namespaced name listed without one is that cut; a bare
+#: built-in such as `init` can legitimately have none and does not count.
+LISTING_FULL, LISTING_TRUNCATED, LISTING_UNKNOWN = "full", "truncated", "unknown"
+_LISTED_RE = re.compile(r"^- (?P<name>[^\s:]+(?::[^\s:]+)?)(?P<rest>.*)$")
+
+
+def listing_state(entry: dict) -> str | None:
+    """`full` or `truncated` for an `attachment` entry holding the session's
+    first (`isInitial`) skill listing; None for any other entry."""
+    attachment = entry.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "skill_listing" \
+            or attachment.get("isInitial") is not True:
+        return None
+    content = attachment.get("content")
+    if not isinstance(content, str):
+        return None
+    for line in content.split("\n"):
+        match = _LISTED_RE.match(line)
+        if match and ":" in match.group("name") \
+                and not match.group("rest").lstrip(":").strip():
+            return LISTING_TRUNCATED
+    return LISTING_FULL
+
+
 def _bump(counts: dict, key: str, week: str) -> None:
     counts.setdefault(key, {})
     counts[key][week] = counts[key].get(week, 0) + 1
@@ -1096,7 +1163,7 @@ def census_all(projects_dir, now: datetime, weeks: int = DEFAULT_WEEKS,
     skills: dict[str, dict[str, int]] = {}
     sessions: dict[str, dict[str, int]] = {}
     tally = {"invocations": skills, "sessions": sessions, "sessions_scanned": 0,
-             "guidance": {}}
+             "guidance": {}, "listing": {}}
     #: (st_dev, st_ino) of every transcript already processed. A symlink or a
     #: hard-linked copy is the SAME underlying file reachable via a second
     #: path in the walk — reading it twice double-counts every turn in it.
@@ -1173,6 +1240,7 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
         title = None
         first_when = first_uuid = None
         texts: list[str] | None = None
+        listing: str | None = None
         tally["sessions_scanned"] += 1
         try:
             with open(transcript, encoding="utf-8", errors="replace") as f:
@@ -1194,6 +1262,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                         found = _instruction_texts(entry)
                         if found is not None:
                             texts = (texts or []) + found
+                        if listing is None:
+                            listing = listing_state(entry)
                         continue
                     if record and kind in ("summary", "custom-title"):
                         text = entry.get("summary" if kind == "summary" else "customTitle")
@@ -1296,6 +1366,8 @@ def _census_root(root: Path, wanted: set, oldest: datetime, counts: dict,
                 and not (isinstance(first_uuid, str) and first_uuid
                          and not fresh(("g", first_uuid))):
             _bump(tally["guidance"], guidance_state(texts), iso_week(first_when))
+            _bump(tally.setdefault("listing", {}), listing or LISTING_UNKNOWN,
+                  iso_week(first_when))
         for event in file_events:
             event["session_title"] = title
         for load in loads:
@@ -1343,6 +1415,9 @@ def build_weekly_document(tally: dict, now: datetime,
             for week, n in by_week.items()]
     rows += [skill_usage.guidance_row(week, state, n)
              for state, by_week in tally.get("guidance", {}).items()
+             for week, n in by_week.items()]
+    rows += [skill_usage.listing_row(week, state, n)
+             for state, by_week in tally.get("listing", {}).items()
              for week, n in by_week.items()]
     if hooks is not None:
         rows += [skill_usage.hook_row(week, name, repo, runs, blocked, runner)
@@ -1850,6 +1925,10 @@ def main() -> int:
                         help="repo whose evals/ fixtures and non-coverage.yml "
                              "name the publishable skills (default: this "
                              "script's repo)")
+    parser.add_argument("--coverage-census", type=Path, default=None,
+                        help="the published coverage census (coverage/latest.json "
+                             "on persistent/eval-results): its public registries' "
+                             "skills are publishable names too")
     parser.add_argument("--now", default=None,
                         help="ISO-8601 instant to treat as now (tests and "
                              "scripts/publish_usage_census.sh's test seam); "
@@ -1892,7 +1971,7 @@ def main() -> int:
     if args.weekly_out is not None or args.events_out is not None:
         import eval_coverage
         try:
-            allowlist = skill_allowlist(args.skill_allowlist_root)
+            allowlist = skill_allowlist(args.skill_allowlist_root, args.coverage_census)
             repos = public_repos()
             private = private_plugins()
             entries = public_registry_entries()

@@ -135,8 +135,8 @@ weekly allowance):
 |---|---|---|
 | `weekly_cap` | 0.30 | all automated evals, in each allowance week of the account (from Monday 17:00 UTC) |
 | `per_run_cap` | 0.01 | one run stops starting new work after this much (Adam, 2026-11-01; was 0.03) |
-| `per_run_overrun` | 0.0018 | added to every run: its last call is never measured. The 95th percentile of each run's largest single call (Adam, 2026-11-01, standing rule; `scripts/run_costs.py` prints the value; was 0.005, then 0.002) |
-| `points_per_usd` | 0.00214 | the allowance one dollar of the CLI's reported call cost uses (`scripts/run_costs.py` prints it), so `per_run_cap` is charged the run's own spend (2026-11-03) |
+| `per_run_overrun` | 0.0005 | added to every run: the routine session's own cost (about $0.67 per fire) and the run's last call, which no reading includes (was 0.005, then 0.002, then 0.0018; 2026-11-06) |
+| `points_per_usd` | 0.0005 | the allowance one dollar of the CLI's reported call cost uses: $20 per point, the low end of the rate measured on 2026-11-04 (about $24, range $20 to $35), so charges err high. `per_run_cap` and the weekly total both charge a run its own spend at this rate (was 0.00214, fitted to the account meter's movement, which other use inflated; 2026-11-06) |
 | `stop_when_account_above` | 0.80 | a run stops, and no fire starts, once the account's weekly meter reads this |
 
 Three layers enforce it:
@@ -158,14 +158,18 @@ Three layers enforce it:
    `routine-eval-fire.yml` before the fire, in every mode). It adds up the
    account's current allowance week, from its last weekly reset
    (`ACCOUNT_WEEK_RESET` plus whole weeks: Monday 17:00 UTC, so daylight
-   saving does not move it; a rolling seven days until 2026-10-26): each ingested run on `persistent/eval-results` at its
-   measured weekly delta plus the overrun (or the full reservation,
-   `per_run_cap + per_run_overrun`, when unmeasured), plus every successful
-   fire without results: at the full reservation when it is under 2 hours
+   saving does not move it; a rolling seven days until 2026-10-26; a manual reset the owner pressed, listed in `MANUAL_RESETS`, starts it at that instant for the rest of its week): each ingested run on `persistent/eval-results` at its
+   own dollars (`usage.cost_estimate.usd` times `points_per_usd`) plus the
+   overrun; at its measured weekly delta plus the overrun when it has no
+   dollar figure (the delta is the whole account's movement, so it charged
+   each run every other thread's use: 116 points booked against about 23 real
+   in the week to 2026-11-04); or at the full reservation,
+   `per_run_cap + per_run_overrun`, when neither is known, plus every successful
+   fire without results: at the full reservation when it is under 90 minutes
    old, and at the overrun alone after that (a routine run finishes within
-   minutes, so a fire with no results two hours later failed or never
-   started). An improve fire (or a guidance-improve fire) never lands
-   results, so it is charged its own
+   minutes and a pair fire's two runs stop 40 minutes each, so a fire with no
+   results 90 minutes later failed or never started). An improve fire (or a
+   guidance-improve fire) never lands results, so it is charged its own
    cost for the whole week: eight eval fires at their measured mean
    (eight full reservations until anything is measured; twelve until
    2026-11-02, when the account meter around improve fires measured 2.3 to
@@ -253,13 +257,14 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
 2. **Missing evidence** (at least 30% of the room): skill cells with no run,
    heaviest-used model first. A cell whose fires twice produced nothing
    becomes a "fixture broken" work item instead (a guidance cell too).
-3. **Near a decision** (at least 20%): skill cells fewest runs short of
-   their next look.
+3. **Near a decision** (at least 20%): undecided skill cells, nearest a
+   verdict first (deep before wide, below).
 4. **Guidance focus** (at least 15%): the undecided guidance cells (no run,
    or not yet decided) of the two sections nearest a verdict, below.
 5. **Improvements** (at least 20%): skills with four or more fixtures, train
-   headroom, a check that fails often but can pass, no retirement verdict,
-   and no pause, ordered by potential value: expected uses over four weeks
+   headroom, a check that fails often but can pass, not owned by retirement
+   (its verdict is `retire` or `retire-pending`, or a removal pull request is
+   open for it), and no pause, ordered by potential value: expected uses over four weeks
    times train headroom, per allowance point an improve run costs (three
    trials of every fixture at its historical fire cost; an unknown use or
    cost is neutral, an unknown headroom ranks last). Fleet-guidance sections
@@ -277,8 +282,55 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    fewer fixtures becomes a "needs fixtures" work item. A skill that already
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
+   A skill or guidance section owned by retirement gets neither item.
 6. **Re-checks**: decided cells not measured for eight weeks (four for a
    high-stakes subject).
+
+Two rules from the 2026-11-03 gate change apply across the bands. A cell
+whose verdict class is `ceiling` (a bound on its without arm shows a mean
+above 1 minus the margin, so it cannot show the gain) or
+`ceiling-unconfirmed` (its without arm averages 0.90 or more and its
+no-harm test has rejected, but it is undecided after 20 pairs) plans no
+fire in any band but safety, re-checks included, and
+becomes a "fixture ceiling" work item, unless its subject is already kept:
+it needs a harder fixture, not more runs. It does not block its subject:
+the subject's other cells keep being measured. An undecided cell that has
+reached the 40-pair cap is not fired either (its window is frozen), blocks
+its subject and becomes a "cell at cap" work item (`cell-at-cap`, with the
+gate's reason), unless its subject is already kept; a decided cell at the
+cap is not re-checked, since a new pair cannot enter its window. And the cheaper
+model goes first: in the missing, near, focus and guidance-rest bands a
+cell waits while its subject's cell of the same fixture on a model with a
+lower known cost is still open (`cheaper_first`). A keep on the cheaper
+model keeps the subject, and a removal needs both cells, so the dearer
+model is fired only once the cheaper cell has decided without a keep. A
+cheaper cell that more runs cannot move (blocking, below), or that already
+has 10 pairs without a decision (`CHEAPER_FIRST_MAX_PAIRS`), holds nothing,
+so a stuck cheaper cell never starves the dearer one.
+
+**Deep before wide** (Adam, 2026-11-08: of 3,010 eval runs, 1,354 sat in
+cells near zero confidence either way, because sweeps spread a few runs over
+every subject). In the missing, near, focus and guidance-rest bands, after
+high stakes, a cell's place is set by its projected pairs to a verdict
+(`pairs_to_verdict`): how many more pairs the gate's keep or remove test
+needs to reach its level, from the level it has reached and D's mean and
+variance as the gate's next bet sees them. Fewest projected points per use
+(pairs x fire cost / (1 + the subject's use)) go first; a cell of a subject
+with some cells settled goes before one of a fresh subject; a cell projected
+past its 40-pair cap, with at least three pairs measured, goes last and is a
+`cell-projected-past-cap` work item (a step summary count, not an issue). A
+cell with no measured difference yet keeps the band's old order behind the
+projected ones. Only a route that can still decide counts: a provisional
+pooled keep is projected to the current rest's own keep test (its lapse at
+the cap is no keep), a cell whose without arm is too high to show the margin
+to its ceiling stop at 20 pairs (its remove test cannot decide it), and a
+crossed remove test still waiting for a second Claude Code version has no
+projection. The two-week batch already caps how many subjects are open
+at once; it now also takes a partly decided subject before the longest
+without a run, and a subject whose every projected cell is past its cap
+after all others. A guidance section whose `eval-coverage.yml` row in
+_agent-guidance is `skipped` is never fired, even with fixtures on the
+schedule.
 7. **Bare baselines** (no minimum share, only the room left): one fire with
    `arms: bare` and three trials per scheduled fixture that runs in place
    and roster model, once per model id
@@ -289,7 +341,8 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    counts as done; a new roster model gets its own. Bare runs are listed
    apart (`bare_runs` in the verdict document) and never pooled into a cell.
 8. **Guidance rest** (no minimum share): every other undecided guidance
-   cell, cells with no run first. It gets only what every other band leaves,
+   cell, by deep before wide, then cells with no run first. It gets only
+   what every other band leaves,
    so when the 30-fire cap binds a section outside the focus can wait weeks.
 
 **The guidance focus** (`guidance_focus` in `scripts/plan_week.py`; Adam's
@@ -298,16 +351,14 @@ does not improve results by 0.15 or more). Guidance fires used to spread over
 every section's cells, so none came near a verdict; the focus spends them on
 the two sections nearest one until those decide.
 
-- **Progress.** A cell's *retire progress* is the no-help confidence of the
-  figures that decide it, divided by `retire_confidence` from the verdict
-  document's `guidance_policy` (0.90 when absent): for a judge-carried cell
-  its judge's, min'd with its objective's when it has objective checks; for
-  any other cell its objective's min'd with its judge's. A cell with no
-  judge block scores 0, since `harness/gates.py` retires no cell without a
-  usable judge. Its *keep progress* is the larger of its objective's and its
-  judge's helps confidence divided by `benefit_confidence` (0.85 when
-  absent); that understates the per-check (Holm) keep route, which has no
-  single confidence to read. An absent value is 0.
+- **Progress.** A cell's *retire progress* is its objective's no-help
+  confidence (the level the remove test has reached), divided by
+  `retire_confidence` from the verdict document's `guidance_policy` (0.90
+  when absent). Its *keep progress* is its objective's helps confidence
+  divided by `benefit_confidence` (0.80 when absent); that is a per-cell
+  level, and the section's keep family asks more of it. Since 2026-11-03 the
+  judge is reported and does not vote, so neither reads it. An absent value
+  is 0.
 - **Score.** A section's score is the larger of its weakest cell's retire
   progress (it retires only when every cell clears) and its strongest cell's
   keep progress (one benefit keeps it). Ties go to the section with fewer
@@ -315,20 +366,32 @@ the two sections nearest one until those decide.
   runs; then to more counted runs; then to the section id.
 - **Eligibility.** The section's verdict is still `insufficient` (or it has
   none): keep, every retire verdict, `shorten-or-merge` and
-  cannot-discriminate are not focused. (Since 2026-11-03 no cell or verdict
-  is `ceiling`: a cell at the ceiling is decided by the removal rule, and a
-  `cannot-discriminate` cell is one whose arms both pass almost nothing over
-  three runs each, left out of the verdict as a broken fixture.) At least one of its cells must be
+  cannot-discriminate and `ceiling` are not focused. (A `ceiling` cell is
+  one whose ceiling test, a betting bound on the without arm's run means at
+  90%, shows a mean above 1 minus the margin, and whose no-harm test shows
+  the section costs less than the margin there: at least 18 pairs, more as
+  the arm drops below 1.0. A high cell undecided after 20 pairs, whose
+  without arm averages 0.90 or more and whose no-harm test has rejected, is
+  `ceiling-unconfirmed`. Both are parked and do not vote on removal, as is
+  a `paused` cell of a fixture the eval scope pass paused, and a
+  section whose every cell is at the ceiling is `ceiling`. A `cannot-discriminate`
+  cell is one whose arms
+  both pass almost nothing over three pairs, left out of the verdict as a
+  broken fixture.) At least one of its cells must be
   able to plan a fire (schedulable, stakes not `none`, not a "fixture
   broken" missing cell), no `retire-guidance/<section>` pull request may be
   open in _agent-guidance, and no cell may be BLOCKING: one whose no-benefit
-  was overruled by an agent-errored trial or a run skipped as anomalous, or
-  a ceiling or cannot-discriminate cell with at least three counted runs on
-  each arm. More runs on the current content cannot move a blocking cell
-  toward removal; under three runs one more can still change its class.
+  or no-clear-effect was overruled by an agent-errored trial or a run
+  skipped as anomalous, or a cannot-discriminate cell with at least three
+  counted runs on each arm. More runs on the current content cannot move a
+  blocking cell toward removal; under three runs one more can still change
+  its class. An undecided cell at the 40-pair cap blocks too. A parked cell
+  does not block: it is not fired, and the section's other cells are still
+  measured.
 - **Order.** The higher-scored section's fires go first; within a section the
   binding cell first (the lowest retire progress, or the highest keep
-  progress when the score came from the keep side), then the cheaper model.
+  progress when the score came from the keep side), then the cheaper model,
+  whose cell the dearer one waits on.
   The plan records the two sections, with their scores, as `guidance_focus`,
   and the job summary names them. There is no stall rule: the 2026-11-02
   design review found one could not be built from the fire history without
@@ -345,32 +408,67 @@ the two sections nearest one until those decide.
   `agent-contribution-markers` (score 0, first of the two-cell sections with
   the most counted runs, by id), 10 fires in focus and 51 in the guidance
   rest.
-- **Known limits.** A cell that is not judge-carried still needs a usable
-  judge to retire unless every judge call it is missing was skipped because
-  the with arm was ahead (#557, 2026-11-02): such a cell is decided on its
-  objective, and its retire progress reads the objective's. A cell whose
-  reason says the judge is still needed scores 0 for retire, and its section
-  stays eligible only through keep progress. The explorer's test queue reads
+- **Known limits.** The explorer's test queue reads
   no pull requests, so it can show a focus place for a section whose removal
   pull request is open, which the planner would not focus.
 
 **The two-week batch** (THE BATCH in `scripts/plan_week.py`; Adam's
 steady-state goal, 2026-11-02: at 25% of the weekly allowance, every two
 weeks pick a batch of skills and guidance sections numbering about three
-times the historical weekly addition rate, bring them all to a verdict, then
-start the next). `evals/batch-policy.yml` sets the start (the 2026-11-09
-17:00 UTC reset, when the cap returns to 25%), the 14-day period, the
-multiplier (3) and the weekly addition rates (skills 0.75, guidance 0.5), so
-a batch holds 2 skills and 2 sections. Only the weekly workflow passes the
-policy (`--batch-policy`).
+times the weekly addition rate, bring them all to a verdict, then start the
+next). `evals/batch-policy.yml` sets the start (the 2026-11-09 17:00 UTC
+reset, when the cap returns to 25%), the 14-day period, the multiplier (3),
+the rate and cost windows, the expected pairs per cell and fallback addition
+rates. Only the weekly workflow passes the policy (`--batch-policy`).
 
+- **Fit to the budget** (Adam, 2026-11-03: "The rate is measured each
+  period. The batch takes as many subjects as fit 50 points, most-used
+  first. The rest wait. No new spend."). Each new batch:
+  - measures each kind's addition rate over `rate_window_days` (28): skills
+    added to adam-agentskills' `scripts/plugin_layout.json`, sections (ids)
+    added to _agent-guidance's `agents-md/eval-coverage.yml`, per week, on
+    each checkout's first-parent history. A file younger than the window is
+    measured from its first version. An unreadable history (no checkout, a
+    shallow one, under 7 days) uses the policy's constant (skills 0.75,
+    guidance 0.5) and the record says so. The target size per kind is
+    max(1, 3 x rate, half rounded up).
+  - prices each subject at its cells with headroom (undecided, schedulable,
+    not fixture-broken). Each is charged its remaining observations,
+    min(`pairs_per_cell`, `max_runs_per_cell` from `gate-policy.yml` less
+    the observations the gate already counts in it), at least 0, times its
+    model's mean cost per observation. An observation is one fire, one
+    paired run whatever its trial count, as the gate counts it. The cost per
+    observation is the points in `cost_estimate.json` over the paired runs
+    of the routine runs of the last `cost_window_days` (14), judge included
+    (a guidance fire's `alone` pair is not an observation of its cell).
+    `pairs_per_cell` is 15: the 2026-11-03 gate threshold sweep's 10.5
+    points per new subject over 0.70 points per observation on both models.
+  - takes candidates while their total stays within the budget,
+    `budget.yml`'s `weekly_cap` x the period's weeks (0.25 x 2 = 50
+    points); a total equal to the budget fits. Carried members stay first
+    and count first. Then the kinds take turns. Skills go most used first
+    (the usage weight), then high stakes, then the longest without a run,
+    then name. Guidance has no per-section use signal, so sections go high
+    stakes first, then the longest without a run, then name. A subject that
+    alone would overflow the room left is skipped and waits; a cheaper one
+    after it can still join. If nothing would join while subjects wait, the
+    cheapest joins over budget, so the batch is never empty. With no
+    measured cost the fit picks by target size alone.
+  - **Today** (2026-11-03, results branch at cba7b38): skills 4 added
+    since the layout pin of 2026-10-26 (3.37 a week, target 10), sections
+    3 in 28 days (0.75 a week, target 2); 0.00152 of the allowance per Opus
+    observation and 0.00064 per Sonnet one, so a fixture with no runs yet
+    on both models is about 3.2 points. The fitted batch is 9 skills (one
+    with two fixtures) and 2 sections (one the four-fixture, high-stakes
+    `data-exposure-in-ci`), 48.6 of 50 points; 18 subjects wait: 13
+    sections past the guidance target size and 5 skills for the budget.
 - **What it changes.** While a batch is open the missing, near, focus and
   guidance-rest bands take only its members' cells, and every guidance
   member is in the focus. Safety, re-checks, improvements and bare
   baselines are unchanged.
 - **Who joins.** Open subjects only: verdict still open, no removal pull
   request, no blocking cell, and some cell that would plan a fire. Never a
-  private skill. High stakes first, then the longest without a run.
+  private skill. In the fit's order, within the budget (above).
 - **When it turns over.** When every member has left `open` (decided,
   blocked, stalled or gone), or at the due time, whichever is first. Open
   members are carried into the next batch first; new picks fill the rest.
@@ -379,8 +477,12 @@ policy (`--batch-policy`).
 - **Where it lives.** `batches/current.json` and `batches/<number>.json` on
   `persistent/eval-results`, written by the weekly workflow's
   `batch-publish` job only when a plan starts a batch. Each record lists the
-  previous batch's members with their final status. The job summary names
-  the batch, each member's status and how many cells wait outside it.
+  previous batch's members with their final status and, for audit, the
+  rates and how each was had (`rate_basis`), the target `sizes`, the fit
+  (`budget`, `pair_costs`, `pairs_per_cell`, `total`, `floor`), each
+  member's expected `cost` and the subjects left `waiting` with theirs and
+  why (`budget` or `size`). The job summary names the batch, each member's
+  status, how many cells wait outside it and the fit's line.
 - **The explorer** queues only the published batch's members in those
   bands. A finished batch stays published until the next sweep replaces it,
   so for that gap the page shows the old batch's queue.
@@ -402,6 +504,21 @@ a fixture whose `fixture.yaml` has a top-level `context` mapping; its run is
 titled `Fire eval routine: eval bare <fixture> <model>`. The allowance guard
 holds it as one run, like any eval fire; the plan reserves it as one arm
 (the cell's cost per arm trial, times three).
+
+**Pair fires.** A routine session costs about $0.67 of its own on every fire,
+and nothing counts it, so when one sweep plans a fixture's cells on two
+roster models with the same arms, it sends them as one fire with
+`model: m1,m2`, in roster order (`scripts/plan_week.py`, PAIR FIRES). The
+fire workflow checks each id as it checks one and sends `models: [m1, m2]`;
+the routine runs the harness once per model, in that order, under one run id
+and one results branch, and each summary keeps its own model. The run is
+titled `Fire eval routine: eval <fixture> m1,m2`, which the planner and the
+explorer read as a fire of each model's cell. Each invocation is stopped 40
+minutes after it starts, so the planner holds a pending pair fire's cells for
+90 minutes (a one-model fire's for 50) and counts it in flight for twice a
+one-model fire's 20 minutes. The allowance guard reserves it
+as one fire and, once its run is ingested, charges each of its two
+invocations.
 
 A skill is paused while an improve pull request is open, an attempt is in
 flight, an open `on-hold` issue names it, for 14 days after a rejection, and
@@ -429,7 +546,9 @@ or the mint fails.
 
 Work items (`needs-fixtures`, `needs-harder-fixtures`, `fixture-broken`,
 `routine-outage`) are listed in the plan, not fired; each carries a
-`change_type`. A skill run
+`change_type`. A guidance section whose `eval-coverage.yml` row is `gap`
+(tracked, no fixture yet) gets `needs-fixtures` with zero fixtures, so its
+first fixture is asked for before any headroom can be measured. A skill run
 tests main's copy of its subject and refuses, with nothing spent, when the
 registry checkout is not clean at its main (ADR 0012, addendum "main's
 copy"); the routine's fire still reads as a success. So a cell with two such
@@ -599,20 +718,119 @@ GUIDANCE-IMPROVE MODE (payload "mode": "guidance-improve" only). You run the gui
 
 Every day, `skill-coverage.yml`'s `retirement` job (schedule only) runs
 `scripts/compute_gates.py` over the results branch and the public registries,
-then `scripts/retire_skill.py` over its verdicts. A skill whose verdict is
-`retire` (90% confidence on an anytime-valid bound, on every fixture and roster model, that the skill does not improve results by 0.15 or more: Adam, 2026-11-02)
-gets, in `retirement_mode: auto` (the committed value in
-`evals/gate-policy.yml`), a ready removal pull request in adam-agentskills,
+then `scripts/retire_skill.py` over its verdicts.
+
+**The rule** (2026-11-03, replacing the normal-mixture bound after that
+day's statistics review and threshold sweep; Adam's decision on it is
+pending, and `harness/gates.py`'s docstring is the full statement):
+
+- *The pair is the unit.* A cell (skill, fixture, roster model) pairs each
+  with run with the without run of the same fire (the same timestamp), and
+  decides on the per-fire difference D = with minus without.
+- *The bound.* A betting confidence sequence on D (Waudby-Smith and Ramdas,
+  aGRAPA bets capped at 0.9 of the safe stake). It needs no variance prior
+  and holds at every run count, so a cell is checked after every pair; four
+  identical runs per arm, which removed a skill under the old bound, now
+  decide nothing (identical arms need 18 pairs).
+- *Keep* when the keep test shows D above 0 at 80% (`benefit_confidence`),
+  split across the subject's cells (fixtures on main times roster models,
+  Bonferroni). *No benefit* in a cell when its test shows D below 0.15
+  (`objective_margin`) at 90% (`retire_confidence`). Whichever test rejects
+  first decides the cell; a tie keeps.
+- *Ceiling.* A cell whose without arm is shown, by a betting bound at 90%
+  on its run means, to average above 1 minus the margin cannot show the
+  margin (a sample mean is not enough: three perfect pairs once parked a
+  cell for good). It is `ceiling`: it does not vote on removal, the planner
+  stops firing it without blocking the subject's other cells, and a subject
+  whose every cell is at the ceiling is `ceiling`. It parks only when a
+  no-harm test (D above minus the margin, at 90%) agrees, so the margin
+  cannot hide a harm beyond the margin. A cell whose without arm is high
+  but undecided after 20 pairs (`max_runs_high_cell`) stops being fired as
+  `ceiling-unconfirmed`, which does not vote either, but only once the
+  no-harm test has rejected and the without arm averages at least 0.90
+  (`HIGH_STOP_MIN_WITHOUT`); otherwise it is fired on to the cap. A retire
+  verdict beside either is only a proposal.
+- *Harm.* A cell whose without arm is high is also tested for harm (D below
+  0 at 90%), and is `no-benefit` once that test decides: it needs no
+  headroom to show harm. A harm beyond the margin is parked only at the
+  no-harm test's error rate; a milder one can still end parked or, at the
+  cap, `no-clear-effect` (a proposal at most). A fixture the eval scope
+  pass pauses stops being fired, so a harm it had not yet decided stays
+  undecided (`paused`, below); the subject is then `insufficient`, not
+  `ceiling`, when every cell is parked, and otherwise a `retire` proposal
+  (a parked cell beside decided `no-benefit` cells), never automatic.
+- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
+  is `no-clear-effect` when no test crossed and its pairs span two Claude
+  Code versions. Otherwise (one version, or a test that crossed but has
+  not decided) it stays `insufficient`: it is no longer fired, blocks its
+  subject and becomes a `cell-at-cap` work item.
+- *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
+  cells in the verdict: a `benefit` cell still keeps, a `no-benefit` cell
+  (a harm or no-benefit its test decided before the pause) still votes, and
+  any other is `paused`, parked, so it does not vote and a removal beside it
+  is only a proposal. A subject whose every cell is parked is `ceiling` only
+  when each shows the ceiling on its own runs: a ceiling class, or a cell
+  paused for the ceiling that was a ceiling class or whose no-harm test had
+  rejected with a without arm averaging 0.90 or more. The pause reads only
+  a pooled sample of the without arm, which is not that evidence. Otherwise
+  (and for a floor or zero-use pause) the subject is `insufficient`, and the
+  planner lists it as a `paused-unmeasured` work item: a paused fixture is
+  off the schedule, so it has no planner cell to carry a `fixture-ceiling`
+  item. A `ceiling` subject with a paused cell among its cells (round 6's
+  M1) is the same gap: no planner cell, and with every fixture paused no
+  improve item either. The planner lists it as a `paused-ceiling` work item
+  asking for a harder fixture.
+- *Where work items go.* `fixture-ceiling`, `cell-at-cap`,
+  `paused-unmeasured` and `paused-ceiling` items are counted in the weekly sweep's step summary
+  and listed in its plan JSON; no issue is filed for them
+  (`scripts/work_item_issues.py` files only `fixture-broken`,
+  `routine-outage`, `needs-fixtures`, `needs-harder-fixtures` and
+  `needs-trigger-set`).
+- *Removal.* `retire` needs every cell with headroom to be no-benefit or
+  no-clear-effect, none undecided. It may be automatic only with two or
+  more such cells, every one no-benefit; one headroom cell, or any
+  no-clear-effect or parked cell, makes it a proposal (`removal: proposal`
+  in the verdict), and `scripts/retire_skill.py` re-derives that from the
+  cells rather than trusting the field. A removal decides at the first pair
+  where its test is at its level and the pairs so far span two Claude Code
+  versions, and a skill cell with an agent-errored trial supports no
+  removal at all.
+- *The judge* is reported beside each cell and does not vote; single
+  checks no longer keep on their own.
+- *Current content only.* A cell decides on runs of the skill and fixture
+  on main. For a guidance section, the guidance block's `rest_policy`
+  (2026-11-07, default `pooled-with-current-guard`) pools the runs beside
+  every rest of the guidance, pair by pair at equal weight, for keeping
+  once the current rest has 6 pairs (a keep test over the current rest
+  alone runs beside it, each at half the keep level);
+  any removal also needs at least `rest_guard_min_pairs` (6) pairs beside
+  the current rest whose own share of the test reaches the removal level,
+  and ceilings, floors and the cap read the current rest only. `current`
+  reads the current rest only, as from 2026-11-03.
+- *The bet prior.* Each cell's first bet starts from a prior learned from
+  other subjects' pairs made before the Monday of the cell's first pair
+  (three pseudo-runs, mean clamped to -0.2..0.5, variance at least 0.001).
+  It only steers the bets, so it changes how soon a cell decides, never the
+  bound's level. The weekly plan's verdicts refit it each run and record
+  its version (that Monday's date) on every cell.
+
+A skill whose verdict is `retire` with `removal: auto`
+gets, in `retirement_mode: auto`, a ready removal pull request in adam-agentskills,
 labeled `agent-authored`, that auto-merges (merge commit) with no human
 review ([ADR 0014](decisions/0014-removal-pull-requests-merge-without-review.md),
-adam-agentskills ADR 0021). Each removal also files an `agent-authored`
+adam-agentskills ADR 0021, and the
+[2026-11-03 addendum](decisions/0014-removal-pull-requests-merge-without-review.md#betting-bound-addendum-2026-11-03)).
+The committed value is `auto` again: Adam set it to `proposal` on
+2026-11-03 ("Resume, auto-removal off") and pre-approved turning it back on
+once a loop withdrawal was hardened (PR #740, skills-evals#645). A
+`removal: proposal` verdict files the issue whatever the mode. Each removal also files an `agent-authored`
 skills-evals issue that mentions Adam, links the removal pull request and
 says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
 is open at a time: nothing is
 opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
 request is open there, and a closed `retire-skill/<skill>` one means the
-skill is decided. That branch carries everything the registry's required
+skill is decided, unless the loop withdrew it (below). That branch carries everything the registry's required
 checks read — the skill gone, the plugin's major version raised, a
 `docs/skill-impact.md` entry, the layout pin in its
 `scripts/plugin_layout.json`, the README skill table and, when the plugin is
@@ -624,8 +842,220 @@ removal plugin-runtime-review would hold (the skill has its own `hooks/` or
 `bin/`, or a hook of its plugin names a path in it), it falls
 back to `proposal`: one skills-evals issue that is filed or updated and that
 a human acts on; once that issue is closed, the skill is not proposed
-again. Preview either mode with
+again. In `auto` mode no removal is opened for it either: the proposal path
+stamps the issue it files, and a closed one with that stamp (or one older
+than the stamps, which has none) declines the removal for good, whatever the
+close reason ("completed" and "not planned" alike), even once
+the reason it was only a proposal is gone (a `removal: proposal` verdict
+that firms up to `auto`, the token coming back, or the mode switched from
+`proposal` to `auto`). A closed issue the withdrawal path filed carries its
+own stamp and declines nothing until the pause cap (below); while `auto` is
+lowered to a proposal short of the cap, it does not count as already
+decided either, so a fresh proposal issue is filed for a person to decline.
+At the cap any closed retirement issue decides on that lowered path too. In
+`auto` mode at the cap, the cap comment (below) is posted once per subject:
+an open retirement issue gets it even beside a closed one, when none of the
+subject's issues carries it yet, so the owner learns the loop stopped; after
+that, or with no issue open, a closed issue decides and nothing is posted.
+A pass lowered to a proposal at the cap (no token, say) keeps the cap note
+in the issue body it rewrites, and posts the comment itself if it is still
+owed, so the comment is posted once whichever pass reaches the cap first.
+If the reason for the proposal goes away while its issue is still open, a
+removal opens and the issue gets a comment linking it. Closing that issue
+then still declines the removal: the next withdrawal pass closes the open
+removal (see "Declined while open" below). Only a removal that has already
+merged is out of reach; press **Revert** on it. Guidance sections work the
+same way. Preview either mode with
 `python3 scripts/retire_skill.py --gates FILE --registry adam-agentskills=PATH --dry-run`.
+
+**Withdrawal.** An open removal pull request is armed on the verdict it was
+opened on, so `scripts/retire_skill.py --withdraw-stale` re-reads that
+verdict (ADR 0014, round 8's known limit). It runs in two places:
+
+- before each pass of this job;
+- after every ingest, in `loop-pr-refresh.yml`'s `withdraw` job, which
+  recomputes the verdicts the same way.
+
+Each pass, skills and then guidance, is its own step that runs unless the run
+was cancelled, so one failing never skips the other; the failed step still
+fails the job.
+
+It reads every open pull request in the target repository that the loop
+opened: the head is `retire-skill/` (or `retire-guidance/` in the guidance
+pass), it carries `agent-authored`, and its author is the eval-improve App's
+bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
+
+The pull request is withdrawn when the verdict no longer supports an
+automatic removal: `keep`, `insufficient` (a roster model just added
+included), a `retire` lowered to a proposal (for a section, also an
+unfinished section-alone pair), or a `retire-pending` that was not a
+supported `retire` before
+`finalize` ranked it. A `retire-pending` whose raw verdict is a supported
+`retire` keeps its pull request, since only one subject retires per
+evaluation and it is simply next.
+
+To withdraw, auto-merge is turned off and read back and the pull request is
+labeled `loop-withdrawn` (the pass creates the label if the repository lacks
+it). Then the subject's retirement issue here (the one proposal mode files)
+is filed, or the oldest open one gets a comment (its body is left as it is),
+to record the withdrawal and link the pull request; only then does a comment
+give the new verdict, why and the override, and the pull request is closed.
+The label is read back before the issue: one that did not land leaves the
+pull request open. A failure at any of those steps leaves the pull request
+open for the next pass. After the close, who closed it is read again: `gh
+pr close` succeeds on a pull request someone else closed first, and only the
+App's own close is a pause. If anyone else closed it (or GitHub records no
+closer), it decides the subject; the pass posts a correction on the pull
+request and the retirement issue, since both already called it a pause, and
+keeps the branch. If the closer cannot be read, the branch is kept too.
+Otherwise the branch is deleted, leased on the closed pull request's head,
+so a commit anyone pushed since keeps it; that needs the App token's
+`contents: write`. The comment and the issue say the branch "will be"
+deleted, since they go out first. A failed delete keeps the pause, and the
+status line names only the error's type; the next removal retries it (see
+below). Any open removal notice for the subject is closed as not planned and
+then commented on; if that fails, the withdrawal still stands and the status
+line says so.
+
+In `auto` mode, an open removal whose verdict still supports it but which
+carries `loop-withdrawn`, or whose auto-merge the loop itself turned off, is
+a withdrawal that stopped part way, so the pass finishes it as a pause and
+the next daily run opens a fresh, armed one. Auto-merge off counts only for
+a pull request opened before the verdicts' `as_of` that is still unarmed
+when read again, and only when the latest `auto_merge_disabled` event on its
+timeline is the App's and the App left no `proposal` switch disarm comment
+after that event (one from an earlier disarm, since re-armed by a person,
+does not count). "After" is read from each event's time, and a comment in
+the same second as the disable counts as after it, whichever order the
+timeline lists them in; only when a time is missing does the order decide. Turning auto-merge off by hand is therefore a hold, as is a
+removal the `proposal` switch disarmed: both stay open, untouched. An
+unreadable timeline keeps it too. A removal the retirement job is still
+arming is caught only if it was opened before `as_of`, which the arm (it
+follows the create within seconds) makes unlikely; even then the timeline has
+no disable event, so it is kept. In `proposal` mode such a pull request is
+only disarmed, as before.
+
+A pass judges a pull request only by verdicts at least as new as the results
+it was opened on: the `as_of` its body's first line records ("Removes ... is
+**retire** as of ..."), ignored when later than the pull request's own
+creation time. With no such line, one created after the verdicts' `as_of`,
+or with either time unknown, is kept for a newer pass to judge. The `withdraw` job in
+`loop-pr-refresh.yml` runs one pass at a time (its own concurrency group,
+`cancel-in-progress: false`).
+
+A withdrawal is a pause, not a decision. A closed, unmerged removal counts
+as a pause only if the App opened it, it carries `loop-withdrawn`, AND the
+App closed it (`closed_by`, read from the issue). Such a pause does not
+decide its subject, so when the verdict supports an automatic removal again,
+this job opens a fresh one with a plain push to the same branch name. If
+that branch still exists, it is a failed delete's leftover only when its tip
+is the head of one of the subject's paused removals (and every closed
+removal from it is such a pause): then the leased delete is retried, a
+branch already gone counting as deleted, and the push is plain. Any other
+branch fails the run rather than be pushed over; a person restores its pull
+request or deletes the branch. Nothing here pushes over a commit. A subject
+whose verdict swings back and forth is
+withdrawn and reopened each time, up to `MAX_LOOP_PAUSES` (3) pauses; from
+then on this job files or updates the subject's proposal issue instead of
+opening a removal, and the first time it reaches an open issue it comments
+there (a comment notifies; a body edit does not), mentioning the owner. Any
+other closed removal decides the subject: merged,
+closed by a person (labeled or not), one whose closer cannot be read, or one
+a person removed `loop-withdrawn` from. So to decline a withdrawn removal for
+good, remove that label, or close the next removal yourself. In `auto`
+mode, closing a retirement issue the withdrawal filed declines nothing until
+the cap; at the cap the issue becomes the proposal, and a closed one
+declines the removal. The issue says both. When the withdrawal only
+commented on the proposal issue, closing that issue declines at once, and
+the comment says so. Nothing lowers the count, so after the cap the loop
+never resumes on its own: the way back is a person's. To remove the subject,
+take over the last withdrawn removal as below; to decline, close the issue.
+To remove the subject anyway, remove the `agent-authored` label first, then
+restore the branch from the pull request page, then reopen it and merge it
+by hand. Without that label it is not the loop's, and no pass touches it;
+reopening it with the label only gets it withdrawn again.
+
+**Declined while open.** Before anything else, the pass reads each open
+removal's subject's retirement issues. If a person has closed its proposal
+issue (one the proposal path stamped, or an older one with no stamp) while
+the removal was open, the removal is declined, whatever its verdict and in
+either mode. Any close counts, whatever its reason. Auto-merge is turned
+off and read back. A `loop-withdrawn` label left by a withdrawal that
+stopped part way is taken off and read back; if it stays on, the pull
+request is left open and the step fails. Then a comment cites the closed
+issue, and the pull request is closed as a decision with no
+`loop-withdrawn` label, so the closed removal decides the subject: the loop
+opens no removal for it again, even if the issue is reopened, and its branch
+is kept, since no later removal pushes to it. No retirement issue is filed,
+since its text would say closing it declines nothing. The closed issue gets
+a comment saying so and stays closed, and any open removal notice is closed.
+If the issue list cannot be read, that pull request is left as it is and
+the step fails.
+
+**A person's arm in force.** One rule overrides everything in this section.
+A removal that is armed for auto-merge now, and whose latest
+`auto_merge_enabled` event is a person's, belongs to that person. A person
+is an actor whose account type is `User` and who is not the App: a `Bot`
+(any App or bot, `github-actions[bot]` included), a deleted account
+(`ghost`), or an actor with no type is not a person. The pass does not
+disarm it under the `proposal` switch or withdraw it on a stale verdict; it
+logs `left #N for a person: armed by a person`, and the refresh below still
+brings it up to date, so it merges once its checks pass. For those, nothing
+is compared with when the App last disarmed it: only who armed it last, and
+that it is still armed. A decline is the one comparison, because the
+latest person action wins: when a closed proposal issue (or an older,
+unstamped one) declines the subject, the arm wins only when its
+`created_at` is strictly later than the issue's `closed_at`. If the issue
+was closed after the arm, in the same second, or either time is missing or
+unreadable, the removal is declined. To stop it, close the proposal issue
+after the arm (the close takes effect at the next withdrawal pass, if the removal has not merged by then), turn its auto-merge off, or close it. A removal that is not
+armed (the App's own disarm included), one a non-person armed last, an
+unreadable timeline, or a missing arm time is not a person's arm, and gets
+the action described here.
+
+One pull request's failure does not stop the pass: the others still act,
+every status line is printed, and the step then fails.
+
+While `retirement_mode` is `proposal`, a removal that is not withdrawn is
+disarmed instead: auto-merge is turned off, the pull request stays open, and
+it is commented once. Disarming goes one way only: switching the mode back to
+`auto` does not re-arm it, and that comment keeps a later pass from taking it
+for a withdrawal that stopped part way. If posting the comment fails, the
+next `proposal` pass that finds the App's disarm with no comment after it
+posts it. The gap left: if the mode is switched back to `auto` before such a
+pass, the removal is finished as a pause and the next daily run opens a
+fresh, armed one. While it stays open, it blocks later removals and
+keeps the skill out of the weekly plan's improve fires. Close it, or turn
+auto-merge on again by hand (a merge commit): that is a person's arm in
+force (above), which the switch leaves armed, so it merges once its checks
+pass. One the App armed last is disarmed.
+
+Unknown data withdraws nothing:
+
+- a missing or unreadable verdicts document exits 0 with a status naming no
+  subject;
+- a subject the document does not list, so an empty or partial block
+  withdraws nothing;
+- a subject whose verdict raised in `compute_gates.py`;
+- a subject whose `retire` fails the re-check.
+
+The pull request writes use the same App token as the removal; with
+something to withdraw or disarm and no token, the step fails. A pass that
+only keeps pull requests needs no token. The issue uses the job's token.
+
+`loop-pr-refresh.yml` brings a removal pull request up to date only while
+`scripts/refresh_loop_prs.py removal-check` finds its verdict still
+supported in `auto` mode and no closed proposal issue declining it. With the
+verdicts unknown, or the issue list unreadable, it refreshes none, so a
+refresh never re-runs a stale or declined removal's checks, even when the
+decline itself failed in that run's withdraw job. The exception is a
+removal under a person's arm in force (`removal-check --number`), which is
+refreshed whatever its verdict or mode, since the pass leaves it to that
+person, unless a closed proposal issue declines it and the arm is not
+strictly later than the close, or the issue list cannot be read. Its push is leased on the
+head it fetched, so it never recreates a branch a withdrawal just deleted.
+
+Preview with `python3 scripts/retire_skill.py --withdraw-stale --gates FILE [--target guidance] --dry-run`.
 
 A fixture moved into a named subdirectory with its content unchanged keeps
 its evidence: `FIXTURE_ALIASES` in `harness/gates.py` maps the old name (""
@@ -669,7 +1099,14 @@ Other unattributed failures stay records with no proposal, and the subject
    none accepted, the rest of that family is not drafted. It dispatches
    `routine-eval-fire.yml` in draft mode only when one fire fits the
    weekly allowance guard.
-2. **Triage, hooks first** (Adam, 2026-10-26: "I want the first choice to
+2. **Upstream check, then triage, hooks first.** Anthropic's own skills
+   (the claude.ai account skills and Claude Code's bundled ones,
+   `harness/upstream_skills.yml`) are background, never subjects (Adam,
+   2026-11-03): the selector skips a subject with an upstream name, and
+   if a skill Anthropic ships already does what the lesson asks, the
+   routine drafts nothing and records `decision: upstream-covered`; the
+   gate opens nothing for it and the subject is final. Next, **triage,
+   hooks first** (Adam, 2026-10-26: "I want the first choice to
    be git hooks whenever possible"). The routine first asks whether the
    lesson can be enforced mechanically: a check in the fleet's
    `.githooks/agent-checks` runner (_agent-guidance ADR 0021, enforced by
@@ -830,21 +1267,44 @@ so no excerpt reaches this repository:
 The same job also reads an `_agent-guidance` checkout. Five sections have
 fixtures under `evals/guidance/<section id>/<name>/`, and
 `anything-you-name-gets-its-link` has four. Each fixture runs the section
-inside the whole guidance against the guidance without it, and the section
-alone against no guidance. The in-situ runs are pooled by the rest of the
-guidance each ran beside (#557): every version of the rest counts, as a
-stratum, so an edit elsewhere in the guidance no longer starts the evidence
-over. A section is `retire` when the gate is 90% confident that it does not
-improve results by 0.15 or more across those strata (Adam, 2026-11-02:
-the guidance block of `evals/gate-policy.yml`; skills use the same rule).
+inside the whole guidance against the guidance without it (in situ), and the
+section alone against no guidance. Since 2026-11-03 the weekly planner runs
+the alone pair only for a section leaning toward removal: its in-situ
+verdict is `retire`, or its in-situ test is at least halfway to a removal
+(`ALONE_PAIR_FROM_PROGRESS` in `scripts/plan_week.py`); every other section's
+fires run only the in-situ pair (`arms: in-situ`), which saves about a third
+of guidance spend. The in-situ runs are grouped by the rest of the
+guidance each ran beside. From 2026-11-03 only the runs beside the current
+rest decided (#557's weighting across older rests favored removal), so an
+edit elsewhere in the guidance started the evidence over; since 2026-11-07
+(`rest_policy: pooled-with-current-guard`) every rest's pairs count at equal
+weight, a removal still needs the current rest's own evidence, and a keep made
+on the pooled pairs alone gives way to such a removal (ADR 0014,
+"Pooled-rest addendum (2026-11-07)"). A section is `retire` by the skills' rule above, with the guidance
+block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
-guidance already covers it. In `auto` mode, the committed
+guidance already covers it. A `retire` whose alone check has not finished
+(no alone cell yet, or one still undecided) is only ever proposed, never
+removed automatically, since the alone check could still turn it into
+`shorten-or-merge`. The Evals Explorer shows a section's alone results only
+when its in-situ verdict is `retire`, because only then do they count; its
+whole-guidance headline still pools every run with no guidance, and each
+section card's trend, help-per-word order and early sign use the in-situ
+gain. In `auto` mode, the committed
 `guidance.retirement_mode`, a `retire` opens an auto-merging removal pull
 request in `_agent-guidance` that passes that repository's own checks; in
 `proposal` mode it becomes one skills-evals issue. A `shorten-or-merge`
 verdict never removes the section; it files an issue. Preview with
 `python3 scripts/retire_skill.py --gates FILE --target guidance --guidance PATH --dry-run`.
+An open `retire-guidance/<section>` removal pull request is withdrawn (or,
+in `guidance: retirement_mode: proposal`, disarmed) the same way as a
+skill's (Withdrawal, above), from the guidance verdicts. A closed one
+decides the section, so no removal is opened for it again, unless it is a
+loop pause as for a skill (and then only up to `MAX_LOOP_PAUSES`). While any
+`retire-guidance/` pull request is open (one a person holds by turning its
+auto-merge off included), the guidance pass waits and writes nothing, as the
+skill pass does.
 
 ### The eval scope pass
 
@@ -867,16 +1327,18 @@ The rules, in order:
 - **Floor.** The same runs, both arms (guidance: `full` and
   `full_minus_section`) at 0.10 or less, on every roster model. Paused.
 - **Keep guard.** Neither rule pauses a subject whose explorer verdict is
-  `keep` or whose confidence that it helps is 0.5 or more. A skill fixture's
-  pause drops its cells from the gate, so it could take a keep with it and
-  leave a removal.
+  `keep` or whose confidence that it helps is 0.5 or more. The gate keeps a
+  paused fixture's cells as parked `paused` cells (below), and a decided
+  `keep` or `no-benefit` cell still counts, so the guard is not needed for
+  safety; it keeps a kept subject's fixtures measured.
 - **Zero use.** A skill with no use in the last 8 weeks
   (`skill_usage.zero_use`, local surface only for the two local-only plugins
   in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
-  unknown answer does nothing) has all its scheduled fixtures paused. A skill
-  listed in `evals/usage-unknown.yml` has unknown use whatever the census says
-  (for example, Claude Code drops its description from the skill listing in
-  some sessions, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)):
+  unknown answer does nothing) has all its scheduled fixtures paused. Use is
+  unknown while any local session in the window had its skill listing cut by
+  Claude Code's listing budget (`listing` rows in the census,
+  [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)). A skill
+  listed in `evals/usage-unknown.yml` has unknown use whatever the census says:
   it is never paused for zero use, and an earlier zero-use pause of it resumes.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
@@ -891,6 +1353,15 @@ reason starts `Auto scope (<rule>), <date>:`. A resume reverses all three.
 Never touched: fixtures of `stakes: high` subjects, `draft: true` fixtures,
 and any `unscheduled.yml` row the pass did not write. The unscheduled rule
 (`test_issue_371_scheduled_fixtures.py`) therefore keeps holding.
+
+The gate does not drop a paused fixture (PR 649's third adversarial round,
+C1): `scripts/compute_gates.py` reads `evals/scope-auto.yml` and the
+`Auto scope (` rows and keeps such a fixture's cells, parked as `paused`
+unless they had already shown `benefit` or `no-benefit` (round 4's M1: a
+decided harm must not be hidden by a pause). Dropping them let the subject's
+other cells remove a subject the paused fixture showed helped,
+automatically. A pause by itself never makes a subject `ceiling` (see
+*Paused fixtures* above).
 
 ## 4. Where to look for current results
 

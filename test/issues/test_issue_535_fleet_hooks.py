@@ -1020,8 +1020,8 @@ class HostGuardTests(HookBase):
 
 
 class HookDigestGroupingTests(unittest.TestCase):
-    """Variance priors and regression windows start afresh when the hook
-    digest moves, though the fixture digest did not (#605)."""
+    """The bet prior's history cells and regression windows start afresh when
+    the hook digest moves, though the fixture digest did not (#605)."""
 
     def runs(self, hooks_digest):
         from test_issue_69_regression import run
@@ -1033,13 +1033,22 @@ class HookDigestGroupingTests(unittest.TestCase):
             out.append(record)
         return out
 
-    def test_run_priors_group_by_hook_digest(self):
-        first, second = self.runs(None)
-        self.assertNotEqual(gates.run_priors([first, second])["objective"],
-                            gates.FALLBACK_PRIOR_VARIANCE)
-        # Two groups of one run each measure no variance: the fallback.
-        apart = gates.run_priors([first, {**second, "fleet_hooks_digest": "h" * 64}])
-        self.assertEqual(apart["objective"], gates.FALLBACK_PRIOR_VARIANCE)
+    def test_the_bet_prior_history_groups_by_hook_digest(self):
+        # The variance priors are gone (2026-11-03); the learned bet prior's
+        # within-cell variance is what #605 now applies to.
+        from test_issue_69_regression import run
+
+        def fire(day, passed, hooks):
+            pair = [run("a", role, day, p) for role, p in (("with", passed), ("without", 2))]
+            for record in pair:
+                if hooks:
+                    record["fleet_hooks_digest"] = hooks
+            return pair
+        together = gates.paired_history(fire(1, 4, None) + fire(2, 3, None))
+        self.assertEqual(len({p["cell"] for p in together}), 1)
+        apart = gates.paired_history(fire(1, 4, None) + fire(2, 3, "h" * 64))
+        self.assertEqual(len(apart), 2)
+        self.assertEqual(len({p["cell"] for p in apart}), 2)
 
     def test_regression_keeps_the_newest_runs_fixture_and_hook_digest(self):
         from test_issue_69_regression import POLICY, series

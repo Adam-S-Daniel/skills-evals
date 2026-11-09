@@ -68,6 +68,8 @@ RESERVE = 0.035
 NOW = datetime(2026, 10, 20, 15, 30, 0, tzinfo=timezone.utc)
 #: The hold window in hours, read from the guard so the tests follow it.
 HOLD_H = guard.PENDING_FULL_HOLD.total_seconds() / 3600
+#: The hold window's `created` bound for NOW, as the runs API query carries it.
+HOLD_QUERY = "%3E%3D" + (NOW - guard.PENDING_FULL_HOLD).strftime("%Y-%m-%dT%H%%3A%M%%3A%SZ")
 VALID_BUDGET = ("weekly_cap: 0.30\nper_run_cap: 0.03\nper_run_overrun: 0.005\n"
                 "stop_when_account_above: 0.80\n")
 
@@ -104,16 +106,18 @@ def tearDownModule() -> None:
 class BudgetFileTests(unittest.TestCase):
 
     def test_the_committed_budget_is_adams_current_cap(self):
-        # 100 points a week and a 95% account stop for the allowance week
-        # ending 2026-11-09 17:00 UTC only (Adam, 2026-11-02, finish-week
-        # push); after that reset, 25 points and 80%. 2026-11-01 (permanent):
+        # 100 points a week and a 90% account stop (95% until Adam asked
+        # to slow evals, 2026-11-07 17:51 UTC; 85% until he raised it 5
+        # points, 2026-11-08 19:21 UTC; 96% from 2026-11-09 15:50 UTC to use the
+        # last of the week) for the allowance week ending
+        # 2026-11-09 17:00 UTC only (Adam, 2026-11-02, finish-week push); after that reset, 25 points and 80%. 2026-11-01 (permanent):
         # the per-run cap is 1 point, the overrun the p95 of a run's largest
         # call.
         self.assertEqual(budget.load_budget(),
                          {**LIMITS, "weekly_cap": 1.00,
-                          "stop_when_account_above": 0.95,
-                          "per_run_cap": 0.01, "per_run_overrun": 0.0018,
-                          "points_per_usd": 0.00214})
+                          "stop_when_account_above": 0.96,
+                          "per_run_cap": 0.01, "per_run_overrun": 0.0005,
+                          "points_per_usd": 0.0005})
         self.assertEqual(budget.DEFAULT_BUDGET, ROOT / "evals" / "budget.yml")
         self.assertAlmostEqual(budget.run_reservation(LIMITS), RESERVE, places=12)
 
@@ -617,6 +621,65 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(state["runs"], 1)
         self.assertAlmostEqual(state["spent"], 0.025, places=12)
 
+    # A run is charged its own dollars when it has them: the meter delta is the
+    # whole account's movement while the run went (2026-11-04).
+    PRICED = {**LIMITS, "points_per_usd": 0.0005}
+
+    def priced_usage(self, dollars, delta=0.30):
+        block = usage_block(delta)
+        block["cost_estimate"] = {"usd": dollars}
+        return block
+
+    def test_a_run_with_dollars_is_charged_them_not_the_meter_delta(self):
+        run = self.run_dir("20261019T100000Z")
+        self.summary(run, "k/20261019T100000Z/with_skill",
+                     self.priced_usage(10.0, delta=0.30))
+        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                              since=NOW - guard.WINDOW)
+        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+
+    def test_a_run_whose_dollars_cannot_be_used_keeps_the_meter_charge(self):
+        cases = {"no cost_estimate": None, "nan": float("nan"),
+                 "infinity": float("inf"), "bool": True, "negative": -1.0,
+                 "string": "4.0"}
+        for name, dollars in cases.items():
+            with self.subTest(case=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                run = self.run_dir("20261019T100000Z")
+                block = usage_block(0.02)
+                if dollars is not None:
+                    block["cost_estimate"] = {"usd": dollars}
+                self.summary(run, "k/20261019T100000Z/with_skill", block)
+                state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                                      since=NOW - guard.WINDOW)
+                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+
+    def test_no_usable_rate_keeps_the_meter_charge(self):
+        for name, rate in {"absent": None, "zero": 0, "bool": True,
+                           "nan": float("nan")}.items():
+            with self.subTest(rate=name):
+                shutil.rmtree(self.tree / "routine-results", ignore_errors=True)
+                run = self.run_dir("20261019T100000Z")
+                self.summary(run, "k/20261019T100000Z/with_skill",
+                             self.priced_usage(10.0, delta=0.02))
+                limits = dict(LIMITS)
+                if rate is not None:
+                    limits["points_per_usd"] = rate
+                state = guard.account(self.tree, limits, NOW, (0, 0),
+                                      since=NOW - guard.WINDOW)
+                self.assertAlmostEqual(state["spent"], 0.025, places=12)
+
+    def test_priced_summaries_of_one_invocation_are_counted_once(self):
+        run = self.run_dir("20261019T100000Z")
+        for rel in ("with_skill", "with_skill/trial-1", "without_skill/trial-2"):
+            block = self.priced_usage(10.0)
+            block["measured"]["started_at"] = rel  # differs per summary
+            self.summary(run, f"k/20261019T100000Z/{rel}", block)
+        state = guard.account(self.tree, self.PRICED, NOW, (0, 0),
+                              since=NOW - guard.WINDOW)
+        self.assertEqual(state["runs"], 1)
+        self.assertAlmostEqual(state["spent"], 10.0 * 0.0005 + 0.005, places=12)
+
     def test_two_invocations_in_one_run_are_each_charged(self):
         run = self.run_dir("20261019T100000Z")
         self.summary(run, "a/20261019T100000Z/with_skill", usage_block(0.02))
@@ -790,7 +853,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("spent 2.5 points over 1 ingested run(s)", out)
         self.assertIn("pending 0.0 points", out)
-        self.assertIn("(0 from the last 0.75h held in full)", out)
+        self.assertIn(f"(0 from the last {HOLD_H:g}h held in full)", out)
         self.assertIn("cap 30.0", out)
         self.assertIn("### Weekly allowance guard", summary)
         self.assertNotIn("20261020T100000Z", out + summary)
@@ -863,12 +926,12 @@ class LiveFiresTests(unittest.TestCase):
         self.assertEqual(self.live(opener), (5, 2))
         self.assertEqual(len(seen), 2)
         self.assertIn("created=%3E%3D2026-10-13T15%3A30%3A00Z", seen[0])
-        self.assertIn("created=%3E%3D2026-10-20T14%3A45%3A00Z", seen[1])
+        self.assertIn("created=" + HOLD_QUERY, seen[1])
         self.assertTrue(all("per_page=1" in url and "status=success" in url for url in seen))
 
     def test_a_failed_hold_window_count_fails_closed(self):
         def opener(request, timeout):
-            if "2026-10-20T14%3A45" in request.full_url:
+            if HOLD_QUERY in request.full_url:
                 raise urllib.error.HTTPError(request.full_url, 502, "Bad", {},
                                              io.BytesIO(b"private-body-marker"))
             return FireCountTests.Response(b'{"total_count": 5}')
@@ -1638,6 +1701,20 @@ class WeekWindowTests(unittest.TestCase):
             self.at(2026, 11, 3, 9, 0): self.at(2026, 11, 2, 17, 0),
             # Before the anchor, whole weeks back from it.
             self.at(2026, 9, 1, 0, 0): self.at(2026, 8, 31, 17, 0),
+        }
+        for now, start in cases.items():
+            with self.subTest(now=now.isoformat()):
+                self.assertEqual(guard.window_start(now), start)
+
+    def test_a_manual_reset_restarts_the_window_until_the_next_monday(self):
+        reset = self.at(2026, 11, 4, 18, 15)
+        self.assertIn(reset, guard.MANUAL_RESETS)
+        cases = {
+            self.at(2026, 11, 4, 18, 14, 59): self.at(2026, 11, 2, 17, 0),
+            reset: reset,
+            self.at(2026, 11, 7, 0, 0): reset,
+            self.at(2026, 11, 9, 16, 59, 59): reset,
+            self.at(2026, 11, 9, 17, 0): self.at(2026, 11, 9, 17, 0),
         }
         for now, start in cases.items():
             with self.subTest(now=now.isoformat()):

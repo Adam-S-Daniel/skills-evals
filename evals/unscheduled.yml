@@ -23,7 +23,7 @@ fixtures:
   - path: evals/code-quality
     reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
   - path: evals/ci-watcher-loops
-    reason: "Scope decision 2026-11-03: paused; current fixture cannot show a 0.15 gain (both arms at ceiling or both at floor). Reschedule with a fixture whose without arm scores <= 0.85."
+    reason: "Scope decision 2026-11-03: paused; current fixture cannot show a 0.15 gain (both arms at ceiling or both at floor). Reschedule with a fixture whose without arm scores <= 0.85. Rechecked 2026-11-08, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and its newest run, 20261103T035509Z-019906, has the without arm at 7/8 checks, 0.875)."
   - path: evals/editorial-label-audit
     reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
   - path: evals/adam-writing-style/proposal-bio
@@ -54,3 +54,17 @@ fixtures:
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
   - path: evals/pdf-ocr-audit
     reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/windows-elevation-from-wsl
+    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/tool-powershell/preview-before-delete
+    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/tool-powershell/protected-path-cleanup
+    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/tool-powershell/silent-exit-one
+    reason: "Auto scope (zero-use), 2026-11-03: no recorded use of the skill in the last 8 weeks on the surfaces it reaches; it returns when the skill is used again."
+  - path: evals/github-actions-repo-settings/consumer-site-excluded
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/github-actions-repo-settings/fleet-bot-bypass
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/github-actions-repo-settings/scratch-repo-partial-manage
+    reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."

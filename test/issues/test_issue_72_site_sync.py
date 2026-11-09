@@ -69,21 +69,99 @@ class SiteWorkflowTests(unittest.TestCase):
             self.assertTrue(mints, name)
             for step in mints:
                 self.assertIs(step.get("continue-on-error"), True, name)
-                self.assertEqual(step["with"]["repositories"], "adamdaniel.ai")
-                self.assertEqual(step["with"]["owner"], "Adam-S-Daniel")
+                if name == "sync":
+                    # The target follows SITE_REPO, which has no default.
+                    self.assertEqual(step["with"]["repositories"],
+                                     "${{ steps.site.outputs.name }}")
+                    self.assertEqual(step["with"]["owner"], "${{ steps.site.outputs.owner }}")
+                else:
+                    self.assertEqual(step["with"]["repositories"],
+                                     "${{ steps.site.outputs.name }}")
+                    self.assertEqual(step["with"]["owner"], "${{ steps.site.outputs.owner }}")
                 self.assertIn("EVAL_IMPROVE_APP_CLIENT_ID", step["with"]["client-id"])
                 self.assertIn("EVAL_IMPROVE_APP_PEM", step["with"]["private-key"])
 
-    def test_missing_token_warns_and_succeeds(self):
+    def test_missing_token_fails_the_sync_but_not_the_preview(self):
+        decide = [s for _, s in steps(self.sync) if s.get("id") == "token"]
+        self.assertEqual(len(decide), 1)
+        run = decide[0]["run"]
+        self.assertIn("::error::", run)
+        self.assertNotIn("::warning::", run)
+        self.assertIn("exit 1", run)
+        self.assertIn("GITHUB_STEP_SUMMARY", run)
+        # Both causes fail: credentials missing, and a mint that failed.
+        self.assertIn("could not be minted", run)
+        self.assertIn("credentials are not set", run)
+        self.assertIn("steps.site.outputs.skip != 'true'", decide[0]["if"])
+
+    def test_missing_token_warns_and_succeeds_in_the_preview(self):
         for name, doc in (("sync", self.sync), ("preview", self.preview)):
             decide = [s for _, s in steps(doc) if s.get("id") == "token"]
             self.assertEqual(len(decide), 1, name)
             run = decide[0]["run"]
-            self.assertIn("::warning::", run, name)
-            self.assertIn("GITHUB_STEP_SUMMARY", run, name)
-            self.assertNotIn("exit 1", run, name)
-            self.assertIn("eval-improve GitHub App on Adam-S-Daniel/adamdaniel.ai",
+            if name == "preview":
+                self.assertIn("::warning::", run, name)
+                self.assertIn("GITHUB_STEP_SUMMARY", run, name)
+                self.assertNotIn("exit 1", run, name)
+            self.assertIn("eval-improve GitHub App on the site repository named by SITE_REPO",
                           doc["env"]["FIX_HINT"], name)
+            self.assertNotIn("Adam-S-Daniel", doc["env"]["FIX_HINT"], name)
+
+    def test_site_repo_comes_from_a_variable_and_none_skips_cleanly(self):
+        self.assertEqual(self.sync["env"]["SITE_REPO"], "${{ vars.SITE_REPO }}")
+        self.assertEqual(self.preview["env"]["SITE_REPO"], "${{ vars.SITE_REPO }}")
+        resolve = [s for _, s in steps(self.sync) if s.get("id") == "site"]
+        self.assertEqual(len(resolve), 1)
+        run = resolve[0]["run"]
+        self.assertIn('[ "$SITE_REPO" = none ]', run)
+        # Unset fails, naming the variable and where to set it.
+        self.assertIn('[ -z "$SITE_REPO" ]', run)
+        self.assertIn("SITE_REPO is not set", run)
+        self.assertIn("Settings > Secrets and variables > Actions > Variables", run)
+        self.assertIn("::notice::", run)
+        self.assertIn("skip=true", run)
+        # Every step that touches the site waits on the skip output.
+        gated = {s.get("id") or s.get("name") for _, s in steps(self.sync)
+                 if "steps.site.outputs.skip" in str(s.get("if", ""))}
+        self.assertTrue({"credential", "mint", "token"} <= gated, gated)
+        checkout = [s for _, s in steps(self.sync) if s.get("name") == "Checkout site repo"][0]
+        self.assertEqual(checkout["with"]["repository"], "${{ env.SITE_REPO }}")
+        preview_checkout = [s for _, s in steps(self.preview)
+                            if s.get("name") == "Checkout site repo"][0]
+        self.assertEqual(preview_checkout["with"]["repository"], "${{ env.SITE_REPO }}")
+        for _, doc in (("sync", self.sync), ("preview", self.preview)):
+            for step in [s for _, s in steps(doc) if s.get("id") == "site"]:
+                self.assertIn("SITE_REPO is not set", step["run"])
+
+    def test_preview_url_comes_from_a_variable_and_fails_when_missing(self):
+        self.assertEqual(self.preview["env"]["SITE_PREVIEW_URL"], "${{ vars.SITE_PREVIEW_URL }}")
+        text = (WORKFLOWS / "site-preview.yml").read_text(encoding="utf-8")
+        self.assertNotIn("preview-pr${SITE_PR}", text)
+        resolve = [s for job_id, s in steps(self.preview)
+                   if job_id == "mirror" and s.get("id") == "site"][0]
+
+        def run(**env):
+            base = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": os.devnull}
+            base.update(env)
+            return subprocess.run(["bash", "-c", resolve["run"]], env=base,
+                                  capture_output=True, text=True)
+
+        site = {"SITE_REPO": "example-owner/example-site"}
+        unset = run(**site)
+        self.assertEqual(unset.returncode, 1)
+        self.assertIn("SITE_PREVIEW_URL is not set", unset.stdout)
+        self.assertEqual(run(SITE_PREVIEW_URL="https://example.com/x/", **site).returncode, 1)
+        self.assertEqual(run(SITE_PREVIEW_URL="http://pr{pr}.example.com/", **site).returncode, 1)
+        self.assertEqual(run(SITE_PREVIEW_URL="https://pr{pr}.example.com/t/", **site).returncode, 0)
+        self.assertEqual(run(SITE_REPO="none").returncode, 0)
+        comment = [s for _, s in steps(self.preview)
+                   if s.get("name") == "Comment the preview URLs here"][0]
+        line = [l.strip() for l in comment["run"].splitlines() if l.strip().startswith("page_url=")][0]
+        out = subprocess.run(["bash", "-c", line + '; printf %s "$page_url"'],
+                             env={"PATH": os.environ["PATH"], "SITE_PR": "12",
+                                  "SITE_PREVIEW_URL": "https://pr{pr}.example.com/t/"},
+                             capture_output=True, text=True)
+        self.assertEqual(out.stdout, "https://pr12.example.com/t/")
 
     def test_permissions_are_minimal(self):
         self.assertEqual(self.sync["permissions"], {"contents": "read"})

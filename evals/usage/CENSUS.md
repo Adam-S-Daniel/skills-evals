@@ -59,7 +59,9 @@ trigger a commit.
 - **Allowlist, then `other`.** A skill name is published only when this repo
   already names it publicly: a skill fixture under `evals/` or an
   `evals/non-coverage.yml` row, in either case only when its registry is not
-  private. Every other Skill tool call counts under `other`, private-registry
+  private, or a public registry's skill that the published coverage census
+  (`coverage/latest.json` on `persistent/eval-results`) lists, so a gap is
+  counted by name before its first fixture. Every other Skill tool call counts under `other`, private-registry
   skills included, and the planner reads their weight as unknown, never 0; a
   typed command that is not an allowlisted skill (`/clear`) is not counted at
   all.
@@ -74,6 +76,27 @@ trigger a commit.
   Local eval sessions do not inflate the counts: `local_eval.py` runs a
   one-turn arm without session persistence and moves a multi-turn arm's
   transcripts out of `~/.claude/projects` when it ends.
+
+## Listing rows
+
+Each weekly row with `kind: "listing"` counts the local sessions whose first
+skill listing (the `attachment` entry of type `skill_listing` with
+`isInitial: true`) was:
+
+- `truncated`: some namespaced skill (`plugin:skill`) was listed with no
+  description. Claude Code keeps the listing under a character budget
+  (`skillListingBudgetFraction`) and, over it, lists the last skills by name
+  only, so they can rarely trigger ([#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)).
+  A bare built-in such as `init` can have no description of its own, so it
+  does not count.
+- `full`: a listing was found and nothing was cut.
+- `unknown`: the file has no initial listing.
+
+Sessions are counted the way guidance rows are (one per session, in the week
+of its first entry, cross-root deduped, subagents left out). While any local
+session in a skill's 4-week window was `truncated`, `skill_usage.zero_use`
+answers unknown for the local surface, so the eval scope pass pauses nothing
+for zero use until the budget or the descriptions are fixed.
 
 ## Guidance rows
 

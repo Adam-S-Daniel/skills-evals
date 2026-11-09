@@ -655,8 +655,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("app_token", scope)
 
     def test_the_agents_md_row_exists(self):
-        text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
-        row = next(line for line in text.splitlines() if line.startswith("  | `eval-scope.yml`"))
+        text = (ROOT / "docs" / "workflows.md").read_text(encoding="utf-8")
+        row = next(line for line in text.splitlines() if line.startswith("| `eval-scope.yml`"))
         for needle in ("workflow_run", "schedule", "dispatch", "no path filter"):
             self.assertIn(needle, row)
 

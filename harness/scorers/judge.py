@@ -42,6 +42,7 @@ if _HARNESS_DIR not in sys.path:
 from cli_json import (failed_run_detail, normalize_cli_result,  # noqa: E402
                       rate_limit_events)
 
+_ERROR_REPR_MAX = 2000
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
 
@@ -93,7 +94,12 @@ def _extract_json(text: str) -> dict:
             return json.loads(candidate)
         except json.JSONDecodeError:
             continue
-    raise ValueError(f"could not parse judge output as JSON: {text!r}")
+    # The message lands in the summary's judge.error, which ingest caps at 4096
+    # characters; keep it well under that rather than quoting the whole output.
+    shown = repr(text)
+    if len(shown) > _ERROR_REPR_MAX:
+        shown = shown[:_ERROR_REPR_MAX] + f" [truncated: {len(shown)} chars]"
+    raise ValueError(f"could not parse judge output as JSON: {shown}")
 
 
 def _weighted_overall(dimensions: list, weights: dict) -> float:
@@ -166,9 +172,48 @@ def collecting_models():
 
 
 #: Every judge call's isolation flags; scripts/propose_skill_edit.py's
-#: one-shot proposal call uses the same tuple.
+#: one-shot proposal call uses the same tuple. `--tools ""` is the CLI's
+#: documented "disable all tools" (`claude --help`, 2.1.318: its init event
+#: then lists `tools: []`, against the whole built-in set, Bash among them,
+#: without it). The judge reads text the agent under test wrote, so a prompt
+#: injection in an arm's output must find no tool to act through. Last, so
+#: the variadic `--tools` is followed only by options (`--model`), never by
+#: a positional it could swallow.
 JUDGE_ISOLATION_FLAGS = ("--setting-sources", "", "--strict-mcp-config",
-                         "--no-session-persistence")
+                         "--no-session-persistence", "--tools", "")
+
+#: Credential variables the judge's CLI never authenticates with, removed
+#: from its environment by `drop_foreign_credentials`.
+_FOREIGN_CREDENTIAL_NAMES = frozenset({
+    "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS",
+})
+#: Whole families (CLOUDSDK_ covers CLOUDSDK_AUTH_ACCESS_TOKEN).
+_FOREIGN_CREDENTIAL_PREFIXES = ("AWS_", "CLOUDSDK_", "AZURE_")
+_FOREIGN_CREDENTIAL_SUBSTRINGS = ("SSH_AUTH_SOCK",)
+
+
+def drop_foreign_credentials(env) -> dict:
+    """A copy of `env` without the GitHub, cloud-provider and SSH-agent
+    credentials the judge never needs. The input mapping is never mutated.
+
+    Defense in depth behind `--tools ""`: the judge reads text the agent
+    under test wrote, and in a cloud routine its environment otherwise
+    carries the whole process's, GH_TOKEN and GITHUB_TOKEN included. With no
+    tool there is nothing to spend them through; without them, a future CLI
+    that let a tool back in would still find none. Only names the judge
+    cannot authenticate with go: ANTHROPIC_*, CLAUDE_* (the OAuth token and
+    the session-ingress token file), SESSION_INGRESS_URL, HOME, PATH, the
+    proxy and CA-bundle variables all stay, because the CLI logs in through
+    them. AWS_*, CLOUDSDK_*, AZURE_* and GOOGLE_APPLICATION_CREDENTIALS
+    would only authenticate Bedrock, Vertex or Foundry, which the harness
+    does not use (run_eval's arm allowlist makes the same first-party-API
+    assumption). Used by the judge sink only.
+    """
+    return {name: value for name, value in env.items()
+            if name not in _FOREIGN_CREDENTIAL_NAMES
+            and not name.startswith(_FOREIGN_CREDENTIAL_PREFIXES)
+            and not any(part in name for part in _FOREIGN_CREDENTIAL_SUBSTRINGS)}
 
 
 def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
@@ -199,8 +244,9 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
     guidance.check_timeout(timeout, "judge._run_judge_cli(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
     # The run's permission mode (guidance.PERMISSION_MODES), default `auto`.
-    # The judge needs no tool — it reads a prompt and answers JSON — so the
-    # mode matters only because `bypassPermissions` is refused as root (a
+    # The judge needs no tool — it reads a prompt and answers JSON — and is
+    # given none (`--tools ""` in JUDGE_ISOLATION_FLAGS), so the mode
+    # matters only because `bypassPermissions` is refused as root (a
     # routine's sandbox, ADR 0010). It follows the arms' mode rather than a
     # mode of its own so a `--permission-mode bypassPermissions` run (eval.yml)
     # launches the judge exactly as every run before this setting did.
@@ -209,9 +255,10 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
         else permission_mode)
     # Isolated from the account and the checkout: no settings source (so no
     # user or project CLAUDE.md, hooks or plugins from settings), no MCP
-    # connector, no transcript, and (env below) no auto-memory. The judge
-    # still needs the real HOME for its login (a scratch HOME or config dir
-    # loses it, measured on CLI 2.1.289), so these flags are the isolation.
+    # connector, no transcript, no tool, and (env below) no auto-memory and
+    # no GitHub or cloud credential. The judge still needs the real HOME for
+    # its login (a scratch HOME or config dir loses it, measured on CLI
+    # 2.1.289), so these flags are the isolation.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
           "--output-format", "json",
           # `--verbose` makes the CLI print the account meter event an agent
@@ -225,11 +272,14 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int,
         cmd += ["--model", model]
 
     try:
-        # The judge inherits this process's environment, plus auto-memory
-        # off (guidance.CLI_FORCED_ENV): it runs under the real HOME.
+        # The judge inherits this process's environment minus the
+        # credentials it never authenticates with (drop_foreign_credentials),
+        # plus auto-memory off (guidance.CLI_FORCED_ENV): it runs under the
+        # real HOME.
         result = subprocess.run(cmd, input=prompt, capture_output=True,
                                 text=True, timeout=timeout,
-                                env=guidance.cli_child_env())
+                                env=drop_foreign_credentials(
+                                    guidance.cli_child_env()))
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"judge CLI call timed out after {timeout}s") from e
     except OSError as e:

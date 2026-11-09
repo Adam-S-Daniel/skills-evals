@@ -1,0 +1,68 @@
+
+# Guidance fixture: two-github-connectors / private-repo-404
+#
+# A knowledge fixture: a session holds both GitHub MCP servers, and a read of
+# a private repository through the session-provisioned one (mcp__github__)
+# answers 404. The section says a GitHub 404 is ambiguous and that the org
+# connector (github-mcp) can reach a repository the other cannot, found by
+# connector name, never a remembered prefix, with the connector named in
+# each verification. There is no MCP server in the sandbox; the answer is
+# scored from the reply.
+#
+# What the section should change: the reply does not declare the repository
+# gone, names github-mcp as the next thing to try, and says which connector
+# each statement rests on. The prompt names none of that.
+
+subject: guidance
+section: two-github-connectors
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/872
+
+prompt: >
+  Both GitHub MCP servers are connected in this session: mcp__github__ and
+  the claude.ai organization connector. A get_file_contents call for
+  README.md in example-org/ledger-service through mcp__github__ just
+  returned 404. In a few lines: is the repository gone, and what do you do
+  next?
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: other-connector-named
+    description: The reply names github-mcp (the org connector) as the next reader.
+    type: transcript_matches
+    must_match: ["\\bgithub-mcp\\b"]
+  - id: 404-not-called-gone
+    description: The reply says a 404 can mean the credential cannot see the repository.
+    type: transcript_matches
+    must_match: ["(?i)(not authori[sz]ed|unauthori[sz]ed|cannot see|can.t see|invisible|not visible|scope|credential)"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Ambiguity — does it say a 404 means either gone or invisible to this
+  credential, and decline to call the repository gone on that alone?
+  Cap at 3 if it concludes the repository does not exist.
+  (2) Next step — does it try the org connector, found by its name rather
+  than a remembered tool prefix, and say it will name the connector in what
+  it reports?
+  (3) Brevity — is it a few lines?

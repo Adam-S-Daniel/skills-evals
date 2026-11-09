@@ -29,7 +29,11 @@ null; `runner` is the first 12 hex of the runner's digest, or null when the
 log line had none (an absent `runner` reads as unknown, since rows written
 elsewhere omit it). Non-hook rows carry `runner: null`. A `guidance` row
 counts sessions per loaded-guidance state (`name` is
-`full`, `stub-only`, `neither` or `unknown`; `invocations` is null). A second source, `scope: "hooks"` with `runs_scanned`, is present only
+`full`, `stub-only`, `neither` or `unknown`; `invocations` is null). A
+`listing` row counts local sessions by how their first skill listing read
+(`name` is `full`, `truncated` or `unknown`; `invocations` is null):
+`truncated` means Claude Code's listing budget cut descriptions, so some
+skills were listed by name only and could rarely trigger (#668). A second source, `scope: "hooks"` with `runs_scanned`, is present only
 when a hook log was read, so an absent one means unknown, not zero.
 
 CLOUD GUIDANCE rows come from the records cloud sessions write to the private
@@ -95,7 +99,7 @@ SCHEMA = 1
 SURFACE_LOCAL = "local"
 SURFACE_CLOUD = "cloud"
 #: Kinds that count sessions: their invocations are always null.
-SESSION_KINDS = ("guidance", "guidance-check")
+SESSION_KINDS = ("guidance", "guidance-check", "listing")
 CLOUD_SCOPE = "guidance-records"
 #: #562: the source of the `skill-digest` rows, one per surface.
 DIGEST_SCOPE = "skill-records"
@@ -140,6 +144,21 @@ def guidance_row(iso_week_label: str, state: str, sessions: int,
     be `invalid`), on `surface`."""
     return {**row(iso_week_label, "guidance", state, None, sessions),
             "surface": surface}
+
+
+def listing_row(iso_week_label: str, state: str, sessions: int) -> dict:
+    """One local listing row: `sessions` sessions that week whose first skill
+    listing was `state` (full, truncated or unknown)."""
+    return row(iso_week_label, "listing", state, None, sessions)
+
+
+def truncated_listings(doc, now: datetime, weeks: int = 4) -> int:
+    """Local sessions over the `weeks` ISO weeks ending with `now`'s whose
+    skill listing had descriptions cut (#668); 0 when no row says so."""
+    window = {week_monday(label) for label in window_weeks(now, weeks)}
+    return sum(r.get("sessions") or 0 for r in (doc or {}).get("rows", [])
+               if r.get("kind") == "listing" and r.get("name") == "truncated"
+               and r.get("surface") == SURFACE_LOCAL and r.get("week") in window)
 
 
 def guidance_check_row(iso_week_label: str, result: str, sessions: int) -> dict:
@@ -409,7 +428,9 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
     surfaces the skill actually reaches, for example `(SURFACE_LOCAL,)` for a
     plugin delivered only to the owner's machines. Cloud coverage means
     sessions that can push to the private usage store: records seen, never
-    complete.
+    complete. Also unknown when any local session in the window had its skill
+    listing cut (`truncated_listings`): a skill listed by name only can rarely
+    trigger, so its zero says nothing about its value (#668).
     """
     if doc is None or not is_fresh(doc, now):
         return None
@@ -419,6 +440,8 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
         counted = counted_from(doc, surface)
         if counted is None or counted > start:
             return None
+    if SURFACE_LOCAL in surfaces and truncated_listings(doc, now, weeks):
+        return None
     used = weight(doc, skill, now, weeks)
     return None if used is None else used == 0
 

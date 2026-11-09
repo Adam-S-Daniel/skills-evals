@@ -58,6 +58,8 @@ TEST_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = TEST_DIR.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "routine-eval-fire.yml"
 INSTRUCTIONS = REPO_ROOT / "docs" / "routine" / "eval-runner-instructions.md"
+#: IMPROVE MODE's own file, which the instructions file points to.
+IMPROVE_MODE = REPO_ROOT / "docs" / "routine" / "modes" / "improve.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(TEST_DIR / "issues"))
 sys.path.insert(0, str(TEST_DIR))
@@ -816,7 +818,7 @@ class ValidateStepTests(unittest.TestCase):
             "bool": (self.improve(trigger_only=True), "not a string"),
             "holdout": (self.improve(trigger_only="true", holdout="bootstrap"),
                         "'holdout' must be empty when 'trigger_only' is true"),
-            "no set": (self.improve(trigger_only="true", skill="skills-doctor"),
+            "no set": (self.improve(trigger_only="true", skill="no-trigger-set-skill"),
                        "refused by the trigger-only loop's check"),
             "eval mode": ({"mode": "eval", "fixture": fire_tests.FIXTURE, "arms": "both",
                            "trials": "1", "trigger_only": "true"},
@@ -860,7 +862,7 @@ class FireStepTests(unittest.TestCase):
 class InstructionsTests(unittest.TestCase):
 
     def test_the_trigger_only_command_is_one_the_script_parses(self):
-        text = INSTRUCTIONS.read_text()
+        text = IMPROVE_MODE.read_text()
         line = next(line for line in text.splitlines() if "--trigger-only --trigger-eval-set"
                     in line)
         words = shlex.split(line.split("scripts/propose_skill_edit.py", 1)[1])
@@ -875,9 +877,9 @@ class InstructionsTests(unittest.TestCase):
         self.assertEqual(args.trigger_eval_set, Path(f"evals/{SKILL}/{pse.TRIGGER_SET_FILE}"))
 
     def test_the_payload_rule_and_the_fire_check(self):
-        text = INSTRUCTIONS.read_text()
-        self.assertIn('"trigger_only": true (only the JSON boolean true', text)
-        self.assertIn('fire-check "$SKILL" --holdout= --trigger-only', text)
+        self.assertIn('"trigger_only": true (only the JSON boolean true',
+                      INSTRUCTIONS.read_text())
+        self.assertIn('fire-check "$SKILL" --holdout= --trigger-only', IMPROVE_MODE.read_text())
 
 
 if __name__ == "__main__":

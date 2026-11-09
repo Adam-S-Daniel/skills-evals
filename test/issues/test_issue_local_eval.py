@@ -827,8 +827,10 @@ class TestLocalEval(unittest.TestCase):
                    "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR",
                    # SET by child_environment, never inherited: auto-memory
-                   # off, so no child writes into the real HOME.
-                   "CLAUDE_CODE_DISABLE_AUTO_MEMORY"}
+                   # off, so no child writes into the real HOME; and the
+                   # 5-minute prompt cache rate.
+                   "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+                   "CLAUDE_CODE_PROMPT_CACHE_TTL"}
         proc = self._run(str(EVAL_DIR), "--trials", "1",
                          "--registry", f"adam-agentskills={self._registry()}",
                          env_extra={"SOME_UNLISTED_VAR": "1",
@@ -842,6 +844,7 @@ class TestLocalEval(unittest.TestCase):
                 for name in ("SOME_UNLISTED_VAR", "CLAUDECODE"):
                     self.assertNotIn(name, call["env_names"])
                 self.assertIn("CLAUDE_CODE_DISABLE_AUTO_MEMORY", call["env_names"])
+                self.assertIn("CLAUDE_CODE_PROMPT_CACHE_TTL", call["env_names"])
                 if call["role"] in ("version", "judge"):
                     # these inherit the wrapper's whole environment
                     extra = {n for n in call["env_names"]
@@ -1190,13 +1193,13 @@ class TestLocalEval(unittest.TestCase):
         proc = self._run(str(skill_dir), "--trials", "2", "--no-judge",
                          "--registry", f"adam-agentskills={registry}")
         aggregate = self._assert_clean(
-            proc, 2, ["bootstrap", "existing-convention", "supersede",
-                      "why-no-comment-trail"])
+            proc, 2, ["bootstrap", "existing-convention", "pr-body-outgrows-itself",
+                      "supersede", "why-no-comment-trail"])
         self.assertNotIn("arms", aggregate, "several fixtures: no single `arms`")
         self.assertEqual(
             [f["name"] for f in self._json("manifest.json")["fixtures"]],
-            ["bootstrap", "existing-convention", "supersede",
-             "why-no-comment-trail"])
+            ["bootstrap", "existing-convention", "pr-body-outgrows-itself",
+             "supersede", "why-no-comment-trail"])
 
     def test_fixture_selects_one_nested_fixture_of_a_skill_directory(self):
         skill_dir = REPO_ROOT / "evals" / "writing-adrs"

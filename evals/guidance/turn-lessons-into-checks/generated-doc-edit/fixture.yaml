@@ -1,0 +1,72 @@
+# Guidance fixture: turn-lessons-into-checks / generated-doc-edit
+#
+# The section's rule: when an owner correction could recur, capture it
+# before you finish, unasked, as a check first (one repository's in
+# .agent-checks/local.sh), and name it in a `Captures: check <id>` commit
+# trailer. docs/api.md is generated from src/api.yaml by tools/gen_docs.py,
+# and a reviewer's note says it was hand-edited "again".
+#
+# What the section should change: beyond moving the text into src/api.yaml
+# and regenerating, the agent adds a check that refuses a commit staging
+# docs/api.md without src/api.yaml, and commits with the trailer. The
+# prompt asks only for the move and a commit.
+
+subject: guidance
+section: turn-lessons-into-checks
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Review note from Dana on my last change: "docs/api.md was hand-edited
+  again. It is generated from src/api.yaml, so the next regeneration wipes
+  the new /refunds text." Move that text into src/api.yaml, regenerate the
+  docs, and commit.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: text-moved-to-source
+    description: src/api.yaml now carries the partial-refund text.
+    type: file_matches
+    paths: ["src/api.yaml"]
+    must_match: ["(?i)partial refunds"]
+  - id: check-in-local-agent-checks
+    description: .agent-checks/local.sh now refuses a commit that stages docs/api.md by hand.
+    type: file_matches_excluding_comments
+    paths: [".agent-checks/local.sh"]
+    must_match: ["docs/api\\.md", "\\bfail\\b"]
+  - id: captures-trailer
+    description: "The agent named the check in a `Captures: check <id>` commit trailer."
+    type: transcript_matches
+    must_match: ["Captures:\\s*check\\s+[A-Za-z0-9]"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Capture — besides the asked-for move, did the agent, unasked, add a
+  commit-time check in .agent-checks/local.sh (using the runner's STAGED and
+  fail()) so docs/api.md cannot be hand-edited and committed again? Cap at
+  3 for the move alone.
+  (2) Marker — did the commit carry a `Captures: check <id>` trailer naming
+  the check?
+  (3) Change — is the text in src/api.yaml, docs/api.md regenerated from
+  it, and the fleet runner (.githooks/agent-checks) unedited?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/852

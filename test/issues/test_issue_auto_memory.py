@@ -34,6 +34,8 @@ import run_eval  # noqa: E402
 from scorers import judge  # noqa: E402
 
 FLAG = "CLAUDE_CODE_DISABLE_AUTO_MEMORY"
+TTL = "CLAUDE_CODE_PROMPT_CACHE_TTL"
+SUBAGENT = "CLAUDE_CODE_SUBAGENT_MODEL"
 
 STAND_IN = f"""#!{sys.executable}
 import json, os, pathlib
@@ -128,13 +130,29 @@ class AutoMemoryIsOffForEverySession(unittest.TestCase):
 
 class ForcedEnvIsSetNotInherited(unittest.TestCase):
     def test_the_forced_value_is_the_cli_off_switch(self):
-        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1"})
+        self.assertEqual(guidance.CLI_FORCED_ENV, {FLAG: "1", TTL: "5m"})
 
     def test_cli_child_env_overrides_and_copies(self):
-        parent = {"PATH": "/bin", FLAG: "0"}
+        parent = {"PATH": "/bin", FLAG: "0", TTL: "1h"}
         env = guidance.cli_child_env(parent)
-        self.assertEqual(env, {"PATH": "/bin", FLAG: "1"})
+        self.assertEqual(env, {"PATH": "/bin", FLAG: "1", TTL: "5m"})
         self.assertEqual(parent[FLAG], "0")
+
+    def test_the_subagent_model_never_reaches_a_child(self):
+        # Set in the cloud environments on 2026-11-08: forwarded, it would
+        # put an Opus arm's subagents on another model than earlier runs'.
+        self.assertEqual(guidance.CLI_DROPPED_ENV, (SUBAGENT,))
+        parent = {"PATH": "/bin", SUBAGENT: "sonnet"}
+        self.assertNotIn(SUBAGENT, guidance.cli_child_env(parent))
+        self.assertEqual(parent[SUBAGENT], "sonnet", "the caller's mapping was mutated")
+        with mock.patch.dict(os.environ, {SUBAGENT: "sonnet"}, clear=False):
+            self.assertNotIn(SUBAGENT, guidance.cli_child_env())
+            # a skill arm's allowlist forwards every CLAUDE_ name
+            forwarded = run_eval.agent_env(Path(tempfile.mkdtemp()), None)
+            self.assertEqual(forwarded[SUBAGENT], "sonnet")
+            arm = guidance.cli_child_env(forwarded)
+            self.assertNotIn(SUBAGENT, arm)
+            self.assertNotIn(SUBAGENT, local_eval.child_environment(dict(os.environ)))
 
     def test_cli_child_env_defaults_to_this_process(self):
         with mock.patch.dict(os.environ, {"AUTOMEM_PROBE": "x"}, clear=False):
@@ -145,7 +163,9 @@ class ForcedEnvIsSetNotInherited(unittest.TestCase):
     def test_local_eval_child_environment(self):
         for parent in ({}, {FLAG: "0"}, {"PATH": "/bin", "HOME": "/h"}):
             with self.subTest(parent=parent):
-                self.assertEqual(local_eval.child_environment(parent)[FLAG], "1")
+                child = local_eval.child_environment(parent)
+                self.assertEqual(child[FLAG], "1")
+                self.assertEqual(child[TTL], "5m")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 import subprocess
@@ -23,6 +24,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "harness"))
 import context as harness_context  # noqa: E402
+sys.path.insert(0, str(ROOT / "scripts"))
+import fixture_pr_gate  # noqa: E402
 WORKFLOW = ROOT / ".github/workflows/eval.yml"
 sys.path.insert(0, str(ROOT / "test"))
 from lockfile_pins import lock_problem  # noqa: E402
@@ -56,6 +59,13 @@ REVIEWED = ["evals/embeddable-tool-pages",
             "evals/guidance/two-github-connectors/org-connector-ci",
             "evals/guidance/two-setup-gaps/multi-repo-cloud-session",
             "evals/guidance/finding-your-unknowns/changelog-check",
+            "evals/guidance/turn-lessons-into-checks/recurring-debug-flag",
+            # Harder fixtures, set A (2026-11-07).
+            "evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit",
+            "evals/guidance/git-practices/stale-branch-pull-request",
+            "evals/guidance/watch-finished-is-not-ci-passed/piped-watch-exit-code",
+            "evals/guidance/automation-vs-branch-protection/generated-stats-push",
+            "evals/guidance/subagent-delegation/contradicting-report",
             # Skill fixtures merged hermetic and left off the schedule while
             # the skills-fixture lane was stopped (#62's children): their
             # skills are live in adam-agentskills and cms-platform.
@@ -86,15 +96,21 @@ REVIEWED = ["evals/embeddable-tool-pages",
 #: Set by scripts/scaffold_real_work.py PROMOTED_NOTE; repeated here so this
 #: module imports no harness code.
 PROMOTED_NOTE = "Promoted automatically"
+#: How a fixture pull request's row's note starts (scripts/fixture_pr_gate.py).
+FIXTURE_PR_NOTE = fixture_pr_gate.FIXTURE_PR_NOTE
+
+
+def plan_week_literal(name):
+    """scripts/plan_week.py's literal `name`, read from its AST so this
+    module imports no harness code."""
+    tree = ast.parse((ROOT / "scripts" / "plan_week.py").read_text(encoding="utf-8"))
+    (value,) = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
+                and [getattr(t, "id", None) for t in node.targets] == [name]]
+    return value
 
 
 def bare_trials():
-    """scripts/plan_week.py's literal `BARE_TRIALS`, read from its AST so
-    this module imports no harness code."""
-    tree = ast.parse((ROOT / "scripts" / "plan_week.py").read_text(encoding="utf-8"))
-    (value,) = [node.value.value for node in tree.body if isinstance(node, ast.Assign)
-                and [getattr(t, "id", None) for t in node.targets] == ["BARE_TRIALS"]]
-    return value
+    return plan_week_literal("BARE_TRIALS")
 
 
 def scheduled_rows():
@@ -108,14 +124,49 @@ def scope_paused():
     return {row["path"] for row in doc.get("rows") or []}
 
 
-def promoted_entries():
-    """Scheduled entries outside the reviewed list: each must be one
-    `scaffold_real_work.py promote` appended, carrying its readiness note and
-    naming a `draft: false` fixture. Anything else is not one."""
+def fixture_pr_problem(row, fixture):
+    """Why a scheduled row is not one a fixture pull request appended, or
+    None. Such a row (scripts/fixture_pr_gate.py, the guidance branch of
+    scripts/work_item_issues.py) names a guidance fixture with a valid
+    `origin:` whose `request` is the skills-evals issue its readiness note
+    names, and is not a draft; it needs no `context:` (a guidance fixture runs
+    its own arms against the guidance alone)."""
+    match = re.match(re.escape(FIXTURE_PR_NOTE) + r" for skills-evals#([1-9][0-9]*): \S",
+                     row["readiness"])
+    if match is None:
+        return "readiness note does not start with the fixture pull request note"
+    if fixture.get("subject") != "guidance" or "draft" in fixture:
+        return "not a guidance fixture, or a draft"
+    origin = fixture.get("origin")
+    if fixture_pr_gate.origin_problem(origin, int(match.group(1))) is not None:
+        return "origin is not valid for the issue the note names"
+    return None
+
+
+def fixture_pr_entries():
+    """Scheduled entries a fixture pull request appended (fixture_pr_problem)."""
     reviewed = set(REVIEWED)
     paths = []
     for row in scheduled_rows():
-        if row["path"] in reviewed:
+        if row["path"] in reviewed or not row["readiness"].startswith(FIXTURE_PR_NOTE):
+            continue
+        fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
+        problem = fixture_pr_problem(row, fixture)
+        if problem is not None:
+            raise AssertionError(f"{row['path']}: {problem}")
+        paths.append(row["path"])
+    return paths
+
+
+def promoted_entries():
+    """Scheduled entries outside the reviewed list and the fixture pull
+    requests' rows: each must be one `scaffold_real_work.py promote`
+    appended, carrying its readiness note and naming a `draft: false`
+    fixture. Anything else is not one."""
+    reviewed = set(REVIEWED)
+    paths = []
+    for row in scheduled_rows():
+        if row["path"] in reviewed or row["readiness"].startswith(FIXTURE_PR_NOTE):
             continue
         fixture = yaml.safe_load((ROOT / row["path"] / "fixture.yaml").read_text(encoding="utf-8"))
         # A drafted skill's fixture (scripts/contextualize_fixtures.py) has no
@@ -147,7 +198,8 @@ def promoted_context_problem(fixture):
 #: plus any promoted ones (Adam, 2026-10-26: fixtures are promoted with no
 #: human in the loop; 2026-11-03: the scope pass pauses and resumes by rule,
 #: and a resume re-appends at the end, so order is the file's own).
-EXPECTED_SET = (set(REVIEWED) - scope_paused()) | set(promoted_entries())
+EXPECTED_SET = ((set(REVIEWED) - scope_paused()) | set(promoted_entries())
+                | set(fixture_pr_entries()))
 EXPECTED = [row["path"] for row in scheduled_rows()]
 #: The manual-dispatch default. It left the schedule on 2026-11-03 (listed in
 #: unscheduled.yml) but stays a committed fixture, which is all a dispatch needs.
@@ -173,6 +225,36 @@ def doc():
 
 def step(job, name):
     return next(s for s in doc()["jobs"][job]["steps"] if s["name"] == name)
+
+
+class TestFixturePullRequestRows(unittest.TestCase):
+    ORIGIN = {"kind": "invented", "source": None,
+              "request": f"{fixture_pr_gate.REQUEST_PREFIX}853"}
+
+    def fixture(self, **overrides):
+        return {"subject": "guidance", "section": "agent-contribution-markers",
+                "origin": dict(self.ORIGIN), **overrides}
+
+    def row(self, note=f"{FIXTURE_PR_NOTE} for skills-evals#853: a marker-less reply."):
+        return {"path": "evals/guidance/agent-contribution-markers/x", "readiness": note}
+
+    def test_a_guidance_fixture_with_its_issues_origin_is_accepted(self):
+        self.assertIsNone(fixture_pr_problem(self.row(), self.fixture()))
+
+    def test_the_rule_rejects_every_other_shape(self):
+        other = {**self.ORIGIN, "request": f"{fixture_pr_gate.REQUEST_PREFIX}852"}
+        for row, fixture in (
+                (self.row("Added by hand: a marker-less reply."), self.fixture()),
+                (self.row(f"{FIXTURE_PR_NOTE}: no issue named."), self.fixture()),
+                (self.row(), self.fixture(origin=other)),
+                (self.row(), self.fixture(origin=None)),
+                (self.row(), self.fixture(draft=False)),
+                (self.row(), {**self.fixture(subject="skill"), "skill": "writing-adrs"})):
+            with self.subTest(row=row["readiness"], fixture=fixture):
+                self.assertIsNotNone(fixture_pr_problem(row, fixture))
+
+    def test_every_fixture_pull_request_row_is_not_also_a_promoted_row(self):
+        self.assertFalse(set(fixture_pr_entries()) & set(promoted_entries()))
 
 
 class TestPromotedRowsCarryProvableContext(unittest.TestCase):
@@ -370,7 +452,8 @@ class TestScheduledFixtures(unittest.TestCase):
                     "eval": {"contents": "read", "id-token": "write"},
                     "publish": {"contents": "write"},
                     "roster": {"contents": "read", "id-token": "write", "issues": "write"},
-                    "disarm": {"contents": "read", "pull-requests": "write"},
+                    # `contents: write`: GitHub refuses --disable-auto without it.
+                    "disarm": {"contents": "write", "pull-requests": "write"},
                     "roster-pr": {"contents": "read", "pull-requests": "write", "issues": "write"},
                     "roster-wait": {"contents": "read", "pull-requests": "write"},
                     "failure-watch": {"issues": "write"}}
@@ -676,7 +759,11 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
         plan_step = next(s for s in jobs["plan"]["steps"] if s.get("id") == "plan")
         self.assertIn("python3 scripts/plan_week.py plan --results-tree eval-results-branch",
                       plan_step["run"])
-        self.assertIn("--max-fires 30", plan_step["run"])
+        self.assertIn("--max-fires 60", plan_step["run"])
+        # The planner refuses a cap above MAX_FIRES_CAP, which failed every
+        # plan when the flag was raised alone (2026-11-07).
+        cap = int(re.search(r"--max-fires (\d+)", plan_step["run"]).group(1))
+        self.assertTrue(1 <= cap <= plan_week_literal("MAX_FIRES_CAP"), cap)
         self.assertEqual(plan_step["env"], {"GH_TOKEN": "${{ github.token }}"})
         steps = jobs["dispatch"]["steps"]
         names = [s["name"] for s in steps]
@@ -685,7 +772,7 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                  names.index("Dispatch the validated fire"),
                  names.index("Space the next fire")]
         self.assertEqual(order, sorted(order))
-        self.assertEqual(steps[order[3]]["run"], "sleep 60")
+        self.assertEqual(steps[order[3]]["run"], "sleep 400")
         fire = steps[order[2]]
         wait = steps[order[1]]
         # A full cap skips the fire and its spacing; the sweep's legs share
@@ -799,7 +886,23 @@ class WeeklyRoutineCallerTests(unittest.TestCase):
                                       "--raw-field", "model=claude-opus-5-5",
                                       "--raw-field", "arms=bare",
                                       "--raw-field", f"trials={bare_trials()}"])
-        for arms in ("", "with", "without", "both bare"):
+        # A guidance cell not leaning toward removal fires its in-situ pair
+        # alone (owner, 2026-11-03), at one trial: the harness refuses more for a
+        # guidance fixture.
+        guidance = "evals/guidance/anything-you-name-gets-its-link/handoff"
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "in-situ", "FIXTURE": guidance,
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-8:], ["--raw-field", "fixture=" + guidance,
+                                      "--raw-field", "model=claude-opus-5-5",
+                                      "--raw-field", "arms=in-situ",
+                                      "--raw-field", "trials=1"])
+        # A guidance cell leaning toward removal fires `both`, still at one.
+        result, sent = self.dispatch({"MODE": "eval", "ARMS": "both", "FIXTURE": guidance,
+                                      "MODEL": "claude-opus-5-5"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sent[-2:], ["--raw-field", "trials=1"])
+        for arms in ("", "with", "without", "both bare", "in-situ both"):
             with self.subTest(arms=arms):
                 result, sent = self.dispatch({"MODE": "eval", "ARMS": arms,
                                               "FIXTURE": EXPECTED[0], "MODEL": "m"})

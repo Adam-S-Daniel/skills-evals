@@ -1,9 +1,12 @@
 # ADR 0014: A skill removal pull request merges automatically, with no human review
 
-- **Status:** accepted (2026-10-26); auto mode is wired and committed
-  (`retirement_mode: auto`, second addendum below). A removal still merges
-  only once the improvement gate's GitHub App secrets are set in
-  skills-evals; until then the workflow falls back to `proposal`.
+- **Status:** accepted (2026-10-26); auto mode is wired (second addendum
+  below), but both blocks of `evals/gate-policy.yml` commit
+  `retirement_mode: proposal` since Adam's 2026-11-03 "Resume, auto-removal
+  off", pending his decision on the betting-bound rule (last addendum
+  below). In `auto`, a removal merges only once the improvement gate's
+  GitHub App secrets are set in skills-evals; until then the workflow falls
+  back to `proposal`.
 - **Issue:** [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)
   (part 2; part 1, the verdict, is
   [#411](https://github.com/Adam-S-Daniel/skills-evals/pull/411)).
@@ -74,7 +77,7 @@ compute_gates lets one skill retire per evaluation (harness/gates.py).
    (the registry's citation test would fail; removing `skills-doctor` today
    is one, through `.claude/hooks/skills-bootstrap.sh`). A refusal exits 2
    and writes nothing, so the run goes red and a human removes the skill.
-6. In `retirement_mode: proposal` (the committed value), a `retire` verdict
+6. In `retirement_mode: proposal`, a `retire` verdict
    files or updates one skills-evals issue instead, and a human removes.
    One issue per skill, ever: only issues `github-actions[bot]` opened
    count, and a closed one means the skill is already decided, so nothing
@@ -123,7 +126,8 @@ slot check still looks only at `retire-skill/*`.
 Adam decided on 2026-10-26 that skill and section removal pull requests
 auto-merge with no human. `evals/gate-policy.yml` now commits
 `retirement_mode: auto` for skills (the one switch; set it to `proposal` to
-stop removal pull requests), and `skill-coverage.yml`'s `retirement` job
+stop removal pull requests, and, since the 2026-11-03 withdrawal addendum,
+to disarm the ones already open), and `skill-coverage.yml`'s `retirement` job
 wires it. The guidance block stays `proposal`: the App below is installed on
 adam-agentskills alone, and _agent-guidance has no write path yet.
 
@@ -210,3 +214,1450 @@ text-only skill changes addendum: a removal falls back to the issue only
 when plugin-runtime-review would hold it (the skill has its own `hooks/`
 or `bin/`, or a hook of its plugin names a path in it), not for every skill
 of a plugin that has hooks. Adam, 2026-11-03: "Yes, auto-merge them."
+
+
+## Betting-bound addendum (2026-11-03)
+
+A statistics review of the gate on 2026-11-03 found the removal bound
+invalid at the run counts where it decided. It was a normal-mixture
+confidence sequence over run means whose variance came from a prior, so
+four identical runs per arm read as certainty and removed a skill, and a
+subject that helped by exactly the margin was removed 15-53% of the time
+against a 5% target. It also found that cells at the ceiling decided
+removals they could not show, that a guidance section's older strata were
+weighted toward removal, and that the judge, having to agree to a removal,
+blocked it for good wherever its call was skipped. Adam turned removals to
+proposals that day ("Resume, auto-removal off"). A threshold sweep the same
+day simulated replacements on the real outcome shapes. What
+`harness/gates.py` now does, with the levels the sweep chose:
+
+- The bound is a betting confidence sequence on the paired per-fire
+  difference D = with minus without (Waudby-Smith and Ramdas, aGRAPA bets
+  capped at 0.9 of the safe stake). It needs no variance prior and is valid
+  at every pair count.
+- Keep when the subject's keep test shows D above 0 at 80%, the alpha split
+  over its cells (Bonferroni). A cell shows no benefit when its test shows
+  D below 0.15 at 90%. Removal is the silent, unchecked error, so it keeps
+  the stricter level.
+- A cell whose without arm a betting bound at 90% shows above 1 minus
+  the margin is `ceiling`: it does not vote, the planner stops firing it
+  and asks for a harder fixture (without blocking the subject's other
+  cells), and a subject whose every cell is at the ceiling is `ceiling`. A
+  harm test (D below 0 at 90%) runs wherever the without arm is high, so a
+  cell the skill makes worse is `no-benefit`, never hidden as a ceiling.
+- A cell undecided after 40 pairs is `no-clear-effect`.
+- The judge is reported and does not vote, and single checks no longer
+  keep on their own.
+- Cells decide on current content only: for a guidance section, the runs
+  beside the current rest of the guidance. Older strata are ignored.
+- The first bet starts from a prior learned from other subjects' earlier
+  pairs, which changes how soon a cell decides but not the bound's level.
+
+What this addendum changes about removal: **an automatic removal needs at
+least two cells with headroom, every one no-benefit.** A `retire` verdict
+with one headroom cell, with any `no-clear-effect` cell, or with any
+`ceiling` cell, carries `removal: proposal`, and `scripts/retire_skill.py`
+files the issue for it even in `auto` mode; it re-derives the mode from the
+cells and lowers a gates file whose `removal: auto` the cells do not
+support. A broken-fixture cell may stand beside a removal, but at least
+one cell must have headroom. The 2026-11-02
+addendum's per-route keep and its 85% level are superseded, as is its
+note that both blocks commit `auto`. Whether removals go back to `auto`
+under this rule, or stay proposals only, is Adam's decision, still
+pending; `retirement_mode` stays a policy knob at `proposal` until he
+makes it.
+
+### Adversarial round 1 (2026-11-03)
+
+An adversarial review of the change before merge found that a ceiling was
+judged on a sample mean over three pairs, so three perfect pairs parked a
+cell for good and let two flat cells remove the subject automatically. A
+cell is now `ceiling` only when a betting bound on the without arm's run
+means, at the remove level, shows the mean above 1 minus the margin (at
+least 18 pairs at 1.0, 25 at 0.95; 0.90 does not reject inside the cap),
+and any retire verdict that includes a ceiling cell is a proposal. A harm
+test at high cells keeps a harmful cell from hiding as a ceiling. The
+planner no longer lets a parked cell block its subject, and the cheaper
+model no longer holds the dearer one when the cheaper cell is stuck.
+Known limits it left:
+
+- *Late arrivals and prior refits re-sort a cell* (m2). A cell is
+  re-classified over every run each evaluation, so a run ingested late, or
+  a bet prior refit on newer results, can move the pair at which a test
+  rejects and so its class. Each evaluation is still a valid test at its
+  level, and the seeded simulations' rejection rates stay under alpha, but
+  the sequence of verdicts a cell shows over time is not itself one
+  sequential test.
+- *In-situ guidance errored trials do not block* (m5). A guidance cell's
+  agent-errored trial scores 0 and does not keep the cell from removal, as
+  a skill's does: the section is measured beside the whole guidance, where
+  an agent failure is part of the outcome. It is a deliberate asymmetry, not
+  a guarantee that errors only help keep.
+- *Each guidance edit resets the evidence* (m6). A cell decides only on runs
+  beside the current rest of the guidance, so an edit to any other section
+  starts every in-situ cell over. A frequently edited guidance file may
+  never let a section accumulate the 18 or more pairs a decision needs.
+  *Addressed for keeping, 2026-11-07* (the "Pooled-rest addendum" below): a
+  cell now pools every rest's pairs at equal weight, so an edit elsewhere no
+  longer resets the keep test's evidence (the pooled keep counts once the
+  current rest has 6 pairs; such a keep is provisional, round 2). A removal
+  still needs pairs beside the current rest (at least 6, and enough for
+  that rest's own evidence to reach 90%), so an edit still delays a
+  removal, by design.
+- *The current keeps restart as insufficient* (m7). The 8 subjects kept
+  under the old bound (4 skills and 4 guidance sections) had 1 to 3 pairs
+  per cell. A valid bound needs 4 to 17 pairs to keep, depending on the
+  effect size, and 18 to remove identical arms, so each returns to
+  `insufficient` and is measured again rather than carrying a keep the new
+  bound cannot support.
+
+### Adversarial round 2 (2026-11-03)
+
+The second round found that round 1's CLI rule had opened a worse hole:
+versions were counted only over the pairs up to a test's first crossing,
+which never moves, so a removal first reached inside one Claude Code
+release could never decide, and the planner fired the cell forever. Pairs
+arrive in bursts, and most cells carried one version. A removal (or harm)
+now decides at a stopping time: the first pair at which the test's wealth
+is at its level AND the pairs so far span two versions. Ville's inequality
+bounds that stopping time as it bounds the first crossing, and a late pair
+that knocks the wealth under the level does not decide. A cell whose pairs
+reach the 40-pair cap undecided is no longer fired, and blocks its subject.
+
+It also found that a perfect without arm let the ceiling test park a cell
+at pair 18, before the harm test could show a harm of up to about 0.17. A
+cell now parks as `ceiling` only when a no-harm test (D above minus the
+margin, at 90%) rejects too; equal arms pass it with the ceiling, so the
+clean case costs nothing.
+
+**The budget trade-off (round 2's M2).** A valid ceiling bound costs pairs:
+at 90%, a perfect without arm needs at least 15 and the implementation 18;
+0.95 about 28; 0.90 does not decide inside the cap. 32 cells on the data of
+2026-11-03 sat above 0.85 with 1 to 4 pairs, on the order of 500 to 1,100
+more paired fires for a class that does not vote. So a cell whose without
+arm is above 1 minus the margin and undecided after `max_runs_high_cell`
+(20) pairs stops being fired and ends `ceiling-unconfirmed`: it does not
+vote, a retire verdict beside it is only a proposal, and it becomes a
+fixture-ceiling work item. The cost is that such a cell hides a harm the
+harm test had not shown by pair 20 (about D = -0.15 and milder at a perfect
+without arm); a subject whose cells all end that way is `ceiling`, never
+removed or proposed. That is the price of not spending the batch on cells
+that cannot vote, and only a harder fixture lifts it.
+
+Known limits it left:
+
+- *A second route around errored trials for guidance* (round 2's m3,
+  extending round 1's m5). In-situ guidance cells do not let an
+  agent-errored trial block removal, and with-arm timeouts at a perfect
+  without arm drive D negative, so the harm test, not only the remove test,
+  can reach `no-benefit` on them, and with two such cells an automatic
+  removal.
+- *Keep is compared with the remove test only* (round 2's m5). A cell keeps
+  when the keep test crossed no later than the remove test, even if the
+  harm test crossed earlier still. Both crossing needs D near 0 with errors
+  on both sides, and the order errs toward keep.
+- *Two removal routes per cell* (round 2's m2). `no-benefit` is the union of
+  the remove test and, at high cells, the harm test, so its worst-case
+  level is twice alpha; the simulations found no measurable excess at
+  D at or above the margin, and a harm rejection also shows D below the
+  margin.
+
+### Adversarial round 3 (2026-11-03)
+
+The third round found the stopping-time rule sound and named four gaps,
+fixed here.
+
+**A paused fixture no longer leaves the verdict (C1).** The eval scope pass
+(`scripts/eval_scope.py`) pauses a fixture whose pooled without arm averages
+0.85 or more over four runs, a sample mean the gate had stopped trusting in
+round 1. For a skill, the pause's `evals/unscheduled.yml` row made
+`scripts/compute_gates.py` drop the fixture, so a subject that clearly
+helped on it could be removed automatically through its other cells (the
+reviewer's repro: `keep` became `retire` with `removal: auto`). For
+guidance, a paused fixture's cells stayed `insufficient` with nothing to
+fire them. Now `compute_gates` reads `evals/scope-auto.yml` and the
+`Auto scope (` rows, and keeps a paused fixture's cells:
+
+- a cell that already showed `benefit` keeps it. A keep earned before the
+  pause still counts: the keep test holds its level at whatever pair it
+  stops, and the fixture was in the keep family from the start;
+- any other cell is `paused`, a parked class beside `ceiling` and
+  `ceiling-unconfirmed`. It does not vote, a retire verdict beside it is
+  only a proposal, and `scripts/retire_skill.py`'s re-derivation
+  (`cells_allow_auto`, from `gates.PARKED_CLASSES`) agrees;
+- a subject whose every cell is parked is `ceiling` when each is at the
+  ceiling or paused for the ceiling, and `insufficient` when a floor or
+  zero-use pause leaves nothing measuring it.
+
+The scope pass's own rule, which still pauses on a pooled sample mean, is
+another thread's (round 3's M1); this makes the gate safe whatever it
+pauses. On the results of 2026-11-03 the two guidance sections it had
+paused (watch-finished-is-not-ci-passed, subagent-delegation) are now
+`ceiling` rather than stuck `insufficient`, and 10 skill cells of
+zero-use pauses are `paused`.
+
+**The 20-pair stop needs the no-harm test and some slack (M2).** Round 2's
+`ceiling-unconfirmed` stop read the without arm's sample mean on every
+pair from 20 on. A high cell now stops at `max_runs_high_cell` pairs only
+when the no-harm test (D above minus the margin, at 90%) has rejected AND
+its without arm averages at least 0.90 (`HIGH_STOP_MIN_WITHOUT`). Any other
+high cell is fired on to the cap, where the harm test catches a harm beyond
+the margin and the rest ends on the cap rule (`no-clear-effect`, a
+proposal at most); the remove test still does not decide a high cell. The
+reviewer's `sim_seq3.py` (4 checks per run, 1,000 runs each, versions
+alternating; "parked" is `ceiling` plus `ceiling-unconfirmed`):
+
+| with / without (D) | Before | No-harm gate only | Both (shipped) |
+|---|---|---|---|
+| 0.80 / 0.95 (-0.15): harm parked | 66.4% | 1.1% | 1.1% (94.9% `no-benefit`) |
+| 0.85 / 0.95 (-0.10): harm parked | 92.2% | 15.8% | 16.0% (64.4% `no-benefit`) |
+| 1.0 / 0.82 (+0.18), m = 4: helpful parked | 32.5% | 32.5% | 4.4% |
+| 1.0 / 0.80 (+0.20), m = 4: helpful parked | 17.9% | 17.9% | 1.8% |
+| 1.0 / 0.85 (+0.15), m = 4: parked | 65.2% | 65.2% | 19.2% |
+| 1.0 / 0.88 (+0.12), m = 4: parked | 91.3% | 91.3% | 52.0% |
+| 0.95 / 0.95 (0): parked, mean stop | 100%, 20.0 pairs | 99.7%, 22.0 | 99.5%, 22.1 |
+| 1.0 / 1.0 (0): `ceiling`, mean stop | 100%, 18.0 | 100%, 18.0 | 100%, 18.0 |
+| 0.65 / 0.50 (+0.15): `no-benefit` (the level) | 2.4% | 2.4% | 2.4% |
+
+So the no-harm gate closes the hidden harm and the slack the parked helpful
+cells; the clean case costs about two more pairs. A harm milder than the
+margin can still end parked (16% at D = -0.10): the no-harm test's null is
+D at or below minus the margin, so rejecting there is not an error, and
+that is the trade-off this rule keeps.
+
+**The order rule compares with the removal's stopping time (M3).** A keep
+used to lose to the remove test's first crossing even when that crossing
+never decided (one CLI version), so a cell that went on to show a clear
+gain sat `insufficient` at the cap for good (the reviewer's
+`repro_order_stuck.py`). The keep now loses only to a removal that decided
+first; the keep's own crossing bounds its error either way. In the
+reviewer's `sim_shift.py` (25 flat pairs on one version, then with 0.8
+against 0.5 on a second; 500 runs), cells stuck at the cap after their keep
+test had crossed fell from 3.0% to 0%, and `benefit` rose from 29.4% to
+32.6%.
+
+**An undecided cell at the cap is a work item (M3).** A cell whose 40 pairs
+span one CLI version, or whose test crossed but has not decided, stays
+`insufficient` and unfired. The planner now lists it as a `cell-at-cap`
+work item with the gate's reason (none for a kept subject), where it had
+been a silent dead end, and no longer re-checks a decided cell at the cap,
+whose window a new pair cannot enter (round 3's m5).
+
+**Tests** (`test/issues/test_issue_gate_round3.py`): the scope-drop repro
+for skills and guidance, the pause files, the 20-pair stop's two
+conditions, the order repro, `at_cap` at exactly the cap and through the
+planner (M4), and the surviving mutations [14] and [29]. `plan_week`'s
+literal `PARKED_CLASSES` is pinned to the gate's, since `plan_week`
+imports `gates` only lazily.
+
+Known limits it left:
+
+- *The scope pass still pauses on a pooled sample mean* (M1, m4): the gate
+  now parks what it pauses, so a wrong pause costs a measurement, not a
+  wrong removal, but a ceiling-paused guidance fixture has no planner cell
+  and so no `fixture-ceiling` item.
+- *A cell held at the cap only by `min_cli_versions`* still needs new
+  content or a person; letting it take pairs past the cap was not done.
+
+### Adversarial round 4 (2026-11-03)
+
+The fourth round found no new path to a wrong automatic removal and named
+two gaps in round 3's pause handling, fixed here.
+
+**A pause no longer hides a decided harm, and is not a ceiling by itself
+(M1).** Round 3 turned every non-`benefit` cell of a paused fixture into
+`paused`, including one whose harm test had already decided `no-benefit`,
+and called a subject whose every cell was parked `ceiling` whenever each
+was paused for the ceiling. The scope pass pauses on a pooled sample of the
+without arm over four runs, long before the harm test can decide (about 14
+to 25 pairs), so a harm of any size could end as `ceiling`: never removed or
+proposed, with the planner asking for harder fixtures. Round 3's "this makes
+the gate safe whatever it pauses" and its note that the two paused guidance
+sections were "now `ceiling`" overstated it. Now:
+
+- a decided `no-benefit` cell keeps its class through a pause and votes
+  (`PAUSE_KEEPS_CLASS`): its test was at its level at its stopping time,
+  and the pause only stopped the firing. With no parked cell beside it, a
+  removal it supports may be automatic, as it would be without the pause;
+- a subject whose every cell is parked is `ceiling` only when each cell
+  shows the ceiling on its own runs (`_shows_ceiling`): a ceiling class, or
+  a cell paused for the ceiling whose class before the pause was a ceiling
+  class, or whose no-harm test had rejected with a without arm averaging at
+  least `HIGH_STOP_MIN_WITHOUT` (0.90). Otherwise it is `insufficient`,
+  marked `unmeasured`, and `scripts/plan_week.py` lists a
+  `paused-unmeasured` work item for it: a paused fixture is off
+  `evals/scheduled.yml`, so it has no planner cell and no `fixture-ceiling`
+  item.
+
+The reviewer's `repro_paused_harm.py`, before and after:
+
+| Case | Before | After |
+|---|---|---|
+| Harmful (with 50, without 95), 40 pairs a model, paused | `ceiling` | `retire`, auto (cells `no-benefit`, as unpaused) |
+| Harmful, paused after 2 pairs a model | `ceiling` | `insufficient` |
+| One model 99/99, the other 75/75, paused | `ceiling` | `retire`, proposal |
+| Harmful fixture a paused, flat fixture b | `retire`, proposal | `retire`, auto (a's harm now votes) |
+
+On the results of 2026-11-03 (`cf913560`) with this branch's evals as of
+round 4, the two guidance sections that read `ceiling`
+(watch-finished-is-not-ci-passed, subagent-delegation) now read
+`insufficient`: their paused cells were `insufficient` before the pause.
+With main merged, the scope pass no longer pauses either.
+
+**`compute` is pinned end to end (M2).** Nothing ran
+`compute_gates.compute` over an `evals/` tree with a pause, so reverting
+its `keep_paused=True` brought round 3's C1 back with every test green. A
+test now builds a temporary tree (two fixtures, a `scope-auto.yml` row and
+an `Auto scope (ceiling)` row for the one that helps) and asserts a kept
+skill stays `keep`, and a pause before the keep leaves a proposal, not
+`auto`. It fails with the call flipped to `keep_paused=False`.
+
+**The minors.**
+
+- *m1:* `fixture-ceiling`, `cell-at-cap` and `paused-unmeasured` items are
+  routed `summary` (`plan_week.SUMMARY_ROUTE`), not `issue`: the sweep's
+  step summary counts them and its plan JSON lists them, and
+  `scripts/work_item_issues.py` files no issue for them. Round 3's "where it
+  had been a silent dead end" overstated what changed: a capped cell is a
+  count in the step summary, not an issue. Filing them would need a marker,
+  a closing rule and a privacy review per kind; the smaller change makes the
+  route say where they go.
+- *m2:* a keep at or before the removal's stopping time wins over a harm
+  the harm test decides later (a test pins it). The keep's own crossing
+  bounds its error. The reviewer's other ordering, a keep that crosses
+  after a decided harm, did not arise in the shapes tried: the remove test
+  (null D at or above the margin) decided at or before the harm test (null
+  D at or above 0), and a keep after the removal's stopping time already
+  loses to it.
+- *m4:* `plan_week` turns a malformed `evals/scope-auto.yml` or
+  `evals/unscheduled.yml` into a PlanError,
+  "evals/unscheduled.yml or evals/scope-auto.yml is malformed", on its
+  guidance path as on its skill path.
+
+Known limits it left:
+
+- *Pauses are read from the tree, not as of `--as-of`* (m3): a past
+  evaluation repeated after a pause or a resume gives its paused fixtures'
+  cells the current classes. `evals/` was already read from the tree, so
+  this adds no new kind of drift.
+- *A pause outlives the content it measured* (m5): a `ceiling` or `floor`
+  pause resumes only when the fixture's digest changes, not the tested
+  skill or section, or the guidance rest. After an edit, a paused fixture's
+  cells are `paused` (from `missing`) until someone resumes it; this can
+  never free a removal (a parked cell vetoes `auto`), but it is a slow loss
+  of measurement, which the `paused-unmeasured` item names only when every
+  cell of the subject is parked. The scope pass's rules are its own
+  thread's to change.
+- *A paused fixture's decided `no-benefit` is final:* no new pair can reach
+  it to let a later keep compete, as for any cell whose window is frozen.
+
+### Adversarial round 5 (2026-11-03)
+
+The fifth round found no path to a wrong automatic removal and three gaps
+in round 4's fixes, fixed here.
+
+- *M1:* `gates.guidance_verdict` copied `removal` and `removal_reason` from
+  the in-situ verdict but not `unmeasured`, so no guidance section, the
+  kind that motivated round 4, ever got a `paused-unmeasured` item. It
+  copies `unmeasured` too; a test runs a fully paused section through
+  `guidance_verdict` into `plan_week.unmeasured_items`.
+- *m1:* `_shows_ceiling` ignored a harm test that had crossed (`harm_at`
+  set), so a cell with 18 clean pairs then 8 harm pairs on one CLI version
+  read `ceiling` once paused, though unpaused it is `insufficient`. It now
+  returns False for such a cell, as `_classify` orders harm before ceiling.
+- *m2:* a test fails when `plan_week.gather` stops handing
+  `unmeasured_items` to the plan.
+- *m3:* the `class_before_pause` branch of `_shows_ceiling` is kept. Deleting
+  it leaves the 8-module set green (601 passed), but the report called it
+  only near-equivalent, so a unit test names its contract instead.
+
+### Adversarial round 6 (2026-11-03)
+
+The sixth round found no path to a wrong automatic removal (a 5,400-subject
+fuzz of pauses found none) and two Major gaps, both off the removal side.
+
+- *M1:* a skill whose every fixture the scope pass paused, on cells that
+  show the ceiling on their own runs, was `ceiling` with no work item: a
+  paused fixture has no planner cell, and with all of them paused the skill
+  was not in `skill_contexts`, so no `needs-harder-fixtures` item either.
+  A `ceiling` verdict with a `paused` cell among its cells is now marked
+  `paused_ceiling` (a separate flag, since `unmeasured` says "no fixture is
+  measuring the subject", which is untrue here), `guidance_verdict` copies
+  it, and `plan_week.paused_ceiling_items` lists a `paused-ceiling` work
+  item (change type `fixture`, summary-routed, no issue) asking for the
+  harder fixture. `skill_contexts` still drops paused fixtures. An
+  end-to-end test runs the reviewer's input through `compute` and the
+  planner.
+- *M2:* text merged from main said a skill fixture's pause drops its cells
+  from the gate (how-it-works, the `eval_scope.py` docstring and comment,
+  and the resume reason the pass prints into its pull request). On this
+  branch the gate keeps them, parked. All four now say so; the keep guard
+  is redundant for safety and keeps a kept subject's fixtures measured.
+- *m1, m2:* tests pin `_shows_ceiling` at exactly `HIGH_STOP_MIN_WITHOUT`
+  (`>=`) and that a paused `no-clear-effect` cell stays `paused`.
+- *m3:* "undecided harm leaves the subject `insufficient`" held only when
+  every cell is parked; beside decided `no-benefit` cells it is a `retire`
+  proposal. how-it-works and `gate-policy.yml` say both.
+
+### Adversarial round 7 (2026-11-03)
+
+The seventh round again found no path to a wrong automatic removal (7,800
+fuzzed subjects, six new invariants held) and two Major findings off the
+removal side.
+
+- *M1:* main's trigger lane judged "owned by retirement" from
+  `skill_contexts`, which drops scope-paused fixtures that the gate keeps. A
+  zero-use skill with every fixture paused and decided `no-benefit` cells was
+  `retire` (even `auto`) in the gate yet got a trigger-only improve fire or a
+  `needs-trigger-set` issue. `trigger_items` now reads the verdict from the
+  gates document (`gate_verdicts`, handed over by `gather`) and also skips a
+  skill with an open `retire-skill/<skill>` PR. A test runs the reviewer's
+  input through `compute_gates.compute`.
+- *M2:* how-it-works listed the issue-filed kinds without
+  `needs-trigger-set`; a test holds the list equal to
+  `work_item_issues.KINDS`.
+- *m1, m3:* `gather`'s hand-over of `paused_ceiling_items` is pinned by
+  running `plan_week.main("plan", ...)` with the function patched, and the
+  item's fixtures filter (paused cells only) by a unit test.
+- *m2 (known limit, routing unchanged):* `paused-ceiling` items are
+  summary-only. No issue is filed, so the fixture queue and the fleet
+  worker's fixture pass never see them; the step summary count and the plan
+  JSON are the only record.
+
+### Adversarial round 8 (2026-11-03)
+
+The eighth round again found no path to a wrong automatic removal (round 7's
+fuzz rerun over 7,800 subjects, plus a new cross-lane fuzz of 300) and one
+Major finding off the removal side.
+
+- *M1:* `improve_items` appended a `needs-fixtures` agent-ready issue before it
+  checked "owned by retirement", so a `retire` skill with fewer than
+  `MIN_IMPROVE_FIXTURES` fixtures (more often after a scope pause drops one)
+  fed the fleet worker's fixture queue, and `fixture-pr-gate.yml` could
+  auto-merge fixtures for a skill the gate was retiring. It could not change
+  the verdict. One helper, `retirement_owner`, now decides ownership for the
+  improve, trim and trigger lanes: the gates document's verdict when `gather`
+  supplied it, `retire` and `retire-pending` own the skill, and so does an open
+  removal PR. The `needs-fixtures` and `needs-harder-fixtures` items consult it
+  too. A test runs the reviewer's rows through `compute_gates.compute`.
+- *m1:* the improve and description-trim lanes now skip a skill with an open
+  `retire-skill/<skill>` PR, as the trigger lane does; a test each.
+- *m2:* a test sends `retire-pending` through `gate_verdicts` to the trigger
+  lane, killing the surviving mutation that narrowed the guard to `retire`.
+- *Known limit, to be solved before `retirement_mode: auto`:* an open automatic
+  removal PR is never withdrawn if the verdict later leaves `retire`.
+  `retire_skill.py` has no close path, so an armed `retire-skill/<skill>` PR
+  whose required checks fail stays armed, and a roster or fixture change that
+  makes the subject `insufficient` would not stop it merging on a re-run of
+  its checks. Unreachable today (`retirement_mode: proposal`); the fix is to
+  re-read the verdict in the PR's checks or have the coverage job disarm and
+  close the PR.
+
+### Adversarial round 9 (2026-11-03)
+
+The ninth round found no path to a wrong automatic removal (round 8's lane fuzz
+clean over 150 trials, a new context-level fuzz over 10,000 subjects) and three
+minor findings.
+
+- *m1:* the guidance half of `improve_items` filed `needs-fixtures` and
+  `needs-harder-fixtures` agent-ready issues for a section with an open
+  `retire-guidance/<section>` PR, because it judged ownership from the verdict
+  alone (pre-existing on main). `retirement_owner` now takes
+  `subject="guidance"` and reads the section's verdict and
+  `guidance_removal_prs`, so a section is owned the same way a skill is, and its
+  status says "owned by retirement (open removal PR)". The fuzz now finds no
+  guidance violation; tests with a no-PR control.
+- *m2:* a test pins that an open removal PR suppresses a skill's
+  `needs-harder-fixtures` item (verdict `insufficient`, four fixtures, headroom
+  0.05), killing the surviving mutation that narrowed that guard to the verdict.
+- *m3:* `plan_week.py`'s improve rules and `how-it-works.md` now say what the
+  code does: retirement owns a subject when its verdict is `retire` or
+  `retire-pending` or a removal PR is open, and an owned subject gets no
+  `needs-fixtures` or `needs-harder-fixtures` item.
+
+### Round 8's known limit: stale removals are withdrawn (2026-11-03)
+
+The limit round 8 recorded, an open automatic removal pull request never
+withdrawn once its verdict leaves `retire`, is addressed by the second fix
+that round named: the coverage job, and now every ingest, disarm and close
+the pull request. `scripts/retire_skill.py --withdraw-stale` runs for skills,
+then with `--target guidance` for sections, in two places:
+
+- before each pass of `skill-coverage.yml`'s daily `retirement` job;
+- after every ingest, in `loop-pr-refresh.yml`'s `withdraw` job (the
+  `workflow_run` trigger that refresh already used), which recomputes the
+  verdicts as the retirement job does.
+
+Each pass is its own step and runs unless the run was cancelled, so a failure
+in one (no token, a failed call) never skips the other pass or an act step;
+the failed step still fails the job.
+
+**What it touches.** An open pull request whose head is `retire-skill/` or
+`retire-guidance/`, that carries `agent-authored`, and whose author is the
+eval-improve App's bot (`LOOP_AUTHOR`, `skills-evals-improve[bot]`). One
+labeled `on-hold` is left alone. Every agent-authored pull request in the
+fleet carries the label, so the author is what tells a loop removal from one
+a person or an agent opened by hand.
+
+**When it withdraws.** It re-reads the subject's current verdict
+(`removal_support`). It withdraws when that verdict no longer supports an
+automatic removal: not `retire` (an `insufficient` verdict included, such
+as every cell on a roster model just added), or a `retire` lowered to a
+proposal (the `removal` field and `proposal_only` must agree on `auto`; for
+a section, `guidance_proposal_only`, which also re-checks the section-alone
+pair, as `guidance_plan` does). A `retire-pending`
+whose `raw_verdict` is a supported `retire` keeps its pull request:
+`compute_gates.finalize` demotes every confirmed subject but one per
+evaluation, which ranks it and says nothing against it.
+
+**A loop withdrawal is a pause, not a decision (2026-11-04).** Rounds 3 to 5
+of PR #740 found that a permanent withdrawal forced ever more machinery: an
+`incomplete` state for data still being measured, a re-arm, a
+`loop-disarmed` label and a head-commit check, each round's fix opening new
+holes. The root was that a withdrawal decided the subject for good, so any
+verdict that was merely in flux (a roster model just added, a cell not yet
+measured) had to be kept apart from one that had really turned. Instead, a
+withdrawal now only pauses the removal: the pass labels the pull request
+`loop-withdrawn` before it closes it, and a closed, unmerged removal that
+carries that label, was opened by `LOOP_AUTHOR` AND was closed by
+`LOOP_AUTHOR` does not decide its subject (`loop_withdrawn`, read by
+`closed_removal_prs` and `guidance_closed_removal_prs`; `closed_by` comes
+from `GET repos/{repo}/issues/{n}`, since the pulls listing lacks it). When the verdict supports an automatic
+removal again, the retirement job opens a fresh pull request. Incomplete
+data is therefore simply stale and withdraws, and nothing re-arms.
+
+**Oscillation is bounded.** A subject whose verdict moves back and forth is
+withdrawn and opened again, at most once per daily retirement run, each time
+with its own comment, retirement-issue comment and removal notice. Round 6's
+R6-6 modeled 9 to 15 removals in 30 days when the removal's checks never
+pass, so after `MAX_LOOP_PAUSES` (3) pauses for a subject the retirement job
+files or updates its proposal issue instead of opening a removal, and a
+person decides. No removal merges while its verdict does not support it.
+
+**The steps, in order.** A withdrawal turns auto-merge off and reads it back,
+adds `loop-withdrawn` and reads it back (round 6's R6-4), files the subject's
+retirement issue (the proposal path's marker and issue) or comments on the
+oldest open one (its body and evidence are kept), then comments the new
+verdict, why and the override on the pull request, closes it, and deletes
+its branch. Every step before the close that fails leaves the pull request
+open for the next pass, so a withdrawal is never closed without its issue
+(PR #740 round 5's R5-4) or without its label: a closed one without the
+label would decide the subject. In `auto` mode an open removal whose
+verdict still supports it but which carries `loop-withdrawn`, or whose
+auto-merge the listing shows off (opened before the verdicts' `as_of`, read
+again before acting, and turned off by the loop itself: round 7's R7-3,
+below), is a withdrawal that stopped part way, and the
+pass finishes it as a pause (R6-2); otherwise it would sit open and
+disarmed, holding the one loop slot. In `proposal` mode it is only
+disarmed. The retirement issue says what closing it means: in `auto` mode
+nothing reads one the withdrawal filed until the pause cap (R7-4, below), so
+it tells a person to close the removal pull request instead (R6-7); a
+closed proposal issue declines at once (round 8's R8-1, below).
+When adding the label fails and the repository's labels (`gh label list
+--search`) lack it, the pass runs `gh label create loop-withdrawn --force`
+and retries once; any other failure creates nothing. GitHub lets an
+installation token with `pull-requests: write` create a label (`POST
+/repos/{owner}/{repo}/labels` is listed under both the Issues and the Pull
+requests permission in "Permissions required for GitHub Apps"). Any open removal notice (#557) for the subject
+is then closed as not planned and commented on, in that order, so a failure
+never leaves an open notice whose comment says it is closed; that step is
+best effort (PR #724 round 2's R2-3 and R2-6).
+
+**No branch outlives its pull request (round 6's R6-5 and R6-11).** Round 5
+kept the branch and replaced it at the reopen with a forced, leased push,
+which the fleet's rules forbid ("never force-push shared branches"; a branch
+that outlives its pull requests is `persistent/<purpose>`). Instead, after
+the close, the pass deletes the branch with `git push
+--force-with-lease=refs/heads/<branch>:<head> <url> :refs/heads/<branch>`,
+`<head>` being the closed pull request's head commit. The server applies the
+delete only while the ref still holds that commit, so a commit anyone pushed
+since keeps the branch. The withdraw mints therefore hold `contents: write`
+again. A failed delete is best effort: the status line names only the
+error's type, and the pause stands. A fresh removal then pushes plainly
+(`default_push` reads the remote branch first and refuses one that exists,
+for a person to restore or delete, unless it is a failed delete's leftover:
+round 7's R7-2, below; nothing pushes over a commit). The refresh in
+`loop-pr-refresh.yml` pushes its merge leased on the head it fetched, so it
+never recreates a branch a withdrawal deleted.
+
+**Who decides.** A closed removal decides its subject when it merged, when a
+person closed it (labeled or not: round 6's R6-1 and R6-3 found a label
+left by a withdrawal that stopped part way, or added by a triager, would
+otherwise turn a person's close into a pause), when its closer cannot be
+read, or when a person removed `loop-withdrawn` from a withdrawn one: a
+closed loop removal without the label is read conservatively as declined.
+So a person declines a withdrawn removal for good by removing that label, or
+by closing the next removal themselves.
+
+**Only verdicts newer than its basis withdraw.** A removal pull request's
+body records the results it was opened on, on its first line: "Removes ...
+is **retire** as of `<as_of>` (". Only that line's first stamp counts, and
+a basis later than the pull request's own `created_at` is ignored. A pass
+keeps it when that basis is later than the pass's own `as_of` (the results
+commit's time), and judges it otherwise, the same results included. A body
+with no parseable basis falls back to the pull request's `created_at`: one
+created later than `as_of` is kept, and so is one whose creation time or
+`as_of` is missing or unparseable (round 2's R2-1). Without this, an ingest
+pass that started on older results could close a removal the retirement job
+had just opened on newer ones. The `withdraw` job
+in `loop-pr-refresh.yml` also has its own concurrency group with
+`cancel-in-progress: false`, so two ingest passes never withdraw the same
+pull request twice (R2-2). The group is not shared with the retirement job,
+whose pending daily pass a newer run would otherwise cancel, so a daily pass
+and an ingest pass can still overlap.
+
+**Unknown data never withdraws.** That covers a missing or unreadable gates
+document, no guidance block, a subject the document does not list (so an
+empty or partial block withdraws nothing), a verdict that raised in
+`compute_gates.py` (`VERDICT_RAISED`), and a `retire` that fails the
+re-check.
+
+**The one switch.** While a target's mode is `proposal`, a loop removal
+that is not withdrawn is disarmed instead: auto-merge is turned off and read
+back, the pull request stays open, and it gets one comment. Nothing turns
+it back on: a person merges it by hand or closes it. That comment
+(`DISARMED_MARKER`) also keeps an `auto`-mode pass from finishing it as a
+part-way withdrawal once the mode is back to `auto` (R7-3), when it follows
+the latest disable (R8-2); a failed one is posted by the next `proposal`
+pass (R8-3). Setting
+`retirement_mode` (or `guidance: retirement_mode`) to `proposal` therefore
+stops removal pull requests from merging on their own, including those
+already open and armed.
+
+**The refresh.** `loop-pr-refresh.yml` merges the base into a `retire-skill/`
+or `retire-guidance/` pull request only when `refresh_loop_prs.py
+removal-check` finds its verdict still supported and the mode `auto`. With
+the verdicts unknown, it refreshes none. A refresh therefore never re-runs
+the checks of a removal that should not merge.
+
+**What remains.** A removal is armed with `--match-head-commit`
+(`execute` and `guidance_execute`), which the code passes only when it turns
+auto-merge on. This round did not verify whether GitHub also enforces that
+commit at merge time, so the design assumes it does not: a removal that is
+still armed can merge at any check run until a pass reaches it. That window
+now runs from one ingest to the end of that ingest's `withdraw` job, not to
+the next daily run. A re-run of a red check on a stale pull request inside
+that window is not covered. Two more windows are not covered either (round
+2's R2-4):
+
+- (a) The retirement job withdraws before it acts, on the same verdicts. A
+  removal it opens on verdicts an ingest has already superseded (the ingest's
+  `withdraw` job listed pull requests before this one existed) is armed, its
+  checks run on their own, and nothing re-reads its verdict until the next
+  ingest's `withdraw` job or the next daily run.
+- (b) Verdict inputs that change on main, not on the results branch
+  (`evals/roster.yml`, `evals/gate-policy.yml`, `evals/scope-auto.yml`,
+  `evals/unscheduled.yml`; eval-scope.yml's pull requests auto-merge), trigger
+  no withdrawal. A removal they make stale is withdrawn at the next ingest or
+  daily run. Until then, the refresh still re-checks the verdict before it
+  brings a removal up to date, so it never re-runs that removal's checks.
+- (c) The daily `retirement` job and an ingest's `withdraw` job run in
+  different concurrency groups, so their passes can overlap. In that overlap
+  both can withdraw one pull request (two comments, two retirement-issue
+  comments). Since a withdrawal only pauses the removal, the cost is noise.
+
+One pull request's failure, of any kind, does not stop the pass: the other
+items still act, every status line is printed (an unexpected error by its
+type only, never its text), and the step then fails. A pass that only keeps
+pull requests makes no call with the App token, so it needs none.
+
+**The override.** To remove a subject anyway, a person removes
+`agent-authored` (the pull request is then not the loop's and no pass
+touches it), restores the branch from the pull request page, then reopens
+it and merges it by hand.
+
+**Round 7 (2026-11-04).** Six minor findings, each fixed with a test that
+fails without it:
+
+- *A person's close during a withdrawal (R7-1).* `gh pr close` exits 0 on a
+  pull request already closed, so after its close the pass reads `closed_by`
+  again. Anyone but `LOOP_AUTHOR`, or no closer at all, decides the subject:
+  the branch is kept, the status line says it decides, and a correction is
+  posted on the pull request and the retirement issue, whose earlier text
+  called it a pause. An unreadable closer keeps the branch as well.
+- *A failed delete stranded the subject (R7-2).* The closed listing now
+  carries each removal's head (`sha`), and the plan passes the paused
+  removals' heads to `default_push`. A branch whose tip is one of them, when
+  every closed removal from it is a loop pause, is a failed delete's
+  leftover: the leased delete is retried and the push is plain. A delete
+  whose branch is already gone (read with `git ls-remote`, not from the
+  error text) counts as deleted. The comment and the issue now say the
+  branch "will be" deleted, since they go out before the delete.
+- *A person's disarm was read as a part-way withdrawal (R7-3).* A
+  `disarmed` candidate is finished only when the latest
+  `auto_merge_disabled` event on its timeline (`GET
+  repos/{r}/issues/{n}/timeline`, every page) is `LOOP_AUTHOR`'s. The
+  proposal switch disarms with the same App, so a pull request that App
+  commented `DISARMED_MARKER` on is excluded too: that comment is what the
+  switch already writes, so no new marker or label was added. An unreadable
+  timeline keeps the pull request. A person who turns auto-merge off by hand
+  therefore holds the removal, as `on-hold` does.
+- *The pause cap (R7-4).* The first time the cap reaches an open retirement
+  issue, the job comments there, mentioning the owner (a body edit sends no
+  notification); the body carries `CAP_MARKER`, so it comments once. The
+  `auto`-mode issue text now says closing it declines nothing only until the
+  cap, after which a closed issue declines the removal. Nothing lowers the
+  count, so the way back after the cap is a person's, and the simplest
+  honest one was chosen: take over the last withdrawn removal (remove
+  `agent-authored`, restore the branch, reopen and merge by hand), or close
+  the issue to decline. No resume mechanism was added.
+- *Docs (R7-5).* The refresh now checks `git merge-base --is-ancestor` on the
+  fetched head before its leased push, so it is fast-forward only by check,
+  not only by construction; its header and the AGENTS.md row say "fast-forward
+  only, leased" instead of "never a force-push", and the row names the
+  withdraw job's branch delete and its mints' `contents: write`.
+- *A null `closed_by` (R7-6)* is pinned by a test: GitHub returns null for
+  some closes, and such a close decides.
+
+**Round 8 (2026-11-04).** One major finding and six minor ones, each fixed
+with a test that fails without it:
+
+- *A declined proposal was ignored in `auto` mode (R8-1, major).* Auto mode
+  files the proposal issue too: for a `removal: proposal` verdict, a run with
+  no write token, and every run while the mode was `proposal`. A person who
+  closed that issue had declined the removal, as a closed issue decides a
+  proposal, but the auto path read only closed removal pull requests, so the
+  subject was removed once the reason for the proposal went away. The
+  proposal path now stamps the issue it files (`PROPOSAL_STAMP`) and the
+  withdrawal path stamps the one it files (`WITHDRAWAL_STAMP`). In `auto`
+  mode a closed `github-actions[bot]` issue with the proposal stamp decides
+  the subject, for skills and sections, whatever else is open; a closed
+  withdrawal issue declines nothing until the pause cap, as before. A
+  withdrawal that comments on an open proposal issue leaves its body, and so
+  its stamp, as it is, and the comment says closing it declines. An issue
+  with neither stamp predates them and counts as a proposal: until this
+  change the committed mode was `proposal`, in which closing it declined, so
+  that reading keeps a person's decline, and its only possible error is a
+  removal not opened, never one opened against a decline. No such issue
+  existed when this was written.
+- *A stale disarm marker held a removal forever (R8-2).* Only a
+  `DISARMED_MARKER` comment after the latest `auto_merge_disabled` event (in
+  timeline order) holds it. One from an earlier disarm that a person undid
+  by re-arming says nothing about the latest one.
+- *A failed disarm comment was never retried (R8-3).* A `proposal` pass that
+  finds a removal already unarmed, whose latest disable is the App's with no
+  marker after it, posts the missing comment. The gap left: if the mode goes
+  back to `auto` before such a pass, the removal is finished as a pause and
+  a fresh, armed one opens the next day.
+- *The cap comment could be lost (R8-4).* It is now posted before the body
+  edit that records `CAP_MARKER`, so a failed comment is retried on the next
+  run (at worst a failed edit repeats it).
+- *A held guidance removal failed the job daily (R8-5).* An open
+  `retire-guidance/` pull request now makes the guidance pass return `none`
+  (exit 0), as an open loop pull request does for skills.
+- *Test gaps (R8-6).* Tests now pin the re-read after a retried delete, the
+  timeline filter itself through real `jq`, and the paused heads reaching the
+  guidance push.
+- *Docs (R8-7).* The script's docstring and `docs/how-it-works.md` now
+  describe R7-1, R7-3 and the above.
+
+**Round 9 (2026-11-04).** Five minor findings, each fixed with a test that
+fails without it:
+
+- *A decline did not reach a removal already open (R9-1).* A closed proposal
+  issue now stops an open removal: `--withdraw-stale` reads each open loop
+  removal's subject's retirement issues, and when `declined` finds a closed
+  proposal (stamped, or legacy) it turns auto-merge off and closes the
+  removal as a decision, in either mode and whatever the verdict. The closed
+  removal carries no `loop-withdrawn` label, so it decides the subject too;
+  its branch is kept; no withdrawal issue is filed (its text would say
+  closing it declines nothing), and the closed issue gets a comment and
+  stays closed. An unreadable issue list fails that item and writes nothing.
+  When a removal opens while a proposal issue is open, that issue gets a
+  comment linking it, since its body said no removal is opened. A removal
+  that merges before the next withdrawal pass is beyond a decline; it is
+  reverted.
+- *A same-second disarm comment could lose the switch's hold (R9-2).* The
+  timeline read now carries `created_at`, and a `DISARMED_MARKER` comment
+  counts as after the latest disable when its time is equal or later,
+  whichever order the timeline lists them in. Order decides only when a time
+  is missing.
+- *Test gaps (R9-3).* Tests now pin a body with both stamps reading as a
+  proposal, and a closed proposal declining beside a paused removal, for
+  skills and sections.
+- *Docs (R9-4).* The script's docstring, `docs/how-it-works.md`, this record
+  and the two workflow headers describe the above; the retirement job's
+  header no longer says a disarmed removal is finished as a pause without
+  the timeline hold.
+- *A closed withdrawal issue suppressed the proposal (R9-5).* While `auto`
+  is lowered to a proposal short of the pause cap, a closed issue the
+  withdrawal path filed no longer counts as already decided: a fresh
+  proposal issue is filed, so a person gets a decline to make. In
+  `proposal` mode, and at the cap, any closed issue still decides.
+
+**Round 10 (2026-11-04).** Six minor findings, each fixed with a test that
+fails without it:
+
+- *A decline on a labeled removal read as a pause (R10-1).* A withdrawal
+  that stopped part way leaves `loop-withdrawn` on, and a decline closed the
+  removal with it, so the closed removal read as a pause and counted toward
+  the cap. The decline now takes the label off and reads it back before it
+  closes; a label that stays on fails the item and leaves the removal open.
+  Without the label the closed removal decides the subject, so no later
+  removal pushes to its branch, which is therefore kept. We fixed the code,
+  not the docs, because the docs described the outcome the decline exists
+  for.
+- *The decline overrode a person's re-arm, and its comments overpromised
+  (R10-2).* Any close of a proposal or legacy issue still declines,
+  whatever its `state_reason`, and this is now documented. A person's
+  re-arm is now handled by round 12's single rule (below), which replaced
+  the comparison with the issue's `closed_at` made here (round 13 brought
+  that comparison back, inside the single rule). The decline's
+  comments now say the closed removal decides the subject and reopening the
+  issue does not resume the loop, which is what happens.
+- *The lowered path ignored the pause cap (R10-3).* `deciding_issues` now
+  takes the subject's pause count, and at `MAX_LOOP_PAUSES` any closed
+  retirement issue decides on the lowered path too. At the cap, a subject a
+  closed issue decides gets `none` once its cap comment is out or no issue
+  is open (narrowed in round 11's R11-1, below).
+- *A refresh could merge a failed decline (R10-4).* `refresh_allowed` now
+  reads the subject's retirement issues and refuses a removal a closed
+  proposal declines, and refuses when the list cannot be read. The refresh
+  job reads them with `issues: read`.
+- *The branch conflicted with `main` in AGENTS.md (R10-5).* `main` was
+  merged in with a merge commit, keeping its text and re-applying this
+  branch's line changes; the file stays under 32,768 bytes.
+- *Test gaps (R10-6).* Tests now pin the URL check on a decline and an
+  unreadable item, the Actions check on a decline-only pass, the guidance
+  removal's note on its open proposal issue, and an unreadable issue list
+  in that note being named, not raised.
+
+**Round 11 (2026-11-04, skills-evals#758).** Four minor findings, none able
+to remove a subject against a person's decision; each fixed with a test
+that fails without it:
+
+- *A subject at the cap was decided with no notice (R11-1).* A person who
+  closed a withdrawal-filed issue before the cap, when its text said closing
+  it declined nothing until the cap, made every later `auto` pass at the cap
+  return `none`, with no cap comment on the open issue the next withdrawal
+  filed. So the owner was never told the loop stopped, and round 10's "no
+  cap comment asks the owner again" was false: none had asked. The cap
+  comment is now owed (`cap_owed`) while an issue is open and none of the
+  subject's issues records `CAP_MARKER`; the open issue then gets it, once,
+  even beside a closed issue. After that, or with no issue open, a closed
+  issue decides with no comment, as round 10 intended. The lowered path
+  got the same guarantee in round 12 (R12-1).
+- *A person's re-arm protected more than the close (R11-2), and in
+  `proposal` mode a hand re-arm did not last (R11-3).* Round 11 answered
+  these with two more comparisons (`person_rearm` against the issue's
+  close, `switch_rearm` against the loop's last disarm). Round 12 found
+  defects in both and replaced them with one rule (below); neither
+  comparison is left.
+- *Test gaps (R11-4).* Tests now kill round 11's mutants 15 (the re-arm read
+  on an unarmed removal: a person's re-arm and then their hold is declined)
+  and 25 (the decline's dry-run listing names the unlabel and its read-back).
+
+**Round 12 (2026-11-04, skills-evals#758): one rule for a person's arm.**
+Five minor findings; four came from three rounds of special cases for a
+person who turns auto-merge on again (R12-2: the switch disarmed a person's
+arm that followed their own hold, and a transient timeline error turned
+the override into a permanent decline; R12-3: an overridden decline that
+then withdrew filed an issue saying closing it declines nothing, which was
+false; R12-4: the refresh refused every re-armed removal, so a conflicting
+one could never merge; R12-5: an arm made before the switch to `proposal`
+survived it). Each comparison of times answered one case and broke another,
+so they are replaced by one rule, used everywhere:
+
+- *A person's arm in force.* A removal pull request that is armed for
+  auto-merge now, and whose latest `auto_merge_enabled` timeline event (by
+  `created_at`) has an actor other than `LOOP_AUTHOR`, belongs to that
+  person (`persons_arm`; round 13 requires that actor to be a `User`).
+- *What the loop leaves alone.* For such a removal the withdrawal pass does
+  not decline it (a closed proposal issue), disarm it (the `proposal`
+  switch) or withdraw it (a stale verdict, or a withdrawal that stopped
+  part way); it logs `left #N for a person: armed by a person`. Round 13
+  narrowed the decline: the arm wins over it only when it is strictly
+  later than the issue's close. The loop
+  never caps an open removal: the retirement job only waits while one is
+  open.
+- *Refresh.* `refresh_allowed` (`removal-check --number`) refreshes it
+  whatever its verdict, mode or issue, so it can still merge (round 13:
+  not when a close no earlier than the arm declines it).
+- *Unknown data.* An unreadable timeline, no event, a missing or
+  unparseable time on any arm, a removal that is not armed (the loop's own
+  disarm included) or one the loop armed last is not a person's arm in
+  force: the loop acts as it would without the rule, so unknown data still
+  leans toward disarming or declining.
+
+So R12-5's case is now intended: an arm a person made before the owner
+switched to `proposal` is still a person's arm, and the switch, which
+exists so that no removal merges without a person, leaves it. A person who
+wants it stopped turns its auto-merge off or closes it.
+
+- *The cap comment was posted again after a lowered pass (R12-1).* A pass
+  lowered to a proposal at the cap (a failed token mint, or a `removal:
+  proposal` verdict) rewrote the open issue's body without the cap note,
+  erasing `CAP_MARKER`, so the next `auto` pass @-mentioned the owner again.
+  The lowered path at the cap now goes through `cap_notice` too: the body it
+  writes keeps the note, and it posts the comment itself when it is still
+  owed. The comment is posted once per subject on every path.
+
+**Round 13 (2026-11-04): the latest person action wins, and a person is a
+`User`.** One major finding and two minor ones, each fixed with a test that
+fails without it:
+
+- *A close after a person's arm did not decline (R13-1, major).* Round 12's
+  rule ignored order: a person who armed a removal and then closed its
+  proposal issue left it armed, the refresh allowed it, and it merged
+  against the later decision, while the issue texts still said closing the
+  issue declines it. Now the latest person action wins, for the decline
+  only: when a closed proposal or legacy issue declines a subject and a
+  person's arm is in force, the arm wins only when its `created_at` is
+  strictly later than the issue's `closed_at` (the latest close, when
+  several decline). A tie, or a time missing or unparseable on either side,
+  and the decline wins. The issue listing reads `closed_at` again and
+  `declined` carries it. `refresh_allowed` applies the same comparison: it
+  refuses when a later close declines, and refuses when the issue list
+  cannot be read. The `proposal` switch and a stale verdict keep round 12's
+  plain rule: a person's arm in force is left alone, whenever it was made.
+  The issue-facing texts (`open_proposal_note`, `withdrawal_issue`, the
+  decline's comments) state the rule (`LATEST_WINS`).
+- *A bot's arm counted as a person's (R13-2).* `persons_arm` asked only
+  "not `LOOP_AUTHOR`", so any other App or bot (`github-actions[bot]`, the
+  loop App under a new slug) or a deleted account could hold a removal open
+  against a decline and a `keep` verdict. `ARMS_JQ` now reads
+  `.actor.type`, and an arm is a person's only when its type is `User` and
+  its login is neither `LOOP_AUTHOR` nor `ghost` (`_a_persons`). A `Bot`, an
+  `Organization`, a missing type or a missing login is not a person.
+- *Test gaps (R13-3).* Tests now kill round 13's mutants 11 (a
+  `shorten-or-merge` counted pauses and got the cap note) and 13 (the
+  person's-arm exception reached before the head's subject check). Mutant
+  12 (the refresh's URL built with the skills repository for a guidance
+  removal) is equivalent: `withdraw_commands` takes the repository from the
+  target and only the number from the URL, so no test can tell them apart.
+  Mutant 2 is equivalent too.
+
+**Accepted (round 6's R6-8).** A step that fails after the issue is written
+leaves a duplicate retirement-issue comment (and, after the PR comment, a
+duplicate PR comment) when the next pass converges; a person who closes the
+fresh retirement issue between those passes gets a second one filed.
+
+The decision is `withdrawal_decision`, a pure function; the tests are in
+`test/issues/test_issue_removal_withdrawal.py`. `retirement_mode` stays
+`proposal`, and switching it remains Adam's decision.
+
+
+## Pooled-rest addendum (2026-11-07)
+
+**The decision.** Adam chose "Pool + removal guard" on 2026-11-07 (15:52
+UTC). From 2026-11-03 an in-situ guidance cell read only the runs beside the
+current rest of the guidance (base.md without the section). One base.md
+edit on 2026-11-04 then discarded 494 of 498 in-situ arms, and known limit
+m6 above became the gate's main cost.
+
+**What changed.** The guidance block of `evals/gate-policy.yml` gains two
+optional keys, read only there:
+
+- `rest_policy`: `pooled-with-current-guard` (committed, and the default) or
+  `current` (the 2026-11-03 rule, reproduced exactly). Any other value
+  fails the policy load and names both choices.
+- `rest_guard_min_pairs`: 6, an integer from 1 to `max_runs_per_cell`.
+
+Under `pooled-with-current-guard`, `harness/gates.py` behaves as follows
+(module docstring, IN-SITU GUIDANCE CELLS and THE CURRENT-REST GUARD):
+
+- A cell pools runs beside every rest. It keeps the rest of today's key: the
+  with arm's tested digest, the fixture digest, the model, and no fleet
+  hook set. Only the rest digest is relaxed.
+- A with run and a without run pair only within one rest, so D still
+  compares two arms beside the same rest. All pairs then form one betting
+  sequence in time order, each at equal weight.
+- Each rest's window holds its first 40 pairs. The cell is at its cap when
+  the current rest's window is full, so older pairs never freeze it.
+- The keep is two tests, each at half the cell's keep alpha, and the
+  earlier crossing keeps. By Bonferroni the cell still keeps at its share of
+  `benefit_confidence`:
+  - The pooled keep test reads every pair. It counts only from the pair at
+    which the current rest has `rest_guard_min_pairs` (6) pairs (Adam,
+    2026-11-07). An older rest alone never keeps; such a cell stays
+    `insufficient` and is fired.
+  - A keep test over the current rest's pairs alone lets a section that
+    helps today keep, whatever the older rests showed.
+- With no older pair in the window, the cell is a `current` cell (round 4
+  below): one keep test at the full keep alpha.
+- A keep the pooled test made is not final (rounds 2 to 4 below). A
+  removal on the current rest's evidence overrides it, and at the current
+  rest's cap it lapses: the cell ends on the current rest's own rules. A
+  keep the current-rest test made is final when it crossed no later than
+  the removal, as under `current`.
+
+**Why equal weighting is not the flaw the review found.** The 2026-11-03
+review removed an inverse-variance weighting across strata. It gave the
+most weight to the strata with the least spread, which are the constant,
+at-ceiling ones where D is about 0. So it leaned toward removal by
+construction. Equal weighting gives every pair one bet in one martingale.
+No stratum gains weight from its spread, and the betting bound's validity
+never depended on weights. What pooling does change is the null hypothesis:
+the pooled test asks whether the section helped across the rests it ran
+beside, not whether it helps beside today's rest. For a keep that error is
+safe only for a while, so a pooled keep is provisional: a section that
+helped beside an older rest and no longer helps keeps once the current rest
+has its 6 pairs, is removed once the current rest's evidence decides, and
+lapses at the current rest's cap (rounds 2 and 3 below; the stale keep
+rows). For a removal the error is not safe, and that is what the guard is
+for.
+
+**The guard: the exact condition.** A `no-benefit` decision by the remove
+test decides at pair n only when all of these hold (round 3 below dropped a
+fourth, the pooled test's own wealth at its level):
+
+1. Of pairs 1..n, at least `rest_guard_min_pairs` are beside the current
+   rest.
+2. Those pairs span `min_cli_versions` CLI versions.
+3. The current rest's removal evidence is at 1/(1 - `retire_confidence`),
+   that is 10. The evidence is the mean of two wealths: the current rest's
+   share of the pooled test's wealth, whose log is the sum of
+   log(1 + lambda_t y_t) over the current rest's pairs, where lambda_t is
+   the bet the pooled test made; and the wealth of the current rest's own
+   remove test, with its own bets over its own pairs, as under `current`
+   (round 2 below).
+
+The remove test counts as crossed where condition 3 first holds; that
+crossing is what rule 7 (no benefit) reads. If it has crossed but
+conditions 1 and 2 have not held at one pair, the cell stays `insufficient`.
+
+A `no-benefit` decision by the harm test decides the same way on its own
+evidence: conditions 1 and 2, and the mean of the harm test's current share
+and the current rest's own harm test at 10 (round 4 below; before it, the
+harm test needed the pooled harm wealth and its share both at 10). It
+counts as crossed where that evidence first reaches 10; that crossing is
+what rule 4 (harm at a high cell) reads. If it has not crossed, the cell
+falls through to the current rest's ceiling, high-cell and cap rules. A
+crossing made by older rests alone therefore never holds a cell (round 1
+below).
+
+A cell with no older pair in its window is classified exactly as a
+`current` cell (round 4): one keep test at the full keep alpha, no pair
+floor, and no `rest_guard`.
+
+Every other path toward removal reads the current rest only:
+
+- the ceiling, no-harm and high-cell rules (each parks a cell, which can
+  turn a keep in waiting into a proposed removal);
+- the floor (it sets a cell aside, which lets the other cells remove);
+- `no-clear-effect`, which needs the current rest's own 40 pairs.
+
+A `retire`, `retire-pending` or `shorten-or-merge` verdict is built only
+from those cell classes, so it inherits the guard.
+
+**Why this condition.** Each bet lambda_t is fixed by the pairs before t,
+which makes it predictable. So under H0 "the section still helps by at
+least the margin beside the current rest", the current rest's share is a
+nonnegative supermartingale, whatever the older rests showed. By Ville's
+inequality it reaches 10 with probability at most 0.10 at any time. So
+does the current rest's own remove test, and so does the mean of the two,
+which is itself such a supermartingale. A false
+removal against today's rest therefore stays at the gate's own level, with
+the older rests used only to size the bets.
+
+This is a strict form of "the current rest must not contradict the pooled
+bound". The weaker form proposed with the decision fails in simulation.
+That form was the pooled test, 6 current pairs, and a current-only keep
+test at the margin that has not rejected. It removed a section that helps
+by exactly the margin 91% of the time. The current rest's own bound rarely
+excludes the margin in a few pairs, so a guard that only waits for it to
+object almost never fires.
+
+`rest_guard_min_pairs` (6) is a floor under the evidence, which cannot
+reach its level in fewer than 3 pairs. It keeps a removal from resting on a
+single burst of fires beside a rest that has just changed. It is twice
+FLOOR_MIN_RUNS and well under the 16 to 20 pairs a true no-benefit removal
+takes, so it rarely binds on its own.
+
+**Simulation.** `scripts/simulate_rest_guard.py` (seed 20261107, 2,000 runs
+per row) runs the gate's own `_classify` on synthetic pairs. Each arm is one
+run of 10 checks with the without arm at 0.55. The CLI version alternates.
+Bets are neutral. The drift case is 40 older pairs with no gain (the older
+rest already covered the section's content), then up to 40 current pairs
+gaining exactly the margin (0.15). False-removal rates:
+
+| Policy | False-removal rate |
+|---|---|
+| `current` | 0.0070 |
+| `pooled-with-current-guard` | 0.0115 |
+| pooled, no guard | 0.9445 |
+| pooled, light guard (rejected) | 0.9120 |
+
+The target is 0.10. With a current gain of 0.20 after 20 older pairs, the
+guarded rate was 0.0000 against 0.547 with no guard. With the without arm at
+0.70, it was 0.0070 (`current` 0.0015). These are the numbers after the
+round 4 fixes below, the same as after rounds 2 and 3; after round 1 they were
+0.0170 and 0.0110, and before it 0.0165 and 0.0100.
+
+How cells end once the current rest's window is full (500 runs per row, 40
+older pairs). "No clear" is `no-clear-effect`, which can only propose a
+removal. "Stuck" means `insufficient` at the cap, which no more runs can
+move. "Pooled keep alone" is the share of the guarded cells that held a
+keep from the pooled test alone at some pair, and "fired meanwhile" the mean
+current-rest pairs the planner fires for such a cell before its current-rest
+keep crosses, the removal decides, or the window is full. Since round 3 no
+cell keeps on a pooled keep at the cap.
+
+| Case | Policy | Benefit | No-benefit | No clear | Stuck | Pooled keep alone | Fired meanwhile |
+|---|---|---|---|---|---|---|---|
+| Helps today by 0.25, older rest no gain | `current` | 1.000 | 0.000 | 0.000 | 0.000 | | |
+| | pooled, guarded | 1.000 | 0.000 | 0.000 | 0.000 | 0.148 | 4.4 |
+| Helps today by 0.25, older rest harmed by 0.20 | `current` | 1.000 | 0.000 | 0.000 | 0.000 | | |
+| | pooled, guarded | 1.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.0 |
+| Helps today by the margin, older rest no gain | `current` | 0.976 | 0.012 | 0.012 | 0.000 | | |
+| | pooled, guarded | 0.940 | 0.022 | 0.038 | 0.000 | 0.162 | 8.9 |
+| Helps today by the margin, older rest gained 0.30 | `current` | 0.982 | 0.008 | 0.010 | 0.000 | | |
+| | pooled, guarded | 0.958 | 0.000 | 0.042 | 0.000 | 1.000 | 18.3 |
+| No gain today, older rest gained 0.30 (stale keep) | `current` | 0.030 | 0.946 | 0.024 | 0.000 | | |
+| | pooled, guarded | 0.012 | 0.918 | 0.070 | 0.000 | 1.000 | 20.7 |
+| Gains 0.05 today, older rest gained 0.30 (stale keep) | `current` | 0.248 | 0.640 | 0.112 | 0.000 | | |
+| | pooled, guarded | 0.142 | 0.500 | 0.358 | 0.000 | 1.000 | 27.7 |
+| Helps today by 0.10, one rest | `current` | 0.772 | 0.138 | 0.090 | 0.000 | | |
+| | pooled, guarded | 0.772 | 0.138 | 0.090 | 0.000 | 0.000 | 0.0 |
+| Costs 0.30 today, without arm 0.90, older rest gained 0.10 | `current` | 0.000 | 1.000 | 0.000 | 0.000 | | |
+| | pooled, guarded | 0.000 | 1.000 | 0.000 | 0.000 | 0.752 | 1.6 |
+| No gain today (harm null), without arm 0.90, older rest gained 0.10 | `current` | 0.002 | 0.002 | 0.472 | 0.000 | | |
+| | pooled, guarded | 0.002 | 0.002 | 0.472 | 0.000 | 0.976 | 12.2 |
+
+Before the round 1 fixes, the second row's pooled cells were stuck 97% of
+the time (the reviewer's simulation). The third row costs a little keep
+power, because the current-rest keep test runs at half the keep alpha. The
+fourth row is the removal's false rate under a standing pooled keep: none of
+500 was removed, and the 4.2% whose current-rest keep never crossed end
+`no-clear-effect` at the cap, a proposal (round 3: an older rest alone
+never keeps). The last two rows are stale keeps. Round 1 kept every one;
+round 2 removed most of the first but kept 39% of the second at the cap
+(the round 3 reviewer); now none keeps on the older rest, and the share
+`current` would keep, 14 to 25%, is what the current-rest keep test at half
+the keep alpha keeps. The last three rows are round 4's: a cell with one
+rest now classifies exactly as under `current`; a section that costs 0.30
+today at a high without arm (where only the harm test removes) is removed
+every time after older gains; and at the harm test's null (no gain today)
+the false harm removal is 0.002, as under `current`. The rest of those
+cells end `ceiling` or `ceiling-unconfirmed`.
+
+A true no-benefit section (no gain beside any rest) is removed after a
+median number of current-rest pairs (500 runs per row):
+
+| Older pairs | `current` | `pooled-with-current-guard` |
+|---|---|---|
+| 0 | 21 pairs (96.0% removed within the cap) | 21 pairs (96.0%) |
+| 20 | 20 pairs (95.0%) | 19 pairs (97.4%) |
+| 40 | 20 pairs (95.0%) | 19 pairs (97.4%) |
+
+So pooling buys keeps, and speeds a removal only a little, through better
+first bets. A removal still costs about as many current-rest pairs as before.
+That is the price of keeping the removal level against today's rest.
+
+**Outputs.** A pooled cell adds three fields:
+
+- `current_rest_pairs`: its window's pairs beside the current rest, which
+  the cap counts.
+- `rests`.
+- `rest_guard`, which holds:
+  - `usable_current_rest_pairs`: the current-rest pairs with a run mean on
+    both arms, which the guard counts;
+  - whether the pair floor is met;
+  - the levels the current rest's shares reached, and the pair at which
+    each share crossed;
+  - the pooled remove, harm and keep crossings, and the current-rest keep
+    crossing;
+  - round 2's fields: `keep_final` (false for a keep the pooled test made
+    alone), `current_remove_at` and `remove_evidence_at` (the current
+    rest's own remove test's and the removal evidence's first crossings),
+    and round 3's `remove_evidence_confidence`, the level the evidence
+    reached. `no_help_confidence` and `remove_share_at` still report the
+    share alone. (Round 2 also had `override_decided_at`; round 3 made the
+    override the removal itself and dropped it.)
+
+The objective block's `remove_at` stays the pooled crossing, for display.
+`keep_tests` has two routes, each p doubled. `pairs` still counts every pair
+the cell holds, and `at_cap` is the current rest's.
+
+The explorer's `current_text_runs`, which `_agent-guidance`'s
+eval-protection gate reads, is unchanged in code and keeps its meaning:
+with-arm runs on the subject's current text. A pooled cell's with arm holds
+runs on the section's current text beside every rest, so an edit elsewhere
+in base.md no longer zeroes it, while an edit to the section still does.
+
+The planner fires a cell whose pooled test leans to removal but whose guard
+is unmet, for as long as the current rest's window has room. Such a cell is
+`insufficient`, and until that window is full it is neither at its cap nor
+blocking. At the cap it ends on the current rest's own rules (benefit,
+ceiling, ceiling-unconfirmed or no-clear-effect). It stays `insufficient`
+there only when a test that did cross has not met conditions 2 and 3 at one
+pair. That happens when the current rest has a single CLI version, as under
+`current`. The planner counts it as a `cell-at-cap` item. A cell's cost to a
+verdict counts `current_rest_pairs` against the cap. Its improve
+evidence pools by the verdict document's `rest_policy`, and reads `current`
+for a document written before the key existed. A cell kept by the pooled
+test alone (`keep_final` false; the planner cell's `provisional_keep`) is
+fired as an undecided guidance cell, in the focus band when its section is
+focused (round 4: its section stays eligible), until its current-rest keep
+crosses or its window is full, unless another cell of its section has a
+final keep. The planner's
+retire progress (the guidance focus and the alone pair) and the explorer's
+`no_help` read a pooled cell's `remove_evidence_confidence`; the planner's
+keep progress and the explorer's `helps` take the best of a pooled cell's
+keep routes (a provisional keep's pooled route left out of the progress),
+and the explorer's pace counts `current_rest_pairs`.
+
+**Switching back.** Set `rest_policy: current` in the guidance block of
+`evals/gate-policy.yml`. The 2026-11-03 rule then applies exactly
+(`test/issues/test_issue_557_stratified_verdict.py` runs under it, and
+`test/issues/test_issue_pooled_rest_guard.py` pins that it adds no field
+and ignores every older rest).
+
+**Review.** This change touches the removal path. Like every change to it,
+it is subject to an independent adversarial round before merge.
+
+### Pooled-rest adversarial round 1 (2026-11-07)
+
+The round found no wrong-removal path. Under adversarial older-rest
+sequences, the worst false-removal rate it measured was 0.0855, against the
+0.10 target. It confirmed that `current` reproduces origin/main exactly on
+400 of 400 cases. It found the following, each now fixed with a test:
+
+- **Stuck evidence (blocker).** A pooled harm or no-benefit crossing made by
+  older rests alone held a cell `insufficient`, through `awaiting`, before
+  the current rest's ceiling, high-cell and cap rules could run. At the
+  current rest's cap the cell froze for good. Two examples: 40 older pairs
+  losing 0.20, then a current rest gaining 0.25, were stuck 97% of the time;
+  a current rest at the ceiling after older harm was stuck 100% of the time.
+
+  A test now counts as crossed only where the pooled wealth and the current
+  share are both at the level, as the guard section above states.
+  Otherwise the cell falls through to the current rest's rules. The
+  current-rest keep test lets a capped cell that helps today end `benefit`
+  rather than `no-clear-effect`.
+- **The keep on older rests (major; Adam's decision).** The pooled keep
+  counts only once the current rest has `rest_guard_min_pairs` pairs, so no
+  section is kept for good on zero current pairs. The two keep routes split
+  the keep alpha in half.
+- **Surviving mutants.** Regression tests now cover four mutants that the
+  first tests did not catch:
+  - the floor reading pooled pass rates;
+  - the no-harm test reading pooled differences;
+  - the cap read from the pooled window (40 older pairs and 3 current pairs
+    on two CLI versions ended `no-clear-effect` on older-rest data);
+  - the pooled-wealth condition dropped from the decision.
+- **Minor fixes.**
+  - The guard's own pair count is renamed `usable_current_rest_pairs`, so
+    it no longer shares a name with the top-level `current_rest_pairs`.
+  - `guidance_verdict`'s docstring is updated.
+  - `_shows_ceiling` reads the current rest's harm share, not the pooled
+    harm crossing.
+  - The reason text of a cell waiting on the guard now says what it is
+    waiting for.
+
+### Pooled-rest adversarial round 2 (2026-11-07)
+
+Adam did not accept a permanent keep for a section that no longer helps
+today: round 1's stale keep row kept 100% of such sections for as long as
+the older rest's pairs stayed in the cell. A pooled keep is now provisional.
+
+- **The override.** If the guarded removal decides at any pair, before or
+  after the pooled keep, `no-benefit` wins over that keep. A keep the
+  current-rest keep test made stays final when it crossed no later than
+  the removal's stopping time, as a `current` cell's keep does.
+- **Why the override as first specified was not enough.** With the override
+  reading the guarded removal alone (pooled wealth and current share at
+  their level, the pair floor, the CLI versions), the stale keep row still
+  kept 99.8% of sections. Forty older pairs gaining 0.30 drive the pooled
+  remove test's bets to about zero, and its running mean recovers too
+  slowly for 40 current pairs to bring the pooled wealth, or the current
+  share it bets, to 10. Two changes close that:
+  - The remove test's current-rest evidence (condition 4) is the mean of
+    the current share's wealth and the wealth of the current rest's own
+    remove test, which bets on the current rest's pairs alone. A mean of
+    two nonnegative supermartingales under "helps by the margin beside
+    today's rest" is one, so Ville's inequality still holds it at 0.10.
+  - Once a pooled keep stands, the override decides when that evidence is
+    at 10 with the pair floor and the CLI versions, without condition 1
+    (the pooled wealth). The pooled wealth is the part older gains can hold
+    down for good.
+- **Why the override adds no false-removal risk beyond the level.** Every
+  removal, guarded or by the override, lies inside the event that the
+  current rest's evidence reaches 10. Under "the section helps by the
+  margin beside today's rest" that event has probability at most 0.10,
+  whatever the older rests showed and whatever the cell kept before. The
+  override only lets that event, rather than the pooled wealth, end a
+  provisional keep. Measured: drift 0.0115 (round 1 0.0170), and 0 of 500
+  in the row that helps by exactly the margin after older gains of 0.30.
+- **The planner.** The override needs current-rest pairs, so a cell kept by
+  the pooled test alone is fired until its current-rest keep crosses or
+  its window is full (40 current pairs). In the simulation that is 15 to
+  16% of the cells that help today (4.4 to 8.9 fires each) and every
+  stale-keep cell (about 21 fires before the removal). The worst case is
+  the full window, 40 current-rest pairs per kept cell. A section with a
+  final keep on another cell is not fired this way.
+- **Sequential check.** On 600 sequences (older gain 0 or 0.30; current
+  gain 0, 0.08 or 0.15), classifying after every current pair never showed a
+  `no-benefit` that the cap reversed, or a final keep that the cap
+  reversed.
+- **Mutation check.** Each of these mutants fails at least one test in
+  `test/issues/test_issue_pooled_rest_guard.py`:
+  - the override removed (the pooled keep final again);
+  - the override reading the guarded removal only;
+  - the removal evidence reduced to the share alone;
+  - a current-rest keep made not final;
+  - the planner not firing a provisional keep, ignoring a final keep on
+    another cell, or never marking a cell provisional, in the helper or in
+    the plan's cells.
+
+  The round 1 mutants are killed too.
+- **Left as they are (Adam, round 2).** The weaker keep at the margin (the
+  half keep alpha) and the cell that stays `insufficient` at its cap because
+  its current rest has a single CLI version.
+
+### Pooled-rest adversarial round 3 (2026-11-07)
+
+The second reviewer found no blocker on round 2. Across 4 seeds and
+adversarial older rests, the worst false removal was 0.0765; the keep level
+stayed at or below 0.142; classification was order-consistent; and
+`current` matched main on 1,500 + 3,000 compared cases. Fixed, each with
+tests:
+
+- **A provisional keep became permanent at the cap (major).** At the
+  current rest's cap no more pairs can test a pooled keep, and the planner
+  stops firing a decided cell there, so round 2 kept it for good. Older
+  gains of 0.30 then a current gain of 0.05 kept 39% at the cap (`current`:
+  27% removed or no-clear-effect). On a single CLI version beside the
+  current rest, 97.3% were kept silently, where `current` gives
+  `insufficient` and a `cell-at-cap` item, which contradicted round 2's
+  "left as they are". A pooled keep now lapses at the cap: the cell ends on
+  the current rest's own rules, and its reason says the pooled keep lapsed.
+  Some sections that help today by the margin after older gains now end
+  `no-clear-effect` at the cap (4.2% in the table), a proposal. That is
+  accepted: an older rest alone never keeps.
+- **One removal rule (m5).** The remove test's decision no longer needs the
+  pooled wealth at its level. That condition added nothing to the level:
+  every removal already lies inside the event that the current rest's
+  evidence reaches 10, with the pair floor and the CLI versions. So a
+  removal with or without a pooled keep before it uses one rule, and
+  round 2's separate override is gone. The harm path keeps the pooled
+  wealth. Drift false removal stayed 0.0115 (target 0.10); with a current
+  gain of 0.20 after 20 older pairs it was 0.0000, and with the without arm
+  at 0.70, 0.0070. The reviewer's adversarial simulation (a current rest
+  at the margin with two-point gains, against older rests from none to 40
+  pairs of +1 or -1), rerun on this code with seeds 7, 8 and 9 at 1,500
+  runs per row, gave a worst false removal of 0.0767, at the cap and at
+  any pair alike; its sequential check found no flips in 150 sequences.
+- **Orderings pinned (m1).** Constructed tests show that a current-rest
+  keep crossing after the removal does not stand (the reviewer's M4), and
+  that a pooled keep crossing after the removal does not undo it (the
+  reviewer's M3, whose code line round 3 removed).
+- **The simulation counts every removal (m2).** `guarded()` reads the
+  earlier of the remove and harm decisions, and the at-cap table reports
+  `no-clear-effect` and the provisional keeps at the cap (none).
+- **The planner and the explorer read the removal evidence (m3, m4).**
+  `rest_guard.remove_evidence_confidence` is the level the evidence
+  reached. The planner's retire progress and the explorer's `no_help` read
+  it for a pooled cell, and the explorer's `helps` takes the best keep
+  route.
+- **Mutation check.** Each of these fails at least one test in
+  `test/issues/test_issue_pooled_rest_guard.py`: the lapse reverted (a
+  pooled keep standing at the cap); the pooled wealth required again for a
+  removal; a current-rest keep after the removal made final; the pooled
+  keep final against a later removal; the remove crossing read from the
+  pooled test; the planner's retire progress, or the explorer's `helps` or
+  `no_help`, reading the pooled figures; and round 2's and round 1's
+  mutants, re-aimed at this code. One survives by design: dropping the
+  pooled wealth from the harm path, which this round kept (the share alone
+  already holds the level, so no test can tell the two apart).
+
+### Pooled-rest adversarial round 4 (2026-11-07)
+
+The third reviewer found no blocker on round 3. The removal level held: the
+worst false removal was 0.0775, and on binomial arms the pooled rule's
+0.0167 compares with `current`'s 0.0117. `current` matched main on 3,000
+and 1,500 compared cases, and the `settings_too_large` failures in
+`test_issue_adr0012_delivery.py` were host-specific. Three majors, all on
+the keep, harm and planner paths, are fixed with tests:
+
+- **Provisional keeps were never fired (M1).** They went to the re-check
+  band, which has no minimum share, so a full focus band (40 sections until
+  the 2026-11-09 reset) starved them. The keep then never lapsed, the
+  section's `keep` blocked the removal of a sibling `no-benefit` cell, and
+  `keep` took the section out of the focus. A provisional keep is now an
+  open cell: `_produces_item` counts it, `verdict_open` keeps its section
+  eligible for the focus and open in the batch while no cell keeps finally,
+  and it is fired in the focus or guidance-rest band. A test fills the
+  focus band with 60 sections and checks with `allocate` that the
+  provisional cell is among the 20 fires.
+- **Keep power with one rest (M2).** With every window pair beside the
+  current rest, the two keep routes were the same test at half the keep
+  alpha each, so 18.7% of cells classified differently from `current`
+  (gain 0.10: 0.533 benefit against 0.777, and four times the removal
+  proposals). Such a cell is now a `current` cell. A differential test over
+  60 random cells checks that the two rules give the same cell, field for
+  field; the simulation's one-rest row matches exactly (0.772 benefit in
+  both).
+- **Harm today was never removed after older gains (M3).** The harm test
+  needed the pooled harm wealth, whose bets older gains hold near zero
+  (older arms 1.0 against 0.6, current arms 0.6 against 0.95: `current`
+  removed at pair 10, the pooled rule never). The harm test now decides
+  as the remove test does, on the mean of its current share and the
+  current rest's own harm test, with the pair floor and the CLI versions.
+  That case now removes at its 12th current pair; the reviewer's noisy
+  variants are removed 100% of the time, as under `current`. At the harm
+  test's null (no gain today, without arm 0.90) the false removal is
+  0.002, the same as `current`.
+- **Minor fixes.**
+  - A pooled keep that a removal overrode or that lapsed reports its
+    route's p as 1, so the explorer no longer shows `helps` near 100% on a
+    retire.
+  - The explorer's pace counts a pooled cell's `current_rest_pairs`.
+  - The planner's keep progress takes the best keep route; the pooled
+    route counts from the pair floor and not at all for a provisional keep.
+  - Every class a lapsed cell ends in says that it lapsed, including the
+    waiting and harm paths.
+  - A constructed tie (the current-rest keep and the removal both at pair
+    37) pins `current_keep <= remove_decided`.
+  - Reading a harm decision in the keep override changed nothing (the harm
+    null is harder to reject than the remove null), so the override reads
+    the remove test alone.
+- **Rerun on this code.** The reviewer's simulations: worst false removal
+  0.0767 (seeds 7 to 9, 1,500 runs per row); binomial arms at the margin,
+  pooled at most 0.0167; harm after older gains removed in every variant.
+  Keep power with older rests is still lower than `current` (gain 0.10:
+  0.567 benefit against 0.743), from the half keep alpha that round 2 left
+  as it is.
+- **Mutation check.** 32 mutants each fail at least one test. They include
+  each round 4 fix reverted, the tie mutant, and the planner and explorer
+  readers. Round 3's harm-path mutant is gone with the pooled-wealth
+  condition it mutated.
+
+### Pooled-rest adversarial round 5 (2026-11-07)
+
+The round 4 review found one major problem, which round 4 itself
+introduced, and three minor ones.
+
+- **A batch stranded a provisional keep.** Round 4 moved provisional keeps
+  from the recheck band to focus or guidance-rest, and both are batch
+  bands. Once a batch is active, a section that a blocking sibling keeps
+  out of it (for example, a cell that is insufficient at its cap on one
+  CLI version) never fired its provisional keep. Its `keep` held forever.
+  Provisional keeps are now exempt from the batch filter, as they were in
+  the recheck band. A test covers an active batch with a blocking sibling.
+- **A scope pause kept a provisional keep.** A paused fixture gets no
+  current-rest runs, so nothing can confirm its keep. A `benefit` cell
+  whose `rest_guard.keep_final` is false is now parked as `paused`, like
+  any other undecided class. A final keep still keeps.
+- **The explorer charted the pooled block.** A pooled cell's gain chart now
+  shows the current rest's own figures: gain, keep bound, remove bound and
+  pairs. Those come from `rest_guard.current_objective`, which uses the
+  current keep route's alpha. Before, a cell that gained 20 points on
+  older rests and none today showed +20.
+- **The harm waiting reason** now names the harm evidence that decides,
+  matching the no-benefit text.
+
+### Pooled-rest adversarial round 6 (2026-11-07)
+
+The round 5 review found four minor problems.
+
+- A paused provisional keep's pooled route now reports p = 1, like the
+  override and lapse paths. Before, the explorer still read the keep's level
+  from it.
+- A cell counts as having one rest when it has no older USABLE pair. An
+  older pair with no run mean adds nothing to pool. Before, 85 of 400 such
+  cells differed from `current`; now none do.
+- The explorer's gain chart row, `keep_pairs`, `no_help_pairs` and
+  `max_pairs` all count a pooled cell's usable current-rest pairs. A pooled
+  cell with no current-rest figure, or a malformed guard, gives no chart
+  row; the chart never falls back to the pooled block.

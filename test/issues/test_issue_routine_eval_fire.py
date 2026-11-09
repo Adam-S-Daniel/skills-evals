@@ -199,7 +199,7 @@ class WorkflowShapeTests(unittest.TestCase):
             self.assertIs(inputs[name]["required"], False)
             self.assertNotIn("default", inputs[name])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["arms"]["options"],
-                         ["both", "with", "without", "bare"])
+                         ["both", "with", "without", "bare", "in-situ"])
         self.assertEqual(on["workflow_dispatch"]["inputs"]["trials"]["options"],
                          ["1", "2", "3"])
 
@@ -449,7 +449,8 @@ class WorkflowShapeTests(unittest.TestCase):
         # pin the gate workflows install; no secret is in this step's reach.
         ids = [s.get("id") for s in self.steps]
         installs = [i for i, s in enumerate(self.steps)
-                    if s.get("run") == "python3 -m pip install pyyaml==6.0.3"]
+                    if s.get("run") == ("python3 -m pip install pyyaml==6.0.3"
+                                        " markdown-it-py==4.2.0")]
         self.assertEqual(len(installs), 1)
         self.assertLess(installs[0], ids.index("validate"))
         self.assertNotIn("env", self.steps[installs[0]])
@@ -472,6 +473,22 @@ def step_script(name: str) -> str:
 
 @unittest.skipUnless(shutil.which("jq") and shutil.which("git"),
                      "needs jq and git on PATH")
+def skills_with_too_few_fixtures() -> list[str]:
+    """Skills under evals/ with one or two nested fixtures, every one naming
+    the skill and the adam-agentskills registry (the routine's)."""
+    found = []
+    for skill_dir in sorted((REPO_ROOT / "evals").iterdir()):
+        fixtures = sorted(skill_dir.glob("*/fixture.yaml"))
+        if not 0 < len(fixtures) < 3:
+            continue
+        docs = [yaml.safe_load(f.read_text(encoding="utf-8")) for f in fixtures]
+        if all(isinstance(d, dict) and d.get("skill") == skill_dir.name
+               and d.get("registry") == "https://github.com/Adam-S-Daniel/adam-agentskills"
+               for d in docs):
+            found.append(skill_dir.name)
+    return found
+
+
 class ValidateStepTests(unittest.TestCase):
 
     def setUp(self):
@@ -680,10 +697,15 @@ class ValidateStepTests(unittest.TestCase):
             # Three nested fixtures, but for adam-agentskills-private.
             "private_registry_skill": {"skill": "adam-writing-style"},
         }, expect="is not an adam-agentskills skill")
-        self._refuse_all(no_holdout, {
-            # Two nested fixtures.
-            "two_fixture_skill": {"skill": "github-actions-repo-settings"},
-        }, expect="fewer than 3 nested fixtures")
+        # Fewer than three nested fixtures. The step reads the real evals/,
+        # where every skill can gain fixtures, so take whichever skill has one
+        # or two today. When none does, test_issue_routine_improve.py's
+        # synthetic test_refuses_too_few_fixtures still covers the refusal.
+        few = skills_with_too_few_fixtures()
+        if few:
+            self._refuse_all(no_holdout, {
+                "too_few_fixtures": {"skill": few[0]},
+            }, expect="fewer than 3 nested fixtures")
         self._refuse_all(good, {
             "holdout_not_a_fixture": {"holdout": "no-such-holdout-xyz"},
             "holdout_of_another_skill": {"holdout": "proposal-bio"},
@@ -824,6 +846,39 @@ class ValidateStepTests(unittest.TestCase):
                 proc, _ = self.run_step(
                     {"mode": "eval", "fixture": fixture, "arms": "both", "trials": "1"})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_accepts_in_situ_for_a_guidance_fixture(self):
+        # Owner, 2026-11-03: a guidance cell not leaning toward removal fires
+        # only the in-situ pair.
+        guidance = "evals/guidance/anything-you-name-gets-its-link/handoff"
+        proc, values = self.run_step(
+            {"mode": "eval", "fixture": guidance, "arms": "in-situ", "trials": "1",
+             "model": "claude-sonnet-5-5"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual((values["arms"], values["fixture"]), ("in-situ", guidance))
+
+    def test_refuses_in_situ_for_a_skill_fixture(self):
+        for fixture in (FIXTURE, NOT_IN_PLACE):
+            with self.subTest(fixture=fixture):
+                proc, values = self.run_step(
+                    {"mode": "eval", "fixture": fixture, "arms": "in-situ", "trials": "1"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {}, "no output on a refusal")
+                self.assertIn("::error::input 'arms' is in-situ but the fixture is not a "
+                              "guidance fixture", proc.stdout)
+                self.assertNotIn(fixture, proc.stdout + proc.stderr)
+
+    def test_refuses_in_situ_outside_eval_mode(self):
+        cases = {"improve": {"mode": "improve", "skill": SKILL, "holdout": HOLDOUT},
+                 "scaffold": {"mode": "scaffold", "candidate": CANDIDATE},
+                 "draft": {"mode": "draft", "proposal": PROPOSAL}}
+        for label, inputs in cases.items():
+            with self.subTest(mode=label):
+                proc, values = self.run_step({**inputs, "arms": "in-situ", "trials": "1"})
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertEqual(values, {})
+                self.assertIn("::error::input 'arms' may be in-situ in eval mode only",
+                              proc.stdout)
 
     def test_refuses_bare_outside_eval_mode(self):
         cases = {"improve": {"mode": "improve", "skill": SKILL, "holdout": HOLDOUT},

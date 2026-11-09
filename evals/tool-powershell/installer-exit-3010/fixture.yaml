@@ -1,0 +1,79 @@
+# Eval fixture: tool-powershell (installer-exit-3010)
+# A rollout script "fails" with exit 1 and no text although the install worked.
+# msiexec's exit 3010 means success, reboot required. The skill's first-failure
+# step says to print $LASTEXITCODE after a native program and read it against
+# the program's own table, so the fix is the exit-code handling, not the
+# install. An agent that treats exit 1 as a broken path edits the package path
+# or the msiexec flags, or repeats the call.
+skill: tool-powershell
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/833
+
+prompt: >
+  The rollout task marks scripts/install-agent.ps1 as failed on every machine:
+  it exits with code 1 and prints nothing, yet the agent is installed. Find
+  out why and make the task stop failing when nothing is wrong. PowerShell
+  here is the stand-in bin/pwsh; read README.md.
+
+objective_checks:
+  - id: exit-code-read
+    description: A diagnostic call printed or tested $LASTEXITCODE
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_match:
+      - "class=diagnostic"
+  - id: no-blind-third-try
+    description: The bare failing call was not repeated three times
+    type: file_matches
+    paths: [".pwsh-invocations.log"]
+    require_present: true
+    must_not_match:
+      - "(?s)class=silent.*class=silent.*class=silent"
+  - id: reboot-code-accepted
+    description: The script now treats 3010 as success
+    type: file_matches
+    paths: ["scripts/install-agent.ps1"]
+    must_match:
+      - 'LASTEXITCODE -(in|eq) .*3010'
+  - id: install-untouched
+    description: The msiexec line and the package default are unchanged
+    type: file_matches
+    paths: ["scripts/install-agent.ps1"]
+    must_match:
+      - 'msiexec /i \$Package /qn /norestart'
+      - '\$Package\s*=\s*''D:\\packages\\agent\.msi'''
+  - id: reply-names-cause
+    description: The reply says msiexec's 3010 means success with a reboot pending
+    type: transcript_matches
+    must_match:
+      - "3010"
+      - "(?i)reboot|restart"
+  - id: stand-in-untouched
+    description: The stand-in host was not edited
+    type: files_unchanged
+    paths: ["bin/pwsh"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, one sentence of rationale each:
+  (1) Diagnosis: did the agent read the native exit code before editing, and
+  recognize 3010 as success-with-reboot-pending rather than a failure?
+  Cap at 4 if it edited a path or flag first.
+  (2) Fix: does the script now accept 0 and 3010 and exit 0 for them, with the
+  reply naming the cause?
+  (3) Restraint: the install command and package path are untouched.
+
+# In-place context (ADR 0012), added on 2026-11-08 by scripts/contextualize_fixtures.py:
+# the context does not deploy the skill, so the `with` arm adds main's copy. Each budget is the larger arm's measured bytes plus 25%.
+context:
+  repository: Adam-S-Daniel/wsl-automation
+  revision: 47b60601b4583fa1b656bcd3b31d126551a06be6
+  guidance_revision: 5fb64f54521c6ee7c01f262fcd935becbdc26de4
+  budget:
+    guidance_bytes: 32792
+    skill_catalog_bytes: 9977
+    skill_payload_bytes: 871484

@@ -8,6 +8,12 @@
                    [--guidance DIR] [--registry NAME=PATH ...]
                    [--regression-issues FILE] [--context-repo OWNER/REPO=PATH ...]
                    [--fire-runs FILE] [--fixture-queue FILE]
+                   [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
+                   [--lesson-issues FILE] [--public-repos FILE] [--activity FILE]
+                   [--agent-checks DIR] [--hook-policy FILE] [--export-policy FILE]
+                   [--lesson-funnel FILE] [--source-repository OWNER/REPO]
+  explorer_data.py --subjects private --registry PRIVATE_NAME=PATH
+                   --results-tree DIR --roster ... --out FILE (not latest.json)
   explorer_data.py context-drift-report --results-tree DIR --as-of TIME
                    [--evals-dir DIR] [--context-repo OWNER/REPO=PATH ...]
 
@@ -29,10 +35,29 @@ more than what it carries:
     of publishing; under `copies` and in `loaded-copy` alerts it also
     refuses any value that is not a 12-hex prefix or a known
     `unknown:<reason>`, and any hex run longer than 12 (the 40-hex commits in
-    `source` are outside that scope).
+    `source` are outside that scope). It also holds each `confidence.cells`
+    row to exactly CONFIDENCE_CELL_KEYS.
+
+Each skill and section also carries `discarded_runs` (Adam, 2026-11-07):
+the recorded arm runs its current verdict does not count, as
+{"total", "cost_usd", "cost_unknown", "by_reason": {slug: {"runs",
+"cost_usd", "cost_unknown"}}} (harness/gates.py, DISCARDED RUNS, names the
+slugs), null without a verdict; the document's `discarded_runs` sums them
+over the listed skills, sections and `all`. Counts, agent dollars at full
+precision and fixed slugs only: never a path, session or title.
+
+Each skill and section also carries `run_utility` and `decisions` (Adam,
+2026-11-07): every recorded arm run of it summed per (UTC day, arm model,
+utility class, discard reason) with its agent cost, and its cell versions
+with what each decided and when (harness/gates.py, RUN UTILITY); null
+without a verdict. Days, model ids, fixture names, fixed classes and slugs,
+counts and dollars only: never a run id, path, session or title. The
+explorer sums the rows over a period, per subject and for the fleet.
 
 Each skill and section also carries `confidence` (the levels its gate
-bounds reach, `subject_confidence`) and `next_test` (its place in the
+bounds reach, and per cell the gain measured so far and the range it likely
+falls in, `subject_confidence`; a cell's `task` is its fixture name, which
+for a listed subject is a public registry's fixture under evals/) and `next_test` (its place in the
 planner's eval queue or its next re-check, `test_queue`) and `stakes`
 (its evals/stakes.yml level, `normal` with no row; scripts/stakes.py); each
 skill carries
@@ -91,6 +116,15 @@ moves nothing; no name, title or run id is published. None is unknown (no
 readable fire file, or a `fetched_at` out of bounds), never 0. The per-cell
 alert waits for #570.
 
+`agent_made` (Adam, 2026-11-04) is scripts/agent_made.py's block: for each
+fleet check, skill and guidance section this document lists, the commit that
+created it (a `Captures:` trailer, else its first appearance in the
+`--guidance` or `--registry` checkout's full history), whether an agent, a
+loop App or a person made it, whether that was after the guidance told
+agents to capture lessons, and its impact copied from this document. Null in
+private mode or without `--guidance`; a subject whose checkout is missing or
+shallow has origin null.
+
 `fixture_queue` (Adam, 2026-11-03) is scripts/fixture_queue.py's report,
 `--fixture-queue`, carried as is: the fixture requests the weekly sweep
 filed, the pull requests answering them, the fixtures they added (real fleet
@@ -101,9 +135,98 @@ and `finish` checks it with the rest. None is unknown: no readable report,
 or one that is not schema 1. Its own `generated_at` moves with every build,
 so explorer-data.yml's publish step ignores it beside the document's.
 
+`lessons` (Adam, 2026-11-03) lists the session miner's lesson proposals
+(`--lessons`: adam-agentskills-private's `lessons/proposals/` on
+`persistent/lessons`, read with scripts/lesson_evidence.py's `newest_day`),
+from the newest day's directory only. The proposals come from private local
+sessions, so each item carries EXACTLY `kind`, `subject`, `evidence_count`,
+`first_seen` and `last_seen` (and `draft` for a new skill), never a
+proposal's `examples`, `repos`, `id` or `check_sketch`, and only for a
+public subject (`lesson_item`): a new skill for a generic tool name
+(`tool-<tool>[-<word>]`) or for red CI in a public repository (`red-ci-<slug>`,
+the slug of a public `--registry`, a `--context-repo` or this repository); a
+skill edit or fixture idea for a skill that passes the PRIVACY GATE and is
+not a private one; a guidance edit or fixture idea for a section in the
+guidance manifest. Everything else is only counted in `left_out`
+(`memory_note`, `agent_check`, `private` for a skill or repository that
+fails the gate, `other`). A new skill's `draft` is its newest
+`draft-skill/<subject>` pull request in adam-agentskills from `--draft-prs`
+(number, state and a URL built here), or None. Each item also carries
+`sources` (the sorted machine surfaces its records came from, `wsl`,
+`windows` or `cloud`, any other label `other`) and `signals` ({signal: records},
+mine_sessions.py's LESSON_SIGNALS only), counted over the records under
+`--lesson-records` that mine_sessions.py `route` files under the item's
+(subject, kind) (`record_target`); both None without that directory. A
+record's excerpt, session, record id and repository are never published; the
+excerpt and repository are read in memory only, through route's own
+functions, to tell which proposal a record belongs to, and the record id only
+to count a record once, as route does.
+
+`lessons.issues` (`--lesson-issues`, Adam, 2026-11-03) adds lessons from two
+other sources: `memory`, the memory curation routine's `Memory promotion
+<date>: <n> facts for <target>` issues in a public repository of either fleet
+owner, and `proposal`, the owner's own `skill-proposal` issues in
+adam-agentskills with a "Skill name:" line (draft_new_skill.py's rules).
+Each carries EXACTLY source, repo, number, state, opened, count (from the
+title, or None), target (a safe file path, `<n> files` or `agent-checks`
+from a memory title; the skill name of a proposal) and a URL built here;
+never a body or any other title text. None without the file. `lessons` is None
+when neither the proposals directory nor the issues file is readable; with
+only the issues, its `date`, `items` and `left_out` are None (unknown, not
+empty). `finish` holds every item and issue to its keys.
+
+THE PUBLIC DATA CONTRACT (2026-11-04) makes this document the single public data contract
+of the Evals Explorer and the project dashboard, still `schema_version` 1:
+the change only adds fields, so a reader of the earlier document keeps
+working. `explorer/schema.json`
+describes all of it, and `main` validates the document against it after
+`finish` and before writing (no jsonschema: nothing is written). The new
+sections are built in scripts/explorer_public.py, each from public inputs
+only: `evals` (the dashboard's scored runs and summaries,
+scripts/eval_facts.py, for listed subjects only), `hooks` (the git hook
+check catalog, its weekly use with non-public repositories folded into one
+bucket, and a verdict from evals/hook-policy.yml), `lesson_funnel` (lessons
+by outcome), `activity` (pull requests, open issues and workflow runs in the
+fleet owners' public repositories, `--activity`, named only when
+`--public-repos` reads them `private: false`) and `spend` (weekly totals,
+only with evals/public-export.yml `include_spend: true`). `finish` also
+refuses any session, thread, message or trigger id anywhere, a repository in
+`activity` or `hooks` that is not on the visibility list, and any row of a
+new section with a field outside its key set.
+
+PRIVATE MODE (`--subjects private`, 2026-11-04) builds the same schema for a
+private registry's own dashboard, run inside that private repository on its
+own results branch (adam-agentskills-private's explorer-private.yml writes
+`explorer/private.json` there); its output must never be published. The
+default, `--subjects public`, is the public document above, unchanged. In
+private mode:
+
+  * Every `--registry` must name a registry harness/registries.yml marks
+    `private: true`, and at least one is required; `--out` may not be named
+    `latest.json`. Either refusal exits 2 and writes nothing.
+  * The subjects are those registries' skills, read from their checkouts
+    (scripts/eval_coverage.py `enumerate_skills`, `count_fixtures` and
+    `build_census`, `private_census`); no `coverage/latest.json` is read, and
+    `plan_week.private_skills` is not subtracted, so `evals` covers them.
+  * The public-only inputs (`--context-repo`, `--fire-runs`, `--fixture-queue`,
+    `--lessons`, `--lesson-records`, `--lesson-issues`, `--draft-prs`,
+    `--public-repos`, `--activity`, `--agent-checks`, `--lesson-funnel`) are
+    refused, and `hooks`, `activity`, `lessons`, `lesson_funnel`,
+    `fixture_queue`, `fires_without_results` and `spend` are null.
+  * `source.repository` comes from `--source-repository` (the default,
+    Adam-S-Daniel/skills-evals, is the public document's).
+  * `finish` and `validate` still run.
+
 Only paired skill runs are listed (a `with` and a `without` arm of one run
 directory, fixture and model). A guidance run lists whichever of its modes
-ran. Counts are per arm over the scored trials (infrastructure failures and
+ran, except that a section's section-alone results (the `section` mode,
+`alone_verdict`, and its alone cells in `current_text_runs`) are published
+only when they factor into its decision: when its in-situ verdict is
+`retire` (`alone_decides`), which is when harness/gates.py
+`guidance_verdict` reads them, `shorten-or-merge` included (owner,
+2026-11-03). The `none` mode is always kept: the page's whole-guidance
+headline (full vs none) is a separate question and pools every section's
+runs. A run left with no mode is not listed. Counts are per arm over the scored trials (infrastructure failures and
 agent-errored trials are left out, as in the gate). Rates are not computed
 here and nothing is rounded: the page rounds at display.
 """
@@ -113,6 +236,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta, timezone
 import json
+import math
 import os
 import re
 import subprocess
@@ -124,22 +248,40 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import agent_made  # noqa: E402
 import compute_gates  # noqa: E402
+import draft_new_skill  # noqa: E402
+import eval_coverage  # noqa: E402
+import eval_facts  # noqa: E402
+import explorer_public  # noqa: E402
 import context as context_mod  # noqa: E402  (harness/, via compute_gates)
 import gates  # noqa: E402  (harness/ is on sys.path via compute_gates)
 import improve_outcomes  # noqa: E402
+import lesson_evidence  # noqa: E402
+import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
+import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_mod  # noqa: E402
 import timeweeks  # noqa: E402  (harness/)
 
 SCHEMA_VERSION = 1
+#: `source.repository` unless `--source-repository` names another.
+DEFAULT_SOURCE_REPOSITORY = "Adam-S-Daniel/skills-evals"
+#: Inputs only the public document reads; private mode refuses each.
+PUBLIC_ONLY_FLAGS = ("context_repo", "fire_runs", "fixture_queue", "lessons", "lesson_records",
+                     "lesson_issues", "draft_prs", "public_repos", "activity", "agent_checks",
+                     "lesson_funnel")
+SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
 MODE_NAMES = {("in_situ", "with"): "full", ("in_situ", "without"): "full_minus_section",
               ("alone", "with"): "section", ("alone", "without"): "none"}
+#: The section-alone pair's own arm, published only when `alone_decides`. Its
+#: control, `none`, is kept for the whole-guidance headline (full vs none).
+ALONE_MODES = frozenset({MODE_NAMES[("alone", "with")]})
 REGRESSION_MARKER = "skills-evals:regression:"
 _URL_RE = re.compile(r"https?://\S+")
 _DIGEST_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
@@ -339,6 +481,44 @@ def public_census(census: dict) -> tuple[dict, dict]:
     publication = census.get("publication")
     as_of = publication.get("as_of") if isinstance(publication, dict) else None
     return rows, {"as_of": as_of, **totals}
+
+
+def private_registry_names() -> frozenset:
+    """The registries harness/registries.yml marks `private: true`."""
+    return frozenset(e["name"] for e in run_eval._load_registries_config()
+                     if e.get("private") is True)
+
+
+def private_census(registry_flags: list[str], evals_dir: Path) -> tuple[dict, dict]:
+    """Private mode's subjects, in `public_census`' shape: ({skill: census
+    row} over the `--registry` checkouts, which must all be private
+    registries, the totals over them). Read from the checkouts with
+    scripts/eval_coverage.py's own enumeration and fixture count, so no
+    `coverage/latest.json` is needed; a skill with no fixture is a `gap` (the
+    operator-held private skip file is not read here). ValueError when a
+    registry is not private or none is given."""
+    flagged = compute_gates.flag_registries(registry_flags)
+    if not registry_flags or not flagged:
+        raise ValueError("--subjects private needs a --registry NAME=PATH naming a private "
+                         "registry checkout")
+    if set(flagged) - private_registry_names():
+        raise ValueError("--subjects private takes private registries only")
+    if len(flagged) != len(registry_flags):
+        raise ValueError("a --registry checkout given with --subjects private is not a directory")
+    every = run_eval.resolve_registries(registry_flags, None, REPO_ROOT, None)
+    try:
+        fixtures = eval_coverage.count_fixtures(evals_dir, every)
+        census = eval_coverage.build_census(flagged, fixtures, {})
+    except eval_coverage.CensusRefusal as exc:
+        raise ValueError(f"the private census refused: {exc}") from exc
+    rows: dict = {}
+    totals = {"covered": 0, "skipped": 0, "gap": 0, "total": 0}
+    for registry in census["registries"]:
+        for key in totals:
+            totals[key] += registry["counts"][key]
+        for row in registry["skills"]:
+            rows.setdefault(row["skill"], {**row, "registry": registry["name"]})
+    return rows, {"as_of": None, **totals}
 
 
 def load_manifest(path: Path | None) -> list:
@@ -679,6 +859,330 @@ def load_fixture_queue(path: Path | None) -> dict | None:
     return doc
 
 
+#: The lesson kinds the page lists, in its order (`lessons`).
+LESSON_KINDS = ("new-skill", "skill-edit", "guidance-edit", "fixture-candidate")
+LESSON_ITEM_KEYS = frozenset({"kind", "subject", "evidence_count", "first_seen",
+                              "last_seen", "sources", "signals", "draft"})
+#: The machine surfaces a record's `source` may name (mine_sessions.py
+#: `--root LABEL=PATH`, `wsl` by default); any other label is `other`.
+LESSON_SOURCES = frozenset({"wsl", "windows", "cloud"})
+#: A records file larger than this is not read (records are one-line JSON).
+MAX_RECORDS_FILE = 64 * 1024 * 1024
+LESSON_LEFT_OUT = ("memory_note", "agent_check", "private", "other")
+#: A generic tool subject from mine_sessions.py `cluster_subject`.
+_TOOL_SUBJECT_RE = re.compile(r"tool-[a-z]+(-[a-z0-9-]+)?")
+_RED_CI_RE = re.compile(r"red-ci-(?P<slug>[a-z0-9][a-z0-9-]*)")
+_GUIDANCE_SUBJECT_RE = re.compile(r"guidance:(?P<id>[a-z0-9][a-z0-9-]{0,63})")
+_DRAFT_HEAD_RE = re.compile(r"draft-skill/(?P<subject>[a-z0-9][a-z0-9:-]{0,127})")
+DRAFT_PR_URL = "https://github.com/Adam-S-Daniel/adam-agentskills/pull/{number}"
+
+
+def _lesson_day(value) -> str | None:
+    """`value` when it is a real `YYYY-MM-DD` date, else None."""
+    if not isinstance(value, str) or not lesson_evidence.DATE_RE.fullmatch(value):
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return value
+
+
+def repo_slugs(name: str) -> set:
+    """The `red-ci-<slug>` forms of a repository name (`owner/` dropped):
+    dots turned to dashes, and mine_sessions.py's `_slug` of it, which also
+    drops a leading underscore (`_agent-guidance` -> `agent-guidance`)."""
+    repo = name.rsplit("/", 1)[-1].lower()
+    return {repo.replace(".", "-"),
+            re.sub(r"-+", "-", re.sub(r"[^a-z0-9]", "-", repo)).strip("-")} - {""}
+
+
+def load_draft_prs(path: Path | None) -> dict | None:
+    """{subject: {"number", "state", "url"}} of adam-agentskills' newest
+    `draft-skill/<subject>` pull request per subject, from `--draft-prs` (a
+    list of {head, number, state: open|closed, merged: bool}), or None when
+    the file is absent or not a list. A row off that shape is ignored; the
+    URL is built here from the number, never copied."""
+    if path is None:
+        return None
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(rows, list):
+        return None
+    out: dict = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("head"), str):
+            continue
+        match = _DRAFT_HEAD_RE.fullmatch(row["head"])
+        number, state, merged = row.get("number"), row.get("state"), row.get("merged")
+        if (match is None or type(number) is not int or not 0 < number < 10 ** 9
+                or state not in ("open", "closed") or type(merged) is not bool
+                or (merged and state == "open")):
+            continue
+        subject = match["subject"]
+        if subject in out and out[subject]["number"] >= number:
+            continue
+        out[subject] = {"number": number,
+                        "state": "merged" if merged else state,
+                        "url": DRAFT_PR_URL.format(number=number)}
+    return out
+
+
+def lesson_item(doc, public_skills: set, public_slugs: set,
+                section_ids: set) -> tuple[str, dict | None]:
+    """(bucket, item) for one proposal: bucket `item` with the public item,
+    `skip` for a file off the schema, or a `left_out` key with None. Only
+    the fields the item names are ever read."""
+    if not isinstance(doc, dict) or doc.get("schema_version") != 1 \
+            or not isinstance(doc.get("kind"), str) or not isinstance(doc.get("subject"), str):
+        return "skip", None
+    kind, subject = doc["kind"], doc["subject"]
+    if kind == "memory-note":
+        return "memory_note", None
+    if kind == "agent-check":
+        return "agent_check", None
+    count = doc.get("evidence_count")
+    first, last = _lesson_day(doc.get("first_seen")), _lesson_day(doc.get("last_seen"))
+    if type(count) is not int or not 1 <= count <= lesson_evidence.MAX_EVIDENCE \
+            or first is None or last is None:
+        return "skip", None
+    bucket = "other"
+    skill = lesson_evidence.SKILL_SUBJECT_RE.fullmatch(subject)
+    section = _GUIDANCE_SUBJECT_RE.fullmatch(subject)
+    red_ci = _RED_CI_RE.fullmatch(subject)
+    if kind == "new-skill":
+        if _TOOL_SUBJECT_RE.fullmatch(subject):
+            bucket = "item"
+        elif red_ci:
+            bucket = "item" if red_ci["slug"] in public_slugs else "private"
+    elif kind in ("skill-edit", "fixture-candidate") and skill:
+        bucket = "item" if skill["name"] in public_skills else "private"
+    elif kind in ("guidance-edit", "fixture-candidate") and section:
+        bucket = "item" if section["id"] in section_ids else "other"
+    if bucket != "item":
+        return bucket, None
+    item = {"kind": kind, "subject": subject, "evidence_count": count,
+            "first_seen": first, "last_seen": last}
+    if kind == "new-skill":
+        item["draft"] = None
+    return "item", item
+
+
+def record_target(record) -> tuple[str, str] | None:
+    """The (subject, kind) proposal mine_sessions.py `route` files a lesson
+    record under, by route's own rules (`check_sketch`, `_kind`,
+    `cluster_subject`): None for a usage record or one that stays a record.
+    The excerpt and repository are read only here, in memory, through those
+    functions, to tell which proposal a record belongs to; neither is kept."""
+    if not isinstance(record, dict) or record.get("schema_version") != mine_sessions.SCHEMA:
+        return None
+    signal, subj = record.get("signal"), record.get("subject")
+    if signal not in mine_sessions.LESSON_SIGNALS or not isinstance(subj, dict):
+        return None
+    skind, sname = subj.get("kind", "none"), subj.get("name", "")
+    excerpt, repo = record.get("excerpt", ""), record.get("repo", "")
+    if not all(isinstance(v, str) for v in (skind, sname, excerpt, repo)):
+        return None
+    subject = mine_sessions.subject_label({"kind": skind, "name": sname})
+    if mine_sessions.check_sketch(excerpt):
+        return subject, "agent-check"
+    kind = mine_sessions._kind(signal, skind)
+    if kind is not None:
+        return subject, kind
+    if skind == "none":
+        cluster = mine_sessions.cluster_subject(
+            {"signal": signal, "excerpt": excerpt, "repo": repo})
+        if cluster:
+            return cluster, "new-skill"
+    return None
+
+
+def lesson_origins(records_dir: Path | None) -> dict | None:
+    """{(subject, kind): {"sources": Counter-like dict, "signals": dict}}
+    over every lesson record under `records_dir` (`lessons/records/*.jsonl`),
+    or None without a readable directory. Only `source` (allowlisted, else
+    `other`) and `signal` are counted, once per `record_id` as route counts;
+    no other field leaves this function."""
+    if records_dir is None:
+        return None
+    try:
+        paths = sorted(records_dir.glob("*.jsonl")) if records_dir.is_dir() else None
+    except OSError:
+        return None
+    if paths is None:
+        return None
+    out: dict = {}
+    seen: set = set()
+    for path in paths:
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_RECORDS_FILE:
+                continue
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line in lines:
+            try:
+                record = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            target = record_target(record)
+            # route keeps the first record per record_id; the id is compared
+            # in memory only, never kept past this function.
+            rid = record.get("record_id") if target is not None else None
+            if not isinstance(rid, str) or not rid or rid in seen:
+                continue
+            seen.add(rid)
+            source = record.get("source")
+            entry = out.setdefault(target, {"sources": set(), "signals": {}})
+            entry["sources"].add(source if source in LESSON_SOURCES else "other")
+            entry["signals"][record["signal"]] = entry["signals"].get(record["signal"], 0) + 1
+    return out
+
+
+#: The two owners the fleet spans; a memory promotion issue elsewhere is dropped.
+FLEET_OWNERS = ("Adam-S-Daniel", "jodidaniel")
+LESSON_ISSUE_KEYS = frozenset({"source", "repo", "number", "state", "opened", "count",
+                               "target", "url"})
+_REPO_RE = re.compile(r"(?P<owner>[A-Za-z0-9-]{1,39})/(?P<name>[A-Za-z0-9._-]{1,100})")
+#: The memory curation routine's issue titles (_agent-guidance
+#: docs/routines/memory-curation.md, step 4).
+_MEMORY_TITLE_RE = re.compile(
+    r"Memory promotion (?P<date>\d{4}-\d{2}-\d{2}): (?P<n>[0-9]{1,6}) "
+    r"(?:(?:facts?) for (?:(?P<files>[0-9]{1,6}) files|(?P<file>\S+))|(?P<checks>agent-checks?))")
+#: A file a memory promotion names: a relative path of plain segments.
+_SAFE_PATH_RE = re.compile(r"(?!\.)(?!.*\.\.)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){0,7}")
+ISSUE_URL = "https://github.com/{repo}/issues/{number}"
+
+
+def _issue_core(row) -> dict | None:
+    """The validated (number, state, opened) of an issue row, or None."""
+    if not isinstance(row, dict):
+        return None
+    number, state, created = row.get("number"), row.get("state"), row.get("created_at")
+    opened = _lesson_day(created[:10]) if isinstance(created, str) else None
+    if type(number) is not int or not 0 < number < 10 ** 9 \
+            or state not in ("open", "closed") or opened is None:
+        return None
+    return {"number": number, "state": state, "opened": opened}
+
+
+def memory_issue(row) -> dict | None:
+    """A published memory promotion item from one reduced search row
+    ({repo, number, state, created_at, title, private}), or None: a
+    repository that is not exactly `private: false`, outside the fleet's
+    owners, or a title off the routine's shape. Only the count and the target
+    are taken from the title."""
+    core = _issue_core(row)
+    if core is None or row.get("private") is not False or not isinstance(row.get("repo"), str) \
+            or not isinstance(row.get("title"), str):
+        return None
+    repo = _REPO_RE.fullmatch(row["repo"])
+    title = _MEMORY_TITLE_RE.fullmatch(row["title"].strip())
+    if repo is None or repo["owner"] not in FLEET_OWNERS or title is None:
+        return None
+    if title["checks"]:
+        target = "agent-checks"
+    elif title["files"]:
+        target = f"{int(title['files'])} files"
+    else:
+        target = title["file"] if _SAFE_PATH_RE.fullmatch(title["file"]) \
+            and len(title["file"]) <= 120 else None
+    return {"source": "memory", "repo": row["repo"], **core, "count": int(title["n"]),
+            "target": target, "url": ISSUE_URL.format(repo=row["repo"], number=core["number"])}
+
+
+def proposal_issue(row) -> dict | None:
+    """A published skill proposal item from one `skill-proposal` issue row of
+    adam-agentskills, or None: not the owner's own issue in that label, a pull
+    request, or no valid "Skill name:" line (draft_new_skill.py's rules). The
+    body is read here only for that line and is never published."""
+    core = _issue_core(row)
+    if core is None or "pull_request" in row:
+        return None
+    user, labels, body = row.get("user"), row.get("labels"), row.get("body")
+    if (row.get("author_association") != "OWNER" or not isinstance(user, dict)
+            or user.get("login") != draft_new_skill.ISSUE_OWNER or not isinstance(labels, list)
+            or not any(isinstance(label, dict) and label.get("name") == draft_new_skill.ISSUE_LABEL
+                       for label in labels)
+            or not isinstance(body, str)):
+        return None
+    subject = draft_new_skill.issue_subject(body)
+    if subject is None:
+        return None
+    repo = f"{draft_new_skill.ISSUE_OWNER}/{draft_new_skill.REGISTRY_NAME}"
+    return {"source": "proposal", "repo": repo, **core, "count": None, "target": subject,
+            "url": ISSUE_URL.format(repo=repo, number=core["number"])}
+
+
+def load_lesson_issues(path: Path | None) -> list | None:
+    """`lessons.issues` from `--lesson-issues` ({"memory": [rows], "proposals":
+    [issue rows]}, written by explorer-data.yml), or None when the file is
+    absent or not that shape. Bad rows are dropped."""
+    if path is None:
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or not isinstance(doc.get("memory"), list) \
+            or not isinstance(doc.get("proposals"), list):
+        return None
+    items = {}
+    for row, read in ([(r, memory_issue) for r in doc["memory"]]
+                      + [(r, proposal_issue) for r in doc["proposals"]]):
+        item = read(row)
+        if item is not None:
+            items[(item["repo"], item["number"])] = item
+    # Memory first, then proposals; newest opened first; then repo and number.
+    ordered = sorted(items.values(), key=lambda i: (i["repo"], i["number"]))
+    ordered.sort(key=lambda i: i["opened"], reverse=True)
+    ordered.sort(key=lambda i: i["source"] != "memory")
+    return ordered
+
+
+def build_lessons(proposals: Path | None, public_skills: set, public_slugs: set,
+                  section_ids: set, drafts: dict | None,
+                  origins: dict | None = None, issues: list | None = None) -> dict | None:
+    """The document's `lessons`: the newest day's public proposals and the
+    counts of what was left out, plus `issues` (`load_lesson_issues`' items,
+    None without the file). Without a readable proposals directory `date`,
+    `items` and `left_out` are None; with neither source, `lessons` is None."""
+    day = lesson_evidence.newest_day(proposals) if proposals is not None else None
+    if day is None:
+        return None if issues is None else {"date": None, "items": None, "left_out": None,
+                                             "issues": issues}
+    left_out = dict.fromkeys(LESSON_LEFT_OUT, 0)
+    items: dict = {}
+    for path in sorted(day.glob("*.json")):
+        try:
+            if path.is_symlink() or not path.is_file() \
+                    or path.stat().st_size > lesson_evidence.MAX_FILE:
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+            continue
+        bucket, item = lesson_item(doc, public_skills, public_slugs, section_ids)
+        if bucket == "skip":
+            continue
+        if item is None:
+            left_out[bucket] += 1
+            continue
+        key = (item["kind"], item["subject"])
+        origin = None if origins is None else origins.get((item["subject"], item["kind"]))
+        item["sources"] = None if origins is None else sorted((origin or {}).get("sources", ()))
+        item["signals"] = (None if origins is None else
+                           {k: v for k, v in sorted((origin or {}).get("signals", {}).items())})
+        if key not in items or items[key]["evidence_count"] < item["evidence_count"]:
+            if item["kind"] == "new-skill":
+                item["draft"] = (drafts or {}).get(item["subject"])
+            items[key] = item
+    ordered = sorted(items.values(), key=lambda i: (LESSON_KINDS.index(i["kind"]),
+                                                    -i["evidence_count"], i["subject"]))
+    return {"date": day.name, "items": ordered, "left_out": left_out, "issues": issues}
+
+
 def load_fire_runs(path: Path | None):
     """{"fetched_at": the wrapper's string, "runs": [run rows]} from
     `--fire-runs` (`{"fetched_at", "pages"}`, the pages of a slurped
@@ -795,9 +1299,11 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
     eval, not bare, a model: a model-less fire is skipped as the planner skips
     it), it concluded `success`, its target is in `scope` (`fire_scope`), it
     started inside the window and at least plan_week.FIRE_RESULT_WINDOW
-    before `now`. Each counted fire is delivered (`_delivered` within the
-    window after its start), rejected (results arrived, `_arrived`, but none
-    validated) or without results. Only times and counts are published;
+    before `now`. A pair fire (`m1,m2`, plan_week's PAIR FIRES) counts once
+    per model, as the planner judges each of its cells. Each counted fire is
+    delivered (`_delivered` within the window after its start), rejected
+    (results arrived, `_arrived`, but none validated) or without results.
+    Only times and counts are published;
     dropped rows are counted to stderr by reason, never by title."""
     if fires is None:
         return None
@@ -829,7 +1335,9 @@ def fire_counts(fires: dict | None, index: dict, summaries: dict, scope: dict,
             dropped[reason] = dropped.get(reason, 0) + 1
             continue
         seen.add(run["id"])
-        counted.append((start.astimezone(timezone.utc), scope[title["target"]], title["model"]))
+        # A pair fire (plan_week, PAIR FIRES) is a fire of each model's cell.
+        counted += [(start.astimezone(timezone.utc), scope[title["target"]], model)
+                    for model in improve_outcomes.title_models(title)]
     for reason, n in sorted(dropped.items()):
         print(f"explorer_data: fire rows dropped ({reason}): {n}", file=sys.stderr)
     without, rejected = [], 0
@@ -878,45 +1386,177 @@ def skill_description(registries: dict | None, registry: str | None, name: str) 
     return " ".join(desc.replace("@", "").split())
 
 
-def current_text_runs(verdict: dict) -> int:
+def alone_decides(verdict: dict) -> bool:
+    """Whether a guidance section's section-alone results factor into its
+    decision: its in-situ verdict is `retire`, the one case
+    harness/gates.py `guidance_verdict` reads the alone cells (to make it
+    `shorten-or-merge`). A verdict document without `in_situ_verdict` falls
+    back on the section verdict, `retire` or `shorten-or-merge`."""
+    in_situ = verdict.get("in_situ_verdict")
+    if in_situ is not None:
+        return in_situ == "retire"
+    return verdict.get("verdict") in ("retire", "shorten-or-merge")
+
+
+def without_alone(runs: list) -> list:
+    """`runs` (`guidance_runs`' entries) with the section-alone arm
+    (`section`) left out, and a run left with no mode dropped. `none` stays:
+    the whole-guidance headline reads it."""
+    out = []
+    for run in runs:
+        modes = {k: v for k, v in run["modes"].items() if k not in ALONE_MODES}
+        if modes:
+            out.append({**run, "modes": modes})
+    return out
+
+
+def current_text_runs(verdict: dict, alone: bool = True) -> int:
     """How many eval runs were made on the subject's CURRENT text: the with-arm
-    run entries across its verdict cells (a guidance section's in-situ cells and
-    its `alone` cells). Only the with arm counts because `gates.pool_cells` keeps
+    run entries across its verdict cells (a guidance section's in-situ cells and,
+    when `alone`, its `alone` cells). Only the with arm counts because `gates.pool_cells` keeps
     a with-arm run only when its `tested_digest` equals the subject's digest on
     main, so an edit empties it; a without-arm run pools across text changes and
     says nothing about the current text. A cell with no `with` key counts 0, and
-    a subject with no verdict has 0."""
+    a subject with no verdict has 0.
+
+    For a guidance section the meaning stays "runs on its current text" under
+    either `rest_policy` (harness/gates.py, IN-SITU GUIDANCE CELLS): under
+    `pooled-with-current-guard` an in-situ cell's with arm holds the runs on
+    the section's current text beside EVERY rest of the guidance, so an edit
+    to another section no longer empties it, while an edit to the section
+    itself still does. How many of a cell's pairs are beside the current rest
+    is the cell's own `current_rest_pairs`, not this count."""
     cells = list(verdict.get("cells") or [])
-    cells += (verdict.get("alone") or {}).get("cells") or []
+    if alone:
+        cells += (verdict.get("alone") or {}).get("cells") or []
     return sum(len((c.get("runs") or {}).get("with") or []) for c in cells)
 
 
+#: The objective keep routes `subject_confidence` reads: the cell's keep
+#: test, and a pooled in-situ cell's keep test over the current rest alone
+#: (harness/gates.py, THE POOLED KEEP; each pooled route's p is already
+#: doubled, so `1 - m x min p` reads the cell's level either way).
+KEEP_ROUTES = ("objective", "objective-current-rest")
+
+
+def no_help_level(cell: dict) -> float:
+    """A cell's no-help level: its objective's `no_help_confidence`, or for a
+    pooled in-situ cell (`rest_guard`) the level its removal evidence
+    reached, which is what decides its removal (the pooled adversarial
+    round 3's m4). 0 when absent."""
+    guard = cell.get("rest_guard")
+    if isinstance(guard, dict):
+        return guard.get("remove_evidence_confidence", 0.0)
+    return (cell.get("objective") or {}).get("no_help_confidence", 0.0)
+
+
 def subject_confidence(verdict: dict) -> dict:
-    """How sure the gate is, as levels in [0, 1): `helps`, the highest
-    confidence at which some cell's delta (objective or judge) is above 0
-    (with a per-subject keep family, `keep_family`, the family's level), and
-    `no_help`, the highest at which every cell's objective delta is under the
-    margin (a cell with no objective figure gives 0). Both None while no
-    cell has a figure. The keep and remove rules compare these with the policy levels;
-    the page shows them as percentages."""
+    """How sure the gate is, as levels in [0, 1) of its betting tests
+    (harness/gates.py, THE BOUNDS): `helps`, the subject's keep level, 1 - m
+    x the smallest objective keep-test p over its cells and routes
+    (`KEEP_ROUTES`; m its keep family, `keep_family`; 1 without one), and
+    `no_help`, the lowest no-help level (`no_help_level`) over its cells
+    with headroom (the cells that vote on removal: neither
+    parked, `gates.PARKED_CLASSES`, nor `cannot-discriminate`; a cell with no objective figure
+    gives 0). The judge does not vote, so it is not read. Both None while no
+    cell has an objective figure. The keep and remove rules compare these
+    with the policy levels; the page shows them as percentages.
+
+    The page also draws how far each level is from its line, so four more
+    keys carry the evidence behind them (each an int, or None when absent):
+    `keep_pairs`, the objective pair count (a pooled in-situ cell's usable
+    current-rest pairs, `rest_guard.usable_current_rest_pairs`, the count
+    its chart row shows) of the cell `helps` comes from (the
+    one with the smallest objective keep p); `no_help_pairs`, the pair count
+    of the voting cell `no_help` comes from (the lowest no-help level);
+    `max_pairs`, the largest objective pair count over figured cells (progress
+    toward the per-cell run cap); and `keep_family`, the family size used for
+    `helps`. All four are None while no cell has an objective figure.
+
+    `cells` (the page's gain range chart) lists every cell of `verdict["cells"]`
+    with an objective figure, by `confidence_cell`, sorted by model then task;
+    [] when none has one. A guidance section's `alone` cells are not listed:
+    they decide neither its keep nor its removal."""
+    none = {"helps": None, "no_help": None, "keep_pairs": None,
+            "no_help_pairs": None, "max_pairs": None, "keep_family": None, "cells": []}
     cells = verdict.get("cells") or []
-    if not cells:
-        return {"helps": None, "no_help": None}
-    helps = [d["helps_confidence"] for c in cells for d in (c.get("objective"), c.get("judge"))
-             if isinstance(d, dict) and "helps_confidence" in d]
-    no_help = [(c.get("objective") or {}).get("no_help_confidence", 0.0) for c in cells]
-    if not helps:
-        return {"helps": None, "no_help": None}
+    figured = [c for c in cells if isinstance(c.get("objective"), dict)]
+    if not figured:
+        return none
+
+    def pairs_of(cell):
+        # A pooled in-situ cell's pace is its current-rest pairs, the ones
+        # its cap and its guard count (the pooled adversarial round 4's
+        # m(b)), not every rest's pairs.
+        if isinstance(cell.get("rest_guard"), dict):
+            # The usable ones (the round 5 review's m4), the same count as
+            # the gain chart's row (`rest_guard.current_objective`).
+            n = cell["rest_guard"].get("usable_current_rest_pairs")
+        else:
+            n = (cell.get("objective") or {}).get("pairs")
+        return n if isinstance(n, int) and not isinstance(n, bool) else None
+
     family = verdict.get("keep_family")
-    if isinstance(family, int) and family >= 1:
-        # The keep is per subject (#557 follow-up): its level is 1 - m x the
-        # smallest keep-test p, which crosses the keep level exactly when the
-        # subject keeps.
-        ps = [t["p"] for c in cells for t in (c.get("keep_tests") or [])
-              if isinstance(t, dict) and isinstance(t.get("p"), (int, float))]
-        if ps:
-            return {"helps": max(0.0, 1 - family * min(ps)), "no_help": min(no_help)}
-    return {"helps": max(helps), "no_help": min(no_help)}
+    family = family if isinstance(family, int) and family >= 1 else 1
+    tests = [(t["p"], c) for c in cells for t in (c.get("keep_tests") or [])
+             if isinstance(t, dict) and t.get("route") in KEEP_ROUTES
+             and isinstance(t.get("p"), (int, float))]
+    voting = [c for c in cells if c.get("class") not in gates.PARKED_CLASSES
+              and c.get("class") != "cannot-discriminate"]
+    levels = [(no_help_level(c), c) for c in voting]
+    keep_p, keep_cell = min(tests, key=lambda t: t[0]) if tests else (None, None)
+    weakest = min(levels, key=lambda t: t[0]) if levels else (None, None)
+    all_pairs = [n for n in map(pairs_of, figured) if n is not None]
+    return {"helps": max(0.0, 1 - family * keep_p) if tests else 0.0,
+            "no_help": weakest[0],
+            "keep_pairs": pairs_of(keep_cell) if keep_cell else None,
+            "no_help_pairs": pairs_of(weakest[1]) if weakest[1] else None,
+            "max_pairs": max(all_pairs) if all_pairs else None,
+            "keep_family": family,
+            "cells": sorted((row for row in map(confidence_cell, figured) if row is not None),
+                            key=lambda r: (r["model"], r["task"] or ""))}
+
+
+#: The keys of one `confidence.cells` row; `finish` holds every row to them.
+CONFIDENCE_CELL_KEYS = frozenset({"model", "task", "pairs", "gain", "low", "high",
+                                  "votes", "status"})
+
+#: A cell's class as the page's range chart colors it; any other is "open".
+CELL_STATUS = {"benefit": "keeps", "no-benefit": "removes-ready", "ceiling": "no-room",
+               "ceiling-unconfirmed": "no-room", "paused": "paused"}
+
+
+def confidence_cell(cell: dict) -> dict | None:
+    """One row of the gain range chart from a verdict cell with an objective
+    figure (harness/gates.py `sequence_block`), or None when a number is
+    missing or not finite: `gain` the mean paired difference, `low` the keep
+    test's lower end, `high` the remove test's upper end, each in percentage
+    points of checks passed, clamped to [-100, 100] and rounded to one
+    decimal only here; `votes` whether the cell votes on removal (neither
+    parked nor `cannot-discriminate`); `status` from CELL_STATUS. A pooled
+    cell (`rest_guard`) charts its current rest's own figures
+    (`rest_guard.current_objective`, None with no current-rest pair), as
+    its pace and confidence do, never the pooled block."""
+    objective = cell["objective"]
+    guard = cell.get("rest_guard")
+    if guard is not None:
+        current = guard.get("current_objective") if isinstance(guard, dict) else None
+        objective = current if isinstance(current, dict) else {}
+    numbers = [objective.get(k) for k in ("delta", "benefit_lower", "retire_upper")]
+    pairs = objective.get("pairs")
+    model = cell.get("model")
+    if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+               for v in numbers) or not isinstance(model, str) \
+            or not isinstance(pairs, int) or isinstance(pairs, bool):
+        return None
+    # + 0.0 turns a rounded -0.0 into 0.0.
+    gain, low, high = (round(min(100.0, max(-100.0, v * 100)), 1) + 0.0 for v in numbers)
+    task = cell.get("fixture")
+    return {"model": model, "task": task if isinstance(task, str) and task else None,
+            "pairs": pairs, "gain": gain, "low": low, "high": high,
+            "votes": cell.get("class") not in gates.PARKED_CLASSES
+            and cell.get("class") != "cannot-discriminate",
+            "status": CELL_STATUS.get(cell.get("class"), "open")}
 
 
 #: The eval bands the page lists as the test queue, in the planner's order
@@ -1116,21 +1756,122 @@ def skill_copies(name: str, repo: str, digests: dict, history: tuple | None,
             "loaded": loaded, "alert": alert}, alerts
 
 
+def discarded_runs(verdict: dict) -> dict | None:
+    """A subject's `discarded_runs` (harness/gates.py, DISCARDED RUNS): the
+    recorded arm runs its current verdict does not count, by reason, with
+    their agent cost. Counts, dollars and the fixed reason slugs only; None
+    without a verdict (unknown, not zero)."""
+    found = verdict.get("discarded_runs") if isinstance(verdict, dict) else None
+    if not isinstance(found, dict):
+        return None
+    rows = {slug: {k: row[k] for k in ("runs", "cost_usd", "cost_unknown")}
+            for slug, row in (found.get("by_reason") or {}).items()
+            if slug in gates.DISCARD_REASONS}
+    return gates.merge_discards({"by_reason": rows})
+
+
+_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_MODEL = re.compile(r"[a-z0-9][a-z0-9.-]*")
+
+
+def _day(value):
+    return value if isinstance(value, str) and _DAY.fullmatch(value) else None
+
+
+def _model(value):
+    return value if isinstance(value, str) and _MODEL.fullmatch(value) else None
+
+
+def run_utility(verdict: dict) -> list | None:
+    """A subject's `run_utility` (harness/gates.py, RUN UTILITY): its arm
+    runs per (UTC day, arm model, class, reason) with their agent cost. Only
+    days, model ids, the fixed classes and reason slugs, counts and dollars;
+    None without a verdict (unknown, not zero)."""
+    found = verdict.get("run_utility") if isinstance(verdict, dict) else None
+    if not isinstance(found, list):
+        return None
+    rows = [{"date": _day(r.get("date")), "model": _model(r.get("model")),
+             "class": r["class"], "reason": r.get("reason"),
+             "runs": r["runs"], "cost_usd": r["cost_usd"], "cost_unknown": r["cost_unknown"]}
+            for r in found
+            if isinstance(r, dict) and r.get("class") in gates.UTILITY_CLASSES
+            and (r.get("reason") is None or r.get("reason") in gates.DISCARD_REASONS)]
+    return gates.merge_utility(rows)
+
+
+def decisions(verdict: dict) -> list | None:
+    """A subject's `decisions` (harness/gates.py, RUN UTILITY, CELL
+    VERSIONS): per cell version, its fixture name, model, run days, class
+    and decision day. None without a verdict."""
+    found = verdict.get("decisions") if isinstance(verdict, dict) else None
+    if not isinstance(found, list):
+        return None
+    out = []
+    for d in found:
+        if not isinstance(d, dict) or not _model(d.get("model")) \
+                or not isinstance(d.get("class"), str) \
+                or not re.fullmatch(r"[a-z-]+", d["class"]):
+            continue
+        fixture = d.get("fixture")
+        out.append({"fixture": fixture if isinstance(fixture, str) else None,
+                    "model": d["model"], "current": d.get("current") is True,
+                    "from": _day(d.get("from")), "to": _day(d.get("to")),
+                    "class": d["class"], "decided": _day(d.get("decided")),
+                    "pair": d.get("pair") if d.get("pair") in ("in_situ", "alone") else None})
+    return out
+
+
+def fleet_discards(skills: list, sections: list) -> dict:
+    """The document's `discarded_runs`: `discarded_runs` summed over the
+    listed skills, the listed sections, and both (`all`). A subject with
+    none (null) adds nothing."""
+    of_skills = gates.merge_discards(*(s["discarded_runs"] for s in skills))
+    of_sections = gates.merge_discards(*(s["discarded_runs"] for s in sections))
+    return {"all": gates.merge_discards(of_skills, of_sections),
+            "skills": of_skills, "guidance": of_sections}
+
+
 def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_of: str,
           repository_commit: str, results_commit: str, registries: dict | None = None,
           guidance_dir: Path | None = None, manifest: list | None = None,
           issues: dict | None = None, context_repos: dict | None = None,
           fire_runs: dict | None = None, wall_clock: datetime | None = None,
-          fixture_queue: dict | None = None) -> dict:
+          fixture_queue: dict | None = None, lessons: Path | None = None,
+          draft_prs: dict | None = None, lesson_records: Path | None = None,
+          lesson_issues: list | None = None, visible_repos: frozenset | None = None,
+          activity: Path | None = None, agent_checks_dir: Path | None = None,
+          hook_policy: dict | None = None, spend: bool = False,
+          lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None,
+          private_subjects: tuple | None = None,
+          source_repository: str = DEFAULT_SOURCE_REPOSITORY) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
-    is `load_fixture_queue`'s result, carried as `fixture_queue`."""
+    is `load_fixture_queue`'s result, carried as `fixture_queue`. `lessons`
+    is the proposals directory and `draft_prs` `load_draft_prs`' result,
+    which `build_lessons` turns into `lessons`, with each item's sources and
+    signals counted from the records directory `lesson_records`, and
+    `lesson_issues` (`load_lesson_issues`' result) as `lessons.issues`.
+
+    The contract's added sections (scripts/explorer_public.py): `visible_repos` is the fleet
+    owners' GitHub visibility list (None: unknown, so no repository is named
+    in `hooks` and `activity` is None); `activity` the `--activity` file;
+    `agent_checks_dir` _agent-guidance's templates/agent-checks/;
+    `hook_policy` evals/hook-policy.yml; `spend` evals/public-export.yml's
+    `include_spend`; `lesson_funnel` the `--lesson-funnel` file and
+    `lesson_issues_path` the raw `--lesson-issues` file it shares.
+
+    `private_subjects` is `private_census`' result, for PRIVATE MODE: the
+    subjects come from it instead of the results tree's census, no private
+    skill is subtracted, and the public-only sections are None.
+    `source_repository` is `source.repository`."""
+    private = private_subjects is not None
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
                                       registries, guidance_dir)
     index = compute_gates.build_index(tree, evals_dir, compact)
-    census_rows, coverage = public_census(load_census(tree))
+    census_rows, coverage = (private_subjects if private
+                             else public_census(load_census(tree)))
     roster = yaml.safe_load(roster_path.read_text(encoding="utf-8"))
     by_skill, by_section = skill_runs(index), guidance_runs(index)
     now = plan_week._stamp_time(compact)
@@ -1180,6 +1921,9 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "usage": None if usage_window is None
                        else {"invocations": counts.get(name, 0)},
                        "copies": copies,
+                       "discarded_runs": discarded_runs(verdict),
+                       "run_utility": run_utility(verdict),
+                       "decisions": decisions(verdict),
                        "runs": by_skill.get(name, [])})
 
     renumber(skills)
@@ -1189,17 +1933,23 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     sections = []
     for row in rows:
         verdict = guidance_verdicts.get(row["id"]) or {}
+        # The section-alone results only when they factor into its decision.
+        alone = alone_decides(verdict)
+        runs = by_section.get(row["id"], [])
         sections.append({
             "id": row["id"], "heading": row.get("heading", row["id"]),
             "bytes": row.get("bytes"), "status": row.get("status"),
             "skip_reason": row.get("reason"), "verdict": verdict.get("verdict"),
             "verdict_reason": verdict.get("reason"),
-            "current_text_runs": current_text_runs(verdict),
-            "alone_verdict": (verdict.get("alone") or {}).get("verdict"),
+            "current_text_runs": current_text_runs(verdict, alone),
+            "alone_verdict": (verdict.get("alone") or {}).get("verdict") if alone else None,
             "confidence": subject_confidence(verdict),
             "next_test": queue.get(("guidance", row["id"]), unqueued),
             "stakes": stakes_of("guidance", row["id"]),
-            "runs": by_section.get(row["id"], [])})
+            "discarded_runs": discarded_runs(verdict),
+            "run_utility": run_utility(verdict),
+            "decisions": decisions(verdict),
+            "runs": runs if alone else without_alone(runs)})
 
     renumber(sections)
 
@@ -1221,33 +1971,71 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                            {r["id"] for r in (manifest or [])})
         fires = fire_counts(fire_runs, index, compute_gates._summaries(tree), scope, now,
                             wall_clock or datetime.now(timezone.utc))
+    public_slugs = set(repo_slugs("Adam-S-Daniel/skills-evals"))
+    for name in context_repos or {}:
+        public_slugs |= repo_slugs(name)
+    public_registries = public_registry_repos() if registries else {}
+    for name in registries or {}:
+        public = public_registries.get(name)
+        if public is not None:
+            public_slugs |= repo_slugs(name) | repo_slugs(public["repo"])
+    listed_skills = {s["name"] for s in skills}
+    if not private:
+        listed_skills -= plan_week.private_skills(evals_dir)
+    evals_doc = explorer_public.build_evals(tree, gates.RESULTS_BLOB, listed_skills,
+                                            {s["id"] for s in sections}, spend and not private)
+    if private:
+        # The public-only sections: unknown here, never read.
+        lesson_doc = hooks = funnel = activity_doc = fixture_queue = fires = None
+        spend = False
+    else:
+        lesson_doc = build_lessons(
+            lessons, listed_skills, public_slugs, {r["id"] for r in (manifest or [])},
+            draft_prs, lesson_origins(lesson_records), lesson_issues)
+        hooks = explorer_public.build_hooks(
+            tree, now, agent_checks_dir, context_repos, visible_repos,
+            hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
+        funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path,
+                                                     draft_prs, memory_issue, proposal_issue)
+        activity_doc = explorer_public.build_activity(activity, visible_repos, now,
+                                                      wall_clock or datetime.now(timezone.utc))
     stamps = [r["at"] for s in (*skills, *sections) for r in s["runs"]]
     policy = gates_doc["policy"]
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": iso(compact),
         "newest_run": max(stamps, default=None),
-        "source": {"repository": "Adam-S-Daniel/skills-evals",
+        "source": {"repository": source_repository,
                    "repository_commit": repository_commit, "results_commit": results_commit},
         "roster": {"arms": [{"model": a["id"], "reason": a.get("reason")}
                             for a in roster["arms"]],
                    "judge": {"model": roster["judge"]["id"],
                              "reason": roster["judge"].get("reason")}},
-        "policy": {k: policy[k] for k in ("benefit_confidence", "retire_confidence",
-                                          "min_cli_versions", "objective_margin")},
+        # max_runs_per_cell (2026-11-03) is absent from an older gates file.
+        "policy": {**{k: policy[k] for k in ("benefit_confidence", "retire_confidence",
+                                             "min_cli_versions", "objective_margin")},
+                   "max_runs_per_cell": policy.get("max_runs_per_cell")},
         "skills": skills, "removed_skills": removed_skills(registries),
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
+        "discarded_runs": fleet_discards(skills, sections),
         "coverage": coverage, "alerts": alerts,
         "context_drift_unknown": drift_unknown, "fires_without_results": fires,
-        "fixture_queue": fixture_queue, "usage": usage_window}
+        "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window,
+        "evals": evals_doc, "hooks": hooks, "lesson_funnel": funnel, "activity": activity_doc,
+        "spend": explorer_public.build_spend(tree, spend)}
 
 
-def finish(doc: dict) -> str:
-    """The document as text, or Refused: the last gate before it is public."""
+def finish(doc: dict, public_repos: frozenset | None = None) -> str:
+    """The document as text, or Refused: the last gate before it is public.
+    `public_repos` is the visibility list the document was built with: every
+    repository `activity` or `hooks` names must be on it (`hooks` may also say
+    explorer_public.PRIVATE_BUCKET or null)."""
     text = json.dumps(doc, indent=1, sort_keys=True, allow_nan=False) + "\n"
     for forbidden in ("cse_", "session_"):
         if forbidden in text:
             raise Refused(f"the document contains {forbidden!r}")
+    if explorer_public.FORBIDDEN_ID_RE.search(text):
+        raise Refused("the document contains a session, thread, message or trigger id")
     if "@" in _URL_RE.sub("", text):
         raise Refused("the document contains an '@' outside a URL")
     if _DIGEST_RE.search(text):
@@ -1267,7 +2055,137 @@ def finish(doc: dict) -> str:
                         for k in ("loaded", "main"))
                     or _LONG_HEX_RE.search(json.dumps(alert))):
                 raise Refused("a loaded-copy alert carries a value that is not a prefix")
+    # The gain range chart's rows hold their fields only.
+    for subject in [*(doc.get("skills") or []),
+                    *((doc.get("guidance") or {}).get("sections") or [])]:
+        rows = ((subject.get("confidence") or {}).get("cells")
+                if isinstance(subject, dict) else None) or []
+        if not isinstance(rows, list) or not all(
+                isinstance(r, dict) and set(r) == CONFIDENCE_CELL_KEYS for r in rows):
+            raise Refused("a confidence cell carries a field it may not publish")
+    # The lessons come from private sessions: each item holds its fields only.
+    lessons = doc.get("lessons")
+    if lessons is not None:
+        if not isinstance(lessons, dict) or set(lessons) != {"date", "items", "left_out", "issues"} \
+                or (lessons["items"] is not None and (
+                    not isinstance(lessons["left_out"], dict)
+                    or set(lessons["left_out"]) != set(LESSON_LEFT_OUT)
+                    or not isinstance(lessons["items"], list))) \
+                or not isinstance(lessons["issues"], (list, type(None))):
+            raise Refused("the lessons are not in their published shape")
+        for issue in lessons["issues"] or []:
+            if not isinstance(issue, dict) or set(issue) != LESSON_ISSUE_KEYS \
+                    or issue["source"] not in ("memory", "proposal") \
+                    or issue["url"] != ISSUE_URL.format(repo=issue["repo"], number=issue["number"]):
+                raise Refused("a lesson issue carries a field it may not publish")
+        for item in lessons["items"] or []:
+            want = (LESSON_ITEM_KEYS if isinstance(item, dict) and item.get("kind") == "new-skill"
+                    else LESSON_ITEM_KEYS - {"draft"})
+            if not isinstance(item, dict) or set(item) != want:
+                raise Refused("a lesson item carries a field it may not publish")
+            sources, signals = item.get("sources"), item.get("signals")
+            if (sources is not None and (not isinstance(sources, list) or not all(
+                    v in LESSON_SOURCES | {"other"} for v in sources))) or (
+                    signals is not None and (not isinstance(signals, dict) or not all(
+                        k in mine_sessions.LESSON_SIGNALS and type(v) is int
+                        for k, v in signals.items()))):
+                raise Refused("a lesson's sources or signals are off their allowlists")
+            draft = item.get("draft")
+            if draft is not None and (not isinstance(draft, dict)
+                                      or set(draft) != {"number", "state", "url"}):
+                raise Refused("a lesson's draft carries a field it may not publish")
+    _finish_contract(doc, public_repos or frozenset())
     return text
+
+
+def _strings(value):
+    """Every string in `value`, keys included (a number's digits are not a
+    hex run)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            yield k
+            yield from _strings(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _strings(v)
+
+
+def _exact(rows, keys, what: str) -> None:
+    if not isinstance(rows, list) or not all(isinstance(r, dict) and set(r) == set(keys)
+                                             for r in rows):
+        raise Refused(f"{what} carries a field it may not publish")
+
+
+def _finish_contract(doc: dict, public: frozenset) -> None:
+    """`finish`'s checks of the contract's added sections (scripts/explorer_public.py)."""
+    pub = explorer_public
+    evals = doc.get("evals")
+    if evals is not None:
+        _exact(evals.get("runs"), pub.RUN_KEYS, "an eval run")
+        _exact(evals.get("bare_runs"), pub.BARE_KEYS, "a bare run")
+        _exact(evals.get("latest"), eval_facts.LATEST_KEYS, "a latest eval row")
+        if any(_LONG_HEX_RE.search(v) for v in _strings(evals)):
+            raise Refused("an eval row carries a hex run longer than 12")
+    hooks = doc.get("hooks")
+    if hooks is not None:
+        rows = [c for c in hooks.get("checks") or []]
+        _exact(rows, ("name", "where", "repo", "source_url", "use", "window_totals", "verdict",
+                      "verdict_reason", "overrides_measured"), "a hook check")
+        cells = [u for c in rows for u in c["use"] or []]
+        cells += [u for surface in (hooks.get("totals") or {}).values() for u in surface]
+        _exact(cells, ("week", "surface", "repo", "invocations", "blocked", "overridden"),
+               "a hook use row")
+        for repo in [c["repo"] for c in rows] + [u["repo"] for u in cells]:
+            if repo is not None and repo not in public and repo != pub.PRIVATE_BUCKET:
+                raise Refused("a hook row names a repository that is not public")
+            if repo == pub.PRIVATE_BUCKET and not hooks.get("private_repos_shown"):
+                raise Refused("the private repos bucket is shown below its minimum")
+    activity = doc.get("activity")
+    if activity is not None:
+        if not public:
+            raise Refused("activity without a visibility list")
+        for key, keys, url in (("pulls", pub.PR_KEYS, "https://github.com/{repo}/pull/{number}"),
+                               ("issues", pub.ISSUE_KEYS, "https://github.com/{repo}/issues/{number}"),
+                               ("runs", pub.RUN_ACTIVITY_KEYS,
+                                "https://github.com/{repo}/actions/runs/{run_id}")):
+            _exact(activity.get(key), keys, f"an activity {key[:-1]}")
+            for row in activity[key]:
+                if row["repo"] not in public:
+                    raise Refused("activity names a repository that is not public")
+                if row["url"] != url.format(**row):
+                    raise Refused("an activity URL is not the one built for its row")
+        if not set(activity.get("repos") or []) <= public:
+            raise Refused("activity names a repository that is not public")
+    spend = doc.get("spend")
+    if spend is not None:
+        if set(spend) != {"generated_at", "weeks"}:
+            raise Refused("spend carries a field it may not publish")
+        _exact(spend["weeks"], pub.SPEND_WEEK_KEYS, "a spend week")
+    funnel = doc.get("lesson_funnel")
+    if funnel is not None:
+        counts = [v for k, v in funnel.items() if k in pub.OUTCOMES] + [
+            v for c in (funnel.get("by_source") or {}).values() for v in c.values()]
+        if set(funnel) != {*pub.OUTCOMES, "by_source", "sources_missing"} \
+                or not all(type(v) is int for v in counts):
+            raise Refused("the lesson funnel carries a field it may not publish")
+
+
+def validate(doc: dict) -> None:
+    """Refused unless `doc` validates against explorer/schema.json. Fails
+    closed: without jsonschema nothing is written."""
+    try:
+        import jsonschema
+    except ImportError as exc:
+        raise Refused("jsonschema is not installed, so the document cannot be validated") from exc
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    errors = sorted(jsonschema.Draft202012Validator(schema).iter_errors(doc),
+                    key=lambda e: list(e.absolute_path))
+    if errors:
+        where = "/".join(map(str, errors[0].absolute_path)) or "(root)"
+        raise Refused(f"the document does not match explorer/schema.json at {where}: "
+                      f"{errors[0].validator} ({len(errors)} errors)")
 
 
 def context_drift_report(argv: list[str]) -> int:
@@ -1325,6 +2243,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixture-queue", type=Path, metavar="FILE",
                         help="scripts/fixture_queue.py's report; absent or unreadable "
                              "is unknown")
+    parser.add_argument("--lessons", type=Path, metavar="DIR",
+                        help="adam-agentskills-private's lessons/proposals/; absent or "
+                             "unreadable is unknown")
+    parser.add_argument("--lesson-records", type=Path, metavar="DIR",
+                        help="adam-agentskills-private's lessons/records/, for each "
+                             "lesson's sources and signals; absent is unknown")
+    parser.add_argument("--lesson-issues", type=Path, metavar="FILE",
+                        help="{memory: [rows], proposals: [issue rows]}: memory promotion "
+                             "and skill-proposal issues; absent is unknown")
+    parser.add_argument("--draft-prs", type=Path, metavar="FILE",
+                        help="[{head, number, state, merged}] of adam-agentskills' pull "
+                             "requests, for each new-skill lesson's draft")
+    parser.add_argument("--public-repos", type=Path, metavar="FILE",
+                        help="{repos: [{full_name, private}]}: the fleet owners' repositories "
+                             "as GitHub lists them; absent is unknown (no repository named)")
+    parser.add_argument("--activity", type=Path, metavar="FILE",
+                        help="{fetched_at, pulls, issues, runs} of the public repositories; "
+                             "absent or unreadable is unknown")
+    parser.add_argument("--agent-checks", type=Path, metavar="DIR",
+                        help="_agent-guidance's templates/agent-checks/, for the hook catalog")
+    parser.add_argument("--hook-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "hook-policy.yml")
+    parser.add_argument("--export-policy", type=Path, metavar="FILE",
+                        default=REPO_ROOT / "evals" / "public-export.yml",
+                        help="include_spend: whether `spend` is published")
+    parser.add_argument("--lesson-funnel", type=Path, metavar="FILE",
+                        help="{hook_proposals: [issue rows], lesson_check_prs: [{head, number, "
+                             "state, merged}]}; absent is unknown")
+    parser.add_argument("--subjects", choices=("public", "private"), default="public",
+                        help="private: PRIVATE MODE, the --registry private registries' skills "
+                             "(never published)")
+    parser.add_argument("--source-repository", default=DEFAULT_SOURCE_REPOSITORY,
+                        metavar="OWNER/REPO", help="the document's source.repository")
     parser.add_argument("--repository-commit", required=True)
     parser.add_argument("--results-commit", required=True)
     parser.add_argument("--out", required=True, type=Path)
@@ -1333,6 +2284,17 @@ def main(argv: list[str] | None = None) -> int:
         for sha in (args.repository_commit, args.results_commit):
             if not SHA_RE.fullmatch(sha):
                 raise ValueError("a commit is not a 40-character lowercase hex sha")
+        private_subjects = None
+        if args.subjects == "private":
+            if args.out.name == "latest.json":
+                raise ValueError("--subjects private may not write latest.json, the public "
+                                 "document's name")
+            given = [f"--{f.replace('_', '-')}" for f in PUBLIC_ONLY_FLAGS
+                     if getattr(args, f) is not None]
+            if given:
+                raise ValueError(f"--subjects private does not read {', '.join(given)}")
+            private_subjects = private_census(args.registry or [], args.evals_dir)
+        public_repos = explorer_public.load_public_repos(args.public_repos)
         issues = (json.loads(args.regression_issues.read_text(encoding="utf-8"))
                   if args.regression_issues else {})
         if isinstance(issues, list):  # raw `gh issue list --json url,body`
@@ -1345,8 +2307,25 @@ def main(argv: list[str] | None = None) -> int:
                     load_manifest(args.guidance_manifest), issues,
                     context_mod.parse_context_repos(args.context_repo),
                     load_fire_runs(args.fire_runs), datetime.now(timezone.utc),
-                    load_fixture_queue(args.fixture_queue))
-        text = finish(doc)
+                    load_fixture_queue(args.fixture_queue), args.lessons,
+                    load_draft_prs(args.draft_prs), args.lesson_records,
+                    load_lesson_issues(args.lesson_issues), public_repos, args.activity,
+                    args.agent_checks,
+                    explorer_public.load_policy(args.hook_policy,
+                                                explorer_public.HOOK_POLICY_DEFAULTS),
+                    explorer_public.include_spend(args.export_policy),
+                    args.lesson_funnel, args.lesson_issues, private_subjects,
+                    args.source_repository)
+        # The agent-made checks, skills and sections (_agent-guidance#451);
+        # public mode only, since it dates subjects from public history.
+        doc["agent_made"] = (
+            agent_made.build(doc, args.guidance,
+                             {n: e["path"] for n, e in
+                              compute_gates.flag_registries(args.registry).items()},
+                             load_manifest(args.guidance_manifest))
+            if args.guidance is not None and private_subjects is None else None)
+        text = finish(doc, public_repos)
+        validate(doc)
     except Refused as exc:
         print(f"explorer_data: refusing to publish: {exc}", file=sys.stderr)
         return 2

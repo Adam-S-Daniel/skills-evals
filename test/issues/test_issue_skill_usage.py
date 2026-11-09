@@ -303,6 +303,54 @@ class AllowlistTests(unittest.TestCase):
                 if r["kind"] == "skill"]
         self.assertEqual(sorted(rows), [("other", 1), ("workflow-path-audit", 1)])
 
+    def test_the_coverage_census_adds_public_registry_gaps(self):
+        root = make_allowlist_root(self.tmp / "repo")
+        coverage = self.tmp / "latest.json"
+
+        def write(registries):
+            coverage.write_text(json.dumps({"registries": registries}), encoding="utf-8")
+
+        def entry(name, skills, private=False, withheld=False):
+            return {"name": name, "private": private, "names_withheld": withheld,
+                    "skills": [{"registry": name, "skill": s} for s in skills]}
+
+        write([entry("adam-agentskills", ["zz-gap-skill", "Not A Key"]),
+               entry("adam-agentskills-private", ["zz-private-gap"], private=True),
+               entry("adam-agentskills", ["zz-withheld"], withheld=True),
+               entry("no-such-registry", ["zz-unknown-registry"]),
+               # The census document says public; harness/registries.yml says
+               # private, and the repository's own config wins.
+               entry("adam-agentskills-private", ["zz-mislabeled"])])
+        allow = census.skill_allowlist(root, coverage)
+        self.assertEqual(allow, {"workflow-path-audit", "zz-skipped-skill", "zz-gap-skill"})
+        for text in ("{", "[]", json.dumps({"registries": {}})):
+            with self.subTest(text=text):
+                coverage.write_text(text, encoding="utf-8")
+                self.assertEqual(census.skill_allowlist(root, coverage),
+                                 census.skill_allowlist(root))
+        self.assertEqual(census.skill_allowlist(root, self.tmp / "missing.json"),
+                         census.skill_allowlist(root))
+
+    def test_a_gap_skill_call_counts_by_name_with_the_coverage_census(self):
+        root = make_allowlist_root(self.tmp / "repo")
+        coverage = self.tmp / "latest.json"
+        coverage.write_text(json.dumps({"registries": [
+            {"name": "adam-agentskills", "private": False, "names_withheld": False,
+             "skills": [{"registry": "adam-agentskills", "skill": "zz-gap-skill"}]}]}),
+            encoding="utf-8")
+        projects = self.tmp / "projects"
+        write_transcript(projects / "p" / "s.jsonl", [skill_call("zz-gap-skill")])
+        out, weekly_out = self.tmp / "out.json", self.tmp / "weekly-local.json"
+        argv = ["model_usage_census.py", "--projects", str(projects), "--out", str(out),
+                "--weekly-out", str(weekly_out), "--now", NOW_TEXT, "--hook-logs", "",
+                "--skill-allowlist-root", str(root), "--coverage-census", str(coverage)]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+            self.assertEqual(census.main(), 0)
+        rows = [(r["name"], r["invocations"])
+                for r in json.loads(weekly_out.read_text(encoding="utf-8"))["rows"]
+                if r["kind"] == "skill"]
+        self.assertEqual(rows, [("zz-gap-skill", 1)])
+
     def test_the_committed_evals_tree_loads(self):
         allow = census.skill_allowlist()
         self.assertIn("workflow-path-audit", allow)
@@ -451,6 +499,30 @@ class PublisherTests(unittest.TestCase):
         printed = proc.stdout + proc.stderr
         for forbidden in ("workflow-path-audit", "123456789012", str(self.tmp)):
             self.assertNotIn(forbidden, printed)
+
+    def test_the_results_branch_coverage_census_names_a_gap_skill(self):
+        """A public registry's skill with no fixture or non-coverage row is
+        counted by name once coverage/latest.json on the results branch
+        lists it, and check_public accepts the key."""
+        work = self.tmp / "results-work"
+        self.git("clone", "--quiet", "--branch", self.BRANCH, self.origin.as_uri(), str(work))
+        (work / "coverage").mkdir()
+        (work / "coverage" / "latest.json").write_text(json.dumps({"registries": [
+            {"name": "adam-agentskills", "private": False, "names_withheld": False,
+             "skills": [{"registry": "adam-agentskills", "skill": "zz-gap-skill"}]}]}),
+            encoding="utf-8")
+        self.git("add", "coverage/latest.json", cwd=work)
+        self.git("commit", "--quiet", "-m", "coverage", cwd=work)
+        self.git("push", "--quiet", "origin", self.BRANCH, cwd=work)
+        write_transcript(self.projects / "-home-example-proj" / "g.jsonl",
+                         [skill_call("zz-gap-skill", "toolu_07")])
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        doc = json.loads(self.git("show", f"{self.BRANCH}:usage/weekly-local.json",
+                                  cwd=self.origin))
+        self.assertEqual(sorted((r["name"], r["invocations"]) for r in doc["rows"]
+                                if r["kind"] == "skill"),
+                         [("other", 1), ("workflow-path-audit", 1), ("zz-gap-skill", 1)])
 
     def test_a_change_to_skills_alone_is_published(self):
         """Same clock and the same model counts: latest.json's bytes do not
@@ -916,6 +988,81 @@ class CloudUseTests(unittest.TestCase):
         doc = self.doc(cloud_from=None)
         self.assertIs(skill_usage.zero_use(
             doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)), True)
+
+
+    def test_zero_use_is_unknown_while_a_local_listing_was_cut(self):
+        """#668: a skill listed by name only can rarely trigger, so a zero in a
+        window holding a cut listing says nothing about its value."""
+        cut = skill_usage.listing_row("2026-W35", "truncated", 1)
+        doc = self.doc([self.cloud_row(name="workflow-path-audit"), cut])
+        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
+        self.assertIsNone(skill_usage.zero_use(
+            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)))
+        # Cloud-only skills are not judged by the local listing.
+        self.assertIs(skill_usage.zero_use(
+            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_CLOUD,)), True)
+
+    def test_a_cut_listing_outside_the_window_or_a_full_one_does_not_block(self):
+        old = skill_usage.listing_row("2026-W30", "truncated", 4)
+        full = skill_usage.listing_row("2026-W36", "full", 9)
+        doc = self.doc([self.cloud_row(name="workflow-path-audit"), old, full])
+        self.assertEqual(skill_usage.truncated_listings(doc, NOW), 0)
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
+
+
+class ListingRowTests(unittest.TestCase):
+    """`kind: "listing"` rows: whether a session's first skill listing kept
+    every plugin skill's description (#668)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="listing-usage-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def session(uuid, content=None, initial=True, when="2026-09-03T10:00:00Z"):
+        entries = [{"type": "user", "uuid": uuid, "timestamp": when,
+                    "message": {"role": "user", "content": "hello"}}]
+        if content is not None:
+            entries.append({"type": "attachment", "timestamp": when,
+                            "attachment": {"type": "skill_listing", "content": content,
+                                           "isInitial": initial, "skillCount": 2,
+                                           "names": []}})
+        return entries
+
+    def states(self, *sessions):
+        root = self.tmp / "root"
+        for index, entries in enumerate(sessions):
+            write_transcript(root / "-proj" / f"s{index}.jsonl", entries)
+        return census.census_all([root], NOW, 8, ALLOW)[1]["listing"]
+
+    def test_each_state_is_classified(self):
+        got = self.states(
+            self.session("u1", "- alpha:one: Does one thing.\n- init: Starts.\n"),
+            self.session("u2", "- alpha:one: Does one thing.\n- alpha:two\n"),
+            self.session("u3", "- init\n- alpha:one: Does one thing."),
+            self.session("u4", None))
+        self.assertEqual(got, {"full": {"2026-W36": 2}, "truncated": {"2026-W36": 1},
+                               "unknown": {"2026-W36": 1}})
+
+    def test_only_the_first_initial_listing_counts(self):
+        entries = self.session("u1", "- alpha:two\n", initial=False)
+        entries += self.session("u2", "- alpha:one: Fine.\n")[1:]
+        entries += self.session("u3", "- alpha:two\n")[1:]
+        self.assertEqual(self.states(entries), {"full": {"2026-W36": 1}})
+
+    def test_rows_have_the_published_shape_and_pass_the_publish_check(self):
+        tally = census.census_all([self.tmp / "none"], NOW, 8, ALLOW)[1]
+        tally["listing"] = {"truncated": {"2026-W36": 2}}
+        doc = census.build_weekly_document(tally, NOW)
+        self.assertEqual(doc["rows"], [{
+            "week": "2026-08-31", "kind": "listing", "name": "truncated", "repo": None,
+            "surface": "local", "invocations": None, "sessions": 2, "blocked": None,
+            "overridden": None, "outcome": None, "runner": None}])
+        self.assertEqual(skill_usage.check_public(doc, ALLOW, frozenset()), [])
+        path = self.tmp / "weekly-local.json"
+        path.write_text(json.dumps(doc), encoding="utf-8")
+        self.assertEqual(skill_usage.load(path), doc)
+        self.assertEqual(skill_usage.truncated_listings(doc, NOW), 2)
 
 
 if __name__ == "__main__":

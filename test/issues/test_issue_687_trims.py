@@ -59,6 +59,8 @@ REPO_ROOT = TEST_DIR.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "routine-eval-fire.yml"
 WEEKLY = REPO_ROOT / ".github" / "workflows" / "routine-eval-weekly.yml"
 INSTRUCTIONS = REPO_ROOT / "docs" / "routine" / "eval-runner-instructions.md"
+#: IMPROVE MODE's own file, which the instructions file points to.
+IMPROVE_MODE = REPO_ROOT / "docs" / "routine" / "modes" / "improve.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(TEST_DIR / "issues"))
 sys.path.insert(0, str(TEST_DIR))
@@ -1156,7 +1158,7 @@ class FireStepTests(unittest.TestCase):
 class InstructionsTests(unittest.TestCase):
 
     def test_the_trim_command_is_one_the_script_parses(self):
-        text = INSTRUCTIONS.read_text()
+        text = IMPROVE_MODE.read_text()
         line = next(line for line in text.splitlines() if "--trim-description" in line
                     and "propose_skill_edit.py" in line)
         words = shlex.split(line.split("scripts/propose_skill_edit.py", 1)[1])
@@ -1170,10 +1172,9 @@ class InstructionsTests(unittest.TestCase):
         self.assertEqual(args.trials, 3)
 
     def test_the_payload_rule_and_the_fire_check(self):
-        text = INSTRUCTIONS.read_text()
         self.assertIn('"trim_description": true (the same rule for that key; never both keys)',
-                      text)
-        self.assertIn('fire-check "$SKILL" --holdout= --trim', text)
+                      INSTRUCTIONS.read_text())
+        self.assertIn('fire-check "$SKILL" --holdout= --trim', IMPROVE_MODE.read_text())
 
 
 if __name__ == "__main__":

@@ -221,12 +221,23 @@ def _describe_change(before: dict[str, str] | None, after: dict[str, str]) -> st
     return '; '.join(changes)
 
 
+# Every commit the harness makes (the seed commits) is dated once per run, so
+# each trial of an arm gets the same commit hash. The CLI puts its recent
+# commits in the agent's first request; a commit dated by the clock made every
+# trial's request differ and rewrite the prompt cache. The run's own start
+# keeps the date as recent as it always was. Git's internal form,
+# `<seconds> <offset>`. Fixture `setup:` scripts commit with their own
+# environment and are not affected.
+COMMIT_DATE = f'{int(time.time())} +0000'
+
+
 def _env(home: Path) -> dict[str, str]:
     return {'PATH': '/usr/bin:/bin', 'HOME': str(home), 'XDG_CONFIG_HOME': str(home),
             'LC_ALL': 'C', 'GIT_CONFIG_NOSYSTEM': '1',
             'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_ATTR_NOSYSTEM': '1',
             'GIT_TERMINAL_PROMPT': '0', 'GIT_PAGER': 'cat',
-            'GIT_OPTIONAL_LOCKS': '0', 'GIT_CEILING_DIRECTORIES': str(home)}
+            'GIT_OPTIONAL_LOCKS': '0', 'GIT_CEILING_DIRECTORIES': str(home),
+            'GIT_AUTHOR_DATE': COMMIT_DATE, 'GIT_COMMITTER_DATE': COMMIT_DATE}
 
 
 def _invoke(args: list[str], *, cwd: Path, home: Path, timeout: float,

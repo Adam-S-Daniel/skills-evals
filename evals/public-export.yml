@@ -1,0 +1,9 @@
+# What the public explorer document (explorer/latest.json) may carry beyond
+# the eval facts. The owner's choice; an adopter's kit sets it to false.
+#
+# include_spend: when true and `spend/weekly.json` exists on the results
+# branch, the document's `spend` copies its weekly totals only (week, eval
+# runs, plan meter points, API dollars, thread spend dollars, cost per verdict,
+# plan name), and each eval run keeps its meter readings. When false, `spend`
+# is null and the meter readings are null.
+include_spend: true

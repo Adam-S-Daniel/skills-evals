@@ -42,14 +42,31 @@ class DeadlineTests(unittest.TestCase):
         self.assertEqual(self.prompt_limits(), routine_deadlines.MODE_LIMITS)
 
     def test_each_deadline_is_its_limit_plus_the_margin(self):
-        expected = {"eval": 40, "scaffold": 40, "improve": 100,
+        expected = {"eval": 50, "scaffold": 40, "improve": 100,
                     "guidance-improve": 100, "draft": 70}
         self.assertEqual({mode: routine_deadlines.deadline(mode)
                           for mode in routine_deadlines.MODE_LIMITS},
                          {mode: timedelta(minutes=m) for mode, m in expected.items()})
 
+    def test_an_eval_fire_gets_its_limit_per_model(self):
+        # A pair fire runs run_eval once per model, in sequence, each with
+        # its own 40-minute stop.
+        self.assertEqual(routine_deadlines.deadline("eval", 1), timedelta(minutes=50))
+        self.assertEqual(routine_deadlines.deadline("eval", 2), timedelta(minutes=90))
+        sentence = re.search(r"Limits: (.*?)\n", PROMPT.read_text(encoding="utf-8")).group(1)
+        self.assertIn("and stop after 40 minutes per model (80 for a two-model fire)", sentence)
+        # Every other mode is one model's, as before.
+        for mode, minutes in {"scaffold": 40, "improve": 100, "guidance-improve": 100,
+                              "draft": 70}.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(routine_deadlines.deadline(mode), timedelta(minutes=minutes))
+
     def test_the_planner_holds_a_cell_for_the_eval_deadline(self):
         self.assertEqual(plan_week.PENDING_WINDOW, routine_deadlines.deadline("eval"))
+        title = {"mode": "eval", "target": SKILL_FIXTURE, "model": MODEL}
+        self.assertEqual(plan_week.pending_window(title), routine_deadlines.deadline("eval"))
+        self.assertEqual(plan_week.pending_window({**title, "model": f"{MODEL},claude-x"}),
+                         routine_deadlines.deadline("eval", 2))
         # The outage rule still judges a fire at two hours (#583).
         self.assertEqual(plan_week.FIRE_RESULT_WINDOW, timedelta(hours=2))
 
@@ -57,7 +74,7 @@ class DeadlineTests(unittest.TestCase):
 class LostFireTests(unittest.TestCase):
     """The a4fd19 shape: one fire lost while the routine delivered others."""
 
-    STARTED = NOW - timedelta(minutes=45)
+    STARTED = NOW - routine_deadlines.deadline("eval") - timedelta(minutes=5)
 
     def doc(self, other_runs):
         def row(fixture, runs):
@@ -78,8 +95,9 @@ class LostFireTests(unittest.TestCase):
         self.assertFalse(self.cell(delivered, lost)["pending"])
 
     def test_before_its_deadline_it_still_holds(self):
-        lost = [fire(1, SKILL_FIXTURE, NOW - timedelta(minutes=35))]
-        delivered = self.doc([stamp(NOW - timedelta(minutes=30))])
+        started = NOW - routine_deadlines.deadline("eval") + timedelta(minutes=5)
+        lost = [fire(1, SKILL_FIXTURE, started)]
+        delivered = self.doc([stamp(started + timedelta(minutes=5))])
         self.assertTrue(self.cell(delivered, lost)["pending"])
 
     def test_with_no_delivery_since_it_holds_as_in_an_outage(self):
@@ -396,7 +414,7 @@ class WorkItemIssueTests(unittest.TestCase):
         self.assertEqual((code, self.writes(calls)), (1, []))
 
     def test_an_open_request_without_its_kind_label_gets_it_once(self):
-        body = "<!-- skills-evals:needs-harder-fixtures:writing-adrs -->\n"
+        body = work_item_issues.body_of(self.HARDER, "writing-adrs", None)[1]
         items = {"routine_down": False, "work": [self.HARDER]}
         unlabeled = [{"number": 21, "state": "open", "body": body, "labels": ["agent-ready"]}]
         code, calls, _ = self.run_main(items, unlabeled)
@@ -417,6 +435,47 @@ class WorkItemIssueTests(unittest.TestCase):
         judged = {"routine_down": False, "work": [], "subjects": {"skills": ["writing-adrs"]}}
         self.assertEqual(self.writes(self.run_main(judged, unlabeled)[1]),
                          [["issue", "comment"], ["issue", "close"]])
+
+    def test_an_open_request_with_stale_instructions_gets_its_body_refreshed(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        kind = "needs-harder-fixtures"
+        # The body as filed before the `origin:` instruction existed.
+        stale = f"<!-- skills-evals:{kind}:writing-adrs -->\n\nWrite a fixture.\n"
+        issue = {"number": 31, "state": "open", "body": stale, "labels": ["agent-ready", kind]}
+        code, calls, _ = self.run_main(items, [issue], "--run-url", "https://example.com/run/2")
+        self.assertEqual(code, 0)
+        edits = [(a, s) for a, s in calls if a[0] == "issue"]
+        self.assertEqual([a for a, _ in edits],
+                         [["issue", "edit", "31", "-R", work_item_issues.EVALS_REPO,
+                           "--body-file", "-"]])
+        self.assertIn("origin:", edits[0][1])
+        self.assertIn("https://example.com/run/2", edits[0][1])
+        # The edited issue now matches, so the next run leaves it alone.
+        fresh = {**issue, "body": edits[0][1]}
+        self.assertEqual(self.writes(self.run_main(items, [fresh])[1]), [])
+
+    def test_a_changed_run_link_or_trailing_blank_lines_are_no_difference(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        body = work_item_issues.body_of(self.HARDER, "writing-adrs", "https://example.com/run/1")[1]
+        kind = "needs-harder-fixtures"
+        for text in (body, body + "\n\n  \n", body.replace("\n", "\r\n")):
+            issue = {"number": 32, "state": "open", "body": text, "labels": ["agent-ready", kind]}
+            code, calls, out = self.run_main(items, [issue], "--run-url", "https://example.com/run/9")
+            self.assertEqual((code, self.writes(calls)), (0, []))
+
+    def test_a_request_a_worker_is_on_or_with_unknown_labels_is_not_refreshed(self):
+        items = {"routine_down": False, "work": [self.HARDER]}
+        kind = "needs-harder-fixtures"
+        stale = f"<!-- skills-evals:{kind}:writing-adrs -->\n\nWrite a fixture.\n"
+        for labels in (["agent-ready", kind, "agent-working"], None):
+            issue = {"number": 33, "state": "open", "body": stale, "labels": labels}
+            code, calls, _ = self.run_main(items, [issue])
+            self.assertEqual((code, self.writes(calls)), (0, []))
+        # A lost-fire issue has no instructions to refresh.
+        bbody = "<!-- skills-evals:fixture-broken:evals/ci-watcher-loops:claude-opus-5-5 -->\nold\n"
+        self.assertEqual(self.writes(self.run_main(
+            {"routine_down": False, "work": [BROKEN]},
+            [{"number": 34, "state": "open", "body": bbody, "labels": []}])[1]), [])
 
     def test_the_issue_listing_asks_for_labels(self):
         gh = FakeGh([{"number": 3, "state": "open", "body": "x", "labels": ["a"]}])

@@ -20,9 +20,10 @@ Rules, each deterministic (thresholds are the constants below):
   floor     the same run filter, both arms pass at most FLOOR_SHARE, again on
             every roster model's own runs. Paused.
   keep      neither ceiling nor floor pauses a subject whose explorer verdict
-            is keep or whose confidence that it helps is at least KEEP_GUARD:
-            a pause drops the fixture's cells from the gate and can take the
-            keep with it.
+            is keep or whose confidence that it helps is at least KEEP_GUARD.
+            The gate keeps a paused fixture's cells as parked `paused` cells
+            (decided keep and no-benefit cells still count), so the guard is
+            not needed for safety; it keeps a kept subject's fixtures measured.
   zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
             surfaces it reaches (`skill_usage.zero_use`; unknown means do
             nothing). All of its scheduled fixtures are paused. A skill in
@@ -71,8 +72,10 @@ CEILING_SHARE = 0.85
 CEILING_JUDGE = 8.5
 FLOOR_SHARE = 0.10
 #: A subject whose explorer confidence that it helps is at least this, or
-#: whose verdict is keep, is never paused for ceiling or floor: a pause drops
-#: the fixture's cells from the gate, and so can drop the keep they carry.
+#: whose verdict is keep, is never paused for ceiling or floor. The gate keeps
+#: a paused fixture's cells as parked `paused` cells (decided keep and
+#: no-benefit cells still count), so this is not needed for safety; it keeps a
+#: kept subject's fixtures measured.
 KEEP_GUARD = 0.5
 ZERO_USE_WEEKS = 8
 LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
@@ -369,8 +372,8 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
             if directory.is_dir() and fixture_digest(directory) != row.get("fixture_digest"):
                 why = "the fixture's content changed since it was paused"
             elif directory.is_dir() and protected(explorer, subject_kind, subject):
-                why = (f"{protected(explorer, subject_kind, subject)}, and a pause could drop "
-                       "the cells that carry it")
+                why = (f"{protected(explorer, subject_kind, subject)}, so its fixtures stay "
+                       "measured (the gate keeps paused cells as parked `paused` ones)")
             elif directory.is_dir():
                 since = last_commit_time(root, path)
                 runs = ([] if since is None

@@ -24,7 +24,8 @@ held-out fixture, and accept it only when validation held and train
 improved. Anthropic publishes a plugin that already does half of that.
 `skill-creator` (plugin `skill-creator@claude-plugins-official`, author
 Anthropic, installed at user scope on the owner's machine; read at commit
-`d182ca456ca09d31d139f7d3818d1d333b103cce`) ships, under
+`d182ca456ca09d31d139f7d3818d1d333b103cce`; the routine and `draft_new_skill.py` pin
+`2a40fd2e7c52207aa903bd33fc4c65716126966e`) ships, under
 `skills/skill-creator/`:
 
 | Path | What it does |
@@ -876,3 +877,36 @@ What it is:
 Not done here: a rejected trim keeps its waiver, but nothing yet writes the
 rejection's reason into adam-agentskills' `docs/skill-impact.md`, as the
 issue asks; the rejection is in the loop's record and the plan's `trims` map.
+
+## Upstream skills are background, never subjects (2026-11-03)
+
+Adam's decision: "Agreed: no loops on or redundant creations of Anthropic
+skills-- and same for Claude bundled skills" (2026-11-03).
+
+What it covers: the loop never evaluates, improves, trims, retires or drafts
+a skill made by Anthropic, whether one of the claude.ai account skills
+(synced as `anthropic-skills:<name>`) or one bundled in Claude Code, and the
+draft loop never creates a skill that duplicates one. Today the loop already
+touches none of them, because they are in no registry; this addendum writes
+the rule down and enforces it.
+
+What stays as it is: skill-creator remains a tool. It is fetched at the one
+pinned commit, run unmodified, and never vendored into this repository. Its
+sibling skills `docx`, `pdf`, `pptx` and `xlsx` in anthropics/skills are
+proprietary ("© 2025 Anthropic, PBC. All rights reserved"), so nothing from
+them is ever copied into a registry.
+
+Mechanisms:
+
+- `harness/upstream_skills.yml` lists the upstream names in two groups,
+  `anthropic_account` and `claude_code_bundled`, as a snapshot (2026-11-03,
+  Claude Code 2.1.317); `harness/upstream_skills.py` loads and validates it.
+- The draft loop: `select` skips an upstream subject, `measure` and the
+  gate's `validate` refuse one, and a new final decision `upstream-covered`
+  (`draft_new_skill.py upstream-covered`) lets the routine record that a
+  skill Anthropic ships, including one only its live listing shows, already
+  does what a proposal asks. The gate acts on no such record, so no pull
+  request or issue follows.
+- `test/issues/test_issue_upstream_skills.py` holds the rule: no fixture, no
+  scheduled or unscheduled entry and no registry names an upstream skill or
+  an Anthropic repository.

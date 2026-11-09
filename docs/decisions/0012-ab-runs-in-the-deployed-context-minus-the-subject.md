@@ -322,6 +322,17 @@ until the last:
 3. Injection inside the arm sandbox.
 4. The pooling key.
 5. The seed audit and the first fixture opt-ins.
+   [The audit](https://github.com/Adam-S-Daniel/skills-evals/issues/535#issuecomment-6589522031)
+   cleared 12 fixtures, which opted in with the three re-pins of #630 (15 in
+   all, listed in `test_issue_535_git_provisioning.py`): github-actions-sha-pinning,
+   review-bash-ci-reliability's drift-report-capture, nightly-snapshot,
+   release-pipeline and test-runner-assertions, workflow-path-audit/required-check-routing,
+   writing-adrs/bootstrap, vendor-release-impact-issues' closing-keywords,
+   issue-hygiene and stamps-skip-quotes, admin-config-render, post-failure-comment,
+   embeddable-tool-pages, finding-unknowns and windows-elevation-from-wsl. The
+   planner holds them until the newest ingested routine summary records
+   `harness.git_version` 2.54 or later (`plan_week.routine_git_version`), not
+   its own host's Git, which is an Actions runner's.
 
 Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
 (`run_eval._in_place_plan` and `_prepare_in_place`), and
@@ -401,8 +412,10 @@ Stages 2 to 4 are `harness/fleet_hooks.py`, wired into the in-place pair
   itself refuses a host without a namespace id (`fleet_hooks_no_receipt`),
   without `python3` where the guard looks (`fleet_hooks_no_python`), or whose
   managed settings set `disableAllHooks` or `allowManagedHooksOnly`
-  (`fleet_hooks_managed_hooks_off`). `run_priors` and the regression window
-  group by `fixture_digest` and the hook digest together. The receipt rests on the sandbox's `--unshare-net`, which the tests stand
+  (`fleet_hooks_managed_hooks_off`). The regression window groups by
+  `fixture_digest` and the hook digest together, and so do the history cells
+  of the gate's learned bet prior (`paired_history`; until 2026-11-03,
+  `run_priors`). The receipt rests on the sandbox's `--unshare-net`, which the tests stand
   in for with `bwrap --unshare-net`, and on the live probes below. The CLI was seen to
   rewrite `GIT_CONFIG_*` for the Git it runs itself (dropping the include
   pairs and setting `hook.<event>.enabled=false`). One live call on WSL

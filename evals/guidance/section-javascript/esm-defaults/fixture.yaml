@@ -1,0 +1,96 @@
+# Guidance fixture: section-javascript / esm-defaults
+#
+# The JavaScript section's rules on the project's module system and on error
+# handling, where the natural shortcut breaks both. The seed is ESM
+# ("type": "module"), where `require`, `module.exports`, `__dirname` and
+# `__filename` do not exist. Reading a JSON file that sits beside the module
+# is the task that most invites them, and a fallback for a missing file
+# invites a catch that drops the error.
+#
+# What the section should change: loadDefaults uses `import.meta.url` (or an
+# import attribute) and an `export`, and a failed read is handled in a way the
+# caller can see, not silently. The prompt names neither rule.
+#
+# Invented task: names, data and hosts are made up.
+
+subject: guidance
+section: section-javascript
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/865
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add loadDefaults() to src/settings.js and export it: it reads
+  defaults.json from the same directory as settings.js and returns the
+  parsed object. If the file cannot be read, it returns an empty object
+  so startup still works.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: helper-exported
+    description: src/settings.js defines loadDefaults and exports it, beside loadOverrides.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.js"]
+    must_match:
+      - "function\\s+loadDefaults\\b|loadDefaults\\s*="
+      - "export\\s+(async\\s+)?function\\s+loadDefaults\\b|export\\s*\\{[^}]*\\bloadDefaults\\b|export\\s+(const|let)\\s+loadDefaults\\b"
+      - "export\\s+(async\\s+)?function\\s+loadOverrides\\b|export\\s*\\{[^}]*\\bloadOverrides\\b"
+  - id: stays-esm
+    description: >
+      No CommonJS require or module.exports, and no __dirname or __filename,
+      which ESM does not define.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.js"]
+    must_not_match:
+      - "\\brequire\\s*\\("
+      - "\\bmodule\\.exports\\b|\\bexports\\.\\w+\\s*="
+      - "\\b__dirname\\b|\\b__filename\\b"
+  - id: file-located-from-module
+    description: The path comes from import.meta, or the JSON is imported.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.js"]
+    must_match: ["import\\.meta\\.(url|dirname|resolve)|import\\s+\\w+\\s+from\\s+[\"']\\./defaults\\.json[\"']"]
+  - id: no-swallowed-error
+    description: >
+      No catch block that holds only comments, a bare return of an empty
+      object, or nothing, and no .catch() handler that discards the error.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.js"]
+    must_not_match:
+      - "catch\\s*(\\([^)]*\\))?\\s*\\{(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*(return\\s*(\\{\\s*\\}|null|undefined)?\\s*;?(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*)?\\}"
+      - "\\.catch\\(\\s*(\\(\\s*\\w*\\s*\\)|\\w+)\\s*=>\\s*(\\{(\\s|//[^\\n]*|/\\*[\\s\\S]*?\\*/)*\\}|\\(?\\{\\s*\\}\\)?|undefined|null)\\s*\\)"
+  - id: failure-reported
+    description: A failed read is reported somewhere, not dropped.
+    type: file_matches_excluding_comments
+    paths: ["src/settings.js"]
+    must_match: ["console\\.(warn|error|log)\\(|logger\\b|\\bonError\\b|reportError|process\\.emitWarning\\(|\\bthrow\\b"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) JavaScript rules — does the file stay ESM (no require, module.exports,
+  __dirname or __filename), and is a failed read handled visibly (logged,
+  warned or passed on) rather than swallowed? Take 4 points off for each rule
+  missed.
+  (2) Behavior — does it read defaults.json beside settings.js whatever the
+  working directory is, return the parsed object, and return an empty object
+  when the read fails?
+  (3) Restraint — did the agent leave loadOverrides and src/index.js alone?

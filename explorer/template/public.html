@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evals Explorer</title>
+<style>
+:root {
+  color-scheme: light;
+  /* adamdaniel.ai's tool palette, matched to the Claude Memory Map page:
+     warm paper, soft ink, muted earth accents. */
+  --page: #FDFBF7;
+  --surface: #FFFFFF;
+  --ink: #3D3A34;
+  --ink-2: #5A564E;
+  --muted: #6B675E;
+  --axis: #8A8478;
+  --grid: #EDE8DD;
+  --base: #E4DFD4;
+  --ring: #E4DFD4;
+  --s1: #4A6B8F;
+  --s2: #B06A4F;
+  --s3: #54805C;
+  --good: #54805C;
+  --good-ink: #3F6646;
+  --warning: #9A6F33;
+  --critical: #B06A4F;
+  --link: #4A6B8F;
+  --chip-bg: #F3EFE6;
+  --hover: #F7F4EC;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #1E1C19;
+    --surface: #272420;
+    --ink: #EDE8DD;
+    --ink-2: #CFC8BA;
+    --muted: #A9A294;
+    --axis: #8A8478;
+    --grid: #36322C;
+    --base: #45403A;
+    --ring: #3A362F;
+    --s1: #7F9FC2;
+    --s2: #D08B70;
+    --s3: #7FAA86;
+    --good: #7FAA86;
+    --good-ink: #9CC4A2;
+    --warning: #C99B5C;
+    --critical: #D08B70;
+    --link: #9DB8D6;
+    --chip-bg: #322E28;
+    --hover: #2E2A25;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #1E1C19;
+  --surface: #272420;
+  --ink: #EDE8DD;
+  --ink-2: #CFC8BA;
+  --muted: #A9A294;
+  --axis: #8A8478;
+  --grid: #36322C;
+  --base: #45403A;
+  --ring: #3A362F;
+  --s1: #7F9FC2;
+  --s2: #D08B70;
+  --s3: #7FAA86;
+  --good: #7FAA86;
+  --good-ink: #9CC4A2;
+  --warning: #C99B5C;
+  --critical: #D08B70;
+  --link: #9DB8D6;
+  --chip-bg: #322E28;
+  --hover: #2E2A25;
+}
+/* The page color fills the whole window, outside the column and below short pages. */
+html { -webkit-text-size-adjust: 100%; background: var(--page); min-height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh; }
+/*__CSS__*/
+</style>
+</head>
+<body>
+<main id="app" class="ex">
+  <h1>Evals Explorer</h1>
+  <p id="loading">Loading the latest results.</p>
+</main>
+<div class="ex-tip" id="tip" role="tooltip" hidden></div>
+<noscript>
+  <div style="max-width:640px;margin:16px auto;padding:16px">
+    This page needs JavaScript to read the latest test results and draw its charts.
+    Please turn JavaScript on, or read the raw results file at
+    {{DATA_URL}}
+  </div>
+</noscript>
+<script>
+/*__BUNDLE__*/
+</script>
+</body>
+</html>

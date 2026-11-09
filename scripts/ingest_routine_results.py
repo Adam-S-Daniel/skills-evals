@@ -33,10 +33,10 @@ checkout, refusing to overwrite a file that differs.
 Subcommands (all output is `key=value` lines of already-validated values,
 for $GITHUB_OUTPUT):
 
-  resolve  --event-name NAME --event-path PATH         (adds kind=eval|cost)
+  resolve  --event-name NAME --event-path PATH    (adds kind=eval|cost|spend)
   validate --repo DIR --base REF --source REF --branch NAME
            [--expect-sha SHA] --out DIR                (adds kind=, dest=)
-  place    --staged DIR --tree DIR [--kind eval|cost]
+  place    --staged DIR --tree DIR [--kind eval|cost|spend]
   estimate --tree DIR --run-id ID
 
 A `claude/eval-cost-<run id>` branch (#572 part 1, 2026-11-02) is the other
@@ -47,6 +47,16 @@ scripts/improve_cost.py's `check_record` and stages it at
 goes red: that is the alarm). `place --kind cost` keeps the first record
 ingested for a run id and reports `conflict=true`, exit 0, for a differing
 second one.
+
+A `claude/spend-<YYYYMMDDTHHMMSSZ>` branch is the third kind: the private
+dashboard refresh (`dashboard/build.py --spend`) pushes the account's weekly
+spend totals as exactly one `spend/weekly.json` in explorer/schema.json's
+`$defs.spend_file` shape. `validate_spend` holds it to weekly totals only
+(SPEND_KEYS and SPEND_WEEK_KEYS, never a per-session, per-thread or
+id-bearing field) and stages it at `spend/weekly.json`; `place --kind spend`
+replaces the file there unless the one already there was generated later
+(`stale=true`, exit 0). Whether the public explorer shows it is
+evals/public-export.yml's `include_spend`, read by explorer_data.py.
 
 `estimate` writes `routine-results/<run id>/cost_estimate.json` beside a run
 just placed (owner decision, 2026-11-01): each run_eval invocation's
@@ -86,6 +96,28 @@ COST_SOURCE_NAME = "cost.json"
 #: an eval fire's reservation).
 COST_DEST_ROOT = "improve-costs"
 COST_CAP = 4 * 1024
+#: The dashboard refresh's weekly spend totals: the branch is named for the
+#: UTC second it was pushed (no `eval-` prefix, so no `claude/eval-*`
+#: trigger or ingest pattern can match it, and back) and adds exactly
+#: SPEND_SOURCE, which lands at SPEND_DEST on persistent/eval-results
+#: (explorer_public.build_spend reads it there). Latest generated wins.
+SPEND_BRANCH_RE = re.compile(r"claude/spend-(?P<run_id>[0-9]{8}T[0-9]{6}Z)")
+SPEND_SOURCE = "spend/weekly.json"
+SPEND_DEST = "spend/weekly.json"
+SPEND_CAP = 64 * 1024
+SPEND_MAX_WEEKS = 1040
+#: The only keys a spend file may carry: explorer/schema.json `$defs.spend_file`
+#: allows more, and this gate does not, so a per-session or per-thread row can
+#: never reach the public results branch.
+SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks"})
+SPEND_WEEK_KEYS = frozenset({"week", "eval_runs", "plan_meter_points", "api_usd",
+                             "thread_spend_usd", "cost_per_verdict", "plan"})
+#: Copies of explorer_public's FORBIDDEN_ID_RE and _PLAN_RE (that module
+#: needs PyYAML and the harness, which this job does not install); a test
+#: holds them equal.
+FORBIDDEN_ID_RE = re.compile(r"(?:cse|session|cmsg|trig|trigger|thread|thr)_"
+                             r"(?=[a-z]*[0-9A-Z])[A-Za-z0-9]{6,}")
+PLAN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,39}")
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 TIMESTAMP_RE = re.compile(r"[0-9]{8}T[0-9]{6}Z")
 NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
@@ -1098,12 +1130,13 @@ def _capped(detail: str) -> str:
 
 
 def cap_summary_details(doc) -> bool:
-    """Cut every over-cap objective check `detail` and `error.detail` string
-    in a summary to MAX_STRING, in place; True when one was cut. A harness
-    from before the cap wrote them whole, and that one long string (a
-    passing `files_unchanged` naming every file, 2026-11-03) rejected the
-    whole paid run. Only these two fields are cut, and only strings: a
-    wrong type is still check_summary's to refuse."""
+    """Cut every over-cap objective check `detail`, `error.detail` and
+    `judge.error` string in a summary to MAX_STRING, in place; True when one
+    was cut. A harness from before the cap wrote them whole, and that one long
+    string (a passing `files_unchanged` naming every file, 2026-11-03; a judge
+    parse error quoting 5000+ chars of the judge's raw output, 2026-11-07)
+    rejected the whole paid run. Only these three fields are cut, and only
+    strings: a wrong type is still check_summary's to refuse."""
     if not isinstance(doc, dict):
         return False
     holders = [doc.get("error")]
@@ -1115,6 +1148,11 @@ def cap_summary_details(doc) -> bool:
                 and len(holder["detail"]) > MAX_STRING:
             holder["detail"] = _capped(holder["detail"])
             cut = True
+    judge = doc.get("judge")
+    if isinstance(judge, dict) and isinstance(judge.get("error"), str) \
+            and len(judge["error"]) > MAX_STRING:
+        judge["error"] = _capped(judge["error"])
+        cut = True
     return cut
 
 
@@ -1593,30 +1631,9 @@ def validate_cost(repo: str, base: str, source: str, branch: str,
     if not match:
         raise Rejected("branch name is not claude/eval-cost-<run id>")
     run_id = match.group("run_id")
-    tip = resolve_commit(repo, source)
-    if expect_sha is not None:
-        if not SHA_RE.fullmatch(expect_sha):
-            raise Rejected("expected sha is not a 40-hex commit id")
-        if tip != expect_sha:
-            raise Rejected("the branch moved since the push that triggered "
-                           "this run; that newer push triggers its own ingest")
-    base_sha = resolve_commit(repo, base)
-    merge_base = git(repo, "merge-base", base_sha, tip).decode().strip()
-    if not SHA_RE.fullmatch(merge_base):
-        raise Rejected("the branch shares no history with the default branch")
-    files = added_files(repo, merge_base, tip)
     expected = f"{COST_SOURCE_ROOT}/{run_id}/{COST_SOURCE_NAME}"
-    if len(files) != 1:
-        raise Rejected("a cost branch adds exactly one file")
-    name, _, oid = files[0]
-    if name != expected:
-        raise Rejected(f"{name!r}: not {expected!r}")
-    size = int(git(repo, "cat-file", "-s", oid).decode().strip())
-    if size > COST_CAP:
-        raise Rejected(f"{name!r}: {size} bytes is over the {COST_CAP}-byte cap")
-    data = git(repo, "cat-file", "blob", oid)
-    if len(data) != size:
-        raise Rejected(f"{name!r}: size changed while reading")
+    tip, name, data = _one_added_file(repo, base, source, expect_sha, expected,
+                                      COST_CAP, "a cost branch")
     doc = load_json(decode_text(data, repr(name)), repr(name))
     try:
         improve_cost.check_record(doc)
@@ -1634,15 +1651,138 @@ def validate_cost(repo: str, base: str, source: str, branch: str,
     return {"run_id": run_id, "sha": tip, "files": "1"}, dest
 
 
+def _one_added_file(repo: str, base: str, source: str, expect_sha: str | None,
+                    expected: str, cap: int, what: str) -> tuple[str, str, bytes]:
+    """(tip, path, bytes) of a branch that adds exactly the one regular file
+    `expected`, at most `cap` bytes, against its merge-base with `base`: the
+    shared opening of the cost and spend validators."""
+    tip = resolve_commit(repo, source)
+    if expect_sha is not None:
+        if not SHA_RE.fullmatch(expect_sha):
+            raise Rejected("expected sha is not a 40-hex commit id")
+        if tip != expect_sha:
+            raise Rejected("the branch moved since the push that triggered "
+                           "this run; that newer push triggers its own ingest")
+    base_sha = resolve_commit(repo, base)
+    merge_base = git(repo, "merge-base", base_sha, tip).decode().strip()
+    if not SHA_RE.fullmatch(merge_base):
+        raise Rejected("the branch shares no history with the default branch")
+    files = added_files(repo, merge_base, tip)
+    if len(files) != 1:
+        raise Rejected(f"{what} adds exactly one file")
+    name, _, oid = files[0]
+    if name != expected:
+        raise Rejected(f"{name!r}: not {expected!r}")
+    size = int(git(repo, "cat-file", "-s", oid).decode().strip())
+    if size > cap:
+        raise Rejected(f"{name!r}: {size} bytes is over the {cap}-byte cap")
+    data = git(repo, "cat-file", "blob", oid)
+    if len(data) != size:
+        raise Rejected(f"{name!r}: size changed while reading")
+    return tip, name, data
+
+
+def validate_spend(repo: str, base: str, source: str, branch: str,
+                   expect_sha: str | None, out: Path,
+                   schema_path: Path | None = None) -> dict:
+    """The spend-branch twin of `validate_cost`: exactly ONE file at
+    exactly SPEND_SOURCE, at most SPEND_CAP bytes, UTF-8 JSON with no
+    duplicate key or non-finite constant, valid against explorer/schema.json
+    `$defs.spend_file` (main's copy, with jsonschema), and weekly totals
+    only (`check_spend`). Staged at SPEND_DEST; the commit message is never
+    read."""
+    import jsonschema  # noqa: PLC0415 - only a spend branch needs it
+    match = SPEND_BRANCH_RE.fullmatch(branch)
+    if not match:
+        raise Rejected("branch name is not claude/spend-<YYYYMMDDTHHMMSSZ>")
+    run_id = match.group("run_id")
+    tip, name, data = _one_added_file(repo, base, source, expect_sha, SPEND_SOURCE,
+                                      SPEND_CAP, "a spend branch")
+    text = decode_text(data, repr(name))
+    doc = load_json(text, repr(name))
+    path = schema_path if schema_path is not None else Path(repo) / "explorer" / "schema.json"
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        spend_file = schema["$defs"]["spend_file"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise Rejected("explorer/schema.json has no $defs.spend_file") from None
+    validator = jsonschema.validators.validator_for(schema)(spend_file)
+    error = jsonschema.exceptions.best_match(validator.iter_errors(doc))
+    if error is not None:
+        # The path into the document, never the offending value.
+        where = "/".join(str(p) for p in error.absolute_path) or "the document"
+        raise Rejected(f"{name!r}: {where} does not match $defs.spend_file "
+                       f"({error.validator})")
+    check_spend(doc, text, repr(name))
+    if out.exists() and any(out.iterdir()):
+        raise Rejected("the staging directory is not empty")
+    target = out / SPEND_DEST
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return {"run_id": run_id, "sha": tip, "files": "1"}
+
+
+def check_spend(doc: dict, text: str, where: str) -> None:
+    """Weekly totals only, past what the schema says: no key outside
+    SPEND_KEYS / SPEND_WEEK_KEYS, a `generated_at`, at most SPEND_MAX_WEEKS
+    weeks, each a distinct Monday, a plan name in PLAN_RE, and no session,
+    thread, message or trigger id or `@` anywhere in the text."""
+    extra = set(doc) - SPEND_KEYS
+    if extra:
+        raise Rejected(f"{where}: carries a field that is not a weekly total")
+    if "generated_at" not in doc:
+        raise Rejected(f"{where}: has no generated_at")
+    if len(doc["weeks"]) > SPEND_MAX_WEEKS:
+        raise Rejected(f"{where}: more than {SPEND_MAX_WEEKS} weeks")
+    plans = [doc.get("plan")]
+    seen = set()
+    for i, week in enumerate(doc["weeks"]):
+        if set(week) - SPEND_WEEK_KEYS:
+            raise Rejected(f"{where}: week {i} carries a field that is not a weekly total")
+        try:
+            day = datetime.strptime(week["week"], "%Y-%m-%d")
+        except ValueError:
+            raise Rejected(f"{where}: week {i} is not a date") from None
+        if day.weekday() != 0:
+            raise Rejected(f"{where}: week {i} does not start on a Monday")
+        if week["week"] in seen:
+            raise Rejected(f"{where}: week {i} repeats an earlier week")
+        seen.add(week["week"])
+        plans.append(week.get("plan"))
+    if any(p is not None and not PLAN_RE.fullmatch(p) for p in plans):
+        raise Rejected(f"{where}: a plan name is not a short plain name")
+    if FORBIDDEN_ID_RE.search(text) or "cse_" in text or "session_" in text:
+        raise Rejected(f"{where}: carries a session, thread, message or trigger id")
+    if "@" in text:
+        raise Rejected(f"{where}: carries an '@'")
+
+
+def _generated_at(data: bytes) -> str | None:
+    """A spend file's `generated_at` (fixed-width UTC, so it sorts as text),
+    or None when it is not readable."""
+    try:
+        doc = json.loads(data)
+    except ValueError:
+        return None
+    value = doc.get("generated_at") if isinstance(doc, dict) else None
+    return value if isinstance(value, str) and re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", value) else None
+
+
 def check_cost_target(mode: str, target: str, evals: Path) -> None:
     """Refuse a target the public results branch must not name: a private
-    skill, or one with no committed fixture set here. A guidance section
-    must have fixtures under evals/guidance/<section>/ (the manifest is in
-    _agent-guidance, which this workflow does not check out; the fire
-    workflow's fire-check already required both)."""
+    skill, or one with no committed fixture set here. A skill's set is its
+    fixtures or, for a trigger-only improve fire, its reviewed
+    evals/<skill>/trigger-eval-set.json (2026-11-07: every trigger-only
+    fire's record was refused). A guidance section must have fixtures under
+    evals/guidance/<section>/ (the manifest is in _agent-guidance, which this
+    workflow does not check out; the fire workflow's fire-check already
+    required both)."""
     folder = evals / target if mode == "improve" else evals / "guidance" / target
-    if folder.is_symlink() or not folder.is_dir() \
-            or not any(folder.rglob("fixture.yaml")):
+    trigger_set = folder / "trigger-eval-set.json"
+    has_set = any(folder.rglob("fixture.yaml")) or (
+        mode == "improve" and trigger_set.is_file() and not trigger_set.is_symlink())
+    if folder.is_symlink() or not folder.is_dir() or not has_set:
         raise Rejected("the record's target has no committed fixture set")
     if mode == "improve":
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1651,13 +1791,17 @@ def check_cost_target(mode: str, target: str, evals: Path) -> None:
             raise Rejected("the record's target is a private skill")
 
 
-def place(staged: Path, tree: Path, *, first_wins: bool = False) -> dict:
+def place(staged: Path, tree: Path, *, first_wins: bool = False,
+          latest_wins: bool = False) -> dict:
     """Copy every staged file onto `tree`. A file already there with the
     same bytes is left alone; one with different bytes is a conflict and
     nothing is written. No path component in `tree` may be a symlink.
     With `first_wins` (a cost record, #572), a conflict is not an error:
     the record already ingested for that run id stands, nothing is written
-    and `conflict=true` says so."""
+    and `conflict=true` says so. With `latest_wins` (the spend file), a
+    differing file is replaced unless its own `generated_at` is later than
+    the staged one's; then nothing is written and `stale=true` says so (a
+    re-dispatched old branch never rolls the totals back)."""
     plan = []
     tree_root = tree.resolve()
     for path in sorted(p for p in staged.rglob("*") if p.is_file()):
@@ -1677,6 +1821,12 @@ def place(staged: Path, tree: Path, *, first_wins: bool = False) -> dict:
             if not target.is_file() or target.read_bytes() != data:
                 if first_wins:
                     return {"changed": "false", "added": "0", "conflict": "true"}
+                if latest_wins and target.is_file():
+                    there, new = _generated_at(target.read_bytes()), _generated_at(data)
+                    if there is not None and new is not None and there > new:
+                        return {"changed": "false", "added": "0", "stale": "true"}
+                    plan.append((target, data))
+                    continue
                 raise Rejected(f"{str(rel)!r}: already ingested with different content")
             continue
         plan.append((target, data))
@@ -1687,18 +1837,21 @@ def place(staged: Path, tree: Path, *, first_wins: bool = False) -> dict:
 
 
 def resolve_ingest(event_name: str, event_path: str) -> dict:
-    """`resolve` for this workflow's two branch kinds, dispatched by branch
+    """`resolve` for this workflow's three branch kinds, dispatched by branch
     regex alone: `kind=eval` for claude/eval-<run id>, `kind=cost` for
-    claude/eval-cost-<run id> (#572). Each kind's own validator then judges
-    the branch, so a cost branch never reaches the eval validator, and
-    back."""
-    try:
-        return {**resolve(event_name, event_path, COST_BRANCH_RE,
-                          "claude/eval-cost-<run id>"), "kind": "cost"}
-    except Rejected:
-        pass
+    claude/eval-cost-<run id> (#572), `kind=spend` for
+    claude/spend-<timestamp>. Each kind's own validator then judges the
+    branch, so no branch ever reaches another kind's validator."""
+    for pattern, shape, kind in (
+            (COST_BRANCH_RE, "claude/eval-cost-<run id>", "cost"),
+            (SPEND_BRANCH_RE, "claude/spend-<YYYYMMDDTHHMMSSZ>", "spend")):
+        try:
+            return {**resolve(event_name, event_path, pattern, shape), "kind": kind}
+        except Rejected:
+            pass
     return {**resolve(event_name, event_path,
-                      shape="claude/eval-<run id> or claude/eval-cost-<run id>"),
+                      shape="claude/eval-<run id>, claude/eval-cost-<run id> "
+                            "or claude/spend-<YYYYMMDDTHHMMSSZ>"),
             "kind": "eval"}
 
 
@@ -1751,7 +1904,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("place")
     p.add_argument("--staged", required=True, type=Path)
     p.add_argument("--tree", required=True, type=Path)
-    p.add_argument("--kind", choices=("eval", "cost"), default="eval")
+    p.add_argument("--kind", choices=("eval", "cost", "spend"), default="eval")
     p = sub.add_parser("estimate")
     p.add_argument("--tree", required=True, type=Path)
     p.add_argument("--run-id", required=True)
@@ -1764,6 +1917,10 @@ def main(argv: list[str] | None = None) -> int:
                                          args.branch, args.expect_sha or None,
                                          args.out)
             result.update(kind="cost", dest=dest)
+        elif args.command == "validate" and SPEND_BRANCH_RE.fullmatch(args.branch):
+            result = validate_spend(args.repo, args.base, args.source, args.branch,
+                                    args.expect_sha or None, args.out)
+            result.update(kind="spend", dest=SPEND_DEST)
         elif args.command == "validate":
             result = validate(args.repo, args.base, args.source, args.branch,
                               args.expect_sha or None, args.out)
@@ -1772,7 +1929,8 @@ def main(argv: list[str] | None = None) -> int:
             result = estimate(args.tree, args.run_id)
         else:
             result = place(args.staged, args.tree,
-                           first_wins=args.kind == "cost")
+                           first_wins=args.kind == "cost",
+                           latest_wins=args.kind == "spend")
     except Rejected as exc:
         # Paths are already repr()-escaped; this is the backstop, so no
         # message can start a new log line (a `::workflow-command::`).

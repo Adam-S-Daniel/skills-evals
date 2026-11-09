@@ -67,7 +67,11 @@ that, after the loop's own normalization (whitespace collapsed, a repeated
 query dropped), holds at least propose_skill_edit.TRIGGER_ONLY_MIN_CLASS
 queries of each class and leaves both of skill-creator's splits with both
 classes (`trigger_set_problems`). The blob is read with `git cat-file` as
-data and parsed as JSON; nothing from the branch runs.
+data and parsed as JSON; nothing from the branch runs. The one other change
+allowed is README.md's layout entry for the skill's directory: README.md
+stays a regular file and the change adds exactly one line, removes none, and
+that line is the directory (`<skill>/`, indented) with at most a `#`
+comment, at most README_LINE_MAX characters (`readme_entry_ok`).
 
 Output, for $GITHUB_OUTPUT: `lane=`, `eligible=`, `issue=`, `reason=` (fixed
 text, never file content). Exit 0 on any decision; exit 2 on bad input.
@@ -76,6 +80,7 @@ text, never file content). Exit 0 on any decision; exit 2 on bad input.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import re
 import subprocess
@@ -96,6 +101,8 @@ ISSUE_AUTHOR = "github-actions[bot]"
 REGISTRY = "https://github.com/Adam-S-Daniel/adam-agentskills"
 MAX_FILE_BYTES = 1_000_000
 MAX_TOTAL_BYTES = 5_000_000
+#: The longest README.md layout line a trigger-set pull request may add.
+README_LINE_MAX = 200
 _REF = re.compile(r"\b(?:refs|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+"
                   r"(?:(?:https://github\.com/)?Adam-S-Daniel/skills-evals(?:/issues/|#)|#)"
                   r"([1-9][0-9]{0,6})\b", re.I)
@@ -106,6 +113,11 @@ _SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 #: `origin.kind` values (module docstring, ORIGIN).
 ORIGIN_KINDS = ("real-work", "invented")
+#: How the `readiness` note of a guidance fixture's evals/scheduled.yml row
+#: starts when a fix PR appends it. The schedule tests tell these rows from the
+#: reviewed list and from `scaffold_real_work.py promote` rows by this prefix
+#: and the fixture's valid `origin:` (test_issue_scheduled_fixtures.py).
+FIXTURE_PR_NOTE = "Added by a fixture pull request"
 #: `origin.request` is this prefix plus the answered issue's number.
 REQUEST_PREFIX = "https://github.com/Adam-S-Daniel/skills-evals/issues/"
 _REQUEST = re.compile(re.escape(REQUEST_PREFIX) + r"([1-9][0-9]{0,6})")
@@ -235,6 +247,24 @@ def trigger_set_ok(data: bytes) -> bool:
         propose_skill_edit.trigger_split_counts(clean))
 
 
+def readme_entry_ok(before: bytes, after: bytes, skill: str) -> bool:
+    """Whether README.md went from `before` to `after` by adding exactly one
+    line, removing none, that names the skill's directory as a layout entry
+    (module docstring, A TRIGGER SET)."""
+    try:
+        old = before.decode("utf-8").splitlines()
+        new = after.decode("utf-8").splitlines()
+    except UnicodeDecodeError:
+        return False
+    changed = [op for op in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes()
+               if op[0] != "equal"]
+    if len(new) != len(old) + 1 or len(changed) != 1 or changed[0][0] != "insert":
+        return False
+    line = new[changed[0][3]]
+    pattern = r" +" + re.escape(skill) + r"/(?: +#[^\r\n]*)?"
+    return len(line) <= README_LINE_MAX and re.fullmatch(pattern, line) is not None
+
+
 def classify_trigger_set(repo: Path, base: str, source: str, skill: str, out: dict) -> dict:
     """The needs-trigger-set half of `classify` (module docstring, A
     TRIGGER SET): fixed-text reasons, never file content."""
@@ -246,8 +276,17 @@ def classify_trigger_set(repo: Path, base: str, source: str, skill: str, out: di
     path = f"evals/{skill}/{propose_skill_edit.TRIGGER_SET_FILE}"
     merge_base = _git(repo, "merge-base", base, source).decode().strip()
     changes = _changes(repo, merge_base, source)
+    readme = [c for c in changes if c[3] == "README.md"]
+    changes = [c for c in changes if c[3] != "README.md"]
     if len(changes) != 1:
-        return refuse("a trigger-set pull request must change exactly one file")
+        return refuse("a trigger-set pull request must add exactly one file, "
+                      "plus at most README.md's entry for it")
+    if readme:
+        r_mode, r_sha, r_status, _ = readme[0]
+        if r_status != "M" or r_mode != "100644" or not readme_entry_ok(
+                _git(repo, "show", f"{merge_base}:README.md"),
+                _git(repo, "cat-file", "blob", r_sha), skill):
+            return refuse("the README.md change is not one added layout line for the skill")
     mode, sha, status, changed = changes[0]
     if status != "A" or mode != "100644" or changed != path:
         return refuse("the change is not the skill's new trigger set as a regular file")

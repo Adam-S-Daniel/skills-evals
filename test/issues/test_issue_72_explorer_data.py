@@ -156,18 +156,24 @@ class ShapeAndMathTests(unittest.TestCase):
     def test_top_level_keys_and_types(self):
         d = self.doc
         # No `broken_unknown`: #544's alert is retired (#559).
-        self.assertEqual(sorted(d), ["alerts", "context_drift_unknown",
-                                     "coverage", "fires_without_results",
+        # The public data contract adds evals, hooks, lesson_funnel, activity and
+        # spend, keeping schema_version 1
+        # (test_issue_public_data_contract.py covers them).
+        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_unknown",
+                                     "coverage", "discarded_runs", "evals", "fires_without_results",
                                      "fixture_queue", "generated_at",
-                                     "guidance", "newest_run", "policy", "removed_skills",
+                                     "guidance", "hooks", "lesson_funnel", "lessons",
+                                     "newest_run", "policy", "removed_skills",
                                      "roster", "schema_version",
-                                     "skills", "source", "usage"])
+                                     "skills", "source", "spend", "usage"])
         self.assertIsNone(d["usage"])
         # No evals/scheduled.yml, so no fixture is in the #545 scope, nor in
         # #555's: no fire file either, so the summary is unknown.
         self.assertIsNone(d["fires_without_results"])
         # No --fixture-queue report: unknown, not an empty queue.
         self.assertIsNone(d["fixture_queue"])
+        # No --lessons directory: unknown, not an empty list.
+        self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
@@ -177,8 +183,9 @@ class ShapeAndMathTests(unittest.TestCase):
         self.assertEqual(d["roster"], {"arms": [{"model": "model-a", "reason": "invented reason a"}],
                                        "judge": {"model": "model-j",
                                                  "reason": "invented judge reason"}})
-        self.assertEqual(d["policy"], {"benefit_confidence": 0.85, "retire_confidence": 0.90,
-                                       "min_cli_versions": 2, "objective_margin": 0.15})
+        self.assertEqual(d["policy"], {"benefit_confidence": 0.80, "retire_confidence": 0.90,
+                                       "min_cli_versions": 2, "objective_margin": 0.15,
+                                       "max_runs_per_cell": 40})
         self.assertIsInstance(d["skills"], list)
         self.assertIsInstance(d["guidance"]["sections"], list)
         self.assertIsInstance(d["alerts"], list)
@@ -186,8 +193,9 @@ class ShapeAndMathTests(unittest.TestCase):
                                          "skipped": 1, "gap": 0, "total": 4})
         for s in d["skills"]:
             self.assertEqual(sorted(s), ["bundle", "confidence", "copies", "current_text_runs",
-                                         "description", "name",
-                                         "next_test", "registry", "runs", "skip_reason",
+                                         "decisions", "description", "discarded_runs", "name",
+                                         "next_test", "registry", "run_utility", "runs",
+                                         "skip_reason",
                                          "stakes", "status", "usage", "verdict",
                                          "verdict_reason"])
             # No evals/stakes.yml row: normal.
@@ -467,9 +475,13 @@ class GuidanceTests(unittest.TestCase):
         self.assertEqual((two["status"], two["skip_reason"], two["runs"]),
                          ("skipped", "invented reason", []))
         run = one["runs"][0]
-        self.assertEqual(sorted(run["modes"]), ["full", "full_minus_section", "none", "section"])
+        # One run decides nothing, so the in-situ verdict is not `retire` and
+        # the section-alone arm is left out (owner, 2026-11-03); `none` stays
+        # for the whole-guidance headline.
+        self.assertEqual(sorted(run["modes"]), ["full", "full_minus_section", "none"])
         passed = {mode: m["checks_passed"] for mode, m in run["modes"].items()}
-        self.assertEqual(passed, {"full": 4, "full_minus_section": 2, "section": 3, "none": 1})
+        self.assertEqual(passed, {"full": 4, "full_minus_section": 2, "none": 1})
+        self.assertIsNone(one["alone_verdict"])
         self.assertEqual(run["modes"]["full"], {"trials": 1, "checks_passed": 4,
                                                 "checks_total": 4, "judge_mean": 8.0,
                                                 "cost_usd": 0.5})
@@ -478,6 +490,51 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn("/guidance/sec-one/20261030T120000Z/report.md", run["report_url"])
         for key in ("verdict", "verdict_reason", "alone_verdict"):
             self.assertIn(key, one)
+
+    def gated(self, verdict):
+        """The document with sec-one's verdict replaced by `verdict`."""
+        real = explorer_data.compute_gates.compute
+
+        def compute(*args, **kwargs):
+            doc = real(*args, **kwargs)
+            doc["guidance"]["sec-one"] = verdict
+            return doc
+        with mock.patch.object(explorer_data.compute_gates, "compute", side_effect=compute):
+            return self.t.build(manifest=MANIFEST)["guidance"]["sections"][0]
+
+    def test_the_alone_modes_are_published_when_the_in_situ_verdict_is_retire(self):
+        alone = {"verdict": "retire", "cells": [cell(1, 1)]}
+        for verdict in ({"verdict": "retire", "in_situ_verdict": "retire", "alone": alone,
+                         "reason": "flat", "cells": [cell(2, 2)]},
+                        {"verdict": "shorten-or-merge", "in_situ_verdict": "retire",
+                         "alone": {**alone, "verdict": "keep"}, "cells": [cell(2, 2)]}):
+            with self.subTest(verdict=verdict["verdict"]):
+                one = self.gated(verdict)
+                self.assertEqual(sorted(one["runs"][0]["modes"]),
+                                 ["full", "full_minus_section", "none", "section"])
+                self.assertEqual(one["alone_verdict"], verdict["alone"]["verdict"])
+                self.assertEqual(one["current_text_runs"], 3)
+
+    def test_the_alone_modes_are_left_out_for_any_other_in_situ_verdict(self):
+        alone = {"verdict": "keep", "cells": [cell(1, 1)]}
+        for in_situ in ("keep", "insufficient", "ceiling"):
+            with self.subTest(in_situ=in_situ):
+                one = self.gated({"verdict": in_situ, "in_situ_verdict": in_situ,
+                                  "alone": alone, "cells": [cell(2, 2)]})
+                self.assertEqual(sorted(one["runs"][0]["modes"]),
+                                 ["full", "full_minus_section", "none"])
+                self.assertIsNone(one["alone_verdict"])
+                self.assertEqual(one["current_text_runs"], 2)
+
+    def test_a_run_with_only_the_section_arm_is_not_listed_unless_it_decides(self):
+        t = Tree(self)
+        t.guidance_arm("sec-one", "20261030T120000Z", "with_guidance_section", "section", 3)
+        self.assertEqual(t.build(manifest=MANIFEST)["guidance"]["sections"][0]["runs"], [])
+        # A `none` run stays: the whole-guidance headline reads it.
+        t = Tree(self)
+        t.guidance_arm("sec-one", "20261030T120000Z", "without_guidance", "none", 1)
+        runs = t.build(manifest=MANIFEST)["guidance"]["sections"][0]["runs"]
+        self.assertEqual([sorted(r["modes"]) for r in runs], [["none"]])
 
     def test_a_missing_mode_is_absent(self):
         t = Tree(self)
@@ -517,11 +574,19 @@ class CurrentTextRunsTests(unittest.TestCase):
                                   "skipped-skill": 0})
 
     def test_a_guidance_section_counts_in_situ_and_alone_cells(self):
+        # The alone cells count when they factor into the decision (an
+        # in-situ `retire`), and only then (owner, 2026-11-03).
         doc = self.build_with({"skills": {}, "guidance": {"sec-one": {
-            "verdict": "retain", "cells": [cell(2, 5)],
+            "verdict": "retire", "in_situ_verdict": "retire", "reason": "flat",
+            "cells": [cell(2, 5)],
             "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
         counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
         self.assertEqual(counts, {"sec-one": 4, "sec-two": 0})
+        doc = self.build_with({"skills": {}, "guidance": {"sec-one": {
+            "verdict": "retain", "in_situ_verdict": "retain", "cells": [cell(2, 5)],
+            "alone": {"verdict": "retain", "cells": [cell(1, 4), cell(1, 0)]}}}})
+        counts = {s["id"]: s["current_text_runs"] for s in doc["guidance"]["sections"]}
+        self.assertEqual(counts, {"sec-one": 2, "sec-two": 0})
 
 
 class AlertTests(unittest.TestCase):
@@ -660,19 +725,90 @@ class QueueConfidenceUsageTests(unittest.TestCase):
         explorer_data.renumber(rows)
         self.assertEqual([r["next_test"]["position"] for r in rows], [2, None, 1])
 
-    def test_confidence_is_the_best_help_and_the_weakest_no_help(self):
-        verdict = {"cells": [
+    def test_confidence_is_the_family_keep_level_and_the_weakest_no_help(self):
+        # 2026-11-03: `helps` is the subject's keep level, 1 - m x the
+        # smallest objective keep p (the judge does not vote, so its levels
+        # are not read); `no_help` the weakest no-help level over the cells
+        # that vote on removal.
+        verdict = {"keep_family": 2, "cells": [
             {"objective": {"helps_confidence": 0.4, "no_help_confidence": 0.7},
+             "keep_tests": [{"route": "objective", "p": 0.6}],
              "judge": {"helps_confidence": 0.9, "no_help_confidence": 0.1}},
-            {"objective": {"helps_confidence": 0.2, "no_help_confidence": 0.3}}]}
-        self.assertEqual(explorer_data.subject_confidence(verdict),
-                         {"helps": 0.9, "no_help": 0.3})
-        # A cell with no figure blocks a no-help claim; no figure at all is None.
+            {"objective": {"helps_confidence": 0.95, "no_help_confidence": 0.3},
+             "keep_tests": [{"route": "objective", "p": 0.05}]}]}
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["helps"], got["no_help"]), (0.9, 0.3))
+        # A family of one, or none recorded, is m = 1.
+        self.assertEqual(explorer_data.subject_confidence(
+            {**verdict, "keep_family": None})["helps"], 0.95)
+        # A ceiling or broken cell does not vote, so it does not lower no_help.
+        verdict["cells"].append({"class": "ceiling", "objective": {"no_help_confidence": 0.0}})
+        verdict["cells"].append({"class": "cannot-discriminate"})
+        self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.3)
+        # A voting cell with no figure blocks a no-help claim; no figure at all is None.
         verdict["cells"].append({"class": "missing"})
         self.assertEqual(explorer_data.subject_confidence(verdict)["no_help"], 0.0)
-        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}),
-                         {"helps": None, "no_help": None})
-        self.assertEqual(explorer_data.subject_confidence({}), {"helps": None, "no_help": None})
+        empty = {**{k: None for k in ("helps", "no_help", "keep_pairs", "no_help_pairs",
+                                      "max_pairs", "keep_family")}, "cells": []}
+        self.assertEqual(explorer_data.subject_confidence({"cells": [{"class": "missing"}]}), empty)
+        self.assertEqual(explorer_data.subject_confidence({}), empty)
+
+    def test_confidence_carries_the_pair_counts_behind_each_level(self):
+        verdict = {"keep_family": 2, "cells": [
+            {"objective": {"no_help_confidence": 0.7, "pairs": 11},
+             "keep_tests": [{"route": "objective", "p": 0.6}]},
+            {"objective": {"no_help_confidence": 0.3, "pairs": 6},
+             "keep_tests": [{"route": "objective", "p": 0.05}]}]}
+        got = explorer_data.subject_confidence(verdict)
+        # keep comes from the second cell (smallest p), remove from the second
+        # (lowest level), and the busiest cell is the first.
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"],
+                          got["keep_family"]), (6, 6, 11, 2))
+        verdict["cells"][1]["objective"]["pairs"] = "6"
+        got = explorer_data.subject_confidence(verdict)
+        self.assertEqual((got["keep_pairs"], got["no_help_pairs"], got["max_pairs"]),
+                         (None, None, 11))
+
+    def test_confidence_lists_each_figured_cell_for_the_gain_range_chart(self):
+        # The page's gain range chart: one row per cell with an objective
+        # figure, in percentage points, rounded to one decimal only here.
+        verdict = {"keep_family": 2, "cells": [
+            {"fixture": "fx-two", "model": "model-b", "class": "benefit",
+             "objective": {"delta": 0.22049, "pairs": 5, "benefit_lower": 0.0123456,
+                           "retire_upper": 0.61449, "no_help_confidence": 0.0},
+             "keep_tests": [{"route": "objective", "p": 0.01}]},
+            {"fixture": "fx-one", "model": "model-a", "class": "ceiling",
+             "objective": {"delta": -0.05, "pairs": 12, "benefit_lower": -1.7,
+                           "retire_upper": 0.04449, "no_help_confidence": 0.95}},
+            {"fixture": "fx-three", "model": "model-a", "class": "missing"}]}
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual(got, [
+            {"model": "model-a", "task": "fx-one", "pairs": 12, "gain": -5.0,
+             "low": -100.0, "high": 4.4, "votes": False, "status": "no-room"},
+            {"model": "model-b", "task": "fx-two", "pairs": 5, "gain": 22.0,
+             "low": 1.2, "high": 61.4, "votes": True, "status": "keeps"}])
+        # Each class maps to one status; an unlisted one is open.
+        for cls, status in (("no-benefit", "removes-ready"), ("ceiling-unconfirmed", "no-room"),
+                            ("paused", "paused"), ("insufficient", "open"),
+                            ("cannot-discriminate", "open")):
+            verdict["cells"][1]["class"] = cls
+            row = explorer_data.subject_confidence(verdict)["cells"][0]
+            self.assertEqual(row["status"], status, cls)
+            self.assertEqual(row["votes"], cls in ("no-benefit", "insufficient"), cls)
+        # A gain that rounds to zero is 0.0, never -0.0.
+        verdict["cells"][1]["objective"]["delta"] = -0.0001
+        self.assertEqual(str(explorer_data.subject_confidence(verdict)["cells"][0]["gain"]), "0.0")
+        # A number that is not finite drops the cell; a fixtureless one has no task.
+        verdict["cells"][1]["objective"]["retire_upper"] = float("nan")
+        verdict["cells"][0]["fixture"] = None
+        got = explorer_data.subject_confidence(verdict)["cells"]
+        self.assertEqual([(r["model"], r["task"]) for r in got], [("model-b", None)])
+        # The document's last gate holds every row to its fields.
+        doc = {"skills": [{"confidence": {"cells": got}}]}
+        explorer_data.finish(doc)
+        doc["skills"][0]["confidence"]["cells"][0]["extra"] = 1
+        with self.assertRaises(explorer_data.Refused):
+            explorer_data.finish(doc)
 
     def test_usage_counts_listed_skills_and_names_its_window(self):
         t = Tree(self)
@@ -774,7 +910,11 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(build["permissions"], {"actions": "read", "contents": "read",
                                                 "issues": "read", "pull-requests": "read"})
         self.assertEqual(publish["permissions"], {"contents": "write"})
-        self.assertEqual(sorted(self.doc["jobs"]), ["build", "publish", "queue-alerts"])
+        self.assertEqual(sorted(self.doc["jobs"]), ["build", "check-site", "publish", "queue-alerts"])
+        # The site freshness check's cron rarely fires, so this workflow
+        # dispatches it; that job holds `actions: write` and nothing else.
+        self.assertEqual(self.doc["jobs"]["check-site"]["permissions"], {"actions": "write"})
+        self.assertEqual(self.doc["jobs"]["check-site"]["needs"], "publish")
         self.assertEqual(self.doc["jobs"]["queue-alerts"]["permissions"],
                          {"contents": "read", "issues": "write"})
         self.assertEqual(publish["needs"], "build")

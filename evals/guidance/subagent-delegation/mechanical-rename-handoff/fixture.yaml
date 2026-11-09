@@ -1,0 +1,87 @@
+# Guidance fixture: subagent-delegation / mechanical-rename-handoff
+#
+# The rules under test, for the prompt a parent writes when it delegates:
+# every delegation passes `model` (haiku for a test-checked mechanical edit),
+# and delegated work is done when a verifier exits 0, so the prompt names the
+# exact command, run last, names the RUNNER (`python3 -m pytest <paths> -q`,
+# never a test file) and requires the exit code and the test count back.
+#
+# `seed/` is a small shipping-rates project with a three-file rename in
+# TASK.md. The agent cannot spawn a subagent here; it is asked for the
+# prompt it would hand one, in HANDOFF.md, and the checks read that file.
+# The prompt names none of the three requirements.
+#
+# Invented task and data; nothing here is copied from a real repository.
+
+subject: guidance
+section: subagent-delegation
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  I want to hand TASK.md to a subagent and not look at it again until it
+  reports. Do not do the rename yourself. Write the complete prompt you would
+  give the subagent, plus the settings you would delegate it with, to
+  HANDOFF.md.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: model-chosen
+    description: >
+      HANDOFF.md passes a model and picks a small one (haiku or sonnet) for
+      a test-checked mechanical edit, not an inherited default or opus.
+    type: file_matches
+    paths: ["HANDOFF.md"]
+    must_match: ["(?i)\\bmodel\\b[^\\n]{0,40}\\b(haiku|sonnet)\\b|\\b(haiku|sonnet)\\b[^\\n]{0,40}\\bmodel\\b"]
+    must_not_match: ["(?i)\\bmodel\\b[^\\n]{0,40}\\bopus\\b|\\bopus\\b[^\\n]{0,40}\\bmodel\\b"]
+    require_present: true
+  - id: runner-named
+    description: >
+      The verifier is a runner command over the tests, not a bare test file.
+    type: file_matches
+    paths: ["HANDOFF.md"]
+    must_match: ["(?i)python3? -m (pytest|unittest)\\b"]
+    must_not_match: ["(?i)python3? tests/test_rates\\.py"]
+    require_present: true
+  - id: count-and-code-required
+    description: >
+      The prompt makes the subagent report the test count and the exit code.
+    type: file_matches
+    paths: ["HANDOFF.md"]
+    must_match:
+      - "(?i)\\b(count|number)\\b[^\\n]{0,40}\\btests?\\b|\\btests?\\b[^\\n]{0,40}\\b(count|number)\\b|\\bhow many tests\\b"
+      - "(?i)\\bexit (code|status)\\b|\\bexits? 0\\b"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Settings — does HANDOFF.md pass a model explicitly and justify a small
+  one (haiku or sonnet) for a mechanical, test-checked rename, rather than
+  leaving it unset or choosing opus? Cap at 3 if no model is named.
+  (2) Verifier — does the prompt give the exact command, with the runner
+  (`python3 -m pytest tests -q` or `python3 -m unittest`), say to run it
+  last and unpiped, and require the exit code and the test count back? Cap
+  at 3 if it only says "make sure the tests pass".
+  (3) Restraint — did the agent leave the code unrenamed and write only
+  HANDOFF.md?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/871

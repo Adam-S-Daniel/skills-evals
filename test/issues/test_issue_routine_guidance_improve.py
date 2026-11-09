@@ -76,9 +76,12 @@ from lockfile_pins import lock_problem  # noqa: E402
 RUN_ID = "20261027T120000Z-0a1b2c"
 BRANCH = f"claude/eval-guidance-improve-{RUN_ID}"
 # The one committed section with the proposer's minimum of full-arm fixtures.
+# Read from disk, so a fixture pull request that adds one (scripts/fixture_pr_gate.py)
+# needs no edit here: the last two in name order are validation and holdout.
 SECTION = "anything-you-name-gets-its-link"
-FIXTURES = [f"guidance/{SECTION}/{n}"
-            for n in ("done-summary", "handoff", "no-url", "waiting-on-review")]
+FIXTURES = sorted(f"guidance/{SECTION}/{p.parent.name}" for p in
+                  (Path(__file__).resolve().parents[2] / "evals" / "guidance" / SECTION)
+                  .glob("*/fixture.yaml"))
 HEADING = "Example section heading"
 MARKER = "do-not-echo-this-marker"
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
@@ -115,8 +118,8 @@ def record(**changes) -> dict:
         "local_exhibit": "skills-evals ADR 0002 decision 4",
         "row": {"file": "agents-md/base.md", "heading": HEADING, "status": "covered"},
         "guidance": {"path": "/tmp/agent-guidance", "sha": "1" * 40},
-        "split": {"rotation": 0, "train": FIXTURES[:2], "validation": FIXTURES[2],
-                  "holdout": FIXTURES[3]},
+        "split": {"rotation": 0, "train": FIXTURES[:-2], "validation": FIXTURES[-2],
+                  "holdout": FIXTURES[-1]},
         "trials": {"initial": 3, "total": 3}, "no_judge": True,
         "models": {"arm": ["claude-opus-5-5"], "proposal": "claude-opus-5-5"},
         "proposal": {"model": "claude-opus-5-5", "rationale": "Sharper.",
@@ -205,7 +208,7 @@ class OutcomeAndGuardTests(unittest.TestCase):
 
     def test_the_guard_counts_and_charges_guidance_fires_as_improve_fires(self):
         # Fires 1 to 3 in the week; only fire 3, a guidance fire, is inside
-        # PENDING_FULL_HOLD (45 minutes).
+        # PENDING_FULL_HOLD (90 minutes).
         self.assertEqual(guard.improve_counts(self.runs(), NOW), (3, 1))
         self.assertEqual(len(guard.improve_starts(self.runs(), NOW)), 3)
         state = {"cap": 1.0, "spent": 0.0, "pending": 0.0, "pace_room": 0.0,
@@ -328,19 +331,19 @@ class ValidateTests(GitCase):
                 self.assertRejected("not accepted|did not pass")
 
     def test_a_held_out_fixture_that_already_passed_everything_is_rejected(self):
-        full = {FIXTURES[2]: {"passed": 30, "total": 30}}
+        full = {FIXTURES[-2]: {"passed": 30, "total": 30}}
         self.commit(good_files(**{"summary.json":
                                   json.dumps(record(baseline=full)).encode()}))
         self.assertRejected("held-out fixture passed every check")
         self.git("reset", "-q", "--hard", "main")
-        partial = {FIXTURES[2]: {"passed": 29, "total": 30}}
+        partial = {FIXTURES[-2]: {"passed": 29, "total": 30}}
         self.commit(good_files(**{"summary.json":
                                   json.dumps(record(baseline=partial)).encode()}))
         self.assertEqual(self.validate()["section"], SECTION)
 
     def test_a_split_that_is_not_the_committed_fixtures_is_rejected(self):
-        split = {"rotation": 0, "train": FIXTURES[:1], "validation": FIXTURES[2],
-                 "holdout": FIXTURES[3]}
+        split = {"rotation": 0, "train": FIXTURES[:1], "validation": FIXTURES[-2],
+                 "holdout": FIXTURES[-1]}
         self.commit(good_files(**{"summary.json": json.dumps(record(split=split)).encode()}))
         self.assertRejected("not the section's fixtures")
 

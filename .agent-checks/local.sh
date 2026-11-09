@@ -6,17 +6,32 @@
 # .github/workflows/actions.lock locks. Dependabot moves that tag, so the test
 # fails the bump and the sweep never merges it (#397 and #475 sat red on
 # five such asserts).
+#
+# Also refuses an AGENTS.md over 32,768 bytes: Codex silently truncates
+# project instructions at that byte. ci.yml's suite skips a docs-only change,
+# so this check (which runs on every pull request) is the one that sees it.
 set -u
 
 rev=${AGENT_CHECKS_REV:-}
 show() { git show "$rev:$1" 2>/dev/null; }
 
+mapfile -d '' -t paths
+status=0
+
+agents_max=32768
+for path in "${paths[@]}"; do
+  [ "$path" = AGENTS.md ] || continue
+  if size=$(show AGENTS.md | wc -c) && [ "$size" -gt "$agents_max" ]; then
+    echo "agent-checks (local): AGENTS.md is $size bytes, over $agents_max. Codex silently truncates project instructions at that byte; shorten it (wc -c AGENTS.md)." >&2
+    status=1
+  fi
+done
+
 mapfile -t pins < <(show .github/workflows/actions.lock \
   | sed -n "s/^ *- '\([^']*@[^']*\)'$/\1/p" | sort -u)
-[ "${#pins[@]}" -gt 0 ] || exit 0
+[ "${#pins[@]}" -gt 0 ] || exit $status
 
-status=0
-while IFS= read -r -d '' path; do
+for path in "${paths[@]}"; do
   case "$path" in test/*.py) ;; *) continue ;; esac
   content=$(show "$path") || continue
   for pin in "${pins[@]}"; do

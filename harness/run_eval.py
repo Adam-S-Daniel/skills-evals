@@ -5,7 +5,7 @@ Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...]
         [--roster PATH] [--no-judge | --judge {auto,always}]
-    python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
+    python3 harness/run_eval.py evals/guidance/<id> --arm both|in-situ [--guidance PATH]
     python3 harness/run_eval.py evals/<skill> --arm both [--fixture NAME]
         [--trials N]
 
@@ -3240,6 +3240,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # (TMPDIR inside HOME, say) is refused, never silently re-opened.
     checkouts = tuple(arm.get("read_denied") or ())
     outputs = tuple(arm.get("read_denied_outputs") or ())
+    if arm.get("followups"):
+        # The session archive this arm's transcript is moved to is denied
+        # only once it exists (`arm_read_denied`). Made before the rules, so
+        # the first multi-turn trial on a fresh machine gets the rules every
+        # later one gets, and the same first request (prompt cache).
+        try:
+            session_archive_dir().mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
     # The mount table is read once, here, and handed to everything below.
     try:
         mountinfo = host_mountinfo()
@@ -3579,6 +3588,25 @@ def _session_projects_dir(env: dict) -> Path | None:
     return Path(home) / ".claude" / "projects" if home else None
 
 
+def _session_left_behind(workspace: Path, env_spec: dict | None) -> bool:
+    """Whether a session directory for `workspace` is already in the profile
+    a skill arm's CLI would write it to, as `run_agent` derives both.
+
+    A trial whose path is reused (`_trial_slot_dir`) may read that directory
+    (`_profile_read_rules` keeps it open), so one a previous trial could not
+    archive must cost the reuse, never reach the next trial. Anything that
+    cannot be worked out counts as left behind."""
+    try:
+        env = guidance.cli_child_env(agent_env(workspace, env_spec))
+    except Exception:
+        return True
+    for name in ARM_DROPPED_ENV:
+        env.pop(name, None)
+    projects = _session_projects_dir(env)
+    return projects is not None and os.path.lexists(
+        projects / _munged_project_name(workspace))
+
+
 def session_archive_dir() -> Path:
     """The harness-owned archive for transcripts a multi-turn arm had to
     persist: `$XDG_STATE_HOME/skills-evals/sessions`, else
@@ -3682,6 +3710,39 @@ WORKSPACE_PREFIX = "workspace-"
 SEED_COMMIT_IDENTITY = ("ci@example.com", "ci")
 SEED_COMMIT_MESSAGE = "initial commit"
 
+
+def _trial_slot_dir(slot: dict | None, fresh, stale=None) -> Path:
+    """A new, empty, private directory under TMPDIR for one trial of an arm.
+
+    The CLI's first request embeds the working directory (in its system
+    prompt, its sandbox rules and the session paths derived from it), so a
+    path that changed every trial made every trial rewrite the prompt cache
+    instead of reading what trial 1 wrote. `slot` is one arm's, kept by
+    `_run_arm_trials` across its trials: the first trial's name comes from
+    `fresh()`, the caller's `mkdtemp` (unique to this run, and so to every
+    concurrent arm, run or fire in the container; its prefix stays at the
+    call site, where the reviewed-prefix test reads it), and each later
+    trial creates that same name again after the previous trial removed it.
+
+    Reuse never means sharing content. The name is created with an exclusive
+    `mkdir`, which fails on anything already there (a directory the last
+    trial could not remove, a symlink, another process's file), and then, as
+    when `stale(path)` reports something the last trial left behind
+    elsewhere, the trial gets a fresh `mkdtemp` name instead, as every trial
+    did before: isolation first, the cache second. No slot is the old
+    behavior."""
+    previous = slot.get("path") if slot is not None else None
+    if previous is not None and not (stale is not None and stale(Path(previous))):
+        try:
+            os.mkdir(previous, 0o700)
+            return Path(previous)
+        except OSError:
+            pass
+    path = Path(fresh())
+    if slot is not None:
+        slot["path"] = str(path)
+    return path
+
 # Where `materialize_workspace` records the workspace's own absolute path,
 # and where a stand-in binary in `<workspace>/bin/` reads it from.
 #
@@ -3728,7 +3789,8 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
 
 
 def materialize_workspace(seed: Path, fixture: dict | None = None,
-                          workspace: Path | None = None) -> Path:
+                          workspace: Path | None = None, *,
+                          slot: dict | None = None, stale=None) -> Path:
     """A fresh arm workspace: the seed copied in, under a baseline git commit.
 
     Extracted from `_run_arm` so a test can build the workspace the arm
@@ -3751,13 +3813,18 @@ def materialize_workspace(seed: Path, fixture: dict | None = None,
     `workspace`, when given, is a directory that does not exist yet inside an
     in-place arm's scratch (ADR 0012), next to its scratch HOME and profile;
     a missing seed leaves it empty, as a guidance arm's always was.
+
+    `slot` and `stale`, when no `workspace` is given, go to
+    `_trial_slot_dir`: every trial of one arm gets the same path, freshly
+    created, so the agent's first request is the same in each.
     """
     given = workspace is not None
     if given:
         workspace = Path(workspace)
         workspace.mkdir()
     else:
-        workspace = Path(tempfile.mkdtemp(prefix=WORKSPACE_PREFIX))
+        workspace = _trial_slot_dir(
+            slot, lambda: tempfile.mkdtemp(prefix=WORKSPACE_PREFIX), stale)
     try:
         if not given or seed.is_dir():
             shutil.copytree(seed, workspace, dirs_exist_ok=True)
@@ -6198,16 +6265,19 @@ def _only_late_markers(config: Path) -> bool:
     return found
 
 
-def _in_place_scratch(plan: dict) -> Path:
+def _in_place_scratch(plan: dict, slot: dict | None = None) -> Path:
     # The reserved profile parent is write-denied; keep writable workspaces
-    # and tool temporary files outside it.
+    # and tool temporary files outside it. `slot` gives every trial of one
+    # arm the same scratch path (`_trial_slot_dir`); the profile is the
+    # pair's, removed after each trial, so no session directory outlives one.
     config = plan["_pair_config"]
     if os.path.lexists(config) and _only_late_markers(Path(config)):
         # A late writer's stamps only (#594): nothing of the previous arm.
         shutil.rmtree(config, ignore_errors=True)
     if os.path.lexists(config):
         raise delivery.DeliveryError("install_collision", "a previous arm's profile was not cleaned")
-    return Path(tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
+    return _trial_slot_dir(
+        slot, lambda: tempfile.mkdtemp(prefix=f"{ARM_WORKSPACE_PREFIX}arm-"))
 
 
 def _fleet_hooks_arm(plan: dict, scratch: Path) -> dict:
@@ -6458,8 +6528,13 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             args: argparse.Namespace, timestamp: str,
             selection: tuple | None = None, *,
             out_dir: Path | None = None, extra: dict | None = None,
-            plan: dict | None = None, hold: list | None = None) -> dict:
+            plan: dict | None = None, hold: list | None = None,
+            slot: dict | None = None) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up.
+
+    `slot` (`_trial_slot_dir`) is one arm's, shared by its trials, so each
+    trial's workspace (an in-place arm's scratch) has the same path and the
+    agent's first request can be read from the prompt cache.
 
     `hold` (#371) is None when the judge runs inside the trial. A list defers
     the judge call: the summary is written with `judge: null` and the list
@@ -6489,7 +6564,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         with _in_place_pair(plan):
             return _run_arm(arm_name, fixture, seed, registries, args, timestamp,
                             selection, out_dir=out_dir, extra=extra, plan=plan,
-                            hold=hold)
+                            hold=hold, slot=slot)
     _TELEMETRY.begin_trial()
     # A caller's own three-value selection (`select_models()`'s shape)
     # records no `judge_selection`.
@@ -6557,9 +6632,11 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     scratch = env_override = None
     try:
         if plan is None:
-            workspace = materialize_workspace(seed, fixture)
+            workspace = materialize_workspace(
+                seed, fixture, slot=slot,
+                stale=lambda path: _session_left_behind(path, fixture.get("env")))
         else:
-            scratch = _in_place_scratch(plan)
+            scratch = _in_place_scratch(plan, slot)
             workspace, env_override, _ = _prepare_in_place(
                 _ROLES[arm_name], fixture, seed, plan, scratch)
     except BaseException as exc:
@@ -6924,10 +7001,18 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
                         item["name"]) / arm_name
     label = {"fixture": item["name"]} if item["name"] else {}
 
+    # One path for every trial of this arm (`_trial_slot_dir`), so the
+    # agent's first request is the same in each and reads the prompt cache.
+    slot: dict = {}
+    # The results directory is denied to the arm only once it exists
+    # (`arm_read_denied`). Made before trial 1, so trial 1's sandbox rules
+    # are the same as every later trial's, which see it.
+    args.results_dir.mkdir(parents=True, exist_ok=True)
+
     def trial(out_dir: Path, extra: dict) -> dict:
         result = _run_arm(arm_name, fixture, item["seed"], registries, args,
                           timestamp, selection, out_dir=out_dir, extra=extra,
-                          plan=plan, hold=hold)
+                          plan=plan, hold=hold, slot=slot)
         # --retry-transient (eval.yml): one more attempt for a timeout or a
         # retryable API status, in a clean trial directory, so the summary
         # on disk is the retry's alone. An errored trial queued no judge call.
@@ -6937,7 +7022,7 @@ def _run_arm_trials(arm_name: str, item: dict, registries: dict[str, dict],
             shutil.rmtree(out_dir, ignore_errors=True)
             result = _run_arm(arm_name, fixture, item["seed"], registries, args,
                               timestamp, selection, out_dir=out_dir, extra=extra,
-                              plan=plan, hold=hold)
+                              plan=plan, hold=hold, slot=slot)
         return result
 
     if args.trials == 1:
@@ -7022,6 +7107,10 @@ SKILL_ARMS = ("objective-only", "with_skill", "without_skill", "both")
 
 DEFAULT_GUIDANCE_ARMS = {"with_guidance": {"mode": "section"},
                          "without_guidance": {"mode": "none"}}
+#: `--arm in-situ` (guidance only): run the fixture's arms of these two modes
+#: and no other (`guidance_arms`).
+IN_SITU_ARM = "in-situ"
+IN_SITU_MODES = ("full", "full-minus-section")
 
 _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -7197,12 +7286,27 @@ def guidance_arms(fixture: dict, arm_flag: str, ablation: bool = False,
     arms = [_validate_arm_entry(name, entry, pairing) for name, entry in declared.items()]
     if arm_flag in ("both", "all"):
         return arms
+    if arm_flag == IN_SITU_ARM:
+        # The in-situ pair alone (owner, 2026-11-03): the whole guidance with
+        # and without the section, which decides keep or remove. The
+        # section-alone pair runs only for a section leaning toward removal
+        # (scripts/plan_week.py `guidance_arms_for`), so a fire for any other
+        # section asks for these two. Their names are kept, so the ingest and
+        # harness/gates.py read them unchanged.
+        pair = [a for a in arms if a["mode"] in IN_SITU_MODES]
+        if sorted(a["mode"] for a in pair) != sorted(IN_SITU_MODES):
+            raise guidance.GuidanceError(
+                f"--arm {IN_SITU_ARM} needs the fixture to declare exactly one arm of "
+                f"each in-situ mode ({', '.join(IN_SITU_MODES)}); declared: "
+                f"{', '.join(a['name'] + '=' + a['mode'] for a in arms)}")
+        return pair
     for arm in arms:
         if arm["name"] == arm_flag:
             return [arm]
     raise guidance.GuidanceError(
         f"--arm {arm_flag!r} names no arm in this fixture (declared: "
-        f"{', '.join(a['name'] for a in arms)}; or `both` for all of them)")
+        f"{', '.join(a['name'] for a in arms)}; or `both` for all of them, or "
+        f"`{IN_SITU_ARM}` for the full and full-minus-section pair)")
 
 
 def substitute_token(value, token: str, decoy: str | None = None):
@@ -8187,8 +8291,10 @@ def main() -> int:
     # names the arms this fixture actually has.
     parser.add_argument("--arm", default="objective-only",
                         help="objective-only | with_skill | without_skill | both "
-                             "for a skill fixture; both, or any arm name the "
-                             "fixture declares, for a guidance fixture")
+                             "for a skill fixture; both, in-situ (only the "
+                             "fixture's full and full-minus-section arms), or "
+                             "any arm name the fixture declares, for a guidance "
+                             "fixture")
     parser.add_argument("--guidance", default=None,
                         help="path to an _agent-guidance checkout (guidance "
                              "fixtures only); else $AGENT_GUIDANCE_DIR, else the "

@@ -58,7 +58,9 @@ class TestIssue75Onboarding(unittest.TestCase):
 
     def test_layout_context_and_draft_gate(self):
         self.assertEqual(run_eval.resolve_fixture_dirs(FAMILY, None),
-                         [FAMILY / "drift-diagnosis", ONBOARDING])
+                         [FAMILY / "consumer-site-excluded", FAMILY / "drift-diagnosis",
+                          FAMILY / "fleet-bot-bypass", ONBOARDING,
+                          FAMILY / "scratch-repo-partial-manage"])
         drift = run_eval.load_fixture(FAMILY / "drift-diagnosis")
         for fixture in (drift, self.fixture):
             metadata = fixture["context"]

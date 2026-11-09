@@ -42,6 +42,9 @@ import plan_week  # noqa: E402
 #: Over RETRY_AFTER past EMPTY_FIRES_SINCE, so only the rule under test excludes a fire.
 NOW = plan_week.EMPTY_FIRES_SINCE + timedelta(days=20)
 SKILL_FIXTURE = "evals/writing-adrs/bootstrap"
+#: The routine's recorded Git (#535): new enough that no hooked fixture
+#: is held, so these cells do not depend on any host's Git.
+ROUTINE_GIT = "git version 2.56.0"
 SECTION = "anything-you-name-gets-its-link"
 GUIDANCE_FIXTURE = f"evals/guidance/{SECTION}/handoff"
 MODEL = "m1"
@@ -130,6 +133,27 @@ class GatesTests(unittest.TestCase):
         self.assertEqual(got["cells"][0]["run_stamps_on_model"], [stamp(moment)])
 
 
+class GatesFieldsReachThePlannerTests(unittest.TestCase):
+    """Round 2's m1: a skill cell's gates `reason`, `pairs` and `at_cap`
+    reach the planner's cell, which `_blocking` and `cheaper_first` read."""
+
+    def test_reason_pairs_and_at_cap_are_carried(self):
+        reason = ("no-benefit on the numbers, but the cell has 1 agent-errored "
+                  "trial(s) or a run skipped as anomalous, so it cannot retire")
+        row = {"fixture": "bootstrap", "model": MODEL, "class": "insufficient",
+               "reason": reason, "pairs": 12, "at_cap": False,
+               "runs": {"with": [], "without": []}, "newest_on_model": None,
+               "run_stamps_on_model": []}
+        doc = {"roster_models": [MODEL], "skills": {"writing-adrs": {"cells": [row]}}}
+        got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW, ROUTINE_GIT), SKILL_FIXTURE)
+        self.assertEqual((got["reason"], got["pairs"], got["at_cap"]), (reason, 12, False))
+        self.assertTrue(plan_week._blocking(got))
+        row.update(reason="neither test has rejected yet", at_cap=True)
+        got = one(plan_week.eval_cells(ROOT / "evals", doc, [], NOW, ROUTINE_GIT), SKILL_FIXTURE)
+        self.assertIs(got["at_cap"], True)
+        self.assertTrue(plan_week._blocking(got))
+
+
 class EndToEndTests(unittest.TestCase):
     """gates.retirement and gates.guidance_verdict output through
     plan_week.eval_cells with fire rows."""
@@ -152,7 +176,7 @@ class EndToEndTests(unittest.TestCase):
                     {"handoff": expected})}}
 
     def cells(self, doc, fires):
-        cells = plan_week.eval_cells(ROOT / "evals", doc, fires, NOW)
+        cells = plan_week.eval_cells(ROOT / "evals", doc, fires, NOW, ROUTINE_GIT)
         return one(cells, SKILL_FIXTURE), one(cells, GUIDANCE_FIXTURE)
 
     def fires(self, started):
@@ -170,7 +194,7 @@ class EndToEndTests(unittest.TestCase):
     def test_two_fires_after_the_newest_run_are_empty_and_break_the_cell(self):
         doc = self.gates_doc()
         cells = plan_week.eval_cells(ROOT / "evals", doc,
-                                     self.fires(self.RUN + timedelta(days=1)), NOW)
+                                     self.fires(self.RUN + timedelta(days=1)), NOW, ROUTINE_GIT)
         for fixture in (SKILL_FIXTURE, GUIDANCE_FIXTURE):
             with self.subTest(fixture=fixture):
                 self.assertEqual(one(cells, fixture)["empty_fires"], 2)
@@ -210,14 +234,14 @@ class CountingTests(unittest.TestCase):
          "run_stamps_on_model": [], "runs": {"with": [], "without": []}}]}}}
 
     def empty(self, fires, now=NOW):
-        cells = plan_week.eval_cells(ROOT / "evals", self.MISSING, fires, now)
+        cells = plan_week.eval_cells(ROOT / "evals", self.MISSING, fires, now, ROUTINE_GIT)
         return one(cells, SKILL_FIXTURE)["empty_fires"]
 
     def test_a_missing_cell_with_two_15_day_old_fires_stays_in_missing(self):
         old = NOW - timedelta(days=15)
         fires = [fire(i, SKILL_FIXTURE, old) for i in (1, 2)]
         self.assertEqual(self.empty(fires), 0)
-        cells = plan_week.eval_cells(ROOT / "evals", self.MISSING, fires, NOW)
+        cells = plan_week.eval_cells(ROOT / "evals", self.MISSING, fires, NOW, ROUTINE_GIT)
         self.assertEqual(planned([one(cells, SKILL_FIXTURE)]),
                          ({"missing": [SKILL_FIXTURE]}, []))
         # The same two fires inside RETRY_AFTER do break it.
@@ -277,7 +301,7 @@ class PendingTests(unittest.TestCase):
         return {"roster_models": [MODEL], "skills": {"writing-adrs": {"cells": [row]}}}
 
     def cell(self, doc, fires):
-        return one(plan_week.eval_cells(ROOT / "evals", doc, fires, NOW), SKILL_FIXTURE)
+        return one(plan_week.eval_cells(ROOT / "evals", doc, fires, NOW, ROUTINE_GIT), SKILL_FIXTURE)
 
     def test_a_pending_fire_blocks_a_re_fire_and_a_landed_run_releases_it(self):
         started = NOW - timedelta(minutes=30)
@@ -363,14 +387,14 @@ class OutageFixture:
     def counts(self, fires, now=None, doc=None, fixtures=None):
         """[(empty_fires, outage_fires)] per fixture, and the outages."""
         cells, outages, _ = plan_week.eval_cells_and_outages(
-            ROOT / "evals", doc or self.doc(), fires, now or self.LATER)
+            ROOT / "evals", doc or self.doc(), fires, now or self.LATER, ROUTINE_GIT)
         return ([(one(cells, f)["empty_fires"], one(cells, f)["outage_fires"])
                  for f in fixtures or self.FIXTURES], outages)
 
     def downs(self, fires, now=None, doc=None, fixtures=None):
         """[down_fires] per fixture."""
         cells, _, _ = plan_week.eval_cells_and_outages(
-            ROOT / "evals", doc or self.doc(), fires, now or self.LATER)
+            ROOT / "evals", doc or self.doc(), fires, now or self.LATER, ROUTINE_GIT)
         return [one(cells, f)["down_fires"] for f in fixtures or self.FIXTURES]
 
 
@@ -429,7 +453,7 @@ class OutageTests(OutageFixture, unittest.TestCase):
         self.assertEqual(self.counts(twice, doc=doc, fixtures=three)[0], [(1, 1)] * 3)
         thrice = twice + sweep(2, 20)
         cells, outages, _ = plan_week.eval_cells_and_outages(ROOT / "evals", doc,
-                                                             thrice, self.LATER)
+                                                             thrice, self.LATER, ROUTINE_GIT)
         mine = [one(cells, f) for f in three]
         self.assertEqual([(c["empty_fires"], c["outage_fires"]) for c in mine], [(2, 1)] * 3)
         self.assertEqual(len(outages), 3)
@@ -486,7 +510,7 @@ class OutageTests(OutageFixture, unittest.TestCase):
         for now, expected in ((start + timedelta(hours=3), 1),
                               (start + timedelta(hours=25), 0)):
             cells, outages, _ = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
-                                                                 fires, now)
+                                                                 fires, now, ROUTINE_GIT)
             _, work = plan_week.eval_items({**ctx(cells), "outages": outages}, now)
             items = [w for w in work if w["kind"] == "routine-outage"]
             with self.subTest(now=now):
@@ -592,7 +616,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
     def plan(self, fires, now, doc=None, *, room=100.0, refresh=False, max_fires=10_000,
              edit=None):
         cells, outages, down = plan_week.eval_cells_and_outages(ROOT / "evals",
-                                                                doc or self.doc(), fires, now)
+                                                                doc or self.doc(), fires, now, ROUTINE_GIT)
         if edit:
             edit(cells)
         # Room for every cell, so the control shows each kind of fire.
@@ -623,7 +647,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
                                           edit=self.only_six)
             for f in plan["fires"]:
                 self.assertEqual(f["mode"], "eval")
-                if f["arms"] == "both":
+                if f["arms"] in plan_week.PAIRED_ARMS:
                     fires.append(fire(1000 + len(fires), f["fixture"], now))
             now += self.CADENCE
         return fires, cells, plan
@@ -633,7 +657,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
         plan, _, down = self.plan([], self.BURST_AT)
         self.assertIsNone(down)
         self.assertFalse(plan["routine_down"])
-        self.assertEqual(self.kinds(plan), {("eval", "both"), ("eval", "bare"), ("improve", "")})
+        self.assertEqual(self.kinds(plan), {("eval", "both"), ("eval", "in-situ"), ("eval", "bare"), ("improve", "")})
         self.assertNotIn("Routine down", "\n".join(plan_week.summary_lines(plan)))
         self.assertNotIn("routine-down", {w["kind"] for w in plan["work"]})
 
@@ -779,7 +803,7 @@ class BreakerTests(OutageFixture, unittest.TestCase):
 
         def priced(room, refresh=False):
             cells, outages, down = plan_week.eval_cells_and_outages(ROOT / "evals", self.doc(),
-                                                                    fires, now)
+                                                                    fires, now, ROUTINE_GIT)
             price(cells)
             plan_ctx = {**ctx(cells), "points_per_usd": 1.0, "room": room, "refresh": refresh,
                         "improve_charge": 0.10, "skills": {}, "lessons": [],
