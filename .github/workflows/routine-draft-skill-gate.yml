@@ -293,7 +293,10 @@ jobs:
 
       # The loop's one merge switch (evals/improve-policy.yml), lowered to
       # draft when plugin-runtime-review would hold the skill's change,
-      # exactly as the improvement gate decides it. No credential is held yet.
+      # exactly as the improvement gate decides it, or when the drafted
+      # SKILL.md's frontmatter sets `hooks` or `allowed-tools` (`--staged`;
+      # adam-agentskills' one-way-door check holds that for a person). No
+      # credential is held yet.
       - name: Decide the merge mode
         id: mode
         working-directory: skills-evals
@@ -303,7 +306,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/improve_gate.py merge-mode \
-            --tree ../adam-agentskills --plugin "$PLUGIN" --skill "$SUBJECT" > "$RUNNER_TEMP/mode.out"
+            --tree ../adam-agentskills --plugin "$PLUGIN" --skill "$SUBJECT" \
+            --staged "$RUNNER_TEMP/staged" > "$RUNNER_TEMP/mode.out"
           cat "$RUNNER_TEMP/mode.out"
           cat "$RUNNER_TEMP/mode.out" >> "$GITHUB_OUTPUT"
 

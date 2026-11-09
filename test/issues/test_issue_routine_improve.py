@@ -1048,6 +1048,44 @@ class PrepareTests(unittest.TestCase):
             self.assertEqual(gate.main(["merge-mode", "--tree", str(self.tree),
                                         "--plugin", "../x", "--skill", SKILL]), 1)
 
+    def test_runtime_frontmatter_lowers_a_drafted_skill_to_a_draft(self):
+        """adam-agentskills#134 fails an armed loop pull request whose
+        SKILL.md sets or changes `hooks` or `allowed-tools`, and nothing in
+        the loop would disarm it: such a draft opens as a draft."""
+        import draft_new_skill  # noqa: PLC0415
+        policy = self.tmp / "auto.yml"
+        policy.write_text("improve_merge_mode: auto\n", encoding="utf-8")
+        for front, want in (
+                ("", ["mode=auto"]),
+                ("allowed-tools: Bash\n", ["mode=draft"]),
+                ("hooks:\n  Stop: []\n", ["mode=draft"])):
+            with self.subTest(front=front):
+                staged = Path(tempfile.mkdtemp(dir=self.tmp))
+                text = f"---\nname: brand-new\ndescription: d\n{front}---\nBody.\n"
+                (staged / "skill.patch").write_text(draft_new_skill.new_files_patch(
+                    draft_new_skill.skill_prefix(PLUGIN, "brand-new"),
+                    {"SKILL.md": text.encode()}), encoding="utf-8")
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    code = gate.main(["merge-mode", "--tree", str(self.tree),
+                                      "--plugin", PLUGIN, "--skill", "brand-new",
+                                      "--policy", str(policy), "--staged", str(staged)])
+                self.assertEqual(code, 0)
+                self.assertEqual(out.getvalue().splitlines()[:1], want)
+
+    def test_frontmatter_refusal(self):
+        base = "---\nname: s\ndescription: d\n{}---\nBody.\n"
+        plain, tools = base.format(""), base.format("allowed-tools: Read\n")
+        self.assertIsNone(gate.frontmatter_refusal(plain, plain))
+        self.assertIsNone(gate.frontmatter_refusal(tools, tools))
+        self.assertIsNone(gate.frontmatter_refusal(None, plain))
+        for before, after in ((plain, tools), (tools, plain), (None, tools),
+                              (tools, base.format("allowed-tools: Bash\n")),
+                              (plain, base.format("hooks: {}\n")),
+                              (plain, "no frontmatter\n")):
+            with self.subTest(before=before, after=after):
+                self.assertIsNotNone(gate.frontmatter_refusal(before, after))
+
     def test_the_cli_prints_validated_values(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
