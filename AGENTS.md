@@ -76,6 +76,15 @@ read; only in replies to the user.
   tabled in [`docs/workflows.md`](docs/workflows.md); keep that table in step
   when a trigger or filter moves.
 
+- **The self-improvement loop runs with no human in it** (Adam, 2026-11-09).
+  Agents decide and act on their own across the loop's repos, and put as few
+  decisions to Adam as they can. The one exception: a pull request waiting on
+  adam-agentskills' `plugin-runtime-review` deployment waits for Adam to
+  approve it, and no agent ever approves one
+  ([ADR 0016](https://github.com/Adam-S-Daniel/adam-agentskills/blob/main/docs/decisions/0016-open-plugin-folders-and-gate-runtime-changes-on-owner-approval.md)).
+  The adversarial round adam-agentskills requires for one-way doors is run
+  by a separate agent, so it is not a human step.
+
 ### Action pins
 
 Workflows name third-party actions by release tag; [`.github/workflows/actions.lock`](.github/workflows/actions.lock) locks each tag to an exact commit, and the runner runs the locked commit even when it disagrees with the tag. The `test` job's "Verify action lockfile" step is the shared action [`Adam-S-Daniel/verify-actions-lock`](https://github.com/Adam-S-Daniel/verify-actions-lock); it runs `gh actions-lock --verify` only when a PR touches workflow dependencies (`.github/workflows/**`, `.github/actions/**`, an `action.yml`/`action.yaml`) and fails on any finding except `cooldown-config-ignored` (dependabot.yml's cooldown `exclude`, which the tool ignores). The runner also rejects forged pins, and GitHub's Require lockfile policy is on. Write the exact tag by hand, regenerate with `gh actions-lock --no-narrow`, and commit both files; review an `actions.lock` diff as you would a SHA pin. A stale or moved pin is fixed with `gh actions-lock --accept-moved`; review the diff. `reachability-unknown` means the API was unreachable: re-run. Cross-repo reusable workflows (`jobs.<id>.uses`) are not locked, so they take a full commit SHA (`Adam-S-Daniel/cms-platform` refs excepted); a test enforces it. Fleet rule: [ADR 0024](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0024-actions-pin-through-lockfiles.md).
