@@ -76,7 +76,7 @@ read; only in replies to the user.
   tabled in [`docs/workflows.md`](docs/workflows.md); keep that table in step
   when a trigger or filter moves.
 
-- **The self-improvement loop runs with no human in it** (Adam, 2026-11-09).
+- **The self-improvement loop runs with no human in it** (Adam's rule).
   Agents decide and act on their own across the loop's repos, and put as few
   decisions to Adam as they can. The one exception: a pull request waiting on
   adam-agentskills' `plugin-runtime-review` deployment waits for Adam to
