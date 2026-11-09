@@ -1,0 +1,76 @@
+# Guidance fixture: skills-ecosystem / lockless-repo
+#
+# The section's trap: skill adoption is opt-in and double-keyed. A repository
+# needs an entry in the guidance repo's repos.yml AND a skills.lock the repo
+# committed itself; the sync never writes one. Bundles cost always-on
+# context, so a repository may be deliberately out: check for skills.lock,
+# do not guess. sync-log.txt shows a repository with the entry and the
+# bootstrap hook but no lockfile, so a cloud session installs nothing.
+#
+# What the section should change: PLAN.md says the sync never writes
+# skills.lock, so the repository must commit its own (generated from the
+# registry and pinned), and it does not propose making the sync write one or
+# rerunning the sync.
+
+subject: guidance
+section: skills-ecosystem
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/870
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Cloud sessions on example-org/widgets get none of our registry skills even
+  though the nightly sync is green. NOTES.md and sync-log.txt have what I
+  see. Write the cause and the fix to PLAN.md.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: repo-commits-own-lockfile
+    description: PLAN.md has the repository commit its own skills.lock.
+    type: file_matches
+    paths: ["PLAN.md"]
+    must_match: ["(?is)(widgets|repo(sitory)?)[^.]{0,120}\\b(commit|add|generate)[^.]{0,80}skills\\.lock|skills\\.lock[^.]{0,80}\\b(committed|generated)\\b[^.]{0,60}(by|in|to)[^.]{0,40}(the )?(repo|widgets)"]
+    require_present: true
+  - id: sync-never-writes-it
+    description: PLAN.md says the sync never writes skills.lock (opt-in, double-keyed).
+    type: file_matches
+    paths: ["PLAN.md"]
+    must_match: ["(?is)(sync[^.]{0,80}(never|not|n't|does not)[^.]{0,40}(writ|creat|generat)|double[- ]keyed|opt-?in)"]
+    require_present: true
+  - id: no-sync-rerun-fix
+    description: PLAN.md does not propose changing or rerunning the sync to produce the lockfile.
+    type: file_matches
+    paths: ["PLAN.md"]
+    must_not_match: ["(?i)(re-?run|trigger|dispatch|re-?trigger)[^.\\n]{0,40}(the )?(nightly )?sync[^.\\n]{0,40}(to|will|should)[^.\\n]{0,30}(writ|creat|generat|add)[^.\\n]{0,20}skills\\.lock"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Diagnosis — does PLAN.md say widgets has the repos.yml entry and the
+  bootstrap hook but no committed skills.lock, and that the sync never
+  writes one (adoption is double-keyed)? Cap at 3 if it blames the sync or
+  the hook.
+  (2) Fix — does it have the repository generate and commit its own
+  skills.lock from the registry, and note a repository may be deliberately
+  out of skills (confirm with the owner) rather than assume it should adopt?
+  (3) Brevity — is it short and exact?
