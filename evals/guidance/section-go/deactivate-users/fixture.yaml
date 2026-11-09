@@ -1,0 +1,85 @@
+# Guidance fixture: section-go / deactivate-users
+#
+# The Go section's rules on a function that only needs part of a larger
+# type: a small interface (1-3 methods) defined where it is used, not beside
+# the concrete type, plus `context.Context` first and table-driven tests.
+# The seed's Store has five methods; the function needs two.
+#
+# What the section should change: Deactivate in deactivate.go declares its
+# own small interface for the two calls it makes, and its test passes a fake
+# through that interface, from a table. The prompt names none of the rules.
+#
+# Invented task: names, data and hosts are made up.
+
+subject: guidance
+section: section-go
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/864
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add Deactivate(ids ...string) to a new file deactivate.go: for each id it
+  loads the user from the Store, sets Active to false and saves it back,
+  stopping at the first error. Add a test for it in deactivate_test.go that
+  does not need a real Store.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: interface-at-use
+    description: deactivate.go declares an interface for the calls Deactivate makes.
+    type: file_matches_excluding_comments
+    paths: ["deactivate.go"]
+    must_match: ["type\\s+\\w+\\s+interface\\s*\\{"]
+    require_present: true
+  - id: interface-is-small
+    description: No interface in deactivate.go has four or more methods.
+    type: file_matches_excluding_comments
+    paths: ["deactivate.go"]
+    must_not_match: ["interface\\s*\\{\\s*\\n(?:[ \\t]*[A-Z]\\w*\\([^\\n]*\\n){4}"]
+    require_present: true
+  - id: no-interface-beside-the-type
+    description: store.go gains no interface; the consumer defines it.
+    type: file_matches_excluding_comments
+    paths: ["store.go"]
+    must_not_match: ["interface\\s*\\{"]
+    require_present: true
+  - id: context-first
+    description: Deactivate takes a context.Context as its first parameter.
+    type: file_matches_excluding_comments
+    paths: ["deactivate.go"]
+    must_match: ["func\\s+Deactivate\\(\\s*ctx\\s+context\\.Context\\b"]
+    require_present: true
+  - id: table-driven-test
+    description: deactivate_test.go drives its cases from a table.
+    type: file_matches
+    paths: ["deactivate_test.go"]
+    must_match: ["\\[\\]struct\\s*\\{", "\\bt\\.Run\\("]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Go rules — a small interface defined in deactivate.go for the calls it
+  makes, context first, table-driven test? Take 3 points off for each one
+  missed.
+  (2) Behavior — does it load, clear Active, save, and stop at the first
+  error, with a test that uses a fake and covers an error case?
+  (3) Restraint — did the agent leave Store, User and ErrNotFound alone?

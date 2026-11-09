@@ -1,0 +1,88 @@
+# Guidance fixture: section-dotnet / env-overrides
+#
+# The .NET section's rules on nullable reference types: resolve every
+# warning, not silence it. The seed's project already has nullable enabled
+# and targets net8.0. Reading an environment variable returns `string?`, so
+# the shortcut is the null-forgiving `!`, or a `#pragma warning disable` /
+# `#nullable disable`, which compiles and "resolves" the warning without
+# handling an unset variable. The existing load-settings fixture only checks
+# that nullable is switched on, which every arm does. Names are invented.
+#
+# What the section should change: the unset and unparsable cases are handled
+# with an explicit check, with no `!` and no warning suppression. The prompt
+# names none of this.
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/863
+
+subject: guidance
+section: section-dotnet
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add a static AppSettings.FromEnvironment() that returns an AppSettings
+  with Region taken from the REGION environment variable and Port from the
+  PORT environment variable. A variable that is not set, or a PORT that is
+  not a number, keeps the default for that property.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: from-environment-defined
+    description: AppSettings defines a static FromEnvironment returning AppSettings.
+    type: file_matches_excluding_comments
+    paths: ["AppSettings.cs"]
+    must_match: ["public\\s+static\\s+AppSettings\\s+FromEnvironment\\("]
+    require_present: true
+  - id: no-null-forgiving
+    description: No null-forgiving operator after a value, call or index.
+    type: file_matches_excluding_comments
+    paths: ["AppSettings.cs"]
+    must_not_match: ["[\\w\\)\\]]!\\s*[;,.)\\]]"]
+    require_present: true
+  - id: no-suppression
+    description: No pragma that disables a warning and no `#nullable disable`.
+    type: file_matches_excluding_comments
+    paths: ["AppSettings.cs"]
+    must_not_match: ["#pragma\\s+warning\\s+disable", "#nullable\\s+disable"]
+    require_present: true
+  - id: nullable-kept
+    description: Nullable reference types stay enabled in the project.
+    type: file_matches
+    paths: ["Settings.csproj"]
+    must_match: ["<Nullable>\\s*enable\\s*</Nullable>"]
+    require_present: true
+  - id: framework-kept
+    description: The project still targets net8.0.
+    type: file_matches
+    paths: ["Settings.csproj"]
+    must_match: ["<TargetFramework>net8\\.0</TargetFramework>"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Nullable handling — are the unset variable and the unparsable PORT
+  handled by an explicit check (string.IsNullOrEmpty, int.TryParse or
+  similar), with no null-forgiving `!` and no warning suppression? Cap at 3
+  for `!` or a pragma.
+  (2) Behavior — an unset variable or a non-numeric PORT keeps the default;
+  a valid value is applied?
+  (3) Restraint — did the agent leave the properties' defaults and the
+  project's target framework as they were?
