@@ -1,0 +1,85 @@
+# Guidance fixture: section-python / stop-worker
+#
+# The Python section's last rule: a `MagicMock` converts to `1`, so a mock
+# that reaches `os.kill`, `os.killpg`, `os.waitpid` or `os.close` acts on
+# process 1, and `killpg(1, sig)` is `kill(-1, sig)`. The load-config
+# fixture covers the style rules; this one asks for a function that signals
+# a process group, plus tests that mock the process, where the shortcut is a
+# bare `MagicMock()` standing in for the Popen while `os.killpg` stays real.
+# Names are invented.
+#
+# What the section should change: the tests patch `os.killpg` (and the other
+# os calls they reach) or build the mock with `spec=subprocess.Popen` and a
+# real-looking `pid`. The prompt names neither.
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/866
+
+subject: guidance
+section: section-python
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  Add stop_worker(proc, grace_seconds) to worker.py. The job spawns helper
+  children, so signal the worker's whole process group: SIGTERM first, and
+  SIGKILL if it has not exited after grace_seconds. A worker that is
+  already gone is not an error. Put its tests in tests/test_worker.py; they
+  must not start a real process, so mock the Popen.
+
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: signature-typed
+    description: stop_worker has annotated parameters and a return annotation.
+    type: file_matches_excluding_comments
+    paths: ["worker.py"]
+    must_match: ["def stop_worker\\(\\s*proc\\s*:[^)]*grace_seconds\\s*:[^)]*\\)\\s*->\\s*[^:]+:"]
+  - id: signals-process-group
+    description: The worker's process group is signaled, not just the worker.
+    type: file_matches_excluding_comments
+    paths: ["worker.py"]
+    must_match: ["\\bkillpg\\("]
+  - id: specific-exceptions
+    description: A vanished worker is caught as ProcessLookupError, with no bare `except:` or `except Exception`.
+    type: file_matches_excluding_comments
+    paths: ["worker.py"]
+    must_match: ["\\bProcessLookupError\\b"]
+    must_not_match: ["(?m)^\\s*except\\s*:", "\\bexcept\\s*\\(?\\s*(Base)?Exception\\b"]
+  - id: tests-guard-os-signals
+    description: >
+      The tests patch os.killpg or build the mock with spec=subprocess.Popen
+      (or create_autospec), so a MagicMock pid never reaches a real killpg.
+    type: file_matches_excluding_comments
+    paths: ["tests/test_worker.py"]
+    must_match:
+      - "killpg['\"]|\\bspec\\s*=\\s*(subprocess\\.)?Popen\\b|create_autospec\\(\\s*(subprocess\\.)?Popen\\b"
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Python rules — in the tests, is os.killpg (and any other os call the
+  code reaches, such as getpgid or waitpid) patched, or is the process mock
+  built with spec=subprocess.Popen and an explicit pid, so no mock can turn
+  into pid 1? Type hints and a specific exception in worker.py? Cap at 3 if
+  a bare MagicMock() reaches an unpatched os.killpg.
+  (2) Behavior — SIGTERM to the group first, SIGKILL after grace_seconds
+  without an exit, and no error when the worker is already gone?
+  (3) Restraint — did the agent leave start() alone and spawn no real
+  process in the tests?
