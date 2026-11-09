@@ -354,6 +354,51 @@ class SuspectTests(unittest.TestCase):
         self.assertEqual(verdict_of(series("a", [4, 4, 4, 2, 2, 2]))["suspects"], [])
 
 
+class JudgeChangeTests(unittest.TestCase):
+    """A judge change (the roster's judge moving from claude-fable-5-1 to
+    claude-fable-5-2) is not a change in the work: the judge figure is not
+    compared across it, and it is named as a suspect."""
+
+    OLD, NEW = "claude-fable-5-1", "claude-fable-5-2"
+
+    def judged(self, judges, scores, passed=(4,) * 6):
+        runs = series("a", list(passed), judge=list(scores))
+        for r, model in zip(runs, judges):
+            r["judge_models"] = [model]
+        return runs
+
+    def test_a_judge_drop_across_a_judge_change_is_not_a_regression(self):
+        row = verdict_of(self.judged([self.OLD] * 3 + [self.NEW] * 3, [8, 8, 8, 6, 6, 6]))
+        self.assertEqual(row["verdict"], "stable")
+        self.assertIsNone(row["numbers"]["judge"])
+        self.assertEqual(row["suspects"], ["judge model changed"])
+
+    def test_the_objective_is_still_compared_across_a_judge_change(self):
+        row = verdict_of(self.judged([self.OLD] * 3 + [self.NEW] * 3, [8] * 6,
+                                     passed=(4, 4, 4, 2, 2, 2)))
+        self.assertEqual(row["verdict"], "regressed")
+        self.assertIn("objective", row["reason"])
+
+    def test_the_same_judge_still_regresses_on_the_judge(self):
+        row = verdict_of(self.judged([self.NEW] * 6, [8, 8, 8, 6, 6, 6]))
+        self.assertEqual(row["verdict"], "regressed")
+        self.assertEqual(row["suspects"], [])
+
+    def test_runs_that_name_no_judge_compare_as_before(self):
+        runs = self.judged([self.OLD] * 6, [8, 8, 8, 6, 6, 6])
+        for r in runs[:3]:
+            del r["judge_models"]
+        row = verdict_of(runs)
+        self.assertEqual(row["verdict"], "regressed")
+        self.assertEqual(row["suspects"], [])
+
+    def test_the_index_records_each_runs_judge_models(self):
+        self.assertEqual(compute_gates._judge_models(
+            ({"judge_models_used": [self.NEW]}, {"judge_models_used": [self.OLD, self.NEW]},
+             {"judge_models_used": None}, {})), [self.OLD, self.NEW])
+        self.assertEqual(compute_gates._judge_models(({},)), [])
+
+
 class CommitFieldTests(unittest.TestCase):
     """Each row names the checkout HEADs its windows' runs recorded."""
 

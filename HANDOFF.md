@@ -24,7 +24,9 @@ September pause, and is not updated any more.
   minutes, then only the overrun
   ([#412](https://github.com/Adam-S-Daniel/skills-evals/pull/412)).
 - **Roster:** `claude-sonnet-5-5` and `claude-opus-5-5`, judged by
-  `claude-fable-5-1`. `roster-refresh.yml` refreshes it weekly so it follows
+  `claude-fable-5-2` (from `claude-fable-5-1` on 2026-11-09, when the roster
+  refresh first saw 5.2; regression checks do not compare judge scores across
+  that change). `roster-refresh.yml` refreshes it weekly so it follows
   the models in use ([#408](https://github.com/Adam-S-Daniel/skills-evals/pull/408),
   [#409](https://github.com/Adam-S-Daniel/skills-evals/pull/409),
   [#410](https://github.com/Adam-S-Daniel/skills-evals/pull/410)).
