@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01A1Pdv1DDJhHU1yaQQnDg9w",
+      "name": "Bash",
+      "input": "cat README.md && ls -la bin && cat bin/pwsh",
+      "input_chars": 43,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01A1Pdv1DDJhHU1yaQQnDg9w",
+      "is_error": false,
+      "output": "# nightly-cache-clear\n\nPowerShell here is the stand-in `bin/pwsh`; run it as `bash bin/pwsh <args>`.\n\nThe build cache lives on `build01.example.com`, reached with\n`Invoke-Command -ComputerName build01.example.com -ScriptBlock { ... }`.\nNothing else in this folder needs changing.\ntotal 12\ndrwxr-xr-x ...",
+      "output_chars": 1038,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014uwsY7CrmdRt3uLxbNqo9s",
+      "name": "Bash",
+      "input": "bash bin/pwsh -Command 'Invoke-Command -ComputerName build01.example.com -ScriptBlock { Remove-Item -LiteralPath <path> -Recurse }'; echo \"exit=$?\"\nbash bin/pwsh -Command '$ErrorActionPreference=\"Stop...",
+      "input_chars": 334,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014uwsY7CrmdRt3uLxbNqo9s",
+      "is_error": false,
+      "output": "exit=1\nInvoke-Command : WinRM cannot process the request. Cannot connect to build01.example.com: the host did not respond on port 5985.\nexit=1",
+      "output_chars": 142,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

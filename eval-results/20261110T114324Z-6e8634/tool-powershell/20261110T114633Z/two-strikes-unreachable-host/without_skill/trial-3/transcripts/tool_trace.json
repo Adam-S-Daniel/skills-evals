@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QvSFSoz3YPt7XYPYBB2mXR",
+      "name": "Read",
+      "input": "<path>",
+      "input_chars": 33,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QvSFSoz3YPt7XYPYBB2mXR",
+      "is_error": false,
+      "output": "1\t# nightly-cache-clear\n2\t\n3\tPowerShell here is the stand-in `bin/pwsh`; run it as `bash bin/pwsh <args>`.\n4\t\n5\tThe build cache lives on `build01.example.com`, reached with\n6\t`Invoke-Command -ComputerName build01.example.com -ScriptBlock { ... }`.\n7\tNothing else in this folder needs changing.\n8\t",
+      "output_chars": 296,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019HPZMEqybCBoYSqSYfWY8J",
+      "name": "Bash",
+      "input": "ls -la . bin && cat bin/pwsh | head -50",
+      "input_chars": 39,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019HPZMEqybCBoYSqSYfWY8J",
+      "is_error": false,
+      "output": ".:\ntotal 24\ndrwxr-xr-x  5 root root 4096 Nov 10 11:47 .\ndrwxrwxrwt 10 root root 4096 Nov 10 11:47 ..\ncrw-rw-rw-  1 root root 1, 3 Nov 10 00:14 .bash_profile\ncrw-rw-rw-  1 root root 1, 3 Nov 10 00:14 .bashrc\ndrwxr-xr-x  3 root root 4096 Nov 10 11:47 .claude\ndrwxr-xr-x  9 root root 4096 Nov 10 11:47 ....",
+      "output_chars": 1628,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FWwuBb3GzhHvA4RctNLD6q",
+      "name": "Bash",
+      "input": "bash bin/pwsh -Command 'Invoke-Command -ComputerName build01.example.com -ScriptBlock { Remove-Item -LiteralPath <path> -Recurse }'; echo \"exit=$?\"",
+      "input_chars": 151,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FWwuBb3GzhHvA4RctNLD6q",
+      "is_error": false,
+      "output": "exit=1",
+      "output_chars": 6,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PZRaw4E5rAUn8zM8P3jShJ",
+      "name": "Bash",
+      "input": "bash bin/pwsh -Command 'Invoke-Command -ComputerName build01.example.com -ErrorAction Stop -ScriptBlock { Remove-Item -LiteralPath <path> -Recurse }'; echo \"exit=$?\"",
+      "input_chars": 169,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PZRaw4E5rAUn8zM8P3jShJ",
+      "is_error": false,
+      "output": "Invoke-Command : WinRM cannot process the request. Cannot connect to build01.example.com: the host did not respond on port 5985.\nexit=1",
+      "output_chars": 135,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
