@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JqcRn56zUXB1QSZMHNPLAu",
+      "name": "Bash",
+      "input": "git status --short | head; git branch -a; ls; ls seed _posts _tools tools 2>&1 | head -50; cat _posts/2026-01-01-example.md; cat _config.yml",
+      "input_chars": 140,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JqcRn56zUXB1QSZMHNPLAu",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n* master\n_config.yml\n_data\n_includes\n_layouts\n_posts\n_tools\nadmin\nassets\nseed\ntools\n_posts:\n2026-01-01-example.md\n\n_tools:\nexisting.md\n\nseed:\nnew-tool\n\ntools:\nindex.html\n-...",
+      "output_chars": 752,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MxfdRJjo3Hr1eCSS6whKET",
+      "name": "Bash",
+      "input": "cat _tools/existing.md; ls -R seed _includes _layouts _data; cat seed/new-tool/* | head -80; cat _includes/* _layouts/tool.html; cat tools/index.html",
+      "input_chars": 149,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MxfdRJjo3Hr1eCSS6whKET",
+      "is_error": false,
+      "output": "---\ntitle: Example Counter\nslug: existing\ndescription: A small counter for demonstrations.\nfeatured: false\nembed_src: <path>\nsource_url: https://example.net/counter/\n---\nThis tool is automation-managed; updates arrive from its source project.\n_data:\ntool_sources\n\n_data/tool_sources:\nexisting.yml\n\n_i...",
+      "output_chars": 2681,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VNyYuquTCc3fzRFHLRp4u8",
+      "name": "Bash",
+      "input": "cat _data/tool_sources/existing.yml; ls assets assets/tools 2>&1; cat .gitmodules; cat _layouts/default.html",
+      "input_chars": 108,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VNyYuquTCc3fzRFHLRp4u8",
+      "is_error": false,
+      "output": "# Automation-managed: synchronized alongside the existing app.\nslug: existing\nsource_url: https://example.net/counter/\nrevision: demonstration-v1\nassets:\ntools\n\nassets/tools:\nexisting\ncat: .gitmodules: Permission denied\n<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{{ page.title...",
+      "output_chars": 399,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013MNQLigeeE7eDiCjDcHuY4",
+      "name": "Bash",
+      "input": "mkdir -p assets/tools/unit-converter && cp seed/new-tool/index.html assets/tools/unit-converter/index.html\ncat > _tools/unit-converter.md <<'EOF'\n---\ntitle: Unit Converter\nslug: unit-converter\ndescrip...",
+      "input_chars": 1043,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013MNQLigeeE7eDiCjDcHuY4",
+      "is_error": true,
+      "output": "Exit code 1\n---\nlayout: default\ntitle: Measuring a small project\n---\nPlanning a small project is easier when the measurements are easy to compare.\n\n## Try the converter\n\n<iframe src=\"{{ '<path>' | relative_url }}\" title=\"Unit Converter\" loading=\"lazy\" style=\"width:100%; height:24rem; border:0;\"></if...",
+      "output_chars": 632,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
