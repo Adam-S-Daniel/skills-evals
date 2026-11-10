@@ -4,6 +4,7 @@ import { clean, friendlyModel, parseTime, fmtDay, roundDecimals } from '../core/
 import { h, link } from '../core/h.js';
 import { defn, skillTerm, sectionTerm } from '../core/terms.js';
 import { trendingView } from './trending.js';
+import { isTrending, alertKindLabel } from '../core/stats.js';
 
 // The sentence for an alert that carries fields instead of `text` (#545);
 // null when it has neither, so the label stands alone.
@@ -37,13 +38,14 @@ export function firesNode(x) {
 
 export function alertsView(doc, mode) {
   const want = mode === 'guidance' ? 'guidance' : 'skill';
-  // A regression is "trending toward removal", a table of its own.
-  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.kind !== 'regression' && (mode === 'all' || a.subject === want));
+  // A regression on an undecided subject is "trending toward removal", a
+  // table of its own; on a decided one it is listed here (isTrending).
+  const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && !isTrending(doc, a) && (mode === 'all' || a.subject === want));
   const x = firesFigures(doc);
   const trending = trendingView(doc, mode);
   return h('div', null, trending, h('section', null, h('h2', null, STRINGS.alertsHeading), x ? firesNode(x) : null,
     alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
-      const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
+      const kind = clean(alertKindLabel(doc, a));
       const l = link(a.url, STRINGS.alertDetails);
       return h('li', null, h('strong', null, kind + ': ', a.subject === 'guidance' ? sectionTerm(a.name, clean(a.name)) : skillTerm(a.name, clean(a.name))), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
         a.text ? ' ' + clean(roundDecimals(a.text)) : (alertText(a) ? ' ' + alertText(a) : null), l ? [' ', l] : null);

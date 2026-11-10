@@ -10,6 +10,7 @@ import { term, defn } from '../core/terms.js';
 import { tile, srcTip, panel } from './bits.js';
 import { alertsView, firesFigures } from './alerts.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
+import { isTrending } from '../core/stats.js';
 
 /* One line saying what each time on the page refers to. */
 export function asOfLine(doc, refMs) {
@@ -54,8 +55,8 @@ export function summaryView(doc, ctx) {
     value: chip(whole.chip, STRINGS.wholeRule), note: STRINGS.wholeAnswer[whole.chip] }));
   // The alerts list below also carries the fires-without-results line, so
   // the tile counts it too.
-  const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && a.kind !== 'regression') : [];
-  const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.kind === 'regression');
+  const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
+  const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => isTrending(doc, a));
   const names = new Set(trending.map((a) => a.subject + ':' + a.name));
   tiles.push(tile({ label: STRINGS.tileAlerts, value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)), tip,
     note: STRINGS.tileAlertsNote + '.' + (names.size ? STRINGS.tileTrendingNote(names.size) : '') }));

@@ -344,8 +344,8 @@
       "bundle": "example-bundle",
       "status": "covered",
       "skip_reason": null,
-      "verdict": "keep",
-      "verdict_reason": "helps on every cell",
+      "verdict": "insufficient",
+      "verdict_reason": "needs more runs",
       "runs": [
         {
           "fixture": "example-task",

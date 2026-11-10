@@ -93,6 +93,31 @@ export const VERDICT_CHIPS = {
   ceiling: 'canttell', 'cannot-discriminate': 'canttell'
 };
 
+export const isDecided = (v) => typeof v === 'string' && Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v);
+
+/* The loop's verdict for an alert's subject ('skill' or 'guidance'), or null. */
+export function verdictOf(doc, subjectKind, name) {
+  const list = subjectKind === 'guidance'
+    ? (doc && doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : [])
+    : (doc && Array.isArray(doc.skills) ? doc.skills : []);
+  const key = subjectKind === 'guidance' ? 'id' : 'name';
+  const hit = list.find((x) => x && String(x[key]) === String(name));
+  return hit && typeof hit.verdict === 'string' ? hit.verdict : null;
+}
+
+/* Is this alert a "Trending toward removal" row? A regression alert is,
+   until the loop decides its subject; after that the decision stands and the
+   alert is an ordinary one ("Score fell, decision stands"). */
+export function isTrending(doc, a) {
+  return !!a && a.kind === 'regression' && !isDecided(verdictOf(doc, a.subject, a.name));
+}
+
+/* The label an alert is listed under. */
+export function alertKindLabel(doc, a) {
+  if (a.kind === 'regression' && !isTrending(doc, a)) return STRINGS.alertRegressionDecided;
+  return Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : String(a.kind);
+}
+
 /* The gain a subject's card is judged by: for a guidance section, the
    in-situ gain (all the guidance vs all of it but the section), which is the
    pair that decides it and the one every section runs; otherwise the paired
@@ -112,11 +137,13 @@ export function earlyOrInsufficient(pooled, subject) {
    does not judge), the page's simple rule applies at the loop's run floor. */
 export function chipFor(pooled, opts) {
   const o = opts || {};
+  // A decision the loop has reached outranks a regression alert: the alert
+  // compares a subject's recent scores with its own earlier ones and decides
+  // nothing (harness/regression.py), so a kept subject is not trending
+  // toward removal (isTrending).
+  if (isDecided(o.verdict)) return VERDICT_CHIPS[o.verdict];
   if (o.regression) return 'worse';
-  if (Object.prototype.hasOwnProperty.call(o, 'verdict')) {
-    const v = typeof o.verdict === 'string' ? o.verdict : '';
-    return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled, o.subject);
-  }
+  if (Object.prototype.hasOwnProperty.call(o, 'verdict')) return earlyOrInsufficient(pooled, o.subject);
   const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
   if (!eligible.length) return earlyOrInsufficient(pooled, o.subject === 'guidance' ? 'guidance' : null);
   const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS)

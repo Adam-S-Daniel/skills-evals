@@ -6,6 +6,7 @@ import { clean, friendlyModel, fmt2, fmtCount, roundDecimals } from '../core/for
 import { h, link } from '../core/h.js';
 import { skillTerm, sectionTerm, fixtureTerm, defn } from '../core/terms.js';
 import { table } from './bits.js';
+import { isTrending } from '../core/stats.js';
 
 const isNum = (x) => typeof x === 'number' && isFinite(x);
 
@@ -14,7 +15,7 @@ const isNum = (x) => typeof x === 'number' && isFinite(x);
 export function trendingRows(doc, mode) {
   const by = new Map();
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
-    if (!a || a.kind !== 'regression' || (mode !== 'all' && a.subject !== (mode === 'guidance' ? 'guidance' : 'skill'))) continue;
+    if (!isTrending(doc, a) || (mode !== 'all' && a.subject !== (mode === 'guidance' ? 'guidance' : 'skill'))) continue;
     const key = a.subject + ':' + a.name;
     if (!by.has(key)) by.set(key, { subject: a.subject, name: String(a.name), models: [], changes: [], urls: [] });
     const row = by.get(key);

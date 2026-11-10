@@ -237,6 +237,9 @@ function buildStrings(you) {
   alertKinds: { regression: 'Trending toward removal', retire: 'Suggested for removal', retired: 'Removed',
     'not-schedulable': 'Not being tested', 'context-drift': 'Context out of date',
     'loaded-copy': 'Sessions load an old copy' },
+  // A regression alert on a subject the loop has already decided: the scores
+  // fell, but the decision is still the loop's verdict, not a trend to removal.
+  alertRegressionDecided: 'Score fell, decision stands',
   // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
   alertCopy: (surface, loaded, main) => 'Most ' + (surface === 'cloud' ? 'cloud' : 'local') + ' uses in the last 2 weeks loaded copy ' + loaded + ', which main did not have at any point in that time. Main is ' + main + '.',
   // #545: this alert carries fields, not text, so the page words it.

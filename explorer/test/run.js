@@ -24,6 +24,8 @@ import { agentMadeRows } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
+import { sectionItems, skillItems } from '../src/core/items.js';
+import { trendingRows } from '../src/views/trending.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -190,6 +192,23 @@ await test('a regression alert is not a Needs attention row: it is trending towa
   const t = textOf(renderRoute(d, { name: 'needs', id: null }, { ext: makeExt(fakeDash({})) }));
   ok(t.includes(STRINGS.trendingHeading) && /fell from 7\.50 to 6\.00, a drop of 1\.50\.\s+An alert needs a drop of at least 1\.00/.test(t.replace(/\s+/g, ' ')), t);
   ok(!/\d\.\d{3,}/.test(t), 'no long decimal on the page: ' + t);
+});
+await test('a regression alert on a subject the loop decided to keep is not trending toward removal', () => {
+  const reg = (name, subject) => ({ kind: 'regression', name: name, subject: subject, model: 'claude-sonnet-5-5', fixture: 'fx-one', verdict: 'regressed',
+    measure: 'objective', previous: 0.75, current: 0.25, drop: 0.5, threshold: 0.15, noise: 0.31, text: name + ' regressed on fx-one.', url: 'https://github.com/example-owner/r/issues/7' });
+  const d = doc({ alerts: [reg('kept-section', 'guidance'), reg('open-section', 'guidance'), reg('kept-skill', 'skill')],
+    skills: [{ name: 'kept-skill', status: 'covered', verdict: 'keep', runs: [] }],
+    guidance: { sections: [{ id: 'kept-section', verdict: 'keep', runs: [] }, { id: 'open-section', verdict: 'insufficient', runs: [] }] } });
+  const chips = Object.fromEntries(sectionItems(d).map((s) => [s.id, s.chip]));
+  eq(chips['kept-section'], 'helps', 'a kept section keeps its verdict chip');
+  eq(chips['open-section'], 'worse', 'an undecided section with a regression still trends toward removal');
+  eq(skillItems(d)[0].chip, 'helps', 'a kept skill keeps its verdict chip');
+  eq(trendingRows(d, 'all').map((r) => r.name).join(','), 'open-section', 'only the undecided subject is in the trending table');
+  const rows = attentionRows(fakeDash({}), d);
+  eq(rows.length, 2, 'both kept subjects are ordinary alerts');
+  ok(rows.every((r) => r.kind.includes(STRINGS.alertRegressionDecided)), JSON.stringify(rows));
+  const t = textOf(renderRoute(d, { name: 'summary', id: null }, {})).replace(/\s+/g, ' ');
+  ok(t.includes(STRINGS.alertRegressionDecided + ': kept-section'), t);
 });
 await test('the allowance and routine health come from their datasets', () => {
   const cap = capUse([{ points: 40.5, account_week_used: 70, pace_room_points: 3, account_reading_at: '2026-11-04T03:30:10Z', week_resets_at: '2026-11-09T17:00:00Z' }],
