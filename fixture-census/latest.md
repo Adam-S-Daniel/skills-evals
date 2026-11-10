@@ -71,6 +71,6 @@ None.
 
 ## Fixture metadata readiness
 
-- Fixtures: 156; draft: 11.
-- Context declared: 76; missing: 80; guidance unproven: 0.
+- Fixtures: 166; draft: 11.
+- Context declared: 76; missing: 90; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
