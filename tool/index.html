@@ -211,6 +211,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 .ex th { position: sticky; top: 0; background: var(--surface); cursor: pointer; font-weight: 600; white-space: nowrap; }
 .ex th[aria-sort="ascending"]::after { content: " \25B4"; }
 .ex th[aria-sort="descending"]::after { content: " \25BE"; }
+.ex table.hooks th { white-space: normal; }
+@media (max-width: 560px) {
+  .ex table.hooks th, .ex table.hooks td { padding: 4px 3px; font-size: 0.78rem; }
+  .ex table.hooks td.num, .ex table.hooks th.num { white-space: normal; }
+}
 .ex td.num, .ex th.num { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .ex .block { min-width: 0; }
 .ex table.console { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.78rem; }
@@ -228,7 +233,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 .ex .chart.range { max-width: 420px; margin-top: 4px; }
 .ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
 .ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
-.ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
+.ex .badge.hv { white-space: normal; text-align: center; line-height: 1.25; }
+.ex .badge.hv.never-blocked, .ex .badge.hv.never-ran, .ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
 .ex details.guide { border: 1px solid var(--base); border-radius: 9px; background: var(--surface); padding: 8px 12px; margin: 0 0 12px; font-size: 0.88rem; color: var(--ink-2); }
 .ex details.guide > summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 28px; display: flex; align-items: center; }
 .ex details.guide > p { margin: 6px 0; max-width: 80ch; }
@@ -776,15 +782,20 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       hooksHeading: "Does each git hook check earn its place?",
       hooksNote: (weeks, from, to) => "Each check runs before a commit or push on " + W.whose + " computers (git hooks) and again in CI. Counts cover the " + weeks + " weeks from " + from + " to " + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
       hooksNone: "No git hook counts in this build.",
-      hookVerdicts: { earning: "Earning its place", "never-fires": "Never fires", "overridden-often": "Overridden often" },
+      hookVerdicts: { earning: "Earning its place", "never-blocked": "Never blocked", "never-ran": "Never ran", "never-fires": "No block seen", "overridden-often": "Overridden often" },
       hookVerdictNone: "No verdict yet",
-      hookWhere: { fleet: "Fleet template", repo: "Repo-local" },
+      hookWhere: { fleet: "Fleet", repo: "Repo-local" },
       hookWhereLine: (where2, repo) => where2 === "repo" ? "Runs from " + (repo || "one repo") + "'s own checks (repo-local)." : "Runs in every fleet repo from the shared template.",
       colCheck: "Check",
       colWhere: "Where it runs",
       colRuns: "Runs",
       colBlocked: "Blocked",
       colOverrides: "Overrides",
+      colRunsWindow: (weeks) => "Runs, " + weeks + " weeks",
+      runsNotCounted: "not counted",
+      runsPartial: (n) => n + " local, CI not counted",
+      blockedOf: (blocked, runs) => blocked + " of " + runs + (runs === 1 ? " run" : " runs"),
+      hookRunsNote: "Local runs come from the hook telemetry on " + W.whose + ` computers: every commit or push that runs the check is counted. CI records only which checks failed in a red run, not how often each ran, so a check's CI runs are not counted; its Runs cell then shows only the local runs, or "not counted". Where runs are counted, Blocked reads like "4 of 30 runs".`,
       overridesNotCounted: "not counted",
       hookOverridesNote: 'Overrides (work pushed past a refusal) are not counted for this check yet, so "overridden often" cannot be judged; the verdict rests on runs and blocks alone.',
       hookRule: (rate, weeks) => "A check earns its place when it blocks something in " + weeks + " weeks; it is overridden often when more than " + rate + " of its blocks are pushed past anyway.",
@@ -2564,7 +2575,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/core/hooks.js
-  var HOOK_RANK = ["earning", "overridden-often", "never-fires"];
+  var HOOK_RANK = ["earning", "overridden-often", "never-blocked", "never-fires", "never-ran"];
   function hookItems(doc) {
     const h2 = doc && doc.hooks;
     const checks = h2 && Array.isArray(h2.checks) ? h2.checks : [];
@@ -2575,7 +2586,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         raw: c,
         where: c.where === "repo" ? "repo" : "fleet",
         repo: typeof c.repo === "string" ? c.repo : null,
-        runs: t ? t.invocations : null,
+        runs: t && Number.isInteger(t.invocations) ? t.invocations : null,
+        runsCounted: t && Number.isInteger(t.invocations_counted) ? t.invocations_counted : t && Number.isInteger(t.invocations) ? t.invocations : null,
         blocked: t ? t.blocked : null,
         overridden: t && Number.isInteger(t.overridden) ? t.overridden : null,
         overrideRate: t && typeof t.override_rate === "number" ? t.override_rate : null,
@@ -2937,6 +2949,15 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 
   // src/views/hooks.js
   var pct2 = (x) => Math.round(x * 100) + "%";
+  function runsCell(it) {
+    if (it.runs !== null) return fmtCount(it.runs);
+    if (it.runsCounted) return STRINGS.runsPartial(it.runsCounted);
+    return h("span", { class: "muted" }, STRINGS.runsNotCounted);
+  }
+  function blockedCell(it) {
+    if (it.blocked === null) return STRINGS.noValue;
+    return it.runs !== null && it.runs > 0 ? STRINGS.blockedOf(it.blocked, it.runs) : fmtCount(it.blocked);
+  }
   function hookVerdict(it) {
     const label = it.verdict && Object.prototype.hasOwnProperty.call(STRINGS.hookVerdicts, it.verdict) ? STRINGS.hookVerdicts[it.verdict] : STRINGS.hookVerdictNone;
     return badge(label, "hv " + (it.verdict || "none"));
@@ -2946,7 +2967,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? " (" + pct2(it.overrideRate) + ")" : "");
   }
   function where(it) {
-    return STRINGS.hookWhere[it.where] + (it.where === "repo" && it.repo ? ": " + clean(it.repo) : "");
+    return STRINGS.hookWhere[it.where];
   }
   function hooksList(doc) {
     const refMs = parseTime(doc.generated_at);
@@ -2959,11 +2980,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const rows = table([
       { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor("hooks", it.name), clean(it.name)) },
       { label: STRINGS.colWhere, sort: (it) => it.where, cell: where },
-      { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => it.runs === null ? STRINGS.noValue : fmtCount(it.runs) },
-      { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked) },
+      { label: STRINGS.colRunsWindow(w.weeks || 8), num: true, sort: (it) => it.runs !== null ? it.runs : it.runsCounted, cell: runsCell },
+      { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: blockedCell },
       anyMeasured ? { label: STRINGS.colOverrides, num: true, sort: (it) => it.measured ? it.overridden : -1, cell: overrides } : null,
       { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || "", cell: hookVerdict }
-    ].filter(Boolean), items);
+    ].filter(Boolean), items, { cls: "hooks" });
     const policy = hk.policy || {};
     return h(
       "section",
@@ -2973,6 +2994,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
       typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct2(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
+      items.length ? h("p", { class: "note" }, STRINGS.hookRunsNote) : null,
       items.length && !anyMeasured ? h("p", { class: "note" }, STRINGS.hookOverridesNote) : null,
       Number.isInteger(hk.unlisted) && hk.unlisted > 0 ? h("p", { class: "note" }, STRINGS.hookUnlisted(hk.unlisted)) : null,
       hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
@@ -2981,14 +3003,17 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   function checkWeeks(it) {
     const by = /* @__PURE__ */ new Map();
     for (const u of it.use) {
-      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, overridden: null });
+      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, ciUnknown: false, overridden: null });
       const r = by.get(u.week);
       const s = u.surface === "ci" ? "ci" : "local";
-      r[s + "Runs"] += Number(u.invocations) || 0;
+      if (Number.isInteger(u.invocations)) r[s + "Runs"] += u.invocations;
+      else r[s + "Unknown"] = true;
       r[s + "Blocked"] += Number(u.blocked) || 0;
       if (Number.isInteger(u.overridden)) r.overridden = (r.overridden || 0) + u.overridden;
     }
-    return Array.from(by.values()).sort((a, b) => a.week < b.week ? -1 : 1);
+    const out = Array.from(by.values());
+    for (const r of out) r.ciRuns = r.ciUnknown || !r.ciRuns ? null : r.ciRuns;
+    return out.sort((a, b) => a.week < b.week ? -1 : 1);
   }
   function hookPage(doc, name, ctx) {
     const refMs = parseTime(doc.generated_at);
@@ -3004,7 +3029,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       const k = (u.repo || STRINGS.unknown) + "|" + u.surface;
       if (!byRepo.has(k)) byRepo.set(k, { repo: u.repo || STRINGS.unknown, surface: u.surface, runs: 0, blocked: 0 });
       const r = byRepo.get(k);
-      r.runs += Number(u.invocations) || 0;
+      r.runs = r.runs === null || !Number.isInteger(u.invocations) ? null : r.runs + u.invocations;
       r.blocked += Number(u.blocked) || 0;
     }
     const extra = ctx && ctx.ext && ctx.ext.hookPage ? ctx.ext.hookPage(ctx, it) : null;
@@ -3025,7 +3050,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h(
           "p",
           { class: "meta" },
-          STRINGS.colRuns + ": " + (it.runs === null ? STRINGS.noValue : fmtCount(it.runs)) + ". " + STRINGS.colBlocked + ": " + (it.blocked === null ? STRINGS.noValue : fmtCount(it.blocked)) + ". " + STRINGS.colOverrides + ": ",
+          STRINGS.colRuns + ": ",
+          runsCell(it),
+          ". " + STRINGS.colBlocked + ": " + blockedCell(it) + ". " + STRINGS.colOverrides + ": ",
           overrides(it),
           "."
         ),
@@ -3043,7 +3070,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => day(w.week) },
           { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.localRuns, cell: (w) => fmtCount(w.localRuns) },
           { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.localBlocked, cell: (w) => fmtCount(w.localBlocked) },
-          { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ciRuns, cell: (w) => fmtCount(w.ciRuns) },
+          { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ciRuns === null ? -1 : w.ciRuns, cell: (w) => w.ciRuns === null ? STRINGS.runsNotCounted : fmtCount(w.ciRuns) },
           { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ciBlocked, cell: (w) => fmtCount(w.ciBlocked) },
           { label: STRINGS.colOverrides, num: true, sort: (w) => w.overridden, cell: (w) => it.measured && w.overridden !== null ? fmtCount(w.overridden) : STRINGS.overridesNotCounted }
         ], weeks.slice().reverse())
@@ -3051,9 +3078,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       panel(STRINGS.hookByRepo, byRepo.size ? table([
         { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(r.repo) },
         { label: STRINGS.colSurface, sort: (r) => r.surface, cell: (r) => r.surface },
-        { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
+        { label: STRINGS.colRuns, num: true, sort: (r) => r.runs === null ? -1 : r.runs, cell: (r) => r.runs === null ? STRINGS.runsNotCounted : fmtCount(r.runs) },
         { label: STRINGS.colBlocked, num: true, sort: (r) => r.blocked, cell: (r) => fmtCount(r.blocked) }
-      ], Array.from(byRepo.values()).sort((a, b) => b.runs - a.runs)) : null),
+      ], Array.from(byRepo.values()).sort((a, b) => (b.runs === null ? -1 : b.runs) - (a.runs === null ? -1 : a.runs) || b.blocked - a.blocked)) : null),
       extra
     );
   }
@@ -3361,13 +3388,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     ];
   }
   function checkUseView(doc) {
-    const items = hookItems(doc).filter((it) => it.runs !== null);
+    const items = hookItems(doc).filter((it) => it.runs !== null || it.blocked);
     if (!items.length) return null;
     return table([
       { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor("hooks", it.name), clean(it.name)) },
-      { label: STRINGS.colRuns, num: true, sort: (it) => it.runs, cell: (it) => fmtCount(it.runs) },
+      { label: STRINGS.colRuns, num: true, sort: (it) => it.runs !== null ? it.runs : it.runsCounted, cell: (it) => it.runs !== null ? fmtCount(it.runs) : STRINGS.runsNotCounted },
       { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => fmtCount(it.blocked || 0) }
-    ], items.slice().sort((a, b) => b.runs - a.runs));
+    ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
   }
   function prWeeks(doc) {
     const a = doc.activity;

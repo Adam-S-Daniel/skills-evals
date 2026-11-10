@@ -52,7 +52,7 @@ class Repo:
 def doc():
     return {
         "hooks": {"checks": [
-            {"name": "old-check", "where": "fleet", "verdict": "never-fires",
+            {"name": "old-check", "where": "fleet", "verdict": "never-blocked",
              "window_totals": {"invocations": 10, "blocked": 0}},
             {"name": "new-check", "where": "fleet", "verdict": "blocks",
              "window_totals": {"invocations": 5, "blocked": 2}},

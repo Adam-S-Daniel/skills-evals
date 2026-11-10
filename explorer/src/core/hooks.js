@@ -2,7 +2,7 @@
    weekly totals the summary and impact views read. */
 import { parseTime } from './format.js';
 
-export const HOOK_RANK = ['earning', 'overridden-often', 'never-fires'];
+export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never-fires', 'never-ran'];
 
 export function hookItems(doc) {
   const h = doc && doc.hooks;
@@ -10,7 +10,9 @@ export function hookItems(doc) {
   return checks.filter((c) => c && typeof c.name === 'string').map((c) => {
     const t = c.window_totals && typeof c.window_totals === 'object' ? c.window_totals : null;
     return { name: c.name, raw: c, where: c.where === 'repo' ? 'repo' : 'fleet', repo: typeof c.repo === 'string' ? c.repo : null,
-      runs: t ? t.invocations : null, blocked: t ? t.blocked : null,
+      runs: t && Number.isInteger(t.invocations) ? t.invocations : null,
+      runsCounted: t && Number.isInteger(t.invocations_counted) ? t.invocations_counted : (t && Number.isInteger(t.invocations) ? t.invocations : null),
+      blocked: t ? t.blocked : null,
       overridden: t && Number.isInteger(t.overridden) ? t.overridden : null,
       overrideRate: t && typeof t.override_rate === 'number' ? t.override_rate : null,
       measured: c.overrides_measured === true, verdict: typeof c.verdict === 'string' ? c.verdict : null,

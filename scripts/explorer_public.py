@@ -73,7 +73,7 @@ FETCH_SKEW = timedelta(minutes=5)
 FETCH_MAX_LAG = timedelta(days=1)
 
 HOOK_POLICY_DEFAULTS = {"window_weeks": 8, "max_override_rate": 0.20, "min_private_repos": 3}
-VERDICTS = ("earning", "never-fires", "overridden-often")
+VERDICTS = ("earning", "never-blocked", "never-ran", "overridden-often")
 
 
 # --- shared readers ------------------------------------------------------------
@@ -296,7 +296,10 @@ def _hook_rows(tree: Path) -> list | None:
         rows += [r for r in doc["rows"] if isinstance(r, dict) and r.get("kind") == "hook"
                  and isinstance(r.get("week"), str) and _DAY_RE.fullmatch(r["week"])
                  and isinstance(r.get("name"), str) and r.get("surface") in ("local", "ci")
-                 and _count(r.get("invocations"))]
+                 # A CI row may carry a null count: the CI producer records
+                 # which checks refused, not which ran.
+                 and (_count(r.get("invocations"))
+                      or r.get("surface") == "ci" and r.get("invocations") is None)]
     return rows if found else None
 
 
@@ -316,7 +319,8 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
     for row in rows or []:
         name, surface = row["name"], row["surface"]
         repo = _bucket(row.get("repo"), public, private_seen)
-        if name == "all" and surface == "local" or name == CI_JOB_NAME and surface == "ci":
+        whole = name == "all" and surface == "local" or name == CI_JOB_NAME and surface == "ci"
+        if whole:
             target = totals[surface]
         elif name in fleet_names:
             target = use.setdefault((name, None), {})
@@ -330,7 +334,15 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
         key = (row["week"], surface, repo)
         cell = target.setdefault(key, {"week": row["week"], "surface": surface, "repo": repo,
                                        "invocations": 0, "blocked": None, "overridden": None})
-        cell["invocations"] += row["invocations"]
+        # The CI file's per-check rows say which checks refused a red run,
+        # not which ran: their `invocations` is 0 (older files) or null, and
+        # neither is a count. Published as null so no check shows fewer runs
+        # than blocks. The whole-job CI row is a real count.
+        runs = row["invocations"]
+        if surface == "ci" and not whole and not runs:
+            runs = None
+        cell["invocations"] = None if cell["invocations"] is None or runs is None \
+            else cell["invocations"] + runs
         cell["blocked"] = _add(cell["blocked"], row.get("blocked"))
         # The CI file's `overridden` repeats its `blocked` (a red CI run is
         # counted as both), so it is not an override count and is never read.
@@ -378,12 +390,23 @@ def verdict(rows: list | None, start: str, policy: dict) -> dict:
     overridden = sum(r["overridden"] for r in known)
     rate = overridden / known_blocked if known_blocked else None
     measured = rate is not None
-    totals = {"invocations": sum(r["invocations"] for r in recent), "blocked": blocked,
-              "overridden": overridden if known else None, "override_rate": rate}
+    uncounted = any(r["invocations"] is None for r in recent)
+    counted = sum(r["invocations"] for r in recent if r["invocations"] is not None)
+    # `invocations` is the run count only when every row counts its runs;
+    # `invocations_counted` is what the rows that do count add up to.
+    totals = {"invocations": None if uncounted else counted, "invocations_counted": counted,
+              "blocked": blocked, "overridden": overridden if known else None, "override_rate": rate}
     weeks, limit = policy["window_weeks"], policy["max_override_rate"]
     out = {"window_totals": totals, "overrides_measured": measured}
     if blocked == 0:
-        return {**out, "verdict": "never-fires", "verdict_reason": f"no block in {weeks} weeks"}
+        if uncounted:
+            return {**out, "verdict": "never-blocked",
+                    "verdict_reason": f"runs not counted; no block in {weeks} weeks"}
+        if counted == 0:
+            return {**out, "verdict": "never-ran",
+                    "verdict_reason": f"no recorded runs in {weeks} weeks (CI runs are not counted per check)"}
+        return {**out, "verdict": "never-blocked",
+                "verdict_reason": f"ran {counted} {'time' if counted == 1 else 'times'} in {weeks} weeks, blocked none"}
     if not measured:
         return {**out, "verdict": "earning",
                 "verdict_reason": f"blocked in {weeks} weeks; no source counts its overrides"}

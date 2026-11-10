@@ -3,7 +3,9 @@
 #
 #   earning           blocked at least once in the window, and overridden in at
 #                     most max_override_rate of its blocks
-#   never-fires       no block in the window
+#   never-blocked     ran in the window (or its runs are not counted) and
+#                     blocked nothing
+#   never-ran         no recorded runs in the window and no block
 #   overridden-often  overridden in more than max_override_rate of its blocks
 #
 # A check that blocks but that no source counts overrides for (the local hook
