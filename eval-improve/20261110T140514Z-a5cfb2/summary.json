@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "skill": "workflow-path-audit",
+  "timestamp": "20261110T140717Z",
+  "mode": "trim",
+  "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+  "registry": {
+    "name": "adam-agentskills",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills",
+    "sha": "31e613b9aa9eb4a7f7d7b2bd575b64635d2a5739",
+    "skill_md": "plugins/adam-coding-anywhere/skills/workflow-path-audit/SKILL.md"
+  },
+  "models": {
+    "arm": "claude-sonnet-5-5",
+    "proposal": "claude-fable-5-2"
+  },
+  "trials": 3,
+  "no_judge": true,
+  "description": {
+    "original": "Audit GitHub Actions workflows for salient-path conditionals \u2014 every workflow that triggers on pull_request or push must filter on the files and directories its steps actually depend on, and skip with success when nothing salient changed. Use when adding a new workflow, modifying an existing one's steps, renaming/moving files a workflow depends on, or when a CI bill spike points at workflows running on irrelevant changes.",
+    "candidate": "Audit GitHub Actions workflows for salient-path conditionals: every workflow triggered on pull_request or push must filter on the files/directories its steps depend on and skip with success when nothing salient changed. Use when adding a workflow, modifying a workflow's steps, renaming/moving files a workflow depends on, or a CI bill spike points at workflows running on irrelevant changes."
+  },
+  "trim": {
+    "max_chars": 400,
+    "original_chars": 425,
+    "candidate_chars": 392,
+    "rule": "aggregate-noninferior-per-fixture-drop-1",
+    "tolerance_checks": 0,
+    "fixture_drop_checks": 1,
+    "baseline": {
+      "companion-skip-pair": {
+        "passed": 24,
+        "total": 24
+      },
+      "moved-test-dir": {
+        "passed": 30,
+        "total": 30
+      },
+      "required-by-unseen-ruleset": {
+        "passed": 33,
+        "total": 33
+      },
+      "required-check-routing": {
+        "passed": 24,
+        "total": 24
+      },
+      "required-gate-salience": {
+        "passed": 35,
+        "total": 36
+      },
+      "workflow-doc-in-step": {
+        "passed": 30,
+        "total": 30
+      }
+    },
+    "candidate": {
+      "companion-skip-pair": {
+        "passed": 24,
+        "total": 24
+      },
+      "moved-test-dir": {
+        "passed": 30,
+        "total": 30
+      },
+      "required-by-unseen-ruleset": {
+        "passed": 33,
+        "total": 33
+      },
+      "required-check-routing": {
+        "passed": 24,
+        "total": 24
+      },
+      "required-gate-salience": {
+        "passed": 36,
+        "total": 36
+      },
+      "workflow-doc-in-step": {
+        "passed": 30,
+        "total": 30
+      }
+    }
+  },
+  "files": {
+    "patch": "/tmp/tmp.2GAjBjKpqI/improvements/workflow-path-audit/20261110T140717Z.patch",
+    "pr_body": "/tmp/tmp.2GAjBjKpqI/improvements/workflow-path-audit/20261110T140717Z.pr-body.md",
+    "record": "/tmp/tmp.2GAjBjKpqI/improvements/workflow-path-audit/20261110T140717Z.json"
+  },
+  "runs": {
+    "baseline": "/tmp/tmp.2GAjBjKpqI/runs/baseline/workflow-path-audit/20261110T140717Z",
+    "candidate": "/tmp/tmp.2GAjBjKpqI/runs/candidate/workflow-path-audit/20261110T140717Z"
+  },
+  "status": "accepted",
+  "reasons": [
+    "objective checks passed over all fixtures 176/177 -> 177/177",
+    "no worse in aggregate, and no fixture lost more than 1 check(s)"
+  ],
+  "decision": "accepted"
+}
