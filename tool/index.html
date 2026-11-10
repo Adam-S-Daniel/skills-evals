@@ -622,6 +622,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         "context-drift": "Context out of date",
         "loaded-copy": "Sessions load an old copy"
       },
+      // A regression alert on a subject the loop has already decided: the scores
+      // fell, but the decision is still the loop's verdict, not a trend to removal.
+      alertRegressionDecided: "Score fell, decision stands",
       // #562: worded from the alert's fields; the prefixes are the first 12 characters of each copy's digest.
       alertCopy: (surface, loaded, main) => "Most " + (surface === "cloud" ? "cloud" : "local") + " uses in the last 2 weeks loaded copy " + loaded + ", which main did not have at any point in that time. Main is " + main + ".",
       // #545: this alert carries fields, not text, so the page words it.
@@ -1207,6 +1210,20 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     ceiling: "canttell",
     "cannot-discriminate": "canttell"
   };
+  var isDecided = (v) => typeof v === "string" && Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v);
+  function verdictOf(doc, subjectKind, name) {
+    const list = subjectKind === "guidance" ? doc && doc.guidance && Array.isArray(doc.guidance.sections) ? doc.guidance.sections : [] : doc && Array.isArray(doc.skills) ? doc.skills : [];
+    const key = subjectKind === "guidance" ? "id" : "name";
+    const hit = list.find((x) => x && String(x[key]) === String(name));
+    return hit && typeof hit.verdict === "string" ? hit.verdict : null;
+  }
+  function isTrending(doc, a) {
+    return !!a && a.kind === "regression" && !isDecided(verdictOf(doc, a.subject, a.name));
+  }
+  function alertKindLabel(doc, a) {
+    if (a.kind === "regression" && !isTrending(doc, a)) return STRINGS.alertRegressionDecided;
+    return Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : String(a.kind);
+  }
   function gainOf(acc, subject) {
     return subject === "guidance" ? acc.inSitu : acc.gain;
   }
@@ -1219,11 +1236,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function chipFor(pooled, opts) {
     const o = opts || {};
+    if (isDecided(o.verdict)) return VERDICT_CHIPS[o.verdict];
     if (o.regression) return "worse";
-    if (Object.prototype.hasOwnProperty.call(o, "verdict")) {
-      const v = typeof o.verdict === "string" ? o.verdict : "";
-      return Object.prototype.hasOwnProperty.call(VERDICT_CHIPS, v) ? VERDICT_CHIPS[v] : earlyOrInsufficient(pooled, o.subject);
-    }
+    if (Object.prototype.hasOwnProperty.call(o, "verdict")) return earlyOrInsufficient(pooled, o.subject);
     const eligible = pooled.models.filter((m) => m.n >= MIN_PAIRED_RUNS && m.gain !== null);
     if (!eligible.length) return earlyOrInsufficient(pooled, o.subject === "guidance" ? "guidance" : null);
     const helps = eligible.some((m) => m.gain >= HELPS_MIN_GAIN - EPS) && !eligible.some((m) => m.gain < WORSE_TOLERANCE - EPS);
@@ -2197,7 +2212,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   function trendingRows(doc, mode) {
     const by = /* @__PURE__ */ new Map();
     for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
-      if (!a || a.kind !== "regression" || mode !== "all" && a.subject !== (mode === "guidance" ? "guidance" : "skill")) continue;
+      if (!isTrending(doc, a) || mode !== "all" && a.subject !== (mode === "guidance" ? "guidance" : "skill")) continue;
       const key = a.subject + ":" + a.name;
       if (!by.has(key)) by.set(key, { subject: a.subject, name: String(a.name), models: [], changes: [], urls: [] });
       const row = by.get(key);
@@ -2349,7 +2364,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function alertsView(doc, mode) {
     const want = mode === "guidance" ? "guidance" : "skill";
-    const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.kind !== "regression" && (mode === "all" || a.subject === want));
+    const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && !isTrending(doc, a) && (mode === "all" || a.subject === want));
     const x = firesFigures(doc);
     const trending = trendingView(doc, mode);
     return h("div", null, trending, h(
@@ -2358,7 +2373,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       h("h2", null, STRINGS.alertsHeading),
       x ? firesNode(x) : null,
       alerts.length ? h("ul", { class: "plain" }, alerts.map((a) => {
-        const kind = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : clean(a.kind);
+        const kind = clean(alertKindLabel(doc, a));
         const l = link(a.url, STRINGS.alertDetails);
         return h(
           "li",
@@ -2887,8 +2902,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       value: chip(whole2.chip, STRINGS.wholeRule),
       note: STRINGS.wholeAnswer[whole2.chip]
     }));
-    const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && a.kind !== "regression") : [];
-    const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && a.kind === "regression");
+    const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
+    const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => isTrending(doc, a));
     const names = new Set(trending.map((a) => a.subject + ":" + a.name));
     tiles.push(tile({
       label: STRINGS.tileAlerts,

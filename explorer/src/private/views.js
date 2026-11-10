@@ -14,6 +14,7 @@ import { problemsToggle } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
+import { isTrending, alertKindLabel } from '../core/stats.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
@@ -77,9 +78,10 @@ export function attentionRows(dash, doc) {
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
-    // A regression is trending toward removal, not an item that needs attention: its own table.
-    if (a.kind === 'regression') continue;
-    const k = Object.prototype.hasOwnProperty.call(STRINGS.alertKinds, a.kind) ? STRINGS.alertKinds[a.kind] : a.kind;
+    // A regression on an undecided subject is trending toward removal, not an
+    // item that needs attention: its own table. On a decided one it is listed.
+    if (isTrending(doc, a)) continue;
+    const k = alertKindLabel(doc, a);
     rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null });
   }
   const f = doc.fires_without_results;

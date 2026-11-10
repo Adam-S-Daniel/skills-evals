@@ -180,7 +180,9 @@ test('with a loop verdict, the chip follows the loop, not the page rule', () => 
   eq(ch(many, 'ceiling'), 'canttell');
   eq(ch(many, 'cannot-discriminate'), 'canttell');
   eq(ch(many, 'shorten-or-merge'), 'alone');
-  eq(ch(many, 'keep', true), 'worse', 'a regression alert still wins');
+  eq(ch(many, 'keep', true), 'helps', 'a decision the loop reached outranks a regression alert');
+  eq(ch(many, 'insufficient', true), 'worse', 'an undecided subject with a regression alert trends toward removal');
+  eq(ch(many, null, true), 'worse', 'no verdict yet, a regression alert');
   eq(ch(many, 'something-new'), 'early', 'an unknown verdict is not final');
   P.STRINGS.chipOrder.forEach((k) => ok(P.STRINGS.chips[k] && P.STRINGS.chipRules[k], 'strings for ' + k));
 });
@@ -813,9 +815,9 @@ test('guidance bars draw "All the guidance" as its own bar, not a tick line', ()
 
 // --- trending toward removal, definitions, chart titles, the summary ---------------------
 const trendDoc = () => Object.assign({}, fixture, { alerts: [
-  { kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'fx-one', verdict: 'lost-delta', measure: 'advantage',
+  { kind: 'regression', subject: 'skill', name: 'example-skill-gamma', model: 'example-large-2-0', fixture: 'fx-one', verdict: 'lost-delta', measure: 'advantage',
     previous: 0.16666666666666663, current: 0, text: 'x', url: 'https://github.com/example-owner/example-repo/issues/846' },
-  { kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-small-2-0', fixture: 'fx-two', verdict: 'regressed', measure: 'judge',
+  { kind: 'regression', subject: 'skill', name: 'example-skill-gamma', model: 'example-small-2-0', fixture: 'fx-two', verdict: 'regressed', measure: 'judge',
     previous: 8, current: 6.5, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/example-repo/issues/846' },
   { kind: 'retire', subject: 'skill', name: 'example-skill-beta', text: 'due for removal.', url: null }] });
 test('regression alerts become one Trending toward removal row per subject, models and fixtures folded in', () => {
@@ -836,13 +838,13 @@ test('regression alerts become one Trending toward removal row per subject, mode
   ok(!sp(P.textOf(P.buildPage(Object.assign({}, trendDoc(), { alerts: [] }), 'skills', {}))).includes(P.STRINGS.trendingHeading), 'hidden when empty');
 });
 test('an older regression alert that words itself still has its decimals rounded', () => {
-  const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-alpha',
-    text: 'example-skill-alpha regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
+  const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-gamma',
+    text: 'example-skill-gamma regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
   const t = P.textOf(P.buildPage(d, 'skills', {}));
   ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), 'legacy text is read back into the same plain sentence');
 });
 const win = (passed, total, judge, runs) => ({ runs: runs || 4, trials: 12, checks_passed: passed, checks_total: total, judge_mean: judge === undefined ? null : judge });
-const countsDoc = (alert) => Object.assign({}, fixture, { alerts: [Object.assign({ kind: 'regression', subject: 'skill', name: 'example-skill-alpha', model: 'example-large-2-0', verdict: 'regressed', text: 'x', url: null }, alert)] });
+const countsDoc = (alert) => Object.assign({}, fixture, { alerts: [Object.assign({ kind: 'regression', subject: 'skill', name: 'example-skill-gamma', model: 'example-large-2-0', verdict: 'regressed', text: 'x', url: null }, alert)] });
 const trendText = (alert) => sp(P.textOf(P.buildPage(countsDoc(alert), 'skills', {})));
 test('a judge row says from, to, the 0 to 10 scale and checks passed out of checks run per window', () => {
   const t = trendText({ measure: 'judge', previous: 7.0666666, current: 5.5666666, drop: 1.5, threshold: 1, noise: 0.472,
