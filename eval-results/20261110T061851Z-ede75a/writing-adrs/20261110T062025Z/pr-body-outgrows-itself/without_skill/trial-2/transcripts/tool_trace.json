@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PJ1sTCnLs5sPKioGbxTyk5",
+      "name": "Bash",
+      "input": "git status && git log --oneline -5 && git diff HEAD -- config/retry.yaml; git diff --cached; cat config/retry.yaml; ls; head -30 CHANGELOG.md",
+      "input_chars": 141,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PJ1sTCnLs5sPKioGbxTyk5",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\ne87318...",
+      "output_chars": 635,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tqtph9TJN833u3Tm5exx9V",
+      "name": "Bash",
+      "input": "ls -R docs scripts && grep -rniE \"retry|backoff|jitter|interval\" docs scripts README.md",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tqtph9TJN833u3Tm5exx9V",
+      "is_error": false,
+      "output": "docs:\ndecisions\n\ndocs/decisions:\n0001-store-passcodes-hashed.md\n0002-expire-passcodes-after-five-minutes.md\nREADME.md\n\nscripts:\nshow-retry.sh\nscripts/show-retry.sh:2:# show-retry.sh: print the retry policy the service will load.\nscripts/show-retry.sh:5:cat \"$(dirname \"$0\")<path>\"\nREADME.md:4:gateway...",
+      "output_chars": 374,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018bU25Br5J5xCf2jJ2dibXg",
+      "name": "Bash",
+      "input": "cat docs/decisions/README.md docs/decisions/0002-expire-passcodes-after-five-minutes.md",
+      "input_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018bU25Br5J5xCf2jJ2dibXg",
+      "is_error": false,
+      "output": "# Architecture decisions\n\nThis log records the choices a reader of the code would otherwise\nsecond-guess: what we picked, why, and what it costs us. A one-line code\ncomment is enough for everything else.\n\n## Format\n\nEach entry lives at `docs/decisions/NNNN-kebab-title.md`, numbered\nsequentially from...",
+      "output_chars": 1771,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016zBTpGGG6oeoaTCmrEQE6G",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 34,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016zBTpGGG6oeoaTCmrEQE6G",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 130,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JWhzAmnwhMzVAayBbmPqwr",
+      "name": "Edit",
+      "input": "<path>",
+      "input_chars": 34,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JWhzAmnwhMzVAayBbmPqwr",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 140,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
