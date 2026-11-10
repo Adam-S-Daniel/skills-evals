@@ -3366,7 +3366,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     # also the CLI's own config override, so the output shape no longer
     # depends on the machine's verbose setting. `normalize_cli_result`
     # accepts both shapes.
-    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
+    cmd = [run_canary.cli_bin(), "-p", prompt,
            "--output-format", "json", "--verbose",
            # One `--permission-mode` flag, never alongside
            # `--dangerously-skip-permissions` (guidance.PERMISSION_MODES).
@@ -4053,7 +4053,7 @@ def claude_version() -> str | None:
         # (`process.kill()` in its TimeoutExpired handler) and reaps it, so a
         # CLI that ignores SIGTERM cannot outlive the probe.
         result = subprocess.run(
-            [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
+            [run_canary.cli_bin(), "--version"],
             capture_output=True, text=True, timeout=VERSION_TIMEOUT_S)
         if result.returncode != 0:
             why = f"exit {result.returncode}"

@@ -36,6 +36,24 @@ from pathlib import Path
 import yaml
 
 
+def cli_bin() -> str:
+    """The CLI every harness session launches: `$CLAUDE_BIN`, else `claude`,
+    looked up on THIS process's PATH, never the child's (#950).
+
+    `subprocess` searches the PATH of the `env=` it is given, and a fixture's
+    `env:` may put a stand-in named `claude` first on that PATH for the agent
+    to call (two-setup-gaps/durable-machine-marketplace does). Launched by
+    bare name, the arm and its delivery guard then ran the stand-in instead of
+    the CLI and read its empty stdout, so every arm came back INCONCLUSIVE.
+    A name that already holds a path is returned unchanged, and one not found
+    is returned bare, so a missing CLI fails as it did before.
+    """
+    wanted = os.environ.get("CLAUDE_BIN", "claude")
+    if os.sep in wanted:
+        return wanted
+    return shutil.which(wanted) or wanted
+
+
 def load_fixture(eval_dir: Path) -> dict:
     """The fixture, or a named configuration error.
 
@@ -70,7 +88,7 @@ def claude_version() -> str:
                            guidance.SINK_TIMEOUT_REMEDY)
     try:
         result = subprocess.run(
-            [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
+            [cli_bin(), "--version"],
             capture_output=True, text=True, timeout=VERSION_TIMEOUT_S,
         )
         if result.returncode == 0:
@@ -131,7 +149,7 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     # not use tools at all (read tools are explicitly disallowed), so the
     # default deny-without-a-prompter headless behavior is the safer choice —
     # and bypassPermissions is refused outright when running as root.
-    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
+    cmd = [cli_bin(), "-p", prompt,
           "--output-format", "json",
           # The meter event an agent call prints (#370): the guidance guard
           # is read as it starts too, and the shape no longer depends on the
