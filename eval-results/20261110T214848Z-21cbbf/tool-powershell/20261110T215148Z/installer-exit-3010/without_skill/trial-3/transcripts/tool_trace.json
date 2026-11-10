@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P8qmsWVN7Xcd92hK3oNRGT",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; ls -R . | head -50; cat scripts/install-agent.ps1; cat bin/pwsh | head -50",
+      "input_chars": 117,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P8qmsWVN7Xcd92hK3oNRGT",
+      "is_error": false,
+      "output": "# agent-installer\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/install-agent.ps1`.\n\n`scripts/install-agent.ps1` installs the monitoring agent with msiexec and is\nrun by the rollout task, which marks a machine failed on any nonzero exit.\nThe package installs fin...",
+      "output_chars": 1162,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TudCkGFjkZ7eoZ9dbCXAmM",
+      "name": "Bash",
+      "input": "cd <path>; cat >> scripts/install-agent.ps1 <<'EOF'\n\n# 3010 = ERROR_SUCCESS_REBOOT_REQUIRED, 1641 = ERROR_SUCCESS_REBOOT_INITIATED:\n# the install succeeded, so don't report them as failures.\nif ($LAST...",
+      "input_chars": 385,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TudCkGFjkZ7eoZ9dbCXAmM",
+      "is_error": false,
+      "output": "installed; reboot required\nrc=0\n M scripts/install-agent.ps1\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc",
+      "output_chars": 199,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

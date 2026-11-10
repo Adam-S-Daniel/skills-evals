@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016h97iS9CHpgptGv5Y9Tn1P",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; ls -R | head -50; cat scripts/install-agent.ps1; git log --oneline | head",
+      "input_chars": 116,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016h97iS9CHpgptGv5Y9Tn1P",
+      "is_error": false,
+      "output": "# agent-installer\n\nPowerShell here is the stand-in `bin/pwsh`; run it as\n`bash bin/pwsh -File scripts/install-agent.ps1`.\n\n`scripts/install-agent.ps1` installs the monitoring agent with msiexec and is\nrun by the rollout task, which marks a machine failed on any nonzero exit.\nThe package installs fin...",
+      "output_chars": 534,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017RjrwsfXaa8ZEjQm7WiWVp",
+      "name": "Bash",
+      "input": "cd <path>; cat bin/pwsh; bash bin/pwsh -File scripts/install-agent.ps1; echo \"exit=$?\"",
+      "input_chars": 103,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017RjrwsfXaa8ZEjQm7WiWVp",
+      "is_error": false,
+      "output": "#!<path> bash\n# Stand-in PowerShell host for an eval sandbox with no Windows. Run it as\n# `bash bin/pwsh <args>`. It logs every call to .pwsh-invocations.log.\nlog=\".pwsh-invocations.log\"\nall=\"$*\"\nrec() { printf 'class=%s args=%s\\n' \"$1\" \"$all\" >> \"$log\"; }\ncase \"$all\" in\n  *install-agent.ps1*)\n    i...",
+      "output_chars": 657,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016iy5evx6hfum3rGZobuRvT",
+      "name": "Bash",
+      "input": "cd <path>; bash bin/pwsh -Command '& ./scripts/install-agent.ps1; \"msiexec exit code: $LASTEXITCODE\"'; echo \"exit=$?\"",
+      "input_chars": 134,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016iy5evx6hfum3rGZobuRvT",
+      "is_error": false,
+      "output": "msiexec exit code: 3010\nexit=1",
+      "output_chars": 30,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KbF6xL1ypinj7qCqTYf29Z",
+      "name": "Bash",
+      "input": "cd <path>; cat > scripts/install-agent.ps1 <<'EOF'\nparam(\n    [string]$Package = '<path>'\n)\n\nmsiexec /i $Package /qn /norestart\n\n# msiexec success codes: 0 = installed, 3010 = installed but a reboot i...",
+      "input_chars": 745,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KbF6xL1ypinj7qCqTYf29Z",
+      "is_error": false,
+      "output": "exit=1\n scripts/install-agent.ps1 | 12 ++++++++++++\n 1 file changed, 12 insertions(+)",
+      "output_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01274mZDovpT5qe4yJxaqCLN",
+      "name": "Bash",
+      "input": "cd <path>; cat > scripts/install-agent.ps1 <<'EOF'\nparam(\n    [string]$Package = '<path>'\n)\n\nmsiexec /i $Package /qn /norestart\n\n# msiexec success codes: 0 = installed, 3010 = installed but a reboot i...",
+      "input_chars": 799,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01274mZDovpT5qe4yJxaqCLN",
+      "is_error": false,
+      "output": "installed; reboot required\nexit=0\nclass=silent args=-File scripts/install-agent.ps1\nclass=diagnostic args=-Command & ./scripts/install-agent.ps1; \"msiexec exit code: $LASTEXITCODE\"\nclass=silent args=-File scripts/install-agent.ps1\nclass=ok args=-File scripts/install-agent.ps1\n M scripts/install-agen...",
+      "output_chars": 469,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

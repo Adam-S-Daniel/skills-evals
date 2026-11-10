@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01P8nq2hY345C1yxv6hC4CVZ",
+      "name": "Bash",
+      "input": "git status && ls -R | head -50 && cat README.md && cat scripts/install-agent.ps1 && cat bin/pwsh",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01P8nq2hY345C1yxv6hC4CVZ",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n.:\nREA...",
+      "output_chars": 1456,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LopdsRBPDyK59dfhXFQ9YB",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/install-agent.ps1; echo \"rc=$?\"; bash bin/pwsh -Command '& ./scripts/install-agent.ps1; \"msiexec exit: $LASTEXITCODE\"'; echo \"rc=$?\"",
+      "input_chars": 160,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LopdsRBPDyK59dfhXFQ9YB",
+      "is_error": false,
+      "output": "rc=1\nmsiexec exit code: 3010\nrc=1",
+      "output_chars": 33,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PtUMSJcoxp3aXpBVWbNtp1",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 49,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PtUMSJcoxp3aXpBVWbNtp1",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 155,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012pucTbjSA6wFc6dXfGaNzm",
+      "name": "Bash",
+      "input": "bash bin/pwsh -File scripts/install-agent.ps1; echo \"rc=$?\"; git diff --stat",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012pucTbjSA6wFc6dXfGaNzm",
+      "is_error": false,
+      "output": "rc=1\n scripts/install-agent.ps1 | 16 ++++++++++++++++\n 1 file changed, 16 insertions(+)",
+      "output_chars": 87,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Hr7E7ci6VXpDHgPUEeq7cw",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/install-agent.ps1'\ns=open(p).read()\ns=s.replace(\"$code = $LASTEXITCODE\\nif ($code -in 0, 3010, 1641) {\\n    if ($code -ne 0) {\\n        Write-Output \\\"Agent installed; reb...",
+      "input_chars": 717,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Hr7E7ci6VXpDHgPUEeq7cw",
+      "is_error": false,
+      "output": "param(\n    [string]$Package = '<path>'\n)\n\nmsiexec /i $Package /qn /norestart\n\n# msiexec success codes:\n#   0    = success\n#   3010 = success, reboot required (ERROR_SUCCESS_REBOOT_REQUIRED)\n#   1641 = success, reboot initiated (ERROR_SUCCESS_REBOOT_INITIATED)\n# Anything else is a real failure and is...",
+      "output_chars": 885,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
