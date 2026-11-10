@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E28iVqG4fU9npcrriuRRAM",
+      "name": "Bash",
+      "input": "ls .github/workflows && cat .github/rulesets/main.json && cat .github/workflows/*e2e* 2><path>; ls; cat playwright.config.* 2><path>",
+      "input_chars": 138,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E28iVqG4fU9npcrriuRRAM",
+      "is_error": true,
+      "output": "Exit code 1\ne2e.yml\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"deletion\" },\n    { \"type\": \"non_fast_forward\" },\n    {\n      \"type\": \"required_status_checks\",...",
+      "output_chars": 1155,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018WP87PaqwyNVHYx99WoMEW",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='.github/workflows/e2e.yml'\ns=open(p).read()\ns=s.replace(\"\"\"jobs:\n  e2e:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n\"\"\",\"\"\"jobs:\n  shard:\n    name: shard (${{ matrix.shard ...",
+      "input_chars": 938,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018WP87PaqwyNVHYx99WoMEW",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 23 +++++++++++++++++++++--\n 1 file changed, 21 insertions(+), 2 deletions(-)\n    defaults:\n      run:\n        working-directory: e2e\n    steps:\n      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955\n      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f0...",
+      "output_chars": 1084,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

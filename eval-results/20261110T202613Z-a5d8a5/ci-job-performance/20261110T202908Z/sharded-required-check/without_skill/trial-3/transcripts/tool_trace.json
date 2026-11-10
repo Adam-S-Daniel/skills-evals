@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NTz9mqQ3YvSf7wvsQpR2wL",
+      "name": "Bash",
+      "input": "ls .github/workflows && cat .github/rulesets/main.json && cat .github/workflows/*e2e* ; cat playwright.config.* | head -50",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NTz9mqQ3YvSf7wvsQpR2wL",
+      "is_error": false,
+      "output": "e2e.yml\n{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"deletion\" },\n    { \"type\": \"non_fast_forward\" },\n    {\n      \"type\": \"required_status_checks\",\n      \"para...",
+      "output_chars": 1183,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FNvhkuEUuiiWaLAKWw8mbs",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='.github/workflows/e2e.yml'\ns=open(p).read()\nhead,rest=s.split(\"jobs:\\n\")\nnew='''jobs:\n  shard:\n    name: shard (${{ matrix.shard }}/3)\n    runs-on: ubuntu-latest\n    timeout-minut...",
+      "input_chars": 1357,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FNvhkuEUuiiWaLAKWw8mbs",
+      "is_error": false,
+      "output": " .github/workflows/e2e.yml | 25 +++++++++++++++++++++++--\n 1 file changed, 23 insertions(+), 2 deletions(-)",
+      "output_chars": 107,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
