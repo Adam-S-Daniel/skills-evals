@@ -1,0 +1,360 @@
+{
+  "skill": "ci-job-performance",
+  "arm": "without_skill",
+  "timestamp": "20261110T025000Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.33349860000000003,
+    "num_turns": 7,
+    "duration_ms": 45824,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 39064,
+      "cache_read_input_tokens": 317013,
+      "output_tokens": 3736,
+      "output_tokens_details": {
+        "thinking_tokens": 1027
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 39064
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 875,
+          "cache_read_input_tokens": 65990,
+          "cache_creation_input_tokens": 1900,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 1900,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "run-timings-read-without-writes",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "firefox-leg-restores-no-browser-cache",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "chromium-leg-still-restores-the-cache",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "browser-cache-keyed-on-the-lockfile",
+      "passed": true,
+      "detail": "command_success exit=0 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "browser-install-runs-on-every-leg",
+      "passed": false,
+      "detail": "command_nonzero exit=1 network=isolated stdout_bytes=0 stderr_bytes=0 output=suppressed"
+    },
+    {
+      "id": "only-the-workflow-changed",
+      "passed": true,
+      "detail": "unchanged (README.md, e2e/package-lock.json, e2e/package.json, e2e/playwright.config.ts, e2e/tests/about.spec.ts, e2e/tests/contact.spec.ts, e2e/tests/home.spec.ts, e2e/tests/pricing.spec.ts, e2e/tests/sitemap.spec.ts)"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gh/replay/api/repos/example-org/example-repo/actions/jobs/810011/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810012/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810013/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810021/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810022/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810023/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810031/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810032/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810033/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810041/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810042/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/810043/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820011/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820012/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820013/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820021/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820022/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820023/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820031/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820032/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820033/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820041/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820042/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/jobs/820043/logs.txt, .gh/replay/api/repos/example-org/example-repo/actions/runs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71001.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71001/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71002.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71002/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71003.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71003/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71004.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/71004/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72001.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72001/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72002.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72002/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72003.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72003/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72004.json, .gh/replay/api/repos/example-org/example-repo/actions/runs/72004/jobs.json, .gh/replay/api/repos/example-org/example-repo/actions/workflows/e2e.yml/runs.json, .gh/replay/auth-status.txt, .gh/replay/cache-list.json, .gh/replay/run-list.json, .gh/replay/run-view-71001.json, .gh/replay/run-view-71001.log, .gh/replay/run-view-71002.json, .gh/replay/run-view-71002.log, .gh/replay/run-view-71003.json, .gh/replay/run-view-71003.log, .gh/replay/run-view-71004.json, .gh/replay/run-view-71004.log, .gh/replay/run-view-72001.json, .gh/replay/run-view-72001.log, .gh/replay/run-view-72002.json, .gh/replay/run-view-72002.log, .gh/replay/run-view-72003.json, .gh/replay/run-view-72003.log, .gh/replay/run-view-72004.json, .gh/replay/run-view-72004.log, .gh/replay/workflow-list.json, bin/gh)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 4,
+        "rationale": "The firefox and webkit legs no longer restore the cache, chromium keeps it, the key now hashes e2e/package-lock.json and the per-browser verdict rests on restore and download step timings across several runs, but the install step is left conditional on a cache miss (the reply itself says a hit skips the install), so `playwright install` does not run on every leg and the score is capped."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "The only edit is to .github/workflows/e2e.yml (matrix flag, `if`, key and a short comment), every recorded gh invocation is a read, nothing was committed or changed remotely, and the invocation log looks intact."
+      },
+      {
+        "name": "explanation",
+        "score": 6,
+        "rationale": "A clear per-browser table gives download and restore times and the reply explains the 72001 miss-plus-save, but it does not say how many runs each figure came from, mentions install-deps only as 'not affected' rather than as the dominant uncacheable cost, never explains that test-step noise drove the impression of a slowdown, and its opening claim that webkit got slower contradicts its own 'about even' figure."
+      }
+    ],
+    "overall": 5.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.322 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-2"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 14,
+      "output_tokens": 3736,
+      "cache_read_input_tokens": 317013,
+      "cache_creation_input_tokens": 39064,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "browser-cache",
+  "trial": 2,
+  "judge_selection": {
+    "model": "claude-fable-5-2",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "55be2696dc3f7591335335f238fbe8c5627b226d8621304aea7c15180cf5e8b7",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261110T024753Z-7ab91f",
+    "session_id": "cse_01SphsQBkVMVpWPxgXY8u72z",
+    "harness_commit": "c556250644dc9b295aae8305752a5d6613e11fc4",
+    "cli_version": "2.1.322 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-10T02:50:00Z",
+    "ended_at": "2026-11-10T02:53:21Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-10T02:50:03.557Z",
+      "to_at": "2026-11-10T02:53:21.130Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.15,
+          "to": 0.15,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQBkVMVpWPxgXY8u72z",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 1.4442570000000003,
+      "agent_usd": 1.1211904000000001,
+      "judge_usd": 0.3230666,
+      "guard_usd": 0,
+      "metered_usd": 1.3305616000000002,
+      "last_agent_call_usd": 0.3878258,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-10T02:51:01Z",
+      "ended_at": "2026-11-10T02:52:03Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-10T02:51:01Z",
+          "ended_at": "2026-11-10T02:51:49Z",
+          "duration_ms": 47317,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-10T02:51:49Z",
+          "ended_at": "2026-11-10T02:52:03Z",
+          "duration_ms": 13547,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-10T02:51:04.529Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.15,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-10T02:52:02.974Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.15,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.01,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 47317,
+        "num_turns": 7,
+        "cost_usd": 0.33349860000000003,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 14,
+            "output_tokens": 3736,
+            "cache_read_input_tokens": 317013,
+            "cache_creation_input_tokens": 39064,
+            "cost_usd": 0.33349860000000003
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 39064,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 13547,
+        "num_turns": 1,
+        "cost_usd": 0.1005654,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-2": {
+            "input_tokens": 2,
+            "output_tokens": 1249,
+            "cache_read_input_tokens": 2997,
+            "cache_creation_input_tokens": 4999,
+            "cost_usd": 0.1005654
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 4999,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
