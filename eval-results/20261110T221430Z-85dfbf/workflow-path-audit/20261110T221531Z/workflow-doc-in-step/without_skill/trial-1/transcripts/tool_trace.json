@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011zQHxYCQKAg5vtennLJ1Jt",
+      "name": "Bash",
+      "input": "git status && ls -la && find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print | head -100 && for f in .github/workflows/*; do echo \"== $f\"; cat \"$f\"; done; cat mkdocs.yml package...",
+      "input_chars": 217,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011zQHxYCQKAg5vtennLJ1Jt",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\ntotal ...",
+      "output_chars": 4163,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JpP9Q9MbR9NSnGCQUHAcqL",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json; echo; cat .gh/replay/api/repos/example-org/example-service/rules/branches/main.json; echo; cat .gh/replay/ruleset-view-4410273.json; echo; cat src/*.js test/*.js script...",
+      "input_chars": 243,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JpP9Q9MbR9NSnGCQUHAcqL",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 2936,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_017ws3ivdoS2LzXCURVrqLAD",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\nimport re\ndef patch(path, paths):\n    s=open(path).read()\n    block=\"\".join(f'      - \"{p}\"\\n' for p in paths)\n    old=\"on:\\n  pull_request:\\n  push:\\n    branches: [main]\\n\"\n    new...",
+      "input_chars": 1139,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_017ws3ivdoS2LzXCURVrqLAD",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/docs-site.yml b/.github/workflows/docs-site.yml\nindex cd2c4cc..869c209 100644\n--- a/.github/workflows/docs-site.yml\n+++ b/.github/workflows/docs-site.yml\n@@ -2,8 +2,16 @@ name: Docs site\n \n on:\n   pull_request:\n+    paths:\n+      - \"docs/**\"\n+      - \"mkdocs.yml\"\n+    ...",
+      "output_chars": 1751,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
