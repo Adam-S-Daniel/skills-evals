@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NnkyLxGPKSzZJq5zoL2avA",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 97,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NnkyLxGPKSzZJq5zoL2avA",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n22a7f8...",
+      "output_chars": 1656,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Lj1WmiczgrqNEf3Ka5n2u9",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt; cat .gh/replay/run-view-61003.log; cat .gh/replay/api/repos/example-org/example-labels/check-runs/*/annotations.json",
+      "input_chars": 199,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Lj1WmiczgrqNEf3Ka5n2u9",
+      "is_error": false,
+      "output": "# Example labels\n\nKeeps the shared issue labels in `labels.txt` on every repository in the\nexample-org organization. The nightly `Sync labels` workflow runs\n`scripts/sync-labels.sh`, which creates each label or updates it in place.\n\nAdd a label by adding a line to `labels.txt`; the next nightly run ...",
+      "output_chars": 1575,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0189rjE7gbP6bTHxJzGKeXRk",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-6100{1,2}.log; head -40 bin/gh; cat .gh/replay/auth-status.txt",
+      "input_chars": 86,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0189rjE7gbP6bTHxJzGKeXRk",
+      "is_error": false,
+      "output": "sync\tSync labels\t2026-01-05T03:00:06 Run bash scripts/sync-labels.sh\nsync\tSync labels\t2026-01-05T03:00:06 cannot use `--jq` without specifying `--json`\nsync\tSync labels\t2026-01-05T03:00:07 No repositories found in example-org; nothing to sync.\nsync\tSync labels\t2026-01-06T03:00:06 Run bash scripts/sy...",
+      "output_chars": 3044,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QitR4b5yfHEDY1LY5e9HKG",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/sync-labels.sh'\ns=open(p).read()\ns=s.replace('''mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/labels.txt\"\n\nif [...",
+      "input_chars": 851,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QitR4b5yfHEDY1LY5e9HKG",
+      "is_error": false,
+      "output": "diff --git a/scripts/sync-labels.sh b/scripts/sync-labels.sh\nindex ca9eaaf..bf8ccd3 100644\n--- a/scripts/sync-labels.sh\n+++ b/scripts/sync-labels.sh\n@@ -5,12 +5,15 @@ set -euo pipefail\n : \"${ORG:?ORG must name the organization}\"\n root=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n \n-mapfile -t REPOS < <(gh re...",
+      "output_chars": 1011,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Me4UJT9xHUx8NhKg4ccsRL",
+      "name": "Bash",
+      "input": "S=<path>; mkdir -p $S/stub && cat > $S/stub/gh <<'EOF'\n#!<path> bash\ncase \"$1 $2\" in\n  \"repo list\")\n    [[ \" $* \" == *\" --jq \"* && \" $* \" != *\" --json \"* ]] && { echo 'cannot use `--jq` without specif...",
+      "input_chars": 932,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Me4UJT9xHUx8NhKg4ccsRL",
+      "is_error": false,
+      "output": "== fixed\nwould create 'triage' on example-org/a\nwould create 'needs-review' on example-org/a\nSynced 2 labels to example-org/a\nwould create 'triage' on example-org/b\nwould create 'needs-review' on example-org/b\nSynced 2 labels to example-org/b\nexit=0\n== fixed, gh failing\nHTTP 401\nexit=1\n== original\nc...",
+      "output_chars": 406,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
