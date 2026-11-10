@@ -1,0 +1,365 @@
+{
+  "skill": "workflow-path-audit",
+  "arm": "without_skill",
+  "timestamp": "20261110T053914Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.16544779999999998,
+    "num_turns": 6,
+    "duration_ms": 35256,
+    "usage": {
+      "input_tokens": 10,
+      "cache_creation_input_tokens": 13153,
+      "cache_read_input_tokens": 182814,
+      "output_tokens": 3154,
+      "output_tokens_details": {
+        "thinking_tokens": 1081
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 13153
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 693,
+          "cache_read_input_tokens": 39981,
+          "cache_creation_input_tokens": 1934,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 1934,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "required-check-gates-inside-one-workflow",
+      "passed": true,
+      "detail": "required check(s) always fire and gate internally (.github/workflows/tests.yml)"
+    },
+    {
+      "id": "companion-skip-workflow-removed",
+      "passed": true,
+      "detail": "0 file(s) matched ['.github/workflows/tests-skip.yml', '.github/workflows/tests-skip.yaml']"
+    },
+    {
+      "id": "docs-change-still-reports-the-required-check",
+      "passed": true,
+      "detail": "changing docs/guide.md routes as expected across 2 workflow(s)"
+    },
+    {
+      "id": "source-change-skips-the-docs-site",
+      "passed": true,
+      "detail": "changing src/util.js routes as expected across 2 workflow(s)"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "event-only-workflows-unfiltered",
+      "passed": true,
+      "detail": "event-only workflows carry no path filters (.github/workflows/nightly-sweep.yml)"
+    },
+    {
+      "id": "ruleset-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json)"
+    },
+    {
+      "id": "project-files-unchanged",
+      "passed": true,
+      "detail": "unchanged (README.md, docs/guide.md, docs/index.md, mkdocs.yml, package-lock.json, package.json, scripts/sweep-stale.sh, src/index.js, src/util.js, test/util.test.js)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 9,
+        "rationale": "tests-skip.yml is deleted and tests.yml is now a single always-run workflow with no workflow-level filter, whose computed `relevant` output gates setup-node, `npm ci` and `npm test` with a predicate covering src/, test/, package.json, package-lock.json and the workflow file itself, while docs-site.yml is correctly left alone; the only caveat is that it has not been exercised on GitHub."
+      },
+      {
+        "name": "Explanation",
+        "score": 9,
+        "rationale": "The summary leads with the mixed changeset (src/ plus docs/ or README.md) firing both workflows because paths-ignore skips only when every changed file matches, and explains that a failing PR could merge, though it overstates slightly by saying the skipped check 'always' wins rather than describing resolution by completion order."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff touches only the two workflow files, leaving the ruleset, nightly-sweep.yml, docs-site.yml and all project files unchanged, and no new trigger such as workflow_dispatch was added."
+      }
+    ],
+    "overall": 9.2
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.322 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-opus-5-5"
+  ],
+  "judge_models_used": [
+    "claude-fable-5-2"
+  ],
+  "model_tokens": {
+    "claude-opus-5-5": {
+      "input_tokens": 10,
+      "output_tokens": 3154,
+      "cache_read_input_tokens": 182814,
+      "cache_creation_input_tokens": 13153,
+      "canonical_model": "claude-opus-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-opus-5-5",
+    "canonical_model": "claude-opus-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "companion-skip-pair",
+  "trial": 3,
+  "judge_selection": {
+    "model": "claude-fable-5-2",
+    "rule": "roster-judge",
+    "arm_tier": "opus",
+    "judge_tier": "fable/mythos"
+  },
+  "fixture_digest": "3cd8dd32516ddb77f7c3431de3f77bed7083049a98db7ed5ffb3651671ebc9c0",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261110T053751Z-4c9557",
+    "session_id": "cse_01SphsQAwPuuPXawwdWKdDJi",
+    "harness_commit": "944c100126daffb147e1c6cc98e4057d8acff3e6",
+    "cli_version": "2.1.322 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-10T05:39:14Z",
+    "ended_at": "2026-11-10T05:41:58Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-10T05:39:17.638Z",
+      "to_at": "2026-11-10T05:41:58.017Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.18,
+          "to": 0.18,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQAwPuuPXawwdWKdDJi",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.9533308,
+      "agent_usd": 0.7413042000000001,
+      "judge_usd": 0.2120266,
+      "guard_usd": 0,
+      "metered_usd": 0.8978754,
+      "last_agent_call_usd": 0.16544779999999998,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-10T05:41:16Z",
+      "ended_at": "2026-11-10T05:41:58Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-10T05:41:16Z",
+          "ended_at": "2026-11-10T05:41:53Z",
+          "duration_ms": 36438,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-10T05:41:53Z",
+          "ended_at": "2026-11-10T05:41:58Z",
+          "duration_ms": 4977,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-10T05:41:19.760Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.18,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-10T05:41:58.017Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.18,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                },
+                "seven_day_overage_included": {
+                  "utilization": 0.03,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 36438,
+        "num_turns": 6,
+        "cost_usd": 0.16544779999999998,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 10,
+            "output_tokens": 3154,
+            "cache_read_input_tokens": 182814,
+            "cache_creation_input_tokens": 13153,
+            "cost_usd": 0.16544779999999998
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13153,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 4977,
+        "num_turns": 1,
+        "cost_usd": 0.0554554,
+        "cost_basis": "list",
+        "models": {
+          "claude-fable-5-2": {
+            "input_tokens": 2,
+            "output_tokens": 394,
+            "cache_read_input_tokens": 2997,
+            "cache_creation_input_tokens": 3908,
+            "cost_usd": 0.0554554
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3908,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
