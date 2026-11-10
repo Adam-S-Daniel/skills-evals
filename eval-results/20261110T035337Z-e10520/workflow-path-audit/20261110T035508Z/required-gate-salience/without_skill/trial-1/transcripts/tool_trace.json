@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UP9A8VbUXDUqTEgXTa5cxy",
+      "name": "Bash",
+      "input": "git status && git log --oneline | head -5 && find . -path ./.git -prune -o -type f -print | head -100 && for f in .github/workflows/*; do echo \"=== $f\"; cat \"$f\"; done",
+      "input_chars": 167,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UP9A8VbUXDUqTEgXTa5cxy",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\nd2a1b6...",
+      "output_chars": 3661,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R8HLV4QkujN25bV7ArAAcv",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json package.json tsconfig.json .nvmrc mkdocs.yml README.md .gitignore; head -30 package-lock.json; cat bin/gh | head -30; git branch -a",
+      "input_chars": 162,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R8HLV4QkujN25bV7ArAAcv",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 3096,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PGrZc2WEhvMMmpeJZ5k3oN",
+      "name": "Bash",
+      "input": "./bin/gh api repos/example-org/example-ledger/rules/branches/main; echo; ./bin/gh api repos/example-org/example-ledger/rulesets; echo; ./bin/gh api repos/example-org/example-ledger/rulesets/5520117",
+      "input_chars": 197,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PGrZc2WEhvMMmpeJZ5k3oN",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-ledger\",\n    \"ruleset_id\": 5520117\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-ledger\",\n    \"ruleset_id\":...",
+      "output_chars": 1888,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KhNsLCYBPY3A4NgkDHmTwQ",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='.github/workflows/ci.yml'\ns=open(p).read()\nold='''          changed=$(git diff --name-only \"$BASE_SHA\" \"$HEAD_SHA\")\n          echo \"Changed files:\"; echo \"$changed\" | sed 's/^/  /...",
+      "input_chars": 2435,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KhNsLCYBPY3A4NgkDHmTwQ",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml\nindex abe97e5..42fb3d5 100644\n--- a/.github/workflows/ci.yml\n+++ b/.github/workflows/ci.yml\n@@ -34,9 +34,16 @@ jobs:\n             echo \"run=true\" >> \"$GITHUB_OUTPUT\"\n             exit 0\n           fi\n-          changed=$(git diff --nam...",
+      "output_chars": 2739,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011xfgF9DmMoY7TrZ128F9YC",
+      "name": "Bash",
+      "input": "re='^(src/|test/|package(-lock)?\\.json$|tsconfig\\.json$|\\.nvmrc$|\\.github/workflows/ci\\.yml$)'; for f in src/a.ts test/x.js package.json package-lock.json tsconfig.json .nvmrc .github/workflows/ci.yml...",
+      "input_chars": 732,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011xfgF9DmMoY7TrZ128F9YC",
+      "is_error": true,
+      "output": "Exit code 128\nsrc/a.ts                            run\ntest/x.js                           run\npackage.json                        run\npackage-lock.json                   run\ntsconfig.json                       run\n.nvmrc                              run\n.github/workflows/ci.yml            run\ndocs/g...",
+      "output_chars": 1465,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NUT7FzCDbG2FfTbzmq5Vna",
+      "name": "Bash",
+      "input": "d=$(mktemp -d); cd $d && G=\"git -c commit.gpgsign=false\"; git init -q -b main && $G commit -q --allow-empty -m root && git checkout -q -b pr && mkdir docs && echo x>docs/a.md && git add . && $G commit...",
+      "input_chars": 410,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NUT7FzCDbG2FfTbzmq5Vna",
+      "is_error": false,
+      "output": "two-dot: docs/a.md src/a.ts   three-dot: docs/a.md\nShell cwd was reset to <path>",
+      "output_chars": 97,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

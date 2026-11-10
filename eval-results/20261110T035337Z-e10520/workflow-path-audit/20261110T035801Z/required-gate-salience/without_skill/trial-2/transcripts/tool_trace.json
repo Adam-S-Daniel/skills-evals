@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0145nVnD6arNHixaTGfRcmHk",
+      "name": "Bash",
+      "input": "ls .github/workflows 2>&1 && wc -l .github/workflows/*",
+      "input_chars": 54,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0145nVnD6arNHixaTGfRcmHk",
+      "is_error": false,
+      "output": "ci.yml\ndependency-audit.yml\ndocs-site.yml\n  64 .github/workflows/ci.yml\n  19 .github/workflows/dependency-audit.yml\n  21 .github/workflows/docs-site.yml\n 104 total",
+      "output_chars": 163,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YawNypKj4xwkprnf5iZWge",
+      "name": "Bash",
+      "input": "for f in .github/workflows/*; do echo \"=== $f\"; cat -n $f; done; git ls-files | head -80",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YawNypKj4xwkprnf5iZWge",
+      "is_error": false,
+      "output": "=== .github/workflows/ci.yml\n     1\tname: CI\n     2\t\n     3\t# `build` is a required status check (.github/rulesets/main.json), so this\n     4\t# workflow has no path filter: it starts on every pull request and decides\n     5\t# inside the job whether there is anything to build.\n     6\ton:\n     7\t  pul...",
+      "output_chars": 3908,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JNFZNiUekTSHuSets63Uzx",
+      "name": "Bash",
+      "input": "cat .github/rulesets/main.json mkdocs.yml package.json; cat bin/gh | head -20",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JNFZNiUekTSHuSets63Uzx",
+      "is_error": false,
+      "output": "{\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": {\n      \"include\": [\n        \"~DEFAULT_BRANCH\"\n      ],\n      \"exclude\": []\n    }\n  },\n  \"rules\": [\n    {\n      \"type\": \"deletion\"\n    },\n    {\n      \"type\": \"non_fast_forward\"\n    },\n    {\n      \"...",
+      "output_chars": 1779,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jh4H4uwupyPTTpiKmjcSwp",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='.github/workflows/ci.yml'\ns=open(p).read()\ns=s.replace('git diff --name-only \"$BASE_SHA\" \"$HEAD_SHA\"','git diff --name-only \"$BASE_SHA...$HEAD_SHA\"')\ns=s.replace(\"'^(src/|test/|pack...",
+      "input_chars": 727,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jh4H4uwupyPTTpiKmjcSwp",
+      "is_error": false,
+      "output": " .github/workflows/ci.yml        | 4 ++--\n .github/workflows/docs-site.yml | 5 +++++\n 2 files changed, 7 insertions(+), 2 deletions(-)\n39:          if grep -qE '^(src/|test/|package\\.json$|package-lock\\.json$|tsconfig\\.json$|\\.nvmrc$|\\.github/workflows/ci\\.yml$)' <<<\"$changed\"; then",
+      "output_chars": 283,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015xxLtXkSiVYcp7amnsopvt",
+      "name": "Bash",
+      "input": "python3 - <<'E'\np='.github/workflows/docs-site.yml'\ns=open(p).read()\ns=s.replace(\"    paths: &paths\\n\",\"    paths:\\n\").replace(\"    paths: *paths\\n\",'    paths:\\n      - \"docs/**\"\\n      - \"mkdocs.yml...",
+      "input_chars": 316,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015xxLtXkSiVYcp7amnsopvt",
+      "is_error": false,
+      "output": "name: Docs site\n\non:\n  pull_request:\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n  push:\n    branches: [main]\n    paths:\n      - \"docs/**\"\n      - \"mkdocs.yml\"\n      - \".github/workflows/docs-site.yml\"\n\npermissions:\n  contents: read\n\njobs:\n  build-docs...",
+      "output_chars": 301,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
