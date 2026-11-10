@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "skill": "vendor-release-impact-issues",
+  "timestamp": "20261110T081218Z",
+  "mode": "trim",
+  "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
+  "registry": {
+    "name": "adam-agentskills",
+    "url": "https://github.com/Adam-S-Daniel/adam-agentskills",
+    "sha": "42f39bd8c810cfde9bab5f344b38d17fe0c5e046",
+    "skill_md": "plugins/adam-coding-anywhere/skills/vendor-release-impact-issues/SKILL.md"
+  },
+  "models": {
+    "arm": "claude-sonnet-5-5",
+    "proposal": "claude-fable-5-2"
+  },
+  "trials": 3,
+  "no_judge": true,
+  "description": {
+    "original": "File or rewrite GitHub issues that track how a vendor's or upstream project's release notes may affect your repos. Each issue covers one group of related changes for one affected repo, and carries exact quotes with release links and publish times, the files, pins or settings touched, the checks to run, and a fixed block for behavior that contradicts the notes. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes.",
+    "candidate": "File or rewrite GitHub issues tracking how a vendor's or upstream project's release notes may affect your repos. Use when asked to go through a CLI, SDK, agent, GitHub Action or library changelog and open issues for what affects you, or when a routine does. Not for reviewing a single dependency bump or Dependabot PR, or for writing your own project's release notes."
+  },
+  "trim": {
+    "max_chars": 400,
+    "original_chars": 617,
+    "candidate_chars": 367,
+    "rule": "aggregate-noninferior-per-fixture-drop-1",
+    "tolerance_checks": 0,
+    "fixture_drop_checks": 1,
+    "baseline": {
+      "closed-duplicate": {
+        "passed": 15,
+        "total": 18
+      },
+      "closing-keywords": {
+        "passed": 18,
+        "total": 18
+      },
+      "issue-hygiene": {
+        "passed": 21,
+        "total": 21
+      },
+      "stamps-skip-quotes": {
+        "passed": 12,
+        "total": 15
+      }
+    },
+    "candidate": {
+      "closed-duplicate": {
+        "passed": 15,
+        "total": 18
+      },
+      "closing-keywords": {
+        "passed": 18,
+        "total": 18
+      },
+      "issue-hygiene": {
+        "passed": 21,
+        "total": 21
+      },
+      "stamps-skip-quotes": {
+        "passed": 14,
+        "total": 15
+      }
+    }
+  },
+  "files": {
+    "patch": "/tmp/tmp.Dw3nX5y6o2/improvements/vendor-release-impact-issues/20261110T081218Z.patch",
+    "pr_body": "/tmp/tmp.Dw3nX5y6o2/improvements/vendor-release-impact-issues/20261110T081218Z.pr-body.md",
+    "record": "/tmp/tmp.Dw3nX5y6o2/improvements/vendor-release-impact-issues/20261110T081218Z.json"
+  },
+  "runs": {
+    "baseline": "/tmp/tmp.Dw3nX5y6o2/runs/baseline/vendor-release-impact-issues/20261110T081218Z",
+    "candidate": "/tmp/tmp.Dw3nX5y6o2/runs/candidate/vendor-release-impact-issues/20261110T081218Z"
+  },
+  "status": "accepted",
+  "reasons": [
+    "objective checks passed over all fixtures 66/72 -> 68/72",
+    "no worse in aggregate, and no fixture lost more than 1 check(s)"
+  ],
+  "decision": "accepted"
+}
