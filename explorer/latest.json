@@ -1,6 +1,6 @@
 {
  "activity": {
-  "fetched_at": "2026-11-10T04:39:18Z",
+  "fetched_at": "2026-11-10T04:44:10Z",
   "issues": [
    {
     "created_at": "2026-11-10T04:10:55Z",
@@ -7411,6 +7411,18 @@
   ],
   "runs": [
    {
+    "conclusion": null,
+    "created_at": "2026-11-10T04:37:23Z",
+    "event": "workflow_run",
+    "repo": "Adam-S-Daniel/skills-evals",
+    "run_id": 42757031754,
+    "state": "queued",
+    "title": "Weekly routine evals",
+    "updated_at": "2026-11-10T04:44:11Z",
+    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42757031754",
+    "workflow": "Weekly routine evals"
+   },
+   {
     "conclusion": "success",
     "created_at": "2026-11-10T04:38:07Z",
     "event": "workflow_run",
@@ -7505,18 +7517,6 @@
     "updated_at": "2026-11-10T04:38:05Z",
     "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42757065522",
     "workflow": "Ingest routine eval results"
-   },
-   {
-    "conclusion": null,
-    "created_at": "2026-11-10T04:37:23Z",
-    "event": "workflow_run",
-    "repo": "Adam-S-Daniel/skills-evals",
-    "run_id": 42757031754,
-    "state": "in_progress",
-    "title": "Weekly routine evals",
-    "updated_at": "2026-11-10T04:37:54Z",
-    "url": "https://github.com/Adam-S-Daniel/skills-evals/actions/runs/42757031754",
-    "workflow": "Weekly routine evals"
    },
    {
     "conclusion": null,
@@ -27499,7 +27499,7 @@
     "workflow": "agent-checks"
    }
   ],
-  "since": "2026-10-27T04:39:18Z"
+  "since": "2026-10-27T04:44:10Z"
  },
  "agent_made": {
   "items": [
@@ -29312,8 +29312,8 @@
    "by_reason": {
     "bare_run": {
      "cost_unknown": 0,
-     "cost_usd": 37.3110709,
-     "runs": 79
+     "cost_usd": 37.8513209,
+     "runs": 80
     },
     "cannot_discriminate": {
      "cost_unknown": 0,
@@ -29362,8 +29362,8 @@
     }
    },
    "cost_unknown": 3,
-   "cost_usd": 417.26878455,
-   "total": 1326
+   "cost_usd": 417.80903455000004,
+   "total": 1327
   },
   "guidance": {
    "by_reason": {
@@ -29406,8 +29406,8 @@
    "by_reason": {
     "bare_run": {
      "cost_unknown": 0,
-     "cost_usd": 37.3110709,
-     "runs": 79
+     "cost_usd": 37.8513209,
+     "runs": 80
     },
     "context_unknown": {
      "cost_unknown": 0,
@@ -29446,12 +29446,28 @@
     }
    },
    "cost_unknown": 3,
-   "cost_usd": 374.77569788,
-   "total": 833
+   "cost_usd": 375.31594788,
+   "total": 834
   }
  },
  "evals": {
   "bare_runs": [
+   {
+    "bare": 5.0,
+    "bare_share": 0.8333333333333334,
+    "checks": 6.0,
+    "cost_usd": 0.54025,
+    "fired_at": "2026-11-10T04:33:42Z",
+    "fixture": "skills-doctor/laptop-double-delivery",
+    "model": "claude-opus-5-5",
+    "paired_at": null,
+    "report_url": "https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/routine-results/20261110T043342Z-951d2d/skills-doctor/20261110T043508Z/report.md",
+    "run_id": "20261110T043342Z-951d2d",
+    "skill": "skills-doctor",
+    "trials": 3,
+    "with_share": null,
+    "without_share": null
+   },
    {
     "bare": 4.0,
     "bare_share": 0.5,
@@ -60767,7 +60783,7 @@
   ]
  },
  "fires_without_results": {
-  "counted": 894,
+  "counted": 896,
   "rejected": 0,
   "since": "2026-11-03T07:15:09Z",
   "sweeps": [
@@ -61252,7 +61268,7 @@
     "without_pass_rate": 0.9254385964912281
    }
   ],
-  "generated_at": "2026-11-10T04:38:31Z",
+  "generated_at": "2026-11-10T04:43:35Z",
   "requests": [
    {
     "closed_at": "2026-11-03T17:37:15Z",
@@ -61364,7 +61380,7 @@
    "requests_open": 4
   }
  },
- "generated_at": "2026-11-10T04:37:14Z",
+ "generated_at": "2026-11-10T04:42:21Z",
  "guidance": {
   "removed": [
    {
@@ -111824,8 +111840,8 @@
     "by_reason": {
      "bare_run": {
       "cost_unknown": 0,
-      "cost_usd": 2.2990535,
-      "runs": 5
+      "cost_usd": 2.8393035,
+      "runs": 6
      },
      "fixture_changed": {
       "cost_unknown": 0,
@@ -111849,8 +111865,8 @@
      }
     },
     "cost_unknown": 0,
-    "cost_usd": 21.9957827,
-    "total": 39
+    "cost_usd": 22.5360327,
+    "total": 40
    },
    "name": "skills-doctor",
    "next_test": {
@@ -112047,6 +112063,15 @@
      "cost_usd": 0.3182413,
      "date": "2026-11-09",
      "model": "claude-sonnet-5-5",
+     "reason": "bare_run",
+     "runs": 1
+    },
+    {
+     "class": "discarded",
+     "cost_unknown": 0,
+     "cost_usd": 0.54025,
+     "date": "2026-11-10",
+     "model": "claude-opus-5-5",
      "reason": "bare_run",
      "runs": 1
     }
@@ -121980,7 +122005,7 @@
  "source": {
   "repository": "Adam-S-Daniel/skills-evals",
   "repository_commit": "944c100126daffb147e1c6cc98e4057d8acff3e6",
-  "results_commit": "832860ff97304b3303ac2a69c93ef33f797fc69d"
+  "results_commit": "ec587d3e691e12ace23b37ee68eb877875f0eeaf"
  },
  "spend": {
   "generated_at": "2026-11-10T04:31:49Z",
