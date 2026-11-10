@@ -5250,11 +5250,12 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         "| Arm | Objective | Judge overall | Cost (USD) | Turns | Duration (ms) | Error |",
         "| --- | --- | --- | --- | --- | --- | --- |",
     ]
+    reasons = _skill_skip_reasons(arm_summaries, lambda s: [s])
     for s in arm_summaries:
         checks = s.get("objective_checks")
         objective_str = f"{sum(1 for c in checks if c['passed'])}/{len(checks)}" if checks else "-"
 
-        judge_str = _judge_cell(s.get("judge"))
+        judge_str = _judge_cell(s.get("judge"), reasons.get(s["arm"]))
 
         agent = s.get("agent") or {}
         cost = agent.get("cost_usd")
@@ -5266,6 +5267,8 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
+    if any(_is_skipped(s.get("judge")) for s in arm_summaries):
+        lines += ["", JUDGE_RULE_LINE]
     lines += guidance_violations.render([
         {"arm": s["arm"], "stats": {"aggregate": {
             "guidance_violations": guidance_violations.aggregate([s])}}}
@@ -5813,6 +5816,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                   "| Arm | n | Errors | Objective (mean) | Judge overall "
                   "(mean, min to max) | Cost USD (mean / sum) |",
                   "| --- | --- | --- | --- | --- | --- |"]
+        reasons = _skill_skip_reasons(arms, lambda a: a.get("results") or [])
         for arm in arms:
             stats = arm["stats"]
             block = stats["aggregate"]
@@ -5826,7 +5830,7 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
             if not judge_stats:
                 judge_str = "-"
             elif _is_skipped(judge_stats):
-                judge_str = SKIPPED_CELL
+                judge_str = reasons.get(arm["arm"]) or SKIPPED_CELL
             elif not judge_stats["overall"]:
                 judge_str = "error"
             else:
@@ -5842,6 +5846,8 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
                 cost_str += f"; {block['cost_unknown_trials']} unknown"
             lines.append(f"| {arm['arm']} | {stats['n']} | {stats['errors']} | "
                          f"{objective_str} | {judge_str} | {cost_str} |")
+        if any(_is_skipped(arm["stats"]["aggregate"]["judge"]) for arm in arms):
+            lines += ["", JUDGE_RULE_LINE]
 
         lines += _render_efficiency_table(arms)
         lines += guidance_violations.render(arms)
@@ -6415,11 +6421,52 @@ def _is_skipped(block) -> bool:
     return isinstance(block, dict) and block.get("status") == "skipped"
 
 
-def _judge_cell(block: dict | None) -> str:
-    """The judge column of one arm's row in a single-trial report."""
+#: The line under a report's table that says when the judge runs.
+JUDGE_RULE_LINE = (
+    "Judge: scored 0 to 10. The arms are compared in pairs on checks passed. "
+    "When the arm with the subject passes more checks than its partner, the "
+    "checks already decide the pair and the judge is skipped for both arms; "
+    "a tie or a loss gets both arms judged.")
+
+
+def _checks_passed(trials: list[dict]) -> tuple[int, int]:
+    """Checks passed and checks scored over `trials` whose `error` is null:
+    the same counts `_objective_decided` compares."""
+    checks = [check for trial in trials if not trial.get("error")
+              for check in trial.get("objective_checks") or []]
+    return sum(1 for c in checks if c.get("passed")), len(checks)
+
+
+def _skip_reasons(pairs: list[tuple]) -> dict[str, str]:
+    """The judge cell of each arm in a pair the checks decided, by arm name:
+    which arm passed more checks, with both counts. `pairs` holds
+    `(with name, with trials, without name, without trials)`."""
+    reasons = {}
+    for with_name, with_trials, without_name, without_trials in pairs:
+        won, with_total = _checks_passed(with_trials)
+        lost, without_total = _checks_passed(without_trials)
+        reasons[with_name] = reasons[without_name] = (
+            f"skipped: {with_name} passed more checks, "
+            f"{won}/{with_total} vs {lost}/{without_total}")
+    return reasons
+
+
+def _skill_skip_reasons(arms: list[dict], trials_of) -> dict[str, str]:
+    """`_skip_reasons` for a skill run's one with/without pair (`_ROLES`), or
+    `{}` when the run has no complete pair."""
+    by_role = {_ROLES.get(arm["arm"]): arm for arm in arms}
+    if "with" not in by_role or "without" not in by_role:
+        return {}
+    w, o = by_role["with"], by_role["without"]
+    return _skip_reasons([(w["arm"], trials_of(w), o["arm"], trials_of(o))])
+
+
+def _judge_cell(block: dict | None, reason: str | None = None) -> str:
+    """The judge column of one arm's row in a single-trial report; `reason`
+    is the skip cell `_skip_reasons` wrote for this arm."""
     jd = block or {}
     if _is_skipped(jd):
-        return SKIPPED_CELL
+        return reason or SKIPPED_CELL
     if "overall" in jd:
         return f"{jd['overall']:.1f}"
     return "error" if "error" in jd else "-"
@@ -7760,6 +7807,25 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         _clean_in_place_config(plan)
 
 
+#: What each guidance pair (`GUIDANCE_JUDGE_PAIRS`) is called in a report.
+GUIDANCE_PAIR_LABELS = {"in_situ": "in context", "alone": "section alone"}
+
+
+def _guidance_report_pairs(arm_summaries: list[dict]) -> tuple[dict, list]:
+    """Each arm's Pair cell by name, and the complete pairs as
+    `_skip_reasons` takes them, matched by mode as `_guidance_judge_holds`
+    matches them (exactly one arm of each mode)."""
+    pair_of, pairs = {}, []
+    for key, roles in GUIDANCE_JUDGE_PAIRS.items():
+        named = {role: [s for s in arm_summaries if s.get("mode") == mode]
+                 for mode, role in roles.items()}
+        if all(len(found) == 1 for found in named.values()):
+            w, o = named["with"][0], named["without"][0]
+            pair_of[w["arm"]] = pair_of[o["arm"]] = GUIDANCE_PAIR_LABELS[key]
+            pairs.append((w["arm"], [w], o["arm"], [o]))
+    return pair_of, pairs
+
+
 def _render_guidance_report(section: str, prompt: str, timestamp: str,
                             delivery: str, arm_bytes: dict,
                             arm_summaries: list[dict],
@@ -7779,14 +7845,16 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         *run_lines,
         _harness_line(harness_version, arm_summaries),
         "",
-        "| Arm | Mode | Bytes | Guard | Objective | Judge overall | Cost (USD) | Error |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Arm | Mode | Pair | Bytes | Guard | Objective | Judge overall | Cost (USD) | Error |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
+    pair_of, pairs = _guidance_report_pairs(arm_summaries)
+    reasons = _skip_reasons(pairs)
     for s in arm_summaries:
         checks = s.get("objective_checks")
         objective_str = (f"{sum(1 for c in checks if c['passed'])}/{len(checks)}"
                          if checks else "-")
-        judge_str = _judge_cell(s.get("judge"))
+        judge_str = _judge_cell(s.get("judge"), reasons.get(s["arm"]))
         agent = s.get("agent") or {}
         cost = agent.get("cost_usd")
         cost_str = f"{cost:.4f}" if isinstance(cost, (int, float)) else "-"
@@ -7809,9 +7877,12 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         err = s.get("error")
         err_str = (" ".join(f"{err['type']}: {err['detail']}".split())
                    .replace("|", "\\|")[:200] if err else "")
-        lines.append(f"| {s['arm']} | {s['mode']} | {arm_bytes.get(s['arm'], '-')} | "
+        lines.append(f"| {s['arm']} | {s['mode']} | {pair_of.get(s['arm'], '-')} | "
+                     f"{arm_bytes.get(s['arm'], '-')} | "
                      f"{guard_str} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{err_str} |")
+    if pairs or any(_is_skipped(s.get("judge")) for s in arm_summaries):
+        lines += ["", JUDGE_RULE_LINE]
     lines += guidance_violations.render([
         {"arm": s["arm"], "stats": {"aggregate": {
             "guidance_violations": guidance_violations.aggregate([s])}}}

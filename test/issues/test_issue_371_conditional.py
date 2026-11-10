@@ -52,7 +52,9 @@ SKILL = "conditional-skill"
 SKIPPED = {"status": "skipped", "reason": "objective-decided"}
 SKIPPED_AGGREGATE = {**SKIPPED, "n": 0, "errors": 0, "overall": None,
                      "dimensions": []}
-CELL = "skipped (objective-decided)"
+#: How every skipped judge cell starts; the rest names the arm that passed
+#: more checks and both arms' counts.
+CELL = "skipped: "
 #: An agent step that writes the file the fixture's second check wants: the
 #: arm passes 2 of 2 checks. A bare step passes 1 of 2.
 GAIN = {"write": "marker.txt"}
@@ -142,7 +144,7 @@ class GainSkipsTests(PairCase):
         # Never `-`, `error` or a number in the judge column.
         row = [line for line in self.report().splitlines()
                if line.startswith("| with_skill |")][0]
-        self.assertIn(f"| {CELL} |", row)
+        self.assertIn("| skipped: with_skill passed more checks, 6/6 vs 3/6 |", row)
 
     def test_the_ingester_accepts_every_summary_of_a_skipped_run(self):
         self.gain(3)
@@ -404,8 +406,10 @@ class StatisticsAndReportTests(unittest.TestCase):
              "objective_checks": [{"id": "a", "passed": True}]},
             {"arm": "without_skill", "judge": None, "objective_checks": []}])
         lines = report.splitlines()
-        self.assertIn(f"| with_skill | 1/1 | {CELL} |", lines[-2])
-        self.assertIn("| without_skill | - | - |", lines[-1])
+        self.assertIn("| with_skill | 1/1 | skipped: with_skill passed more "
+                      "checks, 1/1 vs 0/0 |", lines[-4])
+        self.assertIn("| without_skill | - | - |", lines[-3])
+        self.assertEqual(lines[-1], run_eval.JUDGE_RULE_LINE)
 
     def test_the_trials_report_prints_the_skip(self):
         stats = run_eval.aggregate_trials([self.trial(dict(SKIPPED))])
@@ -414,7 +418,8 @@ class StatisticsAndReportTests(unittest.TestCase):
              "arms": [{"arm": "with_skill", "models_used": [],
                        "stats": stats}]}])
         row = [l for l in report.splitlines() if l.startswith("| with_skill |")]
-        self.assertIn(f"| {CELL} |", row[0])
+        # No without arm, so no pair to name: the plain skip cell.
+        self.assertIn(f"| {run_eval.SKIPPED_CELL} |", row[0])
         self.assertNotIn("error", row[0])
 
     def test_the_guidance_report_prints_the_skip(self):
@@ -423,8 +428,36 @@ class StatisticsAndReportTests(unittest.TestCase):
                 {"arm": "with_guidance", "mode": "section", "guard": {},
                  "judge": dict(SKIPPED),
                  "objective_checks": [{"id": "a", "passed": True}]}])
-        row = report.splitlines()[-1]
-        self.assertIn(f"| 1/1 | {CELL} |", row)
+        row = [l for l in report.splitlines() if l.startswith("| with_guidance |")][0]
+        self.assertIn(f"| section | - | 3 |", row)
+        self.assertIn(f"| 1/1 | {run_eval.SKIPPED_CELL} |", row)
+
+    def test_the_guidance_report_names_each_pair_and_why_it_was_skipped(self):
+        # The 2026-11-09 agent-contribution-markers run: `full` passed 4 of 4
+        # and `full-minus-section` 1 of 4, so that pair skipped the judge;
+        # `section` and `none` tied at 1 of 4, so both were judged.
+        def arm(name, mode, passed, judge):
+            return {"arm": name, "mode": mode, "guard": {}, "judge": judge,
+                    "objective_checks": [{"id": str(i), "passed": i < passed}
+                                         for i in range(4)]}
+        report = run_eval._render_guidance_report(
+            "alpha", "p", "T", "user", {}, [
+                arm("w_section", "section", 1, {"overall": 2.0}),
+                arm("wo_none", "none", 1, {"overall": 2.3}),
+                arm("w_full", "full", 4, dict(SKIPPED)),
+                arm("w_minus", "full-minus-section", 1, dict(SKIPPED))])
+        rows = {l.split(" | ")[0][2:]: l for l in report.splitlines()
+                if l.startswith("| w")}
+        self.assertIn("| section | section alone |", rows["w_section"])
+        self.assertIn("| none | section alone |", rows["wo_none"])
+        self.assertIn("| 1/4 | 2.0 |", rows["w_section"])
+        self.assertIn("| 1/4 | 2.3 |", rows["wo_none"])
+        skipped = "skipped: w_full passed more checks, 4/4 vs 1/4"
+        for name in ("w_full", "w_minus"):
+            with self.subTest(arm=name):
+                self.assertIn("| in context |", rows[name])
+                self.assertIn(f"| {skipped} |", rows[name])
+        self.assertIn(run_eval.JUDGE_RULE_LINE, report.splitlines())
 
 
 FIGURES = ("num_turns", "cost_usd", "models", "cache_creation")
