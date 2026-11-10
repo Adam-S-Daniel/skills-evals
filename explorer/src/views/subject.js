@@ -36,15 +36,21 @@ export function runsOf(doc, kind, name) {
    a tie or a loss gets both arms judged. Guidance rows are always
    the in-context pair (full vs full minus the section), so they name the
    full-guidance version. with_skill and without_skill are the
-   mean checks passed per trial and checks is the total per arm. A run with
-   no scores that the rule would have judged was not recorded. */
+   mean checks passed per trial and checks is the total per arm. The row's
+   judge field says whether a skip happened: "not run" claims no reason. */
 export function judgeCell(r) {
   const num = (x) => typeof x === 'number' && isFinite(x);
   if (num(r.with_judge) && num(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
-  if (!(num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill)) return STRINGS.judgeNotRecorded;
-  if (!(num(r.checks) && r.checks > 0)) return STRINGS.judgeSkippedBare;
-  const who = typeof r.skill === 'string' && r.skill.startsWith('guidance/') ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill;
-  return STRINGS.judgeSkipped(who, fmtCount(r.with_skill), fmtCount(r.without_skill), fmtCount(r.checks));
+  const wins = num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill;
+  const counted = wins && num(r.checks) && r.checks > 0;
+  const skipped = counted ? () => STRINGS.judgeSkipped(
+    typeof r.skill === 'string' && r.skill.startsWith('guidance/') ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill,
+    fmtCount(r.with_skill), fmtCount(r.without_skill), fmtCount(r.checks)) : () => STRINGS.judgeSkippedBare;
+  // The row's own judge field decides whether a skip reason may be claimed.
+  if (r.judge === 'not run') return STRINGS.judgeNotRun;
+  if (typeof r.judge === 'string' && r.judge.startsWith('skipped')) return skipped();
+  // Older documents carry no judge field: fall back to the counts.
+  return wins ? skipped() : STRINGS.judgeNotRecorded;
 }
 
 export function runsTable(runs, refMs) {

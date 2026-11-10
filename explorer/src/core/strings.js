@@ -409,7 +409,7 @@ function buildStrings(you) {
   judgeSkipped: (who, a, b, m) => 'skipped: ' + who + ' passed more checks (' + a + ' of ' + m + ' vs ' + b + ' of ' + m + ')',
   judgeSkippedBare: 'skipped',
   judgeWithSkill: 'the version with the skill', judgeWithSection: 'the full-guidance version',
-  judgeNotRecorded: 'not recorded',
+  judgeNotRecorded: 'not recorded', judgeNotRun: 'not run',
   bareHeading: 'Bare model vs the full setup',
   bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
   colBare: 'Bare', colPaired: 'Paired run', colTrials: 'Trials',

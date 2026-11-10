@@ -830,6 +830,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       judgeWithSkill: "the version with the skill",
       judgeWithSection: "the full-guidance version",
       judgeNotRecorded: "not recorded",
+      judgeNotRun: "not run",
       bareHeading: "Bare model vs the full setup",
       bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
       colBare: "Bare",
@@ -3118,10 +3119,17 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   function judgeCell(r) {
     const num = (x) => typeof x === "number" && isFinite(x);
     if (num(r.with_judge) && num(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
-    if (!(num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill)) return STRINGS.judgeNotRecorded;
-    if (!(num(r.checks) && r.checks > 0)) return STRINGS.judgeSkippedBare;
-    const who = typeof r.skill === "string" && r.skill.startsWith("guidance/") ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill;
-    return STRINGS.judgeSkipped(who, fmtCount(r.with_skill), fmtCount(r.without_skill), fmtCount(r.checks));
+    const wins = num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill;
+    const counted = wins && num(r.checks) && r.checks > 0;
+    const skipped = counted ? () => STRINGS.judgeSkipped(
+      typeof r.skill === "string" && r.skill.startsWith("guidance/") ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill,
+      fmtCount(r.with_skill),
+      fmtCount(r.without_skill),
+      fmtCount(r.checks)
+    ) : () => STRINGS.judgeSkippedBare;
+    if (r.judge === "not run") return STRINGS.judgeNotRun;
+    if (typeof r.judge === "string" && r.judge.startsWith("skipped")) return skipped();
+    return wins ? skipped() : STRINGS.judgeNotRecorded;
   }
   function runsTable(runs, refMs) {
     if (!runs.length) return h("p", { class: "note" }, STRINGS.runsNone);
