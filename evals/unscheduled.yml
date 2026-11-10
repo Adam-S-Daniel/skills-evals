@@ -15,9 +15,9 @@
 # the fixture.
 fixtures:
   - path: evals/browser-testing
-    reason: "Adam's 2026-10-26 decision is to skip browser-testing (scaffold_real_work.py NEVER_PROMOTE), and an in-place plan cannot resolve its skill: it is neither adopted by the pinned context nor in a registry checkout (skill_not_found), so no budget can be measured. Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+    reason: "Adam's 2026-10-26 decision is to skip browser-testing (scaffold_real_work.py NEVER_PROMOTE), and an in-place plan cannot resolve its skill: it is neither adopted by the pinned context nor in a registry checkout (skill_not_found), so no budget can be measured. Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval. Rechecked 2026-11-10, holds: fails criterion 2 (cms-platform's e2e/skill-references-fresh.test.js now lints every skills/*/SKILL.md, browser-testing's included) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02); the fixture is unchanged since 2026-10-08."
   - path: evals/workflow-path-audit/required-check-routing
-    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-10, holds: fails criterion 4 (the fixture is unchanged since 2026-11-03 03:28 UTC, and both runs after that, 20261103T124306Z-892f4f and 20261103T134218Z-d68eee, have the without arm at 8/8 checks)."
   - path: evals/admin-config-render
     reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
   - path: evals/code-quality

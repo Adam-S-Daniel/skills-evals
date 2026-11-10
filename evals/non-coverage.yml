@@ -91,9 +91,11 @@ skips:
     skill: add-received-from-addresses
     decision: skip
     reason: >-
-      dispatches a workflow in the fastmail-actions repository that scans a
-      real Fastmail mailbox and adds sending identities with a real API token;
-      a hermetic fixture cannot exercise it
+      rechecked 2026-11-10, holds: fails criterion 3 (it still dispatches a
+      workflow in the fastmail-actions repository that scans a real Fastmail
+      mailbox and adds sending identities with a real API token; a hermetic
+      fixture cannot exercise it) and criterion 1 (no recorded use, local
+      since 2026-09-21 or cloud since 2026-11-02)
   - registry: cms-platform
     skill: aws-bootstrap
     decision: freshness lint
