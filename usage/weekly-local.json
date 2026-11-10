@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-09T17:37:31Z",
+  "generated_at": "2026-11-10T17:37:15Z",
   "rows": [
     {
       "blocked": null,
@@ -2356,7 +2356,7 @@
     },
     {
       "blocked": null,
-      "digest": "unknown:unverified-commit",
+      "digest": "0be479e716d5",
       "invocations": 3,
       "kind": "skill-digest",
       "name": "disarm-inherited-reach",
@@ -2377,7 +2377,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 28,
+      "sessions": 48,
       "surface": "cloud",
       "week": "2026-11-09"
     },
@@ -2390,7 +2390,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 1,
+      "sessions": 4,
       "surface": "local",
       "week": "2026-11-09"
     },
@@ -2403,7 +2403,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 24,
+      "sessions": 42,
       "surface": "cloud",
       "week": "2026-11-09"
     },
@@ -2416,7 +2416,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 3,
+      "sessions": 4,
       "surface": "cloud",
       "week": "2026-11-09"
     },
@@ -2429,13 +2429,13 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 1,
+      "sessions": 2,
       "surface": "cloud",
       "week": "2026-11-09"
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "all",
       "outcome": null,
@@ -2448,7 +2448,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "persistent-delete",
       "outcome": null,
@@ -2461,7 +2461,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "push-to-default",
       "outcome": null,
@@ -2474,7 +2474,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "rules-dir",
       "outcome": null,
@@ -2487,7 +2487,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "secret-file",
       "outcome": null,
@@ -2500,7 +2500,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "skill-shell",
       "outcome": null,
@@ -2513,7 +2513,7 @@
     },
     {
       "blocked": 0,
-      "invocations": 146,
+      "invocations": 386,
       "kind": "hook",
       "name": "staged-index",
       "outcome": null,
@@ -2533,7 +2533,7 @@
       "overridden": null,
       "repo": null,
       "runner": null,
-      "sessions": 1,
+      "sessions": 4,
       "surface": "local",
       "week": "2026-11-09"
     }
@@ -2543,37 +2543,37 @@
     {
       "from": "2026-09-21T00:00:00Z",
       "scope": "transcripts",
-      "sessions_scanned": 2895,
+      "sessions_scanned": 2888,
       "surface": "local",
-      "to": "2026-11-09T17:37:31Z"
+      "to": "2026-11-10T17:37:15Z"
     },
     {
       "from": "2026-09-21T00:00:00Z",
-      "runs_scanned": 4593,
+      "runs_scanned": 4833,
       "scope": "hooks",
       "surface": "local",
-      "to": "2026-11-09T17:37:31Z"
+      "to": "2026-11-10T17:37:15Z"
     },
     {
       "from": "2026-10-26T00:00:00Z",
-      "records_scanned": 778,
+      "records_scanned": 798,
       "scope": "guidance-records",
       "surface": "cloud",
-      "to": "2026-11-09T17:37:31Z"
+      "to": "2026-11-10T17:37:15Z"
     },
     {
       "events_scanned": 0,
       "from": "2026-10-26T00:00:00Z",
       "scope": "skill-records",
       "surface": "local",
-      "to": "2026-11-09T17:37:31Z"
+      "to": "2026-11-10T17:37:15Z"
     },
     {
       "events_scanned": 3,
       "from": "2026-11-02T00:00:00Z",
       "scope": "skill-records",
       "surface": "cloud",
-      "to": "2026-11-09T17:37:31Z"
+      "to": "2026-11-10T17:37:15Z"
     }
   ]
 }
