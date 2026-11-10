@@ -1,0 +1,308 @@
+{
+  "arm": "with_guidance_full",
+  "timestamp": "20261110T002137Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.056448,
+    "num_turns": 1,
+    "duration_ms": 6437,
+    "usage": {
+      "input_tokens": 2,
+      "cache_creation_input_tokens": 19207,
+      "cache_read_input_tokens": 12565,
+      "output_tokens": 717,
+      "output_tokens_details": {
+        "thinking_tokens": 244
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 19207
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 717,
+          "cache_read_input_tokens": 12565,
+          "cache_creation_input_tokens": 19207,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 19207,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "other-connector-named",
+      "passed": false,
+      "detail": "transcript lacks /\\bgithub-mcp\\b/"
+    },
+    {
+      "id": "404-not-called-gone",
+      "passed": true,
+      "detail": "transcript matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Ambiguity",
+        "score": 10,
+        "rationale": "It says a 404 can mean either deleted or invisible to the credential, and it declines to call the repo gone on that basis."
+      },
+      {
+        "name": "Next step",
+        "score": 8,
+        "rationale": "It looks up the org connector by name in ListConnectors rather than by a remembered prefix, and it names `mcp__github__` in what it would report, but it never says it would name the org connector in its report."
+      },
+      {
+        "name": "Brevity",
+        "score": 5,
+        "rationale": "Three numbered steps plus two explanatory paragraphs is well beyond a few lines, though none of it is padding."
+      }
+    ],
+    "overall": 7.7
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.321 (Claude Code)",
+    "permission_mode": "bypassPermissions",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 2,
+      "output_tokens": 717,
+      "cache_read_input_tokens": 12565,
+      "cache_creation_input_tokens": 19207,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "subject": "guidance",
+  "section": "two-github-connectors",
+  "mode": "full",
+  "bytes": 26582,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v2b744b60, 26582 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-sonnet-5-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "WKQGWBLM-8944"
+  },
+  "fixture_name": "private-repo-404",
+  "guidance_digests": {
+    "section": "88f0d27da868098aad9fc4cbcda925cc6314e81a4773fa20aebaeba5f6a080d5",
+    "rest": "ee61da583bdb311cfff1737e09aa9e0439a9f7c3b198dbbde64c036a2ecc9037",
+    "section_payload": "f035ad5d2a430f862780268a4c7ef83c51ae2dc3dd77de388e2e81c993384dc7"
+  },
+  "fixture_digest": "fc911ded5c4c1e5c0a471e73138d4acb4762365851b82b082cdcdba7c88c72ce",
+  "judge_conditional": true,
+  "receipt": {
+    "proof": "transcript",
+    "ok": true,
+    "reason": null,
+    "detail": null,
+    "files": [
+      {
+        "path": "config/CLAUDE.md",
+        "memory_type": "User",
+        "bytes": 26447,
+        "sha256": "18de1e87e0d7cfb15af44565ad0c4681d7d322bba4cd8e4de0dbbd649fe15745"
+      }
+    ]
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "api",
+    "runner": "actions",
+    "location": "cloud",
+    "id": "42724888343",
+    "session_id": null,
+    "harness_commit": "323763cfd82e5b3a8225aa2eb68c62744e21539d",
+    "cli_version": "2.1.321 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "env:GITHUB_RUN_ID",
+      "session_id": null
+    },
+    "reasons": {
+      "session_id": "no flag named it and nothing in the environment identifies it"
+    }
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-10T00:21:37Z",
+    "ended_at": "2026-11-10T00:22:35Z",
+    "meter": null,
+    "meter_delta": null,
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": null,
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.3242876,
+      "agent_usd": 0.1732545,
+      "judge_usd": 0.062718,
+      "guard_usd": 0.08831510000000001,
+      "metered_usd": null,
+      "last_agent_call_usd": 0.0555505,
+      "calls_with_cost": 12,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "metered_usd": "API-billed run: the subscription's account meter does not apply"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version",
+      "meter": "API-billed run: the subscription's account meter does not apply",
+      "meter_delta": "API-billed run: the subscription's account meter does not apply"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-10T00:21:56Z",
+      "ended_at": "2026-11-10T00:22:18Z",
+      "calls": [
+        {
+          "role": "guard",
+          "index": 0,
+          "started_at": "2026-11-10T00:21:56Z",
+          "ended_at": "2026-11-10T00:21:58Z",
+          "duration_ms": 1721,
+          "outcome": "ok"
+        },
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-10T00:21:58Z",
+          "ended_at": "2026-11-10T00:22:05Z",
+          "duration_ms": 7202,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-10T00:22:13Z",
+          "ended_at": "2026-11-10T00:22:18Z",
+          "duration_ms": 4945,
+          "outcome": "ok"
+        }
+      ],
+      "meter": null,
+      "agent": {
+        "calls": 1,
+        "duration_ms": 7202,
+        "num_turns": 1,
+        "cost_usd": 0.056448,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 717,
+            "cache_read_input_tokens": 12565,
+            "cache_creation_input_tokens": 19207,
+            "cost_usd": 0.056448
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 19207,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 4945,
+        "num_turns": 1,
+        "cost_usd": 0.015017,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 378,
+            "cache_read_input_tokens": 1445,
+            "cache_creation_input_tokens": 1432,
+            "cost_usd": 0.015017
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 1432,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 1,
+        "duration_ms": 1721,
+        "num_turns": 1,
+        "cost_usd": 0.034991900000000006,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 13,
+            "cache_read_input_tokens": 8504,
+            "cache_creation_input_tokens": 13603,
+            "cost_usd": 0.034991900000000006
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 13603,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "reasons": {
+        "meter": "API-billed run: the subscription's account meter does not apply"
+      }
+    }
+  }
+}
