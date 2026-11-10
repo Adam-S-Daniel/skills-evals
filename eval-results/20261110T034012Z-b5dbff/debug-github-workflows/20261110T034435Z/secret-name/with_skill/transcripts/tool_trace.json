@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014E3bp2VxPHpDKvVaLSthUu",
+      "name": "Bash",
+      "input": "git status --short | head; ls .github/workflows | head -50; grep -il \"release notes\" .github/workflows/* ",
+      "input_chars": 105,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014E3bp2VxPHpDKvVaLSthUu",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\ndocs.yml\nrelease-notes.yml\n.github/workflows/release-notes.yml",
+      "output_chars": 191,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018Kko94Exw2vCbtgqQ8D7sR",
+      "name": "Bash",
+      "input": "cat .github/workflows/release-notes.yml; git log --oneline | head; ls",
+      "input_chars": 69,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018Kko94Exw2vCbtgqQ8D7sR",
+      "is_error": false,
+      "output": "name: Release notes\n\non:\n  release:\n    types: [published]\n\npermissions:\n  contents: read\n\njobs:\n  notes:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Publish release notes\n        env:\n          # The release bot's token...",
+      "output_chars": 697,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BcK1cy8J4HGk5szDXwPXAB",
+      "name": "Bash",
+      "input": "ls -la scripts bin; cat scripts/render_notes.py; head -40 CHANGES.md; cat README.md | head -40",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BcK1cy8J4HGk5szDXwPXAB",
+      "is_error": false,
+      "output": "bin:\ntotal 64\ndrwxr-xr-x 2 root root  4096 Nov  8 18:32 .\ndrwxr-xr-x 8 root root  4096 Nov 10 03:44 ..\n-rwxr-xr-x 1 root root 54717 Nov  8 18:32 gh\n\nscripts:\ntotal 12\ndrwxr-xr-x 2 root root 4096 Nov  8 18:32 .\ndrwxr-xr-x 8 root root 4096 Nov 10 03:44 ..\n-rw-r--r-- 1 root root  465 Nov  8 18:32 rende...",
+      "output_chars": 1188,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019sFaTLd6zHdFCVsnnxy4iu",
+      "name": "Bash",
+      "input": "cat .github/workflows/docs.yml; git tag; file bin/gh; head -c 600 bin/gh",
+      "input_chars": 72,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019sFaTLd6zHdFCVsnnxy4iu",
+      "is_error": false,
+      "output": "name: Docs\n\non:\n  release:\n    types: [edited]\n\npermissions:\n  contents: read\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Build the site\n        run: python3 -m compileall -q scripts\nbin/gh: Python script...",
+      "output_chars": 938,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SJaWiPYG4SygesYEUrj3Mq",
+      "name": "Bash",
+      "input": "sed -n 1,80p bin/gh; env | grep -i GH_; which gh",
+      "input_chars": 48,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SJaWiPYG4SygesYEUrj3Mq",
+      "is_error": false,
+      "output": "#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no network and ...",
+      "output_chars": 4723,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HdkaSFKEziYbjuWqcpRJeF",
+      "name": "Bash",
+      "input": "ls .gh/replay | head -30; gh run list --workflow \"Release notes\" 2>&1 | head",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HdkaSFKEziYbjuWqcpRJeF",
+      "is_error": false,
+      "output": "api\nauth-status.txt\nrun-list.json\nrun-view-43001.json\nrun-view-43001.log\nrun-view-43002.json\nrun-view-43002.log\nsecret-list.txt\nworkflow-list.json\n[\n  {\n    \"databaseId\": 43002,\n    \"name\": \"Release notes\",\n    \"workflowName\": \"Release notes\",\n    \"headBranch\": \"v1.4.0\",\n    \"headSha\": \"555555555555...",
+      "output_chars": 410,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UvTLsUpq5jfCzsXdbe5rzK",
+      "name": "Bash",
+      "input": "cd <path> && cat run-view-43002.log; echo ----; cat run-view-43001.log; echo ----; cat secret-list.txt auth-status.txt",
+      "input_chars": 156,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UvTLsUpq5jfCzsXdbe5rzK",
+      "is_error": false,
+      "output": "notes\tPublish release notes\t2026-01-12T16:00:05Z ##[group]Run python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z python3 scripts/render_notes.py \"$TAG\" > notes.md\nnotes\tPublish release notes\t2026-01-12T16:00:05Z gh release edit \"$TAG\" --notes-file note...",
+      "output_chars": 2215,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X1tCCAviJW4jCRa3Bsj8HZ",
+      "name": "Bash",
+      "input": "cd <path> && sed -i 's/secrets\\.RELEASE_NOTES_TOKEN/secrets.RELEASE_NOTES_PAT/' .github/workflows/release-notes.yml && git diff; grep -rn RELEASE_NOTES_TOKEN . --exclude-dir=.git --exclude-dir=.gh | h...",
+      "input_chars": 270,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X1tCCAviJW4jCRa3Bsj8HZ",
+      "is_error": false,
+      "output": "diff --git a/.github/workflows/release-notes.yml b/.github/workflows/release-notes.yml\nindex 432b29c..3023809 100644\n--- a/.github/workflows/release-notes.yml\n+++ b/.github/workflows/release-notes.yml\n@@ -16,7 +16,7 @@ jobs:\n         env:\n           # The release bot's token, not GITHUB_TOKEN: <reda...",
+      "output_chars": 1097,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
