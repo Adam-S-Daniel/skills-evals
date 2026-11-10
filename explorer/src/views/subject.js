@@ -31,6 +31,22 @@ export function runsOf(doc, kind, name) {
   return { runs: pick(e.runs), bare: pick(e.bare_runs) };
 }
 
+/* The Judge cell. The judge is decided per pair of arms: when the arm with
+   the subject passes strictly more checks, it is skipped for both arms;
+   a tie or a loss gets both arms judged. Guidance rows are always
+   the in-context pair (full vs full minus the section), so they name the
+   full-guidance version. with_skill and without_skill are the
+   mean checks passed per trial and checks is the total per arm. A run with
+   no scores that the rule would have judged was not recorded. */
+export function judgeCell(r) {
+  const num = (x) => typeof x === 'number' && isFinite(x);
+  if (num(r.with_judge) && num(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
+  if (!(num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill)) return STRINGS.judgeNotRecorded;
+  if (!(num(r.checks) && r.checks > 0)) return STRINGS.judgeSkippedBare;
+  const who = typeof r.skill === 'string' && r.skill.startsWith('guidance/') ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill;
+  return STRINGS.judgeSkipped(who, fmtCount(r.with_skill), fmtCount(r.without_skill), fmtCount(r.checks));
+}
+
 export function runsTable(runs, refMs) {
   if (!runs.length) return h('p', { class: 'note' }, STRINGS.runsNone);
   const points = runs.some((r) => typeof r.meter_points === 'number');
@@ -41,8 +57,7 @@ export function runsTable(runs, refMs) {
     { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + ' (' + share(r.with_share) + ')' },
     { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + ' (' + share(r.without_share) + ')' },
     { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
-    { label: STRINGS.colJudge, sort: (r) => r.judge, cell: (r) => (typeof r.with_judge === 'number' && typeof r.without_judge === 'number'
-      ? STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1)) : STRINGS.judgeNotNeeded) },
+    { label: STRINGS.colJudge, sort: (r) => r.judge, cell: judgeCell },
     { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
   ];
   if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
