@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EadKekNzFdGafffebmK4rG",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -3 && find . -path ./.git -prune -o -type f -print | head -50 && cat .github/actions/release-notes/action.y*ml 2><path>; ls .github/workflows 2><path> && head -...",
+      "input_chars": 278,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EadKekNzFdGafffebmK4rG",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\nc6801ce seed\n./.idea\n./.bashrc\n./.gitconfig\n./.github/actions/release-notes/action.yml\n./.github/workflows/ci.yml\n./.github/workflows/actions.lock\n./.zprofile\n./...",
+      "output_chars": 1065,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0124WQdPSQcG5d2yix8Q3FFX",
+      "name": "Bash",
+      "input": "cat README.md; which gh; gh extension list 2>&1 | head; gh actions-lock --help 2>&1 | head -20",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0124WQdPSQcG5d2yix8Q3FFX",
+      "is_error": false,
+      "output": "# example-widgets\n\nExample repository for a fixture. There is no network here, so `gh` and\n`git ls-remote` cannot be run.\n<path>\nTo get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\nunknown comman...",
+      "output_chars": 543,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PgHMc4Dzi92BZVtPzfBB6E",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 98,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JNyG33oB7NVQmP9iVim3QQ",
+      "name": "Bash",
+      "input": "python3 -I -c \"import yaml,sys;d=yaml.safe_load(open('.github/workflows/release-notes.yml'));print(d[True],d['permissions'],[s['uses'] for s in d['jobs']['release-notes']['steps']])\"",
+      "input_chars": 182,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PgHMc4Dzi92BZVtPzfBB6E",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 194,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JNyG33oB7NVQmP9iVim3QQ",
+      "is_error": false,
+      "output": "{'push': {'tags': ['v*']}} {'contents': 'read'} ['actions/checkout@v4.2.2', './.github/actions/release-notes']",
+      "output_chars": 110,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
