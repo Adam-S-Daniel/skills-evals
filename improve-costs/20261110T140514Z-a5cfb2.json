@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261110T140514Z-a5cfb2",
+ "mode": "improve",
+ "target": "workflow-path-audit",
+ "exit_code": 0,
+ "outcome": "accepted",
+ "stage_reached": "candidate",
+ "trial_summaries": 36,
+ "agent_calls": 36,
+ "judge_calls": 0,
+ "agent_usd": 2.8653758999999996,
+ "judge_usd": 0,
+ "guard_usd": 0,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 18,
+   "usd": 1.4511184999999998
+  },
+  "candidate": {
+   "trials": 18,
+   "usd": 1.4142574
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.16012579999999998,
+  "input_tokens": 2,
+  "output_tokens": 1834
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-2"
+ },
+ "busy_seconds": 1025.0,
+ "span_seconds": 1008.461,
+ "snapshots": 36,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-10T14:07:42.335000Z",
+  "utilization": 0.22,
+  "resets_at": 1794848400
+ },
+ "last": {
+  "at": "2026-11-10T14:24:30.796000Z",
+  "utilization": 0.22,
+  "resets_at": 1794848400
+ },
+ "delta": 0.0,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-10T14:25:07.011162Z"
+}
