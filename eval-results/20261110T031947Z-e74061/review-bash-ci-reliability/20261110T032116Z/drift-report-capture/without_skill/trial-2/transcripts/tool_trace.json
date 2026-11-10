@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01C1YN8RkpbBoZHPbR1DEBV7",
+      "name": "Bash",
+      "input": "git status --short && ls -la && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 88,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01C1YN8RkpbBoZHPbR1DEBV7",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\ntotal 36\ndrwxr-xr-x  8 root root 4096 Nov 10 03:22 .\ndrwxrwxrwt 10 root root 4096 Nov 10 03:22 ..\ncrw-rw-rw-  1 root root 1, 3 Nov 10 01:09 .bash_profile\ncrw-rw-...",
+      "output_chars": 1476,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jc7ocfg6rPTP221TURVHJe",
+      "name": "Bash",
+      "input": "cat README.md .github/workflows/drift.yml && cat -A scripts/check-drift.sh && ls -l scripts && git log --oneline | head; for f in templates/* deploy/*; do echo \"== $f\"; cat \"$f\"; done",
+      "input_chars": 183,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jc7ocfg6rPTP221TURVHJe",
+      "is_error": false,
+      "output": "# example-configs\n\n`templates/` holds the reviewed source of every service config and\n`deploy/` the copies the hosts read. `.github/workflows/drift.yml` runs\n`scripts/check-drift.sh` on every pull request and once a day: it compares\neach deployed file with its template, prints a unified diff for eve...",
+      "output_chars": 2266,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MpgcF3TgDVzkvzYWy2rekN",
+      "name": "Bash",
+      "input": "S=$PWD/scripts/check-drift.sh; T=$(mktemp -d); \necho \"--- case: drift\"; cp -r templates deploy $T/; cd $T; echo \"workers = 2\" >> deploy/app.conf; bash $S; echo \"exit=$?\"\necho \"--- case: no owner\"; rm ...",
+      "input_chars": 408,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MpgcF3TgDVzkvzYWy2rekN",
+      "is_error": true,
+      "output": "Permission for this command was denied by a built-in Claude Code safety check, not by the user. The check stops removals that can delete far more than intended: a system, home or workspace directory, or a target it cannot resolve, such as a shell variable that, if unset or empty, turns this into `rm...",
+      "output_chars": 1447,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TVGTiZDVB2fKdyHj9pk4oR",
+      "name": "Bash",
+      "input": "R=$PWD; S=$R/scripts/check-drift.sh; SP=<path>\nmk(){ d=$(mktemp -d -p \"$SP\"); cp -r \"$R/templates\" \"$R/deploy\" \"$d/\"; echo \"$d\"; }\necho \"--- drift\"; cd \"$(mk)\"; echo \"workers = 2\" >> deploy/app.conf; ...",
+      "input_chars": 579,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TVGTiZDVB2fKdyHj9pk4oR",
+      "is_error": false,
+      "output": "--- drift\nexit=1\n--- no owner\nexit=1\n--- no templates\nMISSING: deploy/*.conf\ndrift check: 0 checked, 1 drifted\nexit=1\n--- other cwd\nMISSING: deploy/*.conf\ndrift check: 0 checked, 1 drifted\nexit=1\nShell cwd was reset to <path>",
+      "output_chars": 242,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EurHbTC4x6APyzazzzk7hJ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 46,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0198FTKNbjg5j5bh6CxVUhYz",
+      "name": "Bash",
+      "input": "R=$PWD; S=$R/scripts/check-drift.sh; SP=<path>\nmk(){ d=$(mktemp -d -p \"$SP\"); cp -r \"$R/templates\" \"$R/deploy\" \"$d/\"; mkdir \"$d/scripts\"; cp \"$S\" \"$d/scripts/\"; echo \"$d\"; }\necho \"--- clean (repo)\"; b...",
+      "input_chars": 1295,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EurHbTC4x6APyzazzzk7hJ",
+      "is_error": false,
+      "output": "The file <path> has been updated successfully. (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 152,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0198FTKNbjg5j5bh6CxVUhYz",
+      "is_error": true,
+      "output": "Exit code 1\n--- clean (repo)\ndrift check: 3 checked, 0 drifted\nexit=0\n--- clean from /\ndrift check: 3 checked, 0 drifted\nexit=0\n--- drift x2\nDRIFT: deploy/app.conf (owner: web-team)\n--- templates/app.conf\t2026-11-10 03:23:04.097574773 +0000\n+++ deploy/app.conf\t2026-11-10 03:23:04.100633639 +0000\n@@ ...",
+      "output_chars": 1600,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
