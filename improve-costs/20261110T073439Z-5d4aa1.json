@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261110T073439Z-5d4aa1",
+ "mode": "guidance-improve",
+ "target": "turn-lessons-into-checks",
+ "exit_code": 1,
+ "outcome": "rejected",
+ "stage_reached": "candidate",
+ "trial_summaries": 48,
+ "agent_calls": 48,
+ "judge_calls": 48,
+ "agent_usd": 5.0551632,
+ "judge_usd": 0.9036359,
+ "guard_usd": 1.7553433000000005,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 24,
+   "usd": 3.626440199999999
+  },
+  "candidate": {
+   "trials": 24,
+   "usd": 4.087702200000001
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.4204358,
+  "input_tokens": 2,
+  "output_tokens": 2514
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-2"
+ },
+ "busy_seconds": 2339.0,
+ "span_seconds": 2370.768,
+ "snapshots": 145,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-10T07:37:46.936000Z",
+  "utilization": 0.19,
+  "resets_at": 1794848400
+ },
+ "last": {
+  "at": "2026-11-10T08:17:17.704000Z",
+  "utilization": 0.2,
+  "resets_at": 1794848400
+ },
+ "delta": 0.010000000000000009,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-10T08:17:27.118554Z"
+}
