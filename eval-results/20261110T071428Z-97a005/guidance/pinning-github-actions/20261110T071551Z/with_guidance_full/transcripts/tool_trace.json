@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DcU4mNWqxEhcvdKfbW4Qm9",
+      "name": "Bash",
+      "input": "cat REFS.txt; ls -a . .github/workflows 2>&1 | head -30; git log --oneline -3",
+      "input_chars": 77,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DcU4mNWqxEhcvdKfbW4Qm9",
+      "is_error": false,
+      "output": "# `git ls-remote --tags <url>`, captured for this offline sandbox.\n\n## https://github.com/actions/checkout\nbd4aa0d1a48d757a118d3fe9d4f547b843d5a2ca\trefs/tags/v4.2.2\n9459ac0c7a9a78b5ac15c6e471312de28ff87692\trefs/tags/v4.2.2^{}\n\n## https://github.com/actions/setup-node\n87788e64c72e96ca086359b8905b54f0...",
+      "output_chars": 698,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016NPSfH2upSN862H3EHi3si",
+      "name": "Bash",
+      "input": "cat .github/workflows/ci.yml; ls .github .github/workflows/actions.lock 2>&1; cat package.json",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016NPSfH2upSN862H3EHi3si",
+      "is_error": false,
+      "output": "name: ci\non:\n  push:\n    branches: [main]\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@d5e50132c4d90c4ae953c821b3d1d9eaa7242950\n      - run: npm ci && npm test\nls: cannot access '.github/workflows/actions.lock': No such file or dire...",
+      "output_chars": 437,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019MkSmueFurW9ACuZYCiL3B",
+      "name": "Bash",
+      "input": "cat > .github/workflows/lint.yml <<'EOF'\nname: lint\non:\n  pull_request:\npermissions:\n  contents: read\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@9459ac0c7a9a78b...",
+      "input_chars": 610,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019MkSmueFurW9ACuZYCiL3B",
+      "is_error": false,
+      "output": "ok",
+      "output_chars": 2,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
