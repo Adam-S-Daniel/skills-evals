@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QY6ELABeqtCvX5DtFhbArC",
+      "name": "Bash",
+      "input": "git status --short && git log --oneline -5 && find . -path ./.git -prune -o -type f -print | head -50",
+      "input_chars": 101,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QY6ELABeqtCvX5DtFhbArC",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n608ae7e initial commit\n./.idea\n./.bashrc\n./.gitconfig\n./.github/workflows/sync-labels.yml\n./.zprofile\n./README.md\n./.ripgreprc\n./scripts/sync-labels.sh\n./.profil...",
+      "output_chars": 1501,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V1hqzRTnnaoN4cKSv9KuFZ",
+      "name": "Bash",
+      "input": "cat .github/workflows/sync-labels.yml scripts/sync-labels.sh labels.txt README.md; echo ----; cat .gh/replay/run-view-61003.log; cat .gh/replay/api/repos/example-org/example-labels/check-runs/91003/an...",
+      "input_chars": 237,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V1hqzRTnnaoN4cKSv9KuFZ",
+      "is_error": false,
+      "output": "name: Sync labels\n\non:\n  schedule:\n    - cron: \"0 3 * * *\"\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  sync:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3\n      - name: Sync labels\n        env:\n          GH_TOKEN: <reda...",
+      "output_chars": 4016,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LcdRCGon5oELp7pzGk2MqZ",
+      "name": "Bash",
+      "input": "cat .gh/replay/run-view-6100{1,2}.log; jq -r '.[]|\"\\(.databaseId) \\(.conclusion) \\(.createdAt) \\(.headSha)\"' .gh/replay/run-list.json 2><path>; ls test* tests 2><path>; gh --version 2>&1 | head -1; wh...",
+      "input_chars": 215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LcdRCGon5oELp7pzGk2MqZ",
+      "is_error": false,
+      "output": "sync\tSync labels\t2026-01-05T03:00:06 Run bash scripts/sync-labels.sh\nsync\tSync labels\t2026-01-05T03:00:06 cannot use `--jq` without specifying `--json`\nsync\tSync labels\t2026-01-05T03:00:07 No repositories found in example-org; nothing to sync.\nsync\tSync labels\t2026-01-06T03:00:06 Run bash scripts/sy...",
+      "output_chars": 805,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014LR6gHiy1zvv7tPvWPGaAj",
+      "name": "Bash",
+      "input": "<path> repo list example-org --limit 1 --jq '.[].nameWithOwner'; echo \"exit=$?\"; bash -c 'set -euo pipefail; mapfile -t R < <(false); echo \"survived set -e, count=${#R[@]}\"'",
+      "input_chars": 184,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014LR6gHiy1zvv7tPvWPGaAj",
+      "is_error": false,
+      "output": "To get started with GitHub CLI, please run:  gh auth login\nAlternatively, populate the GH_TOKEN environment variable with a GitHub API authentication token.\nexit=4\nsurvived set -e, count=0",
+      "output_chars": 188,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014YetEQBVnri7CBuvBLFyHg",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/sync-labels.sh'\ns=open(p).read()\nold='''mapfile -t REPOS < <(gh repo list \"$ORG\" --limit 200 --jq '.[].nameWithOwner')\nmapfile -t LABELS < \"$root/labels.txt\"\n\nif [ \"${#REP...",
+      "input_chars": 3075,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014YetEQBVnri7CBuvBLFyHg",
+      "is_error": false,
+      "output": "ok   - syncs when repositories are listed\nok   - creates every label on every repository\nok   - fails when no repositories are listed\nok   - creates no labels when no repositories are listed\nall passed\nexit=0\n--- negative control: original script\nok   - syncs when repositories are listed\nFAIL - crea...",
+      "output_chars": 693,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
