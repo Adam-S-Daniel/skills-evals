@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YBPmJR2trzNx2v6PMMyvXk",
+      "name": "Bash",
+      "input": "git ls-files | head -100 && ls -la vendor issues 2>&1; cat vendor/releases.json | head -100",
+      "input_chars": 91,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YBPmJR2trzNx2v6PMMyvXk",
+      "is_error": false,
+      "output": ".example-cli/settings.json\n.github/workflows/ci.yml\nAGENTS.md\nREADME.md\nhooks/session-start.sh\nscripts/check.sh\nvendor/RELEASES.md\nvendor/releases.json\nls: cannot access 'issues': No such file or directory\nvendor:\ntotal 16\ndrwxr-xr-x 2 root root 4096 Nov  8 18:32 .\ndrwxr-xr-x 9 root root 4096 Nov 10...",
+      "output_chars": 899,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UaKJFvG9ooYTddBQjPVmQr",
+      "name": "Bash",
+      "input": "for f in vendor/RELEASES.md .example-cli/settings.json .github/workflows/ci.yml AGENTS.md README.md hooks/session-start.sh scripts/check.sh; do echo \"=== $f\"; cat \"$f\"; done; git log --oneline | head",
+      "input_chars": 199,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UaKJFvG9ooYTddBQjPVmQr",
+      "is_error": false,
+      "output": "=== vendor/RELEASES.md\n# ExampleCLI release notes\n\n## v4.3.0\n\n[https://github.com/example-vendor/example-cli/releases/tag/v4.3.0](https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n\n- `example-cli check` now exits 2 instead of 1 on configuration errors; scripts written against 4.2.0 ...",
+      "output_chars": 2732,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WYNpPzcy1iZoVfYDuDN7hB",
+      "name": "Bash",
+      "input": "mkdir -p issues && cat > issues/01-session-start-hook-misses-fork-sessions.md <<'EOF'\n# SessionStart hook does not fire for forked sessions on ExampleCLI 4.2.0+\n\n## Summary\n\nExampleCLI v4.2.0 (publish...",
+      "input_chars": 4747,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WYNpPzcy1iZoVfYDuDN7hB",
+      "is_error": false,
+      "output": "issues/01-session-start-hook-misses-fork-sessions.md:1:4.2.0+\nissues/01-session-start-hook-misses-fork-sessions.md:7:4.1.0 that list o\nissues/01-session-start-hook-misses-fork-sessions.md:37:4.2.0\nissues/02-check-sh-config-error-exit-code.md:1:4.3.0+ (exit code cha\nissues/02-check-sh-config-error-ex...",
+      "output_chars": 405,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011jpaNCgZcMm8q7HcdBF3pC",
+      "name": "Bash",
+      "input": "cd <path> && python3 - <<'EOF'\nimport re\np='01-session-start-hook-misses-fork-sessions.md'; s=open(p).read()\ns=s.replace(\"# SessionStart hook does not fire for forked sessions on ExampleCLI 4.2.0+\",\"#...",
+      "input_chars": 1237,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011jpaNCgZcMm8q7HcdBF3pC",
+      "is_error": false,
+      "output": "==> 01-session-start-hook-misses-fork-sessions.md <==\n# SessionStart hook does not fire for forked sessions on ExampleCLI 4.2.0+ (4.2.0 published 2026-07-14T09:47Z)\n\n==> 02-check-sh-config-error-exit-code.md <==\n# scripts/check.sh misses configuration errors on ExampleCLI 4.3.0+ (published 2026-08-2...",
+      "output_chars": 728,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
