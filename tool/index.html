@@ -825,7 +825,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       colCost: "List-price cost",
       colPoints: "Points",
       judgeRan: (a, b) => a + " vs " + b,
-      judgeNotNeeded: "not needed",
+      judgeSkipped: (who, a, b, m) => "skipped: " + who + " passed more checks (" + a + " of " + m + " vs " + b + " of " + m + ")",
+      judgeSkippedBare: "skipped",
+      judgeWithSkill: "the version with the skill",
+      judgeWithSection: "the full-guidance version",
+      judgeNotRecorded: "not recorded",
+      judgeNotRun: "not run",
       bareHeading: "Bare model vs the full setup",
       bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
       colBare: "Bare",
@@ -3130,6 +3135,21 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const pick = (list) => (Array.isArray(list) ? list : []).filter((r) => r && r.skill === key).sort((a, b) => a.fired_at < b.fired_at ? 1 : -1);
     return { runs: pick(e.runs), bare: pick(e.bare_runs) };
   }
+  function judgeCell(r) {
+    const num = (x) => typeof x === "number" && isFinite(x);
+    if (num(r.with_judge) && num(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
+    const wins = num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill;
+    const counted = wins && num(r.checks) && r.checks > 0;
+    const skipped = counted ? () => STRINGS.judgeSkipped(
+      typeof r.skill === "string" && r.skill.startsWith("guidance/") ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill,
+      fmtCount(r.with_skill),
+      fmtCount(r.without_skill),
+      fmtCount(r.checks)
+    ) : () => STRINGS.judgeSkippedBare;
+    if (r.judge === "not run") return STRINGS.judgeNotRun;
+    if (typeof r.judge === "string" && r.judge.startsWith("skipped")) return skipped();
+    return wins ? skipped() : STRINGS.judgeNotRecorded;
+  }
   function runsTable(runs, refMs) {
     if (!runs.length) return h("p", { class: "note" }, STRINGS.runsNone);
     const points = runs.some((r) => typeof r.meter_points === "number");
@@ -3140,7 +3160,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + " (" + share(r.with_share) + ")" },
       { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + " (" + share(r.without_share) + ")" },
       { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
-      { label: STRINGS.colJudge, sort: (r) => r.judge, cell: (r) => typeof r.with_judge === "number" && typeof r.without_judge === "number" ? STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1)) : STRINGS.judgeNotNeeded },
+      { label: STRINGS.colJudge, sort: (r) => r.judge, cell: judgeCell },
       { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd2(r.cost_usd) }
     ];
     if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });

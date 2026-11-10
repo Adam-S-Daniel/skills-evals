@@ -18,6 +18,7 @@ import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/privat
 import { makeExt, attentionRows, capUse, routineHealth } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
+import { judgeCell } from '../src/views/subject.js';
 import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
@@ -616,6 +617,25 @@ await test('building into decisive toggles between percent and run counts', () =
 await test('no building into decisive panel when no subject has run_utility', () => {
   ok(conversionView(doc({ skills: [{ name: 'a' }] })) === null, 'null view');
   ok(!textOf(renderRoute(doc({ skills: [{ name: 'a' }] }), { name: 'summary' }, { ext: makeExt(fakeDash({})) })).includes('Building into decisive'), 'no heading');
+});
+
+await test('the judge cell says why a judge was skipped, with both check counts', () => {
+  const run = (o) => ({ skill: 'example-skill', with_skill: 4, without_skill: 1, checks: 4, with_judge: null, without_judge: null, ...o });
+  eq(judgeCell(run({})), 'skipped: the version with the skill passed more checks (4 of 4 vs 1 of 4)');
+  eq(judgeCell(run({ skill: 'guidance/example-section', with_skill: 3, without_skill: 1 })), 'skipped: the full-guidance version passed more checks (3 of 4 vs 1 of 4)');
+  eq(judgeCell(run({ with_skill: 7.333333333333333, without_skill: 5, checks: 12 })), 'skipped: the version with the skill passed more checks (7.3 of 12 vs 5 of 12)');
+  eq(judgeCell(run({ checks: null })), 'skipped');
+  // The row's judge field decides what may be claimed.
+  eq(judgeCell(run({ judge: 'skipped: checks decided' })), 'skipped: the version with the skill passed more checks (4 of 4 vs 1 of 4)');
+  eq(judgeCell(run({ judge: 'skipped: checks decided', skill: 'guidance/example-section' })), 'skipped: the full-guidance version passed more checks (4 of 4 vs 1 of 4)');
+  eq(judgeCell(run({ judge: 'skipped: checks decided', with_skill: 2, without_skill: 2 })), 'skipped');
+  eq(judgeCell(run({ judge: 'not run' })), 'not run');
+  eq(judgeCell(run({ judge: 'not run', with_skill: 1, without_skill: 4 })), 'not run');
+  eq(judgeCell(run({ judge: 'ran', with_judge: 7, without_judge: 8 })), '7.0 vs 8.0');
+  eq(judgeCell(run({ with_skill: 4, without_skill: 4 })), 'not recorded');
+  eq(judgeCell(run({ with_skill: 3, without_skill: 4 })), 'not recorded');
+  eq(judgeCell(run({ with_judge: 7.25, without_judge: 9 })), '7.3 vs 9.0');
+  eq(judgeCell(run({ with_judge: 6, without_judge: 6, with_skill: 4, without_skill: 4 })), '6.0 vs 6.0');
 });
 
 for (const f of failures) console.log('FAIL ' + f);
