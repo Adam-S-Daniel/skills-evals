@@ -6423,10 +6423,15 @@ def _is_skipped(block) -> bool:
 
 #: The line under a report's table that says when the judge runs.
 JUDGE_RULE_LINE = (
-    "Judge: scored 0 to 10. The arms are compared in pairs on checks passed. "
-    "When the arm with the subject passes more checks than its partner, the "
-    "checks already decide the pair and the judge is skipped for both arms; "
-    "a tie or a loss gets both arms judged.")
+    "Judge: when the version with the skill or guidance passes more checks "
+    "than its partner, the judge isn't needed and both are skipped. On a tie "
+    "or a loss, the judge scores both from 0 to 10.")
+
+#: How a skip cell names the version that passed more checks, by its mode
+#: (a guidance arm) or its name (a skill arm).
+_WINNER_LABELS = {"full": "the full-guidance version",
+                  "section": "the section-alone version",
+                  "with_skill": "the version with the skill"}
 
 
 def _checks_passed(trials: list[dict]) -> tuple[int, int]:
@@ -6440,14 +6445,15 @@ def _checks_passed(trials: list[dict]) -> tuple[int, int]:
 def _skip_reasons(pairs: list[tuple]) -> dict[str, str]:
     """The judge cell of each arm in a pair the checks decided, by arm name:
     which arm passed more checks, with both counts. `pairs` holds
-    `(with name, with trials, without name, without trials)`."""
+    `(with name, with trials, without name, without trials, with label)`;
+    the label is a `_WINNER_LABELS` key, falling back to the arm's name."""
     reasons = {}
-    for with_name, with_trials, without_name, without_trials in pairs:
+    for with_name, with_trials, without_name, without_trials, label in pairs:
         won, with_total = _checks_passed(with_trials)
         lost, without_total = _checks_passed(without_trials)
         reasons[with_name] = reasons[without_name] = (
-            f"skipped: {with_name} passed more checks, "
-            f"{won}/{with_total} vs {lost}/{without_total}")
+            f"skipped: {_WINNER_LABELS.get(label, with_name)} passed more "
+            f"checks ({won} of {with_total} vs {lost} of {without_total})")
     return reasons
 
 
@@ -6458,7 +6464,8 @@ def _skill_skip_reasons(arms: list[dict], trials_of) -> dict[str, str]:
     if "with" not in by_role or "without" not in by_role:
         return {}
     w, o = by_role["with"], by_role["without"]
-    return _skip_reasons([(w["arm"], trials_of(w), o["arm"], trials_of(o))])
+    return _skip_reasons([(w["arm"], trials_of(w), o["arm"], trials_of(o),
+                           w["arm"])])
 
 
 def _judge_cell(block: dict | None, reason: str | None = None) -> str:
@@ -7822,7 +7829,7 @@ def _guidance_report_pairs(arm_summaries: list[dict]) -> tuple[dict, list]:
         if all(len(found) == 1 for found in named.values()):
             w, o = named["with"][0], named["without"][0]
             pair_of[w["arm"]] = pair_of[o["arm"]] = GUIDANCE_PAIR_LABELS[key]
-            pairs.append((w["arm"], [w], o["arm"], [o]))
+            pairs.append((w["arm"], [w], o["arm"], [o], w["mode"]))
     return pair_of, pairs
 
 

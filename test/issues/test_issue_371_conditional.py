@@ -144,7 +144,7 @@ class GainSkipsTests(PairCase):
         # Never `-`, `error` or a number in the judge column.
         row = [line for line in self.report().splitlines()
                if line.startswith("| with_skill |")][0]
-        self.assertIn("| skipped: with_skill passed more checks, 6/6 vs 3/6 |", row)
+        self.assertIn("| skipped: the version with the skill passed more checks (6 of 6 vs 3 of 6) |", row)
 
     def test_the_ingester_accepts_every_summary_of_a_skipped_run(self):
         self.gain(3)
@@ -406,8 +406,8 @@ class StatisticsAndReportTests(unittest.TestCase):
              "objective_checks": [{"id": "a", "passed": True}]},
             {"arm": "without_skill", "judge": None, "objective_checks": []}])
         lines = report.splitlines()
-        self.assertIn("| with_skill | 1/1 | skipped: with_skill passed more "
-                      "checks, 1/1 vs 0/0 |", lines[-4])
+        self.assertIn("| with_skill | 1/1 | skipped: the version with the skill "
+                      "passed more checks (1 of 1 vs 0 of 0) |", lines[-4])
         self.assertIn("| without_skill | - | - |", lines[-3])
         self.assertEqual(lines[-1], run_eval.JUDGE_RULE_LINE)
 
@@ -452,7 +452,8 @@ class StatisticsAndReportTests(unittest.TestCase):
         self.assertIn("| none | section alone |", rows["wo_none"])
         self.assertIn("| 1/4 | 2.0 |", rows["w_section"])
         self.assertIn("| 1/4 | 2.3 |", rows["wo_none"])
-        skipped = "skipped: w_full passed more checks, 4/4 vs 1/4"
+        skipped = ("skipped: the full-guidance version passed more checks "
+                   "(4 of 4 vs 1 of 4)")
         for name in ("w_full", "w_minus"):
             with self.subTest(arm=name):
                 self.assertIn("| in context |", rows[name])
