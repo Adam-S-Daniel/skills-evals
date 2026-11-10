@@ -1,0 +1,54 @@
+{
+ "schema_version": 1,
+ "run_id": "20261110T081040Z-55cbf3",
+ "mode": "improve",
+ "target": "vendor-release-impact-issues",
+ "exit_code": 0,
+ "outcome": "accepted",
+ "stage_reached": "candidate",
+ "trial_summaries": 24,
+ "agent_calls": 24,
+ "judge_calls": 0,
+ "agent_usd": 2.4883146000000003,
+ "judge_usd": 0,
+ "guard_usd": 0,
+ "usd_unpriced_trials": 0,
+ "sides": {
+  "baseline": {
+   "trials": 12,
+   "usd": 1.3179880000000002
+  },
+  "candidate": {
+   "trials": 12,
+   "usd": 1.1703265999999999
+  }
+ },
+ "proposal": {
+  "calls": 1,
+  "usd": 0.12502580000000002,
+  "input_tokens": 2,
+  "output_tokens": 1257
+ },
+ "trigger_calls": null,
+ "models": {
+  "arm": "claude-sonnet-5-5",
+  "proposal": "claude-fable-5-2"
+ },
+ "busy_seconds": 954.0,
+ "span_seconds": 917.361,
+ "snapshots": 24,
+ "omitted": 0,
+ "first": {
+  "at": "2026-11-10T08:12:37.253000Z",
+  "utilization": 0.2,
+  "resets_at": 1794848400
+ },
+ "last": {
+  "at": "2026-11-10T08:27:54.614000Z",
+  "utilization": 0.2,
+  "resets_at": 1794848400
+ },
+ "delta": 0.0,
+ "delta_reason": "measured",
+ "ended_at": "2026-11-10T08:28:44.138654Z"
+}
