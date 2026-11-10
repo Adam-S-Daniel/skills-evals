@@ -1,0 +1,350 @@
+{
+  "skill": "tool-powershell",
+  "arm": "without_skill",
+  "timestamp": "20261110T215148Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.11331680000000001,
+    "num_turns": 3,
+    "duration_ms": 15171,
+    "usage": {
+      "input_tokens": 6,
+      "cache_creation_input_tokens": 37964,
+      "cache_read_input_tokens": 73948,
+      "output_tokens": 1100,
+      "output_tokens_details": {
+        "thinking_tokens": 194
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 37964
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 463,
+          "cache_read_input_tokens": 37311,
+          "cache_creation_input_tokens": 653,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 653,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "exit-code-read",
+      "passed": false,
+      "detail": "no such file: .pwsh-invocations.log \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "no-blind-third-try",
+      "passed": false,
+      "detail": "no such file: .pwsh-invocations.log \u2014 this check reads it as evidence, so an absent file fails it"
+    },
+    {
+      "id": "reboot-code-accepted",
+      "passed": true,
+      "detail": "scripts/install-agent.ps1 matches"
+    },
+    {
+      "id": "install-untouched",
+      "passed": true,
+      "detail": "scripts/install-agent.ps1 matches"
+    },
+    {
+      "id": "reply-names-cause",
+      "passed": true,
+      "detail": "transcript matches"
+    },
+    {
+      "id": "stand-in-untouched",
+      "passed": true,
+      "detail": "unchanged (bin/pwsh)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Diagnosis",
+        "score": 8,
+        "rationale": "The agent correctly identified 3010 as ERROR_SUCCESS_REBOOT_REQUIRED (success with reboot pending) and tied it to the silent exit 1 via the stub, though the transcript summary doesn't show the exact order of reading the exit code versus editing, and it shows no path or flag edit."
+      },
+      {
+        "name": "Fix",
+        "score": 10,
+        "rationale": "The script now checks $LASTEXITCODE, exits 0 for 0 and 3010 (and sensibly 1641), propagates real failures with a message, and the reply clearly names msiexec's 3010 return as the cause and reports verification output."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The diff only appends lines after the msiexec call, leaving the install command, flags, and $Package path untouched."
+      }
+    ],
+    "overall": 9.3
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.322 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 6,
+      "output_tokens": 1100,
+      "cache_read_input_tokens": 73948,
+      "cache_creation_input_tokens": 37964,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "installer-exit-3010",
+  "trial": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "e1e558834819a3d0bb074e6cf22b2a60d391c242573fcd51cb342bf621a03e3b",
+  "judge_conditional": false,
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261110T214848Z-21cbbf",
+    "session_id": "cse_01SphsQBc7Kea8cC2Une7d1Y",
+    "harness_commit": "4ebb62af6b5a4946be032981f18060f9c3e9cb07",
+    "cli_version": "2.1.322 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-10T21:51:48Z",
+    "ended_at": "2026-11-10T21:52:59Z",
+    "meter": {
+      "snapshot_count": 6,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-10T21:51:50.631Z",
+      "to_at": "2026-11-10T21:52:59.657Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.29,
+          "to": 0.29,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQBc7Kea8cC2Une7d1Y",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.2794036,
+      "agent_usd": 0.2067042,
+      "judge_usd": 0.0726994,
+      "guard_usd": 0,
+      "metered_usd": 0.2555228,
+      "last_agent_call_usd": 0.042515700000000003,
+      "calls_with_cost": 6,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-10T21:51:48Z",
+      "ended_at": "2026-11-10T21:52:10Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-10T21:51:48Z",
+          "ended_at": "2026-11-10T21:52:04Z",
+          "duration_ms": 16409,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-10T21:52:04Z",
+          "ended_at": "2026-11-10T21:52:10Z",
+          "duration_ms": 6104,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-10T21:51:50.631Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.29,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-10T21:52:10.504Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.29,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 16409,
+        "num_turns": 3,
+        "cost_usd": 0.11331680000000001,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 6,
+            "output_tokens": 1100,
+            "cache_read_input_tokens": 73948,
+            "cache_creation_input_tokens": 37964,
+            "cost_usd": 0.11331680000000001
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 37964,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 6104,
+        "num_turns": 1,
+        "cost_usd": 0.0264428,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 487,
+            "cache_read_input_tokens": 649,
+            "cache_creation_input_tokens": 3313,
+            "cost_usd": 0.0264428
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3313,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
