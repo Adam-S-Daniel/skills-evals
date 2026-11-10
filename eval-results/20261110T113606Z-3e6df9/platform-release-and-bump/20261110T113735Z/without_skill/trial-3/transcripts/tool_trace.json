@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Mq46f9ETuwSNn5vhfXfwub",
+      "name": "Bash",
+      "input": "git status && ls -la && grep -rn \"0\\.1\\.1[0-9][0-9]\\|platform\" --include=*.json --include=*.toml --include=*.yaml --include=*.yml --include=*.lock -l . 2><path> | grep -v node_modules | head -30",
+      "input_chars": 197,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Mq46f9ETuwSNn5vhfXfwub",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\ntotal ...",
+      "output_chars": 3313,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QZvCs3D3ufhn4DTfSJCeMi",
+      "name": "Bash",
+      "input": "cat PLATFORM_REF platform.lock Gemfile Gemfile.lock README.md; ls bin .cms-platform; cat .github/workflows/platform-bump.yml .github/workflows/platform-pin-consistency.yml; cat .gh-invocations.log; fi...",
+      "input_chars": 304,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QZvCs3D3ufhn4DTfSJCeMi",
+      "is_error": false,
+      "output": "tag: v0.1.104\ncommit: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\nplatform_repo: Adam-S-Daniel/cms-platform\nplatform_ref: v0.1.103\nsource \"https://example.com/gems\"\ngem \"cms-platform-theme\", git: \"https://github.com/Adam-S-Daniel/cms-platform\", tag: \"v0.1.103\"\nGIT\n  remote: https://github.com/Adam-S-Da...",
+      "output_chars": 5621,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XWvKJvKiASWVXQPdagf8YG",
+      "name": "Bash",
+      "input": "cat .gh/replay/release-view-v0.1.104.json; echo; cat .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/ref*<path>*.json; echo; cat bin/gh | head -40; ls -R .cms-platform/scripts .cms-platform/e2e | ...",
+      "input_chars": 353,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XWvKJvKiASWVXQPdagf8YG",
+      "is_error": false,
+      "output": "{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\n\n{\n  \"ref\": \"refs/tags/v0.1.104\",\n  \"object\": {\n    \"type\": \"commit\",\n    \"sha\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n  }\n}\n{\n  \"ref\": \"refs/tags/v0.1.104\",...",
+      "output_chars": 7080,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0145Wc9FUeePYEJjxkPtMVsk",
+      "name": "Bash",
+      "input": "ls .cms-platform/examples/site .cms-platform/examples/site/.github; for f in .cms-platform/examples/site/.github/workflows/*.yml; do b=$(basename $f); echo \"== $b\"; if [ -f .github/workflows/$b ]; the...",
+      "input_chars": 340,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0145Wc9FUeePYEJjxkPtMVsk",
+      "is_error": false,
+      "output": ".cms-platform/examples/site:\n\n.cms-platform/examples/site/.github:\nworkflows\n== cms-delete-published-preview.yml\nMISSING\n== cms-editorial-workflow.yml\n== cms-media-roundtrip.yml\n== cms-preview-loops.yml\n== cms-publish-loop-host.yml\n== cms-publish-loop-preview.yml\n== cms-publish-loop-prod.yml\n== cms-...",
+      "output_chars": 922,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SEuQ6ru67oRsUg1m8HvATL",
+      "name": "Bash",
+      "input": "cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml; cat .github/workflows/old-preview-cleanup.yml",
+      "input_chars": 129,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SEuQ6ru67oRsUg1m8HvATL",
+      "is_error": false,
+      "output": "# Thin caller \u2014 copied into a site repo as\n# `.github/workflows/cms-delete-published-preview.yml`. Owns the\n# workflow_dispatch trigger + run-name; delegates the preview-env\n# delete-published loop to the platform's reusable workflow.\nname: CMS Delete Published \u2014 Preview Env\nrun-name: \"${{ format('m...",
+      "output_chars": 3342,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01758JrhFJrUK9X6AezBXntP",
+      "name": "Bash",
+      "input": "git ls-files | xargs grep -l 'v0\\.1\\.103' | xargs sed -i -E '<path>' && sed -i -E 's/revision: 1{40}/revision: e76901db4beaa3d2e4ad88b7f554cfe89fffc20b/; s/\\(0\\.1\\.103\\)/(0.1.104)/' Gemfile.lock && gi...",
+      "input_chars": 318,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01758JrhFJrUK9X6AezBXntP",
+      "is_error": false,
+      "output": " .github/actions/local/action.yml                 | 2 +-\n .github/workflows/cms-editorial-workflow.yml     | 4 ++--\n .github/workflows/cms-media-roundtrip.yml        | 4 ++--\n .github/workflows/cms-preview-loops.yml          | 4 ++--\n .github/workflows/cms-publish-loop-host.yml      | 4 ++--\n .githu...",
+      "output_chars": 1654,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E6QmaPuAmYUqSnKJAqEauJ",
+      "name": "Bash",
+      "input": "git status && ls -a && grep -rn \"0\\.1\\.10[0-9]\\|platform\" --include=* -I . --exclude-dir=.git --exclude-dir=node_modules | head -50",
+      "input_chars": 131,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E6QmaPuAmYUqSnKJAqEauJ",
+      "is_error": false,
+      "output": "On branch master\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.bash_profile\n\t.bashrc\n\t.gitconfig\n\t.gitmodules\n\t.idea\n\t.mcp.json\n\t.profile\n\t.ripgreprc\n\t.vscode\n\t.zprofile\n\t.zshrc\n\nnothing added to commit but untracked files present (use \"git add\" to track)\n.\n..\n....",
+      "output_chars": 6204,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019mkgKmSHCsmBCfdhuJ3rcH",
+      "name": "Bash",
+      "input": "grep -rIln \"0\\.1\\.103\" . --exclude-dir=.git 2><path>; echo ---; cat PLATFORM_REF Gemfile.lock platform.lock; echo ---; ls -la .cms-platform .claude bin; cat README.md | head -60; git log --oneline | h...",
+      "input_chars": 206,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019mkgKmSHCsmBCfdhuJ3rcH",
+      "is_error": false,
+      "output": "./platform.lock\n./Gemfile\n./Gemfile.lock\n./.github/actions/local/action.yml\n./.github/workflows/cms-scheduled-publish-loop.yml\n./.github/workflows/deploy-preview.yml\n./.github/workflows/cms-media-roundtrip.yml\n./.github/workflows/platform-bump.yml\n./.github/workflows/cms-publish-loop-host.yml\n./.git...",
+      "output_chars": 1759,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BBoQDVoVSbg7Dhbzum2AYY",
+      "name": "Bash",
+      "input": "git ls-files | head -50; ls -R .cms-platform | head -30; cat .gitmodules; git log -1 --format=%B -- PLATFORM_REF",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BBoQDVoVSbg7Dhbzum2AYY",
+      "is_error": false,
+      "output": ".cms-platform/e2e/node_modules/yaml/LICENSE\n.cms-platform/e2e/node_modules/yaml/dist/compose/compose-collection.js\n.cms-platform/e2e/node_modules/yaml/dist/compose/compose-doc.js\n.cms-platform/e2e/node_modules/yaml/dist/compose/compose-node.js\n.cms-platform/e2e/node_modules/yaml/dist/compose/compose...",
+      "output_chars": 3461,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012suukrjk1bamFi47be9Ci5",
+      "name": "Bash",
+      "input": "ls .cms-platform/scripts .cms-platform/examples/site -R | head; git ls-files | grep -v node_modules",
+      "input_chars": 99,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012suukrjk1bamFi47be9Ci5",
+      "is_error": false,
+      "output": ".cms-platform/examples/site:\n\n.cms-platform/scripts:\ncheck-platform-pin-consistency.js\nstale-platform-refs.js\nverify-consumer-pins.sh\n.cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml\n.cms-platform/examples/site/.github/workflows/cms-editorial-workflow.yml\n.cms-platform/...",
+      "output_chars": 2008,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SSyNH6EzFMBjC5qg1hTYeX",
+      "name": "Bash",
+      "input": "cat .gh/replay/api/repos/Adam-S-Daniel/cms-platform/git/ref/tags/v0.1.104.json .gh/replay/release-view-v0.1.104.json; echo; cat .cms-platform/scripts/verify-consumer-pins.sh; head -80 .cms-platform/sc...",
+      "input_chars": 239,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SSyNH6EzFMBjC5qg1hTYeX",
+      "is_error": false,
+      "output": "{\n  \"ref\": \"refs/tags/v0.1.104\",\n  \"object\": {\n    \"type\": \"commit\",\n    \"sha\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n  }\n}\n{\n  \"tagName\": \"v0.1.104\",\n  \"isDraft\": false,\n  \"isPrerelease\": false,\n  \"targetCommitish\": \"e76901db4beaa3d2e4ad88b7f554cfe89fffc20b\"\n}\n\n#!<path> bash\n# THIS SCRIPT'S EX...",
+      "output_chars": 14570,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PNhTCaZe1rSYbbUNPWmZnx",
+      "name": "Bash",
+      "input": "files=$(grep -rIl \"0\\.1\\.103\" platform.lock Gemfile Gemfile.lock .github) && sed -i 's/v0\\.1\\.103/v0.1.104/g' $files && sed -i 's/cms-platform-theme (0\\.1\\.103)/cms-platform-theme (0.1.104)/; s/revisi...",
+      "input_chars": 465,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PNhTCaZe1rSYbbUNPWmZnx",
+      "is_error": true,
+      "output": "Exit code 1\n .github/actions/local/action.yml                 | 2 +-\n .github/workflows/cms-editorial-workflow.yml     | 4 ++--\n .github/workflows/cms-media-roundtrip.yml        | 4 ++--\n .github/workflows/cms-preview-loops.yml          | 4 ++--\n .github/workflows/cms-publish-loop-host.yml      | 4 ...",
+      "output_chars": 2712,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LmPkrdqUeEwAvqeoro6gX3",
+      "name": "Bash",
+      "input": "cat .cms-platform/examples/site/.github/workflows/cms-delete-published-preview.yml; echo =====; cat .github/workflows/old-preview-cleanup.yml; echo ====; git stash -q && bash .cms-platform/scripts/ver...",
+      "input_chars": 280,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LmPkrdqUeEwAvqeoro6gX3",
+      "is_error": false,
+      "output": "# Thin caller \u2014 copied into a site repo as\n# `.github/workflows/cms-delete-published-preview.yml`. Owns the\n# workflow_dispatch trigger + run-name; delegates the preview-env\n# delete-published loop to the platform's reusable workflow.\nname: CMS Delete Published \u2014 Preview Env\nrun-name: \"${{ format('m...",
+      "output_chars": 4095,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
