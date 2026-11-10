@@ -49,7 +49,9 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
     of it is judged and each scored trial's `summary.json` records
     `"judge": {"status": "skipped", "reason": "objective-decided"}` (an arm
     aggregate's `aggregate.judge` carries it with `n` and `errors` 0, and
-    reports print `skipped (objective-decided)`); a tie, a loss or a rate
+    reports print `skipped: <the version with the subject> passed more checks (P of T vs P of T)`, a
+    guidance report's Pair column names each arm's pair, and a line under
+    the table states this rule); a tie, a loss or a rate
     that is undefined (an arm with no scored check) judges every scored trial
     of both arms, never some trials of a pair and not others. A single-arm
     run, `--judge always`, and a fixture whose `judge.mode` is not absolute
