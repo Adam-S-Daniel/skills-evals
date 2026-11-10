@@ -1,0 +1,417 @@
+{
+  "skill": "debug-github-workflows",
+  "arm": "without_skill",
+  "timestamp": "20261110T063129Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.08820270000000002,
+    "num_turns": 10,
+    "duration_ms": 47554,
+    "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 14218,
+      "cache_read_input_tokens": 318717,
+      "output_tokens": 2075,
+      "output_tokens_details": {
+        "thinking_tokens": 347
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 14218
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 601,
+          "cache_read_input_tokens": 38976,
+          "cache_creation_input_tokens": 410,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 410,
+            "ephemeral_1h_input_tokens": 0
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "run-log-read-without-writes",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "secret-names-listed",
+      "passed": true,
+      "detail": ".gh-invocations.log matches"
+    },
+    {
+      "id": "workflow-reads-the-existing-secret",
+      "passed": true,
+      "detail": ".github/workflows/release-notes.yml matches"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "permissions-stay-read-only",
+      "passed": true,
+      "detail": ".github/workflows/release-notes.yml matches"
+    },
+    {
+      "id": "reply-names-both-secrets",
+      "passed": true,
+      "detail": "transcript matches"
+    },
+    {
+      "id": "everything-else-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/workflows/docs.yml, CHANGES.md, README.md, scripts/render_notes.py)"
+    },
+    {
+      "id": "instrument-unchanged",
+      "passed": true,
+      "detail": "unchanged (.gh/replay/api/repos/example-org/example-docs.json, .gh/replay/api/repos/example-org/example-docs/actions/runs.json, .gh/replay/api/repos/example-org/example-docs/actions/runs/43001.json, .gh/replay/api/repos/example-org/example-docs/actions/runs/43001/jobs.json, .gh/replay/api/repos/example-org/example-docs/actions/runs/43002.json, .gh/replay/api/repos/example-org/example-docs/actions/runs/43002/jobs.json, .gh/replay/api/repos/example-org/example-docs/actions/secrets.json, .gh/replay/api/repos/example-org/example-docs/check-runs/93001/annotations.json, .gh/replay/api/repos/example-org/example-docs/check-runs/93002/annotations.json, .gh/replay/auth-status.txt, .gh/replay/run-list.json, .gh/replay/run-view-43001.json, .gh/replay/run-view-43001.log, .gh/replay/run-view-43002.json, .gh/replay/run-view-43002.log, .gh/replay/secret-list.txt, .gh/replay/workflow-list.json, bin/gh)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "correctness",
+        "score": 7,
+        "rationale": "The fix is correct: the GH_TOKEN line now reads secrets.RELEASE_NOTES_PAT, and the `contents: read` permission is unchanged. The reply ties the failure to the empty GH_TOKEN in run 43002, gh's 'set the GH_TOKEN environment variable' message and exit code 4. It lists both existing secrets and does not recommend GITHUB_TOKEN or github.token. Deductions: it never mentions run 43001, which failed the same way. It also offers a fallback of creating a RELEASE_NOTES_TOKEN secret and reverting the fix, and it raises an unverified doubt about the PAT's permissions. Neither says a secret must be created or blames scopes, so no cap applies. Both still weaken a diagnosis the evidence already settles."
+      },
+      {
+        "name": "restraint",
+        "score": 9,
+        "rationale": "The only workflow change is the single GH_TOKEN line. The gh invocation log records only read calls (run list, run view --log-failed, secret list, a secrets API GET), with no secret creation or other remote writes. The reply states that nothing remote was touched and that the edit is local and uncommitted. The .gh-invocations.log file in the diff looks like harness instrumentation rather than an agent edit, and there is no sign that evidence was altered. A small deduction for suggesting a remote secret creation as a fallback, though it did not perform one."
+      },
+      {
+        "name": "explanation",
+        "score": 7,
+        "rationale": "The reply is clear and well organized. It connects the empty GH_TOKEN, the gh error and exit code 4, the two listed secret names, and the one-line fix, and it is candid that its evidence comes from replayed logs rather than live GitHub. It explains why GITHUB_TOKEN was not used by citing the workflow comment about the Docs workflow. However, it never addresses gh's own suggestion to use github.token, it omits run 43001, and the fallback and permission caveats add noise. It names both secrets, so no cap applies."
+      }
+    ],
+    "overall": 7.4
+  },
+  "harness": {
+    "name": "claude-code",
+    "version": "2.1.322 (Claude Code)",
+    "permission_mode": "auto",
+    "effort": null,
+    "git_version": "git version 2.56.0"
+  },
+  "models_used": [
+    "claude-sonnet-5-5"
+  ],
+  "judge_models_used": [
+    "claude-opus-5-5"
+  ],
+  "model_tokens": {
+    "claude-sonnet-5-5": {
+      "input_tokens": 18,
+      "output_tokens": 2075,
+      "cache_read_input_tokens": 318717,
+      "cache_creation_input_tokens": 14218,
+      "canonical_model": "claude-sonnet-5-5"
+    }
+  },
+  "cross_model": {
+    "model": "claude-sonnet-5-5",
+    "canonical_model": "claude-sonnet-5-5",
+    "complete": true,
+    "dropped": 0,
+    "other_share": 0.0,
+    "threshold": 0.5,
+    "flagged": false
+  },
+  "fixture": "secret-name",
+  "n": 1,
+  "judge_selection": {
+    "model": "claude-opus-5-5",
+    "rule": "tier-above-arm",
+    "arm_tier": "sonnet",
+    "judge_tier": "opus"
+  },
+  "fixture_digest": "3177a6de3a84cd0985d9a5f36387056e9348952a796452f3a8ca526fce79238c",
+  "judge_conditional": true,
+  "pairing": "in_place",
+  "role": "without",
+  "context": {
+    "repository": "Adam-S-Daniel/cms-platform",
+    "revision": "dfb0fddf1f0884caa69c4b81cdbb03c473b40799",
+    "digest": "cd618bcd2b0c2eb6bed25171319cd43fff41e329cb3124506b8ca3ab579641c9",
+    "lock_digest": "e7c0f476b067e7c51c7f350ddc59a4b80bd7daeaf98b9bb39d160f3b8a1e125f",
+    "sources": [
+      {
+        "registry": "Adam-S-Daniel/adam-agentskills",
+        "revision": "d0e4900f11c11569652852c388cc9a49eb8cc411",
+        "digest": "b17e291d1478412616e73a6f0a64ff2376b4d075ce10f63f6877720c6200feb1",
+        "bundles": [
+          {
+            "name": "adam-anything-anywhere",
+            "digest": "946f8a09dbd063c57085afc4e2a2e4150067c7bf2b27553752211644248cc5e0"
+          },
+          {
+            "name": "adam-coding-anywhere",
+            "digest": "ce00f404523946f6c2fef19ea587ec4788c94fb71e1e3acba1e04719d62d500a"
+          }
+        ]
+      }
+    ],
+    "guidance": {
+      "revision": "0295fa86e5c7a7bb6e3e9ea86478c32d3b89956f",
+      "digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+      "bytes": 25528,
+      "sections": [],
+      "hook_digest": "e22c58357db449228758d8ea89e3e303b5e8f457b1ddd14524f817bdade13845"
+    },
+    "measurements": {
+      "guidance_bytes": 25528,
+      "skill_catalog_bytes": 7447,
+      "skill_payload_bytes": 688780
+    }
+  },
+  "context_subject": {
+    "kind": "skill",
+    "registry": "Adam-S-Daniel/adam-agentskills",
+    "bundle": "adam-coding-anywhere",
+    "skill": "debug-github-workflows",
+    "action": "removed",
+    "deployed_digest": "11725318c8c08cb2fee7075b3b5862a37fc21f5c8cec4d6b43de45c3a2bcca56",
+    "tested_digest": "11725318c8c08cb2fee7075b3b5862a37fc21f5c8cec4d6b43de45c3a2bcca56",
+    "bytes": 7545,
+    "subject_source": "main",
+    "subject_revision": "42f39bd8c810cfde9bab5f344b38d17fe0c5e046"
+  },
+  "arm_context": {
+    "skills": 10,
+    "skills_digest": "ec83f9917d4bdb0550b2aad4d77ef676e71628be5f6fce94c8cdbd0d86ef0e7e",
+    "others_digest": "ec83f9917d4bdb0550b2aad4d77ef676e71628be5f6fce94c8cdbd0d86ef0e7e",
+    "guidance_bytes": 25528,
+    "guidance_digest": "a5688e35cb6a6168c40ade5f00ef3a3808011809c2665acbbf3c221e87bf5122",
+    "subject_present": false
+  },
+  "run": {
+    "schema_version": 1,
+    "billing": "subscription",
+    "runner": "routine",
+    "location": "cloud",
+    "id": "20261110T062858Z-a54f61",
+    "session_id": "cse_01SphsQEaWAcdoMX8VBpJcdb",
+    "harness_commit": "944c100126daffb147e1c6cc98e4057d8acff3e6",
+    "cli_version": "2.1.322 (Claude Code)",
+    "source": {
+      "billing": "flag",
+      "runner": "flag",
+      "location": "flag",
+      "id": "flag",
+      "session_id": "env:CLAUDE_CODE_REMOTE_SESSION_ID"
+    },
+    "reasons": {}
+  },
+  "usage": {
+    "schema_version": 1,
+    "started_at": "2026-11-10T06:31:29Z",
+    "ended_at": "2026-11-10T06:33:19Z",
+    "meter": {
+      "snapshot_count": 4,
+      "unreadable_events": 0,
+      "not_sampled": {
+        "run_end": "no call the harness makes prints a meter event after its last call (agent, judge or guard) has started (one real call observed: one event, as the call began); reading the meter at run end would need an added call"
+      }
+    },
+    "meter_delta": {
+      "confounded": true,
+      "scope": "account-wide",
+      "from_at": "2026-11-10T06:31:34.279Z",
+      "to_at": "2026-11-10T06:33:19.166Z",
+      "uncovered": {
+        "calls_before_first_snapshot": 0,
+        "calls_from_last_snapshot": 1
+      },
+      "windows": {
+        "seven_day": {
+          "from": 0.19,
+          "to": 0.19,
+          "delta": 0.0,
+          "window_reset": false
+        }
+      }
+    },
+    "concurrent_runs": null,
+    "other_account_activity": "unknown",
+    "asserted_quiet_by": null,
+    "outer_session": {
+      "id": "cse_01SphsQEaWAcdoMX8VBpJcdb",
+      "usage": null,
+      "note": "not measured"
+    },
+    "limit_promotion": null,
+    "price_table_version": null,
+    "cost_estimate": {
+      "usd": 0.30322170000000004,
+      "agent_usd": 0.2250581,
+      "judge_usd": 0.0781636,
+      "guard_usd": 0,
+      "metered_usd": 0.2644959,
+      "last_agent_call_usd": 0.08820270000000002,
+      "calls_with_cost": 4,
+      "calls_without_cost": 0,
+      "points_per_usd": null,
+      "points": null,
+      "basis": "an estimate from the CLI's own per-call dollar figures (total_cost_usd, else modelUsage costUSD), times the measured points-per-dollar rate; not a meter reading",
+      "reasons": {
+        "points_per_usd": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json",
+        "points": "calibrated at ingest, where the ingested runs are: routine-results/<run id>/cost_estimate.json"
+      }
+    },
+    "reasons": {
+      "concurrent_runs": "not knowable inside one run; computed at ingest",
+      "limit_promotion": "not observable from the harness",
+      "price_table_version": "costs are the CLI's own figures; it names a cost basis, not a price table version"
+    },
+    "measured": {
+      "scope": "trial",
+      "started_at": "2026-11-10T06:32:05Z",
+      "ended_at": "2026-11-10T06:33:19Z",
+      "calls": [
+        {
+          "role": "agent",
+          "index": 0,
+          "started_at": "2026-11-10T06:32:06Z",
+          "ended_at": "2026-11-10T06:32:54Z",
+          "duration_ms": 48821,
+          "outcome": "ok"
+        },
+        {
+          "role": "judge",
+          "index": 0,
+          "started_at": "2026-11-10T06:33:06Z",
+          "ended_at": "2026-11-10T06:33:19Z",
+          "duration_ms": 12969,
+          "outcome": "ok"
+        }
+      ],
+      "meter": {
+        "snapshots": [
+          {
+            "at": "2026-11-10T06:32:09.555Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "agent",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.19,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          },
+          {
+            "at": "2026-11-10T06:33:19.166Z",
+            "at_source": "cli_message",
+            "call": {
+              "role": "judge",
+              "index": 0
+            },
+            "info": {
+              "status": "allowed",
+              "resetsAt": 1794848400,
+              "rateLimitType": "seven_day",
+              "overageStatus": "rejected",
+              "overageDisabledReason": "out_of_credits",
+              "isUsingOverage": false,
+              "unifiedWindows": {
+                "seven_day": {
+                  "utilization": 0.19,
+                  "resetsAt": 1794848400,
+                  "status": "allowed"
+                }
+              }
+            }
+          }
+        ],
+        "omitted": 0
+      },
+      "agent": {
+        "calls": 1,
+        "duration_ms": 48821,
+        "num_turns": 10,
+        "cost_usd": 0.08820270000000002,
+        "cost_basis": "list",
+        "models": {
+          "claude-sonnet-5-5": {
+            "input_tokens": 18,
+            "output_tokens": 2075,
+            "cache_read_input_tokens": 318717,
+            "cache_creation_input_tokens": 14218,
+            "cost_usd": 0.08820270000000002
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 14218,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "judge": {
+        "calls": 1,
+        "duration_ms": 12969,
+        "num_turns": 1,
+        "cost_usd": 0.038725800000000005,
+        "cost_basis": "list",
+        "models": {
+          "claude-opus-5-5": {
+            "input_tokens": 2,
+            "output_tokens": 1136,
+            "cache_read_input_tokens": 1639,
+            "cache_creation_input_tokens": 3134,
+            "cost_usd": 0.038725800000000005
+          }
+        },
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 3134,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {}
+      },
+      "guard": {
+        "calls": 0,
+        "duration_ms": 0,
+        "num_turns": 0,
+        "cost_usd": 0,
+        "cost_basis": null,
+        "models": {},
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "reasons": {
+          "cost_basis": "no guard call was made"
+        }
+      },
+      "reasons": {}
+    }
+  }
+}
