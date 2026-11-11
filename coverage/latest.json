@@ -2,15 +2,15 @@
   "include_private_names": false,
   "problems": [],
   "publication": {
-    "as_of": "2026-11-10T16:28:43Z",
-    "guidance_revision": "dc7805c9da009b285abab7e7b96b847d701e833e",
+    "as_of": "2026-11-11T16:19:08Z",
+    "guidance_revision": "7f7c19f74eec345ca5da3617f09147e9ca32d569",
     "public_registry_revisions": {
       "adam-agentskills": "ad9094d01a7699294149aaf3c968d8665f081d15",
-      "adamdaniel.ai": "017fc2a909b7efccb4d09d3bda83a990fa60c378",
-      "cms-platform": "c5ea53f0326e28bd66e76bf96b7af24282c6573b"
+      "adamdaniel.ai": "5a469e6a87a0d8fe19c636e275b45f1d60f4b26b",
+      "cms-platform": "faf0add9c898a4a18ac2c6dc635959b434653ce8"
     },
-    "repository_revision": "944c100126daffb147e1c6cc98e4057d8acff3e6",
-    "run_id": "42854802090"
+    "repository_revision": "4ebb62af6b5a4946be032981f18060f9c3e9cb07",
+    "run_id": "43057021544"
   },
   "registries": [
     {
@@ -172,7 +172,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it",
+          "reason": "rechecked 2026-11-10, holds: fails criterion 3 (it still dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02)",
           "registry": "adam-agentskills",
           "skill": "add-received-from-addresses",
           "status": "skipped"
