@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012tkxHvgJ9e2KGbDwGrAGLC",
+      "name": "Bash",
+      "input": "ls -la && git log --oneline -5 && git remote -v; ls .claude 2><path>; cat AGENTS.md CLAUDE.md 2><path> | head -100",
+      "input_chars": 120,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012tkxHvgJ9e2KGbDwGrAGLC",
+      "is_error": false,
+      "output": "total 36\ndrwxr-xr-x 7 root root 4096 Nov 11 07:15 .\ndrwx------ 6 root root 4096 Nov 11 07:15 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:56 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:56 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 07:15 .claude\ndrwxr-xr-x 3 root root 4096 Nov  8 18:32 .gh\ndrwxr-...",
+      "output_chars": 1015,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01R7AADdz5L8jfLUdRoaW8r2",
+      "name": "Bash",
+      "input": "cat README.md platform.lock; ls -la bin .gh .github -R | head -50; find .claude -type f | head",
+      "input_chars": 94,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01R7AADdz5L8jfLUdRoaW8r2",
+      "is_error": false,
+      "output": "# example-site\n\nA Decap-CMS site built on `example-org/cms-platform`, pinned by\n`platform.lock`. Editors publish through `<path>`; the editorial workflow\nopens a `cms/<collection>/<slug>` pull request, and the publish loops in\n`.github/workflows/` exercise that chain end to end against production.\n\n...",
+      "output_chars": 2633,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014zAEGXRz9JPbom2xiCFPAf",
+      "name": "Bash",
+      "input": "ls bin; which gh; head -40 bin/* ; find .gh/replay/api -type f; find .github -type f",
+      "input_chars": 84,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014zAEGXRz9JPbom2xiCFPAf",
+      "is_error": false,
+      "output": "gh\n<path>\n#!<path> python3\n\"\"\"Offline gh: answer from a directory of recorded responses, never the network.\n\nPoint GH_REPLAY_DIR at a directory of responses recorded from a real\nrepository and this replays them, keyed by the NORMALIZED command line, so a\nsession can be re-run on a machine with no ne...",
+      "output_chars": 3945,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0165xXTfH3PJX7qqkAVWVthm",
+      "name": "Bash",
+      "input": "cd <path> && for f in auth-status.txt pr-list.json run-list.json workflow-list.json run-view-4471182930.json run-view-4471182930.log run-watch-4471182930.txt run-view-4468900033.json run-view-44689000...",
+      "input_chars": 282,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0165xXTfH3PJX7qqkAVWVthm",
+      "is_error": false,
+      "output": "=== auth-status.txt\ngithub.com\n  \u2713 Logged in to github.com account cms-bot (GH_TOKEN)\n  - Active account: true\n  - Git operations protocol: https\n  - Token: <redacted>\n  - Token scopes: 'read:org', 'repo:status', 'public_repo'\n\n=== pr-list.json\n[\n  {\n    \"number\": 412,\n    \"title\": \"Create Post \u201cSpr...",
+      "output_chars": 15190,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NasW39xSapBZXAYtL4JMoS",
+      "name": "Bash",
+      "input": "for f in pr-view-*.json pr-checks-*.json ruleset-list.json ruleset-view-1837402.json; do echo \"=== $f\"; cat $f; echo; done",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NasW39xSapBZXAYtL4JMoS",
+      "is_error": false,
+      "output": "=== pr-view-412.json\n{\n  \"number\": 412,\n  \"title\": \"Create Post \u201cSpring release notes\u201d\",\n  \"headRefName\": \"cms/posts/spring-release-notes\",\n  \"headRefOid\": \"c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb\",\n  \"baseRefName\": \"main\",\n  \"baseRefOid\": \"0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04\",\n  \"mergeStateSt...",
+      "output_chars": 23186,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FkqxvxqkhrLKS92UhNWzat",
+      "name": "Bash",
+      "input": "cd <path> && A=.gh/replay/api/repos/example-org/example-site; cat $A/rules/branches/main.json $A/branches/main/protection.json $A/git/ref/heads/main.json; for f in $A/commits/*/check-runs.json $A/comm...",
+      "input_chars": 737,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FkqxvxqkhrLKS92UhNWzat",
+      "is_error": false,
+      "output": "[\n  {\n    \"type\": \"deletion\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-site\",\n    \"ruleset_id\": 1837402\n  },\n  {\n    \"type\": \"non_fast_forward\",\n    \"ruleset_source_type\": \"Repository\",\n    \"ruleset_source\": \"example-org/example-site\",\n    \"ruleset_id\": 183...",
+      "output_chars": 6161,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_019AEfD4AkR5C9o56RtC7HUX",
+      "name": "Bash",
+      "input": "find .gh/replay/.claude .claude -type f | head; for f in .github/workflows/*.yml; do echo \"=== $f\"; cat $f; done",
+      "input_chars": 112,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_019AEfD4AkR5C9o56RtC7HUX",
+      "is_error": false,
+      "output": "=== .github/workflows/cms-publish-loop-prod.yml\n# Thin caller. Owns the push / workflow_dispatch triggers and the run-name;\n# delegates the prod-mutation publish loop to the platform's reusable\n# workflow. Keep `platform_ref` equal to the `@vX.Y.Z` pin on the `uses:`\n# line and to platform.lock.\nnam...",
+      "output_chars": 3225,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
