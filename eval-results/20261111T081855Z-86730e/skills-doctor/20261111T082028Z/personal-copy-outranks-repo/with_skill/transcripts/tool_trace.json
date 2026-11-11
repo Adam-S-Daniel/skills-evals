@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GRaTLSC2d7f1SEo17nqpqZ",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git log --oneline | head; find / -path /proc -prune -o -ipath '*release-notes*' -print 2><path> | head -50",
+      "input_chars": 160,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GRaTLSC2d7f1SEo17nqpqZ",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 11 08:20 .\ndrwx------ 6 root root 4096 Nov 11 08:20 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 02:05 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 02:05 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 08:20 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 08:20 .gi...",
+      "output_chars": 1423,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H4j4gjjrEfUyXp9NZtrxCr",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find repo session .claude -not -path '*<path>*' | head -100; ls -la .claude",
+      "input_chars": 128,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H4j4gjjrEfUyXp9NZtrxCr",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 1725,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012TBs6iMiivMqdiSRdCYgMS",
+      "name": "Bash",
+      "input": "cd <path>; for f in repo/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/release-notes/SKILL.md repo/dot-claude/skills/release-notes/SKILL.md; do echo \"=== $f\"; cat $f; done...",
+      "input_chars": 319,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012TBs6iMiivMqdiSRdCYgMS",
+      "is_error": false,
+      "output": "=== repo/skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/adam-agentskills\",\n  \"ref\": \"2f5987bd8a7dc6fd7e4bfc36dcba19f33fda0c1f\",\n  \"bundles\": [\n    \"adam-anything-anywhere\"\n  ],\n  \"skills\": {\n    \"adam-anything-anywhere/writing-adrs\": \"sha256:e8cd86670c8590eac5c490595ca8ba695ac0b623f36266bda4d31d64ad87b8...",
+      "output_chars": 2513,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012uJcV8j2BjcHSFuWzaseW9",
+      "name": "Bash",
+      "input": "cd <path>; cat session/skills/writing-adrs/SKILL.md",
+      "input_chars": 78,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012uJcV8j2BjcHSFuWzaseW9",
+      "is_error": false,
+      "output": "---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\n\n## Sections\n\nContext, Decision, Consequences, Alternatives considered, References.",
+      "output_chars": 276,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KszcQPKsjqH3ZDwYP1Vfez",
+      "name": "Bash",
+      "input": "cd <path>; cat > FINDINGS.md <<'EOF'\n# Which release-notes does the session read?\n\nWinning copy: session/skills/release-notes/SKILL.md\n\nSource: Not installed by the skills bootstrap hook, and not from...",
+      "input_chars": 2198,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KszcQPKsjqH3ZDwYP1Vfez",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
