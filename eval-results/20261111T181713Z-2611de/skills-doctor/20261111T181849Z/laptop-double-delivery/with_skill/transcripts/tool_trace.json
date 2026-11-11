@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BYfk4ZFPZEZYbSdjCgMehb",
+      "name": "Bash",
+      "input": "git status --short; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 76,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BYfk4ZFPZEZYbSdjCgMehb",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/debug-github-workflows/SKILL.md\n./session/skills/.skills-bootstra...",
+      "output_chars": 555,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014xbCnP6FU5sZjdyZKdXBDJ",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:skills-doctor",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014xbCnP6FU5sZjdyZKdXBDJ",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:skills-doctor",
+      "output_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013YWMXAg1DxrF95XFna8EAX",
+      "name": "Bash",
+      "input": "cd <path> && for f in surface.txt skills.lock skills/.skills-bootstrap-installed.json plugin-list.json skill-listing.txt; do echo \"=== $f\"; cat \"$f\"; done; echo; cat ../README.md; ls -la --time-style=...",
+      "input_chars": 288,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013YWMXAg1DxrF95XFna8EAX",
+      "is_error": false,
+      "output": "=== surface.txt\n$ echo \"entry=$CLAUDE_CODE_ENTRYPOINT remote=$CLAUDE_CODE_REMOTE_SESSION_ID force=$SKILLS_BOOTSTRAP_FORCE env=$CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE\"\nentry=cli remote= force= env=\n=== skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/adam-agentskills\",\n  \"ref\": \"2f5987bd8a7dc6fd7e4bfc36dcba19...",
+      "output_chars": 4601,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016ypcY7Vfnc1DnMmW5jr9ET",
+      "name": "Bash",
+      "input": "S=<path>; ls \"$(dirname $S)\"; env -u CLAUDE_CODE_REMOTE_SESSION_ID -u SKILLS_BOOTSTRAP_FORCE CLAUDE_CODE_ENTRYPOINT=cli python3 -I \"$S\" --lock skills.lock --skills-dir skills --project-dir . ; echo \"e...",
+      "input_chars": 385,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016ypcY7Vfnc1DnMmW5jr9ET",
+      "is_error": false,
+      "output": "check_provenance.py\ntest_check_provenance.py\nprovenance: 3 on disk, 2 hook-installed, 1 unattributed, 0 not in the store \u2014 record present \u2014 surface unsure \u2014 3 findings\n\nRECORD   skills/.skills-bootstrap-installed.json\n  present \u2014 2 install(s) recorded. The rows below are the hook's own account\n  of ...",
+      "output_chars": 5299,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KabbREpvJY5uvVDESz7wUU",
+      "name": "Bash",
+      "input": "cd <path> && head -50 */SKILL.md; cat ../../.gitmodules ../../.mcp.json 2><path> | head -30",
+      "input_chars": 136,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KabbREpvJY5uvVDESz7wUU",
+      "is_error": false,
+      "output": "==> debug-github-workflows/SKILL.md <==\n---\nname: debug-github-workflows\ndescription: Debug a failing workflow run.\n---\n\nExample body for a captured copy.\n\n==> standup-notes/SKILL.md <==\n---\nname: standup-notes\ndescription: Draft my daily standup notes.\n---\n\nHand-made skill; not from any registry.\n\n...",
+      "output_chars": 448,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01ALXNDT627VXarKpcYdyj2s",
+      "name": "Bash",
+      "input": "cd <path> && grep -rn -i 'SKILLS_BOOTSTRAP\\|ENTRYPOINT\\|REMOTE_SESSION' .bashrc .bash_profile .profile .zshrc .zprofile .gitconfig .mcp.json .idea .vscode 2><path>; echo \"grep exit=$?\"",
+      "input_chars": 214,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01ALXNDT627VXarKpcYdyj2s",
+      "is_error": false,
+      "output": "grep exit=2",
+      "output_chars": 11,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UshWpt8khWdNS3M9jLmR9y",
+      "name": "Bash",
+      "input": "ls -la .idea .vscode; wc -c .bashrc .bash_profile .profile .zshrc .zprofile .mcp.json .gitconfig",
+      "input_chars": 96,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UshWpt8khWdNS3M9jLmR9y",
+      "is_error": true,
+      "output": "Exit code 1\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .idea\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .vscode\nwc: .bashrc: Permission denied\nwc: .bash_profile: Permission denied\nwc: .profile: Permission denied\nwc: .zshrc: Permission denied\nwc: .zprofile: Permission denied\nwc: .mcp.json: Permission den...",
+      "output_chars": 351,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ho7Spz2tDqEQA1PwMJAeEZ",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ho7Spz2tDqEQA1PwMJAeEZ",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
