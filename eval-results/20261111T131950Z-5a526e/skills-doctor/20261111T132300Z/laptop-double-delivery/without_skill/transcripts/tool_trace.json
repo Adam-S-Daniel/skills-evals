@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014yVpo2ahcBFyaY94dziaco",
+      "name": "Bash",
+      "input": "cd <path>; pwd; ls -la; git status --short | head",
+      "input_chars": 76,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014yVpo2ahcBFyaY94dziaco",
+      "is_error": false,
+      "output": "<path>\ntotal 24\ndrwxr-xr-x 5 root root 4096 Nov 11 13:23 .\ndrwx------ 6 root root 4096 Nov 11 13:23 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 09:11 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 09:11 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 13:23 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 13:23 .gi...",
+      "output_chars": 1010,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TWg57cbisCwY4BpP3yi4Xo",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find session .claude -type f | head -50",
+      "input_chars": 92,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TWg57cbisCwY4BpP3yi4Xo",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-10-27\n\nCopied off my own laptop, where I open Claude Code in a terminal, so the\ndelivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `session/skills....",
+      "output_chars": 1226,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M6HoUvDigDjDuzJZsZRT2d",
+      "name": "Bash",
+      "input": "cd <path>; for f in skills.lock surface.txt plugin-list.json skill-listing.txt skills/.skills-bootstrap-installed.json; do echo \"=== $f\"; cat $f; done; for f in skills/*/SKILL.md; do echo \"=== $f\"; he...",
+      "input_chars": 279,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M6HoUvDigDjDuzJZsZRT2d",
+      "is_error": false,
+      "output": "=== skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/adam-agentskills\",\n  \"ref\": \"2f5987bd8a7dc6fd7e4bfc36dcba19f33fda0c1f\",\n  \"bundles\": [\n    \"adam-anything-anywhere\",\n    \"adam-coding-anywhere\"\n  ],\n  \"skills\": {\n    \"adam-anything-anywhere/writing-adrs\": \"sha256:5f9179dea6c1b868ec63ee8522b6e9adfde3809...",
+      "output_chars": 2879,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E73LFzdxnJFFhrw3nTh6Gs",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E73LFzdxnJFFhrw3nTh6Gs",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
