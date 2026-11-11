@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01MmPEJTMEfa4VGbPZXEPsfE",
+      "name": "Bash",
+      "input": "git status --short | head; cat scripts/sync_contacts.py; ls; ls tests scripts 2><path>",
+      "input_chars": 89,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01MmPEJTMEfa4VGbPZXEPsfE",
+      "is_error": true,
+      "output": "Exit code 2\n?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n\"\"\"Push contacts.json to the CRM's bulk endpoint.\"\"\"\nimport json\nimport os\nimport urllib.request\n\nAPI = os.environ.get(\"CRM_API\", \"https://crm.example.com/v2/c...",
+      "output_chars": 930,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AGTCAS8uPvCVKZwDAneixb",
+      "name": "Bash",
+      "input": "cat README.md; ls docs .github/workflows 2><path>; python3 -c \"import pytest\" ; head -c 300 contacts.json",
+      "input_chars": 108,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AGTCAS8uPvCVKZwDAneixb",
+      "is_error": false,
+      "output": "# crm-sync\n\nA public repository. `scripts/sync_contacts.py` pushes the contact list in\n`contacts.json` to the CRM; `.github/workflows/nightly-sync.yml` runs it\nevery night. The CRM's API is described in `docs/crm-api.md`.\nPin every `uses:` to a full commit SHA, as the workflows do.\n.github/workflows...",
+      "output_chars": 634,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014Vki9yNtE72Zonaxef7KFK",
+      "name": "Bash",
+      "input": "cat docs/crm-api.md",
+      "input_chars": 19,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014Vki9yNtE72Zonaxef7KFK",
+      "is_error": false,
+      "output": "# CRM API\n\n`POST <path>` takes `{\"contacts\": [...]}` with a bearer token and\nanswers `200` with `{\"synced\": <count>}`.\n\nOn a rejected request it answers `4xx` or `5xx` with a JSON body:\n\n```json\n{\n  \"error\": \"invalid_contact\",\n  \"message\": \"Contact 'Dana Whitfield <<email>>, +1 555 0142' failed vali...",
+      "output_chars": 456,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HkBbBpe9o2WJw3CtrnrL1D",
+      "name": "bash",
+      "input": "cd <path> && python3 - <<'EOF'\np='scripts/sync_contacts.py'\ns=open(p).read()\ns=s.replace(\"import os\\nimport urllib.request\\n\",\"import os\\nimport sys\\nimport urllib.error\\nimport urllib.request\\n\")\ns=s...",
+      "input_chars": 4119,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HkBbBpe9o2WJw3CtrnrL1D",
+      "is_error": true,
+      "output": "<tool_use_error>Error: No such tool available: bash. Tool names are case-sensitive: call Bash instead.</tool_use_error>",
+      "output_chars": 119,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01K5UALrYgewkdLghuUeFdpv",
+      "name": "Bash",
+      "input": "python3 - <<'EOF'\np='scripts/sync_contacts.py'\ns=open(p).read()\ns=s.replace(\"import os\\nimport urllib.request\\n\",\"import os\\nimport sys\\nimport urllib.error\\nimport urllib.request\\n\")\ns=s.replace(''' ...",
+      "input_chars": 4064,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01K5UALrYgewkdLghuUeFdpv",
+      "is_error": false,
+      "output": "test_http_error_reports_code_and_exits_nonzero (test_sync_contacts.SyncFailureTest.test_http_error_reports_code_and_exits_nonzero) ... ok\ntest_network_error_exits_nonzero (test_sync_contacts.SyncFailureTest.test_network_error_exits_nonzero) ... ok\ntest_non_json_body_is_not_echoed (test_sync_contacts...",
+      "output_chars": 586,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
