@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YUo8growduHkjXSv9sQkmL",
+      "name": "Skill",
+      "input": "cms-platform:cms-stuck-pr-triage",
+      "input_chars": 32,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YUo8growduHkjXSv9sQkmL",
+      "is_error": false,
+      "output": "Launching skill: cms-platform:cms-stuck-pr-triage",
+      "output_chars": 49,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01H5bCYcrM4fHjMG6LJiGFpp",
+      "name": "Bash",
+      "input": "git remote -v | head -2; gh pr list --state open --search \"head:cms\" --limit 1000 --json number,title,mergeStateStatus,createdAt --jq '.[] | [.createdAt, .number, .mergeStateStatus, .title] | @tsv' 2>...",
+      "input_chars": 213,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01H5bCYcrM4fHjMG6LJiGFpp",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 412,\n    \"title\": \"Create Post \u201cSpring release notes\u201d\",\n    \"headRefName\": \"cms/posts/spring-release-notes\",\n    \"baseRefName\": \"main\",\n    \"mergeStateStatus\": \"BLOCKED\",\n    \"isDraft\": false,\n    \"createdAt\": \"2026-08-30T09:14:22Z\",\n    \"updatedAt\": \"2026-08-30T09:41:07Z\",\n    \"...",
+      "output_chars": 1035,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016B29FxDfSTjvbhk3wXh4ps",
+      "name": "Bash",
+      "input": "gh pr list --state open --search \"head:cms\" --limit 1000 --json number,title,mergeStateStatus,createdAt 2>&1 | tail -n +30",
+      "input_chars": 122,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016B29FxDfSTjvbhk3wXh4ps",
+      "is_error": false,
+      "output": "    \"title\": \"Create Post \u201cAutumn opening hours\u201d\",\n    \"headRefName\": \"cms/posts/autumn-hours\",\n    \"baseRefName\": \"main\",\n    \"mergeStateStatus\": \"UNKNOWN\",\n    \"isDraft\": false,\n    \"createdAt\": \"2026-09-02T06:09:41Z\",\n    \"updatedAt\": \"2026-09-02T06:10:02Z\",\n    \"author\": <redacted> \"login\": \"edi...",
+      "output_chars": 450,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DrJC5ZsmTiR9KdKdRewQ3f",
+      "name": "Bash",
+      "input": "for n in 412 418 421; do echo \"== $n\"; gh pr view $n --json mergeStateStatus,statusCheckRollup,baseRefOid,autoMergeRequest,headRefOid 2>&1; done; git log origin/main --oneline -1 2>&1",
+      "input_chars": 183,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DrJC5ZsmTiR9KdKdRewQ3f",
+      "is_error": true,
+      "output": "Exit code 128\n== 412\n{\n  \"number\": 412,\n  \"title\": \"Create Post \u201cSpring release notes\u201d\",\n  \"headRefName\": \"cms/posts/spring-release-notes\",\n  \"headRefOid\": \"c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb\",\n  \"baseRefName\": \"main\",\n  \"baseRefOid\": \"0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04\",\n  \"mergeStateSt...",
+      "output_chars": 10795,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016XnYjhwFc5NV68JUDBm5rA",
+      "name": "Bash",
+      "input": "echo \"--- #412 failed lane log\"; gh run view 4468900033 --job 2 --log-failed 2>&1 | tail -25\necho \"--- required contexts (ruleset)\"; gh api \"repos/example-org/example-site/rules/branches/main\" --pagin...",
+      "input_chars": 729,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016XnYjhwFc5NV68JUDBm5rA",
+      "is_error": false,
+      "output": "--- #412 failed lane log\ne2e\tSet up job\t2026-08-30T09:15:12.1042117Z Current runner version: '2.331.0'\ne2e\tSet up job\t2026-08-30T09:15:12.1050338Z Job name: 'e2e / project (chromium-desktop-1080)'\ne2e\tSet up job\t2026-08-30T09:15:12.1058812Z Triggered by: pull_request on refs/pull/412/merge\ne2e\tCheck...",
+      "output_chars": 17004,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
