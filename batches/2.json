@@ -1,0 +1,221 @@
+{
+  "due_at": "2026-11-25T05:17:22Z",
+  "fit": {
+    "budget": 0.5,
+    "floor": false,
+    "pair_costs": {
+      "claude-opus-5-5": 0.0028775750552425955,
+      "claude-sonnet-5-5": 0.0009743180228146741
+    },
+    "pairs_per_cell": 15.0,
+    "priced": true,
+    "total": 0.4622271693668724
+  },
+  "members": [
+    {
+      "cost": 0.17333518851257715,
+      "joined": 2,
+      "kind": "skill",
+      "subject": "skills-doctor"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "joined": 2,
+      "kind": "skill",
+      "subject": "cms-stuck-pr-triage"
+    },
+    {
+      "cost": 0.2311135846834362,
+      "joined": 2,
+      "kind": "guidance",
+      "subject": "data-exposure-in-ci"
+    }
+  ],
+  "multiplier": 3.0,
+  "number": 2,
+  "previous": {
+    "members": [
+      {
+        "kind": "skill",
+        "status": "decided",
+        "subject": "debug-github-workflows"
+      },
+      {
+        "kind": "skill",
+        "status": "decided",
+        "subject": "embeddable-tool-pages"
+      },
+      {
+        "kind": "guidance",
+        "status": "blocked",
+        "subject": "security"
+      },
+      {
+        "kind": "guidance",
+        "status": "decided",
+        "subject": "pinning-github-actions"
+      }
+    ],
+    "number": 1
+  },
+  "rate_basis": {
+    "guidance": {
+      "added": 4,
+      "rate": 1.0,
+      "since": "2026-10-14T05:17:22Z",
+      "source": "measured",
+      "weeks": 4.0
+    },
+    "skill": {
+      "added": 4,
+      "rate": 1.797145684333625,
+      "since": "2026-10-26T11:21:48Z",
+      "source": "measured",
+      "weeks": 2.2257516654712304
+    }
+  },
+  "rates": {
+    "guidance": 1.0,
+    "skill": 1.797145684333625
+  },
+  "schema_version": 1,
+  "sizes": {
+    "guidance": 3,
+    "skill": 5
+  },
+  "started_at": "2026-11-11T05:17:22Z",
+  "waiting": [
+    {
+      "cost": 0.2311135846834362,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "vendor-release-impact-issues"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "name-becomes-scanner-data"
+    },
+    {
+      "cost": 0.2311135846834362,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "workflow-path-audit"
+    },
+    {
+      "cost": 0.17333518851257715,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "watch-finished-is-not-ci-passed"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "subagent-delegation"
+    },
+    {
+      "cost": 0.28889198085429524,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "fan-out-triage"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "automation-vs-branch-protection"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "platform-release-and-bump"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "finding-your-unknowns"
+    },
+    {
+      "cost": 0.28889198085429524,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "ci-job-performance"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "fleet-spans-two-owners"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "github-actions-repo-settings"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "github-404-means-not-authorized"
+    },
+    {
+      "cost": 0.17333518851257715,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "red-ci-adamdaniel-ai"
+    },
+    {
+      "cost": 0.2311135846834362,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "turn-lessons-into-checks"
+    },
+    {
+      "cost": 0.2311135846834362,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "tool-powershell"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-github-connectors"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "skill",
+      "reason": "budget",
+      "subject": "post-failure-comment"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "dependency-updates"
+    },
+    {
+      "cost": 0.057778396170859045,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "working-in-these-repos"
+    },
+    {
+      "cost": 0.28889198085429524,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "anything-you-name-gets-its-link"
+    },
+    {
+      "cost": 0.11555679234171809,
+      "kind": "guidance",
+      "reason": "budget",
+      "subject": "two-setup-gaps"
+    }
+  ]
+}
