@@ -1921,7 +1921,7 @@ yet" must stay distinguishable.)
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
 | `fastmail` bundle | defer (rechecked 2026-11-06) | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own. `fastmail` itself has one recorded local use since 2026-09-14 (week of 2026-09-14) |
 | `aws-bootstrap`, `preview-environments` | freshness lint (rechecked 2026-11-07) | staleness is the failure mode, not procedure quality; the lint now exists (cms-platform's `e2e/skill-references-fresh.test.js` and adam-agentskills' scheduled `scripts/check_skill_freshness.py`), and neither skill has recorded use |
-| `admin-config-render`, `browser-testing`, `code-quality`, `editorial-label-audit` | freshness lint | reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval (scope decision 2026-11-03) |
+| `admin-config-render`, `browser-testing`, `code-quality`, `editorial-label-audit` | freshness lint (rechecked 2026-11-10 and 2026-11-11) | reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval (scope decision 2026-11-03). The lint now exists: cms-platform's `e2e/skill-references-fresh.test.js` checks every `skills/*/SKILL.md`, and none of the four has recorded use |
 | `finding-unknowns`, `adam-writing-style` | owner review | process/taste skill; owner review replaces the eval (scope decision 2026-11-03) |
 
 ### Budget

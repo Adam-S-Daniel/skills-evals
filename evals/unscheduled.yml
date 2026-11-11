@@ -19,13 +19,13 @@ fixtures:
   - path: evals/workflow-path-audit/required-check-routing
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-10, holds: fails criterion 4 (the fixture is unchanged since 2026-11-03 03:28 UTC, and both runs after that, 20261103T124306Z-892f4f and 20261103T134218Z-d68eee, have the without arm at 8/8 checks)."
   - path: evals/admin-config-render
-    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval. Rechecked 2026-11-11, holds: fails criterion 2 (cms-platform's e2e/skill-references-fresh.test.js now lints every skills/*/SKILL.md, admin-config-render's included) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02); the fixture is unchanged since 2026-11-03 03:28 UTC."
   - path: evals/code-quality
-    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval. Rechecked 2026-11-11, holds: fails criterion 2 (cms-platform's e2e/skill-references-fresh.test.js now lints every skills/*/SKILL.md, code-quality's included) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02); the fixture is unchanged since 2026-11-02."
   - path: evals/ci-watcher-loops
     reason: "Scope decision 2026-11-03: paused; current fixture cannot show a 0.15 gain (both arms at ceiling or both at floor). Reschedule with a fixture whose without arm scores <= 0.85. Rechecked 2026-11-08, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and its newest run, 20261103T035509Z-019906, has the without arm at 7/8 checks, 0.875)."
   - path: evals/editorial-label-audit
-    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval."
+    reason: "Scope decision 2026-11-03: reference for one repo's internals; staleness is the failure mode, so a freshness lint replaces the eval. Rechecked 2026-11-11, holds: fails criterion 2 (cms-platform's e2e/skill-references-fresh.test.js now lints every skills/*/SKILL.md, editorial-label-audit's included) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02); the fixture is unchanged since 2026-11-02."
   - path: evals/adam-writing-style/proposal-bio
     reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
   - path: evals/adam-writing-style/recruiter-reply
