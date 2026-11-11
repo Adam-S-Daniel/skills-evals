@@ -7,7 +7,7 @@
     "paired_context_delivery_verified": false,
     "total": 166
   },
-  "generated_at": "2026-11-10T13:45:02Z",
+  "generated_at": "2026-11-11T12:56:19Z",
   "include_private_names": false,
   "problems": [],
   "registries": [
@@ -170,7 +170,7 @@
         {
           "bundle": "adam-non-coding-local",
           "fixtures": 0,
-          "reason": "dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it",
+          "reason": "rechecked 2026-11-10, holds: fails criterion 3 (it still dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02)",
           "registry": "adam-agentskills",
           "skill": "add-received-from-addresses",
           "status": "skipped"
