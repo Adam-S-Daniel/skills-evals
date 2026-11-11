@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012KxmF9deqAL4qbPXN2HQu9",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 129,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012KxmF9deqAL4qbPXN2HQu9",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov 11 23:30 .\ndrwx------ 6 root root 4096 Nov 11 23:30 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:14 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:14 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 23:30 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 23:30 .git\ncrw-r...",
+      "output_chars": 1884,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NtZvQpA6vsnZjvymSC6Kh2",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; cd session/skills; cat .skills-bootstrap-installed.json ../skills.lock; cat synced/*/manifest.json; ls -la . synced synced/*; md5sum writing-adrs/SKILL.md synced/*<path> ../....",
+      "input_chars": 528,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NtZvQpA6vsnZjvymSC6Kh2",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 4592,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Xj6twvj9qoqiNRPszaxqkx",
+      "name": "Bash",
+      "input": "cd <path>; cat -A synced/*<path> | head -20; for f in writing-adrs adam-writing-style; do (cd $f; ls -la; find . -type f | sort | xargs sha256sum); done; cd ../../registry/plugins/adam/skills/writing-...",
+      "input_chars": 355,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Xj6twvj9qoqiNRPszaxqkx",
+      "is_error": false,
+      "output": "---^M$\nname: writing-adrs^M$\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.^M$\n---^M$\n^M$\n# Writing ADRs^M$\n^M$\nOne ADR per decision. Title is an imperative statement of what was decided.^M$\n^M$\n## Sections^M$\n^M$\nContext, Decision, Consequences, References.^M$\ntotal 12\ndrw...",
+      "output_chars": 1077,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VVHRaswiizDFF8kWmAdkYD",
+      "name": "Bash",
+      "input": "cat > <path> <<'EOF'\n# Findings: why writing-adrs drops \"Alternatives considered\"\n\n## Short answer\nThe session is most likely being served a **stale, account-synced copy** of `writing-adrs`,\nnot the r...",
+      "input_chars": 3898,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VVHRaswiizDFF8kWmAdkYD",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}

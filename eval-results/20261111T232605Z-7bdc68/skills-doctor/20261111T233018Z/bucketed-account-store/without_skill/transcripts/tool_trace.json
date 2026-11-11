@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UPr8iRhwKWe57PAyNB2LpR",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git log --oneline | head",
+      "input_chars": 70,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UPr8iRhwKWe57PAyNB2LpR",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov 11 23:30 .\ndrwx------ 6 root root 4096 Nov 11 23:30 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:14 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:14 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 23:30 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 23:30 .git\ncrw-r...",
+      "output_chars": 920,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Jxf5dPgMJxgKfwBSY56m8e",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find registry session .claude -type f | head -100",
+      "input_chars": 102,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Jxf5dPgMJxgKfwBSY56m8e",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 1812,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018cGBb1kTqKEmKgrWtik4Ke",
+      "name": "Bash",
+      "input": "cd <path>; for f in session/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json session/skills/synced/.bucket*; do echo \"=== $f\"; cat \"$f\"; done; ls -la s...",
+      "input_chars": 589,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018cGBb1kTqKEmKgrWtik4Ke",
+      "is_error": false,
+      "output": "=== session/skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/agentskills\",\n  \"ref\": \"f08c85e473f6adec71366fca65485b8de18be252\",\n  \"bundles\": [\n    \"adam\"\n  ],\n  \"skills\": {\n    \"adam/adam-writing-style\": \"sha256:18288219eb6f4a30722b3d9a35179660061a633dc566b2aa12934c6e85def054\",\n    \"adam/writing-adrs\": \"s...",
+      "output_chars": 4174,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M5cZ7aJRKDWX5h5FeNQ8Za",
+      "name": "Bash",
+      "input": "cd <path>; d=registry/plugins/adam/skills/writing-adrs; (cd $d; find . -type f | sort | xargs sha256sum | sha256sum); (cd $d; find . -type f -print0|sort -z|xargs -0 cat|sha256sum); date -d @178971362...",
+      "input_chars": 291,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M5cZ7aJRKDWX5h5FeNQ8Za",
+      "is_error": false,
+      "output": "8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\n5d04a9063499f87449bf15513d452b11c410e2fd0489f17622086179f6e76573  -\nFri Sep 18 06:40:28 UTC 2026\nregistry:\ntotal 12\ndrwxr-xr-x 3 root root 4096 Nov  8 18:32 .\ndrwxr-xr-x 6 root root 4096 Nov 11 23:31 ..\ndrwxr-xr-x 3 root root 4096 N...",
+      "output_chars": 1346,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AN6KvH7XAJ91BQ8ej7CKZg",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AN6KvH7XAJ91BQ8ej7CKZg",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
