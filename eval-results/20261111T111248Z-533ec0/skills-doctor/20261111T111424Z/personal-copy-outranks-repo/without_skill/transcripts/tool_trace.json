@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XAmkec6Tckgasd1rC3hWgA",
+      "name": "Bash",
+      "input": "pwd && ls -la && git log --oneline | head; find . -path ./.git -prune -o -ipath '*release-notes*' -print | head -50",
+      "input_chars": 115,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XAmkec6Tckgasd1rC3hWgA",
+      "is_error": false,
+      "output": "<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 11 11:14 .\ndrwx------ 6 root root 4096 Nov 11 11:14 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 09:11 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 09:11 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 11:14 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 11:14 .gi...",
+      "output_chars": 1108,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RBcXeQf8idLHnyM3vhKdHF",
+      "name": "Bash",
+      "input": "cat README.md; find . -path ./.git -prune -o -print | grep -v '^./\\.[a-z]*$' | head -80; find .claude -type f | head",
+      "input_chars": 116,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RBcXeQf8idLHnyM3vhKdHF",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 1639,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QJkJLNmYodix8k7yp3vPT6",
+      "name": "Bash",
+      "input": "for f in session/skills/.skills-bootstrap-installed.json repo/skills.lock session/skills/release-notes/SKILL.md repo/dot-claude/skills/release-notes/SKILL.md; do echo \"=== $f\"; cat $f; done; ls -la se...",
+      "input_chars": 229,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QJkJLNmYodix8k7yp3vPT6",
+      "is_error": false,
+      "output": "=== session/skills/.skills-bootstrap-installed.json\n{\n  \"version\": 1,\n  \"installed\": [\n    {\n      \"name\": \"writing-adrs\",\n      \"registry\": \"https://github.com/Adam-S-Daniel/adam-agentskills.git\",\n      \"bundle\": \"adam-anything-anywhere\",\n      \"digest\": \"e8cd86670c8590eac5c490595ca8ba695ac0b623f36...",
+      "output_chars": 2278,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016bRHsCpnAnF2FoBQB3jbkn",
+      "name": "Bash",
+      "input": "cat > FINDINGS.md <<'EOF'\n# Which release-notes the session reads\n\nWinning copy: session/skills/release-notes/SKILL.md\n\nSource: not installed by the skills bootstrap; it is an unmanaged file that was ...",
+      "input_chars": 2371,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016bRHsCpnAnF2FoBQB3jbkn",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
