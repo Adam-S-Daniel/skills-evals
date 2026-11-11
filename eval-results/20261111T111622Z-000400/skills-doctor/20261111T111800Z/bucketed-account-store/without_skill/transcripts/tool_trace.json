@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CKHFemJ6DY1epKvpB7jkVz",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CKHFemJ6DY1epKvpB7jkVz",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/synced/00000000-0000-4000...",
+      "output_chars": 986,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NjNKg4dTwFXr4G1c1pe45s",
+      "name": "Bash",
+      "input": "cat README.md; echo ====; cat session/skills.lock; echo ====; cat session/skills/.skills-bootstrap-installed.json; echo ===; cat session/skills/synced/*/manifest.json; echo; ls -la session/skills/sync...",
+      "input_chars": 307,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NjNKg4dTwFXr4G1c1pe45s",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 3798,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QJttKhxHXPkCjM3LsmKeZ3",
+      "name": "Bash",
+      "input": "for f in session/skills/writing-adrs/SKILL.md session/skills/synced/*<path> registry/plugins/adam/skills/writing-adrs/SKILL.md session/skills/adam-writing-style/SKILL.md registry/plugins/adam/skills/a...",
+      "input_chars": 532,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QJttKhxHXPkCjM3LsmKeZ3",
+      "is_error": false,
+      "output": "=== session/skills/writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n## Sections\n\nCon...",
+      "output_chars": 3478,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01X6SUPva6jSWGMgeZFufLxV",
+      "name": "Bash",
+      "input": "git log --oneline -5; ls -la; for f in .mcp.json .gitmodules .gitconfig .ripgreprc; do echo \"== $f\"; cat $f; done; ls -la .idea .vscode; file .idea .vscode; date -d @1789713628 -u; file session/skills...",
+      "input_chars": 268,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01X6SUPva6jSWGMgeZFufLxV",
+      "is_error": false,
+      "output": "f1da167 initial commit\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 11 11:20 .\ndrwx------ 6 root root 4096 Nov 11 11:19 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:49 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:49 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 11:19 .claude\ndrwxr-xr-x 9 root root 4096 ...",
+      "output_chars": 1595,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01GYcKkrFyj4dCtHUFbR9cTu",
+      "name": "Bash",
+      "input": "find .claude -maxdepth 3 | head; cd registry/plugins/adam/skills/writing-adrs && (sha256sum SKILL.md | sha256sum; printf 'SKILL.md\\0'; cat SKILL.md) | head -c0; for s in \"find . -type f | sort | xargs...",
+      "input_chars": 435,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01GYcKkrFyj4dCtHUFbR9cTu",
+      "is_error": false,
+      "output": ".claude\n.claude/.cc-writes\nfind . -type f | sort | xargs sha256sum | sha256sum: 8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\ntar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - . | sha256sum: ede1e0968f5604750c4e3b417a8d46490aa2062a9f5ec068f0252549fa08894b  -\n...",
+      "output_chars": 958,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01N22g8RhQKSgBjCBTdTLxPk",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01N22g8RhQKSgBjCBTdTLxPk",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
