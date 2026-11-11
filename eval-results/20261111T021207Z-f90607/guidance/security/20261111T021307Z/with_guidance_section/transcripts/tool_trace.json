@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0132NSUbCsJ8mGSgJa9k6qg9",
+      "name": "Bash",
+      "input": "git status --short && ls -R app tests 2><path>; cat app/db.py; cat app/web.py",
+      "input_chars": 80,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0132NSUbCsJ8mGSgJa9k6qg9",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\napp:\n__init__.py\ndb.py\nweb.py\n\"\"\"Product catalog queries.\"\"\"\nimport sqlite3\n\n\ndef connect(path: str = \"catalog.db\") -> sqlite3.Connection:\n    return sqlite3.con...",
+      "output_chars": 711,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HqJDgu5kgrb8Qv58exWZNh",
+      "name": "Bash",
+      "input": "cat >> app/db.py <<'EOF'\n\n\ndef _escape_like(term: str) -> str:\n    \"\"\"Make LIKE treat %, _ and the escape char in `term` as literal text.\"\"\"\n    return (term.replace(\"\\\\\", \"\\\\\\\\\")\n                .rep...",
+      "input_chars": 1017,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HqJDgu5kgrb8Qv58exWZNh",
+      "is_error": false,
+      "output": "'widget' [(1, 'Blue Widget', 1.0)]\n'%' [(2, '50% off_sale', 2.0)]\n'_' [(2, '50% off_sale', 2.0)]\n'\\\\' [(3, 'a\\\\b', 3.0)]\n\"'; drop table products;--\" []\n'' [(1, 'Blue Widget', 1.0), (2, '50% off_sale', 2.0), (3, 'a\\\\b', 3.0), (4, 'gadget', 4.0)]",
+      "output_chars": 244,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
