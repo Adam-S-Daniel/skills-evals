@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_011GK4egozt6dXb9ZaiZ8JjD",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_011GK4egozt6dXb9ZaiZ8JjD",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/release-notes/SKILL.md\n./...",
+      "output_chars": 464,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_0137fK5rcj2CFXbxMcptAESz",
+      "name": "Bash",
+      "input": "for f in README.md session/skills/.skills-bootstrap-installed.json session/skills/release-notes/SKILL.md session/skills/writing-adrs/SKILL.md repo/skills.lock repo/dot-claude/skills/release-notes/SKIL...",
+      "input_chars": 264,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_0137fK5rcj2CFXbxMcptAESz",
+      "is_error": false,
+      "output": "=== README.md\n# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the...",
+      "output_chars": 3189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01EzUzfRWZjZfom42Nakwqur",
+      "name": "Bash",
+      "input": "ls -la . .idea .vscode; for f in .bashrc .profile .zprofile .zshrc .bash_profile .gitconfig .gitmodules .mcp.json .ripgreprc; do echo \"=== $f\"; cat \"$f\"; done; ls -la --time-style=full-iso session/ski...",
+      "input_chars": 283,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01EzUzfRWZjZfom42Nakwqur",
+      "is_error": false,
+      "output": "crw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .idea\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .vscode\n\n.:\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 11 12:42 .\ndrwx------ 6 root root 4096 Nov 11 12:41 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .bashrc\n...",
+      "output_chars": 3463,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Tob9HXobtcoK1Usb49Lixk",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Tob9HXobtcoK1Usb49Lixk",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
