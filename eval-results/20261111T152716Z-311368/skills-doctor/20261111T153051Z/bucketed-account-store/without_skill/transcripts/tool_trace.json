@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JEQuNEC81VbWLHz3GMcAEy",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 129,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JEQuNEC81VbWLHz3GMcAEy",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov 11 15:31 .\ndrwx------ 6 root root 4096 Nov 11 15:31 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 15:31 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 15:31 .git\ncrw-r...",
+      "output_chars": 1884,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01L7n7ewCYuy3MyBq6DV5Lph",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; cd session; cat skills.lock skills/.skills-bootstrap-installed.json skills/synced/*/manifest.json; ls -la skills skills/synced/*; for f in skills/writing-adrs/SKILL.md skills...",
+      "input_chars": 406,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01L7n7ewCYuy3MyBq6DV5Lph",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 4118,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NNepMXX6M9Cs2muGfz4jHH",
+      "name": "Bash",
+      "input": "cd <path>; cat synced/*<path>; echo ====; diff synced/*<path> writing-adrs/SKILL.md; cat synced/.bucket*; echo; cat synced/*<path> | head -20; cd ..; sha256sum skills/*/SKILL.md; cd ../registry; git -...",
+      "input_chars": 315,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NNepMXX6M9Cs2muGfz4jHH",
+      "is_error": false,
+      "output": "---\r\nname: writing-adrs\r\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\r\n---\r\n\r\n# Writing ADRs\r\n\r\nOne ADR per decision. Title is an imperative statement of what was decided.\r\n\r\n## Sections\r\n\r\nContext, Decision, Consequences, References.\r\n====\n1,12c1,17\n< ---\r\n< name: writin...",
+      "output_chars": 1335,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01SBe4RGbRpn9hQdzrNMky88",
+      "name": "Bash",
+      "input": "cd <path>; for d in registry/plugins/adam/skills/writing-adrs session/skills/writing-adrs; do (cd $d; find . -type f | sort | xargs sha256sum | sha256sum; ls -la); done; sha256sum registry/plugins/ada...",
+      "input_chars": 433,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01SBe4RGbRpn9hQdzrNMky88",
+      "is_error": false,
+      "output": "8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\ntotal 12\ndrwxr-xr-x 2 root root 4096 Nov  8 18:32 .\ndrwxr-xr-x 4 root root 4096 Nov  8 18:32 ..\n-rw-r--r-- 1 root root  387 Nov  8 18:32 SKILL.md\n8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\ntotal 12\ndrwxr-xr-...",
+      "output_chars": 918,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RKra24Dre582wTMjGw1zQK",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RKra24Dre582wTMjGw1zQK",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
