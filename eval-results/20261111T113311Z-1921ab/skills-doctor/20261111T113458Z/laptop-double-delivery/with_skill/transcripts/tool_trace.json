@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Pb2or9sH4e2VkFVQ3TNMpg",
+      "name": "Bash",
+      "input": "pwd; ls -la; git status --short | head",
+      "input_chars": 38,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Pb2or9sH4e2VkFVQ3TNMpg",
+      "is_error": false,
+      "output": "<path>\ntotal 24\ndrwxr-xr-x 5 root root 4096 Nov 11 11:35 .\ndrwx------ 6 root root 4096 Nov 11 11:34 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 11 11:35 .claude\ndrwxr-xr-x 9 root root 4096 Nov 11 11:35 .gi...",
+      "output_chars": 1010,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01CuDQUufBNyHDQFP2xCUsxp",
+      "name": "Bash",
+      "input": "cat README.md; find session .claude -type f | head -100",
+      "input_chars": 55,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01CuDQUufBNyHDQFP2xCUsxp",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-10-27\n\nCopied off my own laptop, where I open Claude Code in a terminal, so the\ndelivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `session/skills....",
+      "output_chars": 1226,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U72ap9UiA8kV2cZzmvZyFx",
+      "name": "Bash",
+      "input": "cd session; for f in surface.txt skills.lock plugin-list.json skill-listing.txt skills/.skills-bootstrap-installed.json; do echo \"=== $f\"; cat $f; done; for f in skills/*/SKILL.md; do echo \"=== $f\"; h...",
+      "input_chars": 216,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U72ap9UiA8kV2cZzmvZyFx",
+      "is_error": false,
+      "output": "=== surface.txt\n$ echo \"entry=$CLAUDE_CODE_ENTRYPOINT remote=$CLAUDE_CODE_REMOTE_SESSION_ID force=$SKILLS_BOOTSTRAP_FORCE env=$CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE\"\nentry=cli remote= force= env=\n=== skills.lock\n{\n  \"registry\": \"Adam-S-Daniel/adam-agentskills\",\n  \"ref\": \"2f5987bd8a7dc6fd7e4bfc36dcba19...",
+      "output_chars": 2583,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_015iAq2urG4KZhSVGzYRwvg1",
+      "name": "Bash",
+      "input": "cd skills; for d in */; do echo $d; sha256sum $d/SKILL.md; (cd $d; find . -type f | sort | xargs sha256sum | sha256sum); done; ls -la",
+      "input_chars": 133,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_015iAq2urG4KZhSVGzYRwvg1",
+      "is_error": false,
+      "output": "debug-github-workflows/\nba7132233afaae26d0d72317fdf4ae0f123fbc1cb60434beb99893e2810bbd09  debug-github-workflows//SKILL.md\ne9e06f67b4e510b5dd522397b409068a80ba7d4b1187f4438343bb15f0624350  -\nstandup-notes/\n62ab581620532d2a527bd34a4cc2d5ea90f13209fa4e2882ba723bdaf2e54188  standup-notes//SKILL.md\ndafe...",
+      "output_chars": 877,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016KPg2zo4FdwbbF9mSPFKsc",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016KPg2zo4FdwbbF9mSPFKsc",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
