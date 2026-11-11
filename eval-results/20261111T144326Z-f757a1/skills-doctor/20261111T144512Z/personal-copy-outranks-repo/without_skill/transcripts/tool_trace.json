@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013FZotJeti9vsxik9btyQD5",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013FZotJeti9vsxik9btyQD5",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/release-notes/SKILL.md\n./...",
+      "output_chars": 464,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01PoS3SynKiTSS9JfmNMGb2b",
+      "name": "Bash",
+      "input": "cat README.md; for f in session/skills/.skills-bootstrap-installed.json session/skills/release-notes/SKILL.md session/skills/writing-adrs/SKILL.md repo/skills.lock repo/dot-claude/skills/release-notes...",
+      "input_chars": 269,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01PoS3SynKiTSS9JfmNMGb2b",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 3175,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M8aVfunydGx9m3NCCKqii7",
+      "name": "Bash",
+      "input": "for f in .mcp.json .gitmodules .gitconfig .ripgreprc .idea .vscode; do echo \"=== $f\"; cat \"$f\" 2>&1 | head -20; done; ls -la . session/skills repo repo/dot-claude; stat -c '%y %n' session/skills/*/SKI...",
+      "input_chars": 263,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M8aVfunydGx9m3NCCKqii7",
+      "is_error": false,
+      "output": "=== .mcp.json\ncat: .mcp.json: Permission denied\n=== .gitmodules\ncat: .gitmodules: Permission denied\n=== .gitconfig\ncat: .gitconfig: Permission denied\n=== .ripgreprc\ncat: .ripgreprc: Permission denied\n=== .idea\ncat: .idea: Permission denied\n=== .vscode\ncat: .vscode: Permission denied\n.:\ntotal 28\ndrwx...",
+      "output_chars": 2159,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QiSa7Mm795Zpzib5AvPAgb",
+      "name": "Bash",
+      "input": "find .claude | head; cd session/skills && sha256sum writing-adrs/SKILL.md release-notes/SKILL.md; (cd writing-adrs && find . -type f | sort | xargs sha256sum)",
+      "input_chars": 158,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QiSa7Mm795Zpzib5AvPAgb",
+      "is_error": false,
+      "output": ".claude\n.claude/.cc-writes\ncc14673290b282d7b551e4213c9f40a0a92b4c6718b5b6597f2c7a50599a8334  writing-adrs/SKILL.md\n6628e76a5a79ade33b5f4b623da2a4119fc5caec547af175895b75b9ccbc37d1  release-notes/SKILL.md\ncc14673290b282d7b551e4213c9f40a0a92b4c6718b5b6597f2c7a50599a8334  ./SKILL.md",
+      "output_chars": 280,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BxFAonrv1VHouMsdS5QYBs",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BxFAonrv1VHouMsdS5QYBs",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
