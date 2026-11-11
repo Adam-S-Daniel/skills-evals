@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01V26mT8phqHkegPsB7ssxb1",
+      "name": "Bash",
+      "input": "cd <path> 2><path>; pwd; ls -la; cd <path>; pwd; ls -la; git log --oneline | head; find . -path ./.git -prune -o -ipath '*release-notes*' -print | head -50",
+      "input_chars": 210,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01V26mT8phqHkegPsB7ssxb1",
+      "is_error": false,
+      "output": "<path>\ntotal 4\ndrwxr-xr-x  3 root root   60 Nov 11 08:41 .\ndrwxrwxrwt 11 root root 4096 Nov 11 08:41 ..\ndrwx------  3 root root   60 Nov 11 08:41 config\n<path>\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 11 08:41 .\ndrwx------ 6 root root 4096 Nov 11 08:41 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:20 .ba...",
+      "output_chars": 1286,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01387rD8Qeahs22zAgzyQ72A",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find . -path ./.git -prune -o -print | grep -v '^./\\.' | head -50; find .claude; for f in session/skills/release-notes/SKILL.md repo/dot-claude/skills/release-notes/SKILL.md;...",
+      "input_chars": 258,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01387rD8Qeahs22zAgzyQ72A",
+      "is_error": false,
+      "output": "# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the example-app c...",
+      "output_chars": 2539,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XyrAk6tLqBCHknW3rJR6YA",
+      "name": "Bash",
+      "input": "cd <path>; cat session/skills/.skills-bootstrap-installed.json repo/skills.lock; ls -la session/skills session/skills/*",
+      "input_chars": 146,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XyrAk6tLqBCHknW3rJR6YA",
+      "is_error": false,
+      "output": "{\n  \"version\": 1,\n  \"installed\": [\n    {\n      \"name\": \"writing-adrs\",\n      \"registry\": \"https://github.com/Adam-S-Daniel/adam-agentskills.git\",\n      \"bundle\": \"adam-anything-anywhere\",\n      \"digest\": \"e8cd86670c8590eac5c490595ca8ba695ac0b623f36266bda4d31d64ad87b89c\"\n    }\n  ]\n}\n{\n  \"registry\": \"...",
+      "output_chars": 1283,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01RRuZce3ecQnZBMXQAmfyEr",
+      "name": "Bash",
+      "input": "cd <path>; cat > FINDINGS.md <<'EOF'\n# Which release-notes the session reads\n\nWinning copy: session/skills/release-notes/SKILL.md\n\nSource: Not the bootstrap hook and not the repo. It is an unrecorded,...",
+      "input_chars": 2221,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01RRuZce3ecQnZBMXQAmfyEr",
+      "is_error": false,
+      "output": "(Bash completed with no output)",
+      "output_chars": 31,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
