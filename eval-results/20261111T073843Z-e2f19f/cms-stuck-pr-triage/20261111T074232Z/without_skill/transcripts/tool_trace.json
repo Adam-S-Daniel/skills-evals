@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_016GQB95fm7EtWym3Rak45Wn",
+      "name": "Bash",
+      "input": "pwd; git remote -v; git log --oneline -5; ls; which gh; gh auth status 2>&1 | head -5",
+      "input_chars": 85,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Ene37w4dDrmUKhVFSfb7N9",
+      "name": "ToolSearch",
+      "input": "github pull request actions",
+      "input_chars": 27,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01BiQAMqngrmfw2SwQKCycRb",
+      "name": "ListConnectors",
+      "input": "{}",
+      "input_chars": 2,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_016GQB95fm7EtWym3Rak45Wn",
+      "is_error": false,
+      "output": "<path>\nf3c92e5 initial commit\nREADME.md\nbin\nplatform.lock\n<path>\ngithub.com\n  \u2713 Logged in to github.com account cms-bot (GH_TOKEN)\n  - Active account: true\n  - Git operations protocol: https\n  - Token: <redacted>",
+      "output_chars": 303,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Ene37w4dDrmUKhVFSfb7N9",
+      "is_error": false,
+      "output": "",
+      "output_chars": 0,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01BiQAMqngrmfw2SwQKCycRb",
+      "is_error": true,
+      "output": "Connector registry is unavailable right now; please try again.",
+      "output_chars": 62,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01XmYP88J4cFTk7RNMbHHTyW",
+      "name": "Bash",
+      "input": "cat README.md platform.lock; echo ---; cat bin/gh | head -40",
+      "input_chars": 60,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01XmYP88J4cFTk7RNMbHHTyW",
+      "is_error": false,
+      "output": "# example-site\n\nA Decap-CMS site built on `example-org/cms-platform`, pinned by\n`platform.lock`. Editors publish through `<path>`; the editorial workflow\nopens a `cms/<collection>/<slug>` pull request, and the publish loops in\n`.github/workflows/` exercise that chain end to end against production.\n\n...",
+      "output_chars": 3125,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J75cJQpFcxwbEqGV9aE2iE",
+      "name": "Bash",
+      "input": "gh pr list --repo example-org/example-site --state open --json number,title,headRefName,labels,mergeable,statusCheckRollup,updatedAt 2>&1 | head -60; ls -a; ls $GH_REPLAY_DIR 2><path> | head -30",
+      "input_chars": 197,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J75cJQpFcxwbEqGV9aE2iE",
+      "is_error": false,
+      "output": "[\n  {\n    \"number\": 412,\n    \"title\": \"Create Post \u201cSpring release notes\u201d\",\n    \"headRefName\": \"cms/posts/spring-release-notes\",\n    \"baseRefName\": \"main\",\n    \"mergeStateStatus\": \"BLOCKED\",\n    \"isDraft\": false,\n    \"createdAt\": \"2026-08-30T09:14:22Z\",\n    \"updatedAt\": \"2026-08-30T09:41:07Z\",\n    \"...",
+      "output_chars": 1960,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KMqMciyXtgesnJtuzUiyKb",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR; for f in pr-view-412 pr-view-418 pr-view-421 pr-checks-412 pr-checks-418 pr-checks-421 run-list run-view-4468900033 run-view-4471182930 run-watch-4471182930; do echo \"=== $f\"; cat $...",
+      "input_chars": 315,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KMqMciyXtgesnJtuzUiyKb",
+      "is_error": false,
+      "output": "<persisted-output>\nOutput too large (34.5KB). Full output saved to: <path>\n\nPreview (first 2KB):\n=== pr-view-412\n{\n  \"number\": 412,\n  \"title\": \"Create Post \u201cSpring release notes\u201d\",\n  \"headRefName\": \"cms/posts/spring-release-notes\",\n  \"headRefOid\": \"c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb\",\n  \"baseR...",
+      "output_chars": 2234,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J12BxKinQQepGWpqaso6AW",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR; for f in pr-view-418 pr-view-421; do echo \"=== $f\"; jq 'del(.statusCheckRollup[]?|select(.conclusion==\"SUCCESS\"))' $f.json; done; echo; jq -r '.statusCheckRollup[]|select(.conclusio...",
+      "input_chars": 333,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01QhYSroaVSAFmew7Q4Uqgou",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR; for f in run-view-*.log; do echo \"=== $f\"; grep -nEi \"error|fail|timeout|expected|\u2718|not found|404|403|conflict|label\" $f | head -25; done; jq -c '.' run-view-*.json | cut -c1-900",
+      "input_chars": 197,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J12BxKinQQepGWpqaso6AW",
+      "is_error": false,
+      "output": "=== pr-view-418\n{\n  \"number\": 418,\n  \"title\": \"Update Post \u201cCanary post\u201d\",\n  \"headRefName\": \"cms/e2e/canary-post\",\n  \"headRefOid\": \"5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d\",\n  \"baseRefName\": \"main\",\n  \"baseRefOid\": \"9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35\",\n  \"mergeStateStatus\": \"BLOCKED\",\n  \"merg...",
+      "output_chars": 7262,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01QhYSroaVSAFmew7Q4Uqgou",
+      "is_error": false,
+      "output": "=== run-view-4468900033.log\n7:e2e\tInstall Playwright browsers\t2026-08-30T09:15:18.0114420Z apt lock timeout configured: DPkg::Lock::Timeout \"300\";\n12:e2e\tRun Playwright\t2026-08-30T09:40:51.8836204Z     Error: no entry found for slug \"winter-hours\" in collection \"posts\".\n16:e2e\tRun Playwright\t2026-08...",
+      "output_chars": 3807,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DxNbq99wX1FnzMn31yNaLW",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR; cat ruleset-view-1837402.json; cat pr-checks-418.json | jq -c '.[]' | head -20; echo; cat workflow-list.json; sed -n 20,34p run-view-4471182930.log; sed -n 8,18p run-view-4468900033...",
+      "input_chars": 215,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DxNbq99wX1FnzMn31yNaLW",
+      "is_error": false,
+      "output": "{\n  \"id\": 1837402,\n  \"name\": \"main\",\n  \"target\": \"branch\",\n  \"source_type\": \"Repository\",\n  \"source\": \"example-org/example-site\",\n  \"enforcement\": \"active\",\n  \"conditions\": {\n    \"ref_name\": { \"include\": [\"~DEFAULT_BRANCH\"], \"exclude\": [] }\n  },\n  \"rules\": [\n    { \"type\": \"deletion\" },\n    { \"type\":...",
+      "output_chars": 9726,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01AghEQ9eQEFkrozU94P6gaa",
+      "name": "Bash",
+      "input": "cd $GH_REPLAY_DIR/api/repos/example-org/example-site; for s in 5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1; do echo $s; j...",
+      "input_chars": 664,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01AghEQ9eQEFkrozU94P6gaa",
+      "is_error": false,
+      "output": "5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d\nvalidate-content success\ne2e / e2e success\nc47a1f9e02b6538d7ac194e0f2b83d65a70c19bb\nvalidate-content success\ne2e / e2e failure\na83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1\nvalidate-content success\ne2e / e2e queued\ncms-publish-loop-prod.yml\ndeploy-preview.yml\ndepl...",
+      "output_chars": 1355,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
