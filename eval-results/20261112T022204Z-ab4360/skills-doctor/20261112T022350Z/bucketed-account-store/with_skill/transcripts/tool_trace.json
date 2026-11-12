@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_018xtVupj7sqYNEJ2VUhBoYg",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_018xtVupj7sqYNEJ2VUhBoYg",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/synced/00000000...",
+      "output_chars": 996,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01M78w3i5XPUd9T7v4cxBaFN",
+      "name": "Bash",
+      "input": "git log --oneline | head; ls -la; for f in README.md session/skills.lock session/skills/.skills-bootstrap-installed.json session/skills/synced/*/manifest.json session/skills/synced/.bucket-*; do echo ...",
+      "input_chars": 224,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01WgN2PaX4pDjbHHtYCQ7Kw3",
+      "name": "Bash",
+      "input": "for f in registry/plugins/adam/skills/writing-adrs/SKILL.md session/skills/writing-adrs/SKILL.md session/skills/synced/*<path>; do echo \"=== $f\"; cat -A \"$f\" | head -0; cat \"$f\"; echo; sha256sum \"$f\";...",
+      "input_chars": 428,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01M78w3i5XPUd9T7v4cxBaFN",
+      "is_error": false,
+      "output": "d80647a initial commit\ntotal 28\ndrwxr-xr-x 6 root root 4096 Nov 12 02:24 .\ndrwx------ 6 root root 4096 Nov 12 02:23 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:56 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:56 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 12 02:23 .claude\ndrwxr-xr-x 9 root root 4096 ...",
+      "output_chars": 3783,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01WgN2PaX4pDjbHHtYCQ7Kw3",
+      "is_error": false,
+      "output": "=== registry/plugins/adam/skills/writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n##...",
+      "output_chars": 2388,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LQ4G8GxeDR7kkMMHgxj3Yf",
+      "name": "Bash",
+      "input": "file session/skills/synced/*<path> session/skills/writing-adrs/SKILL.md registry/plugins/adam/skills/writing-adrs/SKILL.md; date -u -d @1789713628; find session registry -type f -newer README.md; stat...",
+      "input_chars": 487,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LQ4G8GxeDR7kkMMHgxj3Yf",
+      "is_error": false,
+      "output": "session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/writing-adrs/SKILL.md: ASCII text, with CRLF line terminators\nsession/skills/writing-adrs/SKILL.md:                                                                                  ASCII text\nregistry/plu...",
+      "output_chars": 3745,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_014VPYKxHgv2TiwbmHc7Ff6Q",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:skills-doctor",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_014VPYKxHgv2TiwbmHc7Ff6Q",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:skills-doctor",
+      "output_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01FDMCE36sPUPgdSHxm9pV1d",
+      "name": "Bash",
+      "input": "S=<path>; ls -la $(dirname $S); env -u CLAUDE_CODE_REMOTE_SESSION_ID -u SKILLS_BOOTSTRAP_FORCE CLAUDE_CODE_ENTRYPOINT=cli python3 -I $S --lock session/skills.lock --skills-dir session/skills --project...",
+      "input_chars": 380,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01FDMCE36sPUPgdSHxm9pV1d",
+      "is_error": false,
+      "output": "total 532\ndrwxr-xr-x 2 root root   4096 Nov 12 02:23 .\ndrwxr-xr-x 3 root root   4096 Nov 12 02:23 ..\n-rw-r--r-- 1 root root 217234 Nov 12 02:23 check_provenance.py\n-rw-r--r-- 1 root root 313447 Nov 12 02:23 test_check_provenance.py\nprovenance: 2 on disk, 2 hook-installed, 0 unattributed, 0 not in th...",
+      "output_chars": 3471,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TYCkso3DCMNWXM4W3MYFKe",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TYCkso3DCMNWXM4W3MYFKe",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
