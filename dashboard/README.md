@@ -99,8 +99,9 @@ prompt that tells it to.
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `cleanup`, `decisions`, `gate`, `roster`, `loop_grid`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
-   only its timestamps and pace moved.
+4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `roster`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
+   only its timestamps and pace moved. Never skip `refresh`: it changes every run, and the page's
+   "refresh did not land" banner reads it.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's
    `url`, `asset: true` and `file_path`, one file per call. Then run one
    ArtifactData `batch` of `update` writes on `datasets/<id>`, pinned with
@@ -123,7 +124,7 @@ and uploads `run_stream.json`.
 
 ## Cost and benefit
 
-`build.py` writes two datasets for the Impact group's cost panel. A week runs Monday
+`build.py` writes two datasets for the Spend and use group's cost panel. A week runs Monday
 17:00 UTC to the next Monday and is labeled by its start date; the first is set by
 `COST_START`.
 
@@ -143,9 +144,8 @@ With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
-`evals/public-export.yml` sets `include_spend`), and the public Impact group shows
-spend. No refresh step puts it there yet: until one does, the public document has
-no `spend` and its spend panel stays hidden.
+`evals/public-export.yml` sets `include_spend`), and the public Spend and use group
+shows it. A document without `spend` hides that panel.
 
 The Changes group's fixture requests come from `fixture_queue` in the `explorer`
 dataset (all issue and PR numbers are in skills-evals); no separate dataset

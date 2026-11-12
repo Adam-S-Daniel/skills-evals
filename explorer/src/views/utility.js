@@ -3,7 +3,7 @@
    each subject's `run_utility` (harness/gates.py, RUN UTILITY): runs and
    list-price cost per UTC day, model, class and discard reason. */
 import { STRINGS } from '../core/strings.js';
-import { clean, fmtCount , fmtUsd } from '../core/format.js';
+import { clean, fmtCount, fmtUsd } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { term } from '../core/terms.js';

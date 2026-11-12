@@ -5,6 +5,7 @@ passes --now.
 """
 import importlib.util
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -99,6 +100,18 @@ class DashboardBuildTests(unittest.TestCase):
     def test_usage_keeps_the_weekly_total_apart(self):
         rows, sources, _digests = build.usage(str(self.results))
         self.assertEqual({r["kind"] for r in rows}, {"hook_all", "skill"})
+
+    def test_usage_rows_carry_no_ci_repo_outcomes(self):
+        """The pull request outcomes by repo had no panel left (every repo, loop or not), so no row or key carries them."""
+        path = self.results / "usage" / "weekly-ci.json"
+        doc = json.loads(path.read_text()) if path.exists() else {"schema": 1, "sources": [], "rows": []}
+        doc["rows"].append({"week": "2026-01-05", "kind": "repo", "name": "example-owner/r", "repo": "example-owner/r",
+                            "outcome": {"prs_opened": 3, "prs_merged": 2}})
+        write(path, doc)
+        rows, _, _ = build.usage(str(self.results))
+        self.assertNotIn("repo", {r["kind"] for r in rows})
+        self.assertFalse({"prs_opened", "prs_merged", "ci_red_after"} & set().union(*(r.keys() for r in rows)))
+        self.assertFalse(hasattr(build, "OUTCOME_KEYS"))
 
     def test_usage_sources_carry_each_producers_read_count_and_unit(self):
         _, sources, _ = build.usage(str(self.results))
@@ -231,7 +244,16 @@ class DashboardBuildTests(unittest.TestCase):
 
     #: Datasets kept by hand or changed rarely: only these may keep a longer stale-after
     #: (dashboard/README.md "Compare" names the same list).
-    HAND_KEPT = {"budget", "roster", "explorer_private"}
+    @staticmethod
+    def hand_kept_in_readme():
+        """The names the README's Compare step lists as hand-kept (its one list)."""
+        text = (DASH / "README.md").read_text()
+        line = next(l for l in text.splitlines() if "except the hand-kept ones" in l)
+        return set(re.findall(r"`([a-z_]+)`", line.split("except the hand-kept ones", 1)[1].split(")", 1)[0]))
+
+    @property
+    def HAND_KEPT(self):
+        return self.hand_kept_in_readme()
 
     def test_stale_after_clears_two_refreshes_and_only_hand_kept_datasets_keep_more(self):
         interval = build.REFRESH_INTERVAL_HOURS
@@ -257,6 +279,19 @@ class DashboardBuildTests(unittest.TestCase):
             text = " ".join((DASH / rel).read_text().split())
             self.assertIn(f"every {build.REFRESH_INTERVAL_HOURS} hours", text, rel)
             self.assertNotRegex(text, r"every (?!%d hours)\d+ hours" % build.REFRESH_INTERVAL_HOURS, rel)
+        # The page's own words never write a number of hours: they read it from the refresh dataset.
+        strings = (REPO / "explorer" / "src" / "private" / "strings.js").read_text()
+        self.assertNotRegex(strings, r"every \d+ hours", "private/strings.js derives the interval")
+
+    def test_the_refresh_dataset_carries_the_clock_and_the_one_interval(self):
+        out = self.tmp / "ds-refresh"
+        build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                    "--config", str(DASH / "config.example"), "--out", str(out), "--now", NOW.isoformat()])
+        row = json.loads((out / "refresh.json").read_text())
+        self.assertEqual(row, [{"refreshed_at": "2026-01-06T13:00:00Z", "refresh_every_hours": build.REFRESH_INTERVAL_HOURS}])
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        self.assertIn("refresh", defined)
+        self.assertIn("Never skip `refresh`", (DASH / "README.md").read_text(), "the refresh step uploads it every run")
 
     def test_allowance_row_carries_the_guards_own_room_and_the_next_scheduled_reset(self):
         sys.path.insert(0, str(REPO / "scripts"))

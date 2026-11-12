@@ -8,23 +8,22 @@ import { clean, parseTime, fmtDay, fmtCount } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, navLink, rangeLine, srcLineFor } from './bits.js';
-import { isLoopPull, funnelView, fixtureRequestsView } from './loop.js';
+import { LOOP_KINDS, isLoopPull, funnelView, fixtureRequestsView } from './loop.js';
 import { lessonsView } from './lessons.js';
 import { trendingView } from './trending.js';
 
 export const CHANGE_DAYS = 30;
 const DAY_MS = 86400000;
 const KIND_ROUTE = { newSkill: 'skills', editSkill: 'skills', removeSkill: 'skills', removeSection: 'guidance', editGuidance: 'guidance', newSection: 'guidance', newCheck: 'hooks' };
-const KINDS = [['editSkill', /^eval-improve\//, /^(Improve |Proposed .+ SKILL\.md edit|Trim )/], ['editGuidance', /^eval-guidance-improve\//, /^Proposed .+ guidance edit/],
-  ['newSkill', /^draft-skill\//, /^New skill: /], ['removeSkill', /^retire-skill\//, /^(Retire skill |Remove )/], ['removeSection', /^retire-guidance\//, /^Retire guidance section /]];
 export const REMOVALS = ['removeSkill', 'removeSection'];
 
-/* What kind of change a loop pull request is, by head branch when the
-   document carries it (the lasting rule), else by the title the gate gives it. */
+/* What kind of change a loop pull request is: by its head branch when the
+   document carries one (the lasting rule; a branch that matches no kind is no
+   loop change whatever its title says), else by the title the gate gives it. */
 export function pullKind(p) {
-  const ref = typeof p.head_ref === 'string' ? p.head_ref : '', title = String(p.title || '');
-  for (const [kind, branch, name] of KINDS) if (branch.test(ref) || name.test(title)) return kind;
-  return null;
+  const byRef = typeof p.head_ref === 'string';
+  const hit = LOOP_KINDS.find((k) => (byRef ? k.branch.test(p.head_ref) : k.title.test(String(p.title || ''))));
+  return hit ? hit.kind : null;
 }
 
 /* The skill or section a loop pull request is about, read from its title. */

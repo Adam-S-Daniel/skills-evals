@@ -4,7 +4,7 @@
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
-import { fmtCount , fmtUsd } from '../core/format.js';
+import { fmtCount, fmtUsd } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';

@@ -1,7 +1,7 @@
 /* The loop's records the Changes page shows: fixture requests, where lessons
    went, and which pull requests are the loop's own. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtCount , fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtCount, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { table, srcLineFor } from './bits.js';
@@ -67,8 +67,17 @@ export function funnelView(doc) {
    private build uses), else by the titles the gates give them
    (scripts/draft_new_skill.py, improve_gate.py, guidance_improve_gate.py,
    retire_skill.py), which older documents need. */
-export const LOOP_TITLE = /^(New skill: |Improve |Proposed .+ (SKILL\.md|guidance) edit|Retire (skill|guidance section) |Remove .*: (no (marginal )?benefit|unused)|Trim )/;
-export const LOOP_BRANCH = /^(eval-improve|eval-guidance-improve|draft-skill|retire-skill|retire-guidance)\//;
+const LOOP_SOURCES = [
+  ['editSkill', 'eval-improve', 'Improve |Proposed .+ SKILL\\.md edit|Trim '],
+  ['editGuidance', 'eval-guidance-improve', 'Proposed .+ guidance edit'],
+  ['newSkill', 'draft-skill', 'New skill: '],
+  ['removeSkill', 'retire-skill', 'Retire skill |Remove .*: (?:no (?:marginal )?benefit|unused)'],
+  ['removeSection', 'retire-guidance', 'Retire guidance section ']];
+/* One row per kind of loop change: its head branch prefix and its title. The
+   two patterns below and the changes list's kinds all come from this table. */
+export const LOOP_KINDS = LOOP_SOURCES.map(([kind, branch, title]) => ({ kind, branch: new RegExp('^' + branch + '/'), title: new RegExp('^(?:' + title + ')') }));
+export const LOOP_TITLE = new RegExp('^(?:' + LOOP_SOURCES.map((k) => k[2]).join('|') + ')');
+export const LOOP_BRANCH = new RegExp('^(?:' + LOOP_SOURCES.map((k) => k[1]).join('|') + ')/');
 
 export function isLoopPull(p) {
   if (!p || typeof p !== 'object') return false;

@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as acorn from 'acorn';
 import vm from 'node:vm';
-import { bundle, buildPublicPage, buildPrivatePage, buildArtifactPage } from '../build.js';
+import { bundle, bundleResult, buildPublicPage, buildPrivatePage, buildArtifactPage } from '../build.js';
 import { readDashboard, dashboardSource, DATASET_ID } from '../src/adapters/dashboard.js';
 import { DEFAULT_DATA_URL, DATA_URL_PREFIX, allowedDataUrl } from '../src/adapters/web.js';
 import * as artifactAdapter from '../src/adapters/artifact.js';
@@ -15,7 +15,7 @@ import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
-import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, STALE_AFTER_HOURS } from '../src/private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
@@ -24,10 +24,13 @@ import { agentMadeRows, spendWeeks } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE, noUseShare } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
+// The href attribute values read off the rendered links, as a set: a link is matched by exact equality, never as a substring.
+const hrefSet = (hrefs) => new Set(hrefs);
 import { hashFor, parseRoute, GROUPS as ROUTE_GROUPS } from '../src/core/route.js';
 import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
 import { changeRows, pullKind, pullSubject } from '../src/views/changes.js';
+import { LOOP_KINDS, LOOP_TITLE, LOOP_BRANCH, isLoopPull } from '../src/views/loop.js';
 import { fmtUsd } from '../src/core/format.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
@@ -226,13 +229,13 @@ await test('the allowance and routine health come from their datasets', () => {
   eq(cap.spent, 40.5); eq(cap.cap, 100); eq(cap.stop, 90); eq(cap.room, 59.5);
   eq(Math.round(cap.reservation * 1000) / 1000, 1.2);
   eq(capUse(null, []), null);
-  const rh = routineHealth([{ health: 'OK' }, { health: 'Stalled' }, { health: 'Retired' }, { health: 'Not run yet' }]);
+  const rh = routineHealth([{ health: 'OK' }, { health: 'Stalled' }, { health: 'Not run yet' }]);
   eq(JSON.stringify(rh), '{"active":3,"ok":1,"fresh":1,"attention":1}');
   // Every shape of mix: healthy, not run yet and needing a look always add up to the rows the table lists.
-  for (const mix of [[], ['OK'], ['Not run yet'], ['OK', 'Late', 'Not run yet', 'Retired', 'Failing', 'Paused', 'Check', 'Not run yet']]) {
+  for (const mix of [[], ['OK'], ['Not run yet'], ['OK', 'Late', 'Not run yet', 'Failing', 'Paused', 'Check', 'Not run yet']]) {
     const r = routineHealth(mix.map((health) => ({ health })));
     eq(r.ok + r.fresh + r.attention, r.active, mix.join(','));
-    eq(r.active, mix.filter((x) => x !== 'Retired').length);
+    eq(r.active, mix.length);
   }
 });
 await test('the private build has six groups, Needs you second, and speaks to "you"', () => {
@@ -245,7 +248,7 @@ await test('the private build has six groups, Needs you second, and speaks to "y
     ok(t.includes('Approve the example hook') && t.includes(STRINGS.groups.needs), t);
     ok(!/the owner/.test(t), 'no third person in the private voice');
     const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
-    ok(hrefs.includes('https://github.com/example-owner/r/pull/3'), 'the waiting item links to its page');
+    ok(hrefSet(hrefs).has('https://github.com/example-owner/r/pull/3'), 'the waiting item links to its page');
     ok(hrefs.every((u) => /^(https:\/\/github\.com\/|#\/[a-z]+$)/.test(u)), 'only GitHub and this page: ' + hrefs.join(' '));
   } finally { useVoice('owner'); }
   const pub = textOf(renderRoute(doc(), { name: 'needs', id: null }, {}));
@@ -282,8 +285,8 @@ await test('made by agents: counts by kind, agent items newest first, linked to 
   const node = renderRoute(amDoc(), { name: 'spend', id: null }, {});
   ok(textOf(node).includes(STRINGS.agentMade), 'panel shown');
   const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
-  ok(hrefs.includes('#/hooks/demo-check') && hrefs.includes('#/skills/demo-skill'), hrefs.join(' '));
-  ok(!hrefs.includes('#/guidance/demo-section'), 'person-made items are counted, not listed');
+  ok(hrefSet(hrefs).has('#/hooks/demo-check') && hrefSet(hrefs).has('#/skills/demo-skill'), hrefs.join(' '));
+  ok(!hrefSet(hrefs).has('#/guidance/demo-section'), 'person-made items are counted, not listed');
 });
 
 // --- fixture requests (ported from dashboard/build.py's fixture_queue) ----------------------
@@ -469,8 +472,13 @@ await test('no source file but config.js names the owner/repo', () => {
 
 // --- the public bundle -------------------------------------------------------------
 const publicJs = await bundle('public.js');
-// Unminified, so the module path comments the leak checks look for survive.
-const privateJs = await bundle('private.js', { minifyWhitespace: false });
+// The negative controls below need the private bundle readable (names kept, so
+// the leak check can see `dash`), which the shipped private page is not.
+const privateJs = await bundle('private.js', { minifySyntax: false, minifyWhitespace: false, minifyIdentifiers: false });
+// Which source files went into a bundle, from esbuild's metafile: a fact about
+// the build, where a path comment in the output text is only a habit of the printer.
+const inputsOf = async (entry) => new Set(Object.keys((await bundleResult(entry, { minifySyntax: true, minifyWhitespace: false, minifyIdentifiers: false })).metafile.inputs));
+const PUBLIC_INPUTS = await inputsOf('public.js'), PRIVATE_INPUTS = await inputsOf('private.js'), ARTIFACT_INPUTS = await inputsOf('artifact.js');
 await test('the leak check sees the dashboard adapter in the private bundle', () => {
   // The negative control: the same check must flag what it exists to keep out.
   const leaks = privateLeaks(privateJs);
@@ -488,8 +496,8 @@ await test('the committed page holds no private dataset id and no dash reference
 await test('the public bundle leaves out the dashboard adapter, the private entry and every private view', () => {
   // The negative control: the private bundle carries the same markers.
   for (const m of ['src/adapters/dashboard.js', 'src/entries/private.js', 'src/private/views.js', 'src/private/strings.js']) {
-    ok(privateJs.includes(m), 'the private bundle names ' + m);
-    ok(!publicJs.includes(m), 'the public bundle names ' + m);
+    ok(PRIVATE_INPUTS.has(m), 'the private bundle includes ' + m);
+    ok(!PUBLIC_INPUTS.has(m), 'the public bundle includes ' + m);
   }
   const privateOnly = ['Waiting on you', 'Half-built and broken features'];
   for (const t of privateOnly) {
@@ -538,6 +546,31 @@ await test('the private page fits an ArtifactData document once JSON-serialized'
   const page = await buildPrivatePage();
   const size = Buffer.byteLength(JSON.stringify({ text: page }), 'utf8');
   ok(size < 262144, 'serialized private page is ' + size + ' bytes, over the 262,144 limit');
+});
+// The shipped private page is minified (syntax, whitespace and identifiers); every
+// other test runs the readable bundle, so run the committed script itself too.
+await test('the committed private page script runs and answers like the readable bundle', () => {
+  const scripts = inlineScripts(fs.readFileSync(PRIVATE_PAGE, 'utf8'));
+  eq(scripts.length, 1, 'one inline script');
+  const sandbox = { module: { exports: {} }, URL, URLSearchParams, Intl, console, Date, Math, JSON };
+  vm.runInNewContext(scripts[0], sandbox, { filename: 'dashboard-page.js' });
+  const shipped = sandbox.module.exports;
+  eq(Object.keys(shipped).sort().join(','), Object.keys(exportsOf(privateJs)).sort().join(','), 'the same exports');
+  eq(JSON.stringify(shipped.routineHealth([{ health: 'OK' }, { health: 'Late' }, { health: 'Not run yet' }])), '{"active":3,"ok":1,"fresh":1,"attention":1}');
+  eq(shipped.staleHours(Date.parse('2026-11-12T01:00:00Z'), Date.parse('2026-11-12T20:00:00Z'), 12), 19);
+  eq(shipped.staleHours(Date.parse('2026-11-12T01:00:00Z'), Date.parse('2026-11-12T20:00:00Z'), 24), null);
+});
+// Headroom: each page must stay at least 8 KB under its cap, so a change that
+// eats the margin fails here, before the page can no longer be stored. The
+// private cap is the ArtifactData document limit (JSON-serialized); the public
+// 256 KB budget is a size choice for a page that is one self-contained file
+// people open straight from the repository (tool/test/run.js holds the cap).
+await test('both pages keep 8 KB of headroom under their caps', () => {
+  const HEADROOM = 8 * 1024;
+  const priv = Buffer.byteLength(JSON.stringify({ text: fs.readFileSync(PRIVATE_PAGE, 'utf8') }), 'utf8');
+  const pub = fs.statSync(PAGE).size;
+  ok(priv <= 262144 - HEADROOM, 'private page serialized is ' + priv + ' bytes, within 8 KB of 262,144');
+  ok(pub <= 256 * 1024 - HEADROOM, 'public page is ' + pub + ' bytes, within 8 KB of 256 KB');
 });
 await test('dashboard/page/index.html is one self-contained Dashboard fragment', () => {
   const html = fs.readFileSync(PRIVATE_PAGE, 'utf8');
@@ -633,7 +666,8 @@ await test('the artifact bundle names no raw.githubusercontent.com URL', () => {
   // The negative control: the public bundle does.
   ok(namesRawHost(publicJs), 'the public bundle names raw.githubusercontent.com');
   ok(!namesRawHost(artifactJs), 'the artifact bundle names raw.githubusercontent.com');
-  ok(!artifactJs.includes('src/adapters/web.js') && artifactJs.includes('src/adapters/artifact.js'), 'web.js is replaced by artifact.js');
+  ok(!ARTIFACT_INPUTS.has('src/adapters/web.js') && ARTIFACT_INPUTS.has('src/adapters/artifact.js'), 'web.js is replaced by artifact.js');
+  ok(PUBLIC_INPUTS.has('src/adapters/web.js') && !PUBLIC_INPUTS.has('src/adapters/artifact.js'), 'the public bundle keeps web.js');
   const dataFiles = stringsIn(artifactJs).filter((x) => /\.json(\?|#|$)/.test(x));
   eq([...new Set(dataFiles)].join(','), 'latest.json', 'the one data file it names');
 });
@@ -649,7 +683,7 @@ await test('the artifact bundle fetches no literal URL and reads the data throug
 await test('the artifact bundle holds no private code, dataset id or dash reference', () => {
   eq(privateLeaks(artifactJs).join('; '), '');
   for (const m of ['src/adapters/dashboard.js', 'src/entries/private.js', 'src/private/views.js', 'src/private/strings.js']) {
-    ok(privateJs.includes(m) && !artifactJs.includes(m), 'the artifact bundle names ' + m);
+    ok(PRIVATE_INPUTS.has(m) && !ARTIFACT_INPUTS.has(m), 'the artifact bundle includes ' + m);
   }
   for (const t of ['Waiting on you', 'Half-built and broken features']) {
     ok(!stringsIn(artifactJs).some((x) => x.includes(t)), 'the artifact bundle holds ' + t);
@@ -859,7 +893,7 @@ await test('R3 recommendation 3: with nothing waiting and every routine on time,
   const at = (x) => t.indexOf(x);
   ok(at('Waiting on you') < at('Loop health') && at('Loop health') < at('Needs attention') && at('Needs attention') < at("This week's test allowance") && at("This week's test allowance") < at('Routine health'), 'the order');
   const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
-  for (const h of ['#/activity', '#/changes', '#/spend', '#/summary']) ok(hrefs.includes(h), 'the strip links ' + h);
+  for (const h of ['#/activity', '#/changes', '#/spend', '#/summary']) ok(hrefSet(hrefs).has(h), 'the strip links ' + h);
   const folded = findAll(node, (n) => n.tag === 'details' && textOf(n).includes('R1'));
   eq(folded.length, 1, 'both healthy routines sit under one fold');
 });
@@ -906,15 +940,27 @@ await test('R3 recommendation 4: 29 context-drift rows are one row that says who
   eq(attentionGroups(attentionRows(fakeDash({}), doc({ alerts: alerts.slice(0, 3) }))).length, 3);
   eq(attentionGroups(attentionRows(fakeDash({}), doc({ alerts: alerts.slice(0, 4) }))).length, 1);
 });
+await test('PR 984: the refresh clock, not the allowance row, decides the banner', () => {
+  const ALLOW = okData([{ measure: 'eval_spend_since_reset', points: 1, pace_room_points: 1, computed_at: '2026-11-12T00:00:00Z' }]);
+  const refresh = (iso, every) => okData([{ refreshed_at: iso, refresh_every_hours: every }]);
+  const banner = (dash) => flat(renderRoute(doc(), { name: 'summary', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) })).includes('last refreshed');
+  // An unchanged allowance row for 20 hours (the Compare step skips unchanged datasets) is not a failed refresh.
+  ok(!banner(fakeDash({ eval_allowance: ALLOW, refresh: refresh('2026-11-12T20:00:00Z', 12) })), 'fresh refresh clock, old allowance');
+  eq(snapshotMs(fakeDash({ eval_allowance: ALLOW, refresh: refresh('2026-11-12T20:00:00Z', 12) })), Date.parse('2026-11-12T20:00:00Z'));
+  ok(banner(fakeDash({ eval_allowance: ALLOW, refresh: refresh('2026-11-12T01:00:00Z', 12) })), 'old refresh clock warns');
+  ok(!banner(fakeDash({ eval_allowance: ALLOW, refresh: refresh('2026-11-12T01:00:00Z', 24) })), 'a 24-hour interval allows 19 hours');
+  ok(banner(fakeDash({ eval_allowance: ALLOW })), 'no refresh row falls back to the allowance time and 12 hours');
+});
 await test('R3 recommendation 9: a snapshot older than a refresh allows warns on every group; a fresh one does not', () => {
   const SNAP = (iso) => okData([{ measure: 'eval_spend_since_reset', points: 1, pace_room_points: 1, computed_at: iso }]);
   const old = fakeDash({ eval_allowance: SNAP('2026-11-12T01:16:00Z') });
   eq(snapshotMs(old), Date.parse('2026-11-12T01:16:00Z'));
   eq(staleHours(snapshotMs(old), NOW_ET4PM), 19);
   eq(staleHours(Date.parse('2026-11-12T20:00:00Z'), NOW_ET4PM), null, 'one hour old');
-  eq(staleHours(NOW_ET4PM - STALE_AFTER_HOURS * 3600000, NOW_ET4PM), null, 'exactly at the limit is not past it');
-  eq(staleHours(NOW_ET4PM - STALE_AFTER_HOURS * 3600000 - 1, NOW_ET4PM), 13);
+  eq(staleHours(NOW_ET4PM - 13 * 3600000, NOW_ET4PM), null, 'exactly at the limit is not past it');
+  eq(staleHours(NOW_ET4PM - 13 * 3600000 - 1, NOW_ET4PM), 13);
   eq(staleHours(NaN, NOW_ET4PM), null, 'no snapshot is no claim');
+  eq(staleHours(NOW_ET4PM - 20 * 3600000, NOW_ET4PM, 24), null, 'a 24-hour interval allows 20 hours');
   for (const name of ['summary', 'needs', 'changes', 'hooks', 'spend', 'activity']) {
     const t = flat(renderRoute(doc(), { name, id: null }, { ext: makeExt(old, { now: () => NOW_ET4PM }) }));
     ok(t.includes('This page was last refreshed Nov 11, 2026, 8:16 PM ET, 19 hours ago. It refreshes every 12 hours, so a refresh did not land.'), name + ': ' + t.slice(0, 200));
@@ -974,7 +1020,7 @@ await test('R3 recommendation 5: the page shows the list with When, Change, Subj
   ok(only.includes('old-skill') && only.includes('old-section') && only.includes('ancient'), 'every removal, whenever');
   ok(!only.includes('Edited skill') && !only.includes('New git hook check'), 'nothing else');
   const hrefs = findAll(renderRoute(CHDOC(), { name: 'changes', id: null }, {}), (n) => n.tag === 'a').map((n) => n.attrs.href);
-  ok(hrefs.includes('#/changes/removed') && hrefs.includes('#/skills/workflow-path-audit'), 'the filter and the subject pages');
+  ok(hrefSet(hrefs).has('#/changes/removed') && hrefSet(hrefs).has('#/skills/workflow-path-audit'), 'the filter and the subject pages');
 });
 await test('R3 recommendation 5: the private build adds its live merged pull requests, once each', () => {
   const live = { repo: 'adam-agentskills', number: 142, title: 'Proposed workflow-path-audit SKILL.md edit (improvement run 20261110T1)', author: 'x', closed_at: '2026-11-10T15:00:00Z', url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/142' };
@@ -1000,6 +1046,57 @@ await test('R4 and R5: Spend and use has no pull-request-by-week panel and no re
     ok(!/Pull requests by week|Red CI runs|Red in CI runs|Pull request outcomes/.test(t), t.slice(0, 300));
   }
   ok(!('impactPrs' in STRINGS) && !('impactRed' in STRINGS), 'their strings are gone');
+});
+await test('PR 984: an old route name with anything after it still opens its new home', () => {
+  const all = Object.keys(ROUTE_GROUPS);
+  const at = (hash) => JSON.stringify(parseRoute(hash, '', all, 'needs'));
+  eq(at('#/loop/x'), '{"name":"changes","id":null}');
+  eq(at('#/loop/'), '{"name":"changes","id":null}');
+  eq(at('#/impact/anything/else'), '{"name":"spend","id":null}');
+  eq(at('#/ops/'), '{"name":"activity","id":null}');
+  eq(at('#/removed/'), '{"name":"changes","id":"removed"}');
+  eq(at('#/removed/x'), '{"name":"changes","id":"removed"}');
+  eq(at('#/hooks/'), '{"name":"hooks","id":null}', 'a current route with a bare slash is unchanged');
+});
+await test('PR 984: every folded kind on Needs you says who acts', () => {
+  const alerts = (n) => Array.from({ length: n }, (_, i) => ({ name: 'skill-' + i, kind: 'retire', text: 'due for removal', url: 'https://github.com/example-owner/r/issues/' + i, subject: 'skill' }));
+  const fx = (kind) => Array.from({ length: 4 }, (_, i) => ({ finding_id: kind + i, kind, severity: kind === 'idle' ? 'medium' : 'high', subject: kind + i, url: 'https://github.com/example-owner/r/issues/' + i }));
+  const dash = fakeDash({ half_built_issues: okData(Array.from({ length: 4 }, (_, i) => ({ key: 'h' + i, state: 'open', kind: 'broken', severity: 'high', title: 'T' + i, url: 'https://github.com/example-owner/r/issues/' + i, repo: 'r', age_days: 1 }))) });
+  const groups = attentionGroups(attentionRows(dash, doc({ alerts: alerts(4), fixture_queue: { findings: fx('idle').concat(fx('broken')) } })));
+  eq(groups.length, 4, groups.map((g) => g.kind).join('; '));
+  for (const g of groups) ok(g.children && typeof g.note === 'string' && g.note.length > 20, g.kind + ' names who acts');
+  ok(groups.find((g) => /idle/.test(g.kind)).note.includes('nothing for you') || groups.find((g) => /idle/.test(g.kind)).note.includes('Nothing for you'), 'the idle fixture note');
+  // No inner scroll box: the note and the fold are not cut off.
+  const node = needsPage(dash, doc({ alerts: alerts(4) }));
+  ok(findAll(node, (n) => n.tag === 'div' && String(n.attrs && n.attrs.class || '').split(' ').includes('tall')).length === 0, 'no tall scroller on the attention table');
+});
+await test('PR 984: the changes list and the loop filter share one table of kinds; a branch decides when the document has one', () => {
+  eq(LOOP_KINDS.map((k) => k.kind).join(','), 'editSkill,editGuidance,newSkill,removeSkill,removeSection');
+  // Every kind's own branch and title are loop changes by both rules, and name that kind.
+  const samples = { editSkill: ['eval-improve/x', 'Improve `x`: more'], editGuidance: ['eval-guidance-improve/x', 'Proposed x guidance edit'], newSkill: ['draft-skill/x', 'New skill: x'],
+    removeSkill: ['retire-skill/x', 'Remove a/x: unused'], removeSection: ['retire-guidance/x', 'Retire guidance section x'] };
+  for (const [kind, [ref, title]] of Object.entries(samples)) {
+    ok(LOOP_BRANCH.test(ref) && LOOP_TITLE.test(title), kind + ' matches the shared patterns');
+    eq(pullKind({ head_ref: ref, title: 'unrelated' }), kind, kind + ' by branch');
+    eq(pullKind({ title }), kind, kind + ' by title');
+    ok(isLoopPull({ head_ref: ref }) && isLoopPull({ title }), kind + ' is a loop pull');
+  }
+  // With a branch the title never decides: an ordinary branch titled like a loop change is no loop change.
+  eq(pullKind({ head_ref: 'feature/x', title: 'New skill: x' }), null);
+  ok(!isLoopPull({ head_ref: 'feature/x', title: 'New skill: x' }));
+  eq(pullKind({ title: 'Fix a typo' }), null);
+  ok(!STRINGS.changeWhy.checkRan(1, 1).includes('lesson') && !STRINGS.changeWhy.checkNew.includes('lesson'), 'no claim the data cannot back');
+});
+await test('PR 984: private Spend shows the weekly money once, the cost table folded, and says "list price" once', () => {
+  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 335.49, run_usd: 91.75 }];
+  const dash = fakeDash({ cost_benefit_summary: okData([{ key: 'k', label: 'Summary measure', value: 1, target: null, status: null, note: '' }]),
+    cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0 }]) });
+  const node = renderRoute(doc({ generated_at: '2026-11-12T17:00:00Z', spend: { generated_at: '2026-11-12T01:00:00Z', weeks } }), { name: 'spend', id: null }, { ext: makeExt(dash) });
+  const t = flat(node);
+  eq(t.split('list price').length - 1, 1, 'list price once: ' + t.slice(0, 300));
+  ok(t.includes('Summary measure'), 'the summary measures stay');
+  const folds = findAll(node, (n) => n.tag === 'details').filter((d) => flat(d).includes('Cost by week'));
+  eq(folds.length, 1, 'the weekly cost table sits under a fold');
 });
 await test('R11: no Decisions column, cleanup list or decisions panel is built, and no string for them is left', () => {
   const dash = fakeDash({ cost_benefit_summary: okData([{ key: 'k', label: 'L', value: 1, target: null, status: null, note: '' }]),
@@ -1061,8 +1158,13 @@ await test('recommendation 6: spend shows this week and last week side by side i
   ok(t.includes('Dollars are list price, not what is paid.'), 'said once');
   eq(t.split('not what is paid').length - 1, 1, 'once');
   const old = flat(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => ({ week: w.week, eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1 })) } }), { name: 'spend', id: null }, {}));
-  ok(old.includes('This week') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
+  ok(old.includes('Week (from') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
   eq(spendWeeks(doc({ spend: { weeks: [{ week: '2026-11-09', api_usd: 1, thread_spend_usd: 1 }] } }))[0].total, null, 'a missing part is no total');
+  // Old data does not call an old week this one: the label follows the data's own time.
+  const stale = flat(renderRoute(doc({ generated_at: '2026-11-25T17:00:00Z', spend: { weeks } }), { name: 'spend', id: null }, {}));
+  ok(!stale.includes('This week (from') && !stale.includes('Last week (from') && stale.includes('Week (from Nov 9, 2026, 12:00 PM ET)'), stale.slice(0, 500));
+  const prior = flat(renderRoute(doc({ generated_at: '2026-11-17T12:00:00Z', spend: { weeks } }), { name: 'spend', id: null }, {}));
+  ok(prior.includes('Last week (from Nov 9, 2026, 12:00 PM ET)') && !prior.includes('This week (from'), 'the day before the new week starts: still last week');
 });
 await test('recommendation 19: every route of the old six groups still opens a page, and each group leads with one question', () => {
   const all = Object.keys(ROUTE_GROUPS);
