@@ -15,6 +15,7 @@ import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
 import { isTrending, alertKindLabel } from '../core/stats.js';
+import { LOOP_BRANCH } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
@@ -31,7 +32,18 @@ function pill(text) {
   return h('span', { class: 'st ' + kind }, clean(t));
 }
 const src = (id) => P.srcSnapshot(id);
-const isLoopBranch = (b) => /^(eval-improve|eval-guidance-improve|draft-skill|retire-skill|retire-guidance)\//.test(String(b || ''));
+const isLoopBranch = (b) => LOOP_BRANCH.test(String(b || ''));
+
+/* "Monday noon ET": the weekday and clock time of a reset, in US Eastern,
+   read from the reset itself rather than assumed. */
+export function resetLabel(iso) {
+  const ms = parseTime(iso);
+  if (!isFinite(ms)) return STRINGS.unknown;
+  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: 'America/New_York' }, o)).format(new Date(ms));
+  const day = f({ weekday: 'long' });
+  const clock = f({ hour: 'numeric', minute: '2-digit', hour12: false });
+  return day + ' ' + (clock === '12:00' ? 'noon' : f({ hour: 'numeric', minute: '2-digit' })) + ' ' + STRINGS.et;
+}
 
 /* Test use this week against the cap, from eval_allowance and budget. */
 export function capUse(allowance, budget) {
@@ -43,7 +55,9 @@ export function capUse(allowance, budget) {
   const left = Math.max(0, cap - (Number(a.points) || 0));
   return { spent: Number(a.points) || 0, cap, stop: (Number(b.stop_when_account_above) || 0) * 100, accountUsed: a.account_week_used,
     room: Math.max(left, Number(a.pace_room_points) || 0), reservation: ((Number(b.per_run_cap) || 0) + (Number(b.per_run_overrun) || 0)) * 100,
-    readingAt: a.account_reading_at, resetsAt: a.week_resets_at };
+    readingAt: a.account_reading_at, resetsAt: a.week_resets_at, resetLabel: resetLabel(a.week_resets_at),
+    /* eval_spend_7d is a rolling window; anything naming the reset is counted since it. */
+    basis: a.measure === 'eval_spend_7d' ? 'rolling' : /since_reset|reset/.test(String(a.measure || '')) ? 'reset' : 'plain' };
 }
 
 export function routineHealth(routines) {
@@ -54,9 +68,9 @@ export function routineHealth(routines) {
   return { active: active.length - fresh, ok, attention: active.length - fresh - ok };
 }
 
-function meter(value, max, mark) {
+function meter(value, max, mark, over) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
-  return h('div', { class: 'meter' }, h('div', { class: 'fill' + (value > max ? ' over' : ''), style: 'width:' + pct.toFixed(1) + '%' }),
+  return h('div', { class: 'meter' }, h('div', { class: 'fill' + ((over === undefined ? value > max : over) ? ' over' : ''), style: 'width:' + pct.toFixed(1) + '%' }),
     mark !== undefined ? h('div', { class: 'meter-mark', style: 'left:' + Math.min(100, mark).toFixed(1) + '%' }) : null);
 }
 
@@ -96,6 +110,24 @@ export function attentionRows(dash, doc) {
   return rows.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
 }
 
+/* The use line, its bar and the room line must agree: when the guard still
+   has room, a spend above the cap is the rolling window's, not a breach, so
+   the bar is scaled to the larger of the two, marked at the cap, and red only
+   when there is no room. */
+export function allowanceView(cap, source) {
+  const room = cap.room > 0;
+  const scale = Math.max(cap.cap, cap.spent);
+  const use = cap.basis === 'rolling' ? P.allowanceUseRolling(cap.spent.toFixed(1), cap.cap.toFixed(0))
+    : cap.basis === 'reset' ? P.allowanceUseReset(cap.spent.toFixed(1), cap.cap.toFixed(0), cap.resetLabel) : P.allowanceUsePlain(cap.spent.toFixed(1), cap.cap.toFixed(0));
+  return [srcLine(source, parseTime(cap.readingAt)),
+    h('p', null, use),
+    meter(cap.spent, scale, scale > 0 ? (cap.cap / scale) * 100 : undefined, cap.spent > cap.cap && !room),
+    cap.basis === 'rolling' && cap.spent > cap.cap && room ? h('p', { class: 'note' }, P.allowancePace) : null,
+    cap.accountUsed !== null && cap.accountUsed !== undefined ? [h('p', null, P.allowanceAccount(Math.round(cap.accountUsed), cap.stop.toFixed(0))), meter(cap.accountUsed, 100, cap.stop)] : null,
+    h('p', { class: 'note' }, P.allowanceRoom(cap.room.toFixed(1), cap.reservation.toFixed(1))),
+    h('p', { class: 'note' }, P.allowanceReading(at(cap.readingAt), at(cap.resetsAt), cap.resetLabel))];
+}
+
 function needsView(dash, ctx) {
   const doc = ctx.doc;
   const waiting = some(dash, 'waiting');
@@ -121,11 +153,7 @@ function needsView(dash, ctx) {
       { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att, { tall: true })
       : h('p', null, P.attentionNone)]),
     trendingView(doc, 'all'),
-    cap ? panel(P.allowanceHeading, [srcLine(src('eval_allowance'), parseTime(cap.readingAt)),
-      h('p', null, P.allowanceUse(cap.spent.toFixed(1), cap.cap.toFixed(0))), meter(cap.spent, cap.cap),
-      cap.accountUsed !== null && cap.accountUsed !== undefined ? [h('p', null, P.allowanceAccount(Math.round(cap.accountUsed), cap.stop.toFixed(0))), meter(cap.accountUsed, 100, cap.stop)] : null,
-      h('p', { class: 'note' }, P.allowanceRoom(cap.room.toFixed(1), cap.reservation.toFixed(1))),
-      h('p', { class: 'note' }, P.allowanceReading(at(cap.readingAt), at(cap.resetsAt)))]) : null,
+    cap ? panel(P.allowanceHeading, allowanceView(cap, src('eval_allowance'))) : null,
     rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.active, rh.attention)), table([
       { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
       { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },

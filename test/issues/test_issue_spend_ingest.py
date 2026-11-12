@@ -66,7 +66,7 @@ def spend_doc(**changes) -> dict:
                {"week": "2026-10-26", "eval_runs": 12, "plan_meter_points": 31.25,
                 "api_usd": 40.125, "thread_spend_usd": 18.5, "cost_per_verdict": None},
                {"week": "2026-11-02", "eval_runs": 3, "plan_meter_points": 7.0,
-                "api_usd": 9.75, "thread_spend_usd": 4.0, "cost_per_verdict": 1.3333333333333333,
+                "api_usd": 9.75, "thread_spend_usd": 4.0, "run_usd": 1.3333333333333333,
                 "plan": "Max 20x"}]}
     doc.update(changes)
     return doc
@@ -146,6 +146,7 @@ class SpendBranchTests(GitCase):
             "a week's session id": spend_doc(weeks=[{**week, "session_id": MARKER}]),
             "a week's thread rows": spend_doc(weeks=[{**week, "threads": [MARKER]}]),
             "a week's per-thread spend": spend_doc(weeks=[{**week, "thread": 1.0}]),
+            "a total's thread rows": spend_doc(total={"since": "2026-10-19", "threads": [MARKER]}),
         }
         for label, doc in cases.items():
             with self.subTest(label):
@@ -252,7 +253,10 @@ class SpendBranchTests(GitCase):
         self.assertEqual(ingest.FORBIDDEN_ID_RE.pattern,
                          explorer_public.FORBIDDEN_ID_RE.pattern)
         self.assertEqual(ingest.PLAN_RE.pattern, explorer_public._PLAN_RE.pattern)
-        self.assertEqual(ingest.SPEND_WEEK_KEYS, set(explorer_public.SPEND_WEEK_KEYS))
+        # The ingest still accepts the retired per-verdict week field, so a file
+        # from a dashboard build older than the total is not rejected.
+        self.assertEqual(ingest.SPEND_WEEK_KEYS, set(explorer_public.SPEND_WEEK_KEYS) | {"cost_per_verdict"})
+        self.assertEqual(ingest.SPEND_TOTAL_KEYS, set(explorer_public.SPEND_TOTAL_KEYS))
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]["spend_file"]
         self.assertEqual(ingest.SPEND_KEYS, set(schema["properties"]))
         self.assertEqual(ingest.SPEND_WEEK_KEYS, set(schema["properties"]["weeks"]
@@ -346,7 +350,7 @@ class SpendResolveAndPlaceTests(unittest.TestCase):
         built = explorer_public.build_spend(tree, True)
         self.assertEqual(built["generated_at"], doc["generated_at"])
         self.assertEqual([w["week"] for w in built["weeks"]], ["2026-11-02", "2026-10-26"])
-        self.assertEqual(built["weeks"][0]["cost_per_verdict"], 1.3333333333333333)
+        self.assertEqual(built["weeks"][0]["run_usd"], 1.3333333333333333)
         self.assertEqual(built["weeks"][1]["plan"], "Max 20x")
         self.assertIsNone(explorer_public.build_spend(tree, False))
 

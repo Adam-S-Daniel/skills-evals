@@ -4,7 +4,7 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtCount } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
-import { table, srcLine, panel } from './bits.js';
+import { table, srcLine, panel, rangeLine, srcLineFor } from './bits.js';
 import { lessonsView } from './lessons.js';
 import { barChart, chartTitle } from '../core/charts.js';
 
@@ -21,7 +21,7 @@ export function fixtureRequestsView(doc, refMs) {
   const t = fq.totals;
   const n = (k) => fmtCount(Number(t[k]) || 0);
   const high = fq.findings.filter((f) => f.severity === 'high').length;
-  return [h('p', { class: 'note' }, STRINGS.fqNote),
+  return [srcLineFor(doc, 'queue'), h('p', { class: 'note' }, STRINGS.fqNote),
     h('p', null, STRINGS.fqTotals(n('requests_open'), n('requests_closed'), n('prs_merged'), n('fixtures_real_work'), n('fixtures_invented'), n('fixture_runs'))),
     fq.findings.length ? h('p', { class: 'warn' }, STRINGS.fqFindings(fq.findings.length, high)) : null,
     fq.rows.length ? table([
@@ -33,7 +33,7 @@ export function fixtureRequestsView(doc, refMs) {
       { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + ' (' + r.realWork + ')' },
       { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
       { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd(r.costUsd) }
-    ], fq.rows, { tall: true }) : null];
+    ], fq.unlisted ? fq.rows.concat([Object.assign({ subject: STRINGS.fqUnlisted, issueUrl: null, kind: '', state: '', ageDays: null, prs: 0 }, fq.unlisted)]) : fq.rows, { tall: true }) : null];
 }
 
 const FUNNEL_KEYS = ['check', 'skill', 'guidance', 'nothing', 'open', 'unknown'];
@@ -56,15 +56,25 @@ export function funnelView(doc) {
     missing.length ? h('p', { class: 'note' }, STRINGS.funnelMissing(missing.map((s) => STRINGS.funnelSources[s]).join(', '))) : null];
 }
 
-/* The loop's own pull requests in the public repos, by the titles its gates
-   give them (scripts/draft_new_skill.py, improve_gate.py, retire_skill.py). */
-export const LOOP_TITLE = /^(New skill: |Improve |Retire (skill|guidance section) |Remove .*: no (marginal )?benefit|Trim )/;
+/* The loop's own pull requests in the public repos. By head branch when the
+   document carries it (`activity.pulls[].head_ref`; the lasting rule, as the
+   private build uses), else by the titles the gates give them
+   (scripts/draft_new_skill.py, improve_gate.py, guidance_improve_gate.py,
+   retire_skill.py), which older documents need. */
+export const LOOP_TITLE = /^(New skill: |Improve |Proposed .+ (SKILL\.md|guidance) edit|Retire (skill|guidance section) |Remove .*: no (marginal )?benefit|Trim )/;
+export const LOOP_BRANCH = /^(eval-improve|eval-guidance-improve|draft-skill|retire-skill|retire-guidance)\//;
+
+export function isLoopPull(p) {
+  if (!p || typeof p !== 'object') return false;
+  if (typeof p.head_ref === 'string' && LOOP_BRANCH.test(p.head_ref)) return true;
+  return typeof p.title === 'string' && LOOP_TITLE.test(p.title);
+}
 
 export function loopPrsView(doc, refMs) {
   const a = doc.activity;
-  const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter((p) => p && typeof p.title === 'string' && LOOP_TITLE.test(p.title));
+  const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter(isLoopPull);
   if (!rows.length) return null;
-  return [h('p', { class: 'note' }, STRINGS.loopPrsNote), prTable(rows, refMs)];
+  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.loopPrsNote), prTable(rows, refMs)];
 }
 
 export function prTable(rows, refMs) {
@@ -82,7 +92,7 @@ export function loopView(doc, ctx) {
   const ext = ctx && ctx.ext;
   const stages = ext && ext.loopStages ? ext.loopStages(ctx) : null;
   return h('div', null,
-    srcLine(STRINGS.srcDoc, refMs),
+    rangeLine(doc),
     panel(STRINGS.loopHeading, stages || stagesView()),
     ext && ext.loopTop ? ext.loopTop(ctx) : null,
     panel(STRINGS.funnelHeading, funnelView(doc)),

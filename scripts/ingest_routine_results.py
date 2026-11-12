@@ -109,9 +109,11 @@ SPEND_MAX_WEEKS = 1040
 #: The only keys a spend file may carry: explorer/schema.json `$defs.spend_file`
 #: allows more, and this gate does not, so a per-session or per-thread row can
 #: never reach the public results branch.
-SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks"})
+SPEND_KEYS = frozenset({"schema", "generated_at", "plan", "weeks", "total"})
 SPEND_WEEK_KEYS = frozenset({"week", "eval_runs", "plan_meter_points", "api_usd",
-                             "thread_spend_usd", "cost_per_verdict", "plan"})
+                             "thread_spend_usd", "cost_per_verdict", "plan", "run_usd"})
+SPEND_TOTAL_KEYS = frozenset({"since", "verdicts", "usd", "run_usd", "thread_spend_usd",
+                              "api_usd", "cost_per_verdict"})
 #: Copies of explorer_public's FORBIDDEN_ID_RE and _PLAN_RE (that module
 #: needs PyYAML and the harness, which this job does not install); a test
 #: holds them equal.
@@ -1735,6 +1737,8 @@ def check_spend(doc: dict, text: str, where: str) -> None:
         raise Rejected(f"{where}: has no generated_at")
     if len(doc["weeks"]) > SPEND_MAX_WEEKS:
         raise Rejected(f"{where}: more than {SPEND_MAX_WEEKS} weeks")
+    if isinstance(doc.get("total"), dict) and set(doc["total"]) - SPEND_TOTAL_KEYS:
+        raise Rejected(f"{where}: the total carries a field that is not a weekly total")
     plans = [doc.get("plan")]
     seen = set()
     for i, week in enumerate(doc["weeks"]):

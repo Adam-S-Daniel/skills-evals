@@ -6,7 +6,7 @@ import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, mondayOf } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
-import { table, srcLine, panel, navLink } from './bits.js';
+import { table, srcLine, panel, navLink, rangeLine, srcLineFor } from './bits.js';
 import { weekChart } from './weekchart.js';
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? '$' + x.toFixed(2) : STRINGS.noValue);
@@ -30,7 +30,7 @@ function skillUseView(doc, refMs) {
   const u = doc.usage;
   const rows = skillItems(doc).filter((s) => s.raw.usage && typeof s.raw.usage.invocations === 'number');
   if (!rows.length || !u) return null;
-  return [h('p', { class: 'note' }, STRINGS.impactUseSkillsNote(fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs))),
+  return [srcLineFor(doc, 'usage'), h('p', { class: 'note' }, STRINGS.impactUseSkillsNote(fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs))),
     table([
       { label: STRINGS.colName, sort: (s) => s.name, cell: (s) => navLink(hashFor('skills', s.name), clean(s.name)) },
       { label: STRINGS.colUses, num: true, sort: (s) => s.raw.usage.invocations, cell: (s) => fmtCount(s.raw.usage.invocations) }
@@ -71,7 +71,7 @@ function prOutcomesView(doc, refMs) {
   const weeks = prWeeks(doc);
   if (!a || !weeks.length) return null;
   const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split('/').pop())).join(', ');
-  return [h('p', { class: 'note' }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
+  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
     weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs, STRINGS.weekTitles.prs, [STRINGS.weekDefs.opened, STRINGS.weekDefs.merged]),
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
@@ -86,7 +86,7 @@ function redRunsView(doc, refMs) {
   const a = doc.activity;
   if (!a || !Array.isArray(a.runs)) return null;
   const red = a.runs.filter((r) => r && RED.includes(r.conclusion)).sort((x, y) => (x.created_at < y.created_at ? 1 : -1));
-  return [h('p', { class: 'note' }, STRINGS.impactRedNote), red.length ? table([
+  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.impactRedNote), red.length ? table([
     { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
     { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split('/').pop()) },
     { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => link(r.url, clean(r.workflow || r.title || STRINGS.unknown)) },
@@ -94,18 +94,28 @@ function redRunsView(doc, refMs) {
   ], red) : h('p', null, STRINGS.impactRedNone)];
 }
 
+/* "Since Oct 19: $5,541.65 for 12 decided verdicts, $461.80 each (tests ..., building ..., API ...)",
+   from spend.total; null for a document without one. */
+export function spendTotalLine(s) {
+  const t = s && s.total;
+  if (!t || typeof t !== 'object' || typeof t.usd !== 'number') return null;
+  return h('p', null, STRINGS.impactSpendTotal(dayOf(t.since, NaN), usd(t.usd), fmtCount(t.verdicts || 0),
+    typeof t.cost_per_verdict === 'number' ? usd(t.cost_per_verdict) : STRINGS.noValue, usd(t.run_usd), usd(t.thread_spend_usd), usd(t.api_usd)));
+}
+
 function spendView(doc, refMs) {
   const s = doc.spend;
   if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
   return [h('p', { class: 'note' }, STRINGS.impactSpendNote),
-    s.generated_at ? srcLine(STRINGS.srcDoc, parseTime(s.generated_at)) : null,
+    s.generated_at ? srcLineFor(doc, 'spend') : null,
+    spendTotalLine(s),
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
       { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
       { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => (w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1)) },
-      { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) },
+      { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => (typeof w.run_usd === 'number' ? usd(w.run_usd) : STRINGS.noValue) },
       { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd(w.thread_spend_usd) },
-      { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd(w.cost_per_verdict) }
+      { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
     ], s.weeks)];
 }
 
@@ -164,7 +174,7 @@ export function impactView(doc, ctx) {
   const ext = ctx && ctx.ext;
   const covers = (k) => !!(ext && ext.covers && ext.covers(k));
   return h('div', null,
-    srcLine(STRINGS.srcDoc, refMs),
+    rangeLine(doc),
     panel(STRINGS.agentMade, agentMadeView(doc, refMs)),
     panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
     // The private usage table covers both lists, private repos included.
