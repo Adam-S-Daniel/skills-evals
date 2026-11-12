@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-11-11T14:45:35Z",
+  "generated_at": "2026-11-12T15:38:02Z",
   "schema": 1,
   "sources": [
     {
       "surface": "ci",
       "scope": "github",
       "from": "2026-09-21T00:00:00Z",
-      "to": "2026-11-11T14:45:35Z",
+      "to": "2026-11-12T15:38:02Z",
       "repos_scanned": 23
     }
   ],
@@ -4152,7 +4152,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/_agent-guidance",
       "surface": "ci",
-      "invocations": 19,
+      "invocations": 25,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4176,7 +4176,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adam-agentskills",
       "surface": "ci",
-      "invocations": 40,
+      "invocations": 41,
       "sessions": null,
       "blocked": 1,
       "overridden": 1,
@@ -4188,7 +4188,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/adamdaniel.ai",
       "surface": "ci",
-      "invocations": 48,
+      "invocations": 60,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4224,7 +4224,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/cms-platform",
       "surface": "ci",
-      "invocations": 19,
+      "invocations": 20,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4248,7 +4248,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/repo-settings",
       "surface": "ci",
-      "invocations": 4,
+      "invocations": 5,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4296,7 +4296,7 @@
       "name": "agent-checks",
       "repo": "Adam-S-Daniel/skills-evals",
       "surface": "ci",
-      "invocations": 59,
+      "invocations": 61,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4332,7 +4332,7 @@
       "name": "agent-checks",
       "repo": "jodidaniel/jodidaniel.com",
       "surface": "ci",
-      "invocations": 8,
+      "invocations": 9,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4368,7 +4368,7 @@
       "name": "agent-checks",
       "repo": "private",
       "surface": "ci",
-      "invocations": 7,
+      "invocations": 8,
       "sessions": null,
       "blocked": 0,
       "overridden": 0,
@@ -4385,11 +4385,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 18,
-        "prs_merged": 16,
+        "prs_opened": 20,
+        "prs_merged": 20,
         "prs_closed_unmerged": 1,
         "prs_reverted": 0,
-        "agent_prs_merged": 13,
+        "agent_prs_merged": 16,
         "ci_red_after": 0
       }
     },
@@ -4423,7 +4423,7 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 10,
+        "prs_opened": 11,
         "prs_merged": 10,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
@@ -4442,12 +4442,12 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 48,
-        "prs_merged": 42,
-        "prs_closed_unmerged": 6,
+        "prs_opened": 61,
+        "prs_merged": 52,
+        "prs_closed_unmerged": 8,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
-        "ci_red_after": 0
+        "ci_red_after": 2
       }
     },
     {
@@ -4499,8 +4499,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 14,
-        "prs_merged": 7,
+        "prs_opened": 15,
+        "prs_merged": 8,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 2,
@@ -4537,8 +4537,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 4,
-        "prs_merged": 4,
+        "prs_opened": 5,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
@@ -4613,11 +4613,11 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 40,
-        "prs_merged": 43,
+        "prs_opened": 43,
+        "prs_merged": 46,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
-        "agent_prs_merged": 39,
+        "agent_prs_merged": 42,
         "ci_red_after": 7
       }
     },
@@ -4670,8 +4670,8 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 6,
-        "prs_merged": 4,
+        "prs_opened": 7,
+        "prs_merged": 5,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
         "agent_prs_merged": 1,
@@ -4727,7 +4727,7 @@
       "blocked": null,
       "overridden": null,
       "outcome": {
-        "prs_opened": 7,
+        "prs_opened": 8,
         "prs_merged": 6,
         "prs_closed_unmerged": 0,
         "prs_reverted": 0,
