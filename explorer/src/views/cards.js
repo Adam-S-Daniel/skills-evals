@@ -1,12 +1,13 @@
 /* The lines a subject's page and the Skills and Guidance tables share, and the counts line above the table. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtGain, fmtCount } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf, nextKey } from '../core/items.js';
-import { gainOf, gainPerKb, runsOf } from '../core/stats.js';
+import { gainOf, gainPer100Words, runsOf } from '../core/stats.js';
 import { hashFor } from '../core/route.js';
-import { navLink, table } from './bits.js';
+import { navLink, table, badge } from './bits.js';
+import { signedPoints } from './range.js';
 
 export function verdictLine(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -74,7 +75,13 @@ export function chipSummary(items, mode) {
 /* Best first: the loop's keep, then early signs, trending toward removal,
    no difference, the test cannot tell, not enough data. */
 const TABLE_RANK = ['helps', 'alone', 'early', 'worse', 'none', 'canttell', 'insufficient'];
-const afterColon = (t) => { const x = t.replace(/^[^:]*: /, ''); return x.charAt(0).toUpperCase() + x.slice(1); };
+/* The Next test column in a few words. */
+function nextCell(nt, refMs) {
+  const n = nt && typeof nt === 'object' ? nt : {};
+  if (typeof n.position === 'number' && isFinite(n.position)) return STRINGS.nextCell.queued(n.position);
+  if (isFinite(parseTime(n.due))) return STRINGS.nextCell.due(fmtDay(parseTime(n.due), refMs));
+  return n.scheduled ? STRINGS.nextCell.none : STRINGS.nextCell.unscheduled;
+}
 
 /* One sortable row per skill or section. Skills show real-work
    uses, sections their size; each name opens its page. */
@@ -84,14 +91,14 @@ export function subjectTable(items, kind, refMs) {
   const gain = (it) => gainOf(it.pooled.all, guidance ? 'guidance' : 'skills');
   const rows = items.slice().sort((a, b) => TABLE_RANK.indexOf(a.chip) - TABLE_RANK.indexOf(b.chip) || (guidance ? 0 : uses(b) - uses(a)));
   return table([
-    { label: STRINGS.colName, sort: (it) => it.name, cell: (it) => navLink(hashFor(kind, it.id || it.name), clean(guidance ? it.raw.heading || it.id : it.name)) },
+    { label: STRINGS.colName, sort: (it) => it.name, cell: (it) => [navLink(hashFor(kind, it.id || it.name), clean(guidance ? it.raw.heading || it.id : it.name)), it.raw.private === true ? [' ', badge(STRINGS.privateBadge, 'private')] : null] },
     { label: STRINGS.colStatus, sort: (it) => TABLE_RANK.indexOf(it.chip), cell: (it) => chip(it.chip) },
-    { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => fmtGain(gain(it)) },
+    { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => (gain(it) === null ? STRINGS.noValue : signedPoints(gain(it) * 100)) },
     { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
-    guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPerKb(it.pooled, it.bytes), cell: (it) => { const g = gainPerKb(it.pooled, it.bytes); return g === null ? STRINGS.noValue : (g * 100).toFixed(1); } } : null,
-    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => afterColon(nextText(it.raw.next_test, refMs, guidance ? 'section' : 'skill')) },
-    { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => afterColon(it.raw.verdict ? (STRINGS.verdict[it.raw.verdict] || STRINGS.verdictOther(clean(it.raw.verdict))) : STRINGS.verdict.insufficient) }
+    guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
+    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs) },
+    { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => STRINGS.verdictCell[it.raw.verdict || 'insufficient'] || clean(it.raw.verdict) }
   ].filter(Boolean), rows);
 }

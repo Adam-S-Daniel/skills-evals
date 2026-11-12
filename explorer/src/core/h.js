@@ -2,7 +2,7 @@
 /* into DOM with createElement and text nodes only, never HTML text. */
 import { githubLink } from './format.js';
 
-export const SVG_TAGS = new Set(['svg', 'g', 'rect', 'line', 'circle', 'path', 'text', 'polyline']);
+export const SVG_TAGS = new Set(['svg', 'g', 'rect', 'line', 'circle', 'path', 'text', 'polyline', 'polygon']);
 
 export function h(tag, attrs) {
   const kids = [];

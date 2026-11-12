@@ -144,6 +144,7 @@ export function agentMadeRows(doc) {
    section's by the label of the chip it earns. */
 function verdictLabel(kind, v) {
   if (kind === 'check') return STRINGS.hookVerdicts[v] || clean(v);
+  if (STRINGS.agentVerdicts[v]) return STRINGS.agentVerdicts[v];
   const chip = VERDICT_CHIPS[v] || v;
   return STRINGS.chips[chip] || clean(v);
 }

@@ -173,10 +173,10 @@ export function subjectPage(doc, kind, name, ctx) {
       discardedLine(raw.discarded_runs),
       h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
       guidance && hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null),
-    panel(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
+    fold(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
       hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs, subj))) : null]),
     Array.isArray(raw.run_utility) && raw.run_utility.length
-      ? panel(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
+      ? fold(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
         decisionsView(raw.decisions, friendlyModel)]) : null,
     fold(STRINGS.runsHeading, runsTable(runs, refMs)),
     fold(STRINGS.bareHeading, bareTable(bare)),

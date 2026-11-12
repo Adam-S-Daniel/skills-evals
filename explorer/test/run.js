@@ -23,7 +23,7 @@ import { renderRoute } from '../src/views/page.js';
 import { agentMadeRows, spendWeeks } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE, noUseShare } from '../src/views/utility.js';
-import { textOf, findAll } from '../src/core/h.js';
+import { textOf, findAll, h, toDom, SVG_TAGS } from '../src/core/h.js';
 // The href attribute values read off the rendered links, as a set: a link is matched by exact equality, never as a substring.
 const hrefSet = (hrefs) => new Set(hrefs);
 import { hashFor, parseRoute, GROUPS as ROUTE_GROUPS } from '../src/core/route.js';
@@ -32,6 +32,7 @@ import { trendingRows } from '../src/views/trending.js';
 import { changeRows, pullKind, pullSubject } from '../src/views/changes.js';
 import { LOOP_KINDS, LOOP_TITLE, LOOP_BRANCH, isLoopPull } from '../src/views/loop.js';
 import { fmtUsd } from '../src/core/format.js';
+import { weekChart } from '../src/views/weekchart.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -109,6 +110,35 @@ function privateLeaks(js) {
 }
 const inlineScripts = (html) => [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi)].map((m) => m[1]);
 
+await test('every SVG element name the page draws is in SVG_TAGS, so it gets the SVG namespace', () => {
+  const known = ['svg', 'g', 'path', 'rect', 'line', 'polyline', 'polygon', 'circle', 'ellipse', 'text', 'tspan', 'title', 'defs', 'use', 'clipPath', 'linearGradient', 'stop', 'marker'];
+  const used = new Set();
+  const walkDir = (d) => fs.readdirSync(d, { withFileTypes: true }).forEach((e) => {
+    const f = path.join(d, e.name);
+    if (e.isDirectory()) return walkDir(f);
+    if (!f.endsWith('.js')) return;
+    (function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 'h' && n.arguments[0] && n.arguments[0].type === 'Literal') used.add(n.arguments[0].value);
+      for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+    })(acorn.parse(fs.readFileSync(f, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' }));
+  });
+  walkDir(path.join(EXPLORER, 'src'));
+  const svg = known.filter((t) => used.has(t));
+  ok(svg.includes('polygon') && svg.includes('rect'), 'the scan finds the drawn tags: ' + svg);
+  const missing = svg.filter((t) => !SVG_TAGS.has(t));
+  eq(missing.join(','), '', 'drawn SVG tags missing from SVG_TAGS');
+});
+await test('the weekly chart break mark becomes an SVG-namespace element', () => {
+  const made = [];
+  const doc = { createTextNode: (t) => ({ text: t }), createElement: (t) => ({ ns: null, t, setAttribute() {}, addEventListener() {}, appendChild() {} }),
+    createElementNS: (ns, t) => { const e = { ns, t, setAttribute() {}, addEventListener() {}, appendChild() {} }; made.push(e); return e; } };
+  const wk = (a, b) => ({ label: 'w', a, b });
+  toDom(weekChart([wk(0, 0), wk(498, 0), wk(1, 11), wk(0, 3)], ['Local blocks', 'CI blocks'], 'a', 't', []), doc);
+  const poly = made.filter((e) => e.t === 'polygon');
+  eq(poly.length, 1, 'one break mark');
+  eq(poly[0].ns, 'http://www.w3.org/2000/svg');
+});
 // --- dashboard adapter ---------------------------------------------------------
 await test('readDashboard returns the document from the explorer dataset', () => {
   const d = doc({ newest_run: '2026-10-30T00:00:00Z' });

@@ -1,7 +1,7 @@
 /* Run statistics: pooling, chips, sentences and weekly gains. */
 import { WINDOW_WEEKS, MIN_PAIRED_RUNS, HELPS_MIN_GAIN, WORSE_TOLERANCE, EPS, WEEK_MS } from './rules.js';
 import { STRINGS } from './strings.js';
-import { friendlyModel, parseTime, fmtDay, fmtCount } from './format.js';
+import { friendlyModel, parseTime, fmtDay, fmtCount, wordsFor } from './format.js';
 
 export function armOf(x) {
   if (!x || typeof x !== 'object') return null;
@@ -197,10 +197,10 @@ export function weeklyGains(runs, subject, refMs) {
   }).filter((p) => p.gain !== null);
 }
 
-export function gainPerKb(pooled, bytes) {
-  // Sections only: the in-situ gain, what the section adds to the rest.
+/* Sections only: the in-situ gain, in percentage points of checks passed, for
+   every 100 words the section adds (words as the page shows them). */
+export function gainPer100Words(pooled, bytes) {
   const g = gainOf(pooled.all, 'guidance');
-  const kb = (Number(bytes) || 0) / 1024;
-  if (g === null || !(kb > 0)) return null;
-  return g / kb;
+  const words = wordsFor(bytes);
+  return g === null ? null : (g * 100 / words) * 100;
 }
