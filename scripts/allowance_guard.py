@@ -177,16 +177,23 @@ Pace room (Adam, 2026-10-25: "The percentage of weekly should allow for more
 usage if I'm approaching end of week and under pace"): the allowance the
 account has not used is released as its week ends. The newest account meter
 snapshot in those ingested summaries (`usage.measured.meter.snapshots`) gives
-the seven-day utilization and when that window resets; the room is
-`max(0, stop_when_account_above - utilization)` times the share of the week
-gone, less pending (fires still without results, whose spend the snapshot may
+the seven-day utilization and when that window resets; the room is how far
+the account is under pace, `max(0, stop_when_account_above * share of the
+week gone - utilization)`, less pending (fires still without results, whose spend the snapshot may
 not show yet, so every fire shrinks the room until its results are ingested),
 and a fire fits when it fits under the larger of that and the fixed cap left.
-So the cap is a floor, early in a week the pace room is near nothing,
+So the cap is a floor, an account at or ahead of pace gets no pace room,
 and the in-run `stop_when_account_above` stop still bounds every run. A
 snapshot more than `PACE_MAX_AGE` old, ahead of the clock, with a reset
 already past or more than a week out, or with a value out of range gives no
 pace room: the fixed cap alone, the safe direction.
+
+Under pace only (Adam, 2026-11-11, "Only when under pace"): the room was
+`max(0, stop - utilization)` times the share of the week gone, which never
+asked whether the account was under pace. On 2026-11-12 at 38% with a third
+of the week gone (ahead of the 27% pace) it still released 14 points, and the
+sweep fired 7 evals past a 25-point cap the evals had already spent twice
+over. Now the same reading gives none.
 
 The meter is account-wide, so Adam's own use during a run is counted as eval
 spend: an overcount, the safe direction.
@@ -582,9 +589,10 @@ def window_start(now: datetime) -> datetime:
 
 def pace(runs: list[Path], limits: dict, now: datetime):
     """`(pace_room, utilization, week_elapsed)` from the newest snapshot, or
-    `(0.0, None, None)` when there is none usable: the allowance below
-    `stop_when_account_above` the account has not used, scaled by the share
-    of its week gone."""
+    `(0.0, None, None)` when there is none usable: how far the account is
+    under pace, `stop_when_account_above` times the share of its week gone
+    less utilization, never below zero (Adam, 2026-11-11: room only when
+    the account is under pace)."""
     found = newest_snapshot(runs)
     if found is None:
         return 0.0, None, None
@@ -602,7 +610,7 @@ def pace(runs: list[Path], limits: dict, now: datetime):
     if left <= 0 or resets - at.timestamp() > WINDOW.total_seconds():
         return 0.0, None, None
     elapsed = min(1.0, max(0.0, 1 - left / WINDOW.total_seconds()))
-    room = max(0.0, limits["stop_when_account_above"] - used) * elapsed
+    room = max(0.0, limits["stop_when_account_above"] * elapsed - used)
     return room, float(used), elapsed
 
 
