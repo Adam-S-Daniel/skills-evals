@@ -5,7 +5,7 @@ import { clean, parseTime, fmtCount, fmtUtcDay } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { hookItems, cloudCounted } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
-import { table, srcLine, navLink, panel, badge } from './bits.js';
+import { table, srcLine, navLink, panel, badge, rangeLine, srcLineFor } from './bits.js';
 import { weekChart } from './weekchart.js';
 
 const pct = (x) => Math.round(x * 100) + '%';
@@ -57,7 +57,7 @@ export function hooksList(doc) {
   ].filter(Boolean), items, { cls: 'hooks' });
   const policy = hk.policy || {};
   return h('section', { class: 'block' }, h('h2', null, STRINGS.hooksHeading),
-    srcLine(STRINGS.srcDoc, refMs),
+    rangeLine(doc),
     w.from ? h('p', { class: 'note' }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
     cloudNote(doc),
     typeof policy.max_override_rate === 'number' ? h('p', { class: 'note' }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
@@ -118,7 +118,7 @@ export function hookPage(doc, name, ctx) {
   return h('div', null, back,
     h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(it.name)), hookVerdict(it)),
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       h('h3', null, STRINGS.hookEnforcesHeading), h('p', null, gloss, src ? [' (', src, ')'] : null),
       h('p', { class: 'meta' }, STRINGS.hookWhereLine(it.where, it.repo ? clean(it.repo) : null)),
       h('h3', null, STRINGS.verdictHeading),

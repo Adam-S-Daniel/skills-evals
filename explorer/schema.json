@@ -454,6 +454,18 @@
          }
         ]
        },
+       "head_ref": {
+        "description": "The pull request's head branch (a loop branch is told apart by its prefix: eval-improve/, eval-guidance-improve/, draft-skill/, retire-skill/, retire-guidance/); only its first path segment and a slash when the rest is not publishable; null in data older than this field.",
+        "anyOf": [
+         {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]{1,100}$"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
        "state": {
         "enum": [
          "open",
@@ -2965,12 +2977,37 @@
      "items": {
       "$ref": "#/$defs/spend_week"
      }
+    },
+    "total": {
+     "description": "Since the first week: dollars over the decided verdicts, split into tests, building and API. Null when the spend file predates it.",
+     "anyOf": [
+      {
+       "$ref": "#/$defs/spend_total"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
     "generated_at",
     "weeks"
    ],
+   "additionalProperties": false
+  },
+  "spend_total": {
+   "type": "object",
+   "properties": {
+    "since": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "verdicts": { "type": "integer", "minimum": 0 },
+    "usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "run_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "thread_spend_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "api_usd": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]},
+    "cost_per_verdict": {"anyOf":[{"type":"number","minimum":0},{"type":"null"}]}
+   },
+   "required": ["since", "verdicts", "usd", "run_usd", "thread_spend_usd", "api_usd", "cost_per_verdict"],
    "additionalProperties": false
   },
   "spend_file": {
@@ -2990,6 +3027,19 @@
     },
     "plan": {
      "type": "string"
+    },
+    "total": {
+     "description": "Since the first week, over the decided verdicts (the spend_total shape; extra keys are refused by the ingest, not here).",
+     "type": "object",
+     "properties": {
+      "since": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+      "verdicts": { "type": "integer", "minimum": 0 },
+      "usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "run_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "thread_spend_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "api_usd": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+      "cost_per_verdict": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] }
+     }
     },
     "weeks": {
      "type": "array",
@@ -3029,6 +3079,13 @@
          {
           "type": "null"
          }
+        ]
+       },
+       "run_usd": {
+        "description": "list-price dollars of the week's eval runs",
+        "anyOf": [
+         { "type": "number", "minimum": 0 },
+         { "type": "null" }
         ]
        },
        "plan": {
@@ -3091,7 +3148,7 @@
       }
      ]
     },
-    "cost_per_verdict": {
+    "run_usd": {
      "anyOf": [
       {
        "type": "number",
@@ -3115,7 +3172,6 @@
    },
    "required": [
     "api_usd",
-    "cost_per_verdict",
     "eval_runs",
     "plan",
     "plan_meter_points",

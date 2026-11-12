@@ -2166,9 +2166,11 @@ def _finish_contract(doc: dict, public: frozenset) -> None:
             raise Refused("activity names a repository that is not public")
     spend = doc.get("spend")
     if spend is not None:
-        if set(spend) != {"generated_at", "weeks"}:
+        if set(spend) != {"generated_at", "weeks", "total"}:
             raise Refused("spend carries a field it may not publish")
         _exact(spend["weeks"], pub.SPEND_WEEK_KEYS, "a spend week")
+        if spend["total"] is not None:
+            _exact([spend["total"]], pub.SPEND_TOTAL_KEYS, "the spend total")
     funnel = doc.get("lesson_funnel")
     if funnel is not None:
         counts = [v for k, v in funnel.items() if k in pub.OUTCOMES] + [

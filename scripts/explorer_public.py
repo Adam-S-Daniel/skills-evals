@@ -559,7 +559,7 @@ def build_lesson_funnel(funnel_path: Path | None, lesson_issues_path: Path | Non
 
 # --- activity ------------------------------------------------------------------
 
-PR_KEYS = ("repo", "number", "title", "state", "created_at", "updated_at", "merged_at", "url")
+PR_KEYS = ("repo", "number", "title", "head_ref", "state", "created_at", "updated_at", "merged_at", "url")
 ISSUE_KEYS = ("repo", "number", "title", "state", "created_at", "updated_at", "url")
 RUN_ACTIVITY_KEYS = ("repo", "run_id", "workflow", "title", "event", "state", "conclusion",
                      "created_at", "updated_at", "url")
@@ -571,6 +571,22 @@ _RUN_STATES = frozenset({"queued", "in_progress", "completed", "waiting", "reque
                          "pending", "action_required"})
 _CONCLUSIONS = frozenset({"success", "failure", "cancelled", "skipped", "timed_out",
                           "neutral", "action_required", "stale", "startup_failure"})
+
+
+_HEAD_REF_RE = re.compile(r"[A-Za-z0-9._/-]{1,100}")
+
+
+def safe_head_ref(value) -> str | None:
+    """A pull request's head branch fit to publish: the whole name when it is
+    plain branch characters and `safe_text` accepts it, else only its first
+    path segment plus `/` (the loop's own branches are told apart by that
+    prefix: `eval-improve/`, `retire-skill/`), else None."""
+    if not isinstance(value, str) or not _HEAD_REF_RE.fullmatch(value):
+        return None
+    if safe_text(value) == value:
+        return value
+    prefix = value.split("/", 1)[0]
+    return prefix + "/" if "/" in value and safe_text(prefix) == prefix else None
 
 
 def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
@@ -607,6 +623,7 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
             continue
         seen.add((repo, number))
         pulls.append({"repo": repo, "number": number, "title": safe_text(row.get("title")),
+                      "head_ref": safe_head_ref(row.get("head_ref")),
                       "state": state, "created_at": _stamp(row.get("created_at")),
                       "updated_at": _stamp(row.get("updated_at")), "merged_at": merged,
                       "url": f"https://github.com/{repo}/pull/{number}"})
@@ -653,7 +670,11 @@ def build_activity(path: Path | None, public: frozenset | None, as_of: datetime,
 #: the dashboard refresh; explorer/schema.json `$defs.spend_file` documents
 #: it) may carry more; only these keys are copied.
 SPEND_WEEK_KEYS = ("week", "eval_runs", "plan_meter_points", "api_usd", "thread_spend_usd",
-                   "cost_per_verdict", "plan")
+                   "run_usd", "plan")
+#: The one published shape of the since-the-start total (`total` in
+#: `spend/weekly.json`), the sentence "Since <date>: $X for N decided verdicts".
+SPEND_TOTAL_KEYS = ("since", "verdicts", "usd", "run_usd", "thread_spend_usd", "api_usd",
+                    "cost_per_verdict")
 _PLAN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._()+-]{0,39}")
 
 
@@ -678,11 +699,24 @@ def build_spend(tree: Path, enabled: bool) -> dict | None:
             continue
         runs = row.get("eval_runs")
         numbers = [row.get(k) for k in ("plan_meter_points", "api_usd", "thread_spend_usd",
-                                        "cost_per_verdict")]
+                                        "run_usd")]
         if not (runs is None or _count(runs)) or not all(v is None or _number(v) for v in numbers):
             continue
         weeks.append({"week": row["week"], "eval_runs": runs,
                       **dict(zip(("plan_meter_points", "api_usd", "thread_spend_usd",
-                                  "cost_per_verdict"), numbers)), "plan": plan})
+                                  "run_usd"), numbers)), "plan": plan})
     weeks.sort(key=lambda w: w["week"], reverse=True)
-    return {"generated_at": _stamp(doc.get("generated_at")), "weeks": weeks}
+    return {"generated_at": _stamp(doc.get("generated_at")), "weeks": weeks,
+            "total": _spend_total(doc.get("total"))}
+
+
+def _spend_total(raw) -> dict | None:
+    """`total` of the spend file at SPEND_TOTAL_KEYS, or None when it is
+    absent (an older file) or any value is off shape."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("since"), str) \
+            or not _DAY_RE.fullmatch(raw["since"]) or not _count(raw.get("verdicts")):
+        return None
+    numbers = {k: raw.get(k) for k in SPEND_TOTAL_KEYS[2:]}
+    if not all(v is None or _number(v) for v in numbers.values()):
+        return None
+    return {"since": raw["since"], "verdicts": raw["verdicts"], **numbers}

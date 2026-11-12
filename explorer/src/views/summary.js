@@ -7,7 +7,7 @@ import { skillItems, sectionItems, wholeGuidance } from '../core/items.js';
 import { hookTile } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
 import { term, defn } from '../core/terms.js';
-import { tile, srcTip, panel } from './bits.js';
+import { tile, srcTip, panel, blockMs, BLOCKS } from './bits.js';
 import { alertsView, firesFigures } from './alerts.js';
 import { trendingView } from './trending.js';
 import { utilityView, fleetGroups, hasUtility } from './utility.js';
@@ -16,7 +16,10 @@ import { isTrending } from '../core/stats.js';
 /* One line saying what each time on the page refers to. */
 export function asOfLine(doc, refMs) {
   const newest = parseTime(doc.newest_run);
-  return h('p', { class: 'src asof-line' }, defn('dataBuilt'), ' ' + fmtDateTime(refMs), ' \u00b7 ', defn('newestRun'), ' ' + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet));
+  const reads = BLOCKS.map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
+  const lo = Math.min.apply(null, reads), hi = Math.max.apply(null, reads);
+  return h('p', { class: 'src asof-line' }, defn('dataBuilt'), ' ' + fmtDateTime(refMs), ' \u00b7 ', defn('newestRun'), ' ' + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet),
+    reads.length && fmtDateTime(lo) !== fmtDateTime(hi) ? ' \u00b7 ' + STRINGS.srcRange(fmtDateTime(lo), fmtDateTime(hi)) : null);
 }
 
 /* Every skill's state, counted: [{key, n, label}] in chip order, then the

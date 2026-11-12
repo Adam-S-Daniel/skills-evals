@@ -47,9 +47,10 @@ export async function bundle(entry, opts) {
     target: 'es2020',
     charset: 'utf8',
     // The console stores the private page as one ArtifactData document, which
-    // holds at most 262,144 bytes once JSON-serialized. Whitespace only: names
-    // and syntax stay readable, and the public bundles are unchanged.
+    // holds at most 262,144 bytes once JSON-serialized. Whitespace and syntax only
+    // (no renaming, so names stay readable); the public bundles are unchanged.
     minifyWhitespace: whitespace,
+    minifySyntax: whitespace,
     legalComments: 'none',
     // The page was a strict-mode script before the split; keep it one.
     banner: { js: "'use strict';" },

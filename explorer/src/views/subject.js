@@ -2,14 +2,14 @@
    about it in one place. */
 import { STRINGS } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
-import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor } from '../core/format.js';
+import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor , fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, purposeOf } from '../core/items.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { fixtureTerm, defn, termify, SENTENCE_TERMS } from '../core/terms.js';
 import { hashFor } from '../core/route.js';
-import { table, srcLine, navLink, panel, badge } from './bits.js';
+import { table, rangeLine, navLink, panel, badge } from './bits.js';
 import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine } from './cards.js';
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
 import { trendChart } from './trend.js';
@@ -18,7 +18,7 @@ import { utilityView, decisionsView } from './utility.js';
 import { lessonItem, lessonIssue, lessonTitle, lessonStatus, lessonIssueTitle } from './lessons.js';
 
 const share = (x) => (typeof x === 'number' && isFinite(x) ? Math.round(x * 100) + '%' : STRINGS.noValue);
-const usd = (x) => (typeof x === 'number' && isFinite(x) ? '$' + x.toFixed(2) : STRINGS.noValue);
+const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 const one = (x) => (typeof x === 'number' && isFinite(x) ? fmtCount(x) : STRINGS.noValue);
 
 /* Scored runs of one subject from the document's evals, newest first. A
@@ -138,7 +138,7 @@ export function subjectPage(doc, kind, name, ctx) {
     return h('div', null, back, h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(name)),
         known.private === true ? badge(STRINGS.privateBadge, 'private') : null),
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       h('p', { class: 'gl' }, clean(purposeOf(known.description) || STRINGS.purposeMissing)),
       known.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(known.registry))) : null,
       h('p', null, STRINGS.subjectUntested)));
@@ -153,7 +153,7 @@ export function subjectPage(doc, kind, name, ctx) {
     h('section', { class: 'block subject' },
       h('div', { class: 'subject-head' }, h('h2', { class: 'title' }, clean(guidance ? raw.heading || it.id : it.name)), chip(it.chip),
         raw.private === true ? badge(STRINGS.privateBadge, 'private') : null),
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       h('p', { class: 'gl' }, gloss),
       !guidance && raw.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(raw.registry))) : null,
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,
