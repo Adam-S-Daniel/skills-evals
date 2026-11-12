@@ -187,8 +187,11 @@ class ZeroUseSkillsTests(unittest.TestCase):
         floor = NOW - timedelta(weeks=20)
         label = "2026-W45"
         rows = [skill_usage.listing_row(label, "full", sessions),
-                skill_usage.guidance_row(label, "full", sessions, skill_usage.SURFACE_CLOUD)]
-        doc = skill_usage.document(rows, NOW, floor, sessions_scanned=1)
+                skill_usage.listing_row(label, "full", sessions, skill_usage.SURFACE_CLOUD)]
+        doc = skill_usage.document(
+            rows, NOW, floor, sessions_scanned=1,
+            cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": True},
+            skill_keys=["zz-demo", "zz-exempt"])
         skill_usage.add_rows(doc, [], skill_usage.digest_source(
             floor, NOW, 0, surface=skill_usage.SURFACE_CLOUD))
         (self.tmp / "usage" / "weekly-local.json").write_text(json.dumps(doc), encoding="utf-8")

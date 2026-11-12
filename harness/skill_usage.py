@@ -104,6 +104,12 @@ SURFACE_CLOUD = "cloud"
 #: Kinds that count sessions: their invocations are always null.
 SESSION_KINDS = ("guidance", "guidance-check", "listing")
 CLOUD_SCOPE = "guidance-records"
+#: The cloud source's flag: its records say which sessions had the registry
+#: installed and a full listing. Absent means cloud exposure is unknown.
+LISTING_RECORDED = "listing_recorded"
+#: The local transcripts source's list of the skill names the census counts
+#: by name; any other skill is counted under `other` and so reads as 0 uses.
+TRACKED_FIELD = "skill_keys"
 #: #562: the source of the `skill-digest` rows, one per surface.
 DIGEST_SCOPE = "skill-records"
 DIGEST_KIND = "skill-digest"
@@ -149,10 +155,14 @@ def guidance_row(iso_week_label: str, state: str, sessions: int,
             "surface": surface}
 
 
-def listing_row(iso_week_label: str, state: str, sessions: int) -> dict:
-    """One local listing row: `sessions` sessions that week whose first skill
-    listing was `state` (full, truncated or unknown)."""
-    return row(iso_week_label, "listing", state, None, sessions)
+def listing_row(iso_week_label: str, state: str, sessions: int,
+                surface: str = SURFACE_LOCAL) -> dict:
+    """One listing row: `sessions` sessions that week whose first skill
+    listing was `state` (full, truncated or unknown), on `surface`. A cloud
+    row is written only for the state `full`, and counts the sessions whose
+    record shows the adam-agentskills registry installed AND a full listing
+    (see `exposure_by_surface`)."""
+    return {**row(iso_week_label, "listing", state, None, sessions), "surface": surface}
 
 
 def truncated_listings(doc, now: datetime, weeks: int = 4) -> int:
@@ -196,29 +206,42 @@ def add_rows(doc: dict, rows: list[dict], source: dict) -> None:
     doc["rows"] = sorted(doc["rows"] + rows, key=_sort_key)
 
 
-def cloud_source(window_from: datetime, now: datetime, records_scanned: int) -> dict:
+def cloud_source(window_from: datetime, now: datetime, records_scanned: int,
+                 listing_recorded: bool = False) -> dict:
     """The source of the cloud guidance rows. `to` is when they were read; the
-    carry-forward below ages a source by it."""
-    return {"surface": SURFACE_CLOUD, "scope": CLOUD_SCOPE,
-            "from": window_from.strftime(STAMP), "to": now.strftime(STAMP),
-            "records_scanned": records_scanned}
+    carry-forward below ages a source by it. `listing_recorded` (published only
+    when true) says the records carried the install and listing fields, so the
+    cloud `listing` rows are a count and not an absence."""
+    out = {"surface": SURFACE_CLOUD, "scope": CLOUD_SCOPE,
+           "from": window_from.strftime(STAMP), "to": now.strftime(STAMP),
+           "records_scanned": records_scanned}
+    if listing_recorded:
+        out[LISTING_RECORDED] = True
+    return out
 
 
 def document(rows: list[dict], now: datetime, window_from: datetime,
              sessions_scanned: int, hook_runs_scanned: int | None = None,
-             cloud_guidance: dict | None = None) -> dict:
+             cloud_guidance: dict | None = None,
+             skill_keys: list | None = None) -> dict:
     """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`.
 
-    `cloud_guidance` is {"from": datetime, "records_scanned": n}, passed only
-    when the private records were read."""
+    `cloud_guidance` is {"from": datetime, "records_scanned": n, optionally
+    "listing_recorded": bool}, passed only when the private records were read.
+    `skill_keys` is the skill names the census counts by name (TRACKED_FIELD
+    on the transcripts source); None leaves it out, and a reader then cannot
+    tell a skill with no use from one the census never counted."""
     window = {"surface": SURFACE_LOCAL, "from": window_from.strftime(STAMP),
               "to": now.strftime(STAMP)}
     sources = [{**window, "scope": "transcripts", "sessions_scanned": sessions_scanned}]
+    if skill_keys is not None:
+        sources[0][TRACKED_FIELD] = sorted(set(skill_keys))
     if hook_runs_scanned is not None:
         sources.append({**window, "scope": "hooks", "runs_scanned": hook_runs_scanned})
     if cloud_guidance is not None:
         sources.append(cloud_source(cloud_guidance["from"], now,
-                                    cloud_guidance["records_scanned"]))
+                                    cloud_guidance["records_scanned"],
+                                    bool(cloud_guidance.get("listing_recorded"))))
     return {
         "generated_at": now.strftime(STAMP),
         "schema": SCHEMA,
@@ -289,6 +312,9 @@ def check_public(doc, allowlist, public_repos) -> list[str]:
     if _LONG_HEX_RE.search(json.dumps(doc, sort_keys=True)):
         problems.append("a hex run longer than 12")
     unknown = {f"unknown:{reason}" for reason in UNKNOWN_REASONS}
+    listed = tracked_skills(doc)
+    if listed is not None and not listed <= set(allowlist):
+        problems.append("a tracked skill name outside the allowlist")
     for row in doc["rows"]:
         if not isinstance(row, dict):
             problems.append("a row that is not an object")
@@ -433,6 +459,59 @@ def counted_from(doc, surface: str) -> datetime | None:
     return None
 
 
+def tracked_skills(doc) -> frozenset | None:
+    """The skill names `doc` says the census counts by name, or None when it
+    does not say (a document published before the list existed)."""
+    if not isinstance(doc, dict):
+        return None
+    for source in doc.get("sources") or []:
+        if (isinstance(source, dict) and source.get("scope") == "transcripts"
+                and source.get("surface") == SURFACE_LOCAL):
+            keys = source.get(TRACKED_FIELD)
+            if isinstance(keys, list) and all(isinstance(k, str) for k in keys):
+                return frozenset(keys)
+            return None
+    return None
+
+
+def is_tracked(doc, skill: str) -> bool:
+    """True only when `doc` lists `skill` (by basename) among the names the
+    census counts. A skill it does not list is counted under `other`, so its
+    zero uses prove nothing; a document with no list cannot say."""
+    keys = tracked_skills(doc)
+    return keys is not None and skill_basename(skill) in keys
+
+
+#: Sources a surface's counts come from, by scope.
+_SURFACE_SCOPES = {SURFACE_LOCAL: ("transcripts",), SURFACE_CLOUD: (CLOUD_SCOPE,)}
+
+
+def census_current(doc, surfaces: tuple, now: datetime,
+                   max_age: timedelta = timedelta(days=1)) -> bool:
+    """True when `doc`'s `generated_at` and the `to` of every source on each
+    of `surfaces` lie within `max_age` before `now` (never after it), and each
+    surface has the source its counts come from. `is_fresh` allows 14 days and
+    `carry` keeps a cloud source with an old `to`; an irreversible action
+    reads this instead, so the census stops where the floor window stops."""
+    if not isinstance(doc, dict):
+        return False
+
+    def recent(value) -> bool:
+        moment = parse_ts(value)
+        return moment is not None and timedelta(0) <= now - moment <= max_age
+
+    if not recent(doc.get("generated_at")):
+        return False
+    for surface in surfaces:
+        sources = [s for s in doc.get("sources") or []
+                   if isinstance(s, dict) and s.get("surface") == surface]
+        if not any(s.get("scope") in _SURFACE_SCOPES.get(surface, ()) for s in sources):
+            return False
+        if not all(recent(s.get("to")) for s in sources):
+            return False
+    return True
+
+
 #: Sessions on the surfaces a skill reaches in which it was listed, with no
 #: use, before a zero reads as evidence rather than a quiet fortnight. The
 #: single source: scripts/eval_scope.py and the removal policy import it.
@@ -443,17 +522,21 @@ CENSUS_WEEKS = 8
 
 def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
                         weeks: int = CENSUS_WEEKS) -> dict | None:
-    """{surface: sessions} in which a skill reaching that surface was listed
-    in full, over the `weeks` ISO weeks ending with `now`'s week. A surface
-    counts only the weeks whose Monday is on or after its `counted_from`; a
-    surface with no `counted_from` contributes 0.
+    """{surface: sessions, or None when unknown} in which a skill reaching
+    that surface was listed in full, over the `weeks` ISO weeks ending with
+    `now`'s week. A surface counts only the weeks whose Monday is on or after
+    its `counted_from`; a surface with no `counted_from` contributes 0.
 
     Local: the `listing` rows named `full`. A `truncated` listing cut some
     descriptions and an `unknown` one has no record, so neither counts (they
-    are left out, not a veto). Cloud: the `guidance` rows with surface cloud,
-    in every state. Cloud sessions write no listing record, so each cloud
-    session is COUNTED AS A FULL LISTING: the skill list is delivered whole
-    to a cloud session. `guidance-check` rows are a second view of the same
+    are left out, not a veto). Cloud: the `listing` rows named `full` with
+    surface cloud, which count only sessions whose record shows the
+    adam-agentskills registry installed AND a full, untruncated listing. A
+    cloud listing can be truncated, and a guidance record is written whether
+    or not the skills bundle was installed, so the `guidance` rows prove
+    neither and are never counted. When the cloud source does not say its
+    records carried those fields (`LISTING_RECORDED`), cloud exposure is None:
+    unknown, never 0. `guidance-check` rows are a second view of the same
     sessions and are never counted.
 
     None when `doc` is None or stale (unknown, never 0).
@@ -463,6 +546,12 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
     mondays = {week_monday(label) for label in window_weeks(now, weeks)}
     out = {}
     for surface in surfaces:
+        if surface == SURFACE_CLOUD and not any(
+                isinstance(s, dict) and s.get("scope") == CLOUD_SCOPE
+                and s.get("surface") == SURFACE_CLOUD and s.get(LISTING_RECORDED) is True
+                for s in doc.get("sources") or []):
+            out[surface] = None
+            continue
         counted = counted_from(doc, surface)
         total = 0
         if counted is not None:
@@ -473,11 +562,7 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
                         or entry.get("week") not in usable
                         or not _count(entry.get("sessions"))):
                     continue
-                if surface == SURFACE_LOCAL:
-                    hit = entry.get("kind") == "listing" and entry.get("name") == "full"
-                else:
-                    hit = entry.get("kind") == "guidance"
-                if hit:
+                if entry.get("kind") == "listing" and entry.get("name") == "full":
                     total += entry["sessions"]
         out[surface] = total
     return out
@@ -485,9 +570,10 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
 
 def exposure(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
              weeks: int = CENSUS_WEEKS) -> int | None:
-    """The sum of `exposure_by_surface`; None when it is unknown."""
+    """The sum of `exposure_by_surface` over the surfaces whose exposure is
+    known (a pause may rest on those); None when `doc` is stale."""
     by_surface = exposure_by_surface(doc, now, surfaces, weeks)
-    return None if by_surface is None else sum(by_surface.values())
+    return None if by_surface is None else sum(n for n in by_surface.values() if n is not None)
 
 
 def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
@@ -514,6 +600,8 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
         return None
     if used > 0:
         return False
+    if not is_tracked(doc, skill):
+        return None
     seen = exposure(doc, now, surfaces, weeks)
     return True if seen is not None and seen >= min_sessions else None
 

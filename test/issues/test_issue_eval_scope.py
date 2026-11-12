@@ -141,9 +141,13 @@ def usage_doc(used: dict | None = None, *, cloud: bool = True, local: int = 300,
     rows.append(skill_usage.listing_row("2026-W44", "full", local))
     rows.append(skill_usage.listing_row("2026-W44", "truncated", 700))
     if cloud:
-        rows.append(skill_usage.guidance_row("2026-W44", "full", cloud_sessions,
-                                             skill_usage.SURFACE_CLOUD))
-    doc = skill_usage.document(rows, NOW_DT, floor, sessions_scanned=1)
+        rows.append(skill_usage.listing_row("2026-W44", "full", cloud_sessions,
+                                            skill_usage.SURFACE_CLOUD))
+    doc = skill_usage.document(
+        rows, NOW_DT, floor, sessions_scanned=1,
+        cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": True}
+        if cloud else None,
+        skill_keys=sorted({"alpha", "beta", "zzz", *(used or {})}))
     if cloud:
         skill_usage.add_rows(doc, [], skill_usage.digest_source(
             floor, NOW_DT, 0, surface=skill_usage.SURFACE_CLOUD))

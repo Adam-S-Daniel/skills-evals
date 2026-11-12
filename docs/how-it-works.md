@@ -1350,9 +1350,22 @@ The rules, in order:
   (`skill_usage.exposure`) is the count of those sessions: local sessions
   whose skill listing was `full` (a `truncated` or `unknown` listing is left
   out, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)) plus
-  cloud sessions (cloud writes no listing record, so each cloud `guidance`
-  row session counts as a full listing), each surface only for the weeks from
-  its `counted_from`. Any use wins whatever the exposure. A skill listed in
+  cloud `listing` rows, which count only sessions whose guidance record names
+  the adam-agentskills registry in `sources` AND reports a full listing. A
+  cloud `guidance` row proves neither (a record is written whether or not the
+  bundle was installed, and a cloud listing can be cut), so it is never
+  exposure. When the cloud records carry neither field the cloud source lacks
+  `listing_recorded` and cloud exposure is unknown, not 0. A pause is
+  reversible and resumes on the first use, so it rests on the surfaces whose
+  exposure is known (an unknown one adds nothing); a removal for being unused
+  needs every surface the skill reaches known (`harness/removal_policy.py`), so
+  while cloud is unknown no cloud-reaching skill is removed. Each surface
+  counts only the weeks from its `counted_from`. A skill the census does not
+  track by name (`skill_keys` on its transcripts source) is counted under
+  `other` and reads as 0 uses, so it is neither zero-use nor removable. A
+  removal also needs the census to end where its floor window does: its
+  `generated_at` and the `to` of every source on a reached surface within 1 day
+  of the run's `as_of`. Any use wins whatever the exposure. A skill listed in
   `evals/usage-unknown.yml` has unknown use whatever the census says: it is
   never paused for zero use, and an earlier zero-use pause of it resumes. The
   improvement lane skips a zero-use skill the same way.

@@ -140,11 +140,17 @@ def unused_removal(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: 
 
     `remove` is True only when ALL hold: the skill is not in `exempt`
     (evals/usage-unknown.yml); `surfaces` include cloud, or the policy's
-    `local_removal` is true; the census `doc` is fresh; the skill had no use
-    over the policy's `floor_weeks` weeks; every surface it reaches is
-    counted back to the Monday starting that window (`counted_from`); and
+    `local_removal` is true; the census `doc` is fresh and ends where the
+    window does (its `generated_at` and every reached surface's source `to`
+    within 1 day of `now`, `census_current`); the census tracks the skill by
+    name (`is_tracked`); the skill had no use over the policy's `floor_weeks`
+    weeks; every surface it reaches is counted back to the Monday starting
+    that window (`counted_from`); the exposure of EVERY surface it reaches is
+    known (cloud is unknown unless its records carry the install and listing
+    fields, so a cloud-reaching skill is not removed on such a census); and
     the accrued description cost (`accrued_usd`) is at least
-    `value_per_use_usd`. The dict also carries `uses` (None when the census
+    `value_per_use_usd`. A removal is irreversible, unlike the pause
+    `skill_usage.zero_use` allows on the known surfaces alone. The dict also carries `uses` (None when the census
     is unknown), `exposure` and `threshold` (N*) per surface, `d`,
     `accrued_usd`, `value_usd`, `floor_weeks`, `window_start`, `surfaces`,
     `exempt`, `known` (a fresh census was read) and `why`.
@@ -165,7 +171,8 @@ def unused_removal(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: 
     if fresh:
         out["uses"] = skill_usage.weight(doc, skill, now, weeks)
         out["exposure"] = skill_usage.exposure_by_surface(doc, now, surfaces, weeks) or {}
-        out["accrued_usd"] = accrued_usd(policy, d, out["exposure"])
+        out["accrued_usd"] = accrued_usd(
+            policy, d, {s: n for s, n in out["exposure"].items() if n is not None})
         out["known"] = out["uses"] is not None
     if out["exempt"]:
         return refuse("it is listed in evals/usage-unknown.yml, so its use is not read "
@@ -179,6 +186,16 @@ def unused_removal(policy: dict, doc, skill: str, surfaces: tuple, d: int, now: 
         return refuse("there is no fresh usage census")
     if out["uses"] > 0:
         return refuse(f"it had {out['uses']} use(s) in the last {weeks} weeks")
+    if not skill_usage.is_tracked(doc, skill):
+        return refuse("the census does not track it by name, so its uses would be "
+                      "counted under other and read as zero")
+    if not skill_usage.census_current(doc, surfaces, now):
+        return refuse("the census does not end within 1 day of the date the floor "
+                      "window ends")
+    unknown = [s for s in surfaces if out["exposure"].get(s) is None]
+    if unknown:
+        return refuse(f"its exposure on the {', '.join(unknown)} surface is unknown (the "
+                      "records do not show the registry installed and a full listing)")
     for surface in surfaces:
         counted = skill_usage.counted_from(doc, surface)
         if counted is None or counted > start:

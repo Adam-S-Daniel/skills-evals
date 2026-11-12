@@ -892,10 +892,14 @@ def _bump(counts: dict, key: str, week: str) -> None:
 # One line per cloud session, appended by _agent-guidance's guidance-load hook
 # to events/<YYYY-MM>/cloud-guidance.jsonl on the private branch: {"v","ts",
 # "kind":"guidance-load","session","state","check_expected","check_reported",
-# "cli","repos","guidance_version","registry_sha",...}. Only `session`, `ts`,
-# `state` and `check_reported` are read.
+# "cli","repos","guidance_version","registry_sha","sources",...}. Only
+# `session`, `ts`, `state`, `check_reported`, `sources` (a list of {"registry":
+# "owner/repo", "ref"}, or null) and an optional `listing` (`full` or
+# `truncated`, how the session's skill listing read) are read.
 
 CLOUD_GUIDANCE_FILE = "cloud-guidance.jsonl"
+#: The registry whose skills the usage census is about.
+SKILLS_REGISTRY = "Adam-S-Daniel/adam-agentskills"
 GUIDANCE_INVALID = "invalid"
 GUIDANCE_STATES = (GUIDANCE_FULL, GUIDANCE_STUB, GUIDANCE_NEITHER, GUIDANCE_UNKNOWN)
 CHECK_UNKNOWN = "unknown"
@@ -912,7 +916,12 @@ def cloud_guidance_tally(root, now: datetime, weeks: int = DEFAULT_WEEKS) -> dic
     """Weekly counts from `root`/events/*/cloud-guidance.jsonl, READ-ONLY.
 
     Returns {"guidance": {state: {iso_week: n}}, "checks": {result:
-    {iso_week: n}}, "records_scanned": n, "earliest": datetime | None}.
+    {iso_week: n}}, "listed_full": {iso_week: n}, "listing_recorded": bool,
+    "records_scanned": n, "earliest": datetime | None}. `listed_full` counts
+    the sessions whose record names SKILLS_REGISTRY in `sources` AND says
+    `listing: "full"`; `listing_recorded` is true when any counted record
+    carried a `sources` list or a `listing` field (otherwise the records say
+    nothing about exposure, which is unknown, not zero).
     A record counts only with a string `session` and a parseable `ts` inside
     the census window (not before the Monday of its oldest week, not in a
     later week than `now`'s); a session counts once across every file, at the
@@ -946,7 +955,8 @@ def cloud_guidance_tally(root, now: datetime, weeks: int = DEFAULT_WEEKS) -> dic
             kept = first.get(record["session"])
             if kept is None or when < kept[0]:
                 first[record["session"]] = (when, record)
-    tally = {"guidance": {}, "checks": {}, "records_scanned": len(first),
+    tally = {"guidance": {}, "checks": {}, "listed_full": {}, "listing_recorded": False,
+             "records_scanned": len(first),
              "earliest": min((when for when, _ in first.values()), default=None)}
     for when, record in first.values():
         week = iso_week(when)
@@ -954,6 +964,13 @@ def cloud_guidance_tally(root, now: datetime, weeks: int = DEFAULT_WEEKS) -> dic
                                        GUIDANCE_INVALID), week)
         _bump(tally["checks"], _enum(record.get("check_reported"), CHECK_RESULTS,
                                      CHECK_UNKNOWN), week)
+        sources, listing = record.get("sources"), record.get("listing")
+        if isinstance(sources, list) or isinstance(listing, str):
+            tally["listing_recorded"] = True
+        installed = isinstance(sources, list) and any(
+            isinstance(s, dict) and s.get("registry") == SKILLS_REGISTRY for s in sources)
+        if installed and listing == "full":
+            tally["listed_full"][week] = tally["listed_full"].get(week, 0) + 1
     return tally
 
 
@@ -1402,13 +1419,17 @@ def window_from(now: datetime, weeks: int) -> datetime:
 
 def build_weekly_document(tally: dict, now: datetime,
                           weeks: int = DEFAULT_WEEKS, hooks: dict | None = None,
-                          cloud: dict | None = None, digests: tuple | None = None) -> dict:
+                          cloud: dict | None = None, digests: tuple | None = None,
+                          skill_keys: frozenset | None = None) -> dict:
     """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
     owns its schema. The window starts at the Monday of its oldest week.
     `hooks` is `hook_tally()`'s result; None adds no hook rows or source.
     `cloud` is `cloud_guidance_tally()`'s; None adds no cloud rows or source.
     `digests` is (plan, rows) from `skill_digest_plan` and `digest_rows`;
-    None adds no skill-digest rows or source (#562)."""
+    None adds no skill-digest rows or source (#562). `skill_keys` is the
+    allowlist the census counted by name; it is published on the transcripts
+    source so a reader can tell an untracked skill (counted under `other`)
+    from an unused one."""
     rows = [skill_usage.row(week, "skill", name, n,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
@@ -1431,16 +1452,21 @@ def build_weekly_document(tally: dict, now: datetime,
         rows += [skill_usage.guidance_check_row(week, result, n)
                  for result, by_week in cloud["checks"].items()
                  for week, n in by_week.items()]
+        rows += [skill_usage.listing_row(week, "full", n, skill_usage.SURFACE_CLOUD)
+                 for week, n in cloud.get("listed_full", {}).items()]
         # The Monday of the earliest record's week: no coverage is claimed
         # before the first record.
         earliest = cloud["earliest"]
         record_week = (None if earliest is None else datetime.fromisoformat(
             skill_usage.week_monday(iso_week(earliest))).replace(tzinfo=timezone.utc))
         cloud_source = {"from": max(start, record_week or start),
-                        "records_scanned": cloud["records_scanned"]}
+                        "records_scanned": cloud["records_scanned"],
+                        "listing_recorded": bool(cloud.get("listing_recorded"))}
     doc = skill_usage.document(rows, now, start, tally["sessions_scanned"],
                                None if hooks is None else hooks["runs_scanned"],
-                               cloud_source)
+                               cloud_source,
+                               None if skill_keys is None else
+                               [k for k in skill_keys if SKILL_KEY_RE.fullmatch(k)])
     if digests is not None:
         add_digest_rows(doc, *digests, now)
     return doc
@@ -2030,7 +2056,8 @@ def main() -> int:
             else:
                 digests = (plan, digest_rows(plan, entries, mirrors)[0])
         _write_json(args.weekly_out,
-                    build_weekly_document(tally, now, args.weeks, hooks, cloud, digests))
+                    build_weekly_document(tally, now, args.weeks, hooks, cloud, digests,
+                                          allowlist))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
     if args.events_out is not None:

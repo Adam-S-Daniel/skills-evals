@@ -58,11 +58,13 @@ def body_for(d: int) -> str:
 
 
 def census(*, cloud=0, local=0, truncated=0, uses=(), cloud_from=None, generated=NOW,
-           cloud_source=True):
+           cloud_source=True, recorded=True, keys=(SKILL, KEPT)):
     """A usage document whose 8-week window holds `local` full local listings,
     `truncated` cut ones and `cloud` cloud sessions, plus a `skill` row per
     (name, count) in `uses`. Both surfaces are counted from long before the
-    window unless `cloud_from` says otherwise."""
+    window unless `cloud_from` says otherwise. `recorded` says the cloud records
+    carried the install and listing fields (else cloud exposure is unknown);
+    `keys` are the skill names the census tracks."""
     floor = NOW - timedelta(weeks=20)
     rows = [skill_usage.row(WEEK, "skill", name, count, 1) for name, count in uses]
     if local:
@@ -70,8 +72,11 @@ def census(*, cloud=0, local=0, truncated=0, uses=(), cloud_from=None, generated
     if truncated:
         rows.append(skill_usage.listing_row(WEEK, "truncated", truncated))
     if cloud:
-        rows.append(skill_usage.guidance_row(WEEK, "full", cloud, CLOUD))
-    doc = skill_usage.document(rows, generated, floor, sessions_scanned=1)
+        rows.append(skill_usage.listing_row(WEEK, "full", cloud, CLOUD))
+    doc = skill_usage.document(
+        rows, generated, floor, sessions_scanned=1,
+        cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": recorded},
+        skill_keys=list(keys))
     if cloud_source:
         skill_usage.add_rows(doc, [], skill_usage.digest_source(
             cloud_from or floor, generated, 0, surface=CLOUD))
@@ -201,6 +206,52 @@ class UnusedRemovalTests(unittest.TestCase):
                      policy={**POLICY, "local_removal": True}, surfaces=(LOCAL,))
         self.assertEqual(got["exposure"], {"local": 100})
         self.assertFalse(got["remove"])
+
+    def test_unknown_cloud_exposure_blocks_removal_but_not_a_pause(self):
+        """Records without the install and listing fields: cloud exposure is
+        unknown, so a cloud-reaching skill is not removed however many sessions
+        there were; the reversible pause still rests on local exposure."""
+        doc = census(cloud=10 ** 6, local=10 ** 7, recorded=False)
+        self.assertIsNone(skill_usage.exposure_by_surface(doc, NOW)["cloud"])
+        got = decide(doc)
+        self.assertFalse(got["remove"])
+        self.assertIn("cloud surface is unknown", got["why"])
+        self.assertIs(skill_usage.zero_use(doc, SKILL, NOW, surfaces=BOTH), True)
+        # Local-only with local removal on never looks at cloud exposure.
+        self.assertTrue(decide(doc, surfaces=(LOCAL,),
+                               policy={**POLICY, "local_removal": True})["remove"])
+
+    def test_a_census_that_stops_before_the_window_ends_removes_nothing(self):
+        old = (NOW - timedelta(days=1, minutes=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertTrue(decide(census(cloud=10 ** 6))["remove"])
+        for index in range(len(census(cloud=1)["sources"])):
+            doc = census(cloud=10 ** 6)
+            scope = doc["sources"][index]["scope"]
+            doc["sources"][index]["to"] = old
+            with self.subTest(source=scope):
+                got = decide(doc)
+                self.assertFalse(got["remove"])
+                self.assertIn("within 1 day", got["why"])
+        # generated_at is one of the dates the census must end near.
+        got = decide(census(cloud=10 ** 6, generated=NOW - timedelta(days=2)))
+        self.assertFalse(got["remove"])
+        self.assertIn("within 1 day", got["why"])
+        # A pause is reversible: zero_use still accepts a census 2 days old.
+        self.assertIs(skill_usage.zero_use(
+            census(local=600, generated=NOW - timedelta(days=2)), SKILL, NOW,
+            surfaces=(LOCAL,)), True)
+
+    def test_a_skill_the_census_does_not_track_is_not_zero_use_or_removable(self):
+        doc = census(cloud=10 ** 6, local=600, keys=(KEPT,))
+        got = decide(doc)
+        self.assertFalse(got["remove"])
+        self.assertIn("does not track it by name", got["why"])
+        self.assertIsNone(skill_usage.zero_use(doc, SKILL, NOW))
+        # An older document with no list cannot say either.
+        del doc["sources"][0]["skill_keys"]
+        self.assertFalse(decide(doc)["remove"])
+        self.assertIsNone(skill_usage.zero_use(doc, SKILL, NOW))
+        self.assertIs(skill_usage.zero_use(census(local=600), SKILL, NOW), True)
 
     def test_the_census_must_cover_the_floor_on_every_surface(self):
         # Cloud counts from the week after its `from`: 2026-08-31 + 7 days is
