@@ -167,7 +167,34 @@ only, never its output. Deterministic: no clock; the skill-impact date is
 `--usage` is the published `usage/weekly-local.json`; the issue body names
 the skill's invocations over the four weeks ending at the gates file's
 `as_of` (harness/skill_usage.weight), or says `unknown` when there is no
-fresh census. It informs the human; it changes no decision.
+fresh census. For a `retire` verdict it informs the human and changes no
+decision; the `unused` reason (below) is decided from it.
+
+THE `unused` REASON (Adam, 2026-11-12). With no skill at a `retire` verdict (a
+`retire` verdict always has priority: at most one removal per run), a skill
+nobody uses is removed once the context its description cost passes the value
+of one use. `evals/removal-policy.yml` holds the numbers and
+`harness/removal_policy.py` the rule (`unused_removal`): not exempt
+(`evals/usage-unknown.yml`), reaching the cloud surface (a local-only skill is
+never removed on usage), zero uses over the policy's `floor_weeks`, every
+surface it reaches counted back to the floor's start, and sessions x d x R / P
+summed over the surfaces at least V. Candidates are the skills of
+adam-agentskills' `scripts/plugin_layout.json` (surfaces as
+`eval_scope._surfaces`, d from the skill's SKILL.md), ranked by accrued cost,
+then name; a candidate refused by the checks below, or already decided by a
+closed pull request, a declining issue, a held issue or the pause cap, gives
+way to the next. The chosen one goes through the same `plan` tail as a
+`retire` verdict (loop slot, closed-pull-request, declined, held, runtime-gate
+and registry refusals, adversarial review, auto-merge), in `auto` mode with
+`auto` allowed only: the reason is never lowered to an issue, so proposal
+mode, no credential or no `--usage` opens nothing (exit 0). Its pull request
+body starts "Removes `<path>`: it is **unused** as of <as_of> (" (the basis
+line `BASIS_RE` reads), states the figures and gives the restore command,
+`python3 scripts/restore_skill.py <skill>`; the skill-impact entry and title
+say `unused`. `--withdraw-stale --usage` judges such a pull request by use,
+not by a verdict (`unused_checker`): kept while the skill stays unused,
+withdrawn once it is used in the floor window or exempt, kept when the census
+is missing or stale.
 
 The gate guards against honest mistakes, not forged results (Adam,
 2026-10-26): anyone who can write the results can also remove a skill.
@@ -371,6 +398,8 @@ import guidance_merge_window  # noqa: E402
 import delivery  # noqa: E402
 import guidance  # noqa: E402
 import skill_usage  # noqa: E402
+import removal_policy  # noqa: E402
+import eval_scope  # noqa: E402
 import improve_gate  # noqa: E402
 import removal_review  # noqa: E402
 import loop_door_check  # noqa: E402
@@ -1366,11 +1395,18 @@ def _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
 
 def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
          allowed=("proposal",), usage: dict | None = None, fallback: bool = False,
-         date: str | None = None) -> dict:
-    """What to do, read-only. RetireError for a refusal."""
+         date: str | None = None, unused_loader=None) -> dict:
+    """What to do, read-only. RetireError for a refusal.
+
+    With no `retire` verdict, and `unused_loader` (returns the removal policy
+    and the exempt skills, see `unused_inputs`), an unused skill may be
+    removed instead (`unused_plan`); a `retire` verdict always has priority."""
     skill = retiring(gates)
     mode = mode_of(gates)
     if skill is None:
+        if unused_loader is not None:
+            return unused_plan(gates, registries, gh, run_url, allowed, usage, date,
+                               unused_loader)
         return {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
     mode_reason = None
     if mode == "auto" and proposal_only(gates["skills"][skill]):
@@ -1398,6 +1434,20 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         # R12-1: at the cap the rewritten body keeps CAP_MARKER, so the cap
         # comment is posted once whichever pass reaches the cap first.
         return cap_notice(action, gh, skill, paused) if paused >= MAX_LOOP_PAUSES else action
+    return _removal_action(gates, registries, gh, skill, mode, location, checkout, run_url,
+                           usage, allowed, date)
+
+
+def _removal_action(gates: dict, registries: dict, gh, skill: str, mode: str, location: dict,
+                    checkout: Path, run_url: str | None, usage: dict | None, allowed,
+                    date: str | None, unused: dict | None = None) -> dict:
+    """The auto path of `plan` for one skill, past the mode and runtime
+    checks: the loop-slot, closed-pull-request, declined, held and pause-cap
+    refusals, then the removal action. `unused` (an `unused_removal` answer)
+    makes it an `unused` removal: its figures, not a verdict's cells, fill
+    the texts, and a refusal that concerns only this skill carries
+    `candidate_decided` so the caller may try the next candidate."""
+    skip = {"candidate_decided": True} if unused else {}
     prs = open_loop_prs(gh)
     if prs:
         return {"action": "none", "mode": mode, "skill": skill,
@@ -1408,17 +1458,23 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     if closed:
         return {"action": "none", "mode": mode, "skill": skill,
                 "reason": f"{skill} is already decided: removal pull request "
-                          f"{closed[0].get('url')} is closed, so none is opened again"}
+                          f"{closed[0].get('url')} is closed, so none is opened again", **skip}
     issues = existing_issues(gh, skill)
     decline = declined(issues, skill, mode, "skill")
     if decline:
-        return decline
+        return {**decline, **skip}
     held = [n for n in issues.get("held", []) if n in issues["open"]]
     if held:
         return {"action": "none", "mode": mode, "skill": skill, "issue": held[0],
                 "reason": f"{skill}'s removal is held for a person: issue #{held[0]} "
-                          "is open, so no removal is reviewed or opened again"}
+                          "is open, so no removal is reviewed or opened again", **skip}
     capped = len(paused) >= MAX_LOOP_PAUSES
+    if capped and unused:
+        # The cap files a retirement issue from a verdict's cells; an unused
+        # skill has none, so the loop simply stops opening its removal.
+        return {"action": "none", "mode": mode, "skill": skill, **skip,
+                "reason": f"{skill}'s removal was paused {len(paused)} times by the loop, "
+                          "so no unused removal is opened again"}
     if capped and not cap_owed(issues):  # R11-1: else the open issue gets it first
         if issues["closed"]:
             return capped_decided(issues, mode, "skill", skill, len(paused))
@@ -1430,6 +1486,26 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
     versions = manifest_versions(checkout, location["plugin"])
     check_registry(checkout, location, skill)
     repin = lock_relevant(checkout, location["plugin"])
+    if unused:
+        as_of = gates["as_of"]
+        entry = unused_impact_entry(skill, location["plugin"], run_url,
+                                    next(iter(versions.values())), unused, as_of, date)
+        return {"action": "removal", "mode": mode, "skill": skill, **location,
+                "removal_reason": "unused", "unused": unused,
+                "branch": f"{BRANCH_PREFIX}{skill}", "versions": versions,
+                "paused_heads": paused_heads(paused),
+                "impact_entry": entry, "repin": repin,
+                "notice": unused_notice(skill, location, run_url, unused, as_of),
+                "held_issue": issues["open"][0] if issues["open"] else None,
+                "held_title": f"Retire skill {skill}: held for a person (unused)",
+                "held_body": _unused_issue_body(skill, location, run_url, unused, as_of)
+                + f"\n{HELD_MARKER}\n{HELD_SLOT}\n",
+                "run_url": run_url,
+                "verdict": f"unused as of {as_of}: {unused['why']}",
+                "title": f"Remove {location['plugin']}/{skill}: unused "
+                         "(skills-evals removal policy)",
+                "body": _unused_pr_body(skill, location, versions, run_url, repin, unused,
+                                        as_of)}
     entry = impact_entry(gates, skill, location["plugin"], run_url,
                          next(iter(versions.values())), date)
     return {"action": "removal", "mode": mode, "skill": skill, **location,
@@ -1446,6 +1522,211 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
                         f"{gates['skills'][skill].get('reason')}"),
             "title": f"Remove {location['plugin']}/{skill}: no benefit (skills-evals#70)",
             "body": _pr_body(gates, skill, location, versions, run_url, repin)}
+
+
+# ---------------------------------------------------------------------------
+# The `unused` reason (Adam, 2026-11-12): a skill nobody uses is removed once
+# the context its description cost passes the value of one use
+# (evals/removal-policy.yml, harness/removal_policy.py). It opens the same
+# `retire-skill/<skill>` pull request as a `retire` verdict, through the same
+# refusals, adversarial review and auto-merge, but only in `auto` mode with
+# `auto` allowed, never lowered to an issue, and never beside a `retire`
+# verdict, which has priority: at most one removal per run.
+
+REMOVAL_POLICY_FILE = REPO_ROOT / "evals" / "removal-policy.yml"
+RESTORE_COMMAND = "python3 scripts/restore_skill.py {skill}"
+
+
+def unused_inputs() -> tuple:
+    """(the removal policy, the exempt skills) from this repository's
+    evals/removal-policy.yml and evals/usage-unknown.yml; RetireError when
+    either cannot be read."""
+    try:
+        policy = removal_policy.load(REMOVAL_POLICY_FILE)
+        exempt = set(eval_scope.usage_unknown(REPO_ROOT))
+    except (removal_policy.PolicyError, eval_scope.ScopeError) as exc:
+        raise RetireError(f"the unused-removal inputs cannot be read: {exc}") from None
+    return policy, exempt
+
+
+def _as_of_moment(as_of: str) -> datetime:
+    return datetime.strptime(as_of, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+
+
+def unused_candidates(gates: dict, registries: dict, usage, policy: dict,
+                      exempt) -> list:
+    """Every skill of adam-agentskills' `scripts/plugin_layout.json` whose
+    `unused_removal` says remove, most accrued cost first, then by name.
+    Surfaces come from `eval_scope._surfaces` (the same local-only plugins as
+    the scope pass), d from the skill's SKILL.md. A skill whose copy cannot be
+    located exactly once, or whose SKILL.md has no readable frontmatter, is
+    not a candidate. [] when there is no checkout, layout or fresh census."""
+    if TARGET not in registries or usage is None:
+        return []
+    checkout = Path(registries[TARGET]["path"])
+    layout = checkout / LAYOUT_FILE
+    if not layout.is_file() or layout.is_symlink():
+        return []
+    try:
+        plugins = eval_scope._skill_plugins(layout)
+    except eval_scope.ScopeError:
+        return []
+    now = _as_of_moment(gates["as_of"])
+    found = []
+    for skill in sorted(plugins):
+        if not SKILL_RE.fullmatch(skill):
+            continue
+        try:
+            location = locate(registries, skill)
+            contained(checkout, [f"{location['path']}/SKILL.md"])
+            d = removal_policy.description_tokens(
+                (checkout / location["path"] / "SKILL.md").read_text(encoding="utf-8"))
+        except (RetireError, removal_policy.PolicyError, OSError, UnicodeDecodeError):
+            continue
+        decision = removal_policy.unused_removal(
+            policy, usage, skill, eval_scope._surfaces(skill, plugins), d, now, exempt)
+        if decision["remove"]:
+            found.append({**decision, "location": location})
+    return sorted(found, key=lambda c: (-c["accrued_usd"], c["skill"]))
+
+
+def unused_plan(gates: dict, registries: dict, gh, run_url: str | None, allowed,
+                usage, date: str | None, loader) -> dict:
+    """The plan when no skill has a `retire` verdict: remove the unused
+    skill with the most accrued cost, or nothing. Nothing is raised for a
+    missing census, checkout or credential (a run with no verdict used to do
+    nothing, and still does); a policy file that cannot be read, a shallow
+    checkout, or any refusal `plan` makes for a removal is raised."""
+    mode = mode_of(gates)
+    none = {"action": "none", "mode": mode, "reason": "no skill has a retire verdict"}
+    if mode != "auto" or "auto" not in allowed or usage is None or TARGET not in registries:
+        return none
+    policy, exempt = loader()
+    candidates = unused_candidates(gates, registries, usage, policy, exempt)
+    if not candidates:
+        return {**none, "reason": "no skill has a retire verdict, and none is unused enough "
+                                  "to remove (evals/removal-policy.yml)"}
+    checkout = Path(registries[TARGET]["path"])
+    if _git(checkout, "rev-parse", "--is-shallow-repository").strip() != "false":
+        raise RetireError(f"the {TARGET} checkout is shallow; the lock re-pin needs "
+                          "full history (fetch-depth: 0)")
+    skipped = []
+    for candidate in candidates:
+        skill, location = candidate["skill"], candidate["location"]
+        try:
+            held = runtime_refusal(checkout, location["plugin"], skill)
+            if held is None:
+                check_registry(checkout, location, skill)
+        except RetireError as exc:
+            held = str(exc)
+        if held:
+            skipped.append(f"{skill}: {held}")
+            continue
+        action = _removal_action(gates, registries, gh, skill, mode, location, checkout,
+                                 run_url, usage, allowed, date, unused=candidate)
+        if action.get("candidate_decided"):
+            skipped.append(f"{skill}: {action['reason']}")
+            continue
+        return action
+    return {**none, "reason": "no skill has a retire verdict; "
+                              f"{len(candidates)} unused skill(s), none removable now: "
+                              + "; ".join(skipped)}
+
+
+def _unused_figures(unused: dict) -> str:
+    """The numbers behind an unused removal, as Markdown lines."""
+    lines = [f"- Floor window: the {unused['floor_weeks']} ISO weeks from "
+             f"{unused['window_start']} (the census counts every surface the skill "
+             "reaches back to it)."]
+    for surface in unused["surfaces"]:
+        lines.append(f"- {surface}: {unused['exposure'].get(surface, 0)} full-listing "
+                     f"session(s) in the window; N* = V x P / (d x R) = "
+                     f"{unused['threshold'][surface]:.0f} sessions alone would reach V.")
+    lines += [f"- Uses in the window: {unused['uses']}.",
+              f"- d (description tokens, ceil(bytes / 4) of the frontmatter name and "
+              f"description): {unused['d']}.",
+              f"- Accrued description cost: ${unused['accrued_usd']:.2f}, against "
+              f"V = ${unused['value_usd']:g} for one use "
+              "(`evals/removal-policy.yml`)."]
+    return "\n".join(lines)
+
+
+def _unused_pr_body(skill, location, versions, run_url, repin, unused, as_of) -> str:
+    bumps = "\n".join(f"- `{p}`: {old} -> {new}" for p, (old, new) in versions.items())
+    lock = (f" A second commit re-pins `{LOCK_FILE}` to the removal commit."
+            if repin else "")
+    run = f"\nWorkflow run: {run_url}\n" if run_url else ""
+    return (f"Removes `{location['path']}`: it is **unused** as of {as_of} "
+            f"({unused['why']}).\n\n{_unused_figures(unused)}\n\n"
+            f"Restore it, if it is wanted after all: in an adam-agentskills checkout, on a "
+            f"fresh branch from main, run `{RESTORE_COMMAND.format(skill=skill)}`. It "
+            "restores the directory from the removal commit's parent, bumps the plugin's "
+            "MINOR version and adds a `restore` entry to "
+            f"`{IMPACT_FILE}`.\n\n"
+            f"Version bumps:\n{bumps}\n\nAdds a `{IMPACT_FILE}` entry, drops the skill "
+            f"from `{LAYOUT_FILE}` and regenerates the `{README_FILE}` skill table."
+            f"{lock}\n\n"
+            f"This pull request auto-merges (merge commit) once required checks pass, "
+            f"with no human review, by Adam's 2026-10-25 decision "
+            f"([skills-evals ADR 0014]({ADR}); [ADR 0021]({REGISTRY_ADR})) and his "
+            "2026-11-12 decision to remove unused skills. To decline the removal, close "
+            f"it: a closed `{BRANCH_PREFIX}{skill}` pull request means the skill is "
+            f"decided, and none is opened again.\n"
+            f"{run}\nOpened by skills-evals' scripts/retire_skill.py on its scheduled "
+            f"workflow.\n\n{AGENT_MARKER}\n")
+
+
+def unused_impact_entry(skill: str, plugin: str, run_url: str | None, versions: tuple,
+                        unused: dict, as_of: str, date: str | None = None) -> str:
+    """`impact_entry` for the `unused` reason: the same entry format, with
+    the census figures where a verdict's cells would be."""
+    where = f"workflow run {run_url}" if run_url else "its scheduled workflow"
+    sessions = ", ".join(f"{s} {unused['exposure'].get(s, 0)}" for s in unused["surfaces"])
+    return (f"## {date or _date(as_of)} — {plugin}/{skill} — remove\n\n"
+            f"- Motivation: reason `unused`: no recorded use in the last "
+            f"{unused['floor_weeks']} weeks, and its description has cost "
+            f"${unused['accrued_usd']:.2f} of context, at least the "
+            f"${unused['value_usd']:g} one use is worth (skills-evals "
+            "`evals/removal-policy.yml`).\n"
+            f"- Change: `plugins/{plugin}/skills/{skill}/` removed, the skill dropped from "
+            f"`{LAYOUT_FILE}` and the README table, bundle `{plugin}` {versions[0]} -> "
+            f"{versions[1]} (a removal is a breaking change), by skills-evals' "
+            f"`scripts/retire_skill.py` ({where}). Restore with "
+            f"`{RESTORE_COMMAND.format(skill=skill)}`.\n"
+            f"- Eval: none; usage census as of {as_of}, full-listing sessions in the "
+            f"window: {sessions}, uses 0.\n"
+            f"- Outcome: pending merge; auto-merges once required checks pass, with no "
+            f"human review ([ADR 0021]({REGISTRY_ADR})).\n")
+
+
+def unused_notice(skill: str, location: dict, run_url: str | None, unused: dict,
+                  as_of: str) -> dict:
+    """`skill_notice` for the `unused` reason."""
+    marker = SKILL_NOTICE_MARKER.format(skill=skill)
+    return {"marker": marker,
+            "title": f"Skill {location['plugin']}/{skill} is being removed as unused",
+            "body": (f"{marker}\n@{NOTICE_OWNER}: the skill `{location['plugin']}/{skill}` "
+                     f"is being removed from adam-agentskills as **unused** as of {as_of}: "
+                     f"{unused['why']}.\n\n{_unused_figures(unused)}\n\n"
+                     "Removal pull request: {removal_pr} (auto-merges once its checks "
+                     "pass).\n\n**To reverse it:** before it merges, close that pull "
+                     "request. After it merges, run "
+                     f"`{RESTORE_COMMAND.format(skill=skill)}` in an adam-agentskills "
+                     "checkout on a fresh branch from main (it restores the directory from "
+                     "the removal commit's parent, bumps MINOR and adds a `restore` entry), "
+                     "or press **Revert** on the merged pull request."
+                     + (f"\n\nWorkflow run: {run_url}" if run_url else "")
+                     + "\n\nFiled by scripts/retire_skill.py on the scheduled workflow."
+                       "\n\n" + AGENT_MARKER + "\n")}
+
+
+def _unused_issue_body(skill, location, run_url, unused, as_of) -> str:
+    """The proposal-path issue a held unused removal is recorded on."""
+    run = f"\nWorkflow run: {run_url}\n" if run_url else ""
+    return (f"{ISSUE_MARKER.format(skill=skill)}\n{PROPOSAL_STAMP}\n"
+            f"`{skill}` is **unused** as of {as_of}: {unused['why']}.\n\n"
+            f"{_unused_figures(unused)}\n\nCopy: `{location['path']}` in {REGISTRY_REPO}.\n"
+            f"{run}\nFiled by scripts/retire_skill.py on the scheduled workflow.\n")
 
 
 #: The issue that tells Adam a skill is being removed and how to reverse it
@@ -1537,10 +1818,16 @@ def prepare_branch(checkout: Path, action: dict) -> None:
     run_registry_script(checkout, README_GENERATOR)
     _git(checkout, "add", "--", IMPACT_FILE, LAYOUT_FILE, README_FILE, *action["versions"],
          *ledger)
-    _commit(checkout,
-            f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
-            "skills-evals#70's scheduled retirement found no benefit in every cell at "
-            "the retire confidence level.")
+    if action.get("removal_reason") == "unused":
+        _commit(checkout,
+                f"Remove {action['plugin']}/{action['skill']}: unused\n\n"
+                "skills-evals' removal policy found no use of the skill, and its description "
+                "has cost more context than one use is worth.")
+    else:
+        _commit(checkout,
+                f"Remove {action['plugin']}/{action['skill']}: no benefit on every roster model\n\n"
+                "skills-evals#70's scheduled retirement found no benefit in every cell at "
+                "the retire confidence level.")
     if action.get("repin"):
         run_registry_script(checkout, LOCK_GENERATOR, "--repin")
         run_registry_script(checkout, LOCK_GENERATOR, "--check-current")
@@ -2464,9 +2751,14 @@ LOOP_AUTHOR = "skills-evals-improve[bot]"
 WITHDRAWN_MARKER = "<!-- skills-evals:withdrawn-removal:{subject} -->"
 DISARMED_MARKER = "<!-- skills-evals:disarmed-removal:{subject} -->"
 #: The basis a removal pull request's body records on its first line
-#: (`_pr_body` and `guidance_plan`): "Removes ... is **retire** as of <the
-#: gates document's as_of> (". Matched from the body's start only.
-BASIS_RE = re.compile(r"Removes [^\n]*? is \*\*retire\*\* as of (\S+) \(")
+#: (`_pr_body`, `_unused_pr_body` and `guidance_plan`): "Removes ... is
+#: **retire** (or **unused**) as of <the gates document's as_of> (". Matched
+#: from the body's start only.
+BASIS_RE = re.compile(r"Removes [^\n]*? is \*\*(?:retire|unused)\*\* as of (\S+) \(")
+#: The first line of an `unused` removal (`_unused_pr_body`): the same shape
+#: with `unused` for `retire`. Only this line marks the pull request as an
+#: unused removal, so `withdrawal_decision` judges it by use, not by a verdict.
+UNUSED_BASIS_RE = re.compile(r"Removes [^\n]*? is \*\*unused\*\* as of (\S+) \(")
 #: The events that may withdraw: the daily retirement job and the pass after
 #: every ingest (loop-pr-refresh.yml). Withdrawal only disarms, labels,
 #: closes and files an issue; it never arms or opens anything.
@@ -2550,7 +2842,8 @@ def _basis(body, created_at=None):
     return basis
 
 
-def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> dict:
+def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill",
+                        unused_check=None) -> dict:
     """What to do with one open pull request, from the gates document alone.
 
     `{"action": "ignore" | "keep" | "disarm" | "withdraw", "why": text, ...}`:
@@ -2586,7 +2879,13 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
     if not isinstance(gates, dict) or not isinstance(gates.get(spec["block"]), dict):
         return {"action": "keep", "subject": subject, "why": "the verdicts are unknown"}
     block = gates[spec["block"]]
-    if subject not in block:
+    unused_pr = (target == "skill" and isinstance(pr.get("body"), str)
+                 and UNUSED_BASIS_RE.match(pr["body"]) is not None)
+    if unused_pr:
+        # An `unused` removal has no verdict: it is judged by use (`unused_check`).
+        state, why = (unused_check(subject) if unused_check is not None
+                      else ("unknown", "no usage census was given"))
+    elif subject not in block:
         state, why = "unknown", "the verdicts document does not list the subject"
     else:
         state, why = removal_support(gates, block[subject], target)
@@ -2606,6 +2905,10 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
             if opened > judged:
                 return {"action": "keep", "subject": subject,
                         "why": "it was opened after the results these verdicts stand on"}
+        if unused_pr:
+            return {"action": "withdraw", "subject": subject, "verdict": "no longer unused",
+                    "removal": None, "reason": why, "removal_reason": "", "why": why,
+                    "unused": True}
         entry = block[subject]
         return {"action": "withdraw", "subject": subject, "verdict": entry["verdict"],
                 "removal": entry.get("removal") if isinstance(entry.get("removal"), str)
@@ -2617,7 +2920,8 @@ def withdrawal_decision(pr: dict, gates: dict | None, target: str = "skill") -> 
                 "why": f"the {spec['block']} retirement_mode is proposal ({why})"}
     partial = partial_withdrawal(pr, gates) if state == "supported" else None
     if partial is not None:
-        entry = block[subject]
+        entry = block[subject] if not unused_pr else {
+            "verdict": "unused", "reason": why}
         return {"action": "withdraw", "subject": subject, "partial": partial,
                 "verdict": entry["verdict"],
                 "removal": entry.get("removal") if isinstance(entry.get("removal"), str)
@@ -2679,8 +2983,13 @@ def withdrawal_comment(decision: dict, gates: dict, run_url: str | None) -> str:
            f"**{decision['verdict']}**{removal}: {decision['reason']}"
            + (f" ({decision['removal_reason']})" if decision.get("removal_reason") else "")
            + f". Why this withdraws the removal: {decision['why']}.")
+    if decision.get("unused"):
+        now = (f"The skill `{subject}` as of {gates['as_of']}: {decision['reason']}. "
+               f"Why this withdraws the removal: {decision['why']}.")
     lead = ("A withdrawal of this removal stopped part way, and this finishes it as a "
             "pause." if decision.get("partial") else
+            "This removal pull request was opened because the skill was unused, and it "
+            "no longer is." if decision.get("unused") else
             "This removal pull request was opened on a `retire` verdict with an automatic "
             "removal, and the subject no longer has one.")
     return (f"{WITHDRAWN_MARKER.format(subject=subject)}\n"
@@ -2958,7 +3267,8 @@ def declined_decision(decision: dict, gates: dict, target: str, gh, seen: dict) 
                    "which declines the removal"}
 
 
-def withdraw_plan(gates: dict | None, prs: list, target: str, gh=None) -> list:
+def withdraw_plan(gates: dict | None, prs: list, target: str, gh=None,
+                  unused_check=None) -> list:
     """Each listed pull request's decision, with its number and URL; a
     `withdraw`, `disarm` or `decline` whose URL is not the target
     repository's pull request is refused rather than acted on. With `gh`,
@@ -2967,7 +3277,7 @@ def withdraw_plan(gates: dict | None, prs: list, target: str, gh=None) -> list:
     spec = WITHDRAW_TARGETS[target]
     out, seen = [], {}
     for pr in prs:
-        decision = withdrawal_decision(pr, gates, target)
+        decision = withdrawal_decision(pr, gates, target, unused_check)
         if decision["action"] == "ignore":
             continue
         if gh is not None:
@@ -3032,10 +3342,15 @@ def withdrawal_issue(item: dict, gates: dict, target: str, gh, run_url: str | No
     note = (f"The automatic removal pull request {item['url']} was withdrawn "
             f"(turned off, labeled `{WITHDRAWN_LABEL}` and closed; its branch will be "
             "deleted) "
-            f"on the verdicts as of {gates['as_of']}: the verdict is now "
-            f"**{item['verdict']}**: {item['reason']}. Why: {item['why']}.\n\nA "
-            "withdrawal is a pause, not a decision: if the verdict supports an automatic "
-            f"removal again, the loop opens a fresh removal pull request. {decline}"
+            f"on the verdicts as of {gates['as_of']}: "
+            + (f"the skill is no longer unused: {item['reason']}. Why: {item['why']}."
+               if item.get("unused") else
+               f"the verdict is now **{item['verdict']}**: {item['reason']}. "
+               f"Why: {item['why']}.")
+            + "\n\nA withdrawal is a pause, not a decision: if the "
+            + ("skill is unused again" if item.get("unused") else
+               "verdict supports an automatic removal again")
+            + f", the loop opens a fresh removal pull request. {decline}"
             + (f"\n\nWorkflow run: {run_url}" if run_url else "")
             + "\n\nFiled by scripts/retire_skill.py --withdraw-stale (ADR 0014).\n\n"
             + AGENT_MARKER + "\n")
@@ -3366,6 +3681,37 @@ def withdraw_stale(gates: dict | None, prs: list, target: str, registry_gh,
     return lines or ["no open removal pull request to withdraw"]
 
 
+def unused_checker(gates: dict, usage_path) -> "callable":
+    """The `unused_check` of `withdrawal_decision`: `subject -> (state, why)`
+    for an open `unused` removal. Stale when the skill was used in the
+    policy's `floor_weeks` window (read as of the gates document's `as_of`)
+    or has become exempt (evals/usage-unknown.yml); supported while the
+    census is fresh and still shows no use; unknown (kept) when the census,
+    the policy or the exempt list cannot be read, or the census is stale.
+    The threshold itself is not re-derived here: the withdrawal passes have no
+    registry checkout for a skill's description size, and exposure only
+    grows while the skill stays unused."""
+    def check(subject: str) -> tuple:
+        try:
+            policy, exempt = unused_inputs()
+        except RetireError:
+            return "unknown", "the removal policy or the exempt list could not be read"
+        if subject in exempt:
+            return "stale", "the skill is now listed in evals/usage-unknown.yml (exempt)"
+        usage = skill_usage.load(usage_path) if usage_path is not None else None
+        now = _moment(gates.get("as_of"))
+        if usage is None or now is None or not skill_usage.is_fresh(usage, now):
+            return "unknown", "there is no fresh usage census"
+        uses = skill_usage.weight(usage, subject, now, policy["floor_weeks"])
+        if uses is None:
+            return "unknown", "there is no fresh usage census"
+        if uses > 0:
+            return "stale", (f"the skill has been used ({uses} use(s) in the last "
+                             f"{policy['floor_weeks']} weeks)")
+        return "supported", "the skill still has no recorded use in the census window"
+    return check
+
+
 def withdraw_main(args, env, gh, registry_gh, run_url, out, delete=None) -> int:
     """`--withdraw-stale`: unknown verdicts withdraw nothing and exit 0 with a
     status that names no subject; a refusal or a failed call exits 2."""
@@ -3381,7 +3727,8 @@ def withdraw_main(args, env, gh, registry_gh, run_url, out, delete=None) -> int:
                   "or unreadable\n")
         return 0
     prs = removal_prs(gh, args.target)
-    items = withdraw_plan(gates, prs, args.target, gh)
+    check = unused_checker(gates, args.usage) if args.target == "skill" else None
+    items = withdraw_plan(gates, prs, args.target, gh, check)
     if args.dry_run:
         out.write(json.dumps({"dry_run": True, "withdraw": items, "would_run": [
             ["gh", *c] for i in items for c in would_run(args.target, i)]},
@@ -3551,7 +3898,8 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
             check_auto_env(env)
         usage = skill_usage.load(args.usage) if args.usage is not None else None
         action = plan(gates, registries, gh, run_url, allowed, usage,
-                      fallback=args.fallback_to_proposal, date=args.date)
+                      fallback=args.fallback_to_proposal, date=args.date,
+                      unused_loader=unused_inputs)
         if args.dry_run:
             out.write(json.dumps({"dry_run": True, **action,
                                   "would_run": commands(action)},

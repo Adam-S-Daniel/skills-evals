@@ -423,7 +423,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/retire_skill.py --withdraw-stale \
-            --gates "$RUNNER_TEMP/gates/latest.json"
+            --gates "$RUNNER_TEMP/gates/latest.json" \
+            --usage "$GITHUB_WORKSPACE/eval-results/usage/weekly-local.json"
 
       - name: Act on the skill retirement verdict
         if: ${{ !cancelled() && steps.verdicts.outcome == 'success' }}

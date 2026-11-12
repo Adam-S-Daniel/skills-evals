@@ -1,0 +1,37 @@
+# The numbers behind removing a skill nobody uses, read by
+# harness/removal_policy.py and scripts/retire_skill.py (reason `unused`).
+# Adam, 2026-11-12: a skill that is listed in every session but never used
+# costs context in each of them; remove it once that cost passes the value of
+# one use, and tell Adam how to restore it.
+#
+# The rule: a skill is removed as `unused` only when ALL hold:
+#   * it is not listed in evals/usage-unknown.yml (those are exempt);
+#   * it reaches the cloud surface (a local-only skill is paused, never
+#     removed on usage while `local_removal` is false);
+#   * the usage census is fresh, and the census counts every surface the skill
+#     reaches back to the start of the `floor_weeks` window;
+#   * it had zero uses over `floor_weeks` weeks (any use blocks it);
+#   * the context its description cost over those weeks, summed over the
+#     surfaces, is at least `value_per_use_usd`:
+#         sum over surfaces s of  sessions_s * d * R_s / P  >=  V
+#     where sessions_s is `skill_usage.exposure_by_surface` (sessions in which
+#     the skill was listed in full), d is the skill's description size in
+#     tokens (ceil(bytes / 4) of its frontmatter name and description), P is
+#     `prefix_tokens` and R_s is `reread_usd_per_session` for the surface.
+#     For one surface that is sessions_s >= N* = V * P / (d * R_s); a worked
+#     number: d = 100 on cloud gives 10 * 119000 / (100 * 3.5) = 3400.
+#
+# Keys (all required; a missing, negative or wrong-typed one is refused):
+#   value_per_use_usd  V: USD one use of a skill is worth.
+#   prefix_tokens      P: tokens of the cached prefix a session re-reads.
+#   reread_usd_per_session  R per surface: USD of context re-read per session.
+#   floor_weeks        ISO weeks of census a removal needs, covered and unused.
+#   local_removal      whether a skill that reaches only the local surface may
+#                      be removed on usage (false: paused, never removed).
+value_per_use_usd: 10
+prefix_tokens: 119000
+reread_usd_per_session:
+  cloud: 3.50
+  local: 0.81
+floor_weeks: 8
+local_removal: false
