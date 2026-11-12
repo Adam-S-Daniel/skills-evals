@@ -1,7 +1,7 @@
 # Project dashboard
 
 A status page for the self-improvement loop: test results and the weekly
-allowance, real-work usage, the loop's stages, cleanup, routines, threads, and
+allowance, real-work usage, routines, threads, and
 what waits on you. It is a claude.ai Dashboard artifact: the page
 (`page/index.html`) plus named datasets (`page/datasets.json`). Some datasets
 load live through the GitHub connector. The rest are JSON snapshots that
@@ -30,21 +30,22 @@ raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 | Group | Route | Private only |
 |---|---|---|
 | Summary | `#/summary` | Its waiting, routine and allowance tiles |
-| Needs you | `#/needs` | Yes: waiting on you, the half-built banner, one "Needs attention" list (half-built issues, document alerts, fires without results, fixture-queue findings), a "Trending toward removal" table (regression alerts, one row per subject; expected, so never in the attention list), this week's allowance, routine health |
-| Hooks, skills and guidance | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/removed`, `#/method` | Use by repo on a skill's page, the roster's "why" |
-| Loop | `#/loop` | Stage table, lanes, gaps, grid, build gate, live loop PRs |
-| Impact | `#/impact` | Use across private repos, PR outcomes, red CI runs, cost and benefit |
-| Operations | `#/ops` | Routines, check-ins, the run console, live PRs and issues, ingests, cleanup, decisions, threads |
+| Needs you | `#/needs` | Yes, and the page opens on it. Waiting on you (or "Nothing is waiting on you"), a loop health strip, one "Needs attention" list (a kind with more than 3 rows folds into one row), this week's allowance, routine health (problems first, healthy ones folded), the half-built banner only above 0 |
+| Changes | `#/changes`, `#/changes/removed` | What the loop changed in 30 days with the reason, trending toward removal, where lessons went, fixture requests, lesson proposals; the live merged pull requests join the list |
+| Results | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/method` | Use by repo on a skill's page, the roster's "why" |
+| Spend and use | `#/spend` | One spend panel, use across private repos, cost and benefit |
+| Activity log | `#/activity` | Routines, check-ins, the run console, live PRs and issues, ingests, threads |
 
-Routes are the same in both builds; `?subject=guidance` and the old tab hashes
-(`#overview`, `#evals`, `#costbenefit`, ...) redirect. The public build has no
+Routes are the same in both builds; `?subject=guidance`, the old tab hashes
+(`#overview`, `#evals`, `#costbenefit`, ...) and the old routes (`#/loop`, `#/impact`,
+`#/ops`, `#/removed`) redirect. A snapshot older than 13 hours shows a banner on every group. The public build has no
 Needs you group, says "the owner" where this page says "you", and folds checks
 in private repos into one row. Its bundle never holds private view code,
 private dataset ids or `dash` (an AST check in `explorer/test/run.js`).
 
 Each private panel reads its datasets through `explorer/src/private/` and
 hides when they are empty, loading or only a placeholder row. Where a private
-dataset covers a public panel (red CI runs, PR outcomes, cost, runs, PRs and
+dataset covers a public panel (use, cost, runs, PRs and
 issues), the private one replaces it. The optional `explorer_private` dataset
 (private-skill results, same schema) merges in with a "Private" badge.
 
@@ -81,7 +82,6 @@ prompt that tells it to.
    | `waiting_reviews.json` | `actions_list` `list_workflow_runs` with `status: waiting` in each `environment_review_repos` repo: `repo`, `name` (the display title), `environment`, `head_sha`, `created_at`, and `job_url`, the waiting job's page (`list_workflow_jobs`) |
    | `open_pr_heads.json` | Open PRs' head shas, keyed by repo, for the same repos (`list_pull_requests`, `state: open`) |
    | `link_states.json` | Optional. `{url: "open" \| "closed" \| "merged"}` for each `waiting_manual` link |
-   | `loop_status.json` | The loop's gap list (`gaps[]`: `gap`, `title`, `status`, `owner`, `pr`), kept by the loop thread |
    | `session_costs.jsonl` | One line appended per thread session on every refresh, from `get_session` on every thread session active since the last refresh: `v`, `at` (when sampled), `source` (`backfill` or `refresh`), `thread_id`, `session_id`, `created_at`, `updated_at`, `cost_usd` (the session's cumulative API-equivalent dollars, `ccr.external_metadata.usage.cost_usd`), `output_tokens`, `error` (`null` or `not_found`) |
    | `owner_messages.jsonl` | One line per message the owner wrote in the project, from `read_project_chat` and `read_thread` on threads active since the last refresh: `v`, `message_id`, `sent_at`, `thread_id`. The owner's own messages only, ids and times only, never text |
    | `loop_prs.json` | Pull requests from GitHub search by head-branch prefix (`eval-improve/`, `draft-skill/`, `retire-skill/`, `eval-guidance-improve/`, `retire-guidance/`) in adam-agentskills and _agent-guidance: `repo`, `number`, `url`, `head_ref`, `title`, `state`, `merged_at` |
@@ -99,8 +99,9 @@ prompt that tells it to.
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `cleanup`, `decisions`, `gate`, `roster`, `loop_grid`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
-   only its timestamps and pace moved.
+4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `roster`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
+   only its timestamps and pace moved. Never skip `refresh`: it changes every run, and the page's
+   "refresh did not land" banner reads it.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's
    `url`, `asset: true` and `file_path`, one file per call. Then run one
    ArtifactData `batch` of `update` writes on `datasets/<id>`, pinned with
@@ -121,17 +122,9 @@ runs from `gh api repos/<repo>/actions/runs?created=>=<7 days ago>`, plus
 scheduled-task runs from `list_triggers`/`get_trigger`, accumulated across passes)
 and uploads `run_stream.json`.
 
-## Red in CI runs
-
-`ci_red_runs` lists every agent-checks CI run that failed, newest first, from the
-`red_runs` list in `usage/weekly-ci.json` (written by _agent-guidance's daily
-impact report). A public repo's run links its run page; a private repo's run keeps
-only its week. The Impact group lists it under "Red in CI runs", and the use
-table's "By week" view carries a "Red in CI" column.
-
 ## Cost and benefit
 
-`build.py` writes two datasets for the Impact group's cost panel. A week runs Monday
+`build.py` writes two datasets for the Spend and use group's cost panel. A week runs Monday
 17:00 UTC to the next Monday and is labeled by its start date; the first is set by
 `COST_START`.
 
@@ -139,7 +132,7 @@ table's "By week" view carries a "Red in CI" column.
   account meter, `run_points_est` from their dollars), API-billed eval dollars (`api_usd`,
   from `results/` summaries whose `usage.reasons.meter` is the harness's "API-billed run"
   text), project-thread spend (`build_usd`, `build_points`, `build_estimated`), loop
-  changes merged, real-work reach, owner messages and decisions. `verdicts` is the current
+  changes merged, real-work reach and owner messages. `verdicts` is the current
   count of decided skill and guidance verdicts, on the latest week only.
 - `cost_benefit_summary`: cost per verdict, decision yield, real-work reach, the Dec 15 bar
   (`bar_changes`, `bar_build`, and `bar_verdict` from Dec 16) and the points-per-dollar rate.
@@ -151,11 +144,10 @@ With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
-`evals/public-export.yml` sets `include_spend`), and the public Impact group shows
-spend. No refresh step puts it there yet: until one does, the public document has
-no `spend` and its spend panel stays hidden.
+`evals/public-export.yml` sets `include_spend`), and the public Spend and use group
+shows it. A document without `spend` hides that panel.
 
-The Loop group's fixture requests come from `fixture_queue` in the `explorer`
+The Changes group's fixture requests come from `fixture_queue` in the `explorer`
 dataset (all issue and PR numbers are in skills-evals); no separate dataset
 carries them.
 
@@ -175,13 +167,10 @@ source holds them:
 
 | Config | Why no read can supply it |
 |---|---|
-| `snapshots.json` `cleanup` | A fixed list agreed once, with a "done when" test per item. Each status is checked against the linked PR or issue on refresh, but the list itself is a decision |
-| `snapshots.json` `gate` | Conditions the owner set. Their status is a judgment over several runs and PRs |
-| `snapshots.json` `decisions` | The owner's decisions, in words. They live in chat and memory, not in one queryable place |
+| `snapshots.json` `cleanup` | A fixed list agreed once. Only items marked `waiting_on_you` are read, into the waiting list; the page has no cleanup table |
 | `snapshots.json` `waiting_manual` | Asks that exist only in a conversation. Each drops automatically once its link reads closed or merged in `link_states.json` |
-| `routines.json` | Each routine's plain-English `what`, `schedule` and `note`. Last run, next run, result and health are read |
+| `routines.json` | Each routine's plain-English `what`, `schedule` and `note`, and its `added` date (`YYYY-MM-DD`): a routine with `expect_every_hours` that has never run reads Late once twice that interval has passed since it. Last run, next run, result and health are read |
 | `roster.json` | Plain-English `why` per model and the models just dropped. The list itself is read from `evals/roster.yml` |
-| `loop.json` | The loop's stages, the per-subject grid and the lane notes. Stage status is derived from `loop_status.json` |
 | `site.json` | Owner names, the project's thread link prefix, its channel id, and title overrides |
 
 ## What waits on you

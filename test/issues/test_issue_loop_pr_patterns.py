@@ -4,7 +4,8 @@ explorer/src/views/loop.js names the loop's pull requests by head branch
 (`LOOP_BRANCH`, the rule for data carrying `head_ref`) and by title
 (`LOOP_TITLE`, for older data). A gate that renames its branch prefix or its
 title would silently drop its pull requests from the public Loop page, so this
-reads both patterns out of loop.js with a JavaScript parser (acorn, via node)
+imports loop.js in node and reads the two exported patterns as built (they
+are assembled from the LOOP_SOURCES table, so there is no literal to parse),
 and every gate's title and branch prefix out of the gates themselves: `ast`
 for the Python scripts, `yaml` for the workflows. The scan counts what it
 found, so a parser that finds nothing fails instead of passing.
@@ -26,14 +27,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 WORKFLOWS = ROOT / ".github" / "workflows"
 EXTRACT = """
-const acorn = require('acorn'); const fs = require('fs');
-const ast = acorn.parse(fs.readFileSync(process.argv[1], 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
+const m = await import(process.argv[1]);
 const out = {};
-for (const n of ast.body) {
-  const d = n.type === 'ExportNamedDeclaration' ? n.declaration : n;
-  if (!d || d.type !== 'VariableDeclaration') continue;
-  for (const v of d.declarations) if (v.init && v.init.regex && /^LOOP_/.test(v.id.name)) out[v.id.name] = v.init.regex;
-}
+for (const [name, value] of Object.entries(m)) if (/^LOOP_/.test(name) && value instanceof RegExp) out[name] = { pattern: value.source };
 console.log(JSON.stringify(out));
 """
 
@@ -42,10 +38,9 @@ def loop_patterns() -> dict:
     node = shutil.which("node")
     if node is None:
         raise unittest.SkipTest("node is not installed")
-    done = subprocess.run([node, "-e", EXTRACT, str(ROOT / "explorer" / "src" / "views" / "loop.js")],
+    done = subprocess.run([node, "--input-type=module", "-e", EXTRACT, str(ROOT / "explorer" / "src" / "views" / "loop.js")],
                           cwd=ROOT / "explorer", capture_output=True, text=True, check=False)
-    if done.returncode != 0:
-        raise unittest.SkipTest("acorn is not installed (npm ci in explorer/)")
+    assert done.returncode == 0, done.stderr
     found = json.loads(done.stdout)
     assert set(found) == {"LOOP_TITLE", "LOOP_BRANCH"}, found
     return {k: re.compile(v["pattern"]) for k, v in found.items()}

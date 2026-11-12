@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import unittest
@@ -139,8 +140,30 @@ class DrawnSelectorTests(unittest.TestCase):
         page = (ROOT / "tool" / "index.html").read_text(encoding="utf-8")
         classes = [part.strip().split(".")[-1] for part in sf.DRAWN.split(",")]
         self.assertIn("src", classes)
-        self.assertTrue(any(f"class: '{c}'" in page or f'class: "{c}"' in page
-                            for c in classes),
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("node is not installed")
+        # Parse the inline script and list every object property `class` with a
+        # string value, so the check holds however the build quotes or spaces it.
+        walker = (
+            "const acorn = require('acorn'); const fs = require('fs');"
+            "const html = fs.readFileSync(process.argv[1], 'utf8');"
+            "const out = new Set(); let scripts = 0;"
+            "for (const m of html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script\\b[^>]*>/gi)) {"
+            " scripts++;"
+            " (function walk(n) { if (!n || typeof n.type !== 'string') return;"
+            "  if (n.type === 'Property' && !n.computed && (n.key.name === 'class' || n.key.value === 'class')"
+            "   && n.value.type === 'Literal' && typeof n.value.value === 'string') out.add(n.value.value);"
+            "  for (const [k, v] of Object.entries(n)) { if (k === 'type') continue;"
+            "   if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); } })"
+            "  (acorn.parse(m[1], { ecmaVersion: 'latest', sourceType: 'script' })); }"
+            "console.log(JSON.stringify({ scripts, classes: [...out] }));")
+        done = subprocess.run([node, "-e", walker, str(ROOT / "tool" / "index.html")],
+                              cwd=ROOT / "explorer", capture_output=True, text=True, check=False)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        found = json.loads(done.stdout)
+        self.assertGreaterEqual(found["scripts"], 1, "no inline script parsed")
+        self.assertTrue(any(c in found["classes"] for c in classes),
                         "tool/index.html draws none of the classes in DRAWN")
 
 class PageTests(unittest.TestCase):

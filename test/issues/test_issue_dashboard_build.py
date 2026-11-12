@@ -5,6 +5,7 @@ passes --now.
 """
 import importlib.util
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -100,6 +101,18 @@ class DashboardBuildTests(unittest.TestCase):
         rows, sources, _digests = build.usage(str(self.results))
         self.assertEqual({r["kind"] for r in rows}, {"hook_all", "skill"})
 
+    def test_usage_rows_carry_no_ci_repo_outcomes(self):
+        """The pull request outcomes by repo had no panel left (every repo, loop or not), so no row or key carries them."""
+        path = self.results / "usage" / "weekly-ci.json"
+        doc = json.loads(path.read_text()) if path.exists() else {"schema": 1, "sources": [], "rows": []}
+        doc["rows"].append({"week": "2026-01-05", "kind": "repo", "name": "example-owner/r", "repo": "example-owner/r",
+                            "outcome": {"prs_opened": 3, "prs_merged": 2}})
+        write(path, doc)
+        rows, _, _ = build.usage(str(self.results))
+        self.assertNotIn("repo", {r["kind"] for r in rows})
+        self.assertFalse({"prs_opened", "prs_merged", "ci_red_after"} & set().union(*(r.keys() for r in rows)))
+        self.assertFalse(hasattr(build, "OUTCOME_KEYS"))
+
     def test_usage_sources_carry_each_producers_read_count_and_unit(self):
         _, sources, _ = build.usage(str(self.results))
         self.assertEqual([(s["scanned"], s["scanned_unit"]) for s in sources], [(4, "sessions"), (9, "git hook runs"), (3, "cloud sessions")])
@@ -174,6 +187,21 @@ class DashboardBuildTests(unittest.TestCase):
                 row = build.routines([cfg], triggers, runs, NOW)[0]
                 self.assertEqual((row["health"], row["last_result"]), (health, result))
 
+    def test_a_workflow_that_never_ran_goes_late_once_twice_its_interval_has_passed_since_it_was_added(self):
+        wf = {"kind": "workflow", "repo": "o/r", "workflow": "w.yml", "cron": "0 7 * * 2"}  # next slot is always ahead
+        health = lambda **kw: build.routines([routine(source=wf, expect_every_hours=168, **kw)], {}, {}, NOW)[0]["health"]
+        # NOW is 2026-01-06 13:00 UTC; twice 168 hours is 14 days.
+        self.assertEqual(health(added="2025-12-24"), "Not run yet")  # 13 days: still inside the window
+        self.assertEqual(health(added="2025-12-23"), "Late")  # 14 days and 13 hours: past it
+        self.assertEqual(health(added="2025-12-23T12:00:00Z"), "Late")
+        self.assertEqual(health(added="2025-12-23T13:00:00Z"), "Not run yet", "exactly twice the interval is not past it")
+        self.assertEqual(health(), "Not run yet", "no added date keeps the old reading")
+        self.assertEqual(build.routines([routine(source=wf, added="2020-01-01")], {}, {}, NOW)[0]["health"], "Not run yet",
+                         "a routine that expects no runs is never late for not running")
+        ran = {"o/r:w.yml": [{"created_at": "2026-01-05T00:00:00Z", "status": "completed", "conclusion": "success"}]}
+        self.assertEqual(build.routines([routine(source=wf, expect_every_hours=168, added="2020-01-01")], {}, ran, NOW)[0]["health"], "OK",
+                         "a routine that has run is judged by its last run")
+
     def test_class_a_resolved_thread_never_waits_and_waiting_is_unresolved_blocked_plus_review_ready(self):
         states = ["done", "working", "review_ready", "blocked", "failed", "stopped", None]
         dump = [{"thread_id": f"{st}-{res}", "title": "T", "state": st, "resolved": res}
@@ -216,7 +244,16 @@ class DashboardBuildTests(unittest.TestCase):
 
     #: Datasets kept by hand or changed rarely: only these may keep a longer stale-after
     #: (dashboard/README.md "Compare" names the same list).
-    HAND_KEPT = {"budget", "cleanup", "decisions", "gate", "roster", "loop_grid", "explorer_private"}
+    @staticmethod
+    def hand_kept_in_readme():
+        """The names the README's Compare step lists as hand-kept (its one list)."""
+        text = (DASH / "README.md").read_text()
+        line = next(l for l in text.splitlines() if "except the hand-kept ones" in l)
+        return set(re.findall(r"`([a-z_]+)`", line.split("except the hand-kept ones", 1)[1].split(")", 1)[0]))
+
+    @property
+    def HAND_KEPT(self):
+        return self.hand_kept_in_readme()
 
     def test_stale_after_clears_two_refreshes_and_only_hand_kept_datasets_keep_more(self):
         interval = build.REFRESH_INTERVAL_HOURS
@@ -242,6 +279,19 @@ class DashboardBuildTests(unittest.TestCase):
             text = " ".join((DASH / rel).read_text().split())
             self.assertIn(f"every {build.REFRESH_INTERVAL_HOURS} hours", text, rel)
             self.assertNotRegex(text, r"every (?!%d hours)\d+ hours" % build.REFRESH_INTERVAL_HOURS, rel)
+        # The page's own words never write a number of hours: they read it from the refresh dataset.
+        strings = (REPO / "explorer" / "src" / "private" / "strings.js").read_text()
+        self.assertNotRegex(strings, r"every \d+ hours", "private/strings.js derives the interval")
+
+    def test_the_refresh_dataset_carries_the_clock_and_the_one_interval(self):
+        out = self.tmp / "ds-refresh"
+        build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                    "--config", str(DASH / "config.example"), "--out", str(out), "--now", NOW.isoformat()])
+        row = json.loads((out / "refresh.json").read_text())
+        self.assertEqual(row, [{"refreshed_at": "2026-01-06T13:00:00Z", "refresh_every_hours": build.REFRESH_INTERVAL_HOURS}])
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        self.assertIn("refresh", defined)
+        self.assertIn("Never skip `refresh`", (DASH / "README.md").read_text(), "the refresh step uploads it every run")
 
     def test_allowance_row_carries_the_guards_own_room_and_the_next_scheduled_reset(self):
         sys.path.insert(0, str(REPO / "scripts"))
@@ -375,18 +425,27 @@ class DashboardBuildTests(unittest.TestCase):
         rows = build.waiting({"cleanup": []}, [], [], {}, [], {}, SITE)
         self.assertEqual([(r["id"], r["item"]) for r in rows], [("none", "Nothing waiting on you")])
 
-    def test_loop_stage_status_follows_its_gaps(self):
-        cfg = {"home_thread_id": "t0", "grid": [],
-               "stages": [{"order": "1", "kind": "k", "stage": "a", "what": "w", "gaps": ["G1", "G2"]},
-                          {"order": "2", "kind": "k", "stage": "b", "what": "w", "gaps": ["G1"]},
-                          {"order": "3", "kind": "k", "stage": "c", "what": "w", "gaps": [], "override": "Off"}],
-               "lanes": [{"lane": "L", "thread": "T", "thread_id": "t1", "does": "d", "latest": "x"}]}
-        status = {"gaps": [{"gap": "G1", "title": "x", "status": "done", "pr": "https://example.com/1"},
-                           {"gap": "G2", "title": "y", "status": "open"}]}
-        stages, grid, lanes, gaps = build.loop(cfg, status, SITE)
-        self.assertEqual([s["status"] for s in stages], ["In progress", "Done", "Off"])
-        self.assertEqual((stages[1]["link"], stages[2]["link"]), ("https://example.com/1", SITE["thread_url"] + "t0"))
-        self.assertEqual(lanes[0]["link"], SITE["thread_url"] + "t1")
+    def test_datasets_json_and_build_name_the_same_datasets(self):
+        """A class guard (R11): every `out[<name>] = ...` in build() is a dataset in
+        page/datasets.json and every file dataset there is built, whatever config
+        is present. Read from build.py's AST, so a dataset behind an `if` (the old
+        loop_* ones, which needed loop.json) cannot hide from it."""
+        import ast
+        tree = ast.parse((DASH / "build.py").read_text())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "build")
+        written = set()
+        for node in ast.walk(fn):
+            targets = node.targets if isinstance(node, ast.Assign) else []
+            for t in targets:
+                for sub in ast.walk(t):
+                    if (isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name)
+                            and sub.value.id == "out" and isinstance(sub.slice, ast.Constant)):
+                        written.add(sub.slice.value)
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        files = {k for k, v in defined.items() if v["source"]["kind"] == "file"}
+        self.assertEqual(written, files - build.OPTIONAL_DATASETS)
+        for gone in ("cleanup", "decisions", "gate", "loop_stages", "loop_grid", "loop_lanes", "loop_gaps"):
+            self.assertNotIn(gone, defined)
 
     def test_roster_and_budget_are_read_from_the_repo(self):
         rows = build.roster({"why": {}, "dropped": [
@@ -547,7 +606,7 @@ class DashboardBuildTests(unittest.TestCase):
                           ("guidance edit", "links"), ("guidance removal", "handoff")])
 
     def cb(self, **kw):
-        args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], decisions=[], samples=[],
+        args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], samples=[],
                     owner_msgs=[], prs=[], explorer={}, now=self.cb_now())
         args.update(kw)
         return build.cost_benefit(*args.values())
@@ -571,13 +630,13 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(sm["real_work_reach"]["value"], 8)  # the latest complete week is 2026-10-26
         self.assertEqual(sm["decision_yield"]["value"], "2 of 0")
 
-    def test_owner_messages_dedupe_and_decisions_fall_in_their_week(self):
+    def test_owner_messages_dedupe_and_fall_in_their_week(self):
         msgs = [{"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
                 {"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
                 {"message_id": "cmsg_m2", "sent_at": "2026-10-26T17:00:00Z"}]
-        decisions = [{"date": "2026-10-25"}, {"date": "2026-10-26"}, {"date": "2026-10-27"}]
-        weeks, _ = self.cb(owner_msgs=msgs, decisions=decisions)
-        self.assertEqual([(w["owner_messages"], w["decisions"]) for w in weeks], [(1, 1), (1, 2), (0, 0)])
+        weeks, _ = self.cb(owner_msgs=msgs)
+        self.assertEqual([w["owner_messages"] for w in weeks], [1, 1, 0])
+        self.assertTrue(all("decisions" not in w for w in weeks), "the hand-kept decisions column is gone")
         path = self.tmp / "m.jsonl"
         path.write_text(json.dumps(msgs[0]) + "\nnot json\n\n" + json.dumps(dict(msgs[2], v=2)) + "\n")
         self.assertEqual(len(build.load_jsonl(str(path))), 1)
@@ -692,29 +751,6 @@ class DashboardBuildTests(unittest.TestCase):
                          [(2, "partial", "low"), (1, "unknown", "unknown")])
         self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
 
-    def test_red_runs_list_links_public_runs_and_drops_bad_urls(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            er = Path(tmp)
-            write(er / "usage" / "weekly-ci.json", {"schema": 1, "rows": [], "red_runs": [
-                {"week": "2026-10-19", "repo": "private", "created_at": None, "conclusion": None, "url": None},
-                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-27T08:00:00Z",
-                 "conclusion": "failure", "url": "https://github.com/example-owner/widgets/actions/runs/9100002"},
-                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-28T08:00:00Z",
-                 "conclusion": "timed_out", "url": "https://example.com/not-a-run"},
-                "not a dict"]})
-            rows = build.ci_red_runs(str(er))
-        self.assertEqual([(r["week"], r["created_at"]) for r in rows],
-                         [("2026-10-26", "2026-10-28T08:00:00Z"), ("2026-10-26", "2026-10-27T08:00:00Z"), ("2026-10-19", None)])
-        self.assertIsNone(rows[0]["url"])
-        self.assertEqual(rows[1]["url"], "https://github.com/example-owner/widgets/actions/runs/9100002")
-        self.assertEqual(len({r["key"] for r in rows}), 3)
-
-    def test_red_runs_placeholder_without_the_file_or_the_key(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
-            write(Path(tmp) / "usage" / "weekly-ci.json", {"schema": 1, "rows": []})
-            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
-
     def test_a_build_without_the_explorer_document_refuses(self):
         (self.results / "explorer" / "latest.json").unlink()
         with self.assertRaises(SystemExit) as e:
@@ -778,7 +814,7 @@ class DashboardBuildTests(unittest.TestCase):
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
         for name in defined:
             self.assertRegex(page, r'["\']' + name + r'["\']', f"the page never reads {name}")
-        for name, key in (("half_built_issues", "key"), ("ci_red_runs", "key"), ("usage_rows", "kind"),
+        for name, key in (("half_built_issues", "key"), ("usage_rows", "kind"),
                           ("cost_benefit_weeks", "week"), ("run_stream", "key"), ("waiting", "id")):
             self.assertRegex(page, name + r':\s*"' + key + '"', f"{name} placeholder rows stay hidden")
 

@@ -1,19 +1,13 @@
-/* Loop: the stages, fixture requests, lesson proposals, where lessons went
-   and the loop's own pull requests. */
+/* The loop's records the Changes page shows: fixture requests, where lessons
+   went, and which pull requests are the loop's own. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtCount , fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtCount, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
-import { table, srcLine, panel, rangeLine, srcLineFor } from './bits.js';
-import { lessonsView } from './lessons.js';
+import { table, srcLineFor } from './bits.js';
 import { barChart, chartTitle } from '../core/charts.js';
 
 const usd = (x) => fmtUsd(Number(x) || 0);
-
-export function stagesView() {
-  return [h('ol', { class: 'stages' }, STRINGS.loopStages.map(([name, text]) => h('li', null, h('strong', null, name), ' ', text))),
-    h('p', { class: 'note' }, STRINGS.loopStagesNote)];
-}
 
 export function fixtureRequestsView(doc, refMs) {
   const fq = fixtureQueue(doc, refMs);
@@ -62,20 +56,22 @@ export function funnelView(doc) {
    private build uses), else by the titles the gates give them
    (scripts/draft_new_skill.py, improve_gate.py, guidance_improve_gate.py,
    retire_skill.py), which older documents need. */
-export const LOOP_TITLE = /^(New skill: |Improve |Proposed .+ (SKILL\.md|guidance) edit|Retire (skill|guidance section) |Remove .*: (no (marginal )?benefit|unused)|Trim )/;
-export const LOOP_BRANCH = /^(eval-improve|eval-guidance-improve|draft-skill|retire-skill|retire-guidance)\//;
+const LOOP_SOURCES = [
+  ['editSkill', 'eval-improve', 'Improve |Proposed .+ SKILL\\.md edit|Trim '],
+  ['editGuidance', 'eval-guidance-improve', 'Proposed .+ guidance edit'],
+  ['newSkill', 'draft-skill', 'New skill: '],
+  ['removeSkill', 'retire-skill', 'Retire skill |Remove .*: (?:no (?:marginal )?benefit|unused)'],
+  ['removeSection', 'retire-guidance', 'Retire guidance section ']];
+/* One row per kind of loop change: its head branch prefix and its title. The
+   two patterns below and the changes list's kinds all come from this table. */
+export const LOOP_KINDS = LOOP_SOURCES.map(([kind, branch, title]) => ({ kind, branch: new RegExp('^' + branch + '/'), title: new RegExp('^(?:' + title + ')') }));
+export const LOOP_TITLE = new RegExp('^(?:' + LOOP_SOURCES.map((k) => k[2]).join('|') + ')');
+export const LOOP_BRANCH = new RegExp('^(?:' + LOOP_SOURCES.map((k) => k[1]).join('|') + ')/');
 
 export function isLoopPull(p) {
   if (!p || typeof p !== 'object') return false;
   if (typeof p.head_ref === 'string') return LOOP_BRANCH.test(p.head_ref);
   return typeof p.title === 'string' && LOOP_TITLE.test(p.title);
-}
-
-export function loopPrsView(doc, refMs) {
-  const a = doc.activity;
-  const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter(isLoopPull);
-  if (!rows.length) return null;
-  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.loopPrsNote), prTable(rows, refMs)];
 }
 
 export function prTable(rows, refMs) {
@@ -86,19 +82,4 @@ export function prTable(rows, refMs) {
     { label: STRINGS.colState, sort: (p) => p.state, cell: (p) => STRINGS.prStates[p.state] || clean(p.state) },
     { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at, cell: (p) => fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
   ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || '').localeCompare(String(x.merged_at || x.updated_at || ''))), { tall: true });
-}
-
-export function loopView(doc, ctx) {
-  const refMs = parseTime(doc.generated_at);
-  const ext = ctx && ctx.ext;
-  const stages = ext && ext.loopStages ? ext.loopStages(ctx) : null;
-  return h('div', null,
-    rangeLine(doc),
-    panel(STRINGS.loopHeading, stages || stagesView()),
-    ext && ext.loopTop ? ext.loopTop(ctx) : null,
-    panel(STRINGS.funnelHeading, funnelView(doc)),
-    panel(STRINGS.fqHeading, fixtureRequestsView(doc, refMs)),
-    lessonsView(doc, 'all'),
-    ext && ext.covers && ext.covers('loop-prs') ? ext.loopPrs(ctx) : panel(STRINGS.loopPrsHeading, loopPrsView(doc, refMs)),
-    ext && ext.loopBottom ? ext.loopBottom(ctx) : null);
 }

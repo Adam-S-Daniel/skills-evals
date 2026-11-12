@@ -8,10 +8,10 @@ typed by hand that a read could supply:
              (test runs, the allowance meter, usage counts)
   --inputs   JSON dumps the refresh session collects each run from GitHub and
              the project (threads, scheduled tasks, workflow runs, issues and
-             PRs labeled needs-owner, environment reviews, loop status);
+             PRs labeled needs-owner, environment reviews, the loop's pull requests);
              see README.md, "Inputs"
-  --config   the owner's own lists that no read can supply (cleanup items,
-             gate conditions, decisions, routine descriptions, loop design);
+  --config   the owner's own lists that no read can supply (the waiting list's
+             manual asks, routine descriptions, the roster's reasons);
              kept outside this public repo, see config.example/
 
 The repo's own evals/budget.yml and evals/roster.yml are read directly.
@@ -150,9 +150,6 @@ def roster(cfg):
 
 # --- Impact tab ----------------------------------------------------------------
 
-# Outcome keys from _agent-guidance scripts/impact-report.js (kind "repo" rows from CI).
-OUTCOME_KEYS = ["prs_opened", "prs_merged", "prs_closed_unmerged", "prs_reverted", "agent_prs_merged", "ci_red_after"]
-
 # Each producer names what it read in its own field: the transcript census counts sessions,
 # the local hook log counts git hook runs, the CI report counts repos, the cloud guidance
 # records count cloud sessions.
@@ -193,45 +190,25 @@ def usage(er):
                                 "surface": r.get("surface"), "digest": r.get("digest"),
                                 "invocations": r.get("invocations", 0), "sessions": r.get("sessions")})
                 continue
-            o = r.get("outcome") or {}
+            if r["kind"] == "repo":
+                continue  # CI pull request outcomes by repo: no panel shows them (they cover every repo, loop or not)
             # A git hook row named "all" is that week's total across checks; its own kind keeps
             # per-check sums from counting it twice.
             kind = "hook_all" if r["kind"] == "hook" and r["name"] == "all" else r["kind"]
             rows.append({"week": r["week"], "kind": kind, "name": r["name"], "repo": r.get("repo") or "(any repo)",
                          "surface": r.get("surface"), "invocations": r.get("invocations", 0),
                          "sessions": r.get("sessions"), "blocked": r.get("blocked"),
-                         "overridden": r.get("overridden"), **{k: o.get(k) for k in OUTCOME_KEYS}})
+                         "overridden": r.get("overridden")})
     if not sources:
         sources = [{"key": PLACEHOLDER_ID, "file": PLACEHOLDER_ID, "surface": None, "scope": None, "from": None,
                     "to": None, "scanned": None, "scanned_unit": None, "generated_at": None}]
     if not rows:
         rows = [{"week": None, "kind": PLACEHOLDER_ID, "name": "No usage counts yet", "repo": None, "surface": None,
-                 "invocations": 0, "sessions": None, "blocked": None, "overridden": None,
-                 **{k: None for k in OUTCOME_KEYS}}]
+                 "invocations": 0, "sessions": None, "blocked": None, "overridden": None}]
     if not digests:
         digests = [{"week": None, "name": "No loaded-copy counts yet", "repo": None, "surface": None,
                     "digest": PLACEHOLDER_ID, "invocations": 0, "sessions": None}]
     return rows, sources, digests
-
-
-RED_RUN_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+$")
-
-
-def ci_red_runs(er):
-    """Every red agent-checks CI run the impact report lists (usage/weekly-ci.json `red_runs`), newest
-    first. A URL that is not a GitHub Actions run page is dropped; a private repo's entry has none."""
-    d = load(os.path.join(er, "usage", "weekly-ci.json"), {}) or {}
-    out = []
-    for i, r in enumerate(d.get("red_runs") or []):
-        if not isinstance(r, dict):
-            continue
-        url = r.get("url") if isinstance(r.get("url"), str) and RED_RUN_URL.match(r["url"]) else None
-        out.append({"key": url or f"{r.get('week')}|{r.get('repo')}|{i}", "week": r.get("week"),
-                    "repo": r.get("repo"), "created_at": r.get("created_at"),
-                    "conclusion": r.get("conclusion"), "url": url})
-    out.sort(key=lambda r: (r["week"] or "", r["created_at"] or ""), reverse=True)
-    return out or [{"key": PLACEHOLDER_ID, "week": None, "repo": None, "created_at": None,
-                    "conclusion": None, "url": None}]
 
 
 # --- Overview tab: threads, routines, check-ins, waiting -------------------------
@@ -308,7 +285,8 @@ RUN_RESULT = {"success": "Succeeded", "failure": "Failed", "cancelled": "Cancell
 
 
 def routines(cfg, triggers, workflow_runs, now, workflow_states=None):
-    """One row per routine. Config gives the words; the last and next run and health come from reads."""
+    """One row per routine. Config gives the words (and `added`, the date it started);
+    the last and next run and health come from reads."""
     rows = []
     for r in cfg:
         if r.get("retired"):
@@ -346,7 +324,13 @@ def routines(cfg, triggers, workflow_runs, now, workflow_states=None):
         elif not last_run:
             # No recorded run is never "OK". It is "Late" once a run was due (its next run
             # is past, or it expects runs and none is scheduled), else "Not run yet".
-            due = (next_run and parse(next_run) <= now) or (r.get("expect_every_hours") and not next_run)
+            # A routine that expects runs and has had twice its interval since `added`
+            # (a date in the config) is late too, whatever its next scheduled run says:
+            # a workflow that never fired always has a future cron slot.
+            wait = timedelta(hours=2 * r["expect_every_hours"]) if r.get("expect_every_hours") else None
+            added = parse(r["added"] + "T00:00:00Z" if len(r.get("added") or "") == 10 else r.get("added"))
+            due = ((next_run and parse(next_run) <= now) or (r.get("expect_every_hours") and not next_run)
+                   or (wait and added and now - added > wait))
             health = "Late" if due else "Not run yet"
         elif r.get("expect_every_hours") and now - parse(last_run) > timedelta(hours=2 * r["expect_every_hours"]):
             health = "Late"
@@ -464,42 +448,6 @@ def waiting(snap, needs_owner, reviews, open_heads, thread_dump, link_states, si
         r["id"] = r.get("link") or r["item"]
     return rows or [{"item": "Nothing waiting on you", "why": None, "since": None, "link": None,
                      "where": None, "id": PLACEHOLDER_ID}]
-
-
-def clean_cleanup(items):
-    return [{k: v for k, v in c.items() if k not in ("waiting_on_you", "waiting_since")} for c in items]
-
-
-# --- Loop tab ------------------------------------------------------------------
-
-GAP_WORDS = {"open": "Not started", "in progress": "In progress", "done": "Done"}
-
-
-def loop(cfg, status, site):
-    gaps = [{"gap": g["gap"], "title": g["title"], "status": GAP_WORDS.get(g["status"], g["status"]),
-             "owner": g.get("owner") or "", "link": g.get("pr")} for g in status["gaps"]]
-    by = {g["gap"]: g for g in gaps}
-    home = site["thread_url"] + cfg["home_thread_id"]
-
-    def derive(ids, override):
-        if override:
-            return override
-        s = [by[i]["status"] for i in ids if i in by]
-        if s and all(x == "Done" for x in s):
-            return "Done"
-        if s and all(x == "Not started" for x in s):
-            return "Not started"
-        return "In progress"
-    stages = []
-    for st in cfg["stages"]:
-        links = [by[i]["link"] for i in st["gaps"] if i in by and by[i]["link"]]
-        stages.append({"order": st["order"], "kind": st["kind"], "stage": st["stage"], "what": st["what"],
-                       "status": derive(st["gaps"], st.get("override")), "gaps": ", ".join(st["gaps"]),
-                       "link": links[0] if links else home})
-    lanes = [{"lane": ln["lane"], "thread": ln["thread"], "link": site["thread_url"] + ln["thread_id"],
-              "does": ln["does"], "latest": ln["latest"], "latest_link": ln.get("latest_link")}
-             for ln in cfg["lanes"]]
-    return stages, cfg["grid"], lanes, gaps
 
 
 # --- Cost and benefit tab --------------------------------------------------------
@@ -674,9 +622,9 @@ def r2(v):
     return None if v is None else round(v, 2)
 
 
-def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs, explorer, now, start=COST_START,
+def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
                  raw=None):
-    """(weeks rows, summary rows) for the Impact group's cost panel. `raw`, a
+    """(weeks rows, summary rows) for the Spend and use group's cost panel. `raw`, a
     dict, receives the week rows and the cost per verdict before rounding."""
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
@@ -705,8 +653,6 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
             "changes": sum(1 for c in changes if week_of(c["merged_at"], starts) == i),
             "real_work_reach": sum(week_uses(c, label, usage_rows) for c in changes if c["merged_at"] < end),
             "owner_messages": sum(1 for m in msgs.values() if week_of(parse(m["sent_at"]), starts) == i),
-            "decisions": sum(1 for d in decisions
-                             if week_of(parse(d["date"] + "T17:00:00Z"), starts) == i),
             "verdicts": verdicts if i == len(starts) - 1 else None})
     complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
     last = complete[-1] if complete else None
@@ -752,7 +698,7 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
     if not weeks:
         weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
                   "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
-                  "real_work_reach": None, "owner_messages": None, "decisions": None, "verdicts": None}]
+                  "real_work_reach": None, "owner_messages": None, "verdicts": None}]
     for w in weeks:
         for k in ("run_points_est", "run_meter_points", "api_usd", "build_usd", "build_points", "total_points"):
             w[k] = r2(w[k])
@@ -828,11 +774,12 @@ def build(results, inputs, config, now, raw=None):
     # The page reads test runs from the explorer document; the rows here only
     # feed the cost weeks.
     plan_rows, _ = eval_rows(results, site["report_base"])
+    # Always uploaded: the page reads the refresh clock from here, not from a dataset a quiet day leaves unchanged.
+    out["refresh"] = [{"refreshed_at": iso(now), "refresh_every_hours": REFRESH_INTERVAL_HOURS}]
     out["eval_allowance"] = allowance(results, now)
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
     out["usage_rows"], out["usage_sources"], _ = usage(results)
-    out["ci_red_runs"] = ci_red_runs(results)
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
@@ -840,23 +787,16 @@ def build(results, inputs, config, now, raw=None):
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
     out["waiting"] = waiting(snap, inp("needs_owner.json", []), inp("waiting_reviews.json", []),
                              inp("open_pr_heads.json", {}), thread_dump, inp("link_states.json", {}), site)
-    out["cleanup"] = clean_cleanup(snap["cleanup"])
-    out["gate"] = snap["gate"]
-    out["decisions"] = snap["decisions"]
-    loop_cfg = os.path.join(config, "loop.json")
     explorer = load(os.path.join(results, "explorer", "latest.json"), {})
     if not isinstance(explorer, dict) or not isinstance(explorer.get("schema_version"), int):
         sys.exit("explorer: results/explorer/latest.json is missing or not an explorer document")
     out["explorer"] = explorer
     out["cost_benefit_weeks"], out["cost_benefit_summary"] = cost_benefit(
-        results, plan_rows, out["usage_rows"], snap["decisions"],
+        results, plan_rows, out["usage_rows"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now,
         raw=raw)
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
-    if os.path.exists(loop_cfg):
-        (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
-         out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
     return out
 
 

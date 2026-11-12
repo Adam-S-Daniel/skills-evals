@@ -21,7 +21,6 @@ import { hookItems, hookWeeks, hookTile, cloudCounted, mondayOf } from '../core/
 import { fixtureQueue } from '../core/fixtures.js';
 import { searchItems, filterItems } from '../views/search.js';
 import { checkWeeks } from '../views/hooks.js';
-import { prWeeks } from '../views/impact.js';
 import { runsOf } from '../views/subject.js';
 import { LOOP_TITLE } from '../views/loop.js';
 import { buildFailure } from '../views/failure.js';
@@ -41,6 +40,6 @@ export const EXPORTS = {
   poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
   useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, mondayOf, checkWeeks,
-  fixtureQueue, searchItems, filterItems, prWeeks, runsOf, LOOP_TITLE,
+  fixtureQueue, searchItems, filterItems, runsOf, LOOP_TITLE,
   trendingRows, trendingView, changeNodes, firesFigures, firesNode, asOfLine, skillStateCounts, stateBar, term, defn, closeDef, installDefs, fmt2, fmtSigned2, roundDecimals
 };

@@ -1,7 +1,7 @@
 /* Skill and section cards, and the counts line above them. */
 import { STRINGS } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor , fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd } from '../core/format.js';
 import { h } from '../core/h.js';
 import { termify, SENTENCE_TERMS } from '../core/terms.js';
 import { chip } from '../core/charts.js';
