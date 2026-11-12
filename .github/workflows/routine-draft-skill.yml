@@ -109,7 +109,7 @@ jobs:
           repositories: adam-agentskills-private
           permission-contents: read
 
-      # persistent/lessons exists only once the BOXY miner has pushed a
+      # persistent/lessons exists only once the workstation miner has pushed a
       # lesson; until then only the skill-proposal issues can be drafted,
       # which is not an error. ls-remote exits 2 when the branch is absent;
       # any other nonzero code fails the step.
@@ -132,7 +132,7 @@ jobs:
           [ "$rc" -eq 0 ] || exit "$rc"
           echo "present=true" >> "$GITHUB_OUTPUT"
 
-      # lessons/ for the proposals, from persistent/lessons: the BOXY miner
+      # lessons/ for the proposals, from persistent/lessons: the workstation miner
       # writes there because main is PR-only (skills-evals#423, ADR 0015).
       # Credentials not kept.
       - name: Check out the lessons (adam-agentskills-private)
