@@ -21,46 +21,46 @@
  },
  "checkins": {
   "description": "One-time reminders Claude set in this project, from the scheduled task list.",
-  "schedule": "Updated by Claude on request",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "checkins.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Scheduled check-ins"
  },
  "cost_benefit_summary": {
   "description": "Cost per decided verdict, decision yield, real-work reach, the Dec 15 bar and the points-per-dollar rate used. Built by Claude with the weekly rows.",
-  "schedule": "Updated by Claude on every refresh",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "cost_benefit_summary.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
   "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
-  "schedule": "Updated by Claude on every refresh",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "cost_benefit_weeks.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Cost and benefit, by week"
  },
  "eval_allowance": {
   "description": "Test use over the last 7 days and the latest account meter reading, worked out with skills-evals' own allowance guard code from the results branch. It does not count fires still running.",
-  "schedule": "Refreshed by Claude on request",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "eval_allowance.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 24,
+  "staleAfterHours": 26,
   "title": "Test allowance snapshot"
  },
  "eval_ingests": {
@@ -85,24 +85,24 @@
  },
  "half_built_issues": {
   "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
-  "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "half_built_issues.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 6,
+  "staleAfterHours": 26,
   "title": "Half-built and broken features, findings"
  },
  "half_built_summary": {
   "description": "One row of counts for the Overview banner: findings open, how many are high severity or broken, and when the weekly check last ran. Built by Claude with the findings rows.",
-  "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "half_built_summary.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 6,
+  "staleAfterHours": 26,
   "title": "Half-built and broken features, summary"
  },
  "merged_prs": {
@@ -189,79 +189,79 @@
  },
  "routines": {
   "description": "The project's automatic jobs and their last runs, read by Claude from the scheduled task list and project threads.",
-  "schedule": "Updated by Claude on request",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "routines.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Routines"
  },
  "run_stream": {
   "description": "GitHub Actions runs in the attached repos and scheduled-task runs from the last 7 days, gathered by Claude's watcher every hour.",
-  "schedule": "Refreshed by Claude's watcher every hour until Mon Nov 9",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "run_stream.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 2,
+  "staleAfterHours": 26,
   "title": "Run console"
  },
  "threads": {
   "description": "The threads in this project and their state, from the project's thread list.",
-  "schedule": "Updated by Claude on request",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "threads.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Project threads"
  },
  "usage_rows": {
   "description": "Weekly counts of skill uses and git hook check runs, blocks and bypasses, per repo and place, with PR outcomes where CI reports them. Concatenated by Claude from skills-evals persistent/eval-results usage/weekly-*.json (schema 1). Empty until the first file lands.",
-  "schedule": "Updated by Claude on every refresh",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "usage_rows.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Real-work use, weekly"
  },
  "usage_sources": {
   "description": "The sources each usage file counted: where, scope, time span and sessions read.",
-  "schedule": "Updated by Claude on every refresh",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "usage_sources.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Real-work use sources"
  },
  "waiting": {
   "description": "Items only you can do or decide: open issues and PRs labeled needs-owner, environment reviews waiting on the current head of an open PR, threads waiting on your answer, cleanup items that need you, and a short manual list. Built by dashboard/build.py in skills-evals.",
-  "schedule": "Updated on every refresh",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "waiting.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Waiting on you"
  },
  "explorer": {
   "description": "The public evals document, explorer/latest.json on skills-evals' persistent/eval-results branch, uploaded unchanged: every public skill, guidance section, git check, test run, lesson, fixture request and activity row. The page's Summary, Hooks, skills and guidance, Loop, Impact and Operations groups all read it.",
-  "schedule": "Updated by Claude every 2 hours and on every merged PR",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
   "source": {
    "kind": "file",
    "name": "explorer.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 30,
+  "staleAfterHours": 26,
   "title": "Evals document"
  },
  "explorer_private": {

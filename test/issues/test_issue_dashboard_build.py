@@ -9,7 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -137,6 +137,14 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(rows[1]["state"], "Waiting on you")
         self.assertEqual(rows[1]["link"], SITE["thread_url"] + "t1")
 
+    def test_a_resolved_thread_is_done_and_an_unresolved_review_ready_one_waits_on_the_owner(self):
+        rows = build.threads([
+            {"thread_id": "a", "title": "Resolved blocked", "state": "blocked", "resolved": True},
+            {"thread_id": "b", "title": "Resolved ready", "state": "review_ready", "resolved": True},
+            {"thread_id": "c", "title": "Ready", "state": "review_ready"}], SITE)
+        self.assertEqual({r["title"]: r["state"] for r in rows},
+                         {"Resolved blocked": "Done", "Resolved ready": "Done", "Ready": "Ready for your review"})
+
     def test_threads_carry_their_session_and_branch_so_prs_can_name_them(self):
         rows = build.threads([
             {"thread_id": "t1", "title": "A", "state": "working", "session_id": "cse_01Abc"},
@@ -154,7 +162,8 @@ class DashboardBuildTests(unittest.TestCase):
             (routine(source=trig), {"t": {"enabled": False}}, {}, "Paused", None),
             (routine(source=trig, expect_every_hours=168), {"t": {"next_run_at": "2026-01-13T18:00:00Z"}}, {}, "Not run yet", None),
             (routine(source=trig, expect_every_hours=1), {"t": {"next_run_at": "2026-01-06T00:00:00Z"}}, {}, "Late", None),
-            (routine(source={"kind": "none"}, retired=True), {}, {}, "Retired", "Idle"),
+            (routine(source=trig, expect_every_hours=1), {}, {}, "Late", None),
+            (routine(source={"kind": "none"}), {}, {}, "Not run yet", None),
             (routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"}), {},
              {"o/r:w.yml": [{"created_at": "2026-01-05T00:00:00Z", "status": "completed", "conclusion": "success"},
                             {"created_at": "2026-01-06T00:00:00Z", "status": "completed", "conclusion": "cancelled"}]},
@@ -164,6 +173,158 @@ class DashboardBuildTests(unittest.TestCase):
             with self.subTest(health=health):
                 row = build.routines([cfg], triggers, runs, NOW)[0]
                 self.assertEqual((row["health"], row["last_result"]), (health, result))
+
+    def test_a_workflow_that_never_ran_goes_late_once_twice_its_interval_has_passed_since_it_was_added(self):
+        wf = {"kind": "workflow", "repo": "o/r", "workflow": "w.yml", "cron": "0 7 * * 2"}  # next slot is always ahead
+        health = lambda **kw: build.routines([routine(source=wf, expect_every_hours=168, **kw)], {}, {}, NOW)[0]["health"]
+        # NOW is 2026-01-06 13:00 UTC; twice 168 hours is 14 days.
+        self.assertEqual(health(added="2025-12-24"), "Not run yet")  # 13 days: still inside the window
+        self.assertEqual(health(added="2025-12-23"), "Late")  # 14 days and 13 hours: past it
+        self.assertEqual(health(added="2025-12-23T12:00:00Z"), "Late")
+        self.assertEqual(health(added="2025-12-23T13:00:00Z"), "Not run yet", "exactly twice the interval is not past it")
+        self.assertEqual(health(), "Not run yet", "no added date keeps the old reading")
+        self.assertEqual(build.routines([routine(source=wf, added="2020-01-01")], {}, {}, NOW)[0]["health"], "Not run yet",
+                         "a routine that expects no runs is never late for not running")
+        ran = {"o/r:w.yml": [{"created_at": "2026-01-05T00:00:00Z", "status": "completed", "conclusion": "success"}]}
+        self.assertEqual(build.routines([routine(source=wf, expect_every_hours=168, added="2020-01-01")], {}, ran, NOW)[0]["health"], "OK",
+                         "a routine that has run is judged by its last run")
+
+    def test_class_a_resolved_thread_never_waits_and_waiting_is_unresolved_blocked_plus_review_ready(self):
+        states = ["done", "working", "review_ready", "blocked", "failed", "stopped", None]
+        dump = [{"thread_id": f"{st}-{res}", "title": "T", "state": st, "resolved": res}
+                for st in states for res in (False, True)]
+        for t in dump:
+            label = build.thread_state(t)
+            if t["resolved"]:
+                self.assertEqual(label, "Done", t["thread_id"])
+        rows = build.waiting({"cleanup": []}, [], [], {}, dump, {}, SITE)
+        want = {SITE["thread_url"] + t["thread_id"] for t in dump
+                if t["state"] in ("blocked", "review_ready") and not t["resolved"]}
+        self.assertEqual({r["link"] for r in rows}, want)
+
+    def test_class_health_is_never_ok_without_a_recorded_run_and_the_table_is_the_count(self):
+        trig = {"kind": "trigger", "id": "t"}
+        cfgs = [routine(source=src, expect_every_hours=h, retired=ret)
+                for src in ({"kind": "none"}, trig, {"kind": "workflow", "repo": "o/r", "workflow": "w.yml"})
+                for h in (None, 1, 168) for ret in (False, True)]
+        for triggers in ({}, {"t": {"next_run_at": "2026-01-13T18:00:00Z"}}, {"t": {"enabled": False}}):
+            rows = build.routines(cfgs, triggers, {}, NOW)
+            self.assertEqual(len(rows), len([c for c in cfgs if not c.get("retired")]), "retired rows leave the table")
+            for r in rows:
+                self.assertFalse(r["health"] == "OK" and not r["last_run"], r)
+                self.assertNotEqual(r["health"], "Retired")
+
+    def test_allowance_leaves_out_a_run_from_before_the_reset_even_inside_seven_days(self):
+        now = datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc)
+        usage = {"cost_estimate": {"usd": 10.0}}
+        er = self.tmp / "er"
+        for run in ("20261105T120000Z-aaaaaa", "20261110T120000Z-bbbbbb"):
+            write(er / "routine-results" / run / "x" / "with_skill" / "summary.json", {"usage": usage})
+        sys.path.insert(0, str(REPO / "scripts"))
+        import allowance_guard as g
+        import yaml
+        limits = yaml.safe_load((REPO / "evals" / "budget.yml").read_text())
+        one = g.run_cost(er / "routine-results" / "20261110T120000Z-bbbbbb", limits) * 100
+        row = build.allowance(er, now)[0]
+        self.assertEqual(row["runs"], 1)
+        self.assertAlmostEqual(row["points"], one)
+
+    #: Datasets kept by hand or changed rarely: only these may keep a longer stale-after
+    #: (dashboard/README.md "Compare" names the same list).
+    HAND_KEPT = {"budget", "roster", "explorer_private"}
+
+    def test_stale_after_clears_two_refreshes_and_only_hand_kept_datasets_keep_more(self):
+        interval = build.REFRESH_INTERVAL_HOURS
+        floor = 2 * interval + 2
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        checked = 0
+        for name, d in defined.items():
+            if d.get("staleAfterHours") is None:
+                continue  # live datasets
+            checked += 1
+            self.assertGreaterEqual(d["staleAfterHours"], floor, name)
+            self.assertNotRegex(d["schedule"], r"every (\d+ )?hours?\b", name)
+            if name in self.HAND_KEPT:
+                self.assertNotIn("every refresh", d["schedule"], name)
+            else:
+                self.assertEqual(d["staleAfterHours"], floor, name)
+                self.assertIn("Rebuilt on every refresh", d["schedule"], name)
+        self.assertGreater(checked, 10)
+        self.assertTrue(self.HAND_KEPT <= set(defined))
+
+    def test_the_docs_state_the_refresh_interval_build_py_defines(self):
+        for rel in ("README.md", "tasks/refresh.md"):
+            text = " ".join((DASH / rel).read_text().split())
+            self.assertIn(f"every {build.REFRESH_INTERVAL_HOURS} hours", text, rel)
+            self.assertNotRegex(text, r"every (?!%d hours)\d+ hours" % build.REFRESH_INTERVAL_HOURS, rel)
+
+    def test_allowance_row_carries_the_guards_own_room_and_the_next_scheduled_reset(self):
+        sys.path.insert(0, str(REPO / "scripts"))
+        import allowance_guard as g
+        import yaml
+        limits = yaml.safe_load((REPO / "evals" / "budget.yml").read_text())
+        er = self.tmp / "er2"
+        now = datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc)
+        write(er / "routine-results" / "20261110T120000Z-bbbbbb" / "x" / "with_skill" / "summary.json",
+              {"usage": {"cost_estimate": {"usd": 10.0}}})
+        # A run whose summary cannot be read is charged the full reservation.
+        bad = er / "routine-results" / "20261111T120000Z-cccccc" / "x" / "with_skill"
+        bad.mkdir(parents=True)
+        (bad / "summary.json").write_text("{")
+        runs = g.ingested_runs(er, now, g.window_start(now))
+        state = g.account(er, limits, now, (len(runs), 0), since=g.window_start(now))
+        row = build.allowance(er, now)[0]
+        self.assertAlmostEqual(row["points"], state["spent"] * 100)
+        self.assertAlmostEqual(row["room_points"], g.room(state) * 100)
+        self.assertAlmostEqual(row["committed_points"], state["committed"] * 100)
+        self.assertAlmostEqual(row["pending_points"], state["pending"] * 100)
+        self.assertGreater(row["points"], 10.0 * limits["points_per_usd"] * 100, "the unreadable run is charged in full")
+
+    def test_week_resets_at_is_the_next_scheduled_reset_even_in_a_manual_reset_week(self):
+        sys.path.insert(0, str(REPO / "scripts"))
+        import allowance_guard as g
+        er = self.tmp / "er3"
+        (er / "routine-results").mkdir(parents=True)
+        for now in [g.MANUAL_RESETS[0] + timedelta(hours=1), datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc),
+                    datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)]:
+            row = build.allowance(er, now)[0]
+            reset = datetime.strptime(row["week_resets_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            self.assertGreater(reset, now)
+            self.assertLessEqual(reset - now, g.WINDOW)
+            self.assertEqual((reset - g.ACCOUNT_WEEK_RESET) % g.WINDOW, timedelta(0), "a scheduled Monday 17:00 UTC")
+
+    def test_class_the_spend_file_survives_the_ingest_gate_the_schema_and_the_public_export(self):
+        """Every key build.py's spend output emits passes check_spend and $defs.spend_file and
+        is copied by explorer_public.build_spend (needs the spend lane's changes, batch A)."""
+        import jsonschema
+        sys.path.insert(0, str(REPO / "scripts"))
+        sys.path.insert(0, str(REPO / "harness"))
+        import explorer_public
+        import ingest_routine_results as ingest
+        now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+        spend = self.tmp / "weekly.json"
+        build.main(["--results", str(self.results), "--inputs", str(DASH / "inputs.example"),
+                    "--config", str(DASH / "config.example"), "--out", str(self.tmp / "ds"),
+                    "--now", now.isoformat(), "--spend", str(spend)])
+        text = spend.read_text()
+        doc = json.loads(text)
+        schema = json.loads((REPO / "explorer" / "schema.json").read_text())
+        jsonschema.validate(doc, schema["$defs"]["spend_file"], cls=jsonschema.validators.validator_for(schema))
+        ingest.check_spend(doc, text, "built spend file")
+        tree = self.tmp / "tree2"
+        write(tree / "spend" / "weekly.json", doc)
+        got = explorer_public.build_spend(tree, True)
+        for week in doc["weeks"]:
+            out = next(w for w in got["weeks"] if w["week"] == week["week"])
+            for key, value in week.items():
+                self.assertEqual(out.get(key), value, key)
+        for key, value in doc["total"].items():
+            self.assertEqual(got["total"].get(key), value, key)
+
+    def test_retired_routines_are_left_out_of_the_table(self):
+        rows = build.routines([routine(source={"kind": "none"}, retired=True), routine(source={"kind": "none"})], {}, {}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("Retired", [r["health"] for r in rows])
 
     def test_a_workflow_turned_off_in_github_reads_as_paused(self):
         wf = routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"})
@@ -212,14 +373,17 @@ class DashboardBuildTests(unittest.TestCase):
         reviews = [{"repo": "example-owner/r", "name": "PR", "environment": "env", "head_sha": "new", "job_url": "https://example.com/new"},
                    {"repo": "example-owner/r", "name": "PR", "environment": "env", "head_sha": "old", "job_url": "https://example.com/old"}]
         threads = [{"thread_id": "t1", "title": "Blocked one", "state": "blocked"},
-                   {"thread_id": "t2", "title": "Resolved", "state": "blocked", "resolved": True}]
+                   {"thread_id": "t2", "title": "Resolved", "state": "blocked", "resolved": True},
+                   {"thread_id": "t3", "title": "Ready one", "state": "review_ready"},
+                   {"thread_id": "t4", "title": "Ready resolved", "state": "review_ready", "resolved": True}]
         rows = build.waiting(snap, needs, reviews, {"example-owner/r": ["new"]}, threads,
                              {"https://github.com/example-owner/r/pull/1": "merged"}, SITE)
         self.assertEqual([r["item"] for r in rows],
-                         ["Decide", "Approve the env review for PR", "Blocked one", "Cleanup items C1, C3", "Still open"])
+                         ["Decide", "Approve the env review for PR", "Blocked one", "Ready one", "Cleanup items C1, C3", "Still open"])
         self.assertEqual(rows[0]["where"], "example-owner/r")
         self.assertEqual(rows[1]["link"], "https://example.com/new")
-        self.assertEqual(rows[3]["since"], "2026-01-01T00:00:00Z")
+        self.assertEqual(rows[3]["why"], "Ready for your review")
+        self.assertEqual(rows[4]["since"], "2026-01-01T00:00:00Z")
         self.assertTrue(all(r["id"] for r in rows))
 
     def test_waiting_has_a_placeholder_when_nothing_waits(self):
@@ -570,9 +734,13 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((doc["schema"], doc["generated_at"]), (1, "2026-10-30T12:00:00Z"))
         self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
         for w in doc["weeks"]:
-            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "api_usd", "thread_spend_usd", "cost_per_verdict"})
+            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "api_usd", "thread_spend_usd"})
             self.assertIsInstance(w["eval_runs"], int)
-        self.assertIsNone(doc["weeks"][0]["cost_per_verdict"], "cost per verdict is on the latest week only")
+        total = doc["total"]
+        self.assertEqual(total["since"], "2026-10-19")
+        for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd")):
+            self.assertAlmostEqual(sum(w[part] for w in doc["weeks"]), total[key], msg=key)
+        self.assertAlmostEqual(total["usd"], total["run_usd"] + total["thread_spend_usd"] + total["api_usd"])
         sys.path.insert(0, str(REPO / "scripts"))
         import explorer_public
         tree = self.tmp / "tree"
@@ -582,12 +750,24 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_spend_file_keeps_full_precision(self):
         raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,
-                          "build_usd": 2.0000001}], "cost_per_verdict": 1 / 3}
-        w = build.spend_file(raw, NOW, "Example plan")["weeks"][0]
-        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["cost_per_verdict"]),
-                         (1.23456, 0.333333, 2.0000001, 1 / 3))
-        self.assertEqual(build.spend_file(raw, NOW, "Example plan")["plan"], "Example plan")
+                          "build_usd": 2.0000001, "run_usd": 0.1234567}],
+               "total": {"usd": 1 / 3, "cost_per_verdict": 1 / 3}}
+        doc = build.spend_file(raw, NOW, "Example plan")
+        w = doc["weeks"][0]
+        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"]),
+                         (1.23456, 0.333333, 2.0000001, 0.1234567))
+        self.assertNotIn("cost_per_verdict", w)
+        self.assertEqual(doc["total"]["cost_per_verdict"], 1 / 3)
+        self.assertEqual(doc["plan"], "Example plan")
         self.assertNotIn("plan", build.spend_file(raw, NOW))
+
+    def test_allowance_counts_the_window_the_guard_enforces(self):
+        """Spend since the Monday 17:00 UTC reset, not a rolling seven days (the guard's `window_start`)."""
+        now = datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc)
+        rows = build.allowance(self.results, now)
+        self.assertEqual(rows[0]["measure"], "eval_spend_since_reset")
+        self.assertEqual(rows[0]["window_start"], "2026-11-09T17:00:00Z")
+        self.assertEqual(rows[0]["week_resets_at"], "2026-11-16T17:00:00Z")
 
     def test_the_page_is_the_explorer_build_and_reads_every_dataset(self):
         """dashboard/page/index.html is explorer/'s private build (explorer/build.js);

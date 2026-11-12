@@ -30,14 +30,15 @@ raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 | Group | Route | Private only |
 |---|---|---|
 | Summary | `#/summary` | Its waiting, routine and allowance tiles |
-| Needs you | `#/needs` | Yes: waiting on you, the half-built banner, one "Needs attention" list (half-built issues, document alerts, fires without results, fixture-queue findings), a "Trending toward removal" table (regression alerts, one row per subject; expected, so never in the attention list), this week's allowance, routine health |
-| Hooks, skills and guidance | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/removed`, `#/method` | Use by repo on a skill's page, the roster's "why" |
-| Loop | `#/loop` | Stage table, lanes, gaps, grid, build gate, live loop PRs |
-| Impact | `#/impact` | Use across private repos, PR outcomes, red CI runs, cost and benefit |
-| Operations | `#/ops` | Routines, check-ins, the run console, live PRs and issues, ingests, cleanup, decisions, threads |
+| Needs you | `#/needs` | Yes, and the page opens on it. Waiting on you (or "Nothing is waiting on you"), a loop health strip, one "Needs attention" list (a kind with more than 3 rows folds into one row), this week's allowance, routine health (problems first, healthy ones folded), the half-built banner only above 0 |
+| Changes | `#/changes`, `#/changes/removed` | What the loop changed in 30 days with the reason, trending toward removal, where lessons went, fixture requests, lesson proposals; the live merged pull requests join the list |
+| Results | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/method` | Use by repo on a skill's page, the roster's "why" |
+| Spend and use | `#/spend` | One spend panel, use across private repos, cost and benefit |
+| Activity log | `#/activity` | Routines, check-ins, the run console, live PRs and issues, ingests, threads |
 
-Routes are the same in both builds; `?subject=guidance` and the old tab hashes
-(`#overview`, `#evals`, `#costbenefit`, ...) redirect. The public build has no
+Routes are the same in both builds; `?subject=guidance`, the old tab hashes
+(`#overview`, `#evals`, `#costbenefit`, ...) and the old routes (`#/loop`, `#/impact`,
+`#/ops`, `#/removed`) redirect. A snapshot older than 13 hours shows a banner on every group. The public build has no
 Needs you group, says "the owner" where this page says "you", and folds checks
 in private repos into one row. Its bundle never holds private view code,
 private dataset ids or `dash` (an AST check in `explorer/test/run.js`).
@@ -98,7 +99,7 @@ prompt that tells it to.
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Skip `eval_allowance` when
+4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `cleanup`, `decisions`, `gate`, `roster`, `loop_grid`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
    only its timestamps and pace moved.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's
    `url`, `asset: true` and `file_path`, one file per call. Then run one
@@ -106,10 +107,9 @@ prompt that tells it to.
    `if_version`, that sets `source: {kind: "file", url: "/_blob/<id>", name}` and
    `updated: {at, by}`.
 6. **Page changes.** Build the page in `explorer/` (`npm ci && npm run build`).
-   Smoke-test first. Put d3@7.9.0's `dist/d3.js` in a work dir
-   (`npm pack d3@7.9.0`; the harness still loads it, though the page draws its
-   charts by hand), then run
-   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`.
+   Smoke-test first with
+   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`
+   (`<work>` is any empty directory).
    It exits non-zero on any page error. Then write the page to ArtifactData
    `files/index.html` (field `text`) with `if_version`.
 7. **Check the merge relays.** For each "Dashboard refresh: <repo> merges" task,
@@ -138,8 +138,9 @@ and uploads `run_stream.json`.
 
 With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 `spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
-`plan_meter_points`, `api_usd` and `thread_spend_usd`, with `cost_per_verdict` on
-the latest week, at full precision, and `plan` when `site.json` names one. No
+`plan_meter_points`, `run_usd`, `api_usd` and `thread_spend_usd`, and one `total`
+(`since`, `usd`, `run_usd`, `thread_spend_usd`, `api_usd`, `verdicts`, `cost_per_verdict`:
+the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
 `evals/public-export.yml` sets `include_spend`), and the public Impact group shows
@@ -168,7 +169,7 @@ source holds them:
 |---|---|
 | `snapshots.json` `cleanup` | A fixed list agreed once. Only items marked `waiting_on_you` are read, into the waiting list; the page has no cleanup table |
 | `snapshots.json` `waiting_manual` | Asks that exist only in a conversation. Each drops automatically once its link reads closed or merged in `link_states.json` |
-| `routines.json` | Each routine's plain-English `what`, `schedule` and `note`. Last run, next run, result and health are read |
+| `routines.json` | Each routine's plain-English `what`, `schedule` and `note`, and its `added` date (`YYYY-MM-DD`): a routine with `expect_every_hours` that has never run reads Late once twice that interval has passed since it. Last run, next run, result and health are read |
 | `roster.json` | Plain-English `why` per model and the models just dropped. The list itself is read from `evals/roster.yml` |
 | `site.json` | Owner names, the project's thread link prefix, its channel id, and title overrides |
 
@@ -191,7 +192,7 @@ source holds them:
 2. Create a Dashboard artifact. Write `page/index.html` to `files/index.html`,
    and each entry of `page/datasets.json` to `datasets/<id>`, with your owner and
    repo names in the live queries.
-3. Run one refresh by hand, then schedule `tasks/refresh.md` every 2 hours.
+3. Run one refresh by hand, then schedule `tasks/refresh.md` every 12 hours (7:29 AM and 7:29 PM ET; `REFRESH_INTERVAL_HOURS` in `build.py`).
    Add `tasks/merge-relay.md` as a GitHub-triggered task on each repo whose
    merges should refresh the page.
 4. The page's words are in `explorer/src/core/strings.js` (shared) and

@@ -382,6 +382,50 @@ and `USAGE_HOOK_LOGS` replaces the list) and adds `kind: "hook"` rows:
   A `scope: "hooks"` source with `runs_scanned` is added only when a log was
   read, so no hook source means unknown, not zero.
 
+### Cloud hook records
+
+Cloud sessions run the same git hooks (agent-checks `pre-commit` and
+`pre-push`), and their runs are counted as a third surface, `cloud`, beside
+`local` and `ci`. The cloud Stop hook in `_agent-guidance` uploads one record
+per run-log line to `events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl` on the
+private branch (git), or in the S3 drop envelope's optional `hooks` list
+(`scripts/ingest_usage_sink.py`, which writes the same file). A record is
+`{"v":1,"id","ts","kind":"hook","surface":"cloud","session","event","repo",
+"checks","failed","runner"}`: `id` the first 16 hex of the sha256 of the raw
+run-log line, `session` the same 16-hex id the cloud guidance and skill
+records use, `checks` and `failed` kebab-case check ids (`failed` a subset),
+`repo` `owner/name` or null, `runner` 12 hex or null. The census reads them
+from the `--cloud-guidance` checkout, read-only (`cloud_hook_records`: every
+field checked, a malformed line skipped, an `id` counted once), and publishes:
+
+- `kind: "hook"` rows with `surface: "cloud"`, built by the same function as
+  the local ones: one per (week, check id, repo, runner), plus an `all` row
+  per week. `invocations` is the runs in which the check ran, `blocked` the
+  runs in which it failed. The repo goes through the same public allowlist
+  (anything else is `other`).
+- A source `{surface: "cloud", scope: "hook-records", from, to,
+  records_scanned}`, written only when the store holds at least one valid
+  record, so a branch with no hook records (the hook not shipped yet) changes
+  nothing in the file. `from` is the later of the window start and the Monday
+  of the earliest record's week: **coverage before the first record is
+  unknown, not zero**, and a run in a session that never uploaded is not
+  counted, so a count is a lower bound. A record's `id` hashes the run-log
+  line alone, so two containers that ran the same checks on the same repo in
+  the same second count once.
+- The drop is untrusted, so a cloud check id is published by name only when
+  the trusted local hook log counted that id in the window; any other id is
+  `other`.
+- On a failed fetch of the private branch the previous file's cloud hook rows
+  and source are carried forward like the cloud guidance rows (the summary
+  says `cloud hooks: carried forward` or `not read`).
+
+The publisher's summary "hook runs" counts local `all` rows only. The public
+explorer reads the source: `hooks.totals.cloud` and `hooks.cloud_from` exist
+only with it, and without it cloud hook runs read as not counted, never as 0.
+The ingest script's `VALIDATOR_VERSION` is 3 since it began accepting `hooks`:
+a drop that carries `hooks` was `bad-envelope` before, which is permanent, so
+the hook must not send `hooks` until this version is live.
+
 ## Private usage events
 
 Fine-grained records, kept for refined reporting later, live **only** in the

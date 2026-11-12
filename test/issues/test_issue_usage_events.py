@@ -766,7 +766,7 @@ class PrivatePublishTests(unittest.TestCase):
         # #562: the previous run read the (then empty) store, so its local
         # skill-records source is carried too.
         self.assertIn("cloud: carried forward; skill copies: carried forward; "
-                      "cloud skill copies: not read; published; "
+                      "cloud skill copies: not read; cloud hooks: not read; published; "
                       "private events: not published", proc.stdout)
         self.assertEqual(self.git("diff", "--name-only", first_head, self.head(),
                                   cwd=self.origin),
@@ -788,7 +788,7 @@ class PrivatePublishTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertNotEqual(self.head(), before)
         self.assertIn("cloud: not read; skill copies: not read; cloud skill copies: not read; "
-                      "published", proc.stdout)
+                      "cloud hooks: not read; published", proc.stdout)
         self.assertEqual(self.cloud_part(self.public_weekly()), ([], []))
 
     def test_a_missing_branch_is_not_a_failed_fetch(self):

@@ -45,9 +45,10 @@
 # usage/weekly-local.json's cloud rows and cloud source, and its local and
 # cloud skill-digest rows, each with its source (#562), are carried forward
 # verbatim (they are already public), each unless its source was read more
-# than 14 days ago; the summary says "cloud: carried forward", "skill copies:
-# carried forward" and "cloud skill copies: carried forward" (or "not read"),
-# and the script exits 1 at the end like a private failure.
+# than 14 days ago (cloud hook rows are carried the same way);
+# the summary says "cloud: carried forward", "skill copies: carried forward",
+# "cloud skill copies: carried forward" and "cloud hooks: carried forward"
+# (or "not read"), and the script exits 1 at the end like a private failure.
 #
 # Transcript roots: ~/.claude/projects, and under WSL also every existing
 # Windows-side root (/mnt/c/Users/*/.claude/projects) and every Cowork root
@@ -267,7 +268,7 @@ if any(count is not None for count in carried.values()):
 print("; ".join(f"{label}: " + ("not read" if count is None else "carried forward")
                 for label, count in carried.items()))
 PY
-  )" || cloud_note="cloud: not read; skill copies: not read; cloud skill copies: not read"
+  )" || cloud_note="cloud: not read; skill copies: not read; cloud skill copies: not read; cloud hooks: not read"
 fi
 
 # The last gate on the public weekly file (#562): nothing is staged when it
@@ -304,7 +305,8 @@ new, new_weekly = load(new_dir, "latest.json"), load(new_dir, "weekly-local.json
 turns = sum(sum(w.values()) for w in new["counts"].values())
 calls = sum(r["invocations"] for r in new_weekly["rows"] if r["kind"] == "skill")
 hooks = sum(r["invocations"] for r in new_weekly["rows"]
-            if r["kind"] == "hook" and r["name"] == "all")
+            if r["kind"] == "hook" and r["name"] == "all"
+            and r["surface"] == "local")
 models = len(new["counts"])
 state = "changed"
 try:

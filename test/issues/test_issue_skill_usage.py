@@ -928,7 +928,8 @@ class CloudGuidanceTests(unittest.TestCase):
             [skill_usage.row("2026-W36", "skill", "y", 1, 1)], NOW, NOW - timedelta(weeks=8), 7)
         before = json.dumps(new["rows"])
         self.assertEqual(skill_usage.carry(previous, new),
-                         {"cloud": 2, "skill copies": None, "cloud skill copies": None})
+                         {"cloud": 2, "skill copies": None, "cloud skill copies": None,
+                          "cloud hooks": None})
         self.assertEqual([r for r in new["rows"] if r["surface"] == "cloud"],
                          [r for r in previous["rows"] if r["surface"] == "cloud"])
         self.assertEqual([s for s in new["sources"] if s["surface"] == "cloud"],
@@ -951,7 +952,7 @@ class CloudGuidanceTests(unittest.TestCase):
             new = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
             self.assertEqual(skill_usage.carry(previous, new),
                              {"cloud": None, "skill copies": None,
-                              "cloud skill copies": None})
+                              "cloud skill copies": None, "cloud hooks": None})
             self.assertEqual(new["sources"], local["sources"])
 
 
