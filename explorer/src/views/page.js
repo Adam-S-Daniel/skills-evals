@@ -30,7 +30,7 @@ function unusedSkills(items, u, refMs) {
   const have = items.filter((i) => i.raw.usage && Number.isInteger(i.raw.usage.invocations));
   if (!u || !have.length) return null;
   const none = have.filter((i) => i.raw.usage.invocations === 0).length;
-  return h('p', { class: 'headline-num' }, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs)));
+  return h('p', null, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs)));
 }
 
 /* The Skills or the Guidance list: one table row per subject, the coverage and
@@ -46,7 +46,7 @@ export function buildPage(doc, mode, opts) {
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
         items.length ? subjectTable(items, 'guidance', refMs) : h('p', null, STRINGS.noCards)),
-      coverageView(doc, mode), alertsView(doc, mode));
+      coverageView(doc, mode), alertsView(doc, mode, true));
   }
   const items = skillItems(doc);
   const u = doc.usage;
@@ -57,7 +57,7 @@ export function buildPage(doc, mode, opts) {
       chipSummary(items, mode),
       unusedSkills(items, u, refMs),
       items.length ? subjectTable(items, 'skills', refMs) : h('p', null, STRINGS.noCards)),
-    coverageView(doc, mode), alertsView(doc, mode));
+    coverageView(doc, mode), alertsView(doc, mode, true));
 }
 
 function subNav(current) {

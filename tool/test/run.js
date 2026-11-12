@@ -392,7 +392,7 @@ test('the Skills table lists every tested skill once, best status first, then mo
   doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
   P.skillItems(doc).forEach((it, i) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: i % 2 ? 0 : i + 3 }; });
   const page = P.buildPage(doc, 'skills', {});
-  eq(heads(page).join(','), 'Name,Status,Gain,Runs,Uses,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Uses,Next test,Official decision');
   const rows = tableRows(page);
   const items = P.skillItems(doc);
   eq(rows.length, items.length, 'one row per tested skill');
@@ -412,20 +412,24 @@ test('the Skills table lists every tested skill once, best status first, then mo
 });
 test('the Guidance table shows each section\'s size in words, not uses', () => {
   const page = P.buildPage(fixture, 'guidance', {});
-  eq(heads(page).join(','), 'Name,Status,Gain,Runs,Size,Help per word,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Size,Gain per 100 words,Next test,Official decision');
   eq(tableRows(page).length, P.sectionItems(fixture).length);
   ok(!P.findAll(page, (n) => n.attrs && n.attrs.class === 'cards').length, 'no card grid');
-  // Help per word: the in-situ gain per KB, sortable by the number itself, not its text.
+  // Gain per 100 words: in-situ gain points divided by the words shown, times 100; sorts by the number.
   const tr = P.findAll(page, (n) => n.tag === 'tbody')[0].children;
   const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
   let seen = 0;
   for (const row of tr) {
     const id = decodeURIComponent(P.findAll(row, (n) => n.tag === 'a')[0].attrs.href.split('/').pop());
-    const want = P.gainPerKb(items[id].pooled, items[id].bytes);
+    const it = items[id];
+    const g = it.pooled.all.inSitu;
+    const want = g === null ? null : (g * 100) / P.wordsFor(it.bytes) * 100;
     const td = row.children[5];
     eq(td.attrs['data-sort'], want === null ? null : String(want), 'sort value for ' + id);
-    if (want !== null) { seen++; eq(P.textOf(td).trim(), (want * 100).toFixed(1), 'shown for ' + id); }
+    if (want !== null) { seen++; eq(P.textOf(td).trim(), want.toFixed(1), 'shown for ' + id); }
   }
+  // A known case: 20 points of gain over 400 words is 5.0 points per 100 words.
+  eq(P.gainPer100Words({ all: { inSitu: 0.2 } }, 2400), 5);
   ok(seen > 1, 'at least two sections have a value');
 });
 test('section-alone results show only when the data file carries them, with why', () => {
@@ -713,8 +717,8 @@ test('the skills view lists new-skill and skill items with kind, source, seen, d
   const rows = lessonRows(sec);
   eq(rows.length, 6, 'three miner rows, then three issue rows');
   eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
-  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | Queued for the loop, which drafts one new skill a day');
-  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Queued for the loop: each one moves this skill up the test queue');
+  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | The daily drafter takes the eligible proposal with the most evidence; some are skipped for good (sent to a git hook check, already covered, or rejected).');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Queued for the loop: raises this skill\'s priority for an improvement run');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
   ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 2, 'the open table scrolls inside .tablewrap, the closed one sits in its fold');
@@ -1021,11 +1025,29 @@ test('the git hook verdicts say never blocked and never ran, not never fires', (
 });
 
 
+test('the Skills list stays short: lists fold, the unused line is a normal line, private skills keep their badge, cells are short', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
+  P.skillItems(doc).forEach((it) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: 0 }; });
+  doc.skills.find((x) => x.name === 'example-skill-alpha').private = true;
+  const page = P.buildPage(doc, 'skills', {});
+  const unused = P.findAll(page, (n) => n.tag === 'p' && P.textOf(n).includes('tested skills were not used'))[0];
+  ok(unused && unused.attrs.class === null || unused.attrs.class === undefined, 'a plain paragraph, not the big headline');
+  const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => P.textOf(n.children[0]).trim());
+  ok(folds.includes(P.STRINGS.coverageLists), 'the coverage lists sit under a fold: ' + folds);
+  const row = tableRows(page).find((r) => r[0].startsWith('example-skill-alpha'));
+  ok(/Private/i.test(row[0]), 'the private badge is in the table: ' + row[0]);
+  ok(tableRows(page).every((r) => r[5].length < 20 && r[6].length < 20), 'next test and decision cells are short');
+  const trend = P.buildPage(trendDoc(), 'skills', {});
+  ok(P.findAll(trend, (n) => n.tag === 'details' && n.attrs.class.includes('trending')).length === 1, 'trending table folded on the list');
+  eq(P.findAll(P.renderRoute(trendDoc(), { name: 'changes', id: null }, {}), (n) => n.tag === 'section' && n.attrs.class === 'block trending').length, 1, 'but open on the Changes page');
+});
+
 // --- batch D: results pages ---------------------------------------------------------------
 const route = (doc, name, id) => P.renderRoute(doc, { name, id: id || null }, {});
 const flat = (n) => P.textOf(n).replace(/\s+/g, ' ');
 const hookDoc = () => Object.assign({}, fixture, { generated_at: '2026-11-12T20:00:00Z',
-  hooks: { window: { from: '2026-09-21', to: '2026-11-12', weeks: 8 }, policy: {}, unlisted: 0, totals: { local: [], ci: [] }, checks: [
+  hooks: { window: { from: '2026-08-03', to: '2026-11-12', weeks: 8 }, policy: {}, unlisted: 0, totals: { local: [], ci: [] }, checks: [
     { name: 'young-check', where: 'fleet', verdict: 'never-blocked', use: [], window_totals: { invocations: 5, blocked: 0 } },
     { name: 'old-check', where: 'fleet', verdict: 'never-blocked', use: [{ week: '2026-09-07', surface: 'local', invocations: 3, blocked: 0 }], window_totals: { invocations: 3, blocked: 0 } },
     { name: 'good-check', where: 'fleet', verdict: 'earning', use: [], window_totals: { invocations: 5, blocked: 2 } }] },
@@ -1035,11 +1057,18 @@ test('every git hook check that has not earned its place states what happens nex
   const by = Object.fromEntries(rows.map((r) => [r[0], r]));
   const last = (r) => r[r.length - 1], since = (r) => r[r.length - 2];
   eq(since(by['young-check']), 'Nov 3', 'the day it was made, in Eastern time');
-  eq(last(by['young-check']), 'Too new to judge until Dec 29');
+  eq(last(by['young-check']), 'Too new to judge: a candidate for removal if it has blocked nothing by Dec 29');
   eq(since(by['old-check']), 'Sep 6', 'no made-by record: the first week it ran');
-  eq(last(by['old-check']), 'Due for removal review since Nov 1');
+  eq(last(by['old-check']), 'Blocked nothing in its first 8 weeks (to Nov 1): a candidate for removal');
   eq(last(by['good-check']), '—');
   eq(heads(route(hookDoc(), 'hooks')).slice(-2).join(','), 'Since,What happens next');
+  // A first run in the data window's first week may predate the data: Since is unknown, and the next step makes no date up.
+  const d2 = hookDoc();
+  d2.hooks.checks[1].use = [{ week: '2026-08-03', surface: 'local', invocations: 3, blocked: 0 }];
+  const r2 = tableRows(route(d2, 'hooks')).find((r) => r[0] === 'old-check');
+  eq(r2[r2.length - 2], '\u2014', 'Since unknown');
+  eq(r2[r2.length - 1], 'Not enough data yet');
+  eq(P.hookItems(d2).find((i) => i.name === 'old-check').since, null);
 });
 test('the weekly chart caps its axis at the second tallest bar and draws an outlier cut off with its count', () => {
   const wk = (a, b) => ({ label: 'w', a, b });
@@ -1065,8 +1094,8 @@ test('the fixture findings name what they are and link each one, and say who cle
   const t = flat(page);
   ok(t.includes('2 fixtures were added but never ran. The loop files an issue for each one and closes it when the finding clears.'), t);
   ok(!t.includes('need a look') && !t.includes('high severity'), 'the old wording is gone');
-  const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
-  ok(hrefs.includes('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.includes('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
+  const hrefs = new Set(P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href));
+  ok(hrefs.has('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.has('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
 });
 test('lessons name who acts on each proposal, list open ones by times seen and fold closed ones', () => {
   for (const kind of ['skill-edit', 'guidance-edit', 'fixture-candidate']) ok(P.STRINGS.lessonWaiting[kind].length > 10, kind);
@@ -1094,6 +1123,10 @@ test('Made by agents uses plain words, pluralizes, adds Unknown when above 0, su
   ok(t.includes('1 use') && !t.includes('1 uses'), 'singular');
   ok(heads(P.findAll(page, (n) => n.tag === 'section' && flat(n).startsWith('Made by agents'))[0]).includes('Unknown'), 'Unknown column');
   ok(t.includes('Older items (1)'), 'older folded');
+  ok(t.includes('Decided: remove 1') && !t.includes('No measurable difference 1'), 'a retire verdict reads as a decision, not as done');
+  ok(!/Removed/.test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'nothing in the fixture is retired yet, so nothing says Removed');
+  eq(P.STRINGS.agentVerdicts['retire-pending'], 'Removal pending');
+  eq(P.STRINGS.agentVerdicts.retired, 'Removed');
   ok(t.includes('Never blocked 1') && t.includes('Not enough data 1'), 'plain labels with counts');
 });
 test('a skill page leads with what its tests cost, folds the long tables, and has no Checks or Report columns', () => {

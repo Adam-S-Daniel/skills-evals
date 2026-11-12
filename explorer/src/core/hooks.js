@@ -9,13 +9,17 @@ export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never
 function sinceOf(doc, c) {
   const made = doc.agent_made && Array.isArray(doc.agent_made.items) ? doc.agent_made.items.find((i) => i && i.kind === 'check' && i.id === c.name) : null;
   const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => dayKeyMs(u.week));
-  const at = made ? parseTime(made.created) : Math.min(...weeks);
+  // A first run in the data window's first week may be older than the data: unknown, not the window start.
+  const from = doc.hooks && doc.hooks.window && typeof doc.hooks.window.from === 'string' ? dayKeyMs(mondayOf(dayKeyMs(doc.hooks.window.from))) : -Infinity;
+  const first = Math.min(...weeks);
+  const at = made ? parseTime(made.created) : first > from ? first : NaN;
   return isFinite(at) ? at : null;
 }
 
 /* What the loop does with a check next, and when: a check that has not
-   blocked anything has until `weeks` weeks after it began to do so, then it is
-   due for removal review. {key: 'young'|'due'|'overridden'|'earning'|'unknown', at}. */
+   blocked anything has until `weeks` weeks after it began to do so; after that it
+   is a candidate for removal (nothing removes it by itself).
+   {key: 'young'|'due'|'overridden'|'earning'|'unknown', at}. */
 export function hookNext(it, weeks, refMs) {
   if (it.verdict === 'earning') return { key: 'earning', at: null };
   if (it.verdict === 'overridden-often') return { key: 'overridden', at: null };

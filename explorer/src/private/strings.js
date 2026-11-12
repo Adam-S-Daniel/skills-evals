@@ -35,10 +35,10 @@ export const P = {
   kindFires: 'Fires without results',
   kindFixture: (k) => 'Fixture queue: ' + k,
   /* Who acts on a folded kind, in one plain sentence. */
-  actsHalfBuilt: 'Each is an open issue the fleet health audit filed. Fixing or closing the issue clears the row.',
+  actsHalfBuilt: 'Each is an open issue a health check filed. Fixing or closing the issue clears the row.',
   actsAlert: 'The test results raised these. Each clears on its own once a later test run no longer shows it.',
-  actsFixture: (k) => (k === 'idle' ? 'The nightly fixture worker has not taken these requests yet and retries on its next run. Nothing for you unless they stay.'
-    : 'Each is a stuck fixture pull request or an unused fixture, filed as a half-built or broken issue. The fleet health audit follows it up; open one to see what is stuck.'),
+  actsFixture: (k) => (k === 'idle' ? 'The daily fixture worker has not taken these requests yet and retries on its next run. Nothing for you unless they stay.'
+    : 'Each is a stuck fixture pull request or an unused fixture, filed as a half-built or broken issue. A health check follows it up; open one to see what is stuck.'),
   allowanceHeading: 'This week\'s test allowance',
   allowanceUseRolling: (spent, cap) => 'Test use, last 7 days: ' + spent + ' points (weekly cap ' + cap + ').',
   allowanceUseReset: (spent, cap, reset) => 'Test use since the ' + reset + ' reset: ' + spent + ' of ' + cap + ' points.',
