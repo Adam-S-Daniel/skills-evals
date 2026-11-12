@@ -1,0 +1,386 @@
+{
+  "include_private_names": false,
+  "problems": [],
+  "publication": {
+    "as_of": "2026-11-12T16:53:31Z",
+    "guidance_revision": "3cde93525764497ef6cea362d9608c3598d2f699",
+    "public_registry_revisions": {
+      "adam-agentskills": "ad9094d01a7699294149aaf3c968d8665f081d15",
+      "adamdaniel.ai": "536f9a3e3692eb47173d56cc90fabbbda8ea5a41",
+      "cms-platform": "8cb9ffe249ee6fa66b5852cf96093d47aa1c044b"
+    },
+    "repository_revision": "2a5072e3725def05674fa8d22f3d3d1dce855034",
+    "run_id": "43263445626"
+  },
+  "registries": [
+    {
+      "counts": {
+        "covered": 16,
+        "gap": 1,
+        "skipped": 7,
+        "total": 24
+      },
+      "layout": "plugins/*/skills/*/SKILL.md",
+      "name": "adam-agentskills",
+      "names_withheld": false,
+      "private": false,
+      "skills": [
+        {
+          "bundle": "adam-anything-anywhere",
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "finding-unknowns",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-anything-anywhere",
+          "fixtures": 5,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "writing-adrs",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 5,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "ci-job-performance",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "debug-github-workflows",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "disarm-inherited-reach",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 5,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "fan-out-triage",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "github-actions-repo-settings",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 5,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "red-ci-adamdaniel-ai",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 6,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "review-bash-ci-reliability",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 5,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "skills-doctor",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 4,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "vendor-release-impact-issues",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-anywhere",
+          "fixtures": 6,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "workflow-path-audit",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 0,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "launch-top-level-claude-session",
+          "status": "gap"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-05, holds on criterion 1 only: one recorded local use since 2026-09-14 (week of 2026-09-21). Its surface is Bash over ~/.claude/projects, which a fake HOME can stand in for, so reopen it if use grows",
+          "registry": "adam-agentskills",
+          "skill": "migrate-claude-memory",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-05, holds: fails criterion 1 (no recorded local use since 2026-09-14) and criterion 3 (needs Windows PowerShell 7 and the WSL UNC share, which a fixture cannot fake cheaply)",
+          "registry": "adam-agentskills",
+          "skill": "sync-cc-settings-between-wsl-and-windows",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 8,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "tool-powershell",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-coding-local",
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "windows-elevation-from-wsl",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-06, holds: fails criterion 3 (it dispatches a workflow in the fastmail-actions repository that edits a real Fastmail account's sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded local use since 2026-09-14)",
+          "registry": "adam-agentskills",
+          "skill": "add-from-address",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-10, holds: fails criterion 3 (it still dispatches a workflow in the fastmail-actions repository that scans a real Fastmail mailbox and adds sending identities with a real API token; a hermetic fixture cannot exercise it) and criterion 1 (no recorded use, local since 2026-09-21 or cloud since 2026-11-02)",
+          "registry": "adam-agentskills",
+          "skill": "add-received-from-addresses",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-05, holds on criterion 1 only: no recorded local use since 2026-09-14. Its surface (PowerShell 7 and poppler over a folder of PDFs) can be faked in a container, so reopen it if it is used",
+          "registry": "adam-agentskills",
+          "skill": "compare-pdfpairs",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-06, holds: fails criterion 3 (credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own) and criterion 1 (one recorded local use since 2026-09-14, in the week of 2026-09-14)",
+          "registry": "adam-agentskills",
+          "skill": "fastmail",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-06, holds on criterion 1 only: no recorded local use since 2026-09-14. The machine-bound reason no longer fits: the skill calls the OCRmyPDF CLI directly, which a container can run, so reopen it if it is used",
+          "registry": "adam-agentskills",
+          "skill": "ocr-pdfs",
+          "status": "skipped"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "pdf-ocr-audit",
+          "status": "covered"
+        },
+        {
+          "bundle": "adam-non-coding-local",
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adam-agentskills",
+          "skill": "rename-pdfs",
+          "status": "covered"
+        }
+      ],
+      "url": "https://github.com/Adam-S-Daniel/adam-agentskills"
+    },
+    {
+      "counts": {
+        "covered": 10,
+        "gap": 0,
+        "skipped": 3,
+        "total": 13
+      },
+      "layout": "skills/*/SKILL.md",
+      "name": "cms-platform",
+      "names_withheld": false,
+      "private": false,
+      "skills": [
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "admin-config-render",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
+          "registry": "cms-platform",
+          "skill": "aws-bootstrap",
+          "status": "skipped"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "browser-testing",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "ci-watcher-loops",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "cms-stuck-pr-triage",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "code-quality",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "consumer-repo-provisioning",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "editorial-label-audit",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "github-actions-sha-pinning",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "platform-release-and-bump",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "cms-platform",
+          "skill": "post-failure-comment",
+          "status": "covered"
+        },
+        {
+          "bundle": null,
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the procedure acts on live AWS with real credentials, which a hermetic fixture cannot score) and criterion 2 (its failure mode, staleness, is now checked by cms-platform's e2e/skill-references-fresh.test.js and adam-agentskills' scheduled scripts/check_skill_freshness.py); no recorded use, local since 2026-09-14 or cloud since 2026-11-02",
+          "registry": "cms-platform",
+          "skill": "preview-environments",
+          "status": "skipped"
+        },
+        {
+          "bundle": null,
+          "fixtures": 0,
+          "reason": "rechecked 2026-11-07, holds: fails criterion 3 (the skill is a no-op marker, so a with arm has nothing to score) and criterion 5 (a verdict would change nothing); internal canary; carries no guidance; no probe asserts its delivery (not built, untracked; closed issue #17 built other propagation arms)",
+          "registry": "cms-platform",
+          "skill": "test-canary",
+          "status": "skipped"
+        }
+      ],
+      "url": "https://github.com/Adam-S-Daniel/cms-platform"
+    },
+    {
+      "counts": {
+        "covered": 1,
+        "gap": 0,
+        "skipped": 0,
+        "total": 1
+      },
+      "layout": ".claude/skills/*/SKILL.md",
+      "name": "adamdaniel.ai",
+      "names_withheld": false,
+      "private": false,
+      "skills": [
+        {
+          "bundle": null,
+          "fixtures": 1,
+          "reason": null,
+          "registry": "adamdaniel.ai",
+          "skill": "embeddable-tool-pages",
+          "status": "covered"
+        }
+      ],
+      "url": "https://github.com/Adam-S-Daniel/adamdaniel.ai"
+    },
+    {
+      "counts": {
+        "covered": 1,
+        "gap": 2,
+        "skipped": 0,
+        "total": 3
+      },
+      "layout": "plugins/*/skills/*/SKILL.md",
+      "name": "adam-agentskills-private",
+      "names_withheld": true,
+      "private": true,
+      "skills": []
+    }
+  ],
+  "schema": 1,
+  "totals": {
+    "covered": 28,
+    "gap": 3,
+    "skipped": 10,
+    "total": 41
+  }
+}
