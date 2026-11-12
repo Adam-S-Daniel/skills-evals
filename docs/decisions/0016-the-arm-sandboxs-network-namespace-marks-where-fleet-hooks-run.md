@@ -64,7 +64,7 @@ claude -p --model haiku \
 
 The call is one model request on plan allowance and produces no eval data.
 
-- **2026-11-02, WSL (BOXY).** Claude Code 2.1.316, Git 2.54.0.
+- **2026-11-02, WSL on the durable workstation.** Claude Code 2.1.316, Git 2.54.0.
   - Sandboxed Bash saw `GIT_CONFIG_COUNT=3`. The harness's include was
     still at index 0, and the CLI had added two `safe.directory` pairs.
   - The included hook fired in `net:[4026532234]`. The launching process

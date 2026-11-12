@@ -328,7 +328,7 @@ and should not be reused; #372 replaces it.
 This section supersedes § 0A where the two differ. Adam asked to proceed from
 the [September 15 checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull/157#issuecomment-5685103205)
 on 2026-09-21, from a Claude Code session on the Windows laptop driving the
-WSL clone (`/home/passp/repos/skills-evals`; the Windows clone
+WSL clone (`~/repos/skills-evals`; the Windows clone
 `D:\repos\adam-s-daniel\skills-evals` has no Python and is used for `gh` only).
 At about 14:35 UTC Adam authorized merges, releases, consumer bumps and manual
 workflow dispatch for the session, required all workers to be local (no cloud
@@ -702,7 +702,7 @@ Portable resume sequence (Codex or Claude):
    [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
    (closed 2026-10-29; "Current state" at the top of this file replaces it).
    If available, also read the local
-   `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`. Fetch the
+   `~/repos/.evals-resume-20260915/CURRENT_SESSION.md`. Fetch the
    named remote refs and create dedicated worktrees when the listed local
    paths do not exist; then confirm their heads match this checkpoint.
 2. From the PR #153 candidate worktree, run the generated multi-arm full suite
