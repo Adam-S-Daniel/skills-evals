@@ -174,6 +174,57 @@ class DashboardBuildTests(unittest.TestCase):
                 row = build.routines([cfg], triggers, runs, NOW)[0]
                 self.assertEqual((row["health"], row["last_result"]), (health, result))
 
+    def test_class_a_resolved_thread_never_waits_and_waiting_is_unresolved_blocked_plus_review_ready(self):
+        states = ["done", "working", "review_ready", "blocked", "failed", "stopped", None]
+        dump = [{"thread_id": f"{st}-{res}", "title": "T", "state": st, "resolved": res}
+                for st in states for res in (False, True)]
+        for t in dump:
+            label = build.thread_state(t)
+            if t["resolved"]:
+                self.assertEqual(label, "Done", t["thread_id"])
+        rows = build.waiting({"cleanup": []}, [], [], {}, dump, {}, SITE)
+        want = {SITE["thread_url"] + t["thread_id"] for t in dump
+                if t["state"] in ("blocked", "review_ready") and not t["resolved"]}
+        self.assertEqual({r["link"] for r in rows}, want)
+
+    def test_class_health_is_never_ok_without_a_recorded_run_and_the_table_is_the_count(self):
+        trig = {"kind": "trigger", "id": "t"}
+        cfgs = [routine(source=src, expect_every_hours=h, retired=ret)
+                for src in ({"kind": "none"}, trig, {"kind": "workflow", "repo": "o/r", "workflow": "w.yml"})
+                for h in (None, 1, 168) for ret in (False, True)]
+        for triggers in ({}, {"t": {"next_run_at": "2026-01-13T18:00:00Z"}}, {"t": {"enabled": False}}):
+            rows = build.routines(cfgs, triggers, {}, NOW)
+            self.assertEqual(len(rows), len([c for c in cfgs if not c.get("retired")]), "retired rows leave the table")
+            for r in rows:
+                self.assertFalse(r["health"] == "OK" and not r["last_run"], r)
+                self.assertNotEqual(r["health"], "Retired")
+
+    def test_allowance_leaves_out_a_run_from_before_the_reset_even_inside_seven_days(self):
+        now = datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc)
+        usage = {"cost_estimate": {"usd": 10.0}}
+        er = self.tmp / "er"
+        for run in ("20261105T120000Z-aaaaaa", "20261110T120000Z-bbbbbb"):
+            write(er / "routine-results" / run / "x" / "with_skill" / "summary.json", {"usage": usage})
+        sys.path.insert(0, str(REPO / "scripts"))
+        import allowance_guard as g
+        import yaml
+        limits = yaml.safe_load((REPO / "evals" / "budget.yml").read_text())
+        one = g.run_cost(er / "routine-results" / "20261110T120000Z-bbbbbb", limits) * 100
+        row = build.allowance(er, now)[0]
+        self.assertEqual(row["runs"], 1)
+        self.assertAlmostEqual(row["points"], one)
+
+    def test_every_snapshot_datasets_stale_after_exceeds_the_refresh_interval(self):
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        checked = 0
+        for name, d in defined.items():
+            if d.get("staleAfterHours") is None:
+                continue  # live datasets
+            checked += 1
+            self.assertGreater(d["staleAfterHours"], build.REFRESH_INTERVAL_HOURS, name)
+            self.assertNotRegex(d["schedule"], r"every (\d+ )?hours?\b", name)
+        self.assertGreater(checked, 10)
+
     def test_retired_routines_are_left_out_of_the_table(self):
         rows = build.routines([routine(source={"kind": "none"}, retired=True), routine(source={"kind": "none"})], {}, {}, NOW)
         self.assertEqual(len(rows), 1)
