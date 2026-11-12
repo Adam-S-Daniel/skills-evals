@@ -1,0 +1,12 @@
+{
+  "name": "widgets-ci",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "node scripts/check-no-only.js"
+  },
+  "devDependencies": {
+    "acorn": "8.12.1",
+    "acorn-walk": "8.3.3"
+  }
+}
