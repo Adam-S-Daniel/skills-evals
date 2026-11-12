@@ -1,11 +1,48 @@
-# Skills whose recorded use cannot be read as their real use, so the eval
-# scope pass (scripts/eval_scope.py) treats their use as unknown: it never
-# pauses their fixtures for zero use, and it resumes any zero-use pause it
-# made for them. Ceiling and floor pauses are unaffected.
+# Skills exempt from usage-based pause AND removal. Their recorded use cannot
+# be read as their real use, so the eval scope pass (scripts/eval_scope.py)
+# treats their use as unknown: it never pauses their fixtures for zero use, it
+# resumes any zero-use pause it made for them, the improvement lane never skips
+# them for zero use, and retire_skill.py never removes them as unused. Ceiling
+# and floor pauses are unaffected.
 #
 # Remove an entry once its reason is gone; the next scope run can then pause
 # the skill again on real data.
 #
-# Empty since #668's 12 listing-truncated skills: the census's `listing` rows
-# now make zero use unknown on their own whenever a listing is cut.
-skills: []
+# Two groups: skills the fleet guidance tells agents to use (their value is not
+# how often they are invoked), and cms-platform skills used in jodidaniel's
+# repos, which no census covers.
+skills:
+  - skill: finding-unknowns
+    reason: "the fleet guidance tells agents to use it; its value is not measured by how often it is invoked"
+  - skill: adam-writing-style
+    reason: "the fleet guidance tells agents to use it; its value is not measured by how often it is invoked"
+  - skill: disarm-inherited-reach
+    reason: "the fleet guidance tells agents to use it; its value is not measured by how often it is invoked"
+  - skill: workflow-path-audit
+    reason: "the fleet guidance tells agents to use it; its value is not measured by how often it is invoked"
+  - skill: admin-config-render
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: aws-bootstrap
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: browser-testing
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: ci-watcher-loops
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: cms-stuck-pr-triage
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: code-quality
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: consumer-repo-provisioning
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: editorial-label-audit
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: github-actions-sha-pinning
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: platform-release-and-bump
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: post-failure-comment
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: preview-environments
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"
+  - skill: test-canary
+    reason: "a cms-platform skill used in jodidaniel's repos; no census covers that owner's sessions"

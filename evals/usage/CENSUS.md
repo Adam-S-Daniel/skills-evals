@@ -94,9 +94,11 @@ skill listing (the `attachment` entry of type `skill_listing` with
 
 Sessions are counted the way guidance rows are (one per session, in the week
 of its first entry, cross-root deduped, subagents left out). While any local
-session in a skill's 4-week window was `truncated`, `skill_usage.zero_use`
-answers unknown for the local surface, so the eval scope pass pauses nothing
-for zero use until the budget or the descriptions are fixed.
+session in a skill's window was `truncated`, that session is left out of
+`skill_usage.exposure` (only `full` local listings count); a zero needs 500
+full-listing sessions on the surfaces whose exposure is known, so a census made
+mostly of cut listings pauses nothing for zero use until the budget or the
+descriptions are fixed.
 
 ## Guidance rows
 
@@ -124,6 +126,25 @@ per (week, state) with a nonzero count: `name` is the state, `repo` and
 `invocations` are null, `sessions` the count. Readers that ask about skills
 (`weight()`) ignore them. Cloud sessions are not in local transcripts; their
 rows are described next. No guidance events go to the private events file.
+
+## Tracked skill names
+
+The local `transcripts` source carries `skill_keys`, the sorted skill names the
+census counts by name. Any other skill's use is counted under `other`, so a
+skill not listed there reads as 0 uses whatever its real use: `zero_use` and
+the unused removal return unknown for it, as they do for a document published
+before the list existed. The names are the public allowlist, so the list adds
+nothing `check_public` does not already allow (it also checks the list is a
+subset).
+
+## Freshness for a removal
+
+A pause accepts a census up to 14 days old, because it is reversible. A
+removal for being unused is not, so `harness/removal_policy.py` requires the
+document's `generated_at` and the `to` of every source on each reached surface
+(and the source each surface's counts come from) within 1 day of the run's
+`as_of`, so the census stops where the floor window does. A cloud source
+carried forward from an older publish keeps its old `to`, and fails this.
 
 ## Cloud guidance rows
 
@@ -158,8 +179,21 @@ at its earliest `ts`, however many lines or month files hold it. A malformed
 line, or a record without a string `session` or a parseable `ts`, is skipped
 and counted nowhere public.
 
+Cloud exposure is a third view of the same sessions. A record may carry
+`sources` (a list of `{registry, ref}` the session's skills bootstrap
+installed) and `listing` (`full` or `truncated`, how its skill listing read).
+A session counts as exposure only when `sources` names
+`Adam-S-Daniel/adam-agentskills` AND `listing` is `full`; the census publishes
+those as `kind: "listing"`, `name: "full"`, `surface: "cloud"` rows. A
+`guidance` row proves neither (it is written whether or not the bundle was
+installed, and a cloud listing can be cut), so it is never exposure. When no
+counted record carries either field, the source omits `listing_recorded` and
+cloud exposure is unknown, not 0: a pause then rests on local exposure alone,
+and a removal for being unused is refused for any skill that reaches cloud.
+
 The source is `{surface: "cloud", scope: "guidance-records", from, to,
-records_scanned}`, present only when the branch was read. `records_scanned`
+records_scanned}` (plus `listing_recorded: true` when the records carried those
+fields), present only when the branch was read. `records_scanned`
 is the number of distinct sessions counted; `from` is the later of the census
 window's start and the Monday of the earliest record's week, so it is always a
 week boundary. **Coverage is unknown**: the hook records only the sessions it

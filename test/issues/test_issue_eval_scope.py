@@ -130,12 +130,24 @@ def explorer(skills: dict | None = None, sections: dict | None = None) -> dict:
             "guidance": {"sections": [{"id": n, "runs": r} for n, r in (sections or {}).items()]}}
 
 
-def usage_doc(used: dict | None = None, *, cloud: bool = True) -> dict:
-    """A fresh census counted from long before the 8-week window."""
+def usage_doc(used: dict | None = None, *, cloud: bool = True, local: int = 300,
+              cloud_sessions: int = 300) -> dict:
+    """A fresh census counted from long before the 8-week window, with
+    `local` full-listing local sessions and (when `cloud`) `cloud_sessions`
+    cloud sessions in the window: 600 by default, over the 500 a zero needs."""
     floor = NOW_DT - timedelta(weeks=20)
     rows = [skill_usage.row("2026-W44", "skill", name, count, 1)
             for name, count in (used or {}).items()]
-    doc = skill_usage.document(rows, NOW_DT, floor, sessions_scanned=1)
+    rows.append(skill_usage.listing_row("2026-W44", "full", local))
+    rows.append(skill_usage.listing_row("2026-W44", "truncated", 700))
+    if cloud:
+        rows.append(skill_usage.listing_row("2026-W44", "full", cloud_sessions,
+                                            skill_usage.SURFACE_CLOUD))
+    doc = skill_usage.document(
+        rows, NOW_DT, floor, sessions_scanned=1,
+        cloud_guidance={"from": floor, "records_scanned": 1, "listing_recorded": True}
+        if cloud else None,
+        skill_keys=sorted({"alpha", "beta", "zzz", *(used or {})}))
     if cloud:
         skill_usage.add_rows(doc, [], skill_usage.digest_source(
             floor, NOW_DT, 0, surface=skill_usage.SURFACE_CLOUD))
@@ -368,16 +380,27 @@ class ZeroUseTests(unittest.TestCase):
         doc["generated_at"] = "2026-10-01T00:00:00Z"
         self.assertEqual(self.paused(doc), [])
 
-    def test_a_local_only_plugin_skill_needs_only_the_local_surface(self):
-        doc = usage_doc(cloud=False)
-        # Cloud is not counted: unknown for an ordinary skill ...
-        self.assertEqual(self.paused(doc), [])
-        # ... known for a skill of a local-only plugin.
+    def test_a_local_only_plugin_skill_counts_only_local_sessions(self):
+        doc = usage_doc({"beta": 1}, cloud=False, local=600)
         self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
                          ["evals/alpha/one", "evals/alpha/two"])
         self.assertEqual(self.paused(doc, {"alpha": "adam-non-coding-local"}),
                          ["evals/alpha/one", "evals/alpha/two"])
-        self.assertEqual(self.paused(doc, {"alpha": "adam-coding-anywhere"}), [])
+        # 300 local sessions plus 300 cloud ones: enough for a skill that
+        # reaches both surfaces, not for one that reaches only local.
+        both = usage_doc({"beta": 1})
+        self.assertEqual(self.paused(both, {"alpha": "adam-coding-anywhere"}),
+                         ["evals/alpha/one", "evals/alpha/two"])
+        self.assertEqual(self.paused(both, {"alpha": "adam-coding-local"}), [])
+
+    def test_too_few_full_listing_sessions_is_unknown_not_zero(self):
+        # Truncated listings (700 in the helper) are not full-listing sessions.
+        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=100, cloud_sessions=100)), [])
+
+    def test_the_why_names_the_session_threshold(self):
+        plan = plan_for(self.root, explorer(), usage_doc({"beta": 3}))
+        why = next(p["why"] for p in plan["pause"] if p["rule"] == "zero-use")
+        self.assertIn("500 or more full-listing sessions over the last 8 weeks", why)
 
 
 class ExclusionTests(unittest.TestCase):

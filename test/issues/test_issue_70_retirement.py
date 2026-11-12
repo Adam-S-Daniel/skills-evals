@@ -47,7 +47,11 @@ import ingest_routine_results as ingest  # noqa: E402
 import run_eval  # noqa: E402
 
 POLICY_FILE = ROOT / "evals" / "gate-policy.yml"
-POLICY = gates.parse_gate_policy(POLICY_FILE.read_text(encoding="utf-8"))["skills"]
+COMMITTED_POLICY = gates.parse_gate_policy(POLICY_FILE.read_text(encoding="utf-8"))["skills"]
+#: The cell-rule tests feed up to 40 pairs a cell, so they run on the committed
+#: policy with the cap it had before Adam's 2026-11-12 cut to 20; the committed
+#: number itself is pinned by `test_committed_policy_loads_with_its_numbers`.
+POLICY = {**COMMITTED_POLICY, "max_runs_per_cell": 40}
 #: The cell rules are tested on the committed policy: identical arms (D = 0
 #: every pair) are no-benefit at the 18th pair, and GAIN against LOSS (a
 #: gain of about 0.4) keeps at the 7th.
@@ -151,11 +155,11 @@ class PolicyTests(unittest.TestCase):
     def test_committed_policy_loads_with_its_numbers(self):
         # 2026-11-03 (the statistics review and the threshold sweep): keep
         # at 80% across the subject's cells, no benefit at 90% under 0.15, a
-        # 40-pair cap; removals automatic again once withdrawal was hardened
-        # (PR #740, #645).
-        self.assertEqual(POLICY, {
+        # 40-pair cap, cut to 20 by Adam on 2026-11-12; removals automatic
+        # again once withdrawal was hardened (PR #740, #645).
+        self.assertEqual(COMMITTED_POLICY, {
             "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.80,
-            "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 40,
+            "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 20,
             "max_runs_high_cell": 20, "floor_fraction": 0.10,
             "retirement_mode": "auto"})
 

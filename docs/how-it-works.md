@@ -763,7 +763,7 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   undecided (`paused`, below); the subject is then `insufficient`, not
   `ceiling`, when every cell is parked, and otherwise a `retire` proposal
   (a parked cell beside decided `no-benefit` cells), never automatic.
-- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
+- *The cap.* A cell still undecided after 20 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
   not decided) it stays `insufficient`: it is no longer fired, blocks its
@@ -1342,15 +1342,33 @@ The rules, in order:
   paused fixture's cells as parked `paused` cells (below), and a decided
   `keep` or `no-benefit` cell still counts, so the guard is not needed for
   safety; it keeps a kept subject's fixtures measured.
-- **Zero use.** A skill with no use in the last 8 weeks
-  (`skill_usage.zero_use`, local surface only for the two local-only plugins
-  in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
-  unknown answer does nothing) has all its scheduled fixtures paused. Use is
-  unknown while any local session in the window had its skill listing cut by
-  Claude Code's listing budget (`listing` rows in the census,
-  [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)). A skill
-  listed in `evals/usage-unknown.yml` has unknown use whatever the census says:
-  it is never paused for zero use, and an earlier zero-use pause of it resumes.
+- **Zero use.** A skill with no use over the census's 8 weeks, in at least
+  500 sessions that listed it in full on the surfaces it reaches
+  (`skill_usage.zero_use`; both surfaces, or local only for the two local-only
+  plugins in adam-agentskills' `plugin_layout.json`; an unknown answer does
+  nothing), has all its scheduled fixtures paused. Exposure
+  (`skill_usage.exposure`) is the count of those sessions: local sessions
+  whose skill listing was `full` (a `truncated` or `unknown` listing is left
+  out, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)) plus
+  cloud `listing` rows, which count only sessions whose guidance record names
+  the adam-agentskills registry in `sources` AND reports a full listing. A
+  cloud `guidance` row proves neither (a record is written whether or not the
+  bundle was installed, and a cloud listing can be cut), so it is never
+  exposure. When the cloud records carry neither field the cloud source lacks
+  `listing_recorded` and cloud exposure is unknown, not 0. A pause is
+  reversible and resumes on the first use, so it rests on the surfaces whose
+  exposure is known (an unknown one adds nothing); a removal for being unused
+  needs every surface the skill reaches known (`harness/removal_policy.py`), so
+  while cloud is unknown no cloud-reaching skill is removed. Each surface
+  counts only the weeks from its `counted_from`. A skill the census does not
+  track by name (`skill_keys` on its transcripts source) is counted under
+  `other` and reads as 0 uses, so it is neither zero-use nor removable. A
+  removal also needs the census to end where its floor window does: its
+  `generated_at` and the `to` of every source on a reached surface within 1 day
+  of the run's `as_of`. Any use wins whatever the exposure. A skill listed in
+  `evals/usage-unknown.yml` has unknown use whatever the census says: it is
+  never paused for zero use, and an earlier zero-use pause of it resumes. The
+  improvement lane skips a zero-use skill the same way.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its
