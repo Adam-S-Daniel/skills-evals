@@ -1268,9 +1268,9 @@ jobs:
           # roster App's token through the git-data REST API. That is what
           # lets a ruleset confine updates of `refs/heads/roster/proposal`
           # to the App: `GITHUB_TOKEN` here is the same `github-actions`
-          # identity as dependabot-auto-merge.yml's persisted checkout
-          # credential, so it could never be the ruleset's bypass actor
-          # without letting that job retarget an armed PR too.
+          # identity any other workflow's persisted checkout credential
+          # uses, so it could never be the ruleset's bypass actor without
+          # letting such a job retarget an armed PR too.
           #
           # Byte-identical to the committed file: nothing to publish. The
           # comparison is against THIS checkout (the run's own `main` sha),

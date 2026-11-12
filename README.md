@@ -1071,10 +1071,8 @@ request whose wait ran out stays open with auto-merge off; the next run
 re-arms it. A `roster_only` dispatch has no wait and no eval. Between arming and the merge (which waits on a green
 `test`, possibly for days), any other write-access actor that pushes
 `roster/proposal` retargets the armed pull request; that is outside what this
-workflow controls. The known instance is
-`.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job, which holds
-`contents: write` and keeps the default persisted checkout credential
-(pre-existing, unchanged here). A ruleset restricting creation, update and
+workflow controls. The old instance, `dependabot-auto-merge.yml`'s `auto-merge` job, is gone:
+the fleet-managed replacement has no checkout and no persisted credential. A ruleset restricting creation, update and
 deletion of `refs/heads/roster/proposal` to the roster App and repository
 admins closes it: since round 7 the App is the only thing this workflow
 pushes that branch with, so the ruleset (added in repo-settings) can leave
