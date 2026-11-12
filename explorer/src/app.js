@@ -4,20 +4,21 @@
    often as it changes) or `onFail(result)` with a loadData-shaped failure. */
 import { STRINGS } from './core/strings.js';
 import { toDom, h } from './core/h.js';
-import { parseRoute, hashFor, groupOf } from './core/route.js';
+import { parseRoute, hashFor, groupOf, GROUPS } from './core/route.js';
 import { renderRoute } from './views/page.js';
 import { buildFailure } from './views/failure.js';
 import { DEFAULT_DATA_URL } from './adapters/web.js';
 import { installDefs } from './core/terms.js';
 
-/* opts: { groups (the top-level groups this build has, in order), ext
-   (state -> the private overlays, or null), rootId, tipId, onRoute(hash) }. */
+/* opts: { groups (the top-level groups this build has, in order), home (the
+   route an empty address opens), ext (state -> the private overlays, or
+   null), rootId, tipId, onRoute(hash) }. */
 export function boot(source, opts) {
   const o = opts || {};
-  const groups = o.groups || ['summary', 'hooks', 'loop', 'impact', 'ops'];
+  const groups = o.groups || ['summary', 'changes', 'results', 'spend', 'activity'];
   const root = document.getElementById(o.rootId || 'app');
   const tip = document.getElementById(o.tipId || 'tip');
-  const state = { route: parseRoute(location.hash, location.search, groups), sortBy: 'next', doc: null, url: DEFAULT_DATA_URL,
+  const state = { route: parseRoute(location.hash, location.search, groups, o.home), sortBy: 'next', doc: null, url: DEFAULT_DATA_URL,
     notice: null, search: { text: '', registry: '', verdict: '', model: '', stakes: '' } };
   try { const s = localStorage.getItem('explorer-sort'); if (s === 'size' || s === 'value' || s === 'next') state.sortBy = s; } catch (e) { /* storage unavailable */ }
 
@@ -29,7 +30,7 @@ export function boot(source, opts) {
       h('button', { type: 'button', class: 'menu', 'aria-expanded': 'false', 'aria-controls': 'ex-drawer', onclick: () => toggleMenu() }, STRINGS.menu),
       h('div', { class: 'drawer', id: 'ex-drawer' },
         h('nav', { class: 'groups', 'aria-label': STRINGS.navLabel }, groups.map((g) =>
-          h('a', { id: 'tab-' + g, href: hashFor(g === 'hooks' ? 'hooks' : g), class: 'group' }, STRINGS.groups[g]))),
+          h('a', { id: 'tab-' + g, href: hashFor(GROUPS[g][0]), class: 'group' }, STRINGS.groups[g]))),
         h('input', { type: 'search', class: 'search', placeholder: STRINGS.searchPlaceholder, 'aria-label': STRINGS.searchLabel,
           oninput: (e) => { state.search.text = e.currentTarget.value; renderContent(); } })))), document);
   const content = document.createElement('div');
@@ -88,7 +89,7 @@ export function boot(source, opts) {
     }
   }
   window.addEventListener('hashchange', () => {
-    state.route = parseRoute(location.hash, location.search, groups);
+    state.route = parseRoute(location.hash, location.search, groups, o.home);
     state.search = { text: '', registry: '', verdict: '', model: '', stakes: '' };
     searchBox.value = '';
     toggleMenu(false);

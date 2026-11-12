@@ -539,12 +539,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       title: you ? "Self-improvement project" : "Evals Explorer",
       voice: you ? "you" : "owner",
       loading: "Loading the latest results…",
-      dataAsOf: (when) => "Data as of " + when + ".",
       newestRun: (when) => "Newest run: " + when + ".",
       noRunsYet: "No runs have been recorded yet.",
-      modeLabel: "Show results for",
-      modeSkills: "Skills",
-      modeGuidance: "Guidance",
       hidden: "[hidden]",
       unknown: "unknown",
       et: "ET",
@@ -616,8 +612,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       aloneShown: "Shown because the section is close to removal: if it still helps on its own, it gets shortened or merged instead of removed.",
       tried: (n, when) => n + (n === 1 ? " trial" : " trials") + " in all, the last on " + when + ".",
       notTried: "No trials in the last " + WINDOW_WEEKS + " weeks.",
-      pairedRuns: (n) => n + (n === 1 ? " comparison run" : " comparison runs"),
-      judgeScores: (a, b) => "judge score " + a + " with, " + b + " without (out of 10)",
       nextQueued: (n, kind) => "Next test: " + ordinal(n) + " " + kind + " in line for the next round of tests.",
       nextDue: (when) => "Next test: a re-check due " + when + ".",
       nextNone: "Next test: none planned right now.",
@@ -681,12 +675,10 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         whole: "Weekly gain: checks passed with all the guidance minus none, in percentage points"
       },
       rangeTitle: "Likely range of the gain per model and task, in percentage points of checks passed",
-      weekTitles: { hooks: "Commits and pushes stopped per week, on local computers and in CI", prs: "Pull requests opened and merged per week" },
+      weekTitles: { hooks: "Commits and pushes stopped per week, on local computers and in CI" },
       weekDefs: {
         local: "Commits and pushes refused by git hook checks on local computers in that week.",
-        ci: "Pull requests whose git hook checks failed in CI in that week.",
-        opened: "Pull requests opened in that week, in the repos listed above the chart.",
-        merged: "Pull requests merged in that week, in the repos listed above the chart."
+        ci: "Pull requests whose git hook checks failed in CI in that week."
       },
       dayTitle: "Runs per day (UTC), by how they helped decide",
       utilityDefs: {
@@ -744,11 +736,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       noneListed: "None.",
       alertsHeading: "Alerts",
       asOfLine: "Data times",
-      removedHeading: "Removed sections",
-      removedNote: "Sections the improvement loop removed automatically. Each link opens its removal pull request, whose Revert button restores the section.",
-      removedLink: "removal and revert",
-      removedSkillsHeading: "Removed skills",
-      removedSkillsNote: "Skills the improvement loop removed automatically. Each link opens its removal pull request, whose Revert button restores the skill.",
       alertsNone: "No open alerts.",
       alertsNoneOther: "No other open alerts.",
       alertKinds: {
@@ -776,11 +763,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       // "Trending toward removal": the system working as designed, not an alert that needs action.
       trendingHeading: "Trending toward removal",
       trendingNote: "Expected: the loop saw these subjects score worse in recent runs and acts on it by itself. If the trend continues, it removes the subject automatically; nothing is needed from " + W.obj + ".",
-      trendingNone: "Nothing is trending toward removal.",
       trendingCols: { subject: "Subject", models: "Models", what: "What changed", details: "Details" },
       trendingKinds: { skill: "skill", guidance: "guidance section" },
       trendingIssue: (n) => n ? "Issue #" + n : "Details",
-      trendingAll: "every fixture",
       // Numbers are rounded to 2 decimals by the caller, never here.
       trendOnFixture: "On fixture ",
       trendKindNoun: { skill: "skill", guidance: "section" },
@@ -789,7 +774,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       trendJudgeNeeds: (thr, noise) => "An alert needs a drop of at least " + thr + " that is also bigger than the usual run-to-run variation (" + noise + ").",
       trendChecksNeeds: (thr, noise) => "An alert needs a drop of at least " + thr + " percentage points that is also bigger than the usual run-to-run variation (" + noise + " points).",
       trendOf: (p, t) => p + " of " + t,
-      trendShareOf: (share2, p, t) => share2 + " (" + p + " of " + t + ")",
       trendModelSuffix: (m) => " (" + m + ")",
       // #555: past events, worded from counts; `since` is the oldest counted fire.
       // `total` is every fire the window counted; null when an older document does not say.
@@ -876,11 +860,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       failFile: (url) => "File: " + url,
       failWhat: "Sorry about that. Try reloading in a few minutes. If it keeps happening, the results file may have moved; please open an issue at " + ISSUES_URL + " with the file name above.",
       // --- the six groups (PR4) ---------------------------------------------------
-      groups: { summary: "Summary", needs: "Needs you", hooks: "Hooks, skills and guidance", loop: "Loop", impact: "Impact", ops: "Operations" },
-      subTabs: { hooks: "Git hooks", skills: "Skills", guidance: "Guidance", removed: "Removed", method: "How the tests work" },
+      groups: { summary: "Summary", needs: "Needs you", changes: "Changes", results: "Results", spend: "Spend and use", activity: "Activity log" },
+      subTabs: { hooks: "Git hooks", skills: "Skills", guidance: "Guidance", method: "How the tests work" },
       menu: "Menu",
       navLabel: "Sections",
-      subNavLabel: "Hooks, skills and guidance",
+      subNavLabel: "Results",
       srcDoc: "the results document",
       srcLine: (source, when) => "From " + source + (when ? ", as of " + when : "") + ".",
       srcRange: (from, to) => "Data read between " + from + " and " + to + ".",
@@ -928,7 +912,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       guidanceNoRuns: "No comparison runs in the window yet.",
       sectionsOf: (n) => n + " sections.",
       sectionsBarAria: (n) => "States of " + n + " guidance sections.",
-      tileNewest: "Newest run",
       tileAlerts: "Alerts",
       tileAlertsNote: "open, listed under Needs you.",
       summaryLead: "What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.",
@@ -993,7 +976,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       bareNote: '"Bare" is the model alone: no skills, guidance or memory. "Without" is the full setup minus this subject; "With" is the full setup. Bare runs never count toward a keep or remove decision.',
       colBare: "Bare",
       colPaired: "Paired run",
-      colTrials: "Trials",
       useHeading: "Real-work use",
       copiesHeading: "Loaded copies",
       discarded: (n, cost, unknown, top) => "Discarded runs: " + n + (n === 1 ? " run" : " runs") + " not counted toward this decision, " + cost + (unknown ? " (" + unknown + " with no recorded cost)" : "") + (top ? ". Most often: " + top : "") + ".",
@@ -1099,13 +1081,41 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       prState: (merged, n) => (merged ? "merged" : "open") + (n > 1 ? " (" + n + ")" : ""),
       funnelHeading: "Where lessons went",
       funnelHeadline: (pct3, n) => pct3 + " of the " + n + " lessons with an outcome became git hook checks.",
-      funnelNone: "This build does not report where lessons went.",
       funnelKinds: { check: "A git hook check", skill: "A skill", guidance: "Guidance text", nothing: "Nothing", open: "Still open", unknown: "Unknown" },
       funnelSources: { "hook-proposal": "Hook proposals", "lesson-check": "Lesson checks", memory: "Memory promotions", "draft-skill": "Drafted skills", "skill-proposal": "Skill proposals" },
       funnelMissing: (list) => "Not counted, because their records could not be read: " + list + ".",
-      loopPrsHeading: "Improve and removal pull requests",
-      loopPrsNote: "Pull requests the loop opened in public repos: new skills, edits and removals.",
-      loopPrsNone: "No loop pull requests in this build.",
+      changesHeading: "What the loop changed",
+      changesNote: (days) => "Changes by the loop or an agent in the last " + days + " days, newest first.",
+      changesRemovedNote: "Every skill and section the loop removed. Revert opens the pull request that restores it.",
+      changesNone: (days) => "Nothing changed in the last " + days + " days.",
+      changesAll: "All changes",
+      changesRemovedOnly: "Removed only",
+      changeKinds: {
+        newSkill: "New skill",
+        editSkill: "Edited skill",
+        removeSkill: "Removed skill",
+        removeSection: "Removed guidance section",
+        newCheck: "New git hook check",
+        editGuidance: "Edited guidance",
+        newSection: "New guidance section"
+      },
+      changeWhy: {
+        newSkill: "Drafted from lessons in real sessions, then tested.",
+        newSkillLessons: (n) => "Drafted from " + n + " lessons in real sessions, then tested.",
+        editSkill: "The edit passed the improve check on a test case it had not seen.",
+        editGuidance: "The edit passed the guidance check.",
+        removeNoBenefit: "Its tests showed no benefit on any model.",
+        removeUnused: "It was not used in real work.",
+        removeSkill: "Its tests showed no benefit, or it went unused.",
+        removeSection: "Its tests showed no benefit on any model.",
+        checkRan: (runs, blocked) => "Added after a lesson; it has run " + runs + " times and blocked " + blocked + ".",
+        checkNew: "Added after a lesson; it has not run yet.",
+        newSection: "Added by an agent; its tests have not decided it yet."
+      },
+      colChange: "Change",
+      colWhy: "Why",
+      colUndo: "Undo",
+      changeUndo: "Revert",
       impactUseWeeks: "Git hook runs and blocks by week",
       agentMade: "Made by agents",
       agentMadeNote: (since) => 'Git hook checks, skills and guidance sections, by who made them: an agent, an automated loop or a person. "After the rule" counts agent-made items from ' + since + " on, when the guidance began telling agents to capture lessons this way. Impact is from this page's other data.",
@@ -1124,22 +1134,23 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       impactUseSkills: "Real-work use by skill",
       impactUseSkillsNote: (from, to) => "Uses from " + from + " to " + to + ". Guidance has no direct use signal; its effect shows only in test results.",
       impactUseChecks: "Real-work use by git hook check",
-      impactPrs: "Pull requests by week",
-      impactPrsNote: (repos, since) => "Opened and merged in " + repos + " since " + since + ".",
-      colOpened: "Opened",
-      colMerged: "Merged",
-      impactRed: "Red CI runs",
-      impactRedNote: "Workflow runs in the public repos that ended in failure, newest first.",
-      impactRedNone: "No failed runs in this window.",
-      impactSpend: "Cost",
+      impactSpend: "Spend",
       impactSpendTotal: (since, usd5, verdicts, each, tests, build, api) => "Since " + since + ": " + usd5 + " for " + verdicts + " decided verdicts, " + each + " each (tests " + tests + ", building " + build + ", API " + api + ").",
-      impactSpendNote: "Weekly totals. Dollars are API-equivalent, not what is paid; points are the account's usage meter.",
+      impactSpendNote: "Dollars are list price, not what is paid. Points are the account's usage meter.",
+      spendTests: "Tests",
+      spendBuilding: "Building (threads)",
+      spendApi: "API",
+      spendTotal: "Total",
+      spendWeekHead: (current, from) => (current ? "This week" : "Last week") + " (from " + from + ")",
+      spendPoints: (p) => " · " + p + " points",
+      spendNoUse: (pct3, noUse, total, causes) => "In the last 30 days " + pct3 + " of test dollars bought nothing (" + noUse + " of " + total + ")" + (causes ? ", mostly " + causes : "") + ".",
+      spendUsefulnessLink: "Every run, by use",
+      spendAllWeeks: "Every week",
       colEvalRuns: "Runs",
       colMeter: "Meter points",
       colApi: "API $",
       colThreads: "Thread spend $",
       colRunsUsd: "Tests $",
-      colPlan: "Plan",
       opsRuns: "Workflow and routine runs",
       opsRunsNote: (since) => "GitHub Actions runs in the public repos since " + since + ", newest first.",
       problemsOnly: "Problems only",
@@ -1152,7 +1163,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       opsPrsNote: "Open and recently merged pull requests in the public repos.",
       opsIssues: "Open issues",
       prStates: { open: "open", merged: "merged" },
-      noneYet: "Nothing here yet.",
       methodLead: "How every number on this page is made.",
       removedNone: "Nothing has been removed by the improvement loop.",
       sortHint: "Select a column heading to sort."
@@ -1977,29 +1987,36 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   var GROUPS = {
     summary: ["summary"],
     needs: ["needs"],
-    hooks: ["hooks", "skills", "guidance", "removed", "method"],
-    loop: ["loop"],
-    impact: ["impact"],
-    ops: ["ops"]
+    changes: ["changes"],
+    results: ["hooks", "skills", "guidance", "method"],
+    spend: ["spend"],
+    activity: ["activity"]
   };
   var LEGACY = {
     overview: "needs",
-    loop: "loop",
-    impact: "impact",
-    costbenefit: "impact",
+    loop: "changes",
+    impact: "spend",
+    costbenefit: "spend",
     evals: "skills",
-    cleanup: "ops",
-    work: "ops",
-    routines: "ops",
-    console: "ops",
-    decisions: "ops"
+    cleanup: "activity",
+    work: "activity",
+    routines: "activity",
+    console: "activity",
+    decisions: "activity"
   };
+  var ALIASES = {
+    loop: { name: "changes", id: null },
+    impact: { name: "spend", id: null },
+    ops: { name: "activity", id: null },
+    removed: { name: "changes", id: "removed" }
+  };
+  var CHANGE_FILTERS = ["removed"];
   var SUBJECT_ROUTES = ["hooks", "skills", "guidance"];
   function groupOf(name) {
     for (const g of Object.keys(GROUPS)) if (GROUPS[g].includes(name)) return g;
     return "summary";
   }
-  function parseRoute(hash, search, groups) {
+  function parseRoute(hash, search, groups, home) {
     const have = groups || Object.keys(GROUPS);
     const raw = String(hash || "");
     if (/^#[a-z]+$/.test(raw) && Object.prototype.hasOwnProperty.call(LEGACY, raw.slice(1))) {
@@ -2010,7 +2027,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (!m) {
       const q = new URLSearchParams(search || "");
       if (q.get("subject") === "guidance") return { name: "guidance", id: null };
+      if (!raw && home && have.includes(groupOf(home))) return { name: home, id: null };
       return { name: "summary", id: null };
+    }
+    if (Object.prototype.hasOwnProperty.call(ALIASES, m[1]) && !m[2]) {
+      const to = ALIASES[m[1]];
+      return have.includes(groupOf(to.name)) ? { name: to.name, id: to.id } : { name: "summary", id: null };
     }
     const name = m[1];
     const g = groupOf(name);
@@ -2022,7 +2044,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       } catch (e) {
         id = null;
       }
-    }
+    } else if (m[2] && name === "changes" && CHANGE_FILTERS.includes(m[2])) id = m[2];
     return { name, id };
   }
   function hashFor(name, id) {
@@ -2966,6 +2988,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     });
     return h("svg", { viewBox: "0 0 " + W + " " + H, class: "chart weeks", role: "img", "aria-label": STRINGS.utilityChartAria(days.length) }, kids);
   }
+  function noUseShare(doc, refMs) {
+    const t = utilityTotals(fleetGroups(doc)[0].rows, DEFAULT_PERIOD, refMs);
+    if (!(t.total.cost > 0)) return null;
+    const top = Object.entries(t.reasons).filter(([, v]) => v.cost > 0).sort((a, b) => b[1].cost - a[1].cost || (a[0] < b[0] ? -1 : 1)).slice(0, 2).map(([k, v]) => [reasonName(k), v.cost]);
+    return { share: t.noUse.cost / t.total.cost, noUse: t.noUse.cost, total: t.total.cost, top };
+  }
   var reasonName = (k) => Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k);
   function utilityBody(groups, period, refMs) {
     const totals = groups.map((g) => ({ label: g.label, t: utilityTotals(g.rows, period, refMs) }));
@@ -3455,10 +3483,10 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return { runs: pick(e.runs), bare: pick(e.bare_runs) };
   }
   function judgeCell(r) {
-    const num = (x) => typeof x === "number" && isFinite(x);
-    if (num(r.with_judge) && num(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
-    const wins = num(r.with_skill) && num(r.without_skill) && r.with_skill > r.without_skill;
-    const counted = wins && num(r.checks) && r.checks > 0;
+    const num2 = (x) => typeof x === "number" && isFinite(x);
+    if (num2(r.with_judge) && num2(r.without_judge)) return STRINGS.judgeRan(r.with_judge.toFixed(1), r.without_judge.toFixed(1));
+    const wins = num2(r.with_skill) && num2(r.without_skill) && r.with_skill > r.without_skill;
+    const counted = wins && num2(r.checks) && r.checks > 0;
     const skipped = counted ? () => STRINGS.judgeSkipped(
       typeof r.skill === "string" && r.skill.startsWith("guidance/") ? STRINGS.judgeWithSection : STRINGS.judgeWithSkill,
       fmtCount(r.with_skill),
@@ -3615,12 +3643,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
 
   // src/views/loop.js
   var usd3 = (x) => fmtUsd(Number(x) || 0);
-  function stagesView() {
-    return [
-      h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
-      h("p", { class: "note" }, STRINGS.loopStagesNote)
-    ];
-  }
   function fixtureRequestsView(doc, refMs) {
     const fq = fixtureQueue(doc, refMs);
     if (!fq) return h("p", { class: "note" }, STRINGS.fqNone);
@@ -3670,12 +3692,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (typeof p.head_ref === "string") return LOOP_BRANCH.test(p.head_ref);
     return typeof p.title === "string" && LOOP_TITLE.test(p.title);
   }
-  function loopPrsView(doc, refMs) {
-    const a = doc.activity;
-    const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter(isLoopPull);
-    if (!rows.length) return null;
-    return [srcLineFor(doc, "activity"), h("p", { class: "note" }, STRINGS.loopPrsNote), prTable(rows, refMs)];
-  }
   function prTable(rows, refMs) {
     return table([
       { label: STRINGS.colRepo, sort: (p) => p.repo, cell: (p) => clean(String(p.repo).split("/").pop()) },
@@ -3685,21 +3701,116 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at, cell: (p) => fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
     ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || "").localeCompare(String(x.merged_at || x.updated_at || ""))), { tall: true });
   }
-  function loopView(doc, ctx) {
+
+  // src/views/changes.js
+  var CHANGE_DAYS = 30;
+  var DAY_MS2 = 864e5;
+  var KIND_ROUTE = { newSkill: "skills", editSkill: "skills", removeSkill: "skills", removeSection: "guidance", editGuidance: "guidance", newSection: "guidance", newCheck: "hooks" };
+  var KINDS = [
+    ["editSkill", /^eval-improve\//, /^(Improve |Proposed .+ SKILL\.md edit|Trim )/],
+    ["editGuidance", /^eval-guidance-improve\//, /^Proposed .+ guidance edit/],
+    ["newSkill", /^draft-skill\//, /^New skill: /],
+    ["removeSkill", /^retire-skill\//, /^(Retire skill |Remove )/],
+    ["removeSection", /^retire-guidance\//, /^Retire guidance section /]
+  ];
+  var REMOVALS = ["removeSkill", "removeSection"];
+  function pullKind(p) {
+    const ref = typeof p.head_ref === "string" ? p.head_ref : "", title = String(p.title || "");
+    for (const [kind, branch, name] of KINDS) if (branch.test(ref) || name.test(title)) return kind;
+    return null;
+  }
+  function pullSubject(p) {
+    const t = String(p.title || "").replace(/`/g, "");
+    const m = /^New skill: (\S+)/.exec(t) || /^Proposed (\S+) (?:SKILL\.md|guidance) edit/.exec(t) || /^Improve (\S+)/.exec(t) || /^Trim (\S+)/.exec(t) || /^Remove (?:[\w.-]+\/)?([\w.-]+): /.exec(t) || /^Retire (?:skill|guidance section) ([\w.-]+?):?(?: |$)/.exec(t);
+    return m ? m[1] : null;
+  }
+  function removalWhy(kind, title) {
+    const W = STRINGS.changeWhy;
+    if (kind === "removeSection") return W.removeSection;
+    if (/: unused/.test(title || "")) return W.removeUnused;
+    if (/no (marginal )?benefit/.test(title || "")) return W.removeNoBenefit;
+    return W.removeSkill;
+  }
+  var num = (v) => Number.isInteger(v) ? v : 0;
+  function checkWhy(m) {
+    const runs = num(m && m.runs), blocked = num(m && m.blocked);
+    return runs ? STRINGS.changeWhy.checkRan(fmtCount(runs), fmtCount(blocked)) : STRINGS.changeWhy.checkNew;
+  }
+  function changeRows(doc, extra) {
     const refMs = parseTime(doc.generated_at);
+    const since = isFinite(refMs) ? refMs - CHANGE_DAYS * DAY_MS2 : -Infinity;
+    const a = doc.activity;
+    const seen = /* @__PURE__ */ new Set();
+    const pulls = (a && Array.isArray(a.pulls) ? a.pulls : []).concat(Array.isArray(extra) ? extra : []).filter((p) => p && typeof p === "object" && isLoopPull(p) && p.state === "merged" && !seen.has(p.url) && seen.add(p.url));
+    const lessons = (doc.lessons && Array.isArray(doc.lessons.items) ? doc.lessons.items : []).filter((l) => l && l.kind === "new-skill");
+    const rows = [];
+    const claimed = /* @__PURE__ */ new Set();
+    const removed = [["removeSkill", doc.removed_skills, "name"], ["removeSection", doc.guidance && doc.guidance.removed, "id"]].flatMap(([kind, list, key]) => (Array.isArray(list) ? list : []).filter((r) => r && typeof r[key] === "string" && typeof r.date === "string").map((r) => ({ kind, subject: r[key], date: r.date, undo: r.reverse_url })));
+    for (const r of removed) {
+      const pr = pulls.find((p) => pullKind(p) === r.kind && pullSubject(p) === r.subject);
+      if (pr) claimed.add(pr.url);
+      rows.push({ kind: r.kind, when: parseTime(r.date + "T12:00:00Z"), subject: r.subject, why: removalWhy(r.kind, pr && pr.title), pr: pr || null, undo: r.undo });
+    }
+    for (const p of pulls) {
+      const kind = pullKind(p);
+      const when = parseTime(p.merged_at);
+      if (!kind || claimed.has(p.url) || !(when >= since)) continue;
+      const subject = pullSubject(p);
+      let why;
+      if (kind === "newSkill") {
+        const l = lessons.find((x) => x.subject === subject);
+        why = l && Number.isInteger(l.evidence_count) ? STRINGS.changeWhy.newSkillLessons(fmtCount(l.evidence_count)) : STRINGS.changeWhy.newSkill;
+      } else if (REMOVALS.includes(kind)) why = removalWhy(kind, p.title);
+      else why = STRINGS.changeWhy[kind];
+      rows.push({ kind, when, subject, why, pr: p, undo: null });
+    }
+    const made = doc.agent_made && Array.isArray(doc.agent_made.items) ? doc.agent_made.items : [];
+    const listedSkills = new Set(rows.filter((r) => r.kind === "newSkill").map((r) => r.subject));
+    for (const i of made) {
+      if (!i || i.origin !== "agent" && i.origin !== "loop" || typeof i.id !== "string") continue;
+      const when = parseTime(i.created);
+      if (!(when >= since)) continue;
+      if (i.kind === "check") rows.push({ kind: "newCheck", when, subject: i.id, why: checkWhy(i.impact), pr: null, undo: null });
+      else if (i.kind === "section") rows.push({ kind: "newSection", when, subject: i.id, why: STRINGS.changeWhy.newSection, pr: null, undo: null });
+      else if (i.kind === "skill" && !listedSkills.has(i.id)) rows.push({ kind: "newSkill", when, subject: i.id, why: STRINGS.changeWhy.newSkill, pr: null, undo: null });
+    }
+    return rows.sort((x, y) => y.when - x.when || (x.subject < y.subject ? -1 : x.subject > y.subject ? 1 : 0));
+  }
+  function changesList(doc, filter, extra) {
+    const all = changeRows(doc, extra);
+    const refMs = parseTime(doc.generated_at);
+    const rows = filter === "removed" ? all.filter((r) => REMOVALS.includes(r.kind)) : all.filter((r) => !isFinite(refMs) || r.when >= refMs - CHANGE_DAYS * DAY_MS2);
+    const nav = h(
+      "p",
+      { class: "filters" },
+      filter === "removed" ? navLink(hashFor("changes"), STRINGS.changesAll) : h("strong", null, STRINGS.changesAll),
+      " · ",
+      filter === "removed" ? h("strong", null, STRINGS.changesRemovedOnly) : navLink(hashFor("changes", "removed"), STRINGS.changesRemovedOnly)
+    );
+    return [
+      srcLineFor(doc, "activity"),
+      h("p", { class: "note" }, filter === "removed" ? STRINGS.changesRemovedNote : STRINGS.changesNote(CHANGE_DAYS)),
+      nav,
+      rows.length ? table([
+        { label: STRINGS.colWhen, sort: (r) => r.when, cell: (r) => fmtDay(r.when, refMs) },
+        { label: STRINGS.colChange, sort: (r) => r.kind, cell: (r) => STRINGS.changeKinds[r.kind] },
+        { label: STRINGS.colSubject, sort: (r) => r.subject, cell: (r) => r.subject ? navLink(hashFor(KIND_ROUTE[r.kind], r.subject), clean(r.subject)) : STRINGS.noValue },
+        { label: STRINGS.colWhy, cell: (r) => r.why },
+        { label: STRINGS.colPr, sort: (r) => r.pr ? r.pr.number : 0, cell: (r) => r.pr ? link(r.pr.url, clean(String(r.pr.repo).split("/").pop()) + " #" + r.pr.number) : "" },
+        { label: STRINGS.colUndo, cell: (r) => r.undo ? link(r.undo, STRINGS.changeUndo) : "" }
+      ], rows, { tall: true }) : h("p", null, filter === "removed" ? STRINGS.removedNone : STRINGS.changesNone(CHANGE_DAYS))
+    ];
+  }
+  function changesView(doc, ctx) {
     const ext = ctx && ctx.ext;
-    const stages = ext && ext.loopStages ? ext.loopStages(ctx) : null;
+    const extra = ext && ext.changePulls ? ext.changePulls() : [];
+    const filter = ctx && ctx.route && ctx.route.id === "removed" ? "removed" : null;
     return h(
       "div",
       null,
       rangeLine(doc),
-      panel(STRINGS.loopHeading, stages || stagesView()),
-      ext && ext.loopTop ? ext.loopTop(ctx) : null,
-      panel(STRINGS.funnelHeading, funnelView(doc)),
-      panel(STRINGS.fqHeading, fixtureRequestsView(doc, refMs)),
-      lessonsView(doc, "all"),
-      ext && ext.covers && ext.covers("loop-prs") ? ext.loopPrs(ctx) : panel(STRINGS.loopPrsHeading, loopPrsView(doc, refMs)),
-      ext && ext.loopBottom ? ext.loopBottom(ctx) : null
+      panel(STRINGS.changesHeading, changesList(doc, filter, extra)),
+      filter ? null : [trendingView(doc, "all"), panel(STRINGS.funnelHeading, funnelView(doc)), panel(STRINGS.fqHeading, fixtureRequestsView(doc, parseTime(doc.generated_at))), lessonsView(doc, "all")]
     );
   }
 
@@ -3747,51 +3858,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: (it) => fmtCount(it.blocked || 0) }
     ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
   }
-  function prWeeks(doc) {
-    const a = doc.activity;
-    const pulls = a && Array.isArray(a.pulls) ? a.pulls : [];
-    const by = /* @__PURE__ */ new Map();
-    const add2 = (ts, key) => {
-      const w = mondayOf(parseTime(ts));
-      if (!w) return;
-      if (!by.has(w)) by.set(w, { week: w, opened: 0, merged: 0 });
-      by.get(w)[key] += 1;
-    };
-    for (const p of pulls) {
-      if (!p) continue;
-      add2(p.created_at, "opened");
-      if (p.state === "merged") add2(p.merged_at, "merged");
-    }
-    return Array.from(by.values()).sort((x, y) => x.week < y.week ? 1 : -1);
-  }
-  function prOutcomesView(doc, refMs) {
-    const a = doc.activity;
-    const weeks = prWeeks(doc);
-    if (!a || !weeks.length) return null;
-    const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split("/").pop())).join(", ");
-    return [
-      srcLineFor(doc, "activity"),
-      h("p", { class: "note" }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
-      weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs, STRINGS.weekTitles.prs, [STRINGS.weekDefs.opened, STRINGS.weekDefs.merged]),
-      table([
-        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
-        { label: STRINGS.colOpened, num: true, sort: (w) => w.opened, cell: (w) => fmtCount(w.opened) },
-        { label: STRINGS.colMerged, num: true, sort: (w) => w.merged, cell: (w) => fmtCount(w.merged) }
-      ], weeks)
-    ];
-  }
-  var RED = ["failure", "timed_out", "startup_failure"];
-  function redRunsView(doc, refMs) {
-    const a = doc.activity;
-    if (!a || !Array.isArray(a.runs)) return null;
-    const red = a.runs.filter((r) => r && RED.includes(r.conclusion)).sort((x, y) => x.created_at < y.created_at ? 1 : -1);
-    return [srcLineFor(doc, "activity"), h("p", { class: "note" }, STRINGS.impactRedNote), red.length ? table([
-      { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
-      { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split("/").pop()) },
-      { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => link(r.url, clean(r.workflow || r.title || STRINGS.unknown)) },
-      { label: STRINGS.colState, sort: (r) => r.conclusion, cell: (r) => clean(r.conclusion) }
-    ], red) : h("p", null, STRINGS.impactRedNone)];
-  }
   function spendTotalLine(s) {
     const t = s && s.total;
     if (!t || typeof t !== "object" || typeof t.usd !== "number") return null;
@@ -3805,24 +3871,56 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       usd4(t.api_usd)
     ));
   }
+  function spendWeeks(doc) {
+    const s = doc.spend;
+    const weeks = s && Array.isArray(s.weeks) ? s.weeks.filter((w) => w && typeof w.week === "string").slice().sort((a, b) => a.week < b.week ? 1 : -1) : [];
+    const part = (w, k) => w && typeof w[k] === "number" && isFinite(w[k]) ? w[k] : null;
+    const row = (w) => {
+      const tests = part(w, "run_usd"), build = part(w, "thread_spend_usd"), api = part(w, "api_usd");
+      return { week: w.week, tests, build, api, total: tests === null || build === null || api === null ? null : tests + build + api, points: part(w, "plan_meter_points") };
+    };
+    return weeks.slice(0, 2).map(row);
+  }
+  var weekStart = (w) => fmtDateTime(Date.parse(w + "T17:00:00Z"));
   function spendView(doc, refMs) {
     const s = doc.spend;
     if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
+    const two = spendWeeks(doc);
+    const share2 = noUseShare(doc, refMs);
+    const cell = (r, k) => r && r[k] !== null ? usd4(r[k]) : STRINGS.noValue;
+    const rows = [{ label: STRINGS.spendTests, k: "tests" }, { label: STRINGS.spendBuilding, k: "build" }, { label: STRINGS.spendApi, k: "api" }, { label: STRINGS.spendTotal, k: "total" }];
     return [
       h("p", { class: "note" }, STRINGS.impactSpendNote),
       s.generated_at ? srcLineFor(doc, "spend") : null,
+      two.length ? table([{ label: "", cell: (r) => r.label }].concat(two.map((w, i) => ({
+        label: STRINGS.spendWeekHead(i === 0, weekStart(w.week)),
+        num: true,
+        cell: (r) => cell(w, r.k) + (r.k === "tests" && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : "")
+      }))), rows) : null,
+      share2 ? h(
+        "p",
+        null,
+        STRINGS.spendNoUse(Math.round(share2.share * 100) + "%", usd4(share2.noUse), usd4(share2.total), share2.top.map(([name, cost]) => name + " (" + usd4(cost) + ")").join(" and ")),
+        " ",
+        navLink(hashFor("summary"), STRINGS.spendUsefulnessLink)
+      ) : null,
       spendTotalLine(s),
-      table([
-        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
-        { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
-        { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
-        { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => typeof w.run_usd === "number" ? usd4(w.run_usd) : STRINGS.noValue },
-        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd4(w.thread_spend_usd) },
-        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) }
-      ], s.weeks)
+      h(
+        "details",
+        { class: "history" },
+        h("summary", null, STRINGS.spendAllWeeks),
+        table([
+          { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+          { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
+          { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
+          { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => typeof w.run_usd === "number" ? usd4(w.run_usd) : STRINGS.noValue },
+          { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd4(w.thread_spend_usd) },
+          { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) }
+        ], s.weeks)
+      )
     ];
   }
-  var KIND_ROUTE = { check: "hooks", skill: "skills", section: "guidance" };
+  var KIND_ROUTE2 = { check: "hooks", skill: "skills", section: "guidance" };
   function agentMadeRows(doc) {
     const a = doc && doc.agent_made;
     if (!a || !a.summary || !Array.isArray(a.items)) return null;
@@ -3864,7 +3962,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ], r.kinds),
       r.items.length ? table([
         { label: STRINGS.colKind, sort: (i) => i.kind, cell: (i) => STRINGS.agentMadeKind[i.kind] },
-        { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE[i.kind], i.id), clean(i.id)) },
+        { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE2[i.kind], i.id), clean(i.id)) },
         { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtUtcDay(parseTime(i.created), refMs) },
         { label: STRINGS.colAfterRule, sort: (i) => i.under_rule ? 1 : 0, cell: (i) => i.under_rule ? "✓" : "" },
         { label: STRINGS.colImpact, sort: (i) => itemImpact(i), cell: (i) => itemImpact(i) }
@@ -3879,13 +3977,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "div",
       null,
       rangeLine(doc),
+      panel(STRINGS.impactSpend, spendView(doc, refMs)),
+      covers("cost") ? ext.cost(ctx) : null,
       panel(STRINGS.agentMade, agentMadeView(doc, refMs)),
       panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
       // The private usage table covers both lists, private repos included.
-      covers("use") ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))],
-      covers("pr-outcomes") ? ext.prOutcomes(ctx) : panel(STRINGS.impactPrs, prOutcomesView(doc, refMs)),
-      covers("red-runs") ? ext.redRuns(ctx) : panel(STRINGS.impactRed, redRunsView(doc, refMs)),
-      covers("cost") ? ext.cost(ctx) : panel(STRINGS.impactSpend, spendView(doc, refMs))
+      covers("use") ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))]
     );
   }
 
@@ -4043,47 +4140,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     ));
   }
 
-  // src/views/removed.js
-  function removedView(doc) {
-    const removed = (doc.guidance && Array.isArray(doc.guidance.removed) ? doc.guidance.removed : []).filter((r) => r && typeof r.id === "string" && typeof r.date === "string");
-    if (!removed.length) return null;
-    return h(
-      "section",
-      null,
-      h("h2", null, STRINGS.removedHeading),
-      h("p", { class: "note" }, STRINGS.removedNote),
-      h("ul", null, removed.map((r) => h(
-        "li",
-        null,
-        h("strong", null, clean(r.id)),
-        " ",
-        clean(r.date),
-        " ",
-        link(r.reverse_url, STRINGS.removedLink)
-      )))
-    );
-  }
-  function removedSkillsView(doc) {
-    const removed = (Array.isArray(doc.removed_skills) ? doc.removed_skills : []).filter((r) => r && typeof r.name === "string" && typeof r.date === "string");
-    if (!removed.length) return null;
-    return h(
-      "section",
-      null,
-      h("h2", null, STRINGS.removedSkillsHeading),
-      h("p", { class: "note" }, STRINGS.removedSkillsNote),
-      h("ul", null, removed.map((r) => h(
-        "li",
-        null,
-        h("strong", null, clean(r.name)),
-        " ",
-        clean(r.date),
-        " ",
-        link(r.reverse_url, STRINGS.removedLink)
-      )))
-    );
-  }
-
   // src/views/method.js
+  function stagesView() {
+    return [
+      h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
+      h("p", { class: "note" }, STRINGS.loopStagesNote)
+    ];
+  }
   function methodView(doc, ctx) {
     const ext = ctx && ctx.ext;
     return h(
@@ -4091,14 +4154,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       null,
       h("p", { class: "lead" }, STRINGS.methodLead),
       introView("all"),
+      panel(STRINGS.loopHeading, stagesView()),
       rosterView(doc, ext && ext.rosterWhy ? (m) => ext.rosterWhy(ctx, m) : null),
       engineersView(doc, "skills", ctx && ctx.url),
       engineersView(doc, "guidance", ctx && ctx.url)
     );
-  }
-  function removedPage(doc) {
-    const a = removedSkillsView(doc), b = removedView(doc);
-    return h("div", null, a, b, a || b ? null : h("p", null, STRINGS.removedNone));
   }
 
   // src/views/search.js
@@ -4276,7 +4336,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     );
   }
   function subNav(current) {
-    return h("nav", { class: "subnav", "aria-label": STRINGS.subNavLabel }, GROUPS.hooks.map((name) => navLink(hashFor(name), STRINGS.subTabs[name], { id: "sub-" + name, "aria-current": name === current ? "page" : null })));
+    return h("nav", { class: "subnav", "aria-label": STRINGS.subNavLabel }, GROUPS.results.map((name) => navLink(hashFor(name), STRINGS.subTabs[name], { id: "sub-" + name, "aria-current": name === current ? "page" : null })));
   }
   function isSearching(q) {
     return !!(q && (q.text || q.registry || q.verdict || q.model || q.stakes));
@@ -4301,19 +4361,16 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       case "guidance":
         body = route.id ? subjectPage(doc, "guidance", route.id, ctx) : buildPage(doc, "guidance", o);
         break;
-      case "removed":
-        body = removedPage(doc);
-        break;
       case "method":
         body = methodView(doc, ctx);
         break;
-      case "loop":
-        body = loopView(doc, ctx);
+      case "changes":
+        body = changesView(doc, ctx);
         break;
-      case "impact":
+      case "spend":
         body = impactView(doc, ctx);
         break;
-      case "ops":
+      case "activity":
         body = opsView(doc, ctx);
         break;
       default:
@@ -4323,7 +4380,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "div",
       null,
       h("h1", { class: "group-title" }, STRINGS.groups[group]),
-      group === "hooks" ? subNav(route.name) : null,
+      group === "results" ? subNav(route.name) : null,
+      ctx.ext && ctx.ext.banner ? ctx.ext.banner(ctx) : null,
       o.notice ? h("p", { class: "panel failure" }, o.notice) : null,
       body
     );
@@ -4418,7 +4476,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     fixtureQueue,
     searchItems,
     filterItems,
-    prWeeks,
     runsOf: runsOf2,
     LOOP_TITLE,
     trendingRows,
@@ -4441,11 +4498,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   // src/app.js
   function boot(source, opts) {
     const o = opts || {};
-    const groups = o.groups || ["summary", "hooks", "loop", "impact", "ops"];
+    const groups = o.groups || ["summary", "changes", "results", "spend", "activity"];
     const root = document.getElementById(o.rootId || "app");
     const tip = document.getElementById(o.tipId || "tip");
     const state = {
-      route: parseRoute(location.hash, location.search, groups),
+      route: parseRoute(location.hash, location.search, groups, o.home),
       sortBy: "next",
       doc: null,
       url: DEFAULT_DATA_URL,
@@ -4468,7 +4525,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         h(
           "div",
           { class: "drawer", id: "ex-drawer" },
-          h("nav", { class: "groups", "aria-label": STRINGS.navLabel }, groups.map((g) => h("a", { id: "tab-" + g, href: hashFor(g === "hooks" ? "hooks" : g), class: "group" }, STRINGS.groups[g]))),
+          h("nav", { class: "groups", "aria-label": STRINGS.navLabel }, groups.map((g) => h("a", { id: "tab-" + g, href: hashFor(GROUPS[g][0]), class: "group" }, STRINGS.groups[g]))),
           h("input", {
             type: "search",
             class: "search",
@@ -4547,7 +4604,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       }
     }
     window.addEventListener("hashchange", () => {
-      state.route = parseRoute(location.hash, location.search, groups);
+      state.route = parseRoute(location.hash, location.search, groups, o.home);
       state.search = { text: "", registry: "", verdict: "", model: "", stakes: "" };
       searchBox.value = "";
       toggleMenu(false);

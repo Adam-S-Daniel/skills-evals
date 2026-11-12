@@ -9,11 +9,11 @@ import { readDashboard, dashboardSource, DATASET_ID } from '../adapters/dashboar
 import { boot } from '../app.js';
 import { registerLoaders } from '../private/loaders.js';
 import { mergePrivate } from '../private/merge.js';
-import { makeExt, attentionRows, capUse, routineHealth } from '../private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours } from '../private/views.js';
 import { rowsOf, some } from '../private/datasets.js';
 
 export const PRIVATE_DATASET_ID = 'explorer_private';
-export const GROUPS = ['summary', 'needs', 'hooks', 'loop', 'impact', 'ops'];
+export const GROUPS = ['summary', 'needs', 'changes', 'results', 'spend', 'activity'];
 
 /* The adapter the private page boots from: the public document, with the
    private one merged in whenever it has loaded. */
@@ -33,7 +33,7 @@ export function privateSource(dash) {
 }
 
 export const EXPORTS = Object.assign({}, PUBLIC, { readDashboard, dashboardSource, privateSource, DATASET_ID, PRIVATE_DATASET_ID,
-  GROUPS, makeExt, attentionRows, capUse, routineHealth, mergePrivate, rowsOf, some, useVoice });
+  GROUPS, makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, mergePrivate, rowsOf, some, useVoice });
 
 /* Start the dashboard, given its `dash` runtime. */
 export function startDashboard(dash) {
@@ -41,7 +41,7 @@ export function startDashboard(dash) {
   registerLoaders(dash);
   const ext = makeExt(dash);
   boot(privateSource(dash), {
-    groups: GROUPS, rootId: 'ex-app', tipId: 'ex-tip', ext: () => ext,
+    groups: GROUPS, home: 'needs', rootId: 'ex-app', tipId: 'ex-tip', ext: () => ext,
     onRoute: (hash) => { if (typeof dash.setLink === 'function') dash.setLink(hash); }
   });
 }

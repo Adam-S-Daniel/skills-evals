@@ -15,18 +15,19 @@ import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
-import { makeExt, attentionRows, capUse, routineHealth } from '../src/private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, STALE_AFTER_HOURS } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
 import { renderRoute } from '../src/views/page.js';
-import { agentMadeRows } from '../src/views/impact.js';
+import { agentMadeRows, spendWeeks } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
-import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
+import { utilityTotals, periodStart, inPeriod, NO_USE, noUseShare } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
-import { hashFor } from '../src/core/route.js';
+import { hashFor, parseRoute, GROUPS as ROUTE_GROUPS } from '../src/core/route.js';
 import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
+import { changeRows, pullKind, pullSubject } from '../src/views/changes.js';
 import { fmtUsd } from '../src/core/format.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
@@ -163,15 +164,14 @@ await test('privateSource merges explorer_private in with a Private mark, and wo
   eq(mergePrivate(pub, null), pub);
 });
 await test('placeholder rows never reach a panel, and an empty dataset hides it', () => {
-  const dash = fakeDash({ waiting: okData([{ id: 'none', item: 'Nothing' }]), ci_red_runs: okData([{ key: 'none' }, { key: 'k', week: '2026-10-26' }]),
+  const dash = fakeDash({ waiting: okData([{ id: 'none', item: 'Nothing' }]), checkins: okData([{ id: 'none' }, { id: 'k', when: '2026-10-26' }]),
     routines: { status: 'loading' } });
   eq(rowsOf(dash, 'waiting').length, 0);
   eq(some(dash, 'waiting'), null);
-  eq(rowsOf(dash, 'ci_red_runs').length, 1);
+  eq(rowsOf(dash, 'checkins').length, 1);
   eq(rowsOf(dash, 'routines'), null, 'loading');
   eq(rowsOf(dash, 'no_such'), null, 'missing');
   const ext = makeExt(dash);
-  eq(ext.covers('red-runs'), true);
   eq(ext.covers('runs'), false, 'no run_stream: the public panel stays');
   eq(ext.covers('cost'), false);
 });
@@ -191,7 +191,8 @@ await test('a regression alert is not a Needs attention row: it is trending towa
   const d = doc({ alerts: [{ kind: 'regression', name: 'example-skill', subject: 'skill', model: 'claude-opus-5-5', fixture: 'fx-one', verdict: 'regressed', measure: 'judge',
     previous: 7.5, current: 6.0000000000000009, drop: 1.5000000000000009, threshold: 1, noise: 0.472189541352795, text: 'x', url: 'https://github.com/example-owner/r/issues/5' }] });
   eq(attentionRows(fakeDash({}), d).length, 0, 'not an attention row');
-  const t = textOf(renderRoute(d, { name: 'needs', id: null }, { ext: makeExt(fakeDash({})) }));
+  const t = textOf(renderRoute(d, { name: 'changes', id: null }, { ext: makeExt(fakeDash({})) }));
+  ok(!textOf(renderRoute(d, { name: 'needs', id: null }, { ext: makeExt(fakeDash({})) })).includes(STRINGS.trendingHeading), 'Needs you no longer repeats it');
   ok(t.includes(STRINGS.trendingHeading) && /fell from 7\.50 to 6\.00, a drop of 1\.50\.\s+An alert needs a drop of at least 1\.00/.test(t.replace(/\s+/g, ' ')), t);
   ok(!/\d\.\d{3,}/.test(t), 'no long decimal on the page: ' + t);
 });
@@ -226,10 +227,16 @@ await test('the allowance and routine health come from their datasets', () => {
   eq(Math.round(cap.reservation * 1000) / 1000, 1.2);
   eq(capUse(null, []), null);
   const rh = routineHealth([{ health: 'OK' }, { health: 'Stalled' }, { health: 'Retired' }, { health: 'Not run yet' }]);
-  eq(JSON.stringify(rh), '{"active":2,"ok":1,"attention":1}');
+  eq(JSON.stringify(rh), '{"active":3,"ok":1,"fresh":1,"attention":1}');
+  // Every shape of mix: healthy, not run yet and needing a look always add up to the rows the table lists.
+  for (const mix of [[], ['OK'], ['Not run yet'], ['OK', 'Late', 'Not run yet', 'Retired', 'Failing', 'Paused', 'Check', 'Not run yet']]) {
+    const r = routineHealth(mix.map((health) => ({ health })));
+    eq(r.ok + r.fresh + r.attention, r.active, mix.join(','));
+    eq(r.active, mix.filter((x) => x !== 'Retired').length);
+  }
 });
 await test('the private build has six groups, Needs you second, and speaks to "you"', () => {
-  eq(GROUPS.join(','), 'summary,needs,hooks,loop,impact,ops');
+  eq(GROUPS.join(','), 'summary,needs,changes,results,spend,activity');
   const dash = fakeDash({ waiting: okData([{ id: 'w1', item: 'Approve the example hook', where: 'example-owner/r', link: 'https://github.com/example-owner/r/pull/3', since: '2026-10-30T00:00:00Z' }]) });
   useVoice('you');
   try {
@@ -238,14 +245,15 @@ await test('the private build has six groups, Needs you second, and speaks to "y
     ok(t.includes('Approve the example hook') && t.includes(STRINGS.groups.needs), t);
     ok(!/the owner/.test(t), 'no third person in the private voice');
     const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
-    eq(hrefs.join(','), 'https://github.com/example-owner/r/pull/3');
+    ok(hrefs.includes('https://github.com/example-owner/r/pull/3'), 'the waiting item links to its page');
+    ok(hrefs.every((u) => /^(https:\/\/github\.com\/|#\/[a-z]+$)/.test(u)), 'only GitHub and this page: ' + hrefs.join(' '));
   } finally { useVoice('owner'); }
   const pub = textOf(renderRoute(doc(), { name: 'needs', id: null }, {}));
   ok(!pub.includes('Approve the example hook'), 'no Needs you content without the private overlays');
 });
 await test('every route renders with the private overlays and every dataset empty or loading', () => {
   const ext = makeExt(fakeDash({}));
-  for (const name of ['summary', 'needs', 'hooks', 'skills', 'guidance', 'removed', 'method', 'loop', 'impact', 'ops']) {
+  for (const name of ['summary', 'needs', 'hooks', 'skills', 'guidance', 'method', 'changes', 'spend', 'activity']) {
     ok(textOf(renderRoute(doc(), { name, id: null }, { ext })).length > 0, name);
   }
 });
@@ -264,14 +272,14 @@ const amDoc = () => doc({ agent_made: {
     section: amRow({ total: 1, by_origin: { agent: 0, loop: 0, person: 1, unknown: 0 } }) } } });
 await test('made by agents: absent is not reported', () => {
   for (const d of [doc(), doc({ agent_made: null })]) eq(agentMadeRows(d), null);
-  ok(!textOf(renderRoute(doc(), { name: 'impact', id: null }, {})).includes(STRINGS.agentMade), 'no panel without the block');
+  ok(!textOf(renderRoute(doc(), { name: 'spend', id: null }, {})).includes(STRINGS.agentMade), 'no panel without the block');
 });
 await test('made by agents: counts by kind, agent items newest first, linked to their pages', () => {
   const r = agentMadeRows(amDoc());
   eq(r.kinds.map((k) => [k.kind, k.total, k.agent, k.afterRule].join(':')).join(','), 'check:1:1:1,skill:1:1:0,section:1:0:0');
   eq(r.kinds[0].impact, '12 runs, 3 blocked; verdicts: blocks 1');
   eq(r.items.map((i) => i.id).join(','), 'demo-check,demo-skill');
-  const node = renderRoute(amDoc(), { name: 'impact', id: null }, {});
+  const node = renderRoute(amDoc(), { name: 'spend', id: null }, {});
   ok(textOf(node).includes(STRINGS.agentMade), 'panel shown');
   const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
   ok(hrefs.includes('#/hooks/demo-check') && hrefs.includes('#/skills/demo-skill'), hrefs.join(' '));
@@ -329,9 +337,9 @@ await test('C1: fixtures join their request whether it is a number or an issue U
   eq(requestIssue('12abc'), null); eq(requestIssue(undefined), null); eq(requestIssue(0), null);
   eq(q.rows.reduce((t, r) => t + r.fixtures, 0) + q.unlisted.fixtures + q.noRequest.fixtures, 6, 'rows add up to every fixture');
   eq(q.rows.reduce((t, r) => t + r.runs, 0) + q.unlisted.runs + q.noRequest.runs, 16);
-  const text = textOf(renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }] }).fixture_queue }), { name: 'loop', id: null }, {}));
+  const text = textOf(renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }] }).fixture_queue }), { name: 'changes', id: null }, {}));
   ok(text.includes(STRINGS.fqUnlisted), 'the page shows the unlisted row');
-  const node = renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }, { path: 'n', origin_kind: 'invented', runs: 1 }] }).fixture_queue }), { name: 'loop', id: null }, {});
+  const node = renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }, { path: 'n', origin_kind: 'invented', runs: 1 }] }).fixture_queue }), { name: 'changes', id: null }, {});
   const foot = findAll(node, (n) => n.tag === 'tfoot');
   eq(foot.length, 1, 'the summary rows sit in a tfoot, so sorting cannot move them');
   ok(textOf(foot[0]).includes(STRINGS.fqUnlisted) && textOf(foot[0]).includes(STRINGS.fqNoRequest), textOf(foot[0]));
@@ -350,11 +358,11 @@ await test('C2: loop pull requests are selected by head-branch prefix, with the 
     [PULL(8, 'Fix a typo', 'fix/typo'), 'not the loop'],
     [PULL(9, 'Improve the docs', 'claude/x'), 'a loop-looking title on a non-loop branch'],
     [PULL(10, 'Remove some-plugin/some-skill: unused (skills-evals removal policy)', null), 'unused removal title only']];
-  const t = textOf(renderRoute(doc({ activity: { fetched_at: '2026-11-12T17:00:00Z', since: '2026-10-29T17:00:00Z', repos: [], issues: [], runs: [], pulls: forms.map((f) => f[0]) } }), { name: 'loop', id: null }, {}));
-  const loopSection = t.slice(t.indexOf(STRINGS.loopPrsHeading));
-  for (const [p, what] of forms.filter((f) => ![8, 9].includes(f[0].number))) ok(loopSection.includes('#' + p.number), what + ' is listed');
-  ok(!loopSection.includes('#8'), 'an ordinary pull request is not');
-  ok(!loopSection.includes('#9'), 'a known non-loop branch decides, whatever the title says');
+  const rows = changeRows(doc({ generated_at: '2026-11-12T17:00:00Z', activity: { fetched_at: '2026-11-12T17:00:00Z', since: '2026-10-29T17:00:00Z', repos: [], issues: [], runs: [], pulls: forms.map((f) => f[0]) } }));
+  const listed = rows.map((r) => r.pr && r.pr.number);
+  for (const [p, what] of forms.filter((f) => ![8, 9].includes(f[0].number))) ok(listed.includes(p.number), what + ' is listed');
+  ok(!listed.includes(8), 'an ordinary pull request is not');
+  ok(!listed.includes(9), 'a known non-loop branch decides, whatever the title says');
 });
 const ALLOW = (over) => okData([Object.assign({ measure: 'eval_spend_since_reset', points: 54.4, pace_room_points: 14.1, account_week_used: 40, account_reading_at: '2026-11-12T17:00:00Z', week_resets_at: '2026-11-16T17:00:00Z' }, over || {})]);
 const BUDGET = okData([{ setting: 'weekly_cap', value: 0.25 }, { setting: 'stop_when_account_above', value: 0.9 }, { setting: 'per_run_cap', value: 0.01 }, { setting: 'per_run_overrun', value: 0.002 }]);
@@ -388,10 +396,10 @@ await test('C4: each panel prints its own block time, never one document time, a
   const d = doc({ generated_at: '2026-11-12T16:54:13Z', activity: { fetched_at: '2026-11-12T17:45:57Z', since: '2026-10-29T17:00:00Z', repos: ['Adam-S-Daniel/skills-evals'],
     runs: [{ repo: 'Adam-S-Daniel/skills-evals', run_id: 5, workflow: 'CI', title: 'CI', event: 'push', state: 'completed', conclusion: 'success', created_at: '2026-11-12T17:36:00Z', updated_at: '2026-11-12T17:40:00Z', url: 'https://github.com/Adam-S-Daniel/skills-evals/actions/runs/5' }],
     pulls: [], issues: [] }, fixture_queue: Object.assign({}, fqDoc().fixture_queue, { generated_at: '2026-11-12T17:45:00Z' }) });
-  const ops = textOf(renderRoute(d, { name: 'ops', id: null }, {})).replace(/\s+/g, ' ');
+  const ops = textOf(renderRoute(d, { name: 'activity', id: null }, {})).replace(/\s+/g, ' ');
   ok(ops.includes('as of Nov 12, 2026, 12:45 PM ET'), ops);
   ok(/Data read between Nov 12, 2026, 11:54 AM ET and Nov 12, 2026, 12:45 PM ET/.test(ops), ops);
-  const loop = textOf(renderRoute(d, { name: 'loop', id: null }, {})).replace(/\s+/g, ' ');
+  const loop = textOf(renderRoute(d, { name: 'changes', id: null }, {})).replace(/\s+/g, ' ');
   ok(loop.includes('Fixture requests From the results document, as of Nov 12, 2026, 12:45 PM ET'), loop);
 });
 await test('C4 guard: no view prints the single document time for a panel (srcLine(STRINGS.srcDoc, refMs))', () => {
@@ -434,12 +442,12 @@ await test('C5: the weekly dollar columns sum to the total in the one sentence',
   const sum = (k) => weeks.reduce((t, w) => t + w[k], 0);
   const total = { since: '2026-10-19', usd: sum('api_usd') + sum('thread_spend_usd') + sum('run_usd'), run_usd: sum('run_usd'), thread_spend_usd: sum('thread_spend_usd'), api_usd: sum('api_usd'), verdicts: 12, cost_per_verdict: 0 };
   total.cost_per_verdict = total.usd / 12;
-  const t = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total } }), { name: 'impact', id: null }, {})).replace(/\s+/g, ' ');
+  const t = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total } }), { name: 'spend', id: null }, {})).replace(/\s+/g, ' ');
   ok(t.includes('Since Oct 19: $5,541.65 for 12 decided verdicts, $461.80 each (tests $991.75, building $4,335.49, API $214.41)'), t);
   ok(t.includes(STRINGS.colRunsUsd), 'a Tests $ column');
   ok(!t.includes('Per verdict $'), 'no per-verdict column in a week row');
   eq(Math.round((sum('run_usd') + sum('thread_spend_usd') + sum('api_usd')) * 100), Math.round(total.usd * 100), 'the three columns add to the total');
-  const old = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => { const c = Object.assign({}, w); delete c.run_usd; return c; }) } }), { name: 'impact', id: null }, {}));
+  const old = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => { const c = Object.assign({}, w); delete c.run_usd; return c; }) } }), { name: 'spend', id: null }, {}));
   ok(old.includes(STRINGS.colRunsUsd), 'data without run_usd or total still renders');
 });
 
@@ -826,6 +834,257 @@ await test('the judge cell says why a judge was skipped, with both check counts'
   eq(judgeCell(run({ with_skill: 3, without_skill: 4 })), 'not recorded');
   eq(judgeCell(run({ with_judge: 7.25, without_judge: 9 })), '7.3 vs 9.0');
   eq(judgeCell(run({ with_judge: 6, without_judge: 6, with_skill: 4, without_skill: 4 })), '6.0 vs 6.0');
+});
+
+
+// --- review 2026-11-12, batch C: Needs you, changes, spend, data age, groups ---------------
+const NOW_ET4PM = Date.parse('2026-11-12T21:00:00Z');
+const SNAP_OK = () => okData([{ measure: 'eval_spend_since_reset', points: 10, pace_room_points: 5, room_points: 5, account_reading_at: '2026-11-12T12:00:00Z',
+  week_resets_at: '2026-11-16T17:00:00Z', computed_at: '2026-11-12T20:00:00Z' }]);
+const routine = (name, health) => ({ name, health, last_run: '2026-11-12T10:00:00Z', link: null });
+const needsDash = (extra) => fakeDash(Object.assign({ eval_allowance: SNAP_OK(), budget: BUDGET, waiting: okData([{ id: 'none', item: 'Nothing waiting on you' }]),
+  routines: okData([routine('R1', 'OK'), routine('R2', 'OK')]),
+  half_built_summary: okData([{ open: 0, high: 0, broken: 0, needs_owner: 0, fixed_7d: 2, checked_at: '2026-11-12T10:00:00Z' }]) }, extra || {}));
+const needsPage = (dash, d) => renderRoute(d || doc({ newest_run: '2026-11-12T15:00:00Z', generated_at: '2026-11-12T19:00:00Z' }), { name: 'needs', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
+const flat = (node) => textOf(node).replace(/\s+/g, ' ');
+
+await test('R3 recommendation 3: with nothing waiting and every routine on time, Needs you says so, in order, and folds the healthy routines', () => {
+  const node = needsPage(needsDash());
+  const t = flat(node);
+  ok(t.includes('Nothing is waiting on you.'), t);
+  ok(t.includes('Loop healthy: last test Nov 12, 2026, 10:00 AM ET'), t);
+  ok(t.includes('2 of 2 routines on time') && t.includes('data read Nov 12, 2026, 2:00 PM ET'), t);
+  ok(t.includes('Show 2 healthy routines'), 'the healthy routines fold');
+  ok(!t.includes(STRINGS.trendingHeading) && !t.includes('Half-built and broken features'), 'no trending table, and no half-built banner at zero');
+  const at = (x) => t.indexOf(x);
+  ok(at('Waiting on you') < at('Loop health') && at('Loop health') < at('Needs attention') && at('Needs attention') < at("This week's test allowance") && at("This week's test allowance") < at('Routine health'), 'the order');
+  const hrefs = findAll(node, (n) => n.tag === 'a').map((n) => n.attrs.href);
+  for (const h of ['#/activity', '#/changes', '#/spend', '#/summary']) ok(hrefs.includes(h), 'the strip links ' + h);
+  const folded = findAll(node, (n) => n.tag === 'details' && textOf(n).includes('R1'));
+  eq(folded.length, 1, 'both healthy routines sit under one fold');
+});
+await test('R3 recommendation 3: a late routine reads as a problem outside the fold, and a waiting item shows why', () => {
+  const dash = needsDash({ routines: okData([routine('Good', 'OK'), routine('Bad', 'Late')]),
+    waiting: okData([{ id: 'w', item: 'Review the thing', why: 'Ready for your review', where: 'Thread', link: 'https://claude.ai/code/x', since: '2026-11-12T12:00:00Z' }]),
+    half_built_summary: okData([{ open: 3, high: 1, broken: 0, needs_owner: 1, fixed_7d: 0, checked_at: '2026-11-12T10:00:00Z' }]) });
+  const node = needsPage(dash);
+  const t = flat(node);
+  ok(t.includes('Loop needs a look: last test') && t.includes('1 of 2 routines late, failing or to check'), t);
+  ok(t.includes('Ready for your review') && t.includes('Review the thing') && !t.includes('Nothing is waiting on you.'), t);
+  ok(t.includes('Half-built and broken features'), 'the banner shows when its count is above 0');
+  ok(findAll(node, (n) => n.tag === 'details').every((d) => !textOf(d).includes('Bad')), 'a problem is never inside a fold');
+  ok(t.includes('Show 1 healthy routine') && !t.includes('Show 1 healthy routines'), 'singular');
+  const unknown = flat(needsPage(needsDash({ routines: { status: 'loading' } })));
+  ok(unknown.includes('Loop health unknown:') && !unknown.includes('Loop healthy'), 'no routine data is not a healthy loop');
+});
+await test('R3 recommendation 3: an empty address opens Needs you in the private build only', () => {
+  const priv = GROUPS, pub = ['summary', 'changes', 'results', 'spend', 'activity'];
+  eq(parseRoute('', '', priv, 'needs').name, 'needs');
+  eq(parseRoute('', '', pub, 'needs').name, 'summary');
+  eq(parseRoute('#/summary', '', priv, 'needs').name, 'summary', 'a link to Summary still opens it');
+  const src = fs.readFileSync(path.join(EXPLORER, 'src', 'entries', 'private.js'), 'utf8');
+  ok(/home:\s*'needs'/.test(src), 'the private entry boots with home: needs');
+});
+const DRIFT = (n) => ({ kind: 'context-drift', subject: 'skill', name: 'skill-' + (n % 14), fixture: 'fx-' + n, repository: 'example-owner/r', drift_since: n === 0 ? '2026-11-02T10:00:00Z' : '2026-11-05T10:00:00Z' });
+await test('R3 recommendation 4: 29 context-drift rows are one row that says who acts, with all 29 under a fold', () => {
+  const alerts = Array.from({ length: 29 }, (_, i) => DRIFT(i));
+  const dash = needsDash({ half_built_issues: okData([{ key: 'k1', state: 'open', kind: 'partial', severity: 'low', title: 'One', url: null }]) });
+  const d = doc({ alerts, generated_at: '2026-11-12T19:00:00Z' });
+  const flatRows = attentionRows(dash, d);
+  eq(flatRows.length, 30, 'attentionRows stays the flat list the Summary count reads');
+  const groups = attentionGroups(flatRows);
+  ok(groups.length <= 5 && groups.length === 2, 'at most 5 rows: ' + groups.length);
+  const g = groups.find((r) => r.children);
+  eq(g.children.length, 29);
+  eq(g.what, 'Re-pin 29 tests across 14 skills');
+  ok(/Nothing re-pins them on its own/.test(g.note) && g.note.includes('Nov 2'), g.note);
+  const node = needsPage(dash, d);
+  const fold = findAll(node, (n) => n.tag === 'details' && textOf(n).includes('Show all 29'))[0];
+  ok(fold, 'a fold labeled with the count');
+  eq(findAll(fold, (n) => n.tag === 'li').length, 29, 'expanding shows all 29');
+  // Three or fewer rows of a kind stay separate rows.
+  eq(attentionGroups(attentionRows(fakeDash({}), doc({ alerts: alerts.slice(0, 3) }))).length, 3);
+  eq(attentionGroups(attentionRows(fakeDash({}), doc({ alerts: alerts.slice(0, 4) }))).length, 1);
+});
+await test('R3 recommendation 9: a snapshot older than a refresh allows warns on every group; a fresh one does not', () => {
+  const SNAP = (iso) => okData([{ measure: 'eval_spend_since_reset', points: 1, pace_room_points: 1, computed_at: iso }]);
+  const old = fakeDash({ eval_allowance: SNAP('2026-11-12T01:16:00Z') });
+  eq(snapshotMs(old), Date.parse('2026-11-12T01:16:00Z'));
+  eq(staleHours(snapshotMs(old), NOW_ET4PM), 19);
+  eq(staleHours(Date.parse('2026-11-12T20:00:00Z'), NOW_ET4PM), null, 'one hour old');
+  eq(staleHours(NOW_ET4PM - STALE_AFTER_HOURS * 3600000, NOW_ET4PM), null, 'exactly at the limit is not past it');
+  eq(staleHours(NOW_ET4PM - STALE_AFTER_HOURS * 3600000 - 1, NOW_ET4PM), 13);
+  eq(staleHours(NaN, NOW_ET4PM), null, 'no snapshot is no claim');
+  for (const name of ['summary', 'needs', 'changes', 'hooks', 'spend', 'activity']) {
+    const t = flat(renderRoute(doc(), { name, id: null }, { ext: makeExt(old, { now: () => NOW_ET4PM }) }));
+    ok(t.includes('This page was last refreshed Nov 11, 2026, 8:16 PM ET, 19 hours ago. It refreshes every 12 hours, so a refresh did not land.'), name + ': ' + t.slice(0, 200));
+  }
+  const fresh = fakeDash({ eval_allowance: SNAP('2026-11-12T20:00:00Z') });
+  for (const name of ['summary', 'needs', 'activity']) ok(!flat(renderRoute(doc(), { name, id: null }, { ext: makeExt(fresh, { now: () => NOW_ET4PM }) })).includes('last refreshed'), name + ' fresh');
+  ok(!flat(renderRoute(doc(), { name: 'summary', id: null }, {})).includes('last refreshed'), 'the public build has no banner');
+});
+await test('R12: panels say "As of <time ET>" and keep the dataset id in the hover text, never in the words', () => {
+  const dash = needsDash({ routines: okData([routine('R1', 'OK')]) });
+  const node = renderRoute(doc(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
+  const t = flat(node);
+  ok(t.includes('As of Nov 12, 2026, 3:00 PM ET.'), t.slice(0, 400));
+  ok(!/dashboard snapshot|\(routines\)/.test(t), 'no dataset id in the visible text');
+  ok(findAll(node, (n) => n.tag === 'p' && n.attrs.class === 'src' && n.attrs.title === 'routines').length === 1, 'the id is the hover text');
+  const strings = fs.readFileSync(path.join(EXPLORER, 'src', 'private', 'strings.js'), 'utf8');
+  ok(!/From the dashboard snapshot/.test(strings), 'no per-panel snapshot line left');
+});
+
+const CPULL = (n, title, head, merged, extra) => Object.assign({ repo: 'Adam-S-Daniel/adam-agentskills', number: n, title, head_ref: head, state: merged ? 'merged' : 'open',
+  created_at: '2026-10-01T10:00:00Z', updated_at: merged || '2026-11-01T10:00:00Z', merged_at: merged || null, url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/' + n }, extra || {});
+const CHDOC = () => doc({ generated_at: '2026-11-12T17:00:00Z',
+  activity: { fetched_at: '2026-11-12T17:00:00Z', since: '2026-10-29T17:00:00Z', repos: [], issues: [], runs: [], pulls: [
+    CPULL(142, 'Proposed workflow-path-audit SKILL.md edit (improvement run 20261110T1)', 'eval-improve/workflow-path-audit', '2026-11-10T15:00:00Z'),
+    CPULL(111, 'New skill: demo-new', 'draft-skill/demo-new', '2026-11-07T15:00:00Z'),
+    CPULL(120, 'Remove adam-coding-anywhere/old-skill: unused (removal policy)', 'retire-skill/old-skill', '2026-11-05T15:00:00Z'),
+    CPULL(90, 'Proposed old-edit SKILL.md edit (improvement run r)', 'eval-improve/old-edit', '2026-10-01T15:00:00Z'),
+    CPULL(150, 'Proposed open-edit SKILL.md edit (improvement run r)', 'eval-improve/open-edit', null),
+    CPULL(7, 'Fix a typo', 'fix/typo', '2026-11-09T15:00:00Z')] },
+  lessons: { date: '2026-11-10', items: [{ kind: 'new-skill', subject: 'demo-new', evidence_count: 7 }], left_out: null, issues: [] },
+  removed_skills: [{ name: 'old-skill', plugin: 'adam-coding-anywhere', date: '2026-11-05', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=head%3Aretire-skill%2Fold-skill' },
+    { name: 'ancient', plugin: 'p', date: '2026-09-28', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=head%3Aretire-skill%2Fancient' }],
+  guidance: { sections: [], removed: [{ id: 'old-section', date: '2026-11-01', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=head%3Aretire-guidance%2Fold-section' }] },
+  agent_made: { rule_since: '2026-10-26T14:40:02Z', summary: {}, items: [
+    { kind: 'check', id: 'demo-check', origin: 'agent', created: '2026-11-03T00:00:00Z', impact: { runs: 12, blocked: 3 } },
+    { kind: 'skill', id: 'demo-new', origin: 'loop', created: '2026-11-07T00:00:00Z', impact: {} },
+    { kind: 'section', id: 'person-made', origin: 'person', created: '2026-11-04T00:00:00Z', impact: {} }] } });
+await test('R3 recommendation 5: the changes list is the last 30 days, newest first, every row with a reason, removals matched to their pull request', () => {
+  const rows = changeRows(CHDOC());
+  eq(rows.map((r) => r.kind + ':' + r.subject).join(','), 'editSkill:workflow-path-audit,newSkill:demo-new,removeSkill:old-skill,newCheck:demo-check,removeSection:old-section,removeSkill:ancient');
+  ok(rows.every((r) => typeof r.why === 'string' && r.why.length > 10), 'every row has a reason');
+  eq(rows.filter((r) => r.subject === 'old-skill').length, 1, 'the removal and its pull request are one row');
+  eq(rows[2].pr.number, 120); eq(rows[2].undo.includes('retire-skill%2Fold-skill'), true);
+  ok(rows[2].why.includes('not used'), 'the reason is read from the removal title: ' + rows[2].why);
+  ok(rows[1].why.includes('7 lessons'), rows[1].why);
+  ok(rows[3].why.includes('12 times') && rows[3].why.includes('blocked 3'), rows[3].why);
+  eq(rows.filter((r) => r.subject === 'demo-new').length, 1, 'a new-skill pull request and the agent-made skill are one row');
+  ok(!rows.some((r) => [90, 150, 7].includes(r.pr && r.pr.number)), 'an older, an open and a non-loop pull request are not listed');
+  ok(!flat(renderRoute(CHDOC(), { name: 'changes', id: null }, {})).includes('ancient'), 'removed before the window: only in the removals-only view');
+  eq(changeRows(doc({})).length, 0);
+});
+await test('R3 recommendation 5: the page shows the list with When, Change, Subject, Why, Pull request and Undo, and removals only on #/changes/removed', () => {
+  const t = flat(renderRoute(CHDOC(), { name: 'changes', id: null }, {}));
+  for (const w of ['What the loop changed', 'Edited skill', 'New skill', 'Removed skill', 'New git hook check', 'Removed guidance section', 'Why', 'Undo', 'Nov 10', 'adam-agentskills #142', 'Revert']) ok(t.includes(w), w);
+  ok(t.indexOf('Nov 10') < t.indexOf('Nov 7') && t.indexOf('Nov 7') < t.indexOf('Nov 5'), 'newest first');
+  const only = flat(renderRoute(CHDOC(), parseRoute('#/removed', '', Object.keys(ROUTE_GROUPS)), {}));
+  ok(only.includes('old-skill') && only.includes('old-section') && only.includes('ancient'), 'every removal, whenever');
+  ok(!only.includes('Edited skill') && !only.includes('New git hook check'), 'nothing else');
+  const hrefs = findAll(renderRoute(CHDOC(), { name: 'changes', id: null }, {}), (n) => n.tag === 'a').map((n) => n.attrs.href);
+  ok(hrefs.includes('#/changes/removed') && hrefs.includes('#/skills/workflow-path-audit'), 'the filter and the subject pages');
+});
+await test('R3 recommendation 5: the private build adds its live merged pull requests, once each', () => {
+  const live = { repo: 'adam-agentskills', number: 142, title: 'Proposed workflow-path-audit SKILL.md edit (improvement run 20261110T1)', author: 'x', closed_at: '2026-11-10T15:00:00Z', url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/142' };
+  const extra = { repo: 'adam-agentskills', number: 160, title: 'New skill: live-only', author: 'x', closed_at: '2026-11-11T15:00:00Z', url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/160' };
+  const ext = makeExt(fakeDash({ merged_prs: okData([live, extra]) }));
+  const rows = changeRows(CHDOC(), ext.changePulls());
+  eq(rows.filter((r) => r.pr && r.pr.number === 142).length, 1, 'the pull request the document already lists is not doubled');
+  ok(rows.some((r) => r.subject === 'live-only'), 'a live-only pull request is added');
+  eq(makeExt(fakeDash({})).changePulls().length, 0);
+  ok(flat(renderRoute(CHDOC(), { name: 'changes', id: null }, { ext })).includes('live-only'));
+});
+await test('R2 and R7: the stage text lives on How the tests work; Changes holds the one trending table and Needs you none', () => {
+  const stage = STRINGS.loopStages[0][1];
+  ok(flat(renderRoute(doc(), { name: 'method', id: null }, {})).includes(stage), 'on How the tests work');
+  ok(!flat(renderRoute(doc(), { name: 'changes', id: null }, {})).includes(stage), 'not on Changes');
+  ok(!('loopPrsHeading' in STRINGS) && !('removedHeading' in STRINGS), 'the removed panels\' strings are gone');
+});
+await test('R4 and R5: Spend and use has no pull-request-by-week panel and no red CI panel, public or private', () => {
+  const d = doc({ activity: { fetched_at: '2026-10-31T21:00:00Z', since: '2026-10-24T00:00:00Z', repos: ['Adam-S-Daniel/skills-evals'], issues: [],
+    pulls: [CPULL(1, 'x', null, '2026-10-30T10:00:00Z')], runs: [{ repo: 'Adam-S-Daniel/skills-evals', run_id: 9, workflow: 'CI', title: 'CI', conclusion: 'failure', state: 'completed', created_at: '2026-10-30T10:00:00Z', url: 'https://github.com/Adam-S-Daniel/skills-evals/actions/runs/9' }] } });
+  for (const ext of [null, makeExt(fakeDash({ usage_rows: okData([{ kind: 'repo', repo: 'r', week: '2026-10-26', prs_opened: 3 }]) }))]) {
+    const t = flat(renderRoute(d, { name: 'spend', id: null }, { ext }));
+    ok(!/Pull requests by week|Red CI runs|Red in CI runs|Pull request outcomes/.test(t), t.slice(0, 300));
+  }
+  ok(!('impactPrs' in STRINGS) && !('impactRed' in STRINGS), 'their strings are gone');
+});
+await test('R11: no Decisions column, cleanup list or decisions panel is built, and no string for them is left', () => {
+  const dash = fakeDash({ cost_benefit_summary: okData([{ key: 'k', label: 'L', value: 1, target: null, status: null, note: '' }]),
+    cost_benefit_weeks: okData([{ week: '2026-11-02', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 0, real_work_reach: 0, owner_messages: 0, decisions: 4 }]),
+    cleanup: okData([{ id: 'C1', item: 'Cleanup item text', done_when: 'x', status: 'Done' }]), decisions: okData([{ date: '2026-11-01', decision: 'A decision text', link: null }]) });
+  const ext = makeExt(dash);
+  const cost = flat(renderRoute(doc(), { name: 'spend', id: null }, { ext }));
+  ok(cost.includes('Cost and benefit') && !cost.includes('Decisions'), 'the weekly table has no Decisions column');
+  const ops = flat(renderRoute(doc(), { name: 'activity', id: null }, { ext }));
+  ok(!/Cleanup list|Your decisions|Cleanup item text|A decision text/.test(ops), 'no cleanup or decisions panel');
+  const priv = fs.readFileSync(path.join(EXPLORER, 'src', 'private', 'strings.js'), 'utf8');
+  ok(!/cleanupHeading|decisionsHeading|colDecisions/.test(priv));
+});
+await test('R3 and R11 class guard: every dataset the private source reads is in datasets.json, and every dataset there is read', () => {
+  const defined = Object.keys(JSON.parse(fs.readFileSync(DATASETS, 'utf8')));
+  const read = new Set();
+  const dir = path.join(EXPLORER, 'src');
+  (function scan(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { scan(p); continue; }
+      if (!p.endsWith('.js')) continue;
+      (function walk(n) {
+        if (!n || typeof n.type !== 'string') return;
+        if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && ['rowsOf', 'some', 'ok'].includes(n.callee.name)) {
+          const a = n.arguments[n.callee.name === 'ok' ? 0 : 1];
+          if (a && a.type === 'Literal' && typeof a.value === 'string') read.add(a.value);
+        }
+        if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'loader' && n.arguments[0] && n.arguments[0].type === 'Literal') read.add(n.arguments[0].value);
+        for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+      })(acorn.parse(fs.readFileSync(p, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' }));
+    }
+  })(dir);
+  eq([...read].filter((id) => !defined.includes(id)).join(','), '', 'read but not defined');
+  // Read by name elsewhere: the explorer documents by the adapter, budget and roster by makeExt's helpers.
+  const apart = new Set([DATASET_ID, PRIVATE_DATASET_ID]);
+  eq(defined.filter((id) => !read.has(id) && !apart.has(id)).join(','), '', 'defined but never read');
+});
+await test('R3: the dashboard runtime keeps no loop_* dataset, gate, cleanup or decisions id', () => {
+  const defined = Object.keys(JSON.parse(fs.readFileSync(DATASETS, 'utf8')));
+  for (const gone of ['cleanup', 'decisions', 'gate', 'loop_stages', 'loop_grid', 'loop_lanes', 'loop_gaps']) ok(!defined.includes(gone), gone);
+});
+await test('recommendation 6: spend shows this week and last week side by side in dollars, with week starts in Eastern time and the share that bought nothing', () => {
+  const weeks = [{ week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 4000, run_usd: 900 },
+    { week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 335.49, run_usd: 91.75 },
+    { week: '2026-10-26', eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1, run_usd: 1 }];
+  const two = spendWeeks(doc({ spend: { weeks } }));
+  eq(two.map((w) => w.week).join(','), '2026-11-09,2026-11-02', 'the two newest, newest first');
+  eq(two[0].total, 91.75 + 335.49 + 14.41);
+  const utility = [U('2026-11-10', 'decisive', 10, 59), U('2026-11-10', 'discarded', 4, 25, 'fixture_changed'), U('2026-11-10', 'discarded', 3, 15, 'fixture_off_main'), U('2026-11-10', 'stranded', 1, 1, 'subject_changed')];
+  const d = doc({ generated_at: '2026-11-12T17:00:00Z', skills: [{ name: 'a', run_utility: utility }], spend: { generated_at: '2026-11-12T01:00:00Z', weeks } });
+  const share = noUseShare(d, Date.parse(d.generated_at));
+  eq(Math.round(share.share * 100), 41);
+  eq(share.top.map((x) => x[0]).join(','), 'fixture changed,fixture no longer scheduled');
+  const t = flat(renderRoute(d, { name: 'spend', id: null }, {}));
+  ok(t.includes('This week (from Nov 9, 2026, 12:00 PM ET)') && t.includes('Last week (from Nov 2, 2026, 12:00 PM ET)'), 'week starts in ET: ' + t.slice(0, 600));
+  ok(t.includes('$91.75 · 1.0 points') && t.includes('$335.49') && t.includes('$14.41') && t.includes('$441.65'), 'this week\'s parts and total');
+  ok(t.includes('In the last 30 days 41% of test dollars bought nothing ($41.00 of $100.00), mostly fixture changed ($25.00) and fixture no longer scheduled ($15.00).'), t);
+  ok(t.includes('Dollars are list price, not what is paid.'), 'said once');
+  eq(t.split('not what is paid').length - 1, 1, 'once');
+  const old = flat(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => ({ week: w.week, eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1 })) } }), { name: 'spend', id: null }, {}));
+  ok(old.includes('This week') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
+  eq(spendWeeks(doc({ spend: { weeks: [{ week: '2026-11-09', api_usd: 1, thread_spend_usd: 1 }] } }))[0].total, null, 'a missing part is no total');
+});
+await test('recommendation 19: every route of the old six groups still opens a page, and each group leads with one question', () => {
+  const all = Object.keys(ROUTE_GROUPS);
+  for (const hash of ['#/loop', '#/impact', '#/ops', '#/removed', '#loop', '#impact', '#overview', '#costbenefit', '#evals', '#cleanup', '#decisions', '#console', '#/hooks', '#/skills/x', '#/method']) {
+    const r = parseRoute(hash, '', all, 'needs');
+    ok(r.name !== 'summary', hash + ' leaves Summary: ' + JSON.stringify(r));
+    ok(textOf(renderRoute(doc(), r, { ext: makeExt(fakeDash({})) })).length > 0, hash + ' renders');
+  }
+  eq(ROUTE_GROUPS.results.join(','), 'hooks,skills,guidance,method');
+  ok(!Object.values(ROUTE_GROUPS).some((g) => g.includes('removed')), 'Removed is no route');
+  eq(textOf(renderRoute(doc(), { name: 'hooks', id: null }, {})).includes('Removed'), false, 'no Removed sub-tab');
+  const tabs = findAll(renderRoute(doc(), { name: 'hooks', id: null }, {}), (n) => n.tag === 'a' && /^sub-/.test(n.attrs.id || '')).map((n) => n.attrs.id);
+  eq(tabs.join(','), 'sub-hooks,sub-skills,sub-guidance,sub-method');
+});
+
+await test('the routine line counts every row of the routine table: healthy, not run yet and needing a look add up', () => {
+  const dash = fakeDash({ routines: okData([routine('A', 'OK'), routine('B', 'Not run yet'), routine('C', 'Late')]), eval_allowance: SNAP_OK(), budget: BUDGET });
+  const node = needsPage(dash);
+  ok(flat(node).includes('1 of 3 routines healthy; 1 late, failing or to check; 1 not run yet.'), flat(node));
+  const sec = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Routine health'))[0];
+  eq(findAll(sec, (n) => n.tag === 'tbody').reduce((t, b) => t + findAll(b, (n) => n.tag === 'tr').length, 0), 3, 'the table lists all three');
+  ok(!flat(needsPage(needsDash())).includes('not run yet'), 'no clause when none');
 });
 
 for (const f of failures) console.log('FAIL ' + f);

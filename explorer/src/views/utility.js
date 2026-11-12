@@ -108,6 +108,17 @@ export function dayChart(days) {
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': STRINGS.utilityChartAria(days.length) }, kids);
 }
 
+/* The last 30 days' share of test dollars that bought nothing, and the two
+   biggest causes by dollars: { share, noUse, total, top: [[reason, cost]] }, or
+   null when no run in the period has a known cost. Dollars at full precision. */
+export function noUseShare(doc, refMs) {
+  const t = utilityTotals(fleetGroups(doc)[0].rows, DEFAULT_PERIOD, refMs);
+  if (!(t.total.cost > 0)) return null;
+  const top = Object.entries(t.reasons).filter(([, v]) => v.cost > 0).sort((a, b) => b[1].cost - a[1].cost || (a[0] < b[0] ? -1 : 1)).slice(0, 2)
+    .map(([k, v]) => [reasonName(k), v.cost]);
+  return { share: t.noUse.cost / t.total.cost, noUse: t.noUse.cost, total: t.total.cost, top };
+}
+
 const reasonName = (k) => (Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k));
 
 /* The body for one period: the classes' runs and cost, the reasons, and the

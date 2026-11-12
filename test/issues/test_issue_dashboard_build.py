@@ -226,18 +226,27 @@ class DashboardBuildTests(unittest.TestCase):
         rows = build.waiting({"cleanup": []}, [], [], {}, [], {}, SITE)
         self.assertEqual([(r["id"], r["item"]) for r in rows], [("none", "Nothing waiting on you")])
 
-    def test_loop_stage_status_follows_its_gaps(self):
-        cfg = {"home_thread_id": "t0", "grid": [],
-               "stages": [{"order": "1", "kind": "k", "stage": "a", "what": "w", "gaps": ["G1", "G2"]},
-                          {"order": "2", "kind": "k", "stage": "b", "what": "w", "gaps": ["G1"]},
-                          {"order": "3", "kind": "k", "stage": "c", "what": "w", "gaps": [], "override": "Off"}],
-               "lanes": [{"lane": "L", "thread": "T", "thread_id": "t1", "does": "d", "latest": "x"}]}
-        status = {"gaps": [{"gap": "G1", "title": "x", "status": "done", "pr": "https://example.com/1"},
-                           {"gap": "G2", "title": "y", "status": "open"}]}
-        stages, grid, lanes, gaps = build.loop(cfg, status, SITE)
-        self.assertEqual([s["status"] for s in stages], ["In progress", "Done", "Off"])
-        self.assertEqual((stages[1]["link"], stages[2]["link"]), ("https://example.com/1", SITE["thread_url"] + "t0"))
-        self.assertEqual(lanes[0]["link"], SITE["thread_url"] + "t1")
+    def test_datasets_json_and_build_name_the_same_datasets(self):
+        """A class guard (R11): every `out[<name>] = ...` in build() is a dataset in
+        page/datasets.json and every file dataset there is built, whatever config
+        is present. Read from build.py's AST, so a dataset behind an `if` (the old
+        loop_* ones, which needed loop.json) cannot hide from it."""
+        import ast
+        tree = ast.parse((DASH / "build.py").read_text())
+        fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "build")
+        written = set()
+        for node in ast.walk(fn):
+            targets = node.targets if isinstance(node, ast.Assign) else []
+            for t in targets:
+                for sub in ast.walk(t):
+                    if (isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name)
+                            and sub.value.id == "out" and isinstance(sub.slice, ast.Constant)):
+                        written.add(sub.slice.value)
+        defined = json.loads((DASH / "page" / "datasets.json").read_text())
+        files = {k for k, v in defined.items() if v["source"]["kind"] == "file"}
+        self.assertEqual(written, files - build.OPTIONAL_DATASETS)
+        for gone in ("cleanup", "decisions", "gate", "loop_stages", "loop_grid", "loop_lanes", "loop_gaps"):
+            self.assertNotIn(gone, defined)
 
     def test_roster_and_budget_are_read_from_the_repo(self):
         rows = build.roster({"why": {}, "dropped": [
@@ -398,7 +407,7 @@ class DashboardBuildTests(unittest.TestCase):
                           ("guidance edit", "links"), ("guidance removal", "handoff")])
 
     def cb(self, **kw):
-        args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], decisions=[], samples=[],
+        args = dict(er=str(self.tmp / "no-results"), plan_rows=[], usage_rows=[], samples=[],
                     owner_msgs=[], prs=[], explorer={}, now=self.cb_now())
         args.update(kw)
         return build.cost_benefit(*args.values())
@@ -422,13 +431,13 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(sm["real_work_reach"]["value"], 8)  # the latest complete week is 2026-10-26
         self.assertEqual(sm["decision_yield"]["value"], "2 of 0")
 
-    def test_owner_messages_dedupe_and_decisions_fall_in_their_week(self):
+    def test_owner_messages_dedupe_and_fall_in_their_week(self):
         msgs = [{"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
                 {"message_id": "cmsg_m1", "sent_at": "2026-10-26T16:59:00Z"},
                 {"message_id": "cmsg_m2", "sent_at": "2026-10-26T17:00:00Z"}]
-        decisions = [{"date": "2026-10-25"}, {"date": "2026-10-26"}, {"date": "2026-10-27"}]
-        weeks, _ = self.cb(owner_msgs=msgs, decisions=decisions)
-        self.assertEqual([(w["owner_messages"], w["decisions"]) for w in weeks], [(1, 1), (1, 2), (0, 0)])
+        weeks, _ = self.cb(owner_msgs=msgs)
+        self.assertEqual([w["owner_messages"] for w in weeks], [1, 1, 0])
+        self.assertTrue(all("decisions" not in w for w in weeks), "the hand-kept decisions column is gone")
         path = self.tmp / "m.jsonl"
         path.write_text(json.dumps(msgs[0]) + "\nnot json\n\n" + json.dumps(dict(msgs[2], v=2)) + "\n")
         self.assertEqual(len(build.load_jsonl(str(path))), 1)
@@ -543,29 +552,6 @@ class DashboardBuildTests(unittest.TestCase):
                          [(2, "partial", "low"), (1, "unknown", "unknown")])
         self.assertEqual((summary[0]["open"], summary[0]["high"]), (2, 0))
 
-    def test_red_runs_list_links_public_runs_and_drops_bad_urls(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            er = Path(tmp)
-            write(er / "usage" / "weekly-ci.json", {"schema": 1, "rows": [], "red_runs": [
-                {"week": "2026-10-19", "repo": "private", "created_at": None, "conclusion": None, "url": None},
-                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-27T08:00:00Z",
-                 "conclusion": "failure", "url": "https://github.com/example-owner/widgets/actions/runs/9100002"},
-                {"week": "2026-10-26", "repo": "example-owner/widgets", "created_at": "2026-10-28T08:00:00Z",
-                 "conclusion": "timed_out", "url": "https://example.com/not-a-run"},
-                "not a dict"]})
-            rows = build.ci_red_runs(str(er))
-        self.assertEqual([(r["week"], r["created_at"]) for r in rows],
-                         [("2026-10-26", "2026-10-28T08:00:00Z"), ("2026-10-26", "2026-10-27T08:00:00Z"), ("2026-10-19", None)])
-        self.assertIsNone(rows[0]["url"])
-        self.assertEqual(rows[1]["url"], "https://github.com/example-owner/widgets/actions/runs/9100002")
-        self.assertEqual(len({r["key"] for r in rows}), 3)
-
-    def test_red_runs_placeholder_without_the_file_or_the_key(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
-            write(Path(tmp) / "usage" / "weekly-ci.json", {"schema": 1, "rows": []})
-            self.assertEqual([r["key"] for r in build.ci_red_runs(tmp)], ["none"])
-
     def test_a_build_without_the_explorer_document_refuses(self):
         (self.results / "explorer" / "latest.json").unlink()
         with self.assertRaises(SystemExit) as e:
@@ -613,7 +599,7 @@ class DashboardBuildTests(unittest.TestCase):
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
         for name in defined:
             self.assertRegex(page, r'["\']' + name + r'["\']', f"the page never reads {name}")
-        for name, key in (("half_built_issues", "key"), ("ci_red_runs", "key"), ("usage_rows", "kind"),
+        for name, key in (("half_built_issues", "key"), ("usage_rows", "kind"),
                           ("cost_benefit_weeks", "week"), ("run_stream", "key"), ("waiting", "id")):
             self.assertRegex(page, name + r':\s*"' + key + '"', f"{name} placeholder rows stay hidden")
 

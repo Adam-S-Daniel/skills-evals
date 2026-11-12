@@ -1,5 +1,6 @@
 /* One route's content for one document: the six groups (five in the public
-   build), the subject lists and the subject pages. */
+   build), the subject lists and the subject pages. A private overlay may put
+   one banner above every group. */
 import { STRINGS } from '../core/strings.js';
 import { parseTime } from '../core/format.js';
 import { h } from '../core/h.js';
@@ -14,10 +15,10 @@ import { alertsView } from './alerts.js';
 import { summaryView } from './summary.js';
 import { hooksList, hookPage } from './hooks.js';
 import { subjectPage } from './subject.js';
-import { loopView } from './loop.js';
+import { changesView } from './changes.js';
 import { impactView } from './impact.js';
 import { opsView } from './ops.js';
-import { methodView, removedPage } from './method.js';
+import { methodView } from './method.js';
 import { searchView } from './search.js';
 import { navLink, srcLine, rangeLine, srcLineFor } from './bits.js';
 import { indexDoc } from '../core/terms.js';
@@ -58,7 +59,7 @@ export function buildPage(doc, mode, opts) {
 }
 
 function subNav(current) {
-  return h('nav', { class: 'subnav', 'aria-label': STRINGS.subNavLabel }, GROUPS.hooks.map((name) =>
+  return h('nav', { class: 'subnav', 'aria-label': STRINGS.subNavLabel }, GROUPS.results.map((name) =>
     navLink(hashFor(name), STRINGS.subTabs[name], { id: 'sub-' + name, 'aria-current': name === current ? 'page' : null })));
 }
 
@@ -80,16 +81,16 @@ export function renderRoute(doc, route, opts) {
     case 'hooks': body = route.id ? hookPage(doc, route.id, ctx) : hooksList(doc); break;
     case 'skills': body = route.id ? subjectPage(doc, 'skills', route.id, ctx) : buildPage(doc, 'skills', o); break;
     case 'guidance': body = route.id ? subjectPage(doc, 'guidance', route.id, ctx) : buildPage(doc, 'guidance', o); break;
-    case 'removed': body = removedPage(doc); break;
     case 'method': body = methodView(doc, ctx); break;
-    case 'loop': body = loopView(doc, ctx); break;
-    case 'impact': body = impactView(doc, ctx); break;
-    case 'ops': body = opsView(doc, ctx); break;
+    case 'changes': body = changesView(doc, ctx); break;
+    case 'spend': body = impactView(doc, ctx); break;
+    case 'activity': body = opsView(doc, ctx); break;
     default: body = summaryView(doc, ctx);
   }
   return h('div', null,
     h('h1', { class: 'group-title' }, STRINGS.groups[group]),
-    group === 'hooks' ? subNav(route.name) : null,
+    group === 'results' ? subNav(route.name) : null,
+    ctx.ext && ctx.ext.banner ? ctx.ext.banner(ctx) : null,
     o.notice ? h('p', { class: 'panel failure' }, o.notice) : null,
     body);
 }

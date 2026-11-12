@@ -147,25 +147,17 @@ test('chip: the guidance subject applies the shared rules too', () => {
   eq(chipOf([0, 1, 2, 3, 4].map((d) => secRun('a', d, 5, 5, 5, 5, 8)), 'guidance'), 'none');
   eq(chipOf([secRun('a', 0, 5, 5, 5, 5, 8)], 'guidance', true), 'worse');
 });
-test('removed skills are listed with their date and revert link (#557)', () => {
-  const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [], guidance: { sections: [] },
-    removed_skills: [{ name: 'example-skill', plugin: 'adam-coding-anywhere', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=is%3Apr+head%3Aretire-skill%2Fexample-skill' }] };
-  const text = P.textOf(P.renderRoute(doc, { name: 'removed', id: null }, {}));
-  eq(text.includes(P.STRINGS.removedSkillsHeading), true);
-  eq(text.includes('example-skill'), true);
-  const none = P.textOf(P.renderRoute({ ...doc, removed_skills: [] }, { name: 'removed', id: null }, {}));
-  eq(none.includes(P.STRINGS.removedSkillsHeading), false, 'no list without removals');
-});
-test('removed sections are listed with their date and revert link (#557)', () => {
+test('removed skills and sections are listed on the changes page, with date, reason and revert link (#557)', () => {
   const doc = { schema_version: P.SCHEMA_VERSION, generated_at: '2026-11-20T00:00:00Z', skills: [],
-    guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };
-  const text = P.textOf(P.renderRoute(doc, { name: 'removed', id: null }, {}));
-  eq(text.includes(P.STRINGS.removedHeading), true);
-  eq(text.includes('bravo'), true);
-  eq(text.includes('2026-11-20'), true);
-  const none = P.textOf(P.renderRoute({ ...doc, guidance: { sections: [] } }, { name: 'removed', id: null }, {}));
-  eq(none.includes(P.STRINGS.removedHeading), false, 'no list without removals');
-  ok(none.includes(P.STRINGS.removedNone), 'an empty Removed page says so');
+    removed_skills: [{ name: 'example-skill', plugin: 'adam-coding-anywhere', date: '2026-11-20', reverse_url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pulls?q=is%3Apr+head%3Aretire-skill%2Fexample-skill' }],
+    guidance: { sections: [], removed: [{ id: 'bravo', date: '2026-11-19', reverse_url: 'https://github.com/Adam-S-Daniel/_agent-guidance/pulls?q=is%3Apr+head%3Aretire-guidance%2Fbravo' }] } };
+  const node = P.renderRoute(doc, { name: 'changes', id: 'removed' }, {});
+  const text = P.textOf(node);
+  for (const word of ['example-skill', 'bravo', P.STRINGS.changeKinds.removeSkill, P.STRINGS.changeKinds.removeSection, 'Nov 20', 'Nov 19', P.STRINGS.changeUndo]) ok(text.includes(word), word);
+  ok(P.findAll(node, (n) => n.tag === 'a' && /head%3Aretire-skill%2Fexample-skill/.test(n.attrs.href || '')).length === 1, 'the revert link');
+  const none = P.textOf(P.renderRoute({ ...doc, removed_skills: [], guidance: { sections: [] } }, { name: 'changes', id: 'removed' }, {}));
+  ok(none.includes(P.STRINGS.removedNone), 'an empty removals list says so');
+  eq(P.parseRoute('#/removed', '', ['summary', 'changes']).id, 'removed', 'the old Removed link opens the filtered list');
 });
 test('with a loop verdict, the chip follows the loop, not the page rule', () => {
   const strong = [skillRun('a', 0, 9, 0, 9)];
@@ -476,7 +468,7 @@ test('a good file loads and is cache-busted', async () => {
 
 // --- modes -------------------------------------------------------------------
 test('hash routes: Summary by default, subject pages by id, ?subject=guidance and old dashboard tabs redirect', () => {
-  const pub = ['summary', 'hooks', 'loop', 'impact', 'ops'];
+  const pub = ['summary', 'changes', 'results', 'spend', 'activity'];
   const r = (hash, search, groups) => JSON.stringify(P.parseRoute(hash, search || '', groups || pub));
   eq(r(''), '{"name":"summary","id":null}');
   eq(r('#/nowhere'), '{"name":"summary","id":null}');
@@ -484,24 +476,35 @@ test('hash routes: Summary by default, subject pages by id, ?subject=guidance an
   eq(r('#/skills/example-skill-alpha'), '{"name":"skills","id":"example-skill-alpha"}');
   eq(r('#/hooks/push-to-default'), '{"name":"hooks","id":"push-to-default"}');
   eq(r('#/guidance/security'), '{"name":"guidance","id":"security"}');
-  eq(r('#/removed'), '{"name":"removed","id":null}');
+  eq(r('#/removed'), '{"name":"changes","id":"removed"}', 'the old Removed sub-tab opens the changes list filtered to removals');
+  eq(r('#/changes/removed'), '{"name":"changes","id":"removed"}');
+  eq(r('#/changes/nonsense'), '{"name":"changes","id":null}');
+  eq(r('#/loop'), '{"name":"changes","id":null}', 'old group links still open a page');
+  eq(r('#/impact'), '{"name":"spend","id":null}');
+  eq(r('#/ops'), '{"name":"activity","id":null}');
+  eq(r('#loop'), '{"name":"changes","id":null}');
   eq(r('#/needs'), '{"name":"summary","id":null}', 'the public build has no Needs you group');
   eq(r('#/needs', '', pub.concat(['needs'])), '{"name":"needs","id":null}');
   eq(r('#overview', '', pub.concat(['needs'])), '{"name":"needs","id":null}', 'an old dashboard tab link');
-  eq(r('#costbenefit'), '{"name":"impact","id":null}');
+  eq(r('#costbenefit'), '{"name":"spend","id":null}');
+  eq(JSON.stringify(P.parseRoute('', '', pub.concat(['needs']), 'needs')), '{"name":"needs","id":null}', 'a build with a home route opens it on an empty address');
+  eq(JSON.stringify(P.parseRoute('', '', pub, 'needs')), '{"name":"summary","id":null}', 'a home route the build lacks falls back to Summary');
+  eq(JSON.stringify(P.parseRoute('#/nowhere', '', pub.concat(['needs']), 'needs')), '{"name":"summary","id":null}', 'an unknown link is still Summary');
   eq(P.hashFor('skills', 'a b'), '#/skills/a%20b');
   eq(r(P.hashFor('skills', 'a b')), '{"name":"skills","id":"a b"}');
 });
-test('the public build has five groups and Summary opens first', () => {
-  eq(JSON.stringify(Object.keys(P.GROUPS)), '["summary","needs","hooks","loop","impact","ops"]');
-  eq(P.groupOf('skills'), 'hooks');
-  eq(P.groupOf('method'), 'hooks');
+test('the groups are the questions asked, and Summary opens first', () => {
+  eq(JSON.stringify(Object.keys(P.GROUPS)), '["summary","needs","changes","results","spend","activity"]');
+  eq(JSON.stringify(Object.values(P.STRINGS.groups)), '["Summary","Needs you","Changes","Results","Spend and use","Activity log"]');
+  eq(P.groupOf('skills'), 'results');
+  eq(P.groupOf('method'), 'results');
+  eq(P.groupOf('removed'), 'summary', 'Removed is a filter of Changes, not a route of its own');
   const t = P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {}));
   ok(t.includes(P.STRINGS.groups.summary), 'Summary heading');
   ok(!/Adam/.test(t), 'names no person');
 });
 test('every route renders without throwing, and a missing subject says so', () => {
-  for (const name of ['summary', 'hooks', 'skills', 'guidance', 'removed', 'method', 'loop', 'impact', 'ops']) {
+  for (const name of ['summary', 'hooks', 'skills', 'guidance', 'method', 'changes', 'spend', 'activity']) {
     ok(P.textOf(P.renderRoute(fixture, { name, id: null }, {})).length > 0, name);
   }
   const t = P.textOf(P.renderRoute(fixture, { name: 'skills', id: 'example-skill-alpha' }, {}));
@@ -745,7 +748,7 @@ test('issue lessons alone still render, and bad issues are skipped', () => {
 });
 
 test('lesson proposals render once, on the Loop page, not under the subject lists', () => {
-  const loop = P.textOf(P.renderRoute(fixture, { name: 'loop', id: null }, {}));
+  const loop = P.textOf(P.renderRoute(fixture, { name: 'changes', id: null }, {}));
   ok(loop.includes(P.STRINGS.lessonsHeading), 'on Loop');
   for (const m of ['skills', 'guidance']) ok(!P.textOf(P.buildPage(fixture, m, {})).includes(P.STRINGS.lessonsHeading), m);
   const method = P.textOf(P.renderRoute(fixture, { name: 'method', id: null }, {}));

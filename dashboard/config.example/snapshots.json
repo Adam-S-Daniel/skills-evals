@@ -19,21 +19,6 @@
    "waiting_since": "2026-01-05T15:00:00Z"
   }
  ],
- "gate": [
-  {
-   "condition": "One skill improvement merged or rejected on its numbers",
-   "status": "Not met",
-   "detail": "No improve run has finished yet",
-   "link": null
-  }
- ],
- "decisions": [
-  {
-   "date": "2026-01-05",
-   "decision": "Refresh the dashboard every 2 hours and on every merged PR",
-   "link": "https://claude.ai/code/project/<project id>?thread=thread-0001"
-  }
- ],
  "waiting_manual": [
   {
    "item": "Choose a weekly cap",

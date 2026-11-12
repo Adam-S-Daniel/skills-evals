@@ -30,28 +30,6 @@
   "staleAfterHours": 48,
   "title": "Scheduled check-ins"
  },
- "ci_red_runs": {
-  "description": "Every agent-checks CI run that failed (the Red in CI count), newest first, with its run page link; a private repo's run keeps only its week. Copied by Claude from skills-evals persistent/eval-results usage/weekly-ci.json red_runs, written by _agent-guidance's daily impact report.",
-  "schedule": "Updated by Claude on every refresh",
-  "source": {
-   "kind": "file",
-   "name": "ci_red_runs.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Red in CI runs"
- },
- "cleanup": {
-  "description": "The fixed cleanup list from the strategy, with each item's status checked against GitHub by Claude.",
-  "schedule": "Updated by Claude on request",
-  "source": {
-   "kind": "file",
-   "name": "cleanup.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 168,
-  "title": "Cleanup list C1 to C15"
- },
  "cost_benefit_summary": {
   "description": "Cost per decided verdict, decision yield, real-work reach, the Dec 15 bar and the points-per-dollar rate used. Built by Claude with the weekly rows.",
   "schedule": "Updated by Claude on every refresh",
@@ -64,7 +42,7 @@
   "title": "Cost and benefit, summary"
  },
  "cost_benefit_weeks": {
-  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, your messages and decisions. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
+  "description": "Per week (Monday 5 PM UTC to the next): eval runs and their points, API-billed eval dollars, project-thread spend in dollars and points, loop changes merged, real-work uses of changed skills and guidance, and your messages. Built by Claude from the project's session costs, your message times, merged loop PRs and the results branch. Project threads count every thread in the project; scheduled-task sessions are missing.",
   "schedule": "Updated by Claude on every refresh",
   "source": {
    "kind": "file",
@@ -73,17 +51,6 @@
   },
   "staleAfterHours": 48,
   "title": "Cost and benefit, by week"
- },
- "decisions": {
-  "description": "Decisions you made in this project, from project memory and the records they landed in.",
-  "schedule": "Updated by Claude on request",
-  "source": {
-   "kind": "file",
-   "name": "decisions.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 168,
-  "title": "Your decisions"
  },
  "eval_allowance": {
   "description": "Test use over the last 7 days and the latest account meter reading, worked out with skills-evals' own allowance guard code from the results branch. It does not count fires still running.",
@@ -116,17 +83,6 @@
   },
   "title": "Latest saved test runs"
  },
- "gate": {
-  "description": "The two conditions you set on Oct 24 before anything new got built; both met by Oct 28.",
-  "schedule": "Updated by Claude on request",
-  "source": {
-   "kind": "file",
-   "name": "gate.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 72,
-  "title": "Build gate"
- },
  "half_built_issues": {
   "description": "Open findings from the weekly check for half-built or broken features across the fleet's repos, plus any fixed in the last 7 days: repo, kind, severity, title, link and age. Built by Claude from the check's GitHub issues.",
   "schedule": "Refreshed by Claude every 2 hours; the weekly check runs Mondays 1:37 PM ET",
@@ -148,50 +104,6 @@
   },
   "staleAfterHours": 6,
   "title": "Half-built and broken features, summary"
- },
- "loop_gaps": {
-  "description": "Gaps G1 to G13 and the bare baseline with status and owner, copied from /mnt/project-files/loop/status.json, which the loop thread updates on every merge.",
-  "schedule": "Updated by Claude on every refresh",
-  "source": {
-   "kind": "file",
-   "name": "loop_gaps.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Loop gaps"
- },
- "loop_grid": {
-  "description": "What works at each loop step for skills, guidance sections and memories, from the loop thread's gap list.",
-  "schedule": "Updated by Claude when the loop design changes",
-  "source": {
-   "kind": "file",
-   "name": "loop_grid.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Loop by subject"
- },
- "loop_lanes": {
-  "description": "Each lane of the loop build, the project thread building it, and that thread's latest result, read by Claude from the threads.",
-  "schedule": "Updated by Claude on every refresh",
-  "source": {
-   "kind": "file",
-   "name": "loop_lanes.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Loop lanes"
- },
- "loop_stages": {
-  "description": "The self-improvement loop's stages in order, with status derived from the gaps each depends on. Built by Claude from /mnt/project-files/loop/status.json and the loop thread's design.",
-  "schedule": "Updated by Claude on every refresh and when the loop design changes",
-  "source": {
-   "kind": "file",
-   "name": "loop_stages.json",
-   "url": "/_blob/<uploaded id>"
-  },
-  "staleAfterHours": 48,
-  "title": "Loop stages"
  },
  "merged_prs": {
   "description": "The 30 most recently updated merged pull requests in the same four repos. Reads GitHub pull request search.",

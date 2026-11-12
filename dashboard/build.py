@@ -8,10 +8,10 @@ typed by hand that a read could supply:
              (test runs, the allowance meter, usage counts)
   --inputs   JSON dumps the refresh session collects each run from GitHub and
              the project (threads, scheduled tasks, workflow runs, issues and
-             PRs labeled needs-owner, environment reviews, loop status);
+             PRs labeled needs-owner, environment reviews, the loop's pull requests);
              see README.md, "Inputs"
-  --config   the owner's own lists that no read can supply (cleanup items,
-             gate conditions, decisions, routine descriptions, loop design);
+  --config   the owner's own lists that no read can supply (the waiting list's
+             manual asks, routine descriptions, the roster's reasons);
              kept outside this public repo, see config.example/
 
 The repo's own evals/budget.yml and evals/roster.yml are read directly.
@@ -200,26 +200,6 @@ def usage(er):
         digests = [{"week": None, "name": "No loaded-copy counts yet", "repo": None, "surface": None,
                     "digest": PLACEHOLDER_ID, "invocations": 0, "sessions": None}]
     return rows, sources, digests
-
-
-RED_RUN_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[0-9]+$")
-
-
-def ci_red_runs(er):
-    """Every red agent-checks CI run the impact report lists (usage/weekly-ci.json `red_runs`), newest
-    first. A URL that is not a GitHub Actions run page is dropped; a private repo's entry has none."""
-    d = load(os.path.join(er, "usage", "weekly-ci.json"), {}) or {}
-    out = []
-    for i, r in enumerate(d.get("red_runs") or []):
-        if not isinstance(r, dict):
-            continue
-        url = r.get("url") if isinstance(r.get("url"), str) and RED_RUN_URL.match(r["url"]) else None
-        out.append({"key": url or f"{r.get('week')}|{r.get('repo')}|{i}", "week": r.get("week"),
-                    "repo": r.get("repo"), "created_at": r.get("created_at"),
-                    "conclusion": r.get("conclusion"), "url": url})
-    out.sort(key=lambda r: (r["week"] or "", r["created_at"] or ""), reverse=True)
-    return out or [{"key": PLACEHOLDER_ID, "week": None, "repo": None, "created_at": None,
-                    "conclusion": None, "url": None}]
 
 
 # --- Overview tab: threads, routines, check-ins, waiting -------------------------
@@ -441,42 +421,6 @@ def waiting(snap, needs_owner, reviews, open_heads, thread_dump, link_states, si
                      "where": None, "id": PLACEHOLDER_ID}]
 
 
-def clean_cleanup(items):
-    return [{k: v for k, v in c.items() if k not in ("waiting_on_you", "waiting_since")} for c in items]
-
-
-# --- Loop tab ------------------------------------------------------------------
-
-GAP_WORDS = {"open": "Not started", "in progress": "In progress", "done": "Done"}
-
-
-def loop(cfg, status, site):
-    gaps = [{"gap": g["gap"], "title": g["title"], "status": GAP_WORDS.get(g["status"], g["status"]),
-             "owner": g.get("owner") or "", "link": g.get("pr")} for g in status["gaps"]]
-    by = {g["gap"]: g for g in gaps}
-    home = site["thread_url"] + cfg["home_thread_id"]
-
-    def derive(ids, override):
-        if override:
-            return override
-        s = [by[i]["status"] for i in ids if i in by]
-        if s and all(x == "Done" for x in s):
-            return "Done"
-        if s and all(x == "Not started" for x in s):
-            return "Not started"
-        return "In progress"
-    stages = []
-    for st in cfg["stages"]:
-        links = [by[i]["link"] for i in st["gaps"] if i in by and by[i]["link"]]
-        stages.append({"order": st["order"], "kind": st["kind"], "stage": st["stage"], "what": st["what"],
-                       "status": derive(st["gaps"], st.get("override")), "gaps": ", ".join(st["gaps"]),
-                       "link": links[0] if links else home})
-    lanes = [{"lane": ln["lane"], "thread": ln["thread"], "link": site["thread_url"] + ln["thread_id"],
-              "does": ln["does"], "latest": ln["latest"], "latest_link": ln.get("latest_link")}
-             for ln in cfg["lanes"]]
-    return stages, cfg["grid"], lanes, gaps
-
-
 # --- Cost and benefit tab --------------------------------------------------------
 
 # A cost week starts Monday 17:00 UTC (the account's weekly reset) and is labeled by that date.
@@ -649,7 +593,7 @@ def r2(v):
     return None if v is None else round(v, 2)
 
 
-def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs, explorer, now, start=COST_START,
+def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
                  raw=None):
     """(weeks rows, summary rows) for the Impact group's cost panel. `raw`, a
     dict, receives the week rows and the cost per verdict before rounding."""
@@ -679,8 +623,6 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
             "changes": sum(1 for c in changes if week_of(c["merged_at"], starts) == i),
             "real_work_reach": sum(week_uses(c, label, usage_rows) for c in changes if c["merged_at"] < end),
             "owner_messages": sum(1 for m in msgs.values() if week_of(parse(m["sent_at"]), starts) == i),
-            "decisions": sum(1 for d in decisions
-                             if week_of(parse(d["date"] + "T17:00:00Z"), starts) == i),
             "verdicts": verdicts if i == len(starts) - 1 else None})
     complete = [w for w, s in zip(weeks, starts) if s + WEEK <= now]
     last = complete[-1] if complete else None
@@ -723,7 +665,7 @@ def cost_benefit(er, plan_rows, usage_rows, decisions, samples, owner_msgs, prs,
     if not weeks:
         weeks = [{"week": PLACEHOLDER_ID, "run_count": None, "run_points_est": None, "run_meter_points": None, "api_usd": None, "build_usd": None,
                   "build_points": None, "build_estimated": None, "total_points": None, "changes": None,
-                  "real_work_reach": None, "owner_messages": None, "decisions": None, "verdicts": None}]
+                  "real_work_reach": None, "owner_messages": None, "verdicts": None}]
     for w in weeks:
         for k in ("run_points_est", "run_meter_points", "api_usd", "build_usd", "build_points", "total_points"):
             w[k] = r2(w[k])
@@ -802,7 +744,6 @@ def build(results, inputs, config, now, raw=None):
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
     out["usage_rows"], out["usage_sources"], _ = usage(results)
-    out["ci_red_runs"] = ci_red_runs(results)
     out["threads"] = threads(thread_dump, site, inp("thread_branches.json", {}))
     out["routines"] = routines(load(os.path.join(config, "routines.json")), trigger_dump,
                                inp("workflow_runs.json", {}), now, inp("workflow_states.json", {}))
@@ -810,23 +751,16 @@ def build(results, inputs, config, now, raw=None):
     out["checkins"] = checkins(inp("trigger_list.json", []), site.get("project_channel_id"), now)
     out["waiting"] = waiting(snap, inp("needs_owner.json", []), inp("waiting_reviews.json", []),
                              inp("open_pr_heads.json", {}), thread_dump, inp("link_states.json", {}), site)
-    out["cleanup"] = clean_cleanup(snap["cleanup"])
-    out["gate"] = snap["gate"]
-    out["decisions"] = snap["decisions"]
-    loop_cfg = os.path.join(config, "loop.json")
     explorer = load(os.path.join(results, "explorer", "latest.json"), {})
     if not isinstance(explorer, dict) or not isinstance(explorer.get("schema_version"), int):
         sys.exit("explorer: results/explorer/latest.json is missing or not an explorer document")
     out["explorer"] = explorer
     out["cost_benefit_weeks"], out["cost_benefit_summary"] = cost_benefit(
-        results, plan_rows, out["usage_rows"], snap["decisions"],
+        results, plan_rows, out["usage_rows"],
         load_jsonl(os.path.join(inputs, "session_costs.jsonl")),
         load_jsonl(os.path.join(inputs, "owner_messages.jsonl")), inp("loop_prs.json", []), explorer, now,
         raw=raw)
     out["half_built_issues"], out["half_built_summary"] = half_built(inp("half_built_issues.json", {}), now)
-    if os.path.exists(loop_cfg):
-        (out["loop_stages"], out["loop_grid"], out["loop_lanes"],
-         out["loop_gaps"]) = loop(load(loop_cfg), inp("loop_status.json"), site)
     return out
 
 

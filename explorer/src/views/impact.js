@@ -1,13 +1,14 @@
-/* Impact: what agents made (checks, skills, guidance sections), real-work use
-   of skills and git hook checks by week, pull request outcomes, red CI runs, and cost when the document carries it. */
+/* Spend and use: what the loop cost, what agents made (checks, skills,
+   guidance sections), and real-work use of skills and git hook checks by week. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, fmtDateTime, fmtCount , fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtUtcDay, fmtDateTime, fmtCount, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
-import { hookItems, hookWeeks, mondayOf, cloudCounted } from '../core/hooks.js';
+import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
 import { cloudNote } from './hooks.js';
 import { hashFor } from '../core/route.js';
-import { table, srcLine, panel, navLink, rangeLine, srcLineFor } from './bits.js';
+import { table, panel, navLink, rangeLine, srcLineFor } from './bits.js';
+import { noUseShare } from './utility.js';
 import { weekChart } from './weekchart.js';
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
@@ -51,53 +52,6 @@ function checkUseView(doc) {
   ], items.slice().sort((a, b) => (b.runs !== null ? b.runs : b.runsCounted) - (a.runs !== null ? a.runs : a.runsCounted)));
 }
 
-/* Pull requests opened and merged per UTC week, from the document's activity. */
-export function prWeeks(doc) {
-  const a = doc.activity;
-  const pulls = a && Array.isArray(a.pulls) ? a.pulls : [];
-  const by = new Map();
-  const add = (ts, key) => {
-    const w = mondayOf(parseTime(ts));
-    if (!w) return;
-    if (!by.has(w)) by.set(w, { week: w, opened: 0, merged: 0 });
-    by.get(w)[key] += 1;
-  };
-  for (const p of pulls) {
-    if (!p) continue;
-    add(p.created_at, 'opened');
-    if (p.state === 'merged') add(p.merged_at, 'merged');
-  }
-  return Array.from(by.values()).sort((x, y) => (x.week < y.week ? 1 : -1));
-}
-
-function prOutcomesView(doc, refMs) {
-  const a = doc.activity;
-  const weeks = prWeeks(doc);
-  if (!a || !weeks.length) return null;
-  const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split('/').pop())).join(', ');
-  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
-    weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs, STRINGS.weekTitles.prs, [STRINGS.weekDefs.opened, STRINGS.weekDefs.merged]),
-    table([
-      { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
-      { label: STRINGS.colOpened, num: true, sort: (w) => w.opened, cell: (w) => fmtCount(w.opened) },
-      { label: STRINGS.colMerged, num: true, sort: (w) => w.merged, cell: (w) => fmtCount(w.merged) }
-    ], weeks)];
-}
-
-export const RED = ['failure', 'timed_out', 'startup_failure'];
-
-function redRunsView(doc, refMs) {
-  const a = doc.activity;
-  if (!a || !Array.isArray(a.runs)) return null;
-  const red = a.runs.filter((r) => r && RED.includes(r.conclusion)).sort((x, y) => (x.created_at < y.created_at ? 1 : -1));
-  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.impactRedNote), red.length ? table([
-    { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
-    { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split('/').pop()) },
-    { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => link(r.url, clean(r.workflow || r.title || STRINGS.unknown)) },
-    { label: STRINGS.colState, sort: (r) => r.conclusion, cell: (r) => clean(r.conclusion) }
-  ], red) : h('p', null, STRINGS.impactRedNone)];
-}
-
 /* "Since Oct 19: $5,541.65 for 12 decided verdicts, $461.80 each (tests ..., building ..., API ...)",
    from spend.total; null for a document without one. */
 export function spendTotalLine(s) {
@@ -107,20 +61,47 @@ export function spendTotalLine(s) {
     typeof t.cost_per_verdict === 'number' ? usd(t.cost_per_verdict) : STRINGS.noValue, usd(t.run_usd), usd(t.thread_spend_usd), usd(t.api_usd)));
 }
 
+/* The two newest weeks side by side: tests, building (threads), API and their
+   total in dollars, and the plan points the tests used. A part a week does not
+   carry reads as no value, and so does the total then. */
+export function spendWeeks(doc) {
+  const s = doc.spend;
+  const weeks = s && Array.isArray(s.weeks) ? s.weeks.filter((w) => w && typeof w.week === 'string').slice().sort((a, b) => (a.week < b.week ? 1 : -1)) : [];
+  const part = (w, k) => (w && typeof w[k] === 'number' && isFinite(w[k]) ? w[k] : null);
+  const row = (w) => {
+    const tests = part(w, 'run_usd'), build = part(w, 'thread_spend_usd'), api = part(w, 'api_usd');
+    return { week: w.week, tests, build, api, total: tests === null || build === null || api === null ? null : tests + build + api, points: part(w, 'plan_meter_points') };
+  };
+  return weeks.slice(0, 2).map(row);
+}
+
+/* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
+const weekStart = (w) => fmtDateTime(Date.parse(w + 'T17:00:00Z'));
+
+/* One panel for the loop's money: this week and last week side by side, the
+   share of test dollars that bought nothing, and every week below. */
 function spendView(doc, refMs) {
   const s = doc.spend;
   if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
-  return [h('p', { class: 'note' }, STRINGS.impactSpendNote),
-    s.generated_at ? srcLineFor(doc, 'spend') : null,
+  const two = spendWeeks(doc);
+  const share = noUseShare(doc, refMs);
+  const cell = (r, k) => (r && r[k] !== null ? usd(r[k]) : STRINGS.noValue);
+  const rows = [{ label: STRINGS.spendTests, k: 'tests' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendApi, k: 'api' }, { label: STRINGS.spendTotal, k: 'total' }];
+  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), s.generated_at ? srcLineFor(doc, 'spend') : null,
+    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w, i) => ({ label: STRINGS.spendWeekHead(i === 0, weekStart(w.week)), num: true,
+      cell: (r) => cell(w, r.k) + (r.k === 'tests' && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : '') }))), rows) : null,
+    share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', usd(share.noUse), usd(share.total), share.top.map(([name, cost]) => name + ' (' + usd(cost) + ')').join(' and ')),
+      ' ', navLink(hashFor('summary'), STRINGS.spendUsefulnessLink)) : null,
     spendTotalLine(s),
-    table([
-      { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
-      { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
-      { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => (w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1)) },
-      { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => (typeof w.run_usd === 'number' ? usd(w.run_usd) : STRINGS.noValue) },
-      { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd(w.thread_spend_usd) },
-      { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
-    ], s.weeks)];
+    h('details', { class: 'history' }, h('summary', null, STRINGS.spendAllWeeks),
+      table([
+        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+        { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
+        { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => (w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1)) },
+        { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => (typeof w.run_usd === 'number' ? usd(w.run_usd) : STRINGS.noValue) },
+        { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd(w.thread_spend_usd) },
+        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd(w.api_usd) }
+      ], s.weeks))];
 }
 
 const KIND_ROUTE = { check: 'hooks', skill: 'skills', section: 'guidance' };
@@ -179,11 +160,10 @@ export function impactView(doc, ctx) {
   const covers = (k) => !!(ext && ext.covers && ext.covers(k));
   return h('div', null,
     rangeLine(doc),
+    panel(STRINGS.impactSpend, spendView(doc, refMs)),
+    covers('cost') ? ext.cost(ctx) : null,
     panel(STRINGS.agentMade, agentMadeView(doc, refMs)),
     panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
     // The private usage table covers both lists, private repos included.
-    covers('use') ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))],
-    covers('pr-outcomes') ? ext.prOutcomes(ctx) : panel(STRINGS.impactPrs, prOutcomesView(doc, refMs)),
-    covers('red-runs') ? ext.redRuns(ctx) : panel(STRINGS.impactRed, redRunsView(doc, refMs)),
-    covers('cost') ? ext.cost(ctx) : panel(STRINGS.impactSpend, spendView(doc, refMs)));
+    covers('use') ? ext.impactUse(ctx) : [panel(STRINGS.impactUseChecks, checkUseView(doc)), panel(STRINGS.impactUseSkills, skillUseView(doc, refMs))]);
 }

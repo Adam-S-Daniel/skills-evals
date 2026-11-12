@@ -1,19 +1,13 @@
-/* Loop: the stages, fixture requests, lesson proposals, where lessons went
-   and the loop's own pull requests. */
+/* The loop's records the Changes page shows: fixture requests, where lessons
+   went, and which pull requests are the loop's own. */
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtCount , fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { fixtureQueue } from '../core/fixtures.js';
-import { table, srcLine, panel, rangeLine, srcLineFor } from './bits.js';
-import { lessonsView } from './lessons.js';
+import { table, srcLineFor } from './bits.js';
 import { barChart, chartTitle } from '../core/charts.js';
 
 const usd = (x) => fmtUsd(Number(x) || 0);
-
-export function stagesView() {
-  return [h('ol', { class: 'stages' }, STRINGS.loopStages.map(([name, text]) => h('li', null, h('strong', null, name), ' ', text))),
-    h('p', { class: 'note' }, STRINGS.loopStagesNote)];
-}
 
 export function fixtureRequestsView(doc, refMs) {
   const fq = fixtureQueue(doc, refMs);
@@ -71,13 +65,6 @@ export function isLoopPull(p) {
   return typeof p.title === 'string' && LOOP_TITLE.test(p.title);
 }
 
-export function loopPrsView(doc, refMs) {
-  const a = doc.activity;
-  const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter(isLoopPull);
-  if (!rows.length) return null;
-  return [srcLineFor(doc, 'activity'), h('p', { class: 'note' }, STRINGS.loopPrsNote), prTable(rows, refMs)];
-}
-
 export function prTable(rows, refMs) {
   return table([
     { label: STRINGS.colRepo, sort: (p) => p.repo, cell: (p) => clean(String(p.repo).split('/').pop()) },
@@ -86,19 +73,4 @@ export function prTable(rows, refMs) {
     { label: STRINGS.colState, sort: (p) => p.state, cell: (p) => STRINGS.prStates[p.state] || clean(p.state) },
     { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at, cell: (p) => fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
   ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || '').localeCompare(String(x.merged_at || x.updated_at || ''))), { tall: true });
-}
-
-export function loopView(doc, ctx) {
-  const refMs = parseTime(doc.generated_at);
-  const ext = ctx && ctx.ext;
-  const stages = ext && ext.loopStages ? ext.loopStages(ctx) : null;
-  return h('div', null,
-    rangeLine(doc),
-    panel(STRINGS.loopHeading, stages || stagesView()),
-    ext && ext.loopTop ? ext.loopTop(ctx) : null,
-    panel(STRINGS.funnelHeading, funnelView(doc)),
-    panel(STRINGS.fqHeading, fixtureRequestsView(doc, refMs)),
-    lessonsView(doc, 'all'),
-    ext && ext.covers && ext.covers('loop-prs') ? ext.loopPrs(ctx) : panel(STRINGS.loopPrsHeading, loopPrsView(doc, refMs)),
-    ext && ext.loopBottom ? ext.loopBottom(ctx) : null);
 }
