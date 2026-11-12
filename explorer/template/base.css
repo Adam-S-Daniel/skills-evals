@@ -17,9 +17,9 @@
   --ex-ease: cubic-bezier(0.16, 0.84, 0.3, 1);
 }
 .ex, .ex * { box-sizing: border-box; }
-.ex { color: var(--ink); font: var(--ex-font, 16px/1.5 var(--ex-sans-stack)); overflow-wrap: anywhere; }
+.ex { color: var(--ink); font: var(--ex-font, 17px/1.55 var(--ex-sans-stack)); overflow-wrap: anywhere; }
 .ex ::selection { background: var(--s2); color: var(--page); }
-.ex h1 { font-family: var(--ex-serif, var(--ex-serif-stack)); font-weight: 900; font-size: clamp(3.1rem, 10.5vw, 8.5rem); line-height: 0.9; letter-spacing: 0; text-transform: uppercase; margin: 30px 0 20px -0.03em; overflow-wrap: normal; }
+.ex h1 { font-family: var(--ex-serif, var(--ex-serif-stack)); font-weight: 900; font-size: clamp(2.5rem, 7.5vw, 6rem); line-height: 0.9; letter-spacing: 0; text-transform: uppercase; margin: 30px 0 20px -0.03em; overflow-wrap: normal; }
 .ex h2 { font-family: var(--ex-serif, var(--ex-serif-stack)); font-size: 1.7rem; font-weight: 800; line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; margin: 0 0 16px; }
 .ex h2::before { counter-increment: ex-sec; content: counter(ex-sec, decimal-leading-zero); display: block; font-size: 4.6rem; font-weight: 900; line-height: 0.86; margin: 0 0 6px -2px; color: var(--s2); }
 @supports (-webkit-text-stroke: 2px black) { .ex h2::before { color: transparent; -webkit-text-stroke: 2px var(--ink); } }
@@ -27,7 +27,7 @@
 .ex p { margin: 0 0 12px; max-width: 84ch; }
 .ex a { color: var(--link); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .ex a:hover { text-decoration-color: var(--s2); }
-.ex .asof, .ex .note, .ex .src { color: var(--ink-2); font-size: 0.9rem; }
+.ex .asof, .ex .note, .ex .src { color: var(--ink-2); font-size: 0.96rem; }
 .ex .src { font-family: var(--ex-mono); font-size: 0.7rem; color: var(--muted); margin: -4px 0 10px; }
 .ex .muted { color: var(--muted); }
 .ex .warn { color: var(--warning); font-weight: 700; }
@@ -81,7 +81,7 @@
 
 .ex .toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 12px 0 4px; }
 .ex .seg { display: inline-flex; border: 2px solid var(--ink); overflow: hidden; max-width: 100%; flex-wrap: wrap; }
-.ex .seg button { font: inherit; font-size: 0.88rem; padding: 6px 12px; border: 0; background: var(--surface); color: var(--ink); cursor: pointer; min-height: 36px; }
+.ex .seg button { font: inherit; font-size: 0.94rem; padding: 6px 12px; border: 0; background: var(--surface); color: var(--ink); cursor: pointer; min-height: 36px; }
 .ex .seg button + button { border-left: 2px solid var(--ink); }
 .ex .seg button:hover { background: var(--hover); }
 .ex .seg button[aria-pressed="true"] { background: var(--ink); color: var(--page); font-weight: 700; }
@@ -125,7 +125,7 @@
 .ex .tile-num { font-family: var(--ex-serif, var(--ex-serif-stack)); font-weight: 900; font-size: 4rem; line-height: 0.9; font-variant-numeric: tabular-nums; margin: 8px 0 6px; }
 .ex .tile-num[data-tip] { cursor: help; }
 .ex .tile-num.small { font-size: 1.9rem; line-height: 1; }
-.ex .tile-note { font-size: 0.84rem; color: var(--muted); }
+.ex .tile-note { font-size: 0.92rem; color: var(--muted); }
 .ex .tile:first-child { flex: 1.7 1 300px; padding-left: 0; }
 .ex .tile:first-child .tile-num { font-size: clamp(6rem, 15vw, 11rem); line-height: 0.8; color: var(--s2); margin: 10px 0 10px -0.04em; }
 .ex .headline-num { font-family: var(--ex-serif, var(--ex-serif-stack)); font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; line-height: 1; max-width: 26ch; }
@@ -138,12 +138,12 @@
 .ex .card:hover { border-top-color: var(--s2); }
 .ex .card .head { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin-bottom: 4px; }
 .ex .card .head h3 { margin-top: 0; }
-.ex .card .gl { color: var(--ink-2); font-size: 0.92rem; margin: 2px 0 8px; }
+.ex .card .gl { color: var(--ink-2); font-size: 1rem; margin: 2px 0 8px; }
 .ex .card .sent { font-size: 0.95rem; margin-top: 10px; }
-.ex .card .meta { color: var(--muted); font-size: 0.82rem; margin: 6px 0 0; }
+.ex .card .meta { color: var(--muted); font-size: 0.9rem; margin: 6px 0 0; }
 .ex .card h3 a, .ex a.nav-link { text-decoration: none; }
 .ex .card h3 a:hover, .ex a.nav-link:hover { text-decoration: underline; text-decoration-color: var(--s2); text-decoration-thickness: 3px; }
-.ex .model { font-size: 0.85rem; font-weight: normal; margin: 8px 0 0; color: var(--ink-2); }
+.ex .model { font-size: 0.92rem; font-weight: normal; margin: 8px 0 0; color: var(--ink-2); }
 .ex .chip { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; flex: none; font-family: var(--ex-mono); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 8px; background: var(--chip-bg); color: var(--ink); border: 2px solid var(--ink); cursor: help; }
 .ex .chip .ic { display: inline-block; width: 9px; height: 9px; background: var(--axis); }
 .ex .chip.helps .ic { background: var(--good); }
@@ -158,7 +158,7 @@
 .ex .st.good { border-color: var(--good); color: var(--good-ink); }
 .ex .st.bad { border-color: var(--critical); color: var(--critical); }
 .ex .st.warn { border-color: var(--warning); color: var(--warning); }
-.ex .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--ink-2); margin: 6px 0 0; }
+.ex .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.86rem; color: var(--ink-2); margin: 6px 0 0; }
 .ex .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .ex .sw { width: 12px; height: 12px; display: inline-block; }
 .ex svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -167,7 +167,7 @@
 .ex .chart.weeks { max-width: 640px; }
 .ex .spark { max-width: 320px; margin-top: 10px; }
 .ex .mark:hover, .ex .mark:focus { opacity: 0.75; outline: none; }
-.ex .trend-cap { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+.ex .trend-cap { font-size: 0.86rem; color: var(--muted); margin: 8px 0 0; }
 .ex .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; }
 .ex ul.plain { margin: 6px 0 0; padding-left: 1.2em; }
 .ex ul.plain li { margin: 2px 0; overflow-wrap: anywhere; }
@@ -175,7 +175,7 @@
 .ex ol.stages { margin: 6px 0 12px; padding-left: 1.6em; }
 .ex ol.stages li { margin: 4px 0; }
 .ex ol.stages li::marker { font-family: var(--ex-mono); font-size: 0.8em; color: var(--s1); }
-.ex .reason { color: var(--ink-2); font-size: 0.9rem; }
+.ex .reason { color: var(--ink-2); font-size: 0.96rem; }
 .ex .failure { border-left: 10px solid var(--critical); }
 .ex .summary-line { font-size: 1rem; }
 .ex .subject-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 8px 0; }
@@ -189,9 +189,9 @@
 /* Tables: a scorecard under a heavy rule, mono column heads. */
 .ex .tablewrap { overflow-x: auto; max-width: 100%; }
 .ex .tablewrap.tall { max-height: 520px; overflow-y: auto; }
-.ex table { border-collapse: collapse; font-size: 0.86rem; width: 100%; }
+.ex table { border-collapse: collapse; font-size: 0.95rem; width: 100%; }
 .ex th, .ex td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--base); vertical-align: top; overflow-wrap: break-word; }
-.ex th { position: sticky; top: 0; background: var(--page); cursor: pointer; font-family: var(--ex-mono); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); border-bottom: 3px solid var(--ink); white-space: nowrap; vertical-align: bottom; }
+.ex th { position: sticky; top: 0; background: var(--page); cursor: pointer; font-family: var(--ex-mono); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); border-bottom: 3px solid var(--ink); white-space: nowrap; vertical-align: bottom; }
 .ex th:hover { color: var(--link); }
 .ex tbody tr:hover > td { background: var(--hover); }
 .ex th[aria-sort="ascending"]::after { content: " \25B4"; color: var(--s2); }
@@ -206,13 +206,13 @@
 .ex td.num { font-family: var(--ex-mono); font-size: 0.92em; }
 .ex th:first-child, .ex td:first-child { padding-left: 0; }
 .ex .block { min-width: 0; }
-.ex table.console { font-family: var(--ex-mono); font-size: 0.76rem; }
+.ex table.console { font-family: var(--ex-mono); font-size: 0.82rem; }
 .ex .problems-only tr[data-ok] { display: none; }
-.ex label.check, .ex label.filter { display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; margin: 0 12px 8px 0; }
+.ex label.check, .ex label.filter { display: inline-flex; align-items: center; gap: 6px; font-size: 0.94rem; margin: 0 12px 8px 0; }
 .ex input[type="checkbox"] { accent-color: var(--s1); }
 .ex .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0; }
-.ex select { font: inherit; font-size: 0.88rem; padding: 4px 6px; border: 2px solid var(--ink); border-radius: 0; background: var(--surface); color: var(--ink); max-width: 100%; }
-.ex .linkish { font: inherit; font-size: 0.88rem; border: 0; background: none; color: var(--link); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 4px; }
+.ex select { font: inherit; font-size: 0.94rem; padding: 4px 6px; border: 2px solid var(--ink); border-radius: 0; background: var(--surface); color: var(--ink); max-width: 100%; }
+.ex .linkish { font: inherit; font-size: 0.94rem; border: 0; background: none; color: var(--link); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; padding: 4px; }
 .ex-tip { font-family: var(--ex-font-family, var(--ex-sans-stack)); position: fixed; z-index: 10; pointer-events: none; max-width: 260px; background: var(--ink); color: var(--page); border: 0; padding: 6px 9px; font-size: 0.82rem; line-height: 1.4; box-shadow: 4px 4px 0 var(--s2); }
 .ex-tip[hidden] { display: none; }
 .ex .headline .answer { font-size: 1.2rem; font-weight: 700; }
@@ -221,13 +221,13 @@
   .ex a.group[aria-current="page"], .ex .seg button[aria-pressed="true"], .ex .subnav a[aria-current="page"] { outline: 3px solid Highlight; outline-offset: -3px; }
 }
 .ex .conf { margin: 12px 0 0; }
-.ex .conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
+.ex .conf-h { font-size: 0.92rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
 .ex .chart.range { max-width: 420px; margin-top: 4px; }
 .ex .badge.hv.earning { border-color: var(--good); color: var(--good-ink); }
 .ex .badge.hv.overridden-often { border-color: var(--critical); color: var(--critical); }
 .ex .badge.hv { white-space: normal; text-align: center; line-height: 1.3; }
 .ex .badge.hv.never-blocked, .ex .badge.hv.never-ran, .ex .badge.hv.never-fires, .ex .badge.hv.none { border-color: var(--axis); color: var(--ink-2); }
-.ex details.guide { border-left: 3px solid var(--s1); padding: 2px 0 2px 14px; margin: 0 0 14px; font-size: 0.88rem; color: var(--ink-2); }
+.ex details.guide { border-left: 3px solid var(--s1); padding: 2px 0 2px 14px; margin: 0 0 14px; font-size: 0.95rem; color: var(--ink-2); }
 .ex details.guide > summary { cursor: pointer; font-weight: 600; color: var(--ink); min-height: 28px; display: flex; align-items: center; gap: 8px; }
 .ex details.guide > summary::before { content: "?"; flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; font-family: var(--ex-mono); font-size: 0.7rem; font-weight: 600; color: var(--page); background: var(--s1); }
 .ex details.guide > p { margin: 6px 0; max-width: 80ch; }
@@ -252,7 +252,7 @@
 .ex .defbox-close { display: block; margin: 8px 0 0 auto; font: inherit; font-family: var(--ex-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 12px; min-height: 32px; border: 2px solid var(--ink);
   border-radius: 0; background: var(--surface); color: var(--ink); cursor: pointer; }
 .ex .defbox-close:hover { background: var(--ink); color: var(--page); }
-.ex .chart-title { font-size: 0.88rem; font-weight: 700; color: var(--ink-2); margin: 10px 0 2px; }
+.ex .chart-title { font-size: 0.94rem; font-weight: 700; color: var(--ink-2); margin: 10px 0 2px; }
 .ex .asof-line { margin: 0 0 8px; }
 .ex .trending-table td ul { margin: 0; padding-left: 0; }
 @media (forced-colors: active) { .ex .term { text-decoration: underline; } .ex .defbox { border-color: CanvasText; } }
