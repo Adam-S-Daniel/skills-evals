@@ -328,6 +328,10 @@ class MainTests(Fixture):
         md = hbr.render_markdown(self.run_analyze())
         self.assertIn("… 12 more hours", md)
 
+    def test_report_says_cloud_sessions_are_not_counted(self):
+        md = hbr.render_markdown(self.run_analyze())
+        self.assertIn("Cloud Claude Code sessions are not counted in this report.", md)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@ import { STRINGS } from '../core/strings.js';
 import { HOOK_GLOSSES } from '../core/glosses.js';
 import { clean, parseTime, fmtCount, fmtUtcDay } from '../core/format.js';
 import { h, link } from '../core/h.js';
-import { hookItems } from '../core/hooks.js';
+import { hookItems, cloudCounted } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
 import { table, srcLine, navLink, panel, badge, rangeLine, srcLineFor } from './bits.js';
 import { weekChart } from './weekchart.js';
@@ -59,6 +59,7 @@ export function hooksList(doc) {
   return h('section', { class: 'block' }, h('h2', null, STRINGS.hooksHeading),
     rangeLine(doc),
     w.from ? h('p', { class: 'note' }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
+    cloudNote(doc),
     typeof policy.max_override_rate === 'number' ? h('p', { class: 'note' }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
     items.length ? rows : h('p', null, STRINGS.hooksNone),
     items.length ? h('p', { class: 'note' }, STRINGS.hookRunsNote) : null,
@@ -67,13 +68,22 @@ export function hooksList(doc) {
     hk.private_repos_shown ? h('p', { class: 'note' }, STRINGS.hookPrivateFold) : null);
 }
 
+/* Whether cloud Claude Code sessions are in the counts, said wherever hook
+   counts appear; null when the document has no hook totals. */
+export function cloudNote(doc) {
+  const c = cloudCounted(doc);
+  if (c === null) return null;
+  const from = doc.hooks && typeof doc.hooks.cloud_from === 'string' ? fmtUtcDay(Date.parse(doc.hooks.cloud_from + 'T00:00:00Z')) : null;
+  return h('p', { class: 'note' }, c ? STRINGS.hooksCloudFrom(from) : STRINGS.hooksCloudNotLong);
+}
+
 /* One check's weeks, oldest first, summed over repos. */
 export function checkWeeks(it) {
   const by = new Map();
   for (const u of it.use) {
-    if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, ciUnknown: false, overridden: null });
+    if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, cloudRuns: 0, cloudBlocked: 0, ciUnknown: false, overridden: null });
     const r = by.get(u.week);
-    const s = u.surface === 'ci' ? 'ci' : 'local';
+    const s = u.surface === 'ci' || u.surface === 'cloud' ? u.surface : 'local';
     // A null count is unknown, not zero: the sum stays unknown.
     if (Number.isInteger(u.invocations)) r[s + 'Runs'] += u.invocations; else r[s + 'Unknown'] = true;
     r[s + 'Blocked'] += Number(u.blocked) || 0;
@@ -93,6 +103,7 @@ export function hookPage(doc, name, ctx) {
   if (!it) return h('div', null, back, h('p', null, STRINGS.hookNotFound));
   const day = (d) => fmtUtcDay(Date.parse(d + 'T00:00:00Z'), refMs);
   const weeks = checkWeeks(it);
+  const cloud = cloudCounted(doc) === true;
   const gloss = Object.prototype.hasOwnProperty.call(HOOK_GLOSSES, it.name) ? HOOK_GLOSSES[it.name] : STRINGS.hookEnforcesMissing;
   const src = link(it.raw.source_url, STRINGS.hookSourceLink);
   const byRepo = new Map();
@@ -117,16 +128,18 @@ export function hookPage(doc, name, ctx) {
         overrides(it), '.'),
       it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote)),
     panel(STRINGS.hookByWeek, weeks.length ? [
-      weekChart(weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked, b: w.ciBlocked })),
-        [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+      weekChart(weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked + (cloud ? w.cloudBlocked : 0), b: w.ciBlocked })),
+        [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => day(w.week) },
         { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.localRuns, cell: (w) => fmtCount(w.localRuns) },
         { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.localBlocked, cell: (w) => fmtCount(w.localBlocked) },
         { label: STRINGS.colCiRuns, num: true, sort: (w) => (w.ciRuns === null ? -1 : w.ciRuns), cell: (w) => (w.ciRuns === null ? STRINGS.runsNotCounted : fmtCount(w.ciRuns)) },
         { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ciBlocked, cell: (w) => fmtCount(w.ciBlocked) },
+        cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloudRuns, cell: (w) => fmtCount(w.cloudRuns) } : null,
+        cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloudBlocked, cell: (w) => fmtCount(w.cloudBlocked) } : null,
         { label: STRINGS.colOverrides, num: true, sort: (w) => w.overridden, cell: (w) => (it.measured && w.overridden !== null ? fmtCount(w.overridden) : STRINGS.overridesNotCounted) }
-      ], weeks.slice().reverse())] : null),
+      ].filter(Boolean), weeks.slice().reverse()), cloudNote(doc)] : null),
     panel(STRINGS.hookByRepo, byRepo.size ? table([
       { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(r.repo) },
       { label: STRINGS.colSurface, sort: (r) => r.surface, cell: (r) => r.surface },
