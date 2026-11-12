@@ -409,7 +409,12 @@ field checked, a malformed line skipped, an `id` counted once), and publishes:
   nothing in the file. `from` is the later of the window start and the Monday
   of the earliest record's week: **coverage before the first record is
   unknown, not zero**, and a run in a session that never uploaded is not
-  counted, so a count is a lower bound.
+  counted, so a count is a lower bound. A record's `id` hashes the run-log
+  line alone, so two containers that ran the same checks on the same repo in
+  the same second count once.
+- The drop is untrusted, so a cloud check id is published by name only when
+  the trusted local hook log counted that id in the window; any other id is
+  `other`.
 - On a failed fetch of the private branch the previous file's cloud hook rows
   and source are carried forward like the cloud guidance rows (the summary
   says `cloud hooks: carried forward` or `not read`).

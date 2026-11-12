@@ -22,7 +22,7 @@ field again before the document is written.
     (`surface: cloud` rows) count only when the local file has a cloud
     `hook-records` source: then `totals.cloud` is published and `cloud_from`
     is that source's `from` (a date); with no such source `totals` has no
-    `cloud` key and `cloud_from` is null, which reads as "cloud not counted",
+    `cloud` key and no `cloud_from`, which reads as "cloud not counted",
     never as zero runs. A repository is
     named only when the GitHub visibility list (`--public-repos`) reads it
     `private: false`; every other one, and the producers' own `other` and
@@ -387,14 +387,18 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
         mine = rows_of(use.get(key, {})) if rows is not None else None
         entry.update(use=mine, **verdict(mine, start, policy))
         entries.append(entry)
-    return {"window": {"weeks": policy["window_weeks"], "from": start,
+    out = {"window": {"weeks": policy["window_weeks"], "from": start,
                        "to": now.date().isoformat()},
             "policy": {k: policy[k] for k in ("max_override_rate", "min_private_repos")},
             "checks": entries,
             "totals": None if rows is None else {s: rows_of(totals[s]) for s in surfaces},
-            "cloud_from": None if cloud_source is None else _stamp(cloud_source["from"])[:10],
             "unlisted": None if rows is None else unlisted,
             "private_repos_shown": shown}
+    # Only with a cloud source, so the public file is unchanged until a
+    # cloud record exists.
+    if cloud_source is not None:
+        out["cloud_from"] = _stamp(cloud_source["from"])[:10]
+    return out
 
 
 def verdict(rows: list | None, start: str, policy: dict) -> dict:

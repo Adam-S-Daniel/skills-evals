@@ -53,7 +53,7 @@ anything under `drop/`, with any key, date part and content. So:
   * EACH RECORD is checked on its own. A skill line must pass the census's
     own reader (`_cloud_line_ok`, the ADR 0036 shape); a guidance record
     must pass `guidance_record_ok`; a hook line must pass `hook_line_ok`:
-    exactly the keys CLOUD_HOOK_KEYS in that order, the census's own reader
+    exactly the keys CLOUD_HOOK_KEYS (any order), the census's own reader
     (`cloud_hook_line_ok`) plus ASCII strings, at most MAX_HOOKS lines per
     object, `ts` near LastModified like the others; a guidance record
     must pass `guidance_record_ok`: exactly the keys the hook's phase 1

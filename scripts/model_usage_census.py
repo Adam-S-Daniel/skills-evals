@@ -1719,7 +1719,8 @@ def cloud_hook_records(store) -> list[dict]:
     return out
 
 
-def cloud_hook_tally(store, now: datetime, weeks: int, repos: frozenset[str]) -> dict | None:
+def cloud_hook_tally(store, now: datetime, weeks: int, repos: frozenset[str],
+                     known: frozenset[str] | None = None) -> dict | None:
     """{"rows": {(iso_week, name, repo, runner): [runs, blocked]},
     "records_scanned": n, "earliest": datetime} over the cloud hook records
     in the census window, counted like `hook_tally`'s rows (a repository not
@@ -1727,7 +1728,12 @@ def cloud_hook_tally(store, now: datetime, weeks: int, repos: frozenset[str]) ->
     which is not a count of zero but no coverage. A record counts once per
     `id` across every shard; one outside the window is not counted, but still
     proves the store has records. `earliest` is the earliest record of the
-    STORE, so the source's `from` does not move when the window does."""
+    STORE, so the source's `from` does not move when the window does.
+
+    The records come from an untrusted drop, so a check id is published by
+    name only when it is in `known` (the ids the trusted local hook log
+    counted); any other id is counted as `other`. None keeps every id (tests
+    and callers with no local log)."""
     records = cloud_hook_records(store)
     if not records:
         return None
@@ -1743,8 +1749,9 @@ def cloud_hook_tally(store, now: datetime, weeks: int, repos: frozenset[str]) ->
         repo = record["repo"]
         if repo is not None and repo not in repos:
             repo = OTHER_KEY
-        _count_hook_run(rows, iso_week(when), repo, record["checks"], record["failed"],
-                        record["runner"])
+        name = (lambda c: c) if known is None else (lambda c: c if c in known else OTHER_KEY)
+        _count_hook_run(rows, iso_week(when), repo, [name(c) for c in record["checks"]],
+                        [name(c) for c in record["failed"]], record["runner"])
     earliest = min(parse_ts(r["ts"]).astimezone(timezone.utc) for r in records)
     return {"rows": rows, "records_scanned": len(seen), "earliest": earliest}
 
@@ -2161,7 +2168,10 @@ def main() -> int:
         cloud = (cloud_guidance_tally(args.cloud_guidance, now, args.weeks)
                  if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
                  else None)
-        cloud_hooks = (cloud_hook_tally(args.cloud_guidance, now, args.weeks, repos)
+        known = (None if hooks is None else
+                 frozenset(name for (_, name, _, _) in hooks["rows"]) - {HOOK_ALL})
+        cloud_hooks = (cloud_hook_tally(args.cloud_guidance, now, args.weeks, repos,
+                                        known if known is not None else frozenset())
                        if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
                        else None)
         digests = None

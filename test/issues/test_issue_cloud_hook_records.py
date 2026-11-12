@@ -121,6 +121,15 @@ class TallyTests(StoreCase):
             (w, "all", None, None): [1, 0],
             (w, "rules-dir", None, None): [1, 0]})
 
+    def test_a_check_id_the_local_log_never_counted_is_other(self):
+        # The drop is untrusted: only ids the trusted local log counted are
+        # published by name.
+        self.shard(hook(checks=["rules-dir", "made-up-name"], failed=["made-up-name"]))
+        rows = census.cloud_hook_tally(self.store, NOW, 8, PUBLIC, frozenset({"rules-dir"}))["rows"]
+        names = {name for (_, name, _, _) in rows}
+        self.assertEqual(names, {"all", "rules-dir", "other"})
+        self.assertEqual(rows[("2026-W36", "other", "example/open", "0123456789ab")], [1, 1])
+
     def test_a_repo_outside_the_public_list_is_other(self):
         self.shard(hook(repo="example/closed"), hook(id="1111111111111111", repo=None))
         self.assertEqual(sorted({k[2] for k in self.tally()["rows"] if k[1] != "all"},
@@ -224,7 +233,9 @@ class RowsAndSourceTests(StoreCase):
             doc = json.loads(weekly.read_text(encoding="utf-8"))
             cloud = [r for r in doc["rows"] if r["kind"] == "hook"]
             scopes = [s["scope"] for s in doc["sources"] if s["surface"] == "cloud"]
-            self.assertEqual((len(cloud), "hook-records" in scopes), (3, True) if records
+            # No local hook log, so no id is known: both checks fold into
+            # `other`, leaving an `all` row and an `other` row.
+            self.assertEqual((len(cloud), "hook-records" in scopes), (2, True) if records
                              else (0, False))
             self.assertEqual(skill_usage.load(weekly), doc)
 
@@ -300,7 +311,7 @@ class ExplorerPublicTests(unittest.TestCase):
     def test_without_a_cloud_source_the_cloud_key_is_absent_and_rows_are_dropped(self):
         hooks = self.build(self.rows())
         self.assertEqual(sorted(hooks["totals"]), ["ci", "local"])
-        self.assertIsNone(hooks["cloud_from"])
+        self.assertNotIn("cloud_from", hooks)
         # Another surface's source does not count.
         self.assertNotIn("cloud", self.build(self.rows(), [
             {**CLOUD_SOURCE, "scope": "guidance-records"}])["totals"])
@@ -308,7 +319,7 @@ class ExplorerPublicTests(unittest.TestCase):
     def test_a_source_with_no_readable_from_does_not_count(self):
         hooks = self.build(self.rows(), [{**CLOUD_SOURCE, "from": "nope"}])
         self.assertNotIn("cloud", hooks["totals"])
-        self.assertIsNone(hooks["cloud_from"])
+        self.assertNotIn("cloud_from", hooks)
 
     def test_per_check_use_rows_carry_the_cloud_surface_only_with_a_source(self):
         extra = [skill_usage.hook_row("2026-W36", "repo-local", "example/open", 1, 0),
