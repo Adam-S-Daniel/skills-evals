@@ -18,7 +18,12 @@ field again before the document is written.
     the `lesson_checks` list; `repo-local` is listed per repository instead)
     plus one `repo-local` entry per public repository whose checkout has
     `.agent-checks/local.sh`. Weekly use comes from the `kind: hook` rows of
-    `usage/weekly-local.json` and `usage/weekly-ci.json`. A repository is
+    `usage/weekly-local.json` and `usage/weekly-ci.json`. Cloud sessions' runs
+    (`surface: cloud` rows) count only when the local file has a cloud
+    `hook-records` source: then `totals.cloud` is published and `cloud_from`
+    is that source's `from` (a date); with no such source `totals` has no
+    `cloud` key and `cloud_from` is null, which reads as "cloud not counted",
+    never as zero runs. A repository is
     named only when the GitHub visibility list (`--public-repos`) reads it
     `private: false`; every other one, and the producers' own `other` and
     `private` folds, become PRIVATE_BUCKET, whose rows are published only when
@@ -280,9 +285,25 @@ def _add(a, b):
     return a + b if _count(b) else a
 
 
-def _hook_rows(tree: Path) -> list | None:
+def _cloud_hook_source(tree: Path) -> dict | None:
+    """The cloud `hook-records` source of usage/weekly-local.json, or None:
+    cloud hook runs are counted only when the usage file says it read records."""
+    doc = _read_json(tree / "usage" / "weekly-local.json")
+    if not isinstance(doc, dict) or doc.get("schema") != skill_usage.SCHEMA \
+            or not isinstance(doc.get("sources"), list):
+        return None
+    for source in doc["sources"]:
+        if isinstance(source, dict) and source.get("surface") == "cloud" \
+                and source.get("scope") == skill_usage.CLOUD_HOOK_SCOPE \
+                and isinstance(_stamp(source.get("from")), str):
+            return source
+    return None
+
+
+def _hook_rows(tree: Path, cloud: bool = False) -> list | None:
     """Every `kind: hook` row of the two weekly files, or None when neither
-    is readable."""
+    is readable. A cloud row is kept only when `cloud` says the usage file has
+    a cloud hook source."""
     # Not skill_usage.load: the CI file's `repo` rows carry a null
     # `invocations`, which that loader rejects for the whole file. Only the
     # hook rows are read, each held to its own shape.
@@ -295,7 +316,7 @@ def _hook_rows(tree: Path) -> list | None:
         found = True
         rows += [r for r in doc["rows"] if isinstance(r, dict) and r.get("kind") == "hook"
                  and isinstance(r.get("week"), str) and _DAY_RE.fullmatch(r["week"])
-                 and isinstance(r.get("name"), str) and r.get("surface") in ("local", "ci")
+                 and isinstance(r.get("name"), str) and r.get("surface") in (("local", "ci", "cloud") if cloud else ("local", "ci"))
                  # A CI row may carry a null count: the CI producer records
                  # which checks refused, not which ran.
                  and (_count(r.get("invocations"))
@@ -307,19 +328,22 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
                 context_repos: dict | None, public: frozenset | None, policy: dict) -> dict | None:
     """The document's `hooks`, or None with neither a catalog nor a usage file."""
     catalog = fleet_checks(agent_checks_dir)
-    rows = _hook_rows(tree)
+    cloud_source = _cloud_hook_source(tree)
+    rows = _hook_rows(tree, cloud_source is not None)
     if catalog is None and rows is None:
         return None
     checks = {(c["name"], c["repo"]): dict(c) for c in (catalog or []) + repo_checks(context_repos, public)}
     fleet_names = {c["name"] for c in catalog or []}
     private_seen: set = set()
     use: dict = {}
-    totals: dict = {"local": {}, "ci": {}}
+    surfaces = ("local", "ci") + (("cloud",) if cloud_source is not None else ())
+    totals: dict = {s: {} for s in surfaces}
     unlisted = 0
     for row in rows or []:
         name, surface = row["name"], row["surface"]
         repo = _bucket(row.get("repo"), public, private_seen)
-        whole = name == "all" and surface == "local" or name == CI_JOB_NAME and surface == "ci"
+        whole = name == "all" and surface in ("local", "cloud") \
+            or name == CI_JOB_NAME and surface == "ci"
         if whole:
             target = totals[surface]
         elif name in fleet_names:
@@ -367,7 +391,8 @@ def build_hooks(tree: Path, now: datetime, agent_checks_dir: Path | None,
                        "to": now.date().isoformat()},
             "policy": {k: policy[k] for k in ("max_override_rate", "min_private_repos")},
             "checks": entries,
-            "totals": None if rows is None else {s: rows_of(totals[s]) for s in ("local", "ci")},
+            "totals": None if rows is None else {s: rows_of(totals[s]) for s in surfaces},
+            "cloud_from": None if cloud_source is None else _stamp(cloud_source["from"])[:10],
             "unlisted": None if rows is None else unlisted,
             "private_repos_shown": shown}
 

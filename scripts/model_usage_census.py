@@ -85,6 +85,14 @@ boundary, so each is mapped through a fixed enum (anything else is `invalid`
 for `state`, `unknown` for `check_reported`); no session id, CLI version,
 repository count or guidance version is copied.
 
+CLOUD HOOK RECORDS (cloud sessions' agent-checks runs, one line per run,
+uploaded by the cloud Stop hook) are read from the same checkout,
+`events/*/cloud-hooks/<16 hex>.jsonl` (`cloud_hook_tally`, read-only, every
+field checked by `cloud_hook_line_ok`, a malformed line skipped), and become
+`hook` rows with `surface: "cloud"` through `skill_usage.hook_row`, exactly as
+the local ones, plus a `scope: "hook-records"` source that exists only once a
+record does: coverage before the first record is unknown, not zero.
+
 PRIVATE EVENTS are the exception, and the only one: `--events-out` writes
 one JSON line per skill invocation, with its timestamp, session id and title,
 repository and branch. That file is NEVER published publicly:
@@ -1085,6 +1093,20 @@ def _hook_key(check: str) -> str:
     return check if HOOK_ID_RE.fullmatch(check) and check != HOOK_ALL else OTHER_KEY
 
 
+def _count_hook_run(rows: dict, week: str, repo: str | None, checks: list,
+                    failed_ids: list, runner: str | None) -> None:
+    """Add one run to `rows` ({(week, name, repo, runner): [runs, blocked]}):
+    one count per check that ran, and one `all` count for the run. `repo` is
+    already bucketed."""
+    failed = {_hook_key(check) for check in failed_ids}
+    ran = {_hook_key(check) for check in checks} | failed
+    for name, hit in [((HOOK_ALL, None), bool(failed))] + \
+            [((key, repo), key in failed) for key in ran]:
+        counts = rows.setdefault((week, *name, runner), [0, 0])
+        counts[0] += 1
+        counts[1] += int(hit)
+
+
 def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
                events: list | None = None, machine: str = "") -> dict | None:
     """{"rows": {(iso_week, name, repo, runner): [runs, blocked]},
@@ -1120,13 +1142,7 @@ def hook_tally(paths, now: datetime, weeks: int, repos: frozenset[str],
                 repo = run["repo"]
                 if repo is not None and repo not in repos:
                     repo = OTHER_KEY
-                failed = {_hook_key(check) for check in run["failed"]}
-                ran = {_hook_key(check) for check in run["checks"]} | failed
-                for name, hit in [((HOOK_ALL, None), bool(failed))] + \
-                        [((key, repo), key in failed) for key in ran]:
-                    counts = rows.setdefault((week, *name, run["runner"]), [0, 0])
-                    counts[0] += 1
-                    counts[1] += int(hit)
+                _count_hook_run(rows, week, repo, run["checks"], run["failed"], run["runner"])
                 if events is not None:
                     events.append({"v": 1, "id": digest, "ts": _event_ts(run["when"]),
                                    "kind": "hook", "event": run["event"],
@@ -1420,7 +1436,8 @@ def window_from(now: datetime, weeks: int) -> datetime:
 def build_weekly_document(tally: dict, now: datetime,
                           weeks: int = DEFAULT_WEEKS, hooks: dict | None = None,
                           cloud: dict | None = None, digests: tuple | None = None,
-                          skill_keys: frozenset | None = None) -> dict:
+                          skill_keys: frozenset | None = None,
+                          cloud_hooks: dict | None = None) -> dict:
     """`usage/weekly-local.json`, built by `harness/skill_usage.py`, which
     owns its schema. The window starts at the Monday of its oldest week.
     `hooks` is `hook_tally()`'s result; None adds no hook rows or source.
@@ -1429,7 +1446,8 @@ def build_weekly_document(tally: dict, now: datetime,
     None adds no skill-digest rows or source (#562). `skill_keys` is the
     allowlist the census counted by name; it is published on the transcripts
     source so a reader can tell an untracked skill (counted under `other`)
-    from an unused one."""
+    from an unused one. `cloud_hooks` is `cloud_hook_tally()`'s; None adds no
+    cloud hook rows or source."""
     rows = [skill_usage.row(week, "skill", name, n,
                             tally["sessions"].get(name, {}).get(week, 0))
             for name, by_week in tally["invocations"].items()
@@ -1462,11 +1480,21 @@ def build_weekly_document(tally: dict, now: datetime,
         cloud_source = {"from": max(start, record_week or start),
                         "records_scanned": cloud["records_scanned"],
                         "listing_recorded": bool(cloud.get("listing_recorded"))}
+    cloud_hook_source = None
+    if cloud_hooks is not None:
+        rows += [skill_usage.hook_row(week, name, repo, runs, blocked, runner,
+                                      skill_usage.SURFACE_CLOUD)
+                 for (week, name, repo, runner), (runs, blocked) in cloud_hooks["rows"].items()]
+        first = datetime.fromisoformat(skill_usage.week_monday(
+            iso_week(cloud_hooks["earliest"]))).replace(tzinfo=timezone.utc)
+        cloud_hook_source = {"from": max(start, first),
+                             "records_scanned": cloud_hooks["records_scanned"]}
     doc = skill_usage.document(rows, now, start, tally["sessions_scanned"],
                                None if hooks is None else hooks["runs_scanned"],
                                cloud_source,
                                None if skill_keys is None else
-                               [k for k in skill_keys if SKILL_KEY_RE.fullmatch(k)])
+                               [k for k in skill_keys if SKILL_KEY_RE.fullmatch(k)],
+                               cloud_hook_source)
     if digests is not None:
         add_digest_rows(doc, *digests, now)
     return doc
@@ -1622,6 +1650,103 @@ def _machine_skill_records(store):
 def machine_skill_ids(store) -> set:
     """The ids of every skill line in the store's machine files."""
     return {record["id"] for _, record in _machine_skill_records(store)}
+
+
+# --- Cloud hook records (`--cloud-guidance` checkout) -------------------------
+# A cloud session's Stop hook uploads one line per agent-checks run to
+# events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl on the private branch (git, or
+# the S3 sink through scripts/ingest_usage_sink.py). Same untrusted-line rules
+# as the cloud skill shards: every field is checked, a failing line is skipped.
+
+CLOUD_HOOKS_DIR = "cloud-hooks"
+#: Exactly these keys (the hook writes them in this order; order is not checked).
+CLOUD_HOOK_KEYS = ("v", "id", "ts", "kind", "surface", "session", "event", "repo",
+                   "checks", "failed", "runner")
+#: `id`: the first 16 hex of the sha256 of the raw run-log line.
+CLOUD_HOOK_ID_RE = re.compile(r"[0-9a-f]{16}")
+#: Whole seconds, UTC: the run log's own stamp.
+CLOUD_HOOK_TS_RE = re.compile(
+    r"(20[0-9]{2}|2100)-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z")
+#: A run holds a few dozen checks at most; a longer list is not a run.
+CLOUD_HOOK_LIST_CAP = 64
+
+
+def _hook_id_list(value) -> list | None:
+    """`value` when it is a bounded list of distinct kebab-case check ids."""
+    if not (isinstance(value, list) and len(value) <= CLOUD_HOOK_LIST_CAP
+            and all(isinstance(i, str) and HOOK_ID_RE.fullmatch(i) for i in value)
+            and len(set(value)) == len(value)):
+        return None
+    return value
+
+
+def cloud_hook_line_ok(record, month: str, session: str) -> bool:
+    """Whether `record` has exactly the cloud hook record shape, filed under
+    the shard (`month` directory, `session` stem) its own `ts` and `session`
+    name."""
+    if not isinstance(record, dict) or set(record) != set(CLOUD_HOOK_KEYS):
+        return False
+    ts, repo, runner = record["ts"], record["repo"], record["runner"]
+    checks, failed = _hook_id_list(record["checks"]), _hook_id_list(record["failed"])
+    return (type(record["v"]) is int and record["v"] == 1
+            and isinstance(record["id"], str) and bool(CLOUD_HOOK_ID_RE.fullmatch(record["id"]))
+            and isinstance(ts, str) and bool(CLOUD_HOOK_TS_RE.fullmatch(ts))
+            and ts[:7] == month and parse_ts(ts) is not None
+            and record["kind"] == "hook" and record["surface"] == "cloud"
+            and record["session"] == session
+            and isinstance(session, str) and bool(CLOUD_SESSION_RE.fullmatch(session))
+            and isinstance(record["event"], str) and record["event"] in HOOK_EVENTS
+            and (repo is None or _owner_repo(repo) is not None)
+            and checks is not None and failed is not None and set(failed) <= set(checks)
+            and (runner is None or isinstance(runner, str)
+                 and bool(RUNNER_RE.fullmatch(runner))))
+
+
+def cloud_hook_records(store) -> list[dict]:
+    """Every well-formed line of `store`/events/<YYYY-MM>/cloud-hooks/<16
+    hex>.jsonl, READ-ONLY, files in sorted order and lines in file order,
+    skipping linked months, directories and shards and names of another
+    shape, as `cloud_skill_records` does."""
+    out = []
+    for path in sorted(Path(store).glob(f"{EVENTS_DIR}/*/{CLOUD_HOOKS_DIR}/*.jsonl")):
+        month = path.parent.parent
+        if (not _MONTH_RE.fullmatch(month.name) or not CLOUD_SESSION_RE.fullmatch(path.stem)
+                or month.is_symlink() or path.parent.is_symlink() or path.is_symlink()
+                or not path.is_file()):
+            continue
+        out += [record for record in _jsonl_dicts(path)
+                if cloud_hook_line_ok(record, month.name, path.stem)]
+    return out
+
+
+def cloud_hook_tally(store, now: datetime, weeks: int, repos: frozenset[str]) -> dict | None:
+    """{"rows": {(iso_week, name, repo, runner): [runs, blocked]},
+    "records_scanned": n, "earliest": datetime} over the cloud hook records
+    in the census window, counted like `hook_tally`'s rows (a repository not
+    in `repos` is `other`); None when the store holds no valid record at all,
+    which is not a count of zero but no coverage. A record counts once per
+    `id` across every shard; one outside the window is not counted, but still
+    proves the store has records. `earliest` is the earliest record of the
+    STORE, so the source's `from` does not move when the window does."""
+    records = cloud_hook_records(store)
+    if not records:
+        return None
+    wanted = set(window_weeks(now, weeks))
+    start = window_from(now, weeks)
+    rows: dict = {}
+    seen: set[str] = set()
+    for record in records:
+        when = parse_ts(record["ts"]).astimezone(timezone.utc)
+        if record["id"] in seen or when < start or iso_week(when) not in wanted:
+            continue
+        seen.add(record["id"])
+        repo = record["repo"]
+        if repo is not None and repo not in repos:
+            repo = OTHER_KEY
+        _count_hook_run(rows, iso_week(when), repo, record["checks"], record["failed"],
+                        record["runner"])
+    earliest = min(parse_ts(r["ts"]).astimezone(timezone.utc) for r in records)
+    return {"rows": rows, "records_scanned": len(seen), "earliest": earliest}
 
 
 # --- Cloud shards (#562 PR B; _agent-guidance ADR 0036) ----------------------
@@ -2036,6 +2161,9 @@ def main() -> int:
         cloud = (cloud_guidance_tally(args.cloud_guidance, now, args.weeks)
                  if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
                  else None)
+        cloud_hooks = (cloud_hook_tally(args.cloud_guidance, now, args.weeks, repos)
+                       if args.cloud_guidance is not None and args.cloud_guidance.is_dir()
+                       else None)
         digests = None
         if args.event_store is not None:
             stored, start = store_digests(args.event_store), window_from(now, args.weeks)
@@ -2057,7 +2185,7 @@ def main() -> int:
                 digests = (plan, digest_rows(plan, entries, mirrors)[0])
         _write_json(args.weekly_out,
                     build_weekly_document(tally, now, args.weeks, hooks, cloud, digests,
-                                          allowlist))
+                                          allowlist, cloud_hooks))
         calls = sum(sum(by_week.values()) for by_week in tally["invocations"].values())
         status += f"; {calls} skill invocations -> {args.weekly_out}"
     if args.events_out is not None:

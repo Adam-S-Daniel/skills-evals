@@ -70,6 +70,16 @@ def skill(**overrides) -> dict:
     return record
 
 
+def hook(**overrides) -> dict:
+    """One cloud hook line: an agent-checks run, in the key order the hook writes."""
+    record = {"v": 1, "id": "0123456789abcdef", "ts": "2026-09-02T10:06:00Z",
+              "kind": "hook", "surface": "cloud", "session": SID, "event": "pre-commit",
+              "repo": "example/repo", "checks": ["rules-dir", "secret-file"],
+              "failed": ["secret-file"], "runner": "0123456789ab"}
+    record.update(overrides)
+    return record
+
+
 def drop(guidance_records=None, skills=None, **overrides) -> dict:
     doc = {"v": 1, "kind": "usage-drop", "sent": "2026-09-02T10:10:00Z",
            "guidance": [guidance()] if guidance_records is None else guidance_records,
@@ -255,10 +265,10 @@ class PlanTests(SinkCase):
         listing = self.listing([self.item(k) for k in keys])
         # Lines written before versions existed read as v1.
         self.write_index("rejected", f"{keys[0]} bad-skill-record", f"{keys[1]} bad-keys v1",
-                         f"{keys[2]} bad-guidance-record v2", f"{keys[3]} bad-envelope")
+                         f"{keys[2]} bad-guidance-record v{sink.VALIDATOR_VERSION}", f"{keys[3]} bad-envelope")
         self.assertEqual([line.split("\t")[0] for line in self.plan(listing)[1]],
                          keys[:2])
-        with mock.patch.object(sink, "VALIDATOR_VERSION", 3):
+        with mock.patch.object(sink, "VALIDATOR_VERSION", sink.VALIDATOR_VERSION + 1):
             planned, _ = sink.plan(listing, self.store)
         self.assertEqual([key for key, _ in planned], keys[:3])
 
@@ -342,7 +352,7 @@ class ApplyTests(SinkCase):
         proc = self.apply(unreadable=[KEY, KEY3])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.index("rejected"),
-                         [f"{KEY3} unreadable v2", f"{KEY} unreadable v2"])
+                         [f"{KEY3} unreadable v3", f"{KEY} unreadable v3"])
         self.assertEqual(self.index("ingested"), [])
         self.assertIn("1 planned but missing", proc.stdout)
         self.assertIn("rejected by reason: unreadable 2", proc.stdout)
@@ -378,7 +388,7 @@ class EnvelopeTests(SinkCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(self.events(), [], "nothing from a rejected object is written")
         self.assertEqual(self.index("ingested"), [])
-        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v2"])
+        self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v3"])
         self.assertIn("rejected by reason: bad-envelope 1", proc.stdout)
 
     def test_control_the_valid_object_is_accepted(self):
@@ -524,7 +534,7 @@ class VersionTests(SinkCase):
         self.assertEqual([line.split(" ")[0] for line in self.index("ingested")], [KEY])
         self.assertEqual(self.index("rejected"),
                          [f"{KEY} bad-skill-record", f"{KEY2} bad-envelope v1"])
-        self.assertEqual(sink.VALIDATOR_VERSION, 2)
+        self.assertEqual(sink.VALIDATOR_VERSION, 3)
 
 
 class DedupeTests(SinkCase):
@@ -632,6 +642,121 @@ class LinkTests(SinkCase):
         proc = self.run_cli("apply", "--incoming", str(self.base / "none"),
                             "--store", str(self.store), "--manifest", str(manifest))
         self.assertEqual(proc.returncode, 2)
+
+
+class HookLineTests(SinkCase):
+    """The optional `hooks` list of the envelope: cloud agent-checks runs."""
+
+    def stored(self, session=SID, month="2026-09"):
+        path = self.store / f"events/{month}/cloud-hooks/{session}.jsonl"
+        return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+
+    def test_an_envelope_without_hooks_is_still_accepted(self):
+        self.put(KEY, drop())
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.index("rejected"), [])
+        self.assertEqual(self.stored(), [])
+        self.assertEqual([e for e in self.events() if "cloud-hooks" in e], [])
+
+    def test_hooks_reach_the_census_reader_and_are_stored_as_sent(self):
+        runs = [hook(), hook(id="fedcba9876543210", event="pre-push", repo=None,
+                            checks=[], failed=[], runner=None)]
+        self.put(KEY, drop(None, [], hooks=runs))
+        proc = self.apply()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("2 hook lines added", proc.stdout)
+        self.assertEqual(self.stored(),
+                         [json.dumps(r, separators=(",", ":")) for r in runs])
+        self.assertEqual([r["id"] for r in census.cloud_hook_records(self.store)],
+                         ["0123456789abcdef", "fedcba9876543210"])
+        self.assertEqual(self.index("rejected"), [])
+        self.assertNotIn("partial", "".join(self.index("ingested")))
+
+    def test_an_empty_hooks_list_is_valid(self):
+        self.put(KEY, drop(None, [], hooks=[]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.index("ingested")), 1)
+
+    def test_a_hook_id_already_in_its_shard_is_not_appended_again(self):
+        self.put(KEY, drop(None, [], hooks=[hook()]))
+        self.put(KEY2, drop(None, [], hooks=[hook(), hook(id="fedcba9876543210")]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual([json.loads(line)["id"] for line in self.stored()],
+                         ["0123456789abcdef", "fedcba9876543210"])
+
+    def test_a_rerun_changes_no_byte(self):
+        self.put(KEY, drop(None, [], hooks=[hook()]))
+        self.assertEqual(self.apply().returncode, 0)
+        before = tree_digest(self.store)
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(tree_digest(self.store), before)
+
+    def test_hooks_file_under_their_own_month_and_session(self):
+        self.put(KEY, drop(None, [], hooks=[
+            hook(), hook(id="1111111111111111", session=SID2),
+            hook(id="2222222222222222", ts="2026-08-31T23:00:00Z")]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(len(self.stored()), 1)
+        self.assertEqual(len(self.stored(SID2)), 1)
+        self.assertEqual(len(self.stored(month="2026-08")), 1)
+
+    def test_a_bad_hook_line_loses_only_itself(self):
+        bad = [hook(extra=1), hook(kind="skill"), hook(surface="local"),
+               hook(v=2), hook(id="short"), hook(session="nope"), hook(event="ci"),
+               hook(repo="not a repo"), hook(checks="x"), hook(runner="ABCDEF012345"),
+               hook(failed=["other-check"]), hook(checks=["Bad_Id"], failed=[]),
+               hook(checks=["a", "a"], failed=[]), hook(ts="2026-09-02T10:06:00.5Z"),
+               hook(checks=[f"c{i}" for i in range(65)], failed=[]), "text", 7, None]
+        self.put(KEY, drop(None, [], hooks=[hook(id="aaaaaaaaaaaaaaaa"), *bad]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual([json.loads(line)["id"] for line in self.stored()],
+                         ["aaaaaaaaaaaaaaaa"])
+        self.assertTrue(self.index("ingested")[0].endswith(f" partial={len(bad)}"))
+
+    def test_a_missing_key_is_invalid(self):
+        line = hook()
+        del line["runner"]
+        self.put(KEY, drop(None, [], hooks=[line]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.stored(), [])
+
+    def test_non_ascii_digits_and_ids_are_invalid(self):
+        self.put(KEY, drop(None, [], hooks=[
+            hook(ts="2026-09-02T10:06:00Z".replace("2026", "\u0662\u0660\u0662\u0666")),
+            hook(session="\u0660" * 16), hook(id="\u0660" * 16),
+            hook(checks=["r\u00fcles"], failed=[])]))
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(self.stored(), [])
+
+    def test_hooks_must_be_a_list(self):
+        for bad in (None, {}, "x", 3):
+            with self.subTest(hooks=bad):
+                self.setUp()
+                self.put(KEY, drop(None, [], hooks=bad))
+                self.assertEqual(self.apply().returncode, 0)
+                self.assertEqual(self.index("rejected"), [f"{KEY} bad-envelope v3"])
+                self.assertEqual(self.events(), [])
+
+    def test_hooks_beyond_the_cap_are_dropped(self):
+        lines = [hook(id=f"{i:016x}") for i in range(sink.MAX_HOOKS + 3)]
+        guidance_records, skills, kept, dropped = sink.split_records(
+            drop(None, [], hooks=lines), MODIFIED_AT)
+        self.assertEqual((len(kept), dropped), (sink.MAX_HOOKS, 3))
+
+    def test_ts_is_held_to_last_modified_like_the_other_records(self):
+        def at(delta):
+            return (MODIFIED_AT + delta).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for delta in (timedelta(hours=-48), timedelta(minutes=10)):
+            self.assertTrue(sink.hook_line_ok(hook(ts=at(delta)), MODIFIED_AT))
+        for delta in (timedelta(hours=-48, seconds=-1), timedelta(minutes=10, seconds=1)):
+            self.assertFalse(sink.hook_line_ok(hook(ts=at(delta)), MODIFIED_AT))
+
+    def test_no_hook_content_reaches_stdout_or_stderr(self):
+        self.put(KEY, drop(None, [], hooks=[hook(), hook(extra="marker-skill")]))
+        proc = self.apply()
+        self.assertEqual(proc.stderr, "")
+        self.assertNotIn(SID, proc.stdout)
+        self.assertNotIn("example/repo", proc.stdout)
 
 
 class OutputTests(SinkCase):
