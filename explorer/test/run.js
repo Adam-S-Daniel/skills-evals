@@ -361,11 +361,20 @@ await test('tool/index.html is a fresh build of explorer/src', async () => {
   const fresh = await buildPublicPage();
   ok(fresh === fs.readFileSync(PAGE, 'utf8'), 'tool/index.html differs from a build: run `npm run build` in explorer/ and commit both');
 });
+/* The one resource a page may load: base.css's Google Fonts stylesheet. Fonts
+   only change the look; every stack ends in faces readers already have. */
+const FONT_IMPORT = /@import url\("https:\/\/fonts\.googleapis\.com\/css2\?[^"\s]*"\);/g;
+function loadsOnlyFonts(html) {
+  const imports = html.match(/@import\b/g) || [];
+  const fonts = html.match(FONT_IMPORT) || [];
+  const remote = (html.replace(FONT_IMPORT, '').match(/url\(\s*["']?(?!data:)(?:[a-z]+:|\/\/)/gi) || []);
+  return imports.length === 1 && fonts.length === 1 && remote.length === 0;
+}
 await test('tool/index.html is one self-contained file', () => {
   const html = fs.readFileSync(PAGE, 'utf8');
   ok(!/<script\b[^>]*\bsrc\s*=/i.test(html), 'no external script');
   ok(!/<link\b/i.test(html), 'no linked stylesheet or other resource');
-  ok(!/@import\b/.test(html), 'no CSS import');
+  ok(loadsOnlyFonts(html), 'no CSS import or remote url() but the one Google Fonts stylesheet');
   eq((html.match(/<style>/g) || []).length, 1, 'one inline style block');
   ok(html.includes(DEFAULT_DATA_URL), 'the noscript text names the data file');
   ok(!html.includes('{{') && !html.includes('__BUNDLE__'), 'no template marker left');
@@ -385,7 +394,7 @@ await test('the private page fits an ArtifactData document once JSON-serialized'
 await test('dashboard/page/index.html is one self-contained Dashboard fragment', () => {
   const html = fs.readFileSync(PRIVATE_PAGE, 'utf8');
   ok(html.startsWith('<style>'), 'starts with its style block');
-  ok(!/<script\b[^>]*\bsrc\s*=/i.test(html) && !/<link\b/i.test(html) && !/@import\b/.test(html), 'nothing loaded from elsewhere');
+  ok(!/<script\b[^>]*\bsrc\s*=/i.test(html) && !/<link\b/i.test(html) && loadsOnlyFonts(html), 'nothing loaded from elsewhere but the font stylesheet');
   eq((html.match(/<style>/g) || []).length, 1, 'one inline style block');
   eq(inlineScripts(html).length, 1, 'one inline script');
   ok(!html.includes('{{') && !html.includes('__BUNDLE__') && !html.includes('__CSS__'), 'no template marker left');
@@ -393,13 +402,25 @@ await test('dashboard/page/index.html is one self-contained Dashboard fragment',
   ok(!/\bAdam(?:'s|\s)/.test(html), 'names no person (the repository owner/name aside)');
 });
 
+await test('motion plays only for readers who have not asked for less', () => {
+  // Every animation and transition in base.css sits inside the one
+  // prefers-reduced-motion: no-preference block (found by brace depth).
+  const css = fs.readFileSync(path.join(HERE, '..', 'template', 'base.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const open = '@media (prefers-reduced-motion: no-preference) {';
+  const at = css.indexOf(open);
+  ok(at >= 0, 'base.css has a reduced-motion block');
+  let depth = 1, end = at + open.length;
+  while (depth && end < css.length) { if (css[end] === '{') depth++; else if (css[end] === '}') depth--; end++; }
+  const outside = css.slice(0, at) + css.slice(end);
+  eq((outside.match(/(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/g) || []).length, 0, 'animation or transition outside the reduced-motion block');
+});
 await test('both pages paint the whole window in the theme color, not only their column', () => {
   // Regression: the dark private page showed a white frame outside the column and below short pages.
   const pub = fs.readFileSync(PAGE, 'utf8'), priv = fs.readFileSync(PRIVATE_PAGE, 'utf8');
   ok(/html \{[^}]*background: var\(--page\)[^}]*min-height: 100%/.test(pub), 'public html background');
   ok(/body \{[^}]*background: var\(--page\)[^}]*min-height: 100vh/.test(pub), 'public body background');
-  ok(/html, body \{ background: var\(--color-bg, #FDFBF7\); \}/.test(priv), 'private light background');
-  ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #1E1C19\); \} \}/.test(priv), 'private dark background');
+  ok(/html, body \{ background: var\(--color-bg, #F3F0E6\); \}/.test(priv), 'private light background');
+  ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #0F1614\); \} \}/.test(priv), 'private dark background');
   ok(/body \{ min-height: 100vh; \}/.test(priv), 'private body fills the window');
 });
 
@@ -496,7 +517,7 @@ await test('explorer/dist/artifact/index.html is a fresh, self-contained build',
   const html = fs.readFileSync(ARTIFACT_PAGE, 'utf8');
   ok((await buildArtifactPage()) === html, 'explorer/dist/artifact/index.html differs from a build: run `npm run build` in explorer/ and commit every page');
   ok(/^<!doctype html>/i.test(html), 'a whole document, like tool/index.html');
-  ok(!/<script\b[^>]*\bsrc\s*=/i.test(html) && !/<link\b/i.test(html) && !/@import\b/.test(html), 'nothing loaded from elsewhere');
+  ok(!/<script\b[^>]*\bsrc\s*=/i.test(html) && !/<link\b/i.test(html) && loadsOnlyFonts(html), 'nothing loaded from elsewhere but the font stylesheet');
   const scripts = inlineScripts(html);
   eq(scripts.length, 1, 'one inline script');
   eq(privateLeaks(scripts[0]).join('; '), '');
