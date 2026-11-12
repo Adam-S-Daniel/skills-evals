@@ -604,6 +604,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       sectionsHeading: "Does each section earn its place?",
       sectionsNote: "One row per section, best-faring first. Open a name for everything measured about it.",
       colSize: "Size",
+      colPerKb: "Help per word",
       noCards: "Nothing has been tested yet.",
       summaryCounts: (parts) => "Right now: " + parts + ".",
       sentenceSkill: (m, a, b, c, d) => "With this skill, " + m + " passed " + a + " of " + b + " checks; without it, " + c + " of " + d + ".",
@@ -1477,6 +1478,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       const acc = finish(buckets.get(w));
       return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: gainOf(acc, subject) };
     }).filter((p) => p.gain !== null);
+  }
+  function gainPerKb(pooled, bytes) {
+    const g = gainOf(pooled.all, "guidance");
+    const kb = (Number(bytes) || 0) / 1024;
+    if (g === null || !(kb > 0)) return null;
+    return g / kb;
   }
 
   // src/core/h.js
@@ -2761,12 +2768,16 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => fmtGain(gain(it)) },
       { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? "guidance" : "skills"), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? "guidance" : "skills")) },
       guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) } : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it)) },
+      guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPerKb(it.pooled, it.bytes), cell: (it) => {
+        const g = gainPerKb(it.pooled, it.bytes);
+        return g === null ? STRINGS.noValue : (g * 100).toFixed(1);
+      } } : null,
       { label: STRINGS.colNext, sort: (it) => {
         const k = nextKey(it.raw.next_test);
         return k[0] * 1e14 + k[1];
       }, cell: (it) => afterColon(nextText(it.raw.next_test, refMs, guidance ? "section" : "skill")) },
       { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || "", cell: (it) => afterColon(it.raw.verdict ? STRINGS.verdict[it.raw.verdict] || STRINGS.verdictOther(clean(it.raw.verdict)) : STRINGS.verdict.insufficient) }
-    ], rows);
+    ].filter(Boolean), rows);
   }
 
   // src/views/coverage.js
@@ -4506,6 +4517,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     chipFor,
     sentenceFor,
     weeklyGains,
+    gainPerKb,
     hasRegression,
     hasAlone,
     legendFor,

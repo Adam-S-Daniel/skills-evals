@@ -412,9 +412,21 @@ test('the Skills table lists every tested skill once, best status first, then mo
 });
 test('the Guidance table shows each section\'s size in words, not uses', () => {
   const page = P.buildPage(fixture, 'guidance', {});
-  eq(heads(page).join(','), 'Name,Status,Gain,Runs,Size,Next test,Official decision');
+  eq(heads(page).join(','), 'Name,Status,Gain,Runs,Size,Help per word,Next test,Official decision');
   eq(tableRows(page).length, P.sectionItems(fixture).length);
   ok(!P.findAll(page, (n) => n.attrs && n.attrs.class === 'cards').length, 'no card grid');
+  // Help per word: the in-situ gain per KB, sortable by the number itself, not its text.
+  const tr = P.findAll(page, (n) => n.tag === 'tbody')[0].children;
+  const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
+  let seen = 0;
+  for (const row of tr) {
+    const id = decodeURIComponent(P.findAll(row, (n) => n.tag === 'a')[0].attrs.href.split('/').pop());
+    const want = P.gainPerKb(items[id].pooled, items[id].bytes);
+    const td = row.children[5];
+    eq(td.attrs['data-sort'], want === null ? null : String(want), 'sort value for ' + id);
+    if (want !== null) { seen++; eq(P.textOf(td).trim(), (want * 100).toFixed(1), 'shown for ' + id); }
+  }
+  ok(seen > 1, 'at least two sections have a value');
 });
 test('section-alone results show only when the data file carries them, with why', () => {
   // Owner, 2026-11-03: explorer_data.py publishes a section's section-alone

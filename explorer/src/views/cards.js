@@ -4,7 +4,7 @@ import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtGain, fmtCoun
 import { h } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf, nextKey } from '../core/items.js';
-import { gainOf, runsOf } from '../core/stats.js';
+import { gainOf, gainPerKb, runsOf } from '../core/stats.js';
 import { hashFor } from '../core/route.js';
 import { navLink, table } from './bits.js';
 
@@ -90,7 +90,8 @@ export function subjectTable(items, kind, refMs) {
     { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
+    guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPerKb(it.pooled, it.bytes), cell: (it) => { const g = gainPerKb(it.pooled, it.bytes); return g === null ? STRINGS.noValue : (g * 100).toFixed(1); } } : null,
     { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => afterColon(nextText(it.raw.next_test, refMs, guidance ? 'section' : 'skill')) },
     { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => afterColon(it.raw.verdict ? (STRINGS.verdict[it.raw.verdict] || STRINGS.verdictOther(clean(it.raw.verdict))) : STRINGS.verdict.insufficient) }
-  ], rows);
+  ].filter(Boolean), rows);
 }

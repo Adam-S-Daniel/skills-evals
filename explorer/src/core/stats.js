@@ -196,3 +196,11 @@ export function weeklyGains(runs, subject, refMs) {
     return { week: w, start: refMs - (w + 1) * WEEK_MS, gain: gainOf(acc, subject) };
   }).filter((p) => p.gain !== null);
 }
+
+export function gainPerKb(pooled, bytes) {
+  // Sections only: the in-situ gain, what the section adds to the rest.
+  const g = gainOf(pooled.all, 'guidance');
+  const kb = (Number(bytes) || 0) / 1024;
+  if (g === null || !(kb > 0)) return null;
+  return g / kb;
+}

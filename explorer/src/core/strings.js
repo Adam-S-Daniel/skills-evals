@@ -80,7 +80,7 @@ function buildStrings(you) {
   colGain: 'Gain', colNext: 'Next test', colDecision: 'Official decision',
   sectionsHeading: 'Does each section earn its place?',
   sectionsNote: 'One row per section, best-faring first. Open a name for everything measured about it.',
-  colSize: 'Size',
+  colSize: 'Size', colPerKb: 'Help per word',
   noCards: 'Nothing has been tested yet.',
   summaryCounts: (parts) => 'Right now: ' + parts + '.',
 

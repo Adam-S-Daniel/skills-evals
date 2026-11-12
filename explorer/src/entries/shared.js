@@ -5,7 +5,7 @@ import { STRINGS, useVoice } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING, HOOK_GLOSSES } from '../core/glosses.js';
 import { clean, githubLink, friendlyModel, fmtDay, fmtDateTime, fmtCount, wordsFor } from '../core/format.js';
 import { validateDoc } from '../core/validate.js';
-import { VERDICT_CHIPS, poolRuns, chipFor, sentenceFor, weeklyGains, hasRegression } from '../core/stats.js';
+import { VERDICT_CHIPS, poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression } from '../core/stats.js';
 import { h, textOf, findAll, toDom } from '../core/h.js';
 import { purposeOf, skillItems, sectionItems, wholeGuidance } from '../core/items.js';
 import { DEFAULT_DATA_URL, allowedDataUrl, dataUrlFromSearch, cacheBust, loadData } from '../adapters/web.js';
@@ -38,7 +38,7 @@ export const EXPORTS = {
   STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
   clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
   allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-  poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, hasRegression, hasAlone, legendFor, subjectPage, weekChart, weekScale, hookNext,
+  poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, subjectPage, weekChart, weekScale, hookNext,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
   useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, mondayOf, checkWeeks,
   fixtureQueue, searchItems, filterItems, runsOf, LOOP_TITLE,
