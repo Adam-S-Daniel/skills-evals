@@ -139,7 +139,8 @@ class DrawnSelectorTests(unittest.TestCase):
         page = (ROOT / "tool" / "index.html").read_text(encoding="utf-8")
         classes = [part.strip().split(".")[-1] for part in sf.DRAWN.split(",")]
         self.assertIn("src", classes)
-        self.assertTrue(any(f"class: '{c}'" in page or f'class: "{c}"' in page
+        # The minified build writes `class:"src"` (no space); an unminified one `class: 'src'`.
+        self.assertTrue(any(re.search(r"class:\s*['\"]" + re.escape(c) + r"[\s'\"]", page)
                             for c in classes),
                         "tool/index.html draws none of the classes in DRAWN")
 
