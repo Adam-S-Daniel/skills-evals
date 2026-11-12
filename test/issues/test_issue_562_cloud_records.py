@@ -336,7 +336,8 @@ class CloudCarryTests(unittest.TestCase):
                 new = skill_usage.document([], NOW, NOW - timedelta(weeks=8), 7)
                 self.assertEqual(skill_usage.carry(self.previous(to), new),
                                  {"cloud": None, "skill copies": None,
-                                  "cloud skill copies": carried})
+                                  "cloud skill copies": carried,
+                                  "cloud hooks": None})
                 self.assertEqual([(r["kind"], r["surface"]) for r in new["rows"]],
                                  [("skill-digest", "cloud")] if carried else [])
 

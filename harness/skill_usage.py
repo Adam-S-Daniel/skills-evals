@@ -36,6 +36,19 @@ counts sessions per loaded-guidance state (`name` is
 skills were listed by name only and could rarely trigger (#668). A second source, `scope: "hooks"` with `runs_scanned`, is present only
 when a hook log was read, so an absent one means unknown, not zero.
 
+CLOUD HOOK rows (cloud sessions' agent-checks runs) have the shape of the local
+`hook` rows above, with `surface: "cloud"`: one row per (week, check id,
+repo, runner) and an `all` row per week, `invocations` the runs in which the
+check ran and `blocked` the runs in which it failed. They come from the
+`events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl` records a cloud session's Stop
+hook uploads to the private `persistent/usage-events` branch, never from a
+log read here. Their source, `scope: "hook-records"` with `surface: "cloud"`
+and `records_scanned` (the distinct runs counted), is present only when at
+least one such record exists; its `from` is the later of the census window's
+start and the Monday of the earliest record's week, so coverage before the
+first record is unknown, not zero. A reader that finds no such source must
+read cloud hook runs as not counted, never as zero.
+
 CLOUD GUIDANCE rows come from the records cloud sessions write to the private
 `persistent/usage-events` branch, never from a transcript: a `guidance` row
 with `surface: "cloud"` (`name` is the state, or `invalid`) and a
@@ -104,6 +117,8 @@ SURFACE_CLOUD = "cloud"
 #: Kinds that count sessions: their invocations are always null.
 SESSION_KINDS = ("guidance", "guidance-check", "listing")
 CLOUD_SCOPE = "guidance-records"
+#: The source of the cloud `hook` rows: present only when hook records exist.
+CLOUD_HOOK_SCOPE = "hook-records"
 #: The cloud source's flag: its records say which sessions had the registry
 #: installed and a full listing. Absent means cloud exposure is unknown.
 LISTING_RECORDED = "listing_recorded"
@@ -139,11 +154,13 @@ def row(iso_week_label: str, kind: str, name: str, invocations: int,
 
 
 def hook_row(iso_week_label: str, name: str, repo: str | None, runs: int,
-             blocked: int, runner: str | None = None) -> dict:
-    """One local hook row: runs in which check `name` ran, and failed, by
-    the runner build `runner` (12 hex of its digest, None when unknown)."""
+             blocked: int, runner: str | None = None,
+             surface: str = SURFACE_LOCAL) -> dict:
+    """One hook row: runs in which check `name` ran, and failed, by the runner
+    build `runner` (12 hex of its digest, None when unknown), on `surface`
+    (local, or cloud for the records a cloud session uploaded)."""
     return {**row(iso_week_label, "hook", name, runs, None), "repo": repo,
-            "blocked": blocked, "runner": runner}
+            "blocked": blocked, "runner": runner, "surface": surface}
 
 
 def guidance_row(iso_week_label: str, state: str, sessions: int,
@@ -220,17 +237,27 @@ def cloud_source(window_from: datetime, now: datetime, records_scanned: int,
     return out
 
 
+def cloud_hook_source(window_from: datetime, now: datetime, records_scanned: int) -> dict:
+    """The source of the cloud `hook` rows (see CLOUD_HOOK_SCOPE)."""
+    return {"surface": SURFACE_CLOUD, "scope": CLOUD_HOOK_SCOPE,
+            "from": window_from.strftime(STAMP), "to": now.strftime(STAMP),
+            "records_scanned": records_scanned}
+
+
 def document(rows: list[dict], now: datetime, window_from: datetime,
              sessions_scanned: int, hook_runs_scanned: int | None = None,
              cloud_guidance: dict | None = None,
-             skill_keys: list | None = None) -> dict:
+             skill_keys: list | None = None,
+             cloud_hooks: dict | None = None) -> dict:
     """The whole file: exactly `generated_at`, `schema`, `sources`, `rows`.
 
     `cloud_guidance` is {"from": datetime, "records_scanned": n, optionally
     "listing_recorded": bool}, passed only when the private records were read.
     `skill_keys` is the skill names the census counts by name (TRACKED_FIELD
     on the transcripts source); None leaves it out, and a reader then cannot
-    tell a skill with no use from one the census never counted."""
+    tell a skill with no use from one the census never counted.
+    `cloud_hooks` is {"from": datetime, "records_scanned": n}, passed only when
+    cloud hook records exist."""
     window = {"surface": SURFACE_LOCAL, "from": window_from.strftime(STAMP),
               "to": now.strftime(STAMP)}
     sources = [{**window, "scope": "transcripts", "sessions_scanned": sessions_scanned}]
@@ -242,6 +269,9 @@ def document(rows: list[dict], now: datetime, window_from: datetime,
         sources.append(cloud_source(cloud_guidance["from"], now,
                                     cloud_guidance["records_scanned"],
                                     bool(cloud_guidance.get("listing_recorded"))))
+    if cloud_hooks is not None:
+        sources.append(cloud_hook_source(cloud_hooks["from"], now,
+                                         cloud_hooks["records_scanned"]))
     return {
         "generated_at": now.strftime(STAMP),
         "schema": SCHEMA,
@@ -262,7 +292,8 @@ def _sort_key(entry: dict) -> tuple:
 #: row is never carried.
 CARRIED = (("cloud", CLOUD_SCOPE, SESSION_KINDS, SURFACE_CLOUD),
            ("skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_LOCAL),
-           ("cloud skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_CLOUD))
+           ("cloud skill copies", DIGEST_SCOPE, (DIGEST_KIND,), SURFACE_CLOUD),
+           ("cloud hooks", CLOUD_HOOK_SCOPE, ("hook",), SURFACE_CLOUD))
 
 
 def carry(previous, new: dict, max_age_days: int = 14) -> dict:
