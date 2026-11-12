@@ -1,0 +1,38 @@
+{
+ "schema": 1,
+ "generated_at": "2026-11-12T00:32:29Z",
+ "weeks": [
+  {
+   "week": "2026-10-19",
+   "eval_runs": 192,
+   "plan_meter_points": 71.0,
+   "api_usd": 0,
+   "thread_spend_usd": 621.4202246088876,
+   "cost_per_verdict": null
+  },
+  {
+   "week": "2026-10-26",
+   "eval_runs": 56,
+   "plan_meter_points": 5.0,
+   "api_usd": 0,
+   "thread_spend_usd": 1747.1519355771477,
+   "cost_per_verdict": null
+  },
+  {
+   "week": "2026-11-02",
+   "eval_runs": 943,
+   "plan_meter_points": 131.0,
+   "api_usd": 91.72496880500002,
+   "thread_spend_usd": 1921.6510658556854,
+   "cost_per_verdict": null
+  },
+  {
+   "week": "2026-11-09",
+   "eval_runs": 370,
+   "plan_meter_points": 9.0,
+   "api_usd": 122.68663849999996,
+   "thread_spend_usd": 45.27068486827937,
+   "cost_per_verdict": 461.5950417083333
+  }
+ ]
+}
