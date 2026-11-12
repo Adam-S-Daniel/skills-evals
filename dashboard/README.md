@@ -99,7 +99,7 @@ prompt that tells it to.
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Skip `eval_allowance` when
+4. **Compare.** Upload only datasets that changed (every dataset's `updated` still moves on each refresh, so none reads stale). Skip `eval_allowance` when
    only its timestamps and pace moved.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's
    `url`, `asset: true` and `file_path`, one file per call. Then run one
@@ -107,10 +107,9 @@ prompt that tells it to.
    `if_version`, that sets `source: {kind: "file", url: "/_blob/<id>", name}` and
    `updated: {at, by}`.
 6. **Page changes.** Build the page in `explorer/` (`npm ci && npm run build`).
-   Smoke-test first. Put d3@7.9.0's `dist/d3.js` in a work dir
-   (`npm pack d3@7.9.0`; the harness still loads it, though the page draws its
-   charts by hand), then run
-   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`.
+   Smoke-test first with
+   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`
+   (`<work>` is any empty directory).
    It exits non-zero on any page error. Then write the page to ArtifactData
    `files/index.html` (field `text`) with `if_version`.
 7. **Check the merge relays.** For each "Dashboard refresh: <repo> merges" task,

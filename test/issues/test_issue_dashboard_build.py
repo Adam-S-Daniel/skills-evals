@@ -137,6 +137,14 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(rows[1]["state"], "Waiting on you")
         self.assertEqual(rows[1]["link"], SITE["thread_url"] + "t1")
 
+    def test_a_resolved_thread_is_done_and_an_unresolved_review_ready_one_waits_on_the_owner(self):
+        rows = build.threads([
+            {"thread_id": "a", "title": "Resolved blocked", "state": "blocked", "resolved": True},
+            {"thread_id": "b", "title": "Resolved ready", "state": "review_ready", "resolved": True},
+            {"thread_id": "c", "title": "Ready", "state": "review_ready"}], SITE)
+        self.assertEqual({r["title"]: r["state"] for r in rows},
+                         {"Resolved blocked": "Done", "Resolved ready": "Done", "Ready": "Ready for your review"})
+
     def test_threads_carry_their_session_and_branch_so_prs_can_name_them(self):
         rows = build.threads([
             {"thread_id": "t1", "title": "A", "state": "working", "session_id": "cse_01Abc"},
@@ -153,8 +161,9 @@ class DashboardBuildTests(unittest.TestCase):
             (routine(source=trig, expect_every_hours=1), {"t": {"last_run": {"status": "ROUTINE_RUN_STATUS_SUCCEEDED", "fired_at": "2026-01-06T12:30:00Z"}}}, {}, "OK", "Succeeded"),
             (routine(source=trig), {"t": {"enabled": False}}, {}, "Paused", None),
             (routine(source=trig, expect_every_hours=168), {"t": {"next_run_at": "2026-01-13T18:00:00Z"}}, {}, "Not run yet", None),
-            (routine(source=trig, expect_every_hours=1), {"t": {"next_run_at": "2026-01-06T00:00:00Z"}}, {}, "Late", None),
-            (routine(source={"kind": "none"}, retired=True), {}, {}, "Retired", "Idle"),
+            (routine(source=trig, expect_every_hours=1), {"t": {"next_run_at": "2026-01-06T00:00:00Z"}}, {}, "Not run yet", None),
+            (routine(source=trig, expect_every_hours=1), {}, {}, "Not run yet", None),
+            (routine(source={"kind": "none"}), {}, {}, "Not run yet", None),
             (routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"}), {},
              {"o/r:w.yml": [{"created_at": "2026-01-05T00:00:00Z", "status": "completed", "conclusion": "success"},
                             {"created_at": "2026-01-06T00:00:00Z", "status": "completed", "conclusion": "cancelled"}]},
@@ -164,6 +173,11 @@ class DashboardBuildTests(unittest.TestCase):
             with self.subTest(health=health):
                 row = build.routines([cfg], triggers, runs, NOW)[0]
                 self.assertEqual((row["health"], row["last_result"]), (health, result))
+
+    def test_retired_routines_are_left_out_of_the_table(self):
+        rows = build.routines([routine(source={"kind": "none"}, retired=True), routine(source={"kind": "none"})], {}, {}, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("Retired", [r["health"] for r in rows])
 
     def test_a_workflow_turned_off_in_github_reads_as_paused(self):
         wf = routine(source={"kind": "workflow", "repo": "o/r", "workflow": "w.yml"})
@@ -212,14 +226,17 @@ class DashboardBuildTests(unittest.TestCase):
         reviews = [{"repo": "example-owner/r", "name": "PR", "environment": "env", "head_sha": "new", "job_url": "https://example.com/new"},
                    {"repo": "example-owner/r", "name": "PR", "environment": "env", "head_sha": "old", "job_url": "https://example.com/old"}]
         threads = [{"thread_id": "t1", "title": "Blocked one", "state": "blocked"},
-                   {"thread_id": "t2", "title": "Resolved", "state": "blocked", "resolved": True}]
+                   {"thread_id": "t2", "title": "Resolved", "state": "blocked", "resolved": True},
+                   {"thread_id": "t3", "title": "Ready one", "state": "review_ready"},
+                   {"thread_id": "t4", "title": "Ready resolved", "state": "review_ready", "resolved": True}]
         rows = build.waiting(snap, needs, reviews, {"example-owner/r": ["new"]}, threads,
                              {"https://github.com/example-owner/r/pull/1": "merged"}, SITE)
         self.assertEqual([r["item"] for r in rows],
-                         ["Decide", "Approve the env review for PR", "Blocked one", "Cleanup items C1, C3", "Still open"])
+                         ["Decide", "Approve the env review for PR", "Blocked one", "Ready one", "Cleanup items C1, C3", "Still open"])
         self.assertEqual(rows[0]["where"], "example-owner/r")
         self.assertEqual(rows[1]["link"], "https://example.com/new")
-        self.assertEqual(rows[3]["since"], "2026-01-01T00:00:00Z")
+        self.assertEqual(rows[3]["why"], "Ready for your review")
+        self.assertEqual(rows[4]["since"], "2026-01-01T00:00:00Z")
         self.assertTrue(all(r["id"] for r in rows))
 
     def test_waiting_has_a_placeholder_when_nothing_waits(self):
@@ -584,9 +601,13 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((doc["schema"], doc["generated_at"]), (1, "2026-10-30T12:00:00Z"))
         self.assertEqual([w["week"] for w in doc["weeks"]], ["2026-10-19", "2026-10-26"])
         for w in doc["weeks"]:
-            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "api_usd", "thread_spend_usd", "cost_per_verdict"})
+            self.assertEqual(set(w), {"week", "eval_runs", "plan_meter_points", "run_usd", "api_usd", "thread_spend_usd"})
             self.assertIsInstance(w["eval_runs"], int)
-        self.assertIsNone(doc["weeks"][0]["cost_per_verdict"], "cost per verdict is on the latest week only")
+        total = doc["total"]
+        self.assertEqual(total["since"], "2026-10-19")
+        for key, part in (("run_usd", "run_usd"), ("thread_spend_usd", "thread_spend_usd"), ("api_usd", "api_usd")):
+            self.assertAlmostEqual(sum(w[part] for w in doc["weeks"]), total[key], msg=key)
+        self.assertAlmostEqual(total["usd"], total["run_usd"] + total["thread_spend_usd"] + total["api_usd"])
         sys.path.insert(0, str(REPO / "scripts"))
         import explorer_public
         tree = self.tmp / "tree"
@@ -596,12 +617,24 @@ class DashboardBuildTests(unittest.TestCase):
 
     def test_spend_file_keeps_full_precision(self):
         raw = {"weeks": [{"week": "2026-10-19", "run_count": 3, "run_meter_points": 1.23456, "api_usd": 0.333333,
-                          "build_usd": 2.0000001}], "cost_per_verdict": 1 / 3}
-        w = build.spend_file(raw, NOW, "Example plan")["weeks"][0]
-        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["cost_per_verdict"]),
-                         (1.23456, 0.333333, 2.0000001, 1 / 3))
-        self.assertEqual(build.spend_file(raw, NOW, "Example plan")["plan"], "Example plan")
+                          "build_usd": 2.0000001, "run_usd": 0.1234567}],
+               "total": {"usd": 1 / 3, "cost_per_verdict": 1 / 3}}
+        doc = build.spend_file(raw, NOW, "Example plan")
+        w = doc["weeks"][0]
+        self.assertEqual((w["plan_meter_points"], w["api_usd"], w["thread_spend_usd"], w["run_usd"]),
+                         (1.23456, 0.333333, 2.0000001, 0.1234567))
+        self.assertNotIn("cost_per_verdict", w)
+        self.assertEqual(doc["total"]["cost_per_verdict"], 1 / 3)
+        self.assertEqual(doc["plan"], "Example plan")
         self.assertNotIn("plan", build.spend_file(raw, NOW))
+
+    def test_allowance_counts_the_window_the_guard_enforces(self):
+        """Spend since the Monday 17:00 UTC reset, not a rolling seven days (the guard's `window_start`)."""
+        now = datetime(2026, 11, 12, 17, 0, tzinfo=timezone.utc)
+        rows = build.allowance(self.results, now)
+        self.assertEqual(rows[0]["measure"], "eval_spend_since_reset")
+        self.assertEqual(rows[0]["window_start"], "2026-11-09T17:00:00Z")
+        self.assertEqual(rows[0]["week_resets_at"], "2026-11-16T17:00:00Z")
 
     def test_the_page_is_the_explorer_build_and_reads_every_dataset(self):
         """dashboard/page/index.html is explorer/'s private build (explorer/build.js);
