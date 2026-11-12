@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01NY6Q5k2yAHgyzzYiXSgJoW",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 128,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01NY6Q5k2yAHgyzzYiXSgJoW",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov 12 00:11 .\ndrwx------ 6 root root 4096 Nov 12 00:11 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 00:53 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 12 00:11 .claude\ndrwxr-xr-x 9 root root 4096 Nov 12 00:11 .git\ncrw-r...",
+      "output_chars": 1778,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_012JZCdGJjMnN4J8e4M8Hpjf",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; cd session/skills; cat .skills-bootstrap-installed.json ../skills.lock synced/*/manifest.json; cat synced/.bucket*; echo ----; md5sum writing-adrs/SKILL.md synced/*<path> ../...",
+      "input_chars": 339,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_012JZCdGJjMnN4J8e4M8Hpjf",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 4818,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01YQ3jowW5T7BhnivsbGNZgn",
+      "name": "Bash",
+      "input": "cd <path>; for f in writing-adrs/SKILL.md synced/*<path> synced/*<path> adam-writing-style/SKILL.md; do echo \"=== $f\"; cat \"$f\"; done; for f in writing-adrs/SKILL.md synced/*<path>; do echo $f; sha256...",
+      "input_chars": 393,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01YQ3jowW5T7BhnivsbGNZgn",
+      "is_error": false,
+      "output": "=== writing-adrs/SKILL.md\n---\nname: writing-adrs\ndescription: Write a lightweight Nygard-style ADR under docs/decisions/.\n---\n\n# Writing ADRs\n\nOne ADR per decision. Title is an imperative statement of what was decided.\nStatus is one of Proposed, Accepted, Superseded.\n\n## Sections\n\nContext, Decision,...",
+      "output_chars": 1842,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01U461z9Nu3AY4vxifH6aWB2",
+      "name": "Bash",
+      "input": "date -u -d @1789713628; cd <path>; stat -c '%y %n' writing-adrs/SKILL.md synced/*<path>",
+      "input_chars": 145,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01U461z9Nu3AY4vxifH6aWB2",
+      "is_error": false,
+      "output": "Fri Sep 18 06:40:28 UTC 2026\n2026-11-08 18:32:33.222632082 +0000 writing-adrs/SKILL.md\n2026-11-08 18:32:33.222632082 +0000 synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/writing-adrs/SKILL.md",
+      "output_chars": 225,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01J9qXQo2dG9LeiZ362vH59d",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01J9qXQo2dG9LeiZ362vH59d",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
