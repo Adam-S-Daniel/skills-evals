@@ -13,7 +13,7 @@ import * as artifactAdapter from '../src/adapters/artifact.js';
 import * as webAdapter from '../src/adapters/web.js';
 import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
-import { fixtureQueue } from '../src/core/fixtures.js';
+import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
 import { makeExt, attentionRows, capUse, routineHealth } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
@@ -24,8 +24,10 @@ import { agentMadeRows } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
+import { hashFor } from '../src/core/route.js';
 import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
+import { fmtUsd } from '../src/core/format.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -207,8 +209,15 @@ await test('a regression alert on a subject the loop decided to keep is not tren
   const rows = attentionRows(fakeDash({}), d);
   eq(rows.length, 2, 'both kept subjects are ordinary alerts');
   ok(rows.every((r) => r.kind.includes(STRINGS.alertRegressionDecided)), JSON.stringify(rows));
-  const t = textOf(renderRoute(d, { name: 'summary', id: null }, {})).replace(/\s+/g, ' ');
+  // Alerts are listed on the private dashboard's summary only.
+  const t = textOf(renderRoute(d, { name: 'summary', id: null }, { ext: {} })).replace(/\s+/g, ' ');
   ok(t.includes(STRINGS.alertRegressionDecided + ': kept-section'), t);
+  ok(!textOf(renderRoute(d, { name: 'summary', id: null }, {})).includes(STRINGS.alertRegressionDecided), 'the public summary lists no alerts');
+  const priv = renderRoute(d, { name: 'summary', id: null }, { ext: {} });
+  const alertTile = findAll(priv, (n) => n.attrs && /\btile\b/.test(n.attrs.class || '') && textOf(n).startsWith(STRINGS.tileAlerts))[0];
+  ok(alertTile, 'the dashboard has an alerts tile');
+  eq(textOf(findAll(alertTile, (n) => n.attrs && /tile-num/.test(n.attrs.class || ''))[0]).trim().split(' ').pop(), String(attentionRows(fakeDash({}), d).length), 'the tile counts the rows Needs you lists');
+  eq(findAll(alertTile, (n) => n.tag === 'a')[0].attrs.href, hashFor('needs'), 'it opens Needs you');
 });
 await test('the allowance and routine health come from their datasets', () => {
   const cap = capUse([{ points: 40.5, account_week_used: 70, pace_room_points: 3, account_reading_at: '2026-11-04T03:30:10Z', week_resets_at: '2026-11-09T17:00:00Z' }],
@@ -301,6 +310,137 @@ await test('fixture requests fold in PRs and fixtures and sort open, oldest firs
   eq([done.kind, done.state, done.ageDays].join('|'), 'trigger set|closed|');
   eq(fixtureQueue(fqDoc({ findings: [{ kind: 'stuck-pr', severity: 'high' }] }), FQ_REF).findings.length, 1);
   eq(fixtureQueue(fqDoc({ requests: [], fixtures: [] }), FQ_REF).rows.length, 0);
+});
+
+// --- review 2026-11-12, batch A: each fix is tested through the public entry points ----------
+await test('C1: fixtures join their request whether it is a number or an issue URL, and the rows add up to the totals', () => {
+  const url = (n) => 'https://github.com/' + DATA_REPO + '/issues/' + n;
+  const q = fixtureQueue(fqDoc({ fixtures: [
+    { path: 'a', subject: 's', origin_kind: 'real-work', request: url(12), runs: 4, cost_usd: 1.25 },
+    { path: 'b', subject: 's', origin_kind: 'invented', request: 12, runs: 2, cost_usd: 0.5 },
+    { path: 'c', subject: 'o', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 },
+    { path: 'd', subject: 'o', origin_kind: 'invented', request: null, runs: 1, cost_usd: 0 },
+    { path: 'e', subject: 'o', origin_kind: 'invented', request: 'https://github.com/other-owner/other-repo/issues/12', runs: 1, cost_usd: 0 },
+    { path: 'f', subject: 'o', origin_kind: 'invented', request: '12', runs: 1, cost_usd: 0 }] }), FQ_REF);
+  eq(q.rows.find((r) => r.issue === 12).fixtures, 3, 'a URL, a numeric and a bare-digit request all reach issue 12');
+  eq(q.unlisted.fixtures, 1, 'the fixtures of requests not listed');
+  eq(q.noRequest.fixtures, 2, 'no request, or a request in another repository, names no issue here');
+  eq(requestIssue('https://github.com/other-owner/other-repo/issues/12'), null);
+  eq(requestIssue('12abc'), null); eq(requestIssue(undefined), null); eq(requestIssue(0), null);
+  eq(q.rows.reduce((t, r) => t + r.fixtures, 0) + q.unlisted.fixtures + q.noRequest.fixtures, 6, 'rows add up to every fixture');
+  eq(q.rows.reduce((t, r) => t + r.runs, 0) + q.unlisted.runs + q.noRequest.runs, 16);
+  const text = textOf(renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }] }).fixture_queue }), { name: 'loop', id: null }, {}));
+  ok(text.includes(STRINGS.fqUnlisted), 'the page shows the unlisted row');
+  const node = renderRoute(doc({ fixture_queue: fqDoc({ fixtures: [{ path: 'c', origin_kind: 'invented', request: url(99), runs: 7, cost_usd: 9 }, { path: 'n', origin_kind: 'invented', runs: 1 }] }).fixture_queue }), { name: 'loop', id: null }, {});
+  const foot = findAll(node, (n) => n.tag === 'tfoot');
+  eq(foot.length, 1, 'the summary rows sit in a tfoot, so sorting cannot move them');
+  ok(textOf(foot[0]).includes(STRINGS.fqUnlisted) && textOf(foot[0]).includes(STRINGS.fqNoRequest), textOf(foot[0]));
+});
+const PULL = (n, title, head, extra) => Object.assign({ repo: 'Adam-S-Daniel/adam-agentskills', number: n, title, head_ref: head, state: 'merged',
+  created_at: '2026-11-07T10:00:00Z', updated_at: '2026-11-07T11:00:00Z', merged_at: '2026-11-07T11:00:00Z', url: 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/' + n }, extra || {});
+await test('C2: loop pull requests are selected by head-branch prefix, with the title rule for data older than head_ref', () => {
+  const forms = [
+    [PULL(1, 'Proposed workflow-path-audit SKILL.md edit (improvement run r1)', 'eval-improve/workflow-path-audit'), 'improve skill'],
+    [PULL(2, 'Proposed some-section guidance edit (improvement run r2)', 'eval-guidance-improve/some-section'), 'improve guidance'],
+    [PULL(3, 'Add a skill', 'draft-skill/new-thing'), 'draft by branch'],
+    [PULL(4, 'Whatever the gate says', 'retire-skill/old-thing'), 'retire skill by branch'],
+    [PULL(5, 'Whatever the gate says', 'retire-guidance/old-section'), 'retire guidance by branch'],
+    [PULL(6, 'Proposed older-skill SKILL.md edit (improvement run r6)', null), 'title only, old data'],
+    [PULL(7, 'Retire skill x: no benefit on every roster model (#70)', null), 'retire title only'],
+    [PULL(8, 'Fix a typo', 'fix/typo'), 'not the loop'],
+    [PULL(9, 'Improve the docs', 'claude/x'), 'a loop-looking title on a non-loop branch'],
+    [PULL(10, 'Remove some-plugin/some-skill: unused (skills-evals removal policy)', null), 'unused removal title only']];
+  const t = textOf(renderRoute(doc({ activity: { fetched_at: '2026-11-12T17:00:00Z', since: '2026-10-29T17:00:00Z', repos: [], issues: [], runs: [], pulls: forms.map((f) => f[0]) } }), { name: 'loop', id: null }, {}));
+  const loopSection = t.slice(t.indexOf(STRINGS.loopPrsHeading));
+  for (const [p, what] of forms.filter((f) => ![8, 9].includes(f[0].number))) ok(loopSection.includes('#' + p.number), what + ' is listed');
+  ok(!loopSection.includes('#8'), 'an ordinary pull request is not');
+  ok(!loopSection.includes('#9'), 'a known non-loop branch decides, whatever the title says');
+});
+const ALLOW = (over) => okData([Object.assign({ measure: 'eval_spend_since_reset', points: 54.4, pace_room_points: 14.1, account_week_used: 40, account_reading_at: '2026-11-12T17:00:00Z', week_resets_at: '2026-11-16T17:00:00Z' }, over || {})]);
+const BUDGET = okData([{ setting: 'weekly_cap', value: 0.25 }, { setting: 'stop_when_account_above', value: 0.9 }, { setting: 'per_run_cap', value: 0.01 }, { setting: 'per_run_overrun', value: 0.002 }]);
+const P_PACE = 'Use is above the weekly cap, but the guard still reports room';
+const needs = (allow) => renderRoute(doc(), { name: 'needs', id: null }, { ext: makeExt(fakeDash({ eval_allowance: allow, budget: BUDGET })) });
+await test('C3: the allowance label names its basis and reset, and a bar over the cap is not red while there is room', () => {
+  const full = (n) => findAll(n, (x) => x.tag === 'div' && String(x.attrs && x.attrs.class || '').split(' ').includes('over')).length;
+  const rolling = needs(ALLOW({ measure: 'eval_spend_7d' }));
+  ok(textOf(rolling).includes('Test use, last 7 days: 54.4 points (weekly cap 25)'), textOf(rolling));
+  eq(full(rolling), 0, 'room above 0, so no red bar');
+  const reset = textOf(needs(ALLOW({ points: 7 }))).replace(/\s+/g, ' ');
+  ok(reset.includes('Test use since the Monday noon ET reset: 7.0 of 25 points'), reset);
+  const midweek = textOf(needs(ALLOW({ points: 7, window_start: '2026-11-11T19:15:00Z' }))).replace(/\s+/g, ' ');
+  ok(midweek.includes('Test use since the Wednesday 2:15 PM ET reset: 7.0 of 25 points'), 'a manual mid-week reset is labeled from window_start: ' + midweek);
+  const sinceOver = needs(ALLOW({ points: 54.4, room_points: 3 }));
+  ok(textOf(sinceOver).includes(P_PACE), 'the since-reset basis gets the pace note too');
+  eq(full(sinceOver), 0);
+  const none = needs(ALLOW({ measure: 'eval_spend_7d', points: 90, pace_room_points: 0 }));
+  eq(full(none), 1, 'no room and over the cap is red');
+});
+await test('C3: the guard\'s own room_points is used when present, and rows without it still re-derive room', () => {
+  const rows = (extra) => [Object.assign({ points: 54.4, pace_room_points: 14.1, account_reading_at: '2026-11-12T17:00:00Z', week_resets_at: '2026-11-16T17:00:00Z' }, extra)];
+  const budget = BUDGET.data;
+  eq(capUse(rows({ room_points: 3.5 }), budget).room, 3.5, 'room_points wins');
+  eq(capUse(rows({ room_points: 0 }), budget).room, 0, 'zero room is zero, not the pace figure');
+  eq(capUse(rows({}), budget).room, 14.1, 'old rows keep the derived room');
+  const t = textOf(needs(ALLOW({ room_points: 0, points: 90 }))).replace(/\s+/g, ' ');
+  ok(t.includes('Room for new tests now: about 0.0 points'), t);
+});
+await test('C4: each panel prints its own block time, never one document time, and the page says the range', () => {
+  const d = doc({ generated_at: '2026-11-12T16:54:13Z', activity: { fetched_at: '2026-11-12T17:45:57Z', since: '2026-10-29T17:00:00Z', repos: ['Adam-S-Daniel/skills-evals'],
+    runs: [{ repo: 'Adam-S-Daniel/skills-evals', run_id: 5, workflow: 'CI', title: 'CI', event: 'push', state: 'completed', conclusion: 'success', created_at: '2026-11-12T17:36:00Z', updated_at: '2026-11-12T17:40:00Z', url: 'https://github.com/Adam-S-Daniel/skills-evals/actions/runs/5' }],
+    pulls: [], issues: [] }, fixture_queue: Object.assign({}, fqDoc().fixture_queue, { generated_at: '2026-11-12T17:45:00Z' }) });
+  const ops = textOf(renderRoute(d, { name: 'ops', id: null }, {})).replace(/\s+/g, ' ');
+  ok(ops.includes('as of Nov 12, 2026, 12:45 PM ET'), ops);
+  ok(/Data read between Nov 12, 2026, 11:54 AM ET and Nov 12, 2026, 12:45 PM ET/.test(ops), ops);
+  const loop = textOf(renderRoute(d, { name: 'loop', id: null }, {})).replace(/\s+/g, ' ');
+  ok(loop.includes('Fixture requests From the results document, as of Nov 12, 2026, 12:45 PM ET'), loop);
+});
+await test('C4 guard: no view prints the single document time for a panel (srcLine(STRINGS.srcDoc, refMs))', () => {
+  const dir = path.join(EXPLORER, 'src', 'views');
+  const found = [];
+  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.js'))) {
+    const ast = acorn.parse(fs.readFileSync(path.join(dir, f), 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' });
+    (function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 'srcLine' && n.arguments.length === 2
+        && n.arguments[0].type === 'MemberExpression' && n.arguments[0].object.name === 'STRINGS' && n.arguments[0].property.name === 'srcDoc'
+        && n.arguments[1].type === 'Identifier' && n.arguments[1].name === 'refMs') found.push(f);
+      for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+    })(ast);
+  }
+  eq(found.join(','), '', 'use rangeLine(doc) or srcLineFor(doc, block)');
+});
+await test('money is printed with thousands separators everywhere', () => {
+  eq(fmtUsd(5541.65), '$5,541.65'); eq(fmtUsd(0), '$0.00'); eq(fmtUsd(12.5), '$12.50');
+  const dir = path.join(EXPLORER, 'src');
+  const bad = [];
+  (function scan(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) { scan(p); continue; }
+      if (!p.endsWith('.js')) continue;
+      (function walk(n) {
+        if (!n || typeof n.type !== 'string') return;
+        if (n.type === 'BinaryExpression' && n.operator === '+' && n.left.type === 'Literal' && n.left.value === '$'
+          && n.right.type === 'CallExpression' && n.right.callee.property && n.right.callee.property.name === 'toFixed') bad.push(path.relative(dir, p));
+        for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+      })(acorn.parse(fs.readFileSync(p, 'utf8'), { ecmaVersion: 'latest', sourceType: 'module' }));
+    }
+  })(dir);
+  eq(bad.join(','), '', 'format dollars with fmtUsd');
+});
+await test('C5: the weekly dollar columns sum to the total in the one sentence', () => {
+  const weeks = [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 14.41, thread_spend_usd: 335.49, run_usd: 91.75, cost_per_verdict: 99 },
+    { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 200, thread_spend_usd: 4000, run_usd: 900, cost_per_verdict: null }];
+  const sum = (k) => weeks.reduce((t, w) => t + w[k], 0);
+  const total = { since: '2026-10-19', usd: sum('api_usd') + sum('thread_spend_usd') + sum('run_usd'), run_usd: sum('run_usd'), thread_spend_usd: sum('thread_spend_usd'), api_usd: sum('api_usd'), verdicts: 12, cost_per_verdict: 0 };
+  total.cost_per_verdict = total.usd / 12;
+  const t = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks, total } }), { name: 'impact', id: null }, {})).replace(/\s+/g, ' ');
+  ok(t.includes('Since Oct 19: $5,541.65 for 12 decided verdicts, $461.80 each (tests $991.75, building $4,335.49, API $214.41)'), t);
+  ok(t.includes(STRINGS.colRunsUsd), 'a Tests $ column');
+  ok(!t.includes('Per verdict $'), 'no per-verdict column in a week row');
+  eq(Math.round((sum('run_usd') + sum('thread_spend_usd') + sum('api_usd')) * 100), Math.round(total.usd * 100), 'the three columns add to the total');
+  const old = textOf(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => { const c = Object.assign({}, w); delete c.run_usd; return c; }) } }), { name: 'impact', id: null }, {}));
+  ok(old.includes(STRINGS.colRunsUsd), 'data without run_usd or total still renders');
 });
 
 // --- web adapter and config ------------------------------------------------------

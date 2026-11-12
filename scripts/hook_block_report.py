@@ -391,6 +391,9 @@ def render_markdown(report: dict) -> str:
     out.append(f"{local['runs']} local hook runs, {local['blocked']} blocked, "
                f"{len(report['findings'])} findings, "
                f"{local['malformed']} malformed lines skipped.")
+    # The report reads the owner machines' hook log and CI only; cloud
+    # sessions' runs go to the census (evals/usage/CENSUS.md), not here.
+    out.append("Cloud Claude Code sessions are not counted in this report.")
     out += ["", "### Findings", ""]
     if report["findings"]:
         for f in report["findings"]:

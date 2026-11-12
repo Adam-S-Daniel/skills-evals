@@ -63,7 +63,6 @@
 .ex input.search:focus { outline: 3px solid var(--s2); outline-offset: 2px; box-shadow: 4px 4px 0 var(--ink); }
 .ex .menu:focus-visible { outline: 3px solid var(--s2); outline-offset: 2px; }
 @media (max-width: 760px) {
-  .ex .tile { padding-left: 0; padding-right: 0; }
   .ex .menu { display: inline-block; }
   .ex .drawer { display: none; flex-basis: 100%; padding: 0 0 12px; }
   .ex .topbar.open .drawer { display: flex; }
@@ -135,6 +134,39 @@
 .ex .tile-note { font-size: 0.92rem; color: var(--muted); }
 .ex .tile:first-child { flex: 1.7 1 300px; padding-left: 0; }
 .ex .tile:first-child .tile-num { font-size: clamp(6rem, 15vw, 11rem); line-height: 0.8; color: var(--s2); margin: 10px 0 10px -0.04em; }
+.ex .tile-num .unit { font-size: 0.32em; font-weight: 700; letter-spacing: 0; margin-left: 0.08em; }
+.ex .tile-note .lede, .ex .tile-note .fine { display: block; }
+.ex .tile-note .lede { color: var(--ink-2); }
+.ex .tile-note .lede .chip { margin-right: 4px; }
+.ex .tile-note .fine { font-size: 0.8rem; margin-top: 8px; }
+.ex .statebar { display: block; margin-top: 12px; }
+.ex .statebar .sbar { display: flex; height: 12px; gap: 2px; transform-origin: left center; }
+.ex .statebar .sb { flex-basis: 0; min-width: 3px; }
+.ex .statebar .legend-mini { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; font-size: 0.8rem; line-height: 1.5; }
+.ex .statebar .li { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ex .statebar .sw { width: 9px; height: 9px; flex: none; }
+.ex :is(.sb, .sw).helps { background: var(--good); }
+.ex :is(.sb, .sw).early { background: color-mix(in srgb, var(--good) 45%, var(--page)); }
+.ex :is(.sb, .sw).alone { background: var(--warning); }
+.ex :is(.sb, .sw).none { background: var(--axis); }
+.ex :is(.sb, .sw).worse { background: var(--critical); }
+.ex :is(.sb, .sw).canttell { background: repeating-linear-gradient(135deg, var(--axis) 0 2px, transparent 2px 5px); }
+.ex :is(.sb, .sw).insufficient { background: color-mix(in srgb, var(--axis) 35%, var(--page)); }
+.ex :is(.sb, .sw).skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--axis); }
+.ex :is(.sb, .sw).gap { background: repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 4px); }
+.ex .weekbars { display: flex; align-items: flex-end; gap: 6px; height: 74px; margin-top: 14px; max-width: 340px; }
+.ex .weekbars .wk { flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; }
+.ex .weekbars .wn { font-family: var(--ex-mono); font-size: 0.68rem; text-align: center; color: var(--ink-2); }
+.ex .weekbars .wb { display: block; background: var(--s2); min-height: 0; transform-origin: bottom center; }
+.ex .weekbars .wd { font-family: var(--ex-mono); font-size: 0.6rem; letter-spacing: 0.04em; text-align: center; color: var(--muted); border-top: 1px solid var(--ink); padding-top: 3px; white-space: nowrap; }
+.ex .weekbars .partial .wb { background: repeating-linear-gradient(135deg, var(--s2) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--s2); }
+.ex .weekbars .partial .wd { text-transform: uppercase; color: var(--s2); }
+@media (max-width: 760px) {
+  /* Stacked tiles share one left edge (they keep 22px only side by side). */
+  .ex .tile, .ex .tile:first-child { padding-left: 0; padding-right: 0; border-left: 0; }
+}
+@keyframes ex-bar-rise { from { transform: scaleY(0.05); opacity: 0.2; } }
+@keyframes ex-bar-fill { from { transform: scaleX(0.05); opacity: 0.2; } }
 .ex .headline-num { font-family: var(--ex-serif, var(--ex-serif-stack)); font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; line-height: 1; max-width: 26ch; }
 
 /* Cards */
@@ -224,7 +256,7 @@
 .ex-tip[hidden] { display: none; }
 .ex .headline .answer { font-size: 1.2rem; font-weight: 700; }
 @media (forced-colors: active) {
-  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw { forced-color-adjust: none; }
+  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw, .ex .sb, .ex .weekbars .wb { forced-color-adjust: none; }
   .ex a.group[aria-current="page"], .ex .seg button[aria-pressed="true"], .ex .subnav a[aria-current="page"] { outline: 3px solid Highlight; outline-offset: -3px; }
 }
 .ex .conf { margin: 12px 0 0; }
@@ -283,6 +315,8 @@
   .ex .content.enter .tiles > :nth-child(3) { animation-delay: 150ms; }
   .ex .content.enter .tiles > :nth-child(4) { animation-delay: 210ms; }
   .ex .content.enter .tiles > :nth-child(n+5) { animation-delay: 270ms; }
+  .ex .content.enter .weekbars .wb { animation: ex-bar-rise 520ms var(--ex-ease) 260ms backwards; }
+  .ex .content.enter .statebar .sbar { animation: ex-bar-fill 620ms var(--ex-ease) 260ms backwards; }
   .ex .content.enter .meter .fill { animation: ex-fill 900ms 200ms var(--ex-ease) backwards; }
   .ex .defbox { animation: ex-pop 140ms var(--ex-ease) backwards; }
 }
@@ -849,6 +883,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       subNavLabel: "Hooks, skills and guidance",
       srcDoc: "the results document",
       srcLine: (source, when) => "From " + source + (when ? ", as of " + when : "") + ".",
+      srcRange: (from, to) => "Data read between " + from + " and " + to + ".",
       srcTip: (source, when) => "Source: " + source + "." + (when ? " As of " + when + "." : ""),
       noValue: "—",
       privateBadge: "Private",
@@ -867,23 +902,35 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       kinds: { skill: "Skill", section: "Guidance section", check: "Git hook check", pr: "Pull request", issue: "Issue" },
       colWhat: "What",
       colDetail: "Detail",
-      tileStopped: "Commits and pushes stopped by git hook checks, this week so far",
-      tileTrendingNote: (n) => " " + n + (n === 1 ? " subject trending toward removal is" : " subjects trending toward removal are") + " listed separately.",
-      // The data holds weekly totals only, so this is the calendar week so far (it starts Monday, UTC) beside the last full week.
-      tileStoppedNote: (l, c, week, pl, pc, prev) => l + " on " + W.whose + " computers and " + c + " in CI so far in the week starting Monday " + week + " (UTC)" + (prev ? ". Last week (" + prev + "): " + pl + " and " + pc + "." : "."),
+      tileHooks: "Hooks",
       tileStoppedNone: "No git hook counts in this build.",
-      tileHelped: "Skills that help",
-      tileHelpedNote: (n, all) => "of " + n + " tested skills, by the loop's own keep decision. All " + all + " skills:",
+      // Counts come in weekly totals only, so the headline is the last full week
+      // and the week in progress is shown apart, never compared as if whole.
+      hooksLastWeek: (day, local, ci, cloud) => "commits and pushes stopped the week of " + day + ": " + local + " on " + W.whose + " computers, " + ci + " in CI" + (cloud === null ? "" : ", " + cloud + " in cloud sessions") + ".",
+      hooksNoFullWeek: "No full week of git hook counts yet.",
+      hooksSoFar: (n, days) => "This week so far (" + days + (days === 1 ? " day" : " days") + "): " + n + ".",
+      hooksSoFarWord: "so far",
+      hooksCloudNot: "Cloud sessions are not counted yet.",
+      hooksBarsAria: (list) => "Commits and pushes stopped by week: " + list + ".",
+      tileSkills: "Skills",
+      skillsHelpLine: (n) => "help, of " + n + " tested.",
+      skillsOf: (n) => n + " skills in all.",
+      skillsBarAria: (n) => "States of all " + n + " skills.",
       skillStateExtra: { skipped: "Left out on purpose", gap: "Not yet tested" },
       skillStateDefs: {
         skipped: "Deliberately not tested. Each has a recorded reason, such as a task a self-contained fixture cannot exercise.",
         gap: "Should be tested but has no test yet."
       },
       skillStatesAll: "No other skills.",
-      tileWhole: "Does the guidance help at all?",
+      tileGuidance: "Guidance",
+      ptsUnit: " pts",
+      guidanceGainLine: (runs, models) => "more checks passed with the guidance than without, over " + runs + " runs on " + models + (models === 1 ? " model." : " models."),
+      guidanceNoRuns: "No comparison runs in the window yet.",
+      sectionsOf: (n) => n + " sections.",
+      sectionsBarAria: (n) => "States of " + n + " guidance sections.",
       tileNewest: "Newest run",
-      tileAlerts: "Open alerts",
-      tileAlertsNote: "From the results document's own checks",
+      tileAlerts: "Alerts",
+      tileAlertsNote: "open, listed under Needs you.",
       summaryLead: "What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.",
       hooksHeading: "Does each git hook check earn its place?",
       hooksNote: (weeks, from, to) => "Each check runs before a commit or push on " + W.whose + " computers (git hooks) and again in CI. Counts cover the " + weeks + " weeks from " + from + " to " + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
@@ -910,6 +957,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       hookSourceLink: "source",
       hookByWeek: "Runs and blocks by week",
       hookByRepo: "By repo",
+      colCloudRuns: "Cloud runs",
+      colCloudBlocked: "Cloud blocks",
+      colLocalCloudBlocked: "Local and cloud blocks",
+      hooksCloudNotLong: "Cloud Claude Code sessions are not counted yet, so these counts cover " + W.whose + " computers and CI only.",
+      hooksCloudFrom: (day) => "Cloud Claude Code sessions are counted" + (day ? " from the week of " + day : "") + ".",
       colWeek: "Week of",
       colLocalRuns: "Local runs",
       colLocalBlocked: "Local blocks",
@@ -1035,6 +1087,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       fqNote: "When a test finds a subject too easy to measure, the loop asks for harder fixtures, ideally rebuilt from real work. Each request is followed to the fixtures that ran.",
       fqNone: "This build does not report the fixture queue.",
       fqTotals: (o, c, m, rw, inv, runs) => o + " open, " + c + " closed, " + m + " pull requests merged, " + rw + " fixtures from real work and " + inv + " invented, " + runs + " runs.",
+      fqNoRequest: "Fixtures with no request issue",
+      fqUnlisted: "Requests not listed (closed before the queue report began)",
       fqFindings: (n, high) => n + (n === 1 ? " finding needs" : " findings need") + " a look (" + high + " high severity).",
       colSubject: "Subject",
       colState: "State",
@@ -1078,12 +1132,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       impactRedNote: "Workflow runs in the public repos that ended in failure, newest first.",
       impactRedNone: "No failed runs in this window.",
       impactSpend: "Cost",
+      impactSpendTotal: (since, usd5, verdicts, each, tests, build, api) => "Since " + since + ": " + usd5 + " for " + verdicts + " decided verdicts, " + each + " each (tests " + tests + ", building " + build + ", API " + api + ").",
       impactSpendNote: "Weekly totals. Dollars are API-equivalent, not what is paid; points are the account's usage meter.",
       colEvalRuns: "Runs",
       colMeter: "Meter points",
       colApi: "API $",
       colThreads: "Thread spend $",
-      colPerVerdict: "Per verdict $",
+      colRunsUsd: "Tests $",
       colPlan: "Plan",
       opsRuns: "Workflow and routine runs",
       opsRunsNote: (since) => "GitHub Actions runs in the public repos since " + since + ", newest first.",
@@ -1175,6 +1230,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const opts = { timeZone: "UTC", month: "short", day: "numeric" };
     if (isFinite(refMs) && new Date(ms).getUTCFullYear() !== new Date(refMs).getUTCFullYear()) opts.year = "numeric";
     return new Intl.DateTimeFormat("en-US", opts).format(new Date(ms));
+  }
+  function fmtUsd(x) {
+    return "$" + Number(x).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function fmtCount(x) {
     const n = Number(x) || 0;
@@ -1997,6 +2055,30 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   function srcLine(source, ms) {
     return h("p", { class: "src" }, STRINGS.srcLine(source, isFinite(ms) ? fmtDateTime(ms) : ""));
   }
+  function blockMs(doc, which) {
+    const d = doc || {};
+    const at = {
+      doc: d.generated_at,
+      activity: d.activity && d.activity.fetched_at,
+      queue: d.fixture_queue && d.fixture_queue.generated_at,
+      spend: d.spend && d.spend.generated_at,
+      usage: d.usage && d.usage.to,
+      coverage: d.coverage && d.coverage.as_of
+    }[which];
+    const ms = parseTime(at);
+    return isFinite(ms) ? ms : parseTime(d.generated_at);
+  }
+  var BLOCKS = ["doc", "activity", "queue", "spend", "usage", "coverage"];
+  function srcLineFor(doc, which, source) {
+    return srcLine(source || STRINGS.srcDoc, blockMs(doc, which));
+  }
+  function rangeLine(doc) {
+    const times = BLOCKS.map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
+    if (!times.length) return srcLine(STRINGS.srcDoc, NaN);
+    const lo = Math.min.apply(null, times), hi = Math.max.apply(null, times);
+    if (fmtDateTime(lo) === fmtDateTime(hi)) return srcLine(STRINGS.srcDoc, blockMs(doc, "doc"));
+    return h("p", { class: "src" }, STRINGS.srcRange(fmtDateTime(lo), fmtDateTime(hi)));
+  }
   function srcTip(source, ms) {
     return STRINGS.srcTip(source, isFinite(ms) ? fmtDateTime(ms) : "");
   }
@@ -2060,7 +2142,13 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return h(
       "div",
       { class: "tablewrap" + (o.tall ? " tall" : "") },
-      h("table", { class: o.cls || null }, h("thead", null, head), h("tbody", null, body))
+      h(
+        "table",
+        { class: o.cls || null },
+        h("thead", null, head),
+        h("tbody", null, body),
+        o.foot && o.foot.length ? h("tfoot", null, o.foot.map((r) => h("tr", null, cols.map((c) => h("td", { class: c.num ? "num" : null }, c.cell(r)))))) : null
+      )
     );
   }
 
@@ -2247,7 +2335,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
   function discardedLine(d) {
     if (!d || typeof d !== "object" || !Number.isInteger(d.total) || d.total <= 0) return null;
-    const usd5 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? "$" + d.cost_usd.toFixed(2) : STRINGS.noValue;
+    const usd5 = typeof d.cost_usd === "number" && isFinite(d.cost_usd) ? fmtUsd(d.cost_usd) : STRINGS.noValue;
     const rows = Object.entries(d.by_reason && typeof d.by_reason === "object" ? d.by_reason : {}).filter(([, r]) => r && Number.isInteger(r.runs) && r.runs > 0).sort((a, b) => b[1].runs - a[1].runs || (a[0] < b[0] ? -1 : 1)).slice(0, 3).map(([k, r]) => (Object.prototype.hasOwnProperty.call(STRINGS.discardedReasons, k) ? STRINGS.discardedReasons[k] : clean(k)) + " (" + r.runs + ")");
     const unknown = Number.isInteger(d.cost_unknown) ? d.cost_unknown : 0;
     return h("p", { class: "meta" }, STRINGS.discarded(d.total, usd5, unknown, rows.join(", ")));
@@ -2736,14 +2824,19 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const back = (d.getUTCDay() + 6) % 7;
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
   }
+  function cloudCounted(doc) {
+    const t = doc && doc.hooks && doc.hooks.totals;
+    if (!t || typeof t !== "object") return null;
+    return Array.isArray(t.cloud);
+  }
   function hookWeeks(doc) {
     const t = doc && doc.hooks && doc.hooks.totals;
     if (!t || typeof t !== "object") return [];
     const by = /* @__PURE__ */ new Map();
-    for (const surface of ["local", "ci"]) {
+    for (const surface of ["local", "ci", "cloud"]) {
       for (const u of Array.isArray(t[surface]) ? t[surface] : []) {
         if (!u || typeof u.week !== "string") continue;
-        if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 } });
+        if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 }, cloud: { runs: 0, blocked: 0 } });
         const cell = by.get(u.week)[surface];
         cell.runs += Number(u.invocations) || 0;
         cell.blocked += Number(u.blocked) || 0;
@@ -2751,19 +2844,41 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     }
     return Array.from(by.values()).sort((a, b) => a.week < b.week ? 1 : -1);
   }
-  function blockedThisWeek(doc) {
+  function hookTile(doc, n) {
     if (!doc || !doc.hooks || !doc.hooks.totals) return null;
-    const week = mondayOf(parseTime(doc.generated_at));
-    const weeks = hookWeeks(doc);
-    const row = weeks.find((w) => w.week === week);
-    const before = isFinite(parseTime(doc.generated_at)) ? mondayOf(parseTime(doc.generated_at) - 7 * 24 * 3600 * 1e3) : null;
-    const prevRow = weeks.find((w) => w.week === before);
-    const reaches = weeks.some((w) => w.week <= before);
+    const at = parseTime(doc.generated_at);
+    if (!isFinite(at)) return null;
+    const week = mondayOf(at);
+    const day = 24 * 3600 * 1e3;
+    const rows = hookWeeks(doc);
+    const sum = (r, k) => r.local[k] + r.ci[k] + r.cloud[k];
+    const cell = (w) => {
+      const r = rows.find((x) => x.week === w);
+      return {
+        week: w,
+        blocked: r ? sum(r, "blocked") : 0,
+        runs: r ? sum(r, "runs") : 0,
+        local: r ? r.local.blocked : 0,
+        ci: r ? r.ci.blocked : 0,
+        cloud: r ? r.cloud.blocked : 0,
+        partial: w === week
+      };
+    };
+    const from = doc.hooks.window && typeof doc.hooks.window.from === "string" ? mondayOf(Date.parse(doc.hooks.window.from + "T00:00:00Z")) : null;
+    const oldest = from || (rows.length ? rows[rows.length - 1].week : week);
+    const weeks = [];
+    for (let t = Date.parse(week + "T00:00:00Z"), k = 0; k < (n || 6); t -= 7 * day, k++) {
+      const w = mondayOf(t);
+      if (w < oldest) break;
+      weeks.unshift(cell(w));
+    }
+    const prev = mondayOf(Date.parse(week + "T00:00:00Z") - 7 * day);
     return {
-      week,
-      local: row ? row.local.blocked : 0,
-      ci: row ? row.ci.blocked : 0,
-      prev: reaches ? { week: before, local: prevRow ? prevRow.local.blocked : 0, ci: prevRow ? prevRow.ci.blocked : 0 } : null
+      last: prev >= oldest ? cell(prev) : null,
+      now: cell(week),
+      days: Math.min(7, Math.floor((at - Date.parse(week + "T00:00:00Z")) / day) + 1),
+      weeks,
+      cloud: cloudCounted(doc)
     };
   }
 
@@ -2821,7 +2936,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     }
     return out;
   }
-  var usd = (x) => "$" + x.toFixed(2);
+  var usd = (x) => fmtUsd(x);
   var money = (t) => usd(t.cost) + (t.unknown ? STRINGS.utilityUnknownCost(t.unknown) : "");
   function dayChart(days) {
     if (!days.length) return null;
@@ -2957,14 +3072,25 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   // src/views/summary.js
   function asOfLine(doc, refMs) {
     const newest = parseTime(doc.newest_run);
-    return h("p", { class: "src asof-line" }, defn("dataBuilt"), " " + fmtDateTime(refMs), " · ", defn("newestRun"), " " + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet));
+    const reads = BLOCKS.map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
+    const lo = Math.min.apply(null, reads), hi = Math.max.apply(null, reads);
+    return h(
+      "p",
+      { class: "src asof-line" },
+      defn("dataBuilt"),
+      " " + fmtDateTime(refMs),
+      " · ",
+      defn("newestRun"),
+      " " + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet),
+      reads.length && fmtDateTime(lo) !== fmtDateTime(hi) ? " · " + STRINGS.srcRange(fmtDateTime(lo), fmtDateTime(hi)) : null
+    );
   }
-  function skillStates(doc, tested) {
+  function skillStateCounts(doc, tested) {
     const counts = {};
     tested.forEach((s) => {
       counts[s.chip] = (counts[s.chip] || 0) + 1;
     });
-    const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => [counts[k] + " ", term(STRINGS.chips[k].toLowerCase(), STRINGS.chipRules[k], { title: STRINGS.chips[k] })]);
+    const out = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));
     const listed = Array.isArray(doc.skills) ? doc.skills.filter(Boolean) : [];
     const testedNames = new Set(tested.map((s) => s.name));
     const rest = { skipped: 0, gap: 0 };
@@ -2972,55 +3098,113 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       if (!testedNames.has(String(s.name)) && Object.prototype.hasOwnProperty.call(rest, s.status)) rest[s.status] += 1;
     });
     for (const k of Object.keys(rest)) {
-      if (rest[k]) parts.push([rest[k] + " ", term(STRINGS.skillStateExtra[k].toLowerCase(), STRINGS.skillStateDefs[k], { title: STRINGS.skillStateExtra[k] })]);
+      if (rest[k]) out.push({ key: k, n: rest[k], label: STRINGS.skillStateExtra[k], rule: STRINGS.skillStateDefs[k] });
     }
-    const out = [];
-    parts.forEach((p, i) => {
-      if (i) out.push(" · ");
-      out.push(p);
+    return out;
+  }
+  function stateBar(parts, aria) {
+    const total = parts.reduce((a, p) => a + p.n, 0);
+    if (!total) return null;
+    return h(
+      "span",
+      { class: "statebar" },
+      h("span", { class: "sbar", role: "img", "aria-label": aria }, parts.map((p) => h("span", { class: "sb " + p.key, style: "flex-grow:" + p.n }))),
+      h("span", { class: "legend-mini" }, parts.map((p) => h(
+        "span",
+        { class: "li" },
+        h("span", { class: "sw " + p.key, "aria-hidden": "true" }),
+        h("b", null, fmtCount(p.n)),
+        " ",
+        term(p.label.toLowerCase(), p.rule, { title: p.label })
+      )))
+    );
+  }
+  function hookBars(t, refMs) {
+    const top = Math.max(1, ...t.weeks.map((w) => w.blocked));
+    return h(
+      "span",
+      { class: "weekbars", role: "img", "aria-label": STRINGS.hooksBarsAria(t.weeks.map((w) => fmtUtcDay(Date.parse(w.week), refMs) + " " + w.blocked + (w.partial ? " " + STRINGS.hooksSoFarWord : "")).join(", ")) },
+      t.weeks.map((w) => h(
+        "span",
+        { class: "wk" + (w.partial ? " partial" : "") },
+        h("span", { class: "wn" }, fmtCount(w.blocked)),
+        // Square root, so one bad week does not flatten every other bar.
+        h("span", { class: "wb", style: "height:" + (w.blocked ? Math.max(8, Math.round(100 * Math.sqrt(w.blocked / top))) : 0) + "%" }),
+        h("span", { class: "wd" }, w.partial ? STRINGS.hooksSoFarWord : fmtUtcDay(Date.parse(w.week), refMs))
+      ))
+    );
+  }
+  function hooksTile(doc, tip, refMs) {
+    const t = hookTile(doc, 6);
+    if (!t) return tile({ label: STRINGS.tileHooks, href: hashFor("hooks"), tip, value: STRINGS.noValue, note: STRINGS.tileStoppedNone });
+    const last = t.last;
+    return tile({
+      label: STRINGS.tileHooks,
+      href: hashFor("hooks"),
+      tip,
+      value: last ? fmtCount(last.blocked) : STRINGS.noValue,
+      note: [
+        h("span", { class: "lede" }, last ? STRINGS.hooksLastWeek(fmtUtcDay(Date.parse(last.week), refMs), fmtCount(last.local), fmtCount(last.ci), t.cloud ? fmtCount(last.cloud) : null) : STRINGS.hooksNoFullWeek),
+        hookBars(t, refMs),
+        h("span", { class: "fine" }, STRINGS.hooksSoFar(fmtCount(t.now.blocked), t.days), " ", t.cloud ? null : STRINGS.hooksCloudNot)
+      ]
     });
-    return out.length ? out : STRINGS.skillStatesAll;
+  }
+  function guidanceTile(doc, tip) {
+    const whole2 = wholeGuidance(doc);
+    const g = whole2.pooled.all.gain;
+    const secs = sectionItems(doc, "next");
+    const counts = {};
+    secs.forEach((s) => {
+      counts[s.chip] = (counts[s.chip] || 0) + 1;
+    });
+    const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));
+    const models = whole2.pooled.models.length;
+    return tile({
+      label: STRINGS.tileGuidance,
+      href: hashFor("guidance"),
+      tip,
+      value: g === null || !isFinite(g) ? STRINGS.noValue : [(Math.round(g * 100) >= 0 ? "+" : "−") + Math.abs(Math.round(g * 100)), h("span", { class: "unit" }, STRINGS.ptsUnit)],
+      note: [
+        h("span", { class: "lede" }, chip(whole2.chip, STRINGS.wholeRule), " ", g === null || !isFinite(g) ? STRINGS.guidanceNoRuns : STRINGS.guidanceGainLine(fmtCount(whole2.pooled.all.n), models)),
+        stateBar(parts, STRINGS.sectionsBarAria(secs.length)),
+        h("span", { class: "fine" }, STRINGS.sectionsOf(secs.length))
+      ]
+    });
   }
   function summaryView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
     const src = STRINGS.srcDoc;
     const tip = srcTip(src, refMs);
-    const tiles = [];
-    const b = blockedThisWeek(doc);
-    tiles.push(tile({
-      label: STRINGS.tileStopped,
-      href: hashFor("hooks"),
-      tip,
-      value: b ? fmtCount(b.local + b.ci) : STRINGS.noValue,
-      note: b ? STRINGS.tileStoppedNote(fmtCount(b.local), fmtCount(b.ci), b.week, b.prev ? fmtCount(b.prev.local) : "", b.prev ? fmtCount(b.prev.ci) : "", b.prev ? b.prev.week : "") : STRINGS.tileStoppedNone
-    }));
+    const priv = !!(ctx && ctx.ext);
+    const tiles = [hooksTile(doc, tip, refMs)];
     const skills = skillItems(doc);
     const tested = skills.filter((s) => s.raw.status === "covered" || s.pooled.all.n > 0);
+    const states = skillStateCounts(doc, tested);
+    const all = Array.isArray(doc.skills) ? doc.skills.filter(Boolean).length : tested.length;
     tiles.push(tile({
-      label: STRINGS.tileHelped,
+      label: STRINGS.tileSkills,
       href: hashFor("skills"),
       tip,
       value: fmtCount(tested.filter((s) => s.chip === "helps").length),
-      note: [STRINGS.tileHelpedNote(tested.length, Array.isArray(doc.skills) ? doc.skills.filter(Boolean).length : tested.length), " ", skillStates(doc, tested)]
+      note: [
+        h("span", { class: "lede" }, STRINGS.skillsHelpLine(tested.length)),
+        stateBar(states, STRINGS.skillsBarAria(all)) || STRINGS.skillStatesAll,
+        h("span", { class: "fine" }, STRINGS.skillsOf(all))
+      ]
     }));
-    const whole2 = wholeGuidance(doc);
-    tiles.push(tile({
-      label: STRINGS.tileWhole,
-      href: hashFor("guidance"),
-      tip,
-      value: chip(whole2.chip, STRINGS.wholeRule),
-      note: STRINGS.wholeAnswer[whole2.chip]
-    }));
-    const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
-    const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => isTrending(doc, a));
-    const names = new Set(trending.map((a) => a.subject + ":" + a.name));
-    tiles.push(tile({
-      label: STRINGS.tileAlerts,
-      value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)),
-      tip,
-      note: STRINGS.tileAlertsNote + "." + (names.size ? STRINGS.tileTrendingNote(names.size) : "")
-    }));
-    const extra = ctx && ctx.ext && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
+    tiles.push(guidanceTile(doc, tip));
+    if (priv) {
+      const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
+      tiles.push(tile({
+        label: STRINGS.tileAlerts,
+        href: hashFor("needs"),
+        tip,
+        value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)),
+        note: STRINGS.tileAlertsNote
+      }));
+    }
+    const extra = priv && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
     return h(
       "div",
       null,
@@ -3028,8 +3212,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       asOfLine(doc, refMs),
       h("div", { class: "tiles" }, tiles, extra),
       hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
-      ctx && ctx.ext && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
-      alertsView(doc, "all")
+      priv && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
+      priv ? alertsView(doc, "all") : trendingView(doc, "all")
     );
   }
 
@@ -3119,8 +3303,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       "section",
       { class: "block" },
       h("h2", null, STRINGS.hooksHeading),
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
+      cloudNote(doc),
       typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct2(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
       items.length ? h("p", { class: "note" }, STRINGS.hookRunsNote) : null,
@@ -3129,12 +3314,18 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
     );
   }
+  function cloudNote(doc) {
+    const c = cloudCounted(doc);
+    if (c === null) return null;
+    const from = doc.hooks && typeof doc.hooks.cloud_from === "string" ? fmtUtcDay(Date.parse(doc.hooks.cloud_from + "T00:00:00Z")) : null;
+    return h("p", { class: "note" }, c ? STRINGS.hooksCloudFrom(from) : STRINGS.hooksCloudNotLong);
+  }
   function checkWeeks(it) {
     const by = /* @__PURE__ */ new Map();
     for (const u of it.use) {
-      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, ciUnknown: false, overridden: null });
+      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, cloudRuns: 0, cloudBlocked: 0, ciUnknown: false, overridden: null });
       const r = by.get(u.week);
-      const s = u.surface === "ci" ? "ci" : "local";
+      const s = u.surface === "ci" || u.surface === "cloud" ? u.surface : "local";
       if (Number.isInteger(u.invocations)) r[s + "Runs"] += u.invocations;
       else r[s + "Unknown"] = true;
       r[s + "Blocked"] += Number(u.blocked) || 0;
@@ -3151,6 +3342,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (!it) return h("div", null, back, h("p", null, STRINGS.hookNotFound));
     const day = (d) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
     const weeks = checkWeeks(it);
+    const cloud = cloudCounted(doc) === true;
     const gloss = Object.prototype.hasOwnProperty.call(HOOK_GLOSSES, it.name) ? HOOK_GLOSSES[it.name] : STRINGS.hookEnforcesMissing;
     const src = link(it.raw.source_url, STRINGS.hookSourceLink);
     const byRepo = /* @__PURE__ */ new Map();
@@ -3170,7 +3362,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         "section",
         { class: "block subject" },
         h("div", { class: "subject-head" }, h("h2", { class: "title" }, clean(it.name)), hookVerdict(it)),
-        srcLine(STRINGS.srcDoc, refMs),
+        rangeLine(doc),
         h("h3", null, STRINGS.hookEnforcesHeading),
         h("p", null, gloss, src ? [" (", src, ")"] : null),
         h("p", { class: "meta" }, STRINGS.hookWhereLine(it.where, it.repo ? clean(it.repo) : null)),
@@ -3189,8 +3381,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ),
       panel(STRINGS.hookByWeek, weeks.length ? [
         weekChart(
-          weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked, b: w.ciBlocked })),
-          [STRINGS.colLocalBlocked, STRINGS.colCiBlocked],
+          weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked + (cloud ? w.cloudBlocked : 0), b: w.ciBlocked })),
+          [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked],
           STRINGS.hookByWeek,
           STRINGS.weekTitles.hooks,
           [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]
@@ -3201,8 +3393,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.localBlocked, cell: (w) => fmtCount(w.localBlocked) },
           { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ciRuns === null ? -1 : w.ciRuns, cell: (w) => w.ciRuns === null ? STRINGS.runsNotCounted : fmtCount(w.ciRuns) },
           { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ciBlocked, cell: (w) => fmtCount(w.ciBlocked) },
+          cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloudRuns, cell: (w) => fmtCount(w.cloudRuns) } : null,
+          cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloudBlocked, cell: (w) => fmtCount(w.cloudBlocked) } : null,
           { label: STRINGS.colOverrides, num: true, sort: (w) => w.overridden, cell: (w) => it.measured && w.overridden !== null ? fmtCount(w.overridden) : STRINGS.overridesNotCounted }
-        ], weeks.slice().reverse())
+        ].filter(Boolean), weeks.slice().reverse()),
+        cloudNote(doc)
       ] : null),
       panel(STRINGS.hookByRepo, byRepo.size ? table([
         { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(r.repo) },
@@ -3217,12 +3412,19 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   // src/core/fixtures.js
   var EVALS_URL = "https://github.com/" + DATA_REPO;
   var FQ_KINDS = { "needs-fixtures": "new fixtures", "needs-harder-fixtures": "harder fixtures", "needs-trigger-set": "trigger set" };
+  function requestIssue(request) {
+    if (Number.isInteger(request) && request > 0) return request;
+    if (typeof request !== "string") return null;
+    const t = request.trim();
+    const m = /^(\d{1,9})$/.exec(t) || new RegExp("^" + EVALS_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "/issues/(\\d{1,9})/?$").exec(t);
+    return m ? Number(m[1]) : null;
+  }
   function fixtureQueue(doc, refMs) {
     const q = doc && doc.fixture_queue;
     if (!q || typeof q !== "object" || !Array.isArray(q.requests)) return null;
     const fixtures = Array.isArray(q.fixtures) ? q.fixtures.filter((f) => f && typeof f === "object") : [];
     const rows = q.requests.filter((r) => r && typeof r === "object" && Number.isInteger(r.issue)).map((req) => {
-      const mine = fixtures.filter((f) => String(f.request) === String(req.issue));
+      const mine = fixtures.filter((f) => requestIssue(f.request) === req.issue);
       const prs = Array.isArray(req.prs) ? req.prs.filter((p) => p && Number.isInteger(p.number)) : [];
       const latest = prs.reduce((a, p) => !a || p.number > a.number ? p : a, null);
       const opened = parseTime(req.opened_at);
@@ -3244,14 +3446,26 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         costUsd: mine.reduce((s, f) => s + (Number(f.cost_usd) || 0), 0)
       };
     });
+    const sum = (list) => list.length ? {
+      fixtures: list.length,
+      realWork: list.filter((f) => f.origin_kind === "real-work").length,
+      runs: list.reduce((s, f) => s + (Number(f.runs) || 0), 0),
+      costUsd: list.reduce((s, f) => s + (Number(f.cost_usd) || 0), 0)
+    } : null;
+    const listed = new Set(rows.map((r) => r.issue));
+    const unlisted = sum(fixtures.filter((f) => {
+      const n = requestIssue(f.request);
+      return n !== null && !listed.has(n);
+    }));
+    const noRequest = sum(fixtures.filter((f) => requestIssue(f.request) === null));
     rows.sort((a, b) => (a.state === "open" ? 0 : 1) - (b.state === "open" ? 0 : 1) || (a.opened || 0) - (b.opened || 0));
     const findings = Array.isArray(q.findings) ? q.findings.filter((f) => f && typeof f === "object") : [];
-    return { rows, totals: q.totals && typeof q.totals === "object" ? q.totals : {}, findings, fixtures };
+    return { rows, unlisted, noRequest, totals: q.totals && typeof q.totals === "object" ? q.totals : {}, findings, fixtures };
   }
 
   // src/views/subject.js
   var share = (x) => typeof x === "number" && isFinite(x) ? Math.round(x * 100) + "%" : STRINGS.noValue;
-  var usd2 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd2 = (x) => typeof x === "number" && isFinite(x) ? fmtUsd(x) : STRINGS.noValue;
   var one = (x) => typeof x === "number" && isFinite(x) ? fmtCount(x) : STRINGS.noValue;
   function runsOf2(doc, kind, name) {
     const key = kind === "guidance" ? "guidance/" + name : name;
@@ -3363,7 +3577,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           h("h2", { class: "title" }, clean(name)),
           known2.private === true ? badge(STRINGS.privateBadge, "private") : null
         ),
-        srcLine(STRINGS.srcDoc, refMs),
+        rangeLine(doc),
         h("p", { class: "gl" }, clean(purposeOf(known2.description) || STRINGS.purposeMissing)),
         known2.registry ? h("p", { class: "meta" }, STRINGS.registryLine(clean(known2.registry))) : null,
         h("p", null, STRINGS.subjectUntested)
@@ -3388,7 +3602,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           chip(it.chip),
           raw.private === true ? badge(STRINGS.privateBadge, "private") : null
         ),
-        srcLine(STRINGS.srcDoc, refMs),
+        rangeLine(doc),
         h("p", { class: "gl" }, gloss),
         !guidance && raw.registry ? h("p", { class: "meta" }, STRINGS.registryLine(clean(raw.registry))) : null,
         guidance ? h("p", { class: "meta" }, STRINGS.size(wordsFor(it.bytes))) : null,
@@ -3419,7 +3633,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/loop.js
-  var usd3 = (x) => "$" + (Number(x) || 0).toFixed(2);
+  var usd3 = (x) => fmtUsd(Number(x) || 0);
   function stagesView() {
     return [
       h("ol", { class: "stages" }, STRINGS.loopStages.map(([name, text]) => h("li", null, h("strong", null, name), " ", text))),
@@ -3433,6 +3647,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const n = (k) => fmtCount(Number(t[k]) || 0);
     const high = fq.findings.filter((f) => f.severity === "high").length;
     return [
+      srcLineFor(doc, "queue"),
       h("p", { class: "note" }, STRINGS.fqNote),
       h("p", null, STRINGS.fqTotals(n("requests_open"), n("requests_closed"), n("prs_merged"), n("fixtures_real_work"), n("fixtures_invented"), n("fixture_runs"))),
       fq.findings.length ? h("p", { class: "warn" }, STRINGS.fqFindings(fq.findings.length, high)) : null,
@@ -3445,7 +3660,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         { label: STRINGS.colFixtures, num: true, sort: (r) => r.fixtures, cell: (r) => r.fixtures + " (" + r.realWork + ")" },
         { label: STRINGS.colRuns, num: true, sort: (r) => r.runs, cell: (r) => fmtCount(r.runs) },
         { label: STRINGS.colCost, num: true, sort: (r) => r.costUsd, cell: (r) => usd3(r.costUsd) }
-      ], fq.rows, { tall: true }) : null
+      ], fq.rows, { tall: true, foot: [fq.unlisted && Object.assign({ subject: STRINGS.fqUnlisted }, fq.unlisted), fq.noRequest && Object.assign({ subject: STRINGS.fqNoRequest }, fq.noRequest)].filter(Boolean).map((r) => Object.assign({ issueUrl: null, kind: "", state: "", ageDays: null, prs: 0 }, r)) }) : null
     ];
   }
   var FUNNEL_KEYS = ["check", "skill", "guidance", "nothing", "open", "unknown"];
@@ -3467,12 +3682,18 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       missing.length ? h("p", { class: "note" }, STRINGS.funnelMissing(missing.map((s) => STRINGS.funnelSources[s]).join(", "))) : null
     ];
   }
-  var LOOP_TITLE = /^(New skill: |Improve |Retire (skill|guidance section) |Remove .*: no (marginal )?benefit|Trim )/;
+  var LOOP_TITLE = /^(New skill: |Improve |Proposed .+ (SKILL\.md|guidance) edit|Retire (skill|guidance section) |Remove .*: (no (marginal )?benefit|unused)|Trim )/;
+  var LOOP_BRANCH = /^(eval-improve|eval-guidance-improve|draft-skill|retire-skill|retire-guidance)\//;
+  function isLoopPull(p) {
+    if (!p || typeof p !== "object") return false;
+    if (typeof p.head_ref === "string") return LOOP_BRANCH.test(p.head_ref);
+    return typeof p.title === "string" && LOOP_TITLE.test(p.title);
+  }
   function loopPrsView(doc, refMs) {
     const a = doc.activity;
-    const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter((p) => p && typeof p.title === "string" && LOOP_TITLE.test(p.title));
+    const rows = (a && Array.isArray(a.pulls) ? a.pulls : []).filter(isLoopPull);
     if (!rows.length) return null;
-    return [h("p", { class: "note" }, STRINGS.loopPrsNote), prTable(rows, refMs)];
+    return [srcLineFor(doc, "activity"), h("p", { class: "note" }, STRINGS.loopPrsNote), prTable(rows, refMs)];
   }
   function prTable(rows, refMs) {
     return table([
@@ -3490,7 +3711,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return h(
       "div",
       null,
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       panel(STRINGS.loopHeading, stages || stagesView()),
       ext && ext.loopTop ? ext.loopTop(ctx) : null,
       panel(STRINGS.funnelHeading, funnelView(doc)),
@@ -3502,21 +3723,25 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   }
 
   // src/views/impact.js
-  var usd4 = (x) => typeof x === "number" && isFinite(x) ? "$" + x.toFixed(2) : STRINGS.noValue;
+  var usd4 = (x) => typeof x === "number" && isFinite(x) ? fmtUsd(x) : STRINGS.noValue;
   var dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
   function hookWeeksView(doc, refMs) {
     const weeks = hookWeeks(doc);
     if (!weeks.length) return null;
     const old = weeks.slice().reverse();
+    const cloud = cloudCounted(doc) === true;
     return [
-      weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+      weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked })), [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
         { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
         { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.local.blocked, cell: (w) => fmtCount(w.local.blocked) },
         { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ci.runs, cell: (w) => fmtCount(w.ci.runs) },
-        { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) }
-      ], weeks)
+        { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) },
+        cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloud.runs, cell: (w) => fmtCount(w.cloud.runs) } : null,
+        cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloud.blocked, cell: (w) => fmtCount(w.cloud.blocked) } : null
+      ].filter(Boolean), weeks),
+      cloudNote(doc)
     ];
   }
   function skillUseView(doc, refMs) {
@@ -3524,6 +3749,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const rows = skillItems(doc).filter((s) => s.raw.usage && typeof s.raw.usage.invocations === "number");
     if (!rows.length || !u) return null;
     return [
+      srcLineFor(doc, "usage"),
       h("p", { class: "note" }, STRINGS.impactUseSkillsNote(fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs))),
       table([
         { label: STRINGS.colName, sort: (s) => s.name, cell: (s) => navLink(hashFor("skills", s.name), clean(s.name)) },
@@ -3563,6 +3789,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (!a || !weeks.length) return null;
     const repos = (Array.isArray(a.repos) ? a.repos : []).map((r) => clean(String(r).split("/").pop())).join(", ");
     return [
+      srcLineFor(doc, "activity"),
       h("p", { class: "note" }, STRINGS.impactPrsNote(repos, fmtDateTime(parseTime(a.since)))),
       weekChart(weeks.slice().reverse().map((w) => ({ label: dayOf(w.week, refMs), a: w.opened, b: w.merged })), [STRINGS.colOpened, STRINGS.colMerged], STRINGS.impactPrs, STRINGS.weekTitles.prs, [STRINGS.weekDefs.opened, STRINGS.weekDefs.merged]),
       table([
@@ -3577,26 +3804,40 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const a = doc.activity;
     if (!a || !Array.isArray(a.runs)) return null;
     const red = a.runs.filter((r) => r && RED.includes(r.conclusion)).sort((x, y) => x.created_at < y.created_at ? 1 : -1);
-    return [h("p", { class: "note" }, STRINGS.impactRedNote), red.length ? table([
+    return [srcLineFor(doc, "activity"), h("p", { class: "note" }, STRINGS.impactRedNote), red.length ? table([
       { label: STRINGS.colWhen, sort: (r) => r.created_at, cell: (r) => fmtDateTime(parseTime(r.created_at)) },
       { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(String(r.repo).split("/").pop()) },
       { label: STRINGS.colWorkflow, sort: (r) => r.workflow, cell: (r) => link(r.url, clean(r.workflow || r.title || STRINGS.unknown)) },
       { label: STRINGS.colState, sort: (r) => r.conclusion, cell: (r) => clean(r.conclusion) }
     ], red) : h("p", null, STRINGS.impactRedNone)];
   }
+  function spendTotalLine(s) {
+    const t = s && s.total;
+    if (!t || typeof t !== "object" || typeof t.usd !== "number") return null;
+    return h("p", null, STRINGS.impactSpendTotal(
+      dayOf(t.since, NaN),
+      usd4(t.usd),
+      fmtCount(t.verdicts || 0),
+      typeof t.cost_per_verdict === "number" ? usd4(t.cost_per_verdict) : STRINGS.noValue,
+      usd4(t.run_usd),
+      usd4(t.thread_spend_usd),
+      usd4(t.api_usd)
+    ));
+  }
   function spendView(doc, refMs) {
     const s = doc.spend;
     if (!s || !Array.isArray(s.weeks) || !s.weeks.length) return null;
     return [
       h("p", { class: "note" }, STRINGS.impactSpendNote),
-      s.generated_at ? srcLine(STRINGS.srcDoc, parseTime(s.generated_at)) : null,
+      s.generated_at ? srcLineFor(doc, "spend") : null,
+      spendTotalLine(s),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs) },
         { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1) },
-        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) },
+        { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => typeof w.run_usd === "number" ? usd4(w.run_usd) : STRINGS.noValue },
         { label: STRINGS.colThreads, num: true, sort: (w) => w.thread_spend_usd, cell: (w) => usd4(w.thread_spend_usd) },
-        { label: STRINGS.colPerVerdict, num: true, sort: (w) => w.cost_per_verdict, cell: (w) => usd4(w.cost_per_verdict) }
+        { label: STRINGS.colApi, num: true, sort: (w) => w.api_usd, cell: (w) => usd4(w.api_usd) }
       ], s.weeks)
     ];
   }
@@ -3656,7 +3897,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return h(
       "div",
       null,
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       panel(STRINGS.agentMade, agentMadeView(doc, refMs)),
       panel(STRINGS.impactUseWeeks, hookWeeksView(doc, refMs)),
       // The private usage table covers both lists, private repos included.
@@ -3681,6 +3922,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const rows = a.runs.filter(Boolean).slice().sort((x, y) => x.created_at < y.created_at ? 1 : -1);
     const state = (r) => r.conclusion || r.state || STRINGS.unknown;
     return [
+      srcLineFor(doc, "activity"),
       h("p", { class: "note" }, STRINGS.opsRunsNote(fmtDateTime(parseTime(a.since)))),
       problemsToggle(),
       table([
@@ -3695,17 +3937,17 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
   function prsView(doc, refMs) {
     const a = doc.activity;
     if (!a || !Array.isArray(a.pulls) || !a.pulls.length) return null;
-    return [h("p", { class: "note" }, STRINGS.opsPrsNote), prTable(a.pulls.filter(Boolean), refMs)];
+    return [srcLineFor(doc, "activity"), h("p", { class: "note" }, STRINGS.opsPrsNote), prTable(a.pulls.filter(Boolean), refMs)];
   }
   function issuesView(doc, refMs) {
     const a = doc.activity;
     if (!a || !Array.isArray(a.issues) || !a.issues.length) return null;
-    return table([
+    return [srcLineFor(doc, "activity"), table([
       { label: STRINGS.colRepo, sort: (i) => i.repo, cell: (i) => clean(String(i.repo).split("/").pop()) },
       { label: STRINGS.colNumber, num: true, sort: (i) => i.number, cell: (i) => link(i.url, "#" + i.number) },
       { label: STRINGS.colTitle, sort: (i) => i.title, cell: (i) => clean(i.title) },
       { label: STRINGS.colUpdated, sort: (i) => i.updated_at, cell: (i) => fmtDay(parseTime(i.updated_at), refMs) }
-    ], a.issues.filter(Boolean).slice().sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at))), { tall: true });
+    ], a.issues.filter(Boolean).slice().sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at))), { tall: true })];
   }
   function opsView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
@@ -3714,7 +3956,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return h(
       "div",
       null,
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       ext && ext.opsTop ? ext.opsTop(ctx) : null,
       covers("runs") ? ext.runs(ctx) : panel(STRINGS.opsRuns, runsView(doc, refMs)),
       covers("prs") ? ext.prs(ctx) : panel(STRINGS.opsPrs, prsView(doc, refMs)),
@@ -4005,7 +4247,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       return h(
         "div",
         null,
-        srcLine(STRINGS.srcDoc, refMs),
+        rangeLine(doc),
         wholeView(wholeGuidance(doc), refMs),
         h(
           "section",
@@ -4037,7 +4279,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     return h(
       "div",
       null,
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       h(
         "section",
         null,
@@ -4188,7 +4430,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     GROUPS,
     hookItems,
     hookWeeks,
-    blockedThisWeek,
+    hookTile,
+    cloudCounted,
     mondayOf,
     checkWeeks,
     fixtureQueue,
@@ -4203,7 +4446,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     firesFigures,
     firesNode,
     asOfLine,
-    skillStates,
+    skillStateCounts,
+    stateBar,
     term,
     defn,
     closeDef,

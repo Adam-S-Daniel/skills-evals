@@ -19,7 +19,7 @@ import { impactView } from './impact.js';
 import { opsView } from './ops.js';
 import { methodView, removedPage } from './method.js';
 import { searchView } from './search.js';
-import { navLink, srcLine } from './bits.js';
+import { navLink, srcLine, rangeLine, srcLineFor } from './bits.js';
 import { indexDoc } from '../core/terms.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
 
@@ -32,7 +32,7 @@ export function buildPage(doc, mode, opts) {
     const items = sectionItems(doc, o.sortBy);
     const hd = o.handlers || {};
     return h('div', null,
-      srcLine(STRINGS.srcDoc, refMs),
+      rangeLine(doc),
       wholeView(wholeGuidance(doc), refMs),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
@@ -48,7 +48,7 @@ export function buildPage(doc, mode, opts) {
   const items = skillItems(doc);
   const u = doc.usage;
   return h('div', null,
-    srcLine(STRINGS.srcDoc, refMs),
+    rangeLine(doc),
     h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),

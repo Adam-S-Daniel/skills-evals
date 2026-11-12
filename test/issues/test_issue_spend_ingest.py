@@ -66,7 +66,7 @@ def spend_doc(**changes) -> dict:
                {"week": "2026-10-26", "eval_runs": 12, "plan_meter_points": 31.25,
                 "api_usd": 40.125, "thread_spend_usd": 18.5, "cost_per_verdict": None},
                {"week": "2026-11-02", "eval_runs": 3, "plan_meter_points": 7.0,
-                "api_usd": 9.75, "thread_spend_usd": 4.0, "cost_per_verdict": 1.3333333333333333,
+                "api_usd": 9.75, "thread_spend_usd": 4.0, "run_usd": 1.3333333333333333,
                 "plan": "Max 20x"}]}
     doc.update(changes)
     return doc
@@ -103,6 +103,19 @@ class SpendBranchTests(GitCase):
         self.assertEqual((self.tmp / "staged" / ingest.SPEND_DEST).read_bytes(), data)
         self.assertEqual([p for p in (self.tmp / "staged").rglob("*") if p.is_file()],
                          [self.tmp / "staged" / ingest.SPEND_DEST])
+
+    def test_a_total_in_the_dashboards_shape_is_accepted(self):
+        # The shape dashboard/build.py's spend_file writes (#980): since the
+        # first week, over the decided verdicts, split into its three parts.
+        total = {"since": "2026-10-19", "verdicts": 12, "usd": 5541.65, "run_usd": 991.75,
+                 "thread_spend_usd": 4335.49, "api_usd": 214.41, "cost_per_verdict": 461.8}
+        doc = spend_doc(total=total)
+        doc["weeks"] = [{k: v for k, v in w.items() if k != "cost_per_verdict"} | {"run_usd": 1.0}
+                        for w in doc["weeks"]]
+        data = spend_bytes(doc)
+        self.commit({ingest.SPEND_SOURCE: data})
+        self.validate_spend()
+        self.assertEqual((self.tmp / "staged" / ingest.SPEND_DEST).read_bytes(), data)
 
     def test_a_minimal_file_is_accepted(self):
         self.commit({ingest.SPEND_SOURCE: spend_bytes(
@@ -153,6 +166,11 @@ class SpendBranchTests(GitCase):
                 self.git("checkout", "-q", "-B", SPEND_BRANCH)
                 self.commit({ingest.SPEND_SOURCE: spend_bytes(doc)})
                 self.assertSpendRejected("not a weekly total")
+
+    def test_rejects_a_field_in_the_total_that_is_not_a_total(self):
+        self.commit({ingest.SPEND_SOURCE: spend_bytes(
+            spend_doc(total={"since": "2026-10-19", "threads": [MARKER]}))})
+        self.assertSpendRejected("the total carries")
 
     def test_rejects_ids_and_addresses_in_values(self):
         for label, plan, pattern in (
@@ -252,7 +270,10 @@ class SpendBranchTests(GitCase):
         self.assertEqual(ingest.FORBIDDEN_ID_RE.pattern,
                          explorer_public.FORBIDDEN_ID_RE.pattern)
         self.assertEqual(ingest.PLAN_RE.pattern, explorer_public._PLAN_RE.pattern)
-        self.assertEqual(ingest.SPEND_WEEK_KEYS, set(explorer_public.SPEND_WEEK_KEYS))
+        # The ingest still accepts the retired per-verdict week field, so a file
+        # from a dashboard build older than the total is not rejected.
+        self.assertEqual(ingest.SPEND_WEEK_KEYS, set(explorer_public.SPEND_WEEK_KEYS) | {"cost_per_verdict"})
+        self.assertEqual(ingest.SPEND_TOTAL_KEYS, set(explorer_public.SPEND_TOTAL_KEYS))
         schema = json.loads(SCHEMA.read_text(encoding="utf-8"))["$defs"]["spend_file"]
         self.assertEqual(ingest.SPEND_KEYS, set(schema["properties"]))
         self.assertEqual(ingest.SPEND_WEEK_KEYS, set(schema["properties"]["weeks"]
@@ -346,7 +367,7 @@ class SpendResolveAndPlaceTests(unittest.TestCase):
         built = explorer_public.build_spend(tree, True)
         self.assertEqual(built["generated_at"], doc["generated_at"])
         self.assertEqual([w["week"] for w in built["weeks"]], ["2026-11-02", "2026-10-26"])
-        self.assertEqual(built["weeks"][0]["cost_per_verdict"], 1.3333333333333333)
+        self.assertEqual(built["weeks"][0]["run_usd"], 1.3333333333333333)
         self.assertEqual(built["weeks"][1]["plan"], "Max 20x")
         self.assertIsNone(explorer_public.build_spend(tree, False))
 

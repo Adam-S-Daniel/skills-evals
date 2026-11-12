@@ -470,7 +470,7 @@ jobs:
             [[ "$repo" =~ ^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$ ]] || continue
             { gh api --method GET "repos/$repo/pulls?state=all&sort=updated&direction=desc&per_page=100" \
                 > "$work/page.json" 2>/dev/null \
-              && jq -c --arg repo "$repo" '.[] | {repo: $repo, number, title, state, created_at, updated_at, closed_at, merged_at}' \
+              && jq -c --arg repo "$repo" '.[] | {repo: $repo, number, title, head_ref: .head.ref, state, created_at, updated_at, closed_at, merged_at}' \
                 "$work/page.json" >> "$work/pulls.jsonl" \
               && gh api --method GET "repos/$repo/issues?state=open&per_page=100" \
                 > "$work/page.json" 2>/dev/null \

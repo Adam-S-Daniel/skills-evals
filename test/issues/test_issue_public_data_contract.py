@@ -461,6 +461,7 @@ class ActivityTests(unittest.TestCase):
     def doc(**extra):
         return {"fetched_at": "2026-10-31T20:00:00Z",
                 "pulls": [{"repo": "Adam-S-Daniel/open-one", "number": 7, "title": "Fix @someone's bug",
+                           "head_ref": "eval-improve/some-skill",
                            "state": "closed", "created_at": "2026-10-25T10:00:00Z",
                            "updated_at": "2026-10-26T10:00:00Z", "closed_at": "2026-10-26T10:00:00Z",
                            "merged_at": "2026-10-26T10:00:00Z", "body": "never published"},
@@ -509,6 +510,26 @@ class ActivityTests(unittest.TestCase):
         for leak in ("hidden", "Hidden", "never published", "body", "@", "cmsg_"):
             self.assertNotIn(leak, text)
 
+    def test_the_workflow_reads_each_pulls_head_branch(self):
+        # Without head_ref in the reduction the document can never select the
+        # loop's pull requests by branch (the lasting rule the page uses).
+        wf = yaml.safe_load((ROOT / ".github" / "workflows" / "explorer-data.yml").read_text(encoding="utf-8"))
+        steps = [st for job in wf["jobs"].values() for st in job["steps"]
+                 if st.get("name") == "List recent activity in the public repositories"]
+        self.assertEqual(len(steps), 1)
+        self.assertIn("head_ref: .head.ref", steps[0]["run"])
+
+    def test_the_head_branch_is_published_only_when_plain(self):
+        ref = pub.safe_head_ref
+        self.assertEqual(ref("eval-improve/some-skill"), "eval-improve/some-skill")
+        # A long hex run is refused by safe_text; the loop prefix alone is kept.
+        self.assertEqual(ref("retire-skill/x-0123456789abcdef0123"), "retire-skill/")
+        for bad in (None, 7, "", "has space/x", "a" * 101, "weird@name/x"):
+            self.assertIsNone(ref(bad))
+        self.assertIsNone(ref("0123456789abcdef0123"))
+        a = self.activity(self.doc())
+        self.assertEqual([p["head_ref"] for p in a["pulls"]], ["eval-improve/some-skill", None])
+
     def test_titles_are_cleaned_and_urls_built(self):
         a = self.activity(self.doc())
         pull = a["pulls"][0]
@@ -546,7 +567,7 @@ class SpendTests(unittest.TestCase):
                        "api_usd": 4.25, "thread_spend_usd": 18.123456789, "cost_per_verdict": None,
                        "sessions": [{"session": "invented", "usd": 1}], "thread_id": "thread-0001"},
                       {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1,
-                       "api_usd": 0, "thread_spend_usd": 2, "cost_per_verdict": 1.5, "plan": "Pro"},
+                       "api_usd": 0, "thread_spend_usd": 2, "run_usd": 1.5, "plan": "Pro"},
                       {"week": "2026-10-12", "eval_runs": -1, "api_usd": 1},
                       {"week": "not-a-week", "eval_runs": 1}]}
 
@@ -559,9 +580,10 @@ class SpendTests(unittest.TestCase):
         self.assertEqual(spend["generated_at"], "2026-10-31T12:00:00Z")
         self.assertEqual(spend["weeks"], [
             {"week": "2026-10-26", "eval_runs": 3, "plan_meter_points": 1, "api_usd": 0,
-             "thread_spend_usd": 2, "cost_per_verdict": 1.5, "plan": "Pro"},
+             "thread_spend_usd": 2, "run_usd": 1.5, "plan": "Pro"},
             {"week": "2026-10-19", "eval_runs": 12, "plan_meter_points": 30.5, "api_usd": 4.25,
-             "thread_spend_usd": 18.123456789, "cost_per_verdict": None, "plan": "Max 20x"}])
+             "thread_spend_usd": 18.123456789, "run_usd": None, "plan": "Max 20x"}])
+        self.assertIsNone(spend["total"], "a file without a total publishes none")
         self.assertNotIn("invented", json.dumps(spend))
         self.assertNotIn("thread-0001", json.dumps(spend))
 
@@ -570,6 +592,22 @@ class SpendTests(unittest.TestCase):
         self.assertIsNone(pub.build_spend(self.t.tree / "elsewhere", True))
         write(self.t.tree / "spend" / "weekly.json", {**self.FILE, "schema": 2})
         self.assertIsNone(pub.build_spend(self.t.tree, True))
+
+    def test_the_since_the_start_total_is_published_in_one_shape(self):
+        total = {"since": "2026-10-19", "verdicts": 12, "usd": 5541.65, "run_usd": 991.75,
+                 "thread_spend_usd": 4335.49, "api_usd": 214.41, "cost_per_verdict": 461.8,
+                 "invented": "never published"}
+        write(self.t.tree / "spend" / "weekly.json", {**self.FILE, "total": total})
+        spend = pub.build_spend(self.t.tree, True)
+        self.assertEqual(set(spend["total"]), set(pub.SPEND_TOTAL_KEYS))
+        self.assertNotIn("never published", json.dumps(spend))
+        for bad in ({**total, "usd": "5"}, {**total, "verdicts": -1}, {**total, "since": "Oct 19"}):
+            write(self.t.tree / "spend" / "weekly.json", {**self.FILE, "total": bad})
+            self.assertIsNone(pub.build_spend(self.t.tree, True)["total"])
+        on = explorer_data.build(self.t.tree, self.t.roster, self.t.policy, self.t.evals, AS_OF,
+                                 SHA_A, SHA_B, spend=True)
+        explorer_data.finish(on)
+        explorer_data.validate(on)
 
     def test_the_flag_reaches_the_document_both_ways(self):
         on = explorer_data.build(self.t.tree, self.t.roster, self.t.policy, self.t.evals, AS_OF,

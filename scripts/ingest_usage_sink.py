@@ -16,7 +16,10 @@ the files the census already reads (`model_usage_census.py`):
     (read by `cloud_guidance_tally`), unless its `session` already appears in
     any events/*/cloud-guidance.jsonl;
   * a skill line -> events/<YYYY-MM of its ts>/cloud-skills/<session>.jsonl
-    (read by `cloud_skill_records`), unless its `id` is already in that shard.
+    (read by `cloud_skill_records`), unless its `id` is already in that shard;
+  * a hook line (an agent-checks run, optional key `hooks`, below) ->
+    events/<YYYY-MM of its ts>/cloud-hooks/<session>.jsonl (read by
+    `cloud_hook_records`), unless its `id` is already in that shard.
 
 Each line is re-serialized compactly (`separators=(",", ":")`), which gives
 back the hook's own bytes: the git route writes the same `json.dumps` of the
@@ -40,12 +43,19 @@ anything under `drop/`, with any key, date part and content. So:
     backdated into past weeks' tallies.
   * THE ENVELOPE is checked whole: at most SIZE_CAP bytes, UTF-8, JSON with
     no duplicated key and no NaN/Infinity, exactly the keys {v, kind, sent,
-    guidance, skills}, `v` 1, `kind` `usage-drop`, `sent` a UTC second stamp,
-    `guidance` a list of at most one item and `skills` a list. An object
-    whose envelope fails is rejected whole (`bad-envelope`) and nothing from
-    it is written.
+    guidance, skills} or those plus the optional `hooks`, `v` 1, `kind`
+    `usage-drop`, `sent` a UTC second stamp, `guidance` a list of at most one
+    item, `skills` a list and `hooks` a list. An object whose envelope fails
+    is rejected whole (`bad-envelope`) and nothing from it is written. An
+    envelope WITH `hooks` was `bad-envelope` before VALIDATOR_VERSION 3, and
+    that reason is permanent, so the hook that sends `hooks` must only be
+    deployed after this version is live.
   * EACH RECORD is checked on its own. A skill line must pass the census's
     own reader (`_cloud_line_ok`, the ADR 0036 shape); a guidance record
+    must pass `guidance_record_ok`; a hook line must pass `hook_line_ok`:
+    exactly the keys CLOUD_HOOK_KEYS (any order), the census's own reader
+    (`cloud_hook_line_ok`) plus ASCII strings, at most MAX_HOOKS lines per
+    object, `ts` near LastModified like the others; a guidance record
     must pass `guidance_record_ok`: exactly the keys the hook's phase 1
     uploads (GUIDANCE_KEYS), each value in the shape the hook builds it. The
     hook's local copy of a record carries one more key, `uploaded`; the line
@@ -66,6 +76,7 @@ THE STORE LAYOUT (relative to `--store`):
 
   events/<YYYY-MM>/cloud-guidance.jsonl         guidance records (append only)
   events/<YYYY-MM>/cloud-skills/<16 hex>.jsonl  skill lines (append only)
+  events/<YYYY-MM>/cloud-hooks/<16 hex>.jsonl   hook lines (append only)
   sink/ingested/<YYYY-MM>.txt                   `<key> <sha256 of body>[ partial=<k>]`
   sink/rejected/<YYYY-MM>.txt                   `<key> <reason> v<version>`
 
@@ -128,7 +139,7 @@ import model_usage_census as census  # noqa: E402
 
 #: Bumped whenever validation accepts more than before, so that keys rejected
 #: by an older version (except for good: PERMANENT_REASONS) are planned again.
-VALIDATOR_VERSION = 2
+VALIDATOR_VERSION = 3
 
 #: The hook's object key: `drop/<UTC day of send>/<32 hex from os.urandom>.json`.
 KEY_RE = re.compile(r"drop/([0-9]{4}-[0-9]{2})-[0-9]{2}/[0-9a-f]{32}\.json", re.ASCII)
@@ -152,6 +163,10 @@ MAX_BEFORE = timedelta(hours=48)
 MAX_AFTER = timedelta(minutes=10)
 
 DROP_KEYS = frozenset({"v", "kind", "sent", "guidance", "skills"})
+#: The optional sixth key: a list of cloud hook lines (agent-checks runs).
+HOOKS_KEY = "hooks"
+#: One object holds the runs of one Stop-hook send; more is not a run log.
+MAX_HOOKS = 500
 
 #: Phase 1's uploaded line: `phase1()` in guidance-load-record.sh.
 GUIDANCE_KEYS = frozenset({
@@ -274,6 +289,21 @@ def skill_line_ok(record, modified: datetime | None = None) -> bool:
             and _ts_near(record["ts"], modified))
 
 
+def hook_line_ok(record, modified: datetime | None = None) -> bool:
+    """Whether `record` is a well-formed cloud hook line, by the census's own
+    reader, for the shard its `ts` and `session` file it under, with every
+    string ASCII and its `ts` near `modified` when given."""
+    if not (isinstance(record, dict) and isinstance(record.get("ts"), str)
+            and _ascii_match(census.CLOUD_SESSION_RE, record.get("session"))
+            and all(v.isascii() for v in record.values() if isinstance(v, str))
+            and all(i.isascii() for key in ("checks", "failed")
+                    if isinstance(record.get(key), list)
+                    for i in record[key] if isinstance(i, str))):
+        return False
+    return (census.cloud_hook_line_ok(record, record["ts"][:7], record["session"])
+            and _ts_near(record["ts"], modified))
+
+
 def _no_duplicates(pairs):
     keys = [key for key, _ in pairs]
     if len(keys) != len(set(keys)):
@@ -295,7 +325,7 @@ def parse_drop(body: bytes) -> dict:
                          parse_constant=_no_constant)
     except (UnicodeDecodeError, ValueError, RecursionError):
         raise Rejected(BAD_ENVELOPE) from None
-    if not (isinstance(doc, dict) and set(doc) == DROP_KEYS
+    if not (isinstance(doc, dict) and set(doc) in (DROP_KEYS, DROP_KEYS | {HOOKS_KEY})
             and type(doc["v"]) is int and doc["v"] == 1
             and doc["kind"] == "usage-drop"
             and _ascii_match(SECOND_TS_RE, doc["sent"])
@@ -303,15 +333,22 @@ def parse_drop(body: bytes) -> dict:
             and isinstance(doc["guidance"], list) and len(doc["guidance"]) <= 1
             and isinstance(doc["skills"], list)):
         raise Rejected(BAD_ENVELOPE)
+    if HOOKS_KEY in doc and not isinstance(doc[HOOKS_KEY], list):
+        raise Rejected(BAD_ENVELOPE)
     return doc
 
 
-def split_records(doc: dict, modified: datetime | None) -> tuple[list, list, int]:
-    """(valid guidance records, valid skill lines, number of invalid records)."""
+def split_records(doc: dict, modified: datetime | None) -> tuple[list, list, list, int]:
+    """(valid guidance records, valid skill lines, valid hook lines, number of
+    invalid records). A `hooks` list longer than MAX_HOOKS keeps its first
+    MAX_HOOKS lines and counts the rest as invalid."""
     guidance = [r for r in doc["guidance"] if guidance_record_ok(r, modified)]
     skills = [r for r in doc["skills"] if skill_line_ok(r, modified)]
-    dropped = len(doc["guidance"]) + len(doc["skills"]) - len(guidance) - len(skills)
-    return guidance, skills, dropped
+    sent = doc.get(HOOKS_KEY, [])
+    hooks = [r for r in sent[:MAX_HOOKS] if hook_line_ok(r, modified)]
+    dropped = (len(doc["guidance"]) + len(doc["skills"]) + len(sent)
+               - len(guidance) - len(skills) - len(hooks))
+    return guidance, skills, hooks, dropped
 
 
 # --- the store ------------------------------------------------------------------
@@ -548,7 +585,7 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
     stats = {"objects": 0, "ingested": 0, "partial": 0, "rejected": 0, "already": 0,
              "ignored": ignored + len(set(found) - set(manifest) - set(unreadable)),
              "missing": 0, "records_dropped": 0, "guidance_added": 0,
-             "skills_added": 0, "reasons": {}}
+             "skills_added": 0, "hooks_added": 0, "reasons": {}}
 
     def reject(key, reason):
         month = KEY_RE.fullmatch(key).group(1)
@@ -582,7 +619,7 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
         except Rejected as exc:
             reject(key, exc.args[0])
             continue
-        guidance, skills, dropped = split_records(doc, manifest[key])
+        guidance, skills, hooks, dropped = split_records(doc, manifest[key])
         writes: dict = {}
         for record in guidance:
             record = {k: v for k, v in record.items() if k != UPLOADED_KEY}
@@ -590,6 +627,10 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
             writes.setdefault(rel, []).append(record)
         for record in skills:
             rel = (census.EVENTS_DIR, record["ts"][:7], census.CLOUD_SKILLS_DIR,
+                   f"{record['session']}.jsonl")
+            writes.setdefault(rel, []).append(record)
+        for record in hooks:
+            rel = (census.EVENTS_DIR, record["ts"][:7], census.CLOUD_HOOKS_DIR,
                    f"{record['session']}.jsonl")
             writes.setdefault(rel, []).append(record)
         index = (SINK_DIR, INGESTED, f"{KEY_RE.fullmatch(key).group(1)}.txt")
@@ -608,7 +649,8 @@ def apply(incoming, store, manifest: dict, unreadable=()) -> dict:
                     if record["id"] not in have:
                         have.add(record["id"])
                         lines.append(_line(record))
-                stats["skills_added"] += len(lines)
+                stats["hooks_added" if census.CLOUD_HOOKS_DIR in rel
+                      else "skills_added"] += len(lines)
             _append(targets[rel], lines)
         note = f" partial={dropped}" if dropped else ""
         _append(targets[index], [f"{key} {hashlib.sha256(body).hexdigest()}{note}"])
@@ -625,8 +667,9 @@ def _summary(stats: dict) -> str:
             f"({stats['partial']} partial, {stats['records_dropped']} invalid records dropped), "
             f"{stats['rejected']} rejected, {stats['already']} already recorded, "
             f"{stats['missing']} planned but missing, {stats['ignored']} other entries ignored; "
-            f"{stats['guidance_added']} guidance lines and {stats['skills_added']} skill "
-            f"lines added" + (f"; rejected by reason: {reasons}" if reasons else ""))
+            f"{stats['guidance_added']} guidance lines, {stats['skills_added']} skill "
+            f"lines and {stats['hooks_added']} hook lines added"
+            + (f"; rejected by reason: {reasons}" if reasons else ""))
 
 
 def _max_arg(value: str) -> int:
