@@ -937,6 +937,14 @@ test('the hooks tile leads with the last full week and shows the week in progres
   ok(!sp(P.textOf(P.renderRoute(cloud, { name: 'summary', id: null }, {}))).includes(P.STRINGS.hooksCloudNot), 'no not-counted line once cloud is counted');
   ok(sp(P.textOf(P.renderRoute(d, { name: 'hooks', id: null }, {}))).includes(P.STRINGS.hooksCloudNotLong), 'the hooks page says cloud is not counted');
 });
+test('the hooks tile counts quiet window weeks as zero and handles the week edges', () => {
+  const base = { hooks: Object.assign({}, fixture.hooks, { window: { weeks: 8, from: '2026-10-19', to: '2026-11-12' }, totals: { local: [{ week: '2026-11-09', blocked: 1, invocations: 2 }], ci: [] } }) };
+  const t = P.hookTile(Object.assign({}, fixture, base, { generated_at: '2026-11-12T16:00:00Z' }), 6);
+  eq(t.last.blocked, 0, 'a measured quiet week is 0, not missing'); eq(t.weeks.length, 4);
+  eq(P.hookTile(Object.assign({}, fixture, base, { generated_at: '2026-11-09T00:00:00Z' }), 6).days, 1, 'Monday 00:00 is day 1');
+  eq(P.hookTile(Object.assign({}, fixture, base, { generated_at: '2026-11-15T23:59:00Z' }), 6).days, 7, 'Sunday is day 7');
+  eq(P.hookTile(Object.assign({}, fixture, base, { generated_at: null }), 6), null, 'no document time, no tile data');
+});
 test('the public summary has no alerts tile or alerts list', () => {
   const t = sp(P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {})));
   ok(!t.includes(P.STRINGS.tileAlerts + ' '), 'no alerts tile: ' + t.slice(0, 400));

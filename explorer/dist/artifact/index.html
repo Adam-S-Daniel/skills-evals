@@ -165,8 +165,8 @@
   /* Stacked tiles share one left edge (they keep 22px only side by side). */
   .ex .tile, .ex .tile:first-child { padding-left: 0; padding-right: 0; border-left: 0; }
 }
-@keyframes ex-rise { from { transform: scaleY(0.05); opacity: 0.2; } }
-@keyframes ex-fill { from { transform: scaleX(0.05); opacity: 0.2; } }
+@keyframes ex-bar-rise { from { transform: scaleY(0.05); opacity: 0.2; } }
+@keyframes ex-bar-fill { from { transform: scaleX(0.05); opacity: 0.2; } }
 .ex .headline-num { font-family: var(--ex-serif, var(--ex-serif-stack)); font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; line-height: 1; max-width: 26ch; }
 
 /* Cards */
@@ -256,7 +256,7 @@
 .ex-tip[hidden] { display: none; }
 .ex .headline .answer { font-size: 1.2rem; font-weight: 700; }
 @media (forced-colors: active) {
-  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw { forced-color-adjust: none; }
+  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw, .ex .sb, .ex .weekbars .wb { forced-color-adjust: none; }
   .ex a.group[aria-current="page"], .ex .seg button[aria-pressed="true"], .ex .subnav a[aria-current="page"] { outline: 3px solid Highlight; outline-offset: -3px; }
 }
 .ex .conf { margin: 12px 0 0; }
@@ -315,8 +315,8 @@
   .ex .content.enter .tiles > :nth-child(3) { animation-delay: 150ms; }
   .ex .content.enter .tiles > :nth-child(4) { animation-delay: 210ms; }
   .ex .content.enter .tiles > :nth-child(n+5) { animation-delay: 270ms; }
-  .ex .content.enter .weekbars .wb { animation: ex-rise 520ms var(--ex-ease) 260ms backwards; }
-  .ex .content.enter .statebar .sbar { animation: ex-fill 620ms var(--ex-ease) 260ms backwards; }
+  .ex .content.enter .weekbars .wb { animation: ex-bar-rise 520ms var(--ex-ease) 260ms backwards; }
+  .ex .content.enter .statebar .sbar { animation: ex-bar-fill 620ms var(--ex-ease) 260ms backwards; }
   .ex .content.enter .meter .fill { animation: ex-fill 900ms 200ms var(--ex-ease) backwards; }
   .ex .defbox { animation: ex-pop 140ms var(--ex-ease) backwards; }
 }
@@ -2808,7 +2808,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
         partial: w === week
       };
     };
-    const oldest = rows.length ? rows[rows.length - 1].week : week;
+    const from = doc.hooks.window && typeof doc.hooks.window.from === "string" ? mondayOf(Date.parse(doc.hooks.window.from + "T00:00:00Z")) : null;
+    const oldest = from || (rows.length ? rows[rows.length - 1].week : week);
     const weeks = [];
     for (let t = Date.parse(week + "T00:00:00Z"), k = 0; k < (n || 6); t -= 7 * day, k++) {
       const w = mondayOf(t);
@@ -3096,7 +3097,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       label: STRINGS.tileGuidance,
       href: hashFor("guidance"),
       tip,
-      value: g === null || !isFinite(g) ? STRINGS.noValue : [(g >= 0 ? "+" : "−") + Math.abs(Math.round(g * 100)), h("span", { class: "unit" }, STRINGS.ptsUnit)],
+      value: g === null || !isFinite(g) ? STRINGS.noValue : [(Math.round(g * 100) >= 0 ? "+" : "−") + Math.abs(Math.round(g * 100)), h("span", { class: "unit" }, STRINGS.ptsUnit)],
       note: [
         h("span", { class: "lede" }, chip(whole2.chip, STRINGS.wholeRule), " ", g === null || !isFinite(g) ? STRINGS.guidanceNoRuns : STRINGS.guidanceGainLine(fmtCount(whole2.pooled.all.n), models)),
         stateBar(parts, STRINGS.sectionsBarAria(secs.length)),
@@ -3128,12 +3129,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     tiles.push(guidanceTile(doc, tip));
     if (priv) {
       const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
-      const distinct = new Set(alerts.map((a) => [a.kind, a.subject, a.name].join(":")));
       tiles.push(tile({
         label: STRINGS.tileAlerts,
         href: hashFor("needs"),
         tip,
-        value: fmtCount(distinct.size + (firesFigures(doc) ? 1 : 0)),
+        value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)),
         note: STRINGS.tileAlertsNote
       }));
     }

@@ -68,7 +68,6 @@ export function hooksList(doc) {
     hk.private_repos_shown ? h('p', { class: 'note' }, STRINGS.hookPrivateFold) : null);
 }
 
-/* One check's weeks, oldest first, summed over repos. */
 /* Whether cloud Claude Code sessions are in the counts, said wherever hook
    counts appear; null when the document has no hook totals. */
 export function cloudNote(doc) {
@@ -78,6 +77,7 @@ export function cloudNote(doc) {
   return h('p', { class: 'note' }, c ? STRINGS.hooksCloudFrom(from) : STRINGS.hooksCloudNotLong);
 }
 
+/* One check's weeks, oldest first, summed over repos. */
 export function checkWeeks(it) {
   const by = new Map();
   for (const u of it.use) {

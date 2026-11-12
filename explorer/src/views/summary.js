@@ -79,7 +79,7 @@ function guidanceTile(doc, tip) {
   const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));
   const models = whole.pooled.models.length;
   return tile({ label: STRINGS.tileGuidance, href: hashFor('guidance'), tip,
-    value: g === null || !isFinite(g) ? STRINGS.noValue : [(g >= 0 ? '+' : '−') + Math.abs(Math.round(g * 100)), h('span', { class: 'unit' }, STRINGS.ptsUnit)],
+    value: g === null || !isFinite(g) ? STRINGS.noValue : [(Math.round(g * 100) >= 0 ? '+' : '−') + Math.abs(Math.round(g * 100)), h('span', { class: 'unit' }, STRINGS.ptsUnit)],
     note: [
       h('span', { class: 'lede' }, chip(whole.chip, STRINGS.wholeRule), ' ', g === null || !isFinite(g) ? STRINGS.guidanceNoRuns : STRINGS.guidanceGainLine(fmtCount(whole.pooled.all.n), models)),
       stateBar(parts, STRINGS.sectionsBarAria(secs.length)),
@@ -106,9 +106,9 @@ export function summaryView(doc, ctx) {
   // tile, and it opens Needs you, where each one is listed.
   if (priv) {
     const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
-    const distinct = new Set(alerts.map((a) => [a.kind, a.subject, a.name].join(':')));
+    // The same rows Needs you lists for them (attentionRows), so the counts match.
     tiles.push(tile({ label: STRINGS.tileAlerts, href: hashFor('needs'), tip,
-      value: fmtCount(distinct.size + (firesFigures(doc) ? 1 : 0)), note: STRINGS.tileAlertsNote }));
+      value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)), note: STRINGS.tileAlertsNote }));
   }
   const extra = priv && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
   return h('div', null,

@@ -79,7 +79,10 @@ export function hookTile(doc, n) {
     return { week: w, blocked: r ? sum(r, 'blocked') : 0, runs: r ? sum(r, 'runs') : 0,
       local: r ? r.local.blocked : 0, ci: r ? r.ci.blocked : 0, cloud: r ? r.cloud.blocked : 0, partial: w === week };
   };
-  const oldest = rows.length ? rows[rows.length - 1].week : week;
+  // Weeks the counts cover start at the window's start: a week there with
+  // no rows was measured as zero, not missing.
+  const from = doc.hooks.window && typeof doc.hooks.window.from === 'string' ? mondayOf(Date.parse(doc.hooks.window.from + 'T00:00:00Z')) : null;
+  const oldest = from || (rows.length ? rows[rows.length - 1].week : week);
   const weeks = [];
   for (let t = Date.parse(week + 'T00:00:00Z'), k = 0; k < (n || 6); t -= 7 * day, k++) {
     const w = mondayOf(t);

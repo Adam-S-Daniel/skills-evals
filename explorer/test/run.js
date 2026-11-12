@@ -215,6 +215,7 @@ await test('a regression alert on a subject the loop decided to keep is not tren
   const priv = renderRoute(d, { name: 'summary', id: null }, { ext: {} });
   const alertTile = findAll(priv, (n) => n.attrs && /\btile\b/.test(n.attrs.class || '') && textOf(n).startsWith(STRINGS.tileAlerts))[0];
   ok(alertTile, 'the dashboard has an alerts tile');
+  eq(textOf(findAll(alertTile, (n) => n.attrs && /tile-num/.test(n.attrs.class || ''))[0]).trim().split(' ').pop(), String(attentionRows(fakeDash({}), d).length), 'the tile counts the rows Needs you lists');
   eq(findAll(alertTile, (n) => n.tag === 'a')[0].attrs.href, hashFor('needs'), 'it opens Needs you');
 });
 await test('the allowance and routine health come from their datasets', () => {
