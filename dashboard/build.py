@@ -97,18 +97,25 @@ def allowance(er, now):
     import yaml
     import allowance_guard as g
     limits = yaml.safe_load(open(REPO / "evals" / "budget.yml"))
-    # The guard caps spend since the account's last weekly reset (`window_start`), not a
-    # rolling seven days, so the figure here is that same window.
+    # The guard caps spend since the account's last weekly reset (`window_start`; the
+    # guard's own reset, or a manual one), not a rolling seven days. Every figure below
+    # is the guard's own number for that window, so the page never recomputes it.
+    # Fires still waiting for results are unknown here (no fire log), so `pending` is
+    # 0 and `room_points` is what the guard would say with no fire in flight.
     since = g.window_start(now)
     runs = g.ingested_runs(Path(er), now, since)
     st = g.account(Path(er), limits, now, (len(runs), 0), since=since)
     found = g.newest_snapshot(runs)
-    resets = iso(since + g.WINDOW)  # the guard's own reset (Monday 17:00 UTC), not a snapshot's claim
+    # The next scheduled reset (Monday 17:00 UTC), even when a manual reset started this window.
+    resets = iso(g.ACCOUNT_WEEK_RESET + ((now - g.ACCOUNT_WEEK_RESET) // g.WINDOW + 1) * g.WINDOW)
     return [{
         "measure": "eval_spend_since_reset", "window_start": iso(since), "points": st["spent"] * 100, "runs": st["runs"],
         "account_week_used": None if st["account_used"] is None else st["account_used"] * 100,
         "account_reading_at": iso(found[0]) if found else None, "week_resets_at": resets,
         "week_elapsed": st["week_elapsed"], "pace_room_points": st["pace_room"] * 100,
+        "room_points": g.room(st) * 100, "committed_points": st["committed"] * 100,
+        "pending_points": st["pending"] * 100,
+        "stop_left_points": None if st["stop_left"] is None else st["stop_left"] * 100,
         "reservation_points": st["reservation"] * 100, "computed_at": iso(now),
     }]
 
@@ -337,8 +344,10 @@ def routines(cfg, triggers, workflow_runs, now, workflow_states=None):
         elif last_result == "Cancelled":
             health = "Check"
         elif not last_run:
-            # No recorded run is never "OK" (nor, for lack of a clock to judge by, "Late").
-            health = "Not run yet"
+            # No recorded run is never "OK". It is "Late" once a run was due (its next run
+            # is past, or it expects runs and none is scheduled), else "Not run yet".
+            due = (next_run and parse(next_run) <= now) or (r.get("expect_every_hours") and not next_run)
+            health = "Late" if due else "Not run yet"
         elif r.get("expect_every_hours") and now - parse(last_run) > timedelta(hours=2 * r["expect_every_hours"]):
             health = "Late"
         else:

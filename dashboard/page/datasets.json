@@ -10,13 +10,13 @@
    "connector": "github-mcp",
    "tool": "get_file_contents"
   },
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude when the cap changes (standing values since the Oct 26 reset, skills-evals#431)",
   "source": {
    "kind": "file",
    "name": "budget.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 48,
   "title": "Test budget settings"
  },
  "checkins": {
@@ -43,13 +43,13 @@
  },
  "cleanup": {
   "description": "The fixed cleanup list from the strategy, with each item's status checked against GitHub by Claude.",
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude on request",
   "source": {
    "kind": "file",
    "name": "cleanup.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 168,
   "title": "Cleanup list C1 to C15"
  },
  "cost_benefit_summary": {
@@ -76,13 +76,13 @@
  },
  "decisions": {
   "description": "Decisions you made in this project, from project memory and the records they landed in.",
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude on request",
   "source": {
    "kind": "file",
    "name": "decisions.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 168,
   "title": "Your decisions"
  },
  "eval_allowance": {
@@ -118,13 +118,13 @@
  },
  "gate": {
   "description": "The two conditions you set on Oct 24 before anything new got built; both met by Oct 28.",
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude on request",
   "source": {
    "kind": "file",
    "name": "gate.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 72,
   "title": "Build gate"
  },
  "half_built_issues": {
@@ -162,13 +162,13 @@
  },
  "loop_grid": {
   "description": "What works at each loop step for skills, guidance sections and memories, from the loop thread's gap list.",
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude when the loop design changes",
   "source": {
    "kind": "file",
    "name": "loop_grid.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 48,
   "title": "Loop by subject"
  },
  "loop_lanes": {
@@ -266,13 +266,13 @@
  },
  "roster": {
   "description": "Which models the skill tests run on, judge with and quick-check with, read by Claude from skills-evals evals/roster.yml on main, plus models dropped in the last change.",
-  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "schedule": "Updated by Claude when the model list changes (it is recomputed every Monday)",
   "source": {
    "kind": "file",
    "name": "roster.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 26,
+  "staleAfterHours": 192,
   "title": "Models in the tests"
  },
  "routines": {
