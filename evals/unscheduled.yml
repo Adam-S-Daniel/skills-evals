@@ -35,11 +35,11 @@ fixtures:
   - path: evals/finding-unknowns
     reason: "Scope decision 2026-11-03: process/taste skill; owner review replaces the eval."
   - path: evals/review-bash-ci-reliability/empty-repo-discovery
-    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-12, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and both runs after that, 20261103T051307Z-9a6eba on Sonnet 5.5 and 20261103T093214Z-20145d on Opus 5.5, have the without arm at 7/7 checks)."
   - path: evals/skills-doctor/one-row-rejects-the-lock
-    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-12, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and both runs after that, 20261103T012234Z-dd66ce on Sonnet 5.5 and 20261103T095129Z-a28e1a on Opus 5.5, have the without arm at 5/5 checks)."
   - path: evals/skills-doctor/ssh-remote-is-durable
-    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
+    reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side. Rechecked 2026-11-12, holds: fails criterion 4 (the fixture is unchanged since 2026-11-02, and both runs after that, 20261103T024322Z-b8c817 on Sonnet 5.5 and 20261103T095401Z-15b65b on Opus 5.5, have the without arm at 6/6 checks)."
   - path: evals/workflow-path-audit/moved-test-dir
     reason: "Scope decision 2026-11-03: both arms pass every check, so the fixture cannot show a gain; dropped from the removal side."
   - path: evals/writing-adrs/supersede
