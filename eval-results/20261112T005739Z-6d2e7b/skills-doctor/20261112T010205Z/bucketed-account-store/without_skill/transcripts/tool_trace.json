@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01E4b86rJKY466tbD3om6EcC",
+      "name": "Bash",
+      "input": "cd <path>; ls -la; git log --oneline | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 128,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01E4b86rJKY466tbD3om6EcC",
+      "is_error": false,
+      "output": "total 28\ndrwxr-xr-x 6 root root 4096 Nov 12 01:02 .\ndrwx------ 6 root root 4096 Nov 12 01:02 ..\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .bash_profile\ncrw-rw-rw- 1 root root 1, 3 Nov 11 01:06 .bashrc\ndrwxr-xr-x 3 root root 4096 Nov 12 01:02 .claude\ndrwxr-xr-x 9 root root 4096 Nov 12 01:02 .git\ncrw-r...",
+      "output_chars": 1778,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01Gi1dzKkTkCKFsmPNdpetVw",
+      "name": "Bash",
+      "input": "cd <path>; cat README.md; find .claude -type f; cd session/skills; cat .skills-bootstrap-installed.json ../skills.lock; cat synced/*/manifest.json; ls -la . synced synced/*; for f in writing-adrs/SKIL...",
+      "input_chars": 351,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01Gi1dzKkTkCKFsmPNdpetVw",
+      "is_error": false,
+      "output": "# Session capture \u2014 laptop, 2026-09-18\n\nCopied off the machine so the delivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store as it stood, including whatever\n  the claude.ai account sync had put there.\n- `session/skills.lock` \u2014 the lock the bootstrap hook inst...",
+      "output_chars": 4794,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01UPDR4VNshQswDwz5KhMXAH",
+      "name": "Bash",
+      "input": "cd <path>; date -u -d @1789713628 ; diff -r session/skills/writing-adrs registry/plugins/adam/skills/writing-adrs && echo same-installed-vs-registry; diff -r session/skills/adam-writing-style registry...",
+      "input_chars": 616,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01UPDR4VNshQswDwz5KhMXAH",
+      "is_error": false,
+      "output": "Fri Sep 18 06:40:28 UTC 2026\nsame-installed-vs-registry\nsame-style\n8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\n5d04a9063499f87449bf15513d452b11c410e2fd0489f17622086179f6e76573  SKILL.md\n8ee58d77c0b1817d4045bacb5ab25e024c5be6f14658534f29500cd9694d7401  -\n5d04a9063499f87449bf15...",
+      "output_chars": 1050,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01LoF73GmtuUpas9iV5MyoZ5",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01LoF73GmtuUpas9iV5MyoZ5",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
