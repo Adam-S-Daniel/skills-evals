@@ -56,7 +56,7 @@
   background: var(--surface) no-repeat 10px 50% / 13px 13px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23737B8C' stroke-width='2.4'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 4 4'/%3E%3C/svg%3E"); }
 .ex input.search:focus { outline: 3px solid var(--s2); outline-offset: 2px; box-shadow: 4px 4px 0 var(--ink); }
 .ex .menu:focus-visible { outline: 3px solid var(--s2); outline-offset: 2px; }
-@media (max-width: 760px) {
+@container (max-width: 760px) {
   .ex .tile { padding-left: 0; padding-right: 0; }
   .ex .menu { display: inline-block; }
   .ex .drawer { display: none; flex-basis: 100%; padding: 0 0 12px; }
@@ -64,12 +64,12 @@
   .ex a.group { padding: 8px 10px 9px; }
   .ex input.search { margin-top: 10px; }
 }
-@media (min-width: 761px) {
-  .ex.shell, .ex .shell { display: grid; grid-template-columns: 212px minmax(0, 1fr); }
+@container (min-width: 761px) {
+  .ex.shell, .ex .shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); }
   .ex .content { padding: 0 36px 96px 40px; }
   .ex .topbar { align-self: start; height: 100vh; overflow-y: auto; border-bottom: 0; border-right: 3px solid var(--ink); padding: 0; }
   .ex .bar { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; min-height: 100%; }
-  .ex .brand { display: block; font-size: 2.5rem; padding: 22px 18px 26px; overflow-wrap: normal; hyphens: manual; }
+  .ex .brand { display: block; font-size: 1.95rem; padding: 22px 18px 26px; overflow-wrap: normal; hyphens: manual; }
   .ex .brand::before { display: block; width: 16px; height: 16px; margin: 0 0 14px; box-shadow: 22px 0 0 -4px var(--page), 22px 0 0 0 var(--ink); }
   .ex nav.groups { border-bottom: 1px solid var(--base); }
   .ex input.search { width: auto; margin: auto 18px 20px; }
@@ -94,7 +94,7 @@
    bout sheets run the full measure underneath. */
 .ex .content section { border-top: 3px solid var(--ink); margin-top: 60px; padding-top: 14px; }
 .ex .content section section { margin-top: 36px; }
-@media (min-width: 1180px) {
+@container (min-width: 1180px) {
   .ex .content section { display: grid; grid-template-columns: 200px minmax(0, 1fr); column-gap: 36px; align-items: start; }
   .ex .content section > * { grid-column: 1 / -1; min-width: 0; }
   .ex .content section > h2:first-child { grid-column: 1; grid-row: 1 / span 4; }
@@ -107,7 +107,7 @@
 .ex dl.gloss { display: grid; grid-template-columns: minmax(8em, max-content) 1fr; gap: 6px 16px; margin: 8px 0 0; }
 .ex dl.gloss dt { font-weight: 600; }
 .ex dl.gloss dd { margin: 0; color: var(--ink-2); }
-@media (max-width: 560px) { .ex dl.gloss { grid-template-columns: 1fr; } .ex dl.gloss dd { margin-bottom: 8px; } }
+@container (max-width: 560px) { .ex dl.gloss { grid-template-columns: 1fr; } .ex dl.gloss dd { margin-bottom: 8px; } }
 .ex summary { cursor: pointer; font-weight: 600; min-height: 32px; }
 .ex summary::marker { color: var(--s2); }
 
@@ -198,7 +198,7 @@
 .ex th[aria-sort="ascending"]::after { content: " \25B4"; color: var(--s2); }
 .ex th[aria-sort="descending"]::after { content: " \25BE"; color: var(--s2); }
 .ex table.hooks th { white-space: normal; }
-@media (max-width: 560px) {
+@container (max-width: 560px) {
   .ex table.hooks th, .ex table.hooks td { padding: 4px 3px; font-size: 0.78rem; }
   .ex table.hooks th { font-size: 0.62rem; letter-spacing: 0.04em; }
   .ex table.hooks td.num, .ex table.hooks th.num { white-space: normal; }
@@ -328,7 +328,7 @@ html, body { background: var(--color-bg, #E8ECF1); }
 @media (prefers-color-scheme: dark) { html, body { background: var(--color-bg, #090A10); } }
 html { min-height: 100%; }
 body { min-height: 100vh; }
-#ex-root { background: var(--page); min-height: 100vh; }
+#ex-root { background: var(--page); min-height: 100vh; container-type: inline-size; }
 </style>
 <div id="ex-root" class="ex">
   <div id="ex-app">

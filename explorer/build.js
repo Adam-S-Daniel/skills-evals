@@ -59,9 +59,18 @@ export async function bundle(entry, opts) {
 }
 
 /* A template with its CSS and one bundle filled in. */
-function fill(templatePath, js, vars) {
+/* The private page sits in a dashboard pane that can be far narrower than the
+   window (beside a chat, or with Sources open), so its layout answers to its
+   own width: every width @media in base.css becomes an @container query on
+   #ex-root, which private.html makes a container. */
+export function widthQueriesToContainer(css) {
+  return css.replace(/@media \((max|min)-width:/g, '@container ($1-width:');
+}
+
+function fill(templatePath, js, vars, opts) {
   if (/<\/script/i.test(js)) throw new Error('the bundle contains </script, which would end the inline script early');
-  const css = fs.readFileSync(BASE_CSS, 'utf8').replace(/\n$/, '');
+  let css = fs.readFileSync(BASE_CSS, 'utf8').replace(/\n$/, '');
+  if (opts && opts.container) css = widthQueriesToContainer(css);
   let tpl = fs.readFileSync(templatePath, 'utf8');
   const c = tpl.split('/*__CSS__*/');
   if (c.length !== 2) throw new Error(templatePath + ' must hold exactly one /*__CSS__*/ marker');
@@ -80,7 +89,7 @@ export async function buildPublicPage() {
 }
 
 export async function buildPrivatePage() {
-  return fill(PRIVATE_TEMPLATE, await bundle('private.js'), {});
+  return fill(PRIVATE_TEMPLATE, await bundle('private.js'), {}, { container: true });
 }
 
 export async function buildArtifactPage() {

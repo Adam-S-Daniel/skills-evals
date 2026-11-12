@@ -414,6 +414,16 @@ await test('motion plays only for readers who have not asked for less', () => {
   const outside = css.slice(0, at) + css.slice(end);
   eq((outside.match(/(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/g) || []).length, 0, 'animation or transition outside the reduced-motion block');
 });
+await test('the private page lays out by its own width, not the window', () => {
+  // The dashboard pane can be ~400px on a wide window: a window-width rail
+  // breakpoint would squeeze the content beside a 212px rail.
+  const priv = fs.readFileSync(PRIVATE_PAGE, 'utf8');
+  ok(/#ex-root \{[^}]*container-type: inline-size/.test(priv), '#ex-root is a size container');
+  eq((priv.match(/@media \((?:max|min)-width/g) || []).length, 0, 'width @media left in the private page');
+  ok(/@container \(max-width: 760px\)/.test(priv), 'the narrow layout is a container query');
+  const pub = fs.readFileSync(PAGE, 'utf8');
+  ok(/@media \(max-width: 760px\)/.test(pub) && !/@container/.test(pub), 'the public page still uses the window width');
+});
 await test('both pages paint the whole window in the theme color, not only their column', () => {
   // Regression: the dark private page showed a white frame outside the column and below short pages.
   const pub = fs.readFileSync(PAGE, 'utf8'), priv = fs.readFileSync(PRIVATE_PAGE, 'utf8');

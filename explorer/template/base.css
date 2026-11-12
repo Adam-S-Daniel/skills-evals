@@ -64,11 +64,11 @@
   .ex input.search { margin-top: 10px; }
 }
 @media (min-width: 761px) {
-  .ex.shell, .ex .shell { display: grid; grid-template-columns: 212px minmax(0, 1fr); }
+  .ex.shell, .ex .shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); }
   .ex .content { padding: 0 36px 96px 40px; }
   .ex .topbar { align-self: start; height: 100vh; overflow-y: auto; border-bottom: 0; border-right: 3px solid var(--ink); padding: 0; }
   .ex .bar { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; min-height: 100%; }
-  .ex .brand { display: block; font-size: 2.5rem; padding: 22px 18px 26px; overflow-wrap: normal; hyphens: manual; }
+  .ex .brand { display: block; font-size: 1.95rem; padding: 22px 18px 26px; overflow-wrap: normal; hyphens: manual; }
   .ex .brand::before { display: block; width: 16px; height: 16px; margin: 0 0 14px; box-shadow: 22px 0 0 -4px var(--page), 22px 0 0 0 var(--ink); }
   .ex nav.groups { border-bottom: 1px solid var(--base); }
   .ex input.search { width: auto; margin: auto 18px 20px; }
