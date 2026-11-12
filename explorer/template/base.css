@@ -240,6 +240,31 @@
 .ex .block { min-width: 0; }
 .ex table.console { font-family: var(--ex-mono); font-size: 0.82rem; }
 .ex .problems-only tr[data-ok] { display: none; }
+.ex tr[hidden] { display: none !important; }
+.ex .sub { color: var(--muted); font-size: 0.85em; }
+.ex .tablewrap { position: relative; }
+.ex .scroll-hint { display: none; margin: 0 0 4px; font-size: 0.82rem; color: var(--muted); }
+/* The "Skip table" button is out of sight until the keyboard reaches it. */
+.ex .skip-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ex .skip-table:focus { position: static; width: auto; height: auto; clip-path: none; margin: 0 0 6px; padding: 4px 10px; font: inherit; font-size: 0.9rem; border: 2px solid var(--ink); background: var(--surface); color: var(--ink); cursor: pointer; }
+.ex .show-all { display: block; margin: 6px 0 0; }
+.ex .table-end { display: block; height: 0; outline: none; }
+/* Every control the keyboard can reach shows where it is. */
+.ex .tablewrap:focus-visible, .ex .skip-table:focus-visible, .ex .show-all:focus-visible, .ex .linkish:focus-visible, .ex .n:focus-visible, .ex .mark:focus-visible, .ex input:focus-visible, .ex select:focus-visible, .ex summary:focus-visible, .ex button:focus-visible { outline: 3px solid var(--s2); outline-offset: 2px; }
+.ex .mark:focus-visible { outline-offset: -3px; opacity: 0.75; }
+.ex th:focus-visible { outline-offset: -3px; }
+/* A phone shows a wide table's rows as blocks, each cell's label above its value, so no column is cut off or scrolled to. */
+@media (max-width: 560px) {
+  .ex .tablewrap.tall { max-height: none; overflow-y: visible; }
+  .ex .scroll-hint { display: block; }
+  .ex table.stack, .ex table.stack tbody, .ex table.stack tfoot, .ex table.stack tr, .ex table.stack td { display: block; width: 100%; }
+  .ex table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .ex table.stack tr { border-bottom: 3px solid var(--ink); padding: 6px 0; }
+  .ex table.stack td, .ex table.stack td:first-child { border-bottom: 0; padding: 3px 0; text-align: left; white-space: normal; }
+  .ex table.stack td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; font-family: var(--ex-mono); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .ex table.stack td:empty { display: none; }
+  .ex table.stack td.num { font-size: 0.95em; }
+}
 .ex label.check, .ex label.filter { display: inline-flex; align-items: center; gap: 6px; font-size: 0.94rem; margin: 0 12px 8px 0; }
 .ex input[type="checkbox"] { accent-color: var(--s1); }
 .ex .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0; }

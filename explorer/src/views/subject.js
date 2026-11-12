@@ -67,7 +67,7 @@ export function runsTable(runs, refMs) {
     { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
   ];
   if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
-  return table(cols, runs, { tall: true });
+  return table(cols, runs, { tall: true, scroll: true });
 }
 
 export function bareTable(bare) {

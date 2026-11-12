@@ -3,12 +3,12 @@
    itself when its datasets are empty, so a dashboard with only the explorer
    dataset shows the public views alone. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel } from '../core/format.js';
 import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, srcLine, tile, badge } from '../views/bits.js';
+import { table, panel, fold, srcLine, tile, badge } from '../views/bits.js';
 import { alertText } from '../views/alerts.js';
-import { problemsToggle } from '../views/ops.js';
+import { problemsToggle, PROBLEMS_PANEL, runName } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
@@ -35,12 +35,20 @@ const isLoopBranch = (b) => LOOP_BRANCH.test(String(b || ''));
 /* "Monday noon ET": the weekday and clock time of a reset, in US Eastern,
    read from the reset itself rather than assumed. */
 export function resetLabel(iso) {
-  const ms = parseTime(iso);
-  if (!isFinite(ms)) return STRINGS.unknown;
-  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: 'America/New_York' }, o)).format(new Date(ms));
-  const day = f({ weekday: 'long' });
-  const clock = f({ hour: 'numeric', minute: '2-digit', hour12: false });
-  return day + ' ' + (clock === '12:00' ? 'noon' : f({ hour: 'numeric', minute: '2-digit' })) + ' ' + STRINGS.et;
+  return fmtResetLabel(parseTime(iso));
+}
+
+/* A routine's schedule in US Eastern only. The routine list words some
+   schedules as "Daily 06:53 UTC, GitHub Actions (1:53 AM ET)": the Eastern time
+   in the parentheses replaces the UTC one, and a "UTC hours ..." aside keeps
+   only its Eastern list. */
+export function etSchedule(text) {
+  return String(text === null || text === undefined ? '' : text)
+    .replace(/\d{1,2}:\d{2} UTC([^()]*)\(([^()]*\bET)\)/g, (m, mid, et) => {
+      const rest = mid.trim();
+      return et + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
+    })
+    .replace(/\(UTC hours [^:()]*: /g, '(');
 }
 
 /* Test use this week against the cap, from eval_allowance and budget. */
@@ -315,7 +323,7 @@ export function makeExt(dash, opts) {
       return [h('h3', null, P.byRepoHeading), table([
         { label: P.colRepo, sort: (g) => g.repo, cell: (g) => clean(g.repo) },
         { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
-        { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => g.last }], byRepo)];
+        { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], byRepo)];
     },
     /* The live merged pull requests, in the document's own shape, for the changes list. */
     changePulls() {
@@ -333,9 +341,9 @@ export function makeExt(dash, opts) {
         { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
         { label: P.colRedCi, num: true, sort: (g) => g.overridden, cell: (g) => n(g.overridden) },
         { label: P.colRepos, num: true, sort: (g) => g.repos.size, cell: (g) => n(g.repos.size) },
-        { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => g.last }], usageGroup(rows, (r) => r.kind + '|' + r.name).sort((a, b) => b.uses - a.uses), { tall: true }),
+        { label: P.colLastWeek, sort: (g) => g.last, cell: (g) => fmtWeekStart(g.last) }], usageGroup(rows, (r) => r.kind + '|' + r.name).sort((a, b) => b.uses - a.uses), { tall: true }),
       h('h3', null, P.byWeekHeading), table([
-        { label: P.colWeek, sort: (g) => g.week, cell: (g) => g.week },
+        { label: P.colWeek, sort: (g) => g.week, cell: (g) => fmtWeekStart(g.week) },
         { label: P.colSurface, sort: (g) => g.surface, cell: (g) => clean(g.surface) },
         { label: P.colUses, num: true, sort: (g) => g.uses, cell: (g) => n(g.uses) },
         { label: P.colBlocked, num: true, sort: (g) => g.blocked, cell: (g) => n(g.blocked) },
@@ -357,7 +365,7 @@ export function makeExt(dash, opts) {
         { label: P.colStatus, cell: (r) => (r.status ? pill(r.status) : '') },
         { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'cost_benefit_summary')),
       weeks ? [h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
-        { label: P.colWeek, sort: (r) => r.week, cell: (r) => r.week },
+        { label: P.colWeek, sort: (r) => r.week, cell: (r) => fmtWeekStart(r.week) },
         { label: P.colEvalRuns, num: true, sort: (r) => r.run_count, cell: (r) => n(r.run_count) },
         { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => n(r.run_points_est) },
         { label: P.colApi, num: true, sort: (r) => r.api_usd, cell: (r) => usd(r.api_usd) },
@@ -372,7 +380,7 @@ export function makeExt(dash, opts) {
       return [panel(P.routinesTable, ok('routines') ? [asOf('routines'), table([
         { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
         { label: P.colDoes, cell: (r) => clean(r.what) },
-        { label: P.colSchedule, cell: (r) => clean(r.schedule) },
+        { label: P.colSchedule, cell: (r) => clean(etSchedule(r.schedule)) },
         { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) },
         { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
         { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'routines'))] : null),
@@ -389,10 +397,9 @@ export function makeExt(dash, opts) {
         { label: P.colWhen, cls: 'when', sort: (r) => r.at, cell: (r) => at(r.at) },
         { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
         { label: P.colWhere, sort: (r) => r.source, cell: (r) => clean(r.source || '') },
-        { label: P.colJob, sort: (r) => r.name, cell: (r) => clean(r.name || '') },
-        { label: P.colRun, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title || '')) },
+        { label: P.colRun, sort: (r) => runName(r.title, r.name), cell: (r) => plink(r.link, clean(runName(r.title, r.name))) },
         { label: P.colTook, num: true, sort: (r) => r.duration_s, cell: (r) => took(r.duration_s, r) }],
-      some(dash, 'run_stream').slice().sort((a, b) => String(b.at).localeCompare(String(a.at))), { tall: true, cls: 'console', rowAttrs: (r) => (PROBLEM.includes(r.state) ? null : { 'data-ok': '' }) })]);
+      some(dash, 'run_stream').slice().sort((a, b) => String(b.at).localeCompare(String(a.at))), { tall: true, cls: 'console', counts: (r) => PROBLEM.includes(r.state), rowAttrs: (r) => (PROBLEM.includes(r.state) ? null : { 'data-ok': '' }) })], PROBLEMS_PANEL);
     },
     prs() {
       const open = some(dash, 'open_prs') || [];
@@ -421,10 +428,7 @@ export function makeExt(dash, opts) {
         panel(P.ingestsHeading, ok('eval_ingests') ? [h('p', { class: 'note' }, P.ingestsNote), table([
           { label: P.colRun, sort: (r) => r.run_id || r.message, cell: (r) => plink(r.url, clean(r.run_id || r.message)) },
           { label: P.colSaved, sort: (r) => r.ingested_at, cell: (r) => at(r.ingested_at) }], some(dash, 'eval_ingests'), { tall: true })] : null),
-        panel(P.threadsHeading, ok('threads') ? table([
-          { label: P.colThread, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title)) },
-          { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
-          { label: P.colActive, sort: (r) => r.last_active, cell: (r) => at(r.last_active) }], some(dash, 'threads')) : null)];
+        panel(P.threadsHeading, ok('threads') ? threadTables(some(dash, 'threads')) : null)];
     },
     searchExtra() {
       const out = [];
@@ -436,6 +440,16 @@ export function makeExt(dash, opts) {
     }
   };
   return ext;
+}
+
+/* Threads still going first; the finished ones fold away under their count. */
+export function threadTables(threads) {
+  const cols = [
+    { label: P.colThread, sort: (r) => r.title, cell: (r) => plink(r.link, clean(r.title)) },
+    { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
+    { label: P.colActive, sort: (r) => r.last_active, cell: (r) => at(r.last_active) }];
+  const open = threads.filter((r) => r.state !== 'Done'), done = threads.filter((r) => r.state === 'Done');
+  return [open.length ? table(cols, open) : h('p', null, P.threadsNoneOpen), fold(P.threadsDone(done.length), done.length ? table(cols, done, { tall: true }) : null)];
 }
 
 function prRows(rows) {

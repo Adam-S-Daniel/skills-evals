@@ -2,6 +2,7 @@
 import { STRINGS } from '../core/strings.js';
 import { clean, githubLink, parseTime, fmtUtcDay } from '../core/format.js';
 import { h, link } from '../core/h.js';
+import { table } from './bits.js';
 
 export const LESSON_DAY = /^\d{4}-\d{2}-\d{2}$/;
 export const lessonDayMs = (d) => (typeof d === 'string' && LESSON_DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN);
@@ -123,26 +124,19 @@ export function lessonsView(doc, mode) {
     : it.kind === 'new-skill' || it.subject.startsWith('skill:'))));
   const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
   const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
-  const entry = (closed, n, tr) => ({ closed, n, tr });
-  const minerRows = items.map((it) => entry(!!it.draft && it.draft.state !== 'open', it.n, h('tr', null,
-    h('td', null, lessonTitle(it.subject, headings)), h('td', null, STRINGS.lessonKinds[it.kind]),
-    h('td', null, lessonSource(it)),
-    h('td', { class: 'num' }, STRINGS.lessonSeen(it.n)), h('td', { class: 'num' }, day(it.first)),
-    h('td', { class: 'num' }, day(it.last)), h('td', null, lessonStatus(it)))));
-  const issueRows = issues.map((it) => entry(it.state !== 'open', 0, h('tr', null,
-    h('td', null, lessonIssueTitle(it)), h('td', null, STRINGS.lessonIssueKinds[it.source]),
-    h('td', null, STRINGS.lessonIssueSources[it.source]),
-    h('td', { class: 'num' }, STRINGS.lessonNoValue), h('td', { class: 'num' }, day(it.opened)),
-    h('td', { class: 'num' }, STRINGS.lessonNoValue),
-    h('td', null, link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')'))));
+  const entry = (closed, n, cells) => ({ closed, n, cells });
+  const minerRows = items.map((it) => entry(!!it.draft && it.draft.state !== 'open', it.n, [
+    lessonTitle(it.subject, headings), STRINGS.lessonKinds[it.kind], lessonSource(it), STRINGS.lessonSeen(it.n), day(it.first), day(it.last), lessonStatus(it)]));
+  const issueRows = issues.map((it) => entry(it.state !== 'open', 0, [
+    lessonIssueTitle(it), STRINGS.lessonIssueKinds[it.source], STRINGS.lessonIssueSources[it.source], STRINGS.lessonNoValue, day(it.opened), STRINGS.lessonNoValue,
+    [link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')']]));
   // Open proposals first, the most-seen on top; closed ones fold away.
   const rows = minerRows.concat(issueRows).sort((a, b) => a.closed - b.closed || b.n - a.n);
-  const grid = (list) => h('div', { class: 'tablewrap' }, h('table', null,
-    h('thead', null, h('tr', null, cols.map((c) => h('th', null, c)))), h('tbody', null, list.map((r) => r.tr))));
+  const grid = (list) => table(cols.map((label, i) => ({ label, num: i >= 3 && i <= 5, cell: (r) => r.cells[i] })), list, { label: STRINGS.lessonsHeading });
   const open = rows.filter((r) => !r.closed), shut = rows.filter((r) => r.closed);
-  const table = rows.length ? [open.length ? grid(open) : null, shut.length ? h('details', { class: 'history' }, h('summary', null, STRINGS.lessonClosed + ' (' + shut.length + ')'), grid(shut)) : null]
+  const tables = rows.length ? [open.length ? grid(open) : null, shut.length ? h('details', { class: 'history' }, h('summary', null, STRINGS.lessonClosed + ' (' + shut.length + ')'), grid(shut)) : null]
     : h('p', null, mode === 'guidance' ? STRINGS.lessonsEmptyGuidance : STRINGS.lessonsEmptySkills);
   return h('section', null, head,
-    h('p', { class: 'lead' }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone), table,
+    h('p', { class: 'lead' }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone), tables,
     miner ? h('p', { class: 'note', style: 'margin-top:8px' }, lessonLeftOut(L.left_out)) : null);
 }

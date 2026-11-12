@@ -1,9 +1,9 @@
 /* Run usefulness (Adam, 2026-11-07): which runs helped decide a subject's
    keep-or-remove and which bought nothing, over a chosen period. The rows are
    each subject's `run_utility` (harness/gates.py, RUN UTILITY): runs and
-   list-price cost per UTC day, model, class and discard reason. */
+   list-price cost per day, model, class and discard reason. */
 import { STRINGS } from '../core/strings.js';
-import { clean, fmtCount, fmtUsd } from '../core/format.js';
+import { clean, fmtCount, fmtUsd, dayKeyOf, dayKeysBetween, fmtDayKey } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { term } from '../core/terms.js';
@@ -21,12 +21,12 @@ export const DEFAULT_PERIOD = '30';
 const DAY_MS = 86400000;
 const isDay = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
-/* The first UTC day a period covers, counting the reference day itself, or
+/* The first day a period covers, counting the reference day itself, or
    null for all time (or no reference). */
 export function periodStart(period, refMs) {
   const p = PERIODS.find((x) => x.key === period);
   if (!p || p.days === null || !isFinite(refMs)) return null;
-  return new Date(refMs - (p.days - 1) * DAY_MS).toISOString().slice(0, 10);
+  return dayKeyOf(refMs - (p.days - 1) * DAY_MS);
 }
 
 /* Rows inside a period: on or after its first day. A row without a day
@@ -63,10 +63,7 @@ export function utilityTotals(rows, period, refMs) {
   }
   // Every day from the first to the last, so a day without runs shows as a gap.
   const keys = Object.keys(days).sort();
-  for (let t = keys.length ? Date.parse(keys[0] + 'T00:00:00Z') : 0; keys.length && t <= Date.parse(keys[keys.length - 1] + 'T00:00:00Z'); t += DAY_MS) {
-    const k = new Date(t).toISOString().slice(0, 10);
-    out.days.push(days[k] || { date: k });
-  }
+  if (keys.length) for (const k of dayKeysBetween(keys[0], keys[keys.length - 1])) out.days.push(days[k] || { date: k });
   return out;
 }
 
@@ -100,9 +97,9 @@ export function dayChart(days) {
       y -= hgt;
     }
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0,
-      'data-tip': d.date + ': ' + UTILITY_CLASSES.filter((c) => d[c]).map((c) => STRINGS.utilityClasses[c] + ' ' + fmtCount(d[c])).join(', ') }));
+      'data-tip': fmtDayKey(d.date) + ': ' + UTILITY_CLASSES.filter((c) => d[c]).map((c) => STRINGS.utilityClasses[c] + ' ' + fmtCount(d[c])).join(', ') }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
-      kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), d.date.slice(5)));
+      kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), fmtDayKey(d.date)));
     }
   });
   return h('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart weeks', role: 'img', 'aria-label': STRINGS.utilityChartAria(days.length) }, kids);

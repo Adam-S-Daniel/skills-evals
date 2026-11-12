@@ -1,6 +1,6 @@
 /* Git hook checks from the document's `hooks`: one item per check, and the
    weekly totals the summary and impact views read. */
-import { parseTime } from './format.js';
+import { parseTime, weekKeyOf, dayKeyMs } from './format.js';
 
 export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never-fires', 'never-ran'];
 
@@ -8,7 +8,7 @@ export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never
    the agent-made checks, else the first week it ran; null when neither. */
 function sinceOf(doc, c) {
   const made = doc.agent_made && Array.isArray(doc.agent_made.items) ? doc.agent_made.items.find((i) => i && i.kind === 'check' && i.id === c.name) : null;
-  const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => Date.parse(u.week + 'T00:00:00Z'));
+  const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => dayKeyMs(u.week));
   const at = made ? parseTime(made.created) : Math.min(...weeks);
   return isFinite(at) ? at : null;
 }
@@ -44,13 +44,10 @@ export function hookItems(doc) {
   });
 }
 
-/* The UTC Monday (YYYY-MM-DD) of the week holding `ms`: the week label the
+/* The Monday (YYYY-MM-DD, the data's own week key) of the week holding `ms`: the week label the
    usage producers use. */
 export function mondayOf(ms) {
-  if (!isFinite(ms)) return null;
-  const d = new Date(ms);
-  const back = (d.getUTCDay() + 6) % 7;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
+  return weekKeyOf(ms);
 }
 
 /* Whether the document counts cloud sessions' hook runs: true when

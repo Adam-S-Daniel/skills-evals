@@ -15,11 +15,14 @@ import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
-import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours } from '../src/private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, etSchedule } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
-import { renderRoute } from '../src/views/page.js';
+import { renderRoute, usesUtcDays } from '../src/views/page.js';
+import { runName, hasCron } from '../src/views/ops.js';
+import { applyCap, SKIP_OVER } from '../src/views/bits.js';
+import { runsTable } from '../src/views/subject.js';
 import { agentMadeRows, spendWeeks } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE, noUseShare } from '../src/views/utility.js';
@@ -31,7 +34,7 @@ import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
 import { changeRows, pullKind, pullSubject } from '../src/views/changes.js';
 import { LOOP_KINDS, LOOP_TITLE, LOOP_BRANCH, isLoopPull } from '../src/views/loop.js';
-import { fmtUsd } from '../src/core/format.js';
+import { fmtUsd, fmtDayKey, fmtWeekStart, fmtWeekOf, fmtResetLabel, weekKeyOf, dayKeysBetween } from '../src/core/format.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -824,8 +827,8 @@ await test('the summary shows building into decisive with its lead, table, plann
   ok(text.includes('Of 23 runs that have resolved, 15 helped decide keep or remove (65%) and 8 were stranded by a change first: 0.5 stranded for every one that decided. 46 runs ($4.60) are still building.'), text);
   for (const l of ['Near a verdict (confidence 65% or more)', 'Partway (30% to 65%)', 'Far (under 30%)', 'Never (subject no longer tested)', 'Total']) ok(text.includes(l), l);
   ok(text.includes('~18') && text.includes('~21'), 'expected counts');
-  ok(text.includes('Cells that reached a verdict, by day: 11-05 2, 11-07 1.'), text);
-  ok(text.includes('Since the deep-before-wide planner change (') && text.includes(', Nov 8 UTC): 17 runs, 29% near a verdict, 59% partway, 0% far, 12% never.') && text.includes('Before it: 54 runs, 56% near a verdict, 22% partway, 7% far, 15% never.'), text);
+  ok(text.includes('Cells that reached a verdict, by day: Nov 5 2, Nov 7 1.'), text);
+  ok(text.includes('Since the deep-before-wide planner change (') && text.includes(', Nov 8): 17 runs, 29% near a verdict, 59% partway, 0% far, 12% never.') && text.includes('Before it: 54 runs, 56% near a verdict, 22% partway, 7% far, 15% never.'), text);
   const a = findAll(node, (n) => n.tag === 'a' && n.attrs.href === PLANNER_CHANGE.url);
   eq(a.length, 1);
   ok(findAll(node, (n) => n.tag === 'rect' && n.attrs['data-group'] === 'stranded').length === 2, 'stranded segments');
@@ -837,7 +840,7 @@ await test('building into decisive toggles between percent and run counts', () =
   const share = textOf(conversionBody(CDOC(), 'share'));
   ok(share.includes('17 runs, 29% near a verdict, 59% partway'), share);
   const count = textOf(conversionBody(CDOC(), 'count'));
-  ok(count.includes(', Nov 8 UTC): 17 runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
+  ok(count.includes(', Nov 8): 17 runs: 5 near a verdict, 10 partway, 0 far, 2 never.'), count);
   ok(count.includes('Before it: 54 runs: 30 near a verdict, 12 partway, 4 far, 8 never.'), count);
   ok(count.includes('Runs by the day they ran, and where they stand now.') && !count.includes('fills from decided'), count);
   // The busiest day (2026-11-05) has 30 runs, so the axis tops out there.
@@ -1187,6 +1190,313 @@ await test('the routine line counts every row of the routine table: healthy, not
   const sec = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Routine health'))[0];
   eq(findAll(sec, (n) => n.tag === 'tbody').reduce((t, b) => t + findAll(b, (n) => n.tag === 'tr').length, 0), 3, 'the table lists all three');
   ok(!flat(needsPage(needsDash())).includes('not run yet'), 'no clause when none');
+});
+
+// ---- Batch E: US Eastern everywhere, phone tables, keyboard (UX review recs 10, 11, 12, 20) ----
+
+/* Every .js under src/, as [relative path, source]. */
+function sourceFiles() {
+  const out = [];
+  (function scan(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) scan(p); else if (p.endsWith('.js')) out.push([path.relative(path.join(EXPLORER, 'src'), p).split(path.sep).join('/'), fs.readFileSync(p, 'utf8')]);
+    }
+  })(path.join(EXPLORER, 'src'));
+  return out;
+}
+const DATE_METHODS = new Set(['toISOString', 'toUTCString', 'toGMTString', 'toDateString', 'toTimeString', 'toLocaleDateString', 'toLocaleTimeString',
+  'getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCDay', 'getUTCHours', 'getUTCMinutes', 'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours', 'getMinutes', 'getTimezoneOffset']);
+const DAY_FIELDS = new Set(['date', 'week', 'day', 'since', 'created', 'from', 'to', 'when', 'at']);
+/* What in a source file formats a date or time on its own. Parses the file;
+   returns one "line: what" per finding. `utcKey` is the one property that may
+   hold the word UTC (the footnote). */
+function etViolations(source, utcKey) {
+  const found = [];
+  const ast = acorn.parse(source, { ecmaVersion: 'latest', sourceType: 'module', locations: true });
+  (function walk(n, key) {
+    if (!n || typeof n.type !== 'string') return;
+    const at = n.loc.start.line;
+    if (n.type === 'MemberExpression' && !n.computed && DATE_METHODS.has(n.property.name)) found.push(at + ': .' + n.property.name);
+    if (n.type === 'NewExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'DateTimeFormat') found.push(at + ': Intl.DateTimeFormat');
+    // d.date.slice(5), r.created.substring(0, 10): a date cut apart by hand
+    if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && ['slice', 'substring', 'substr'].includes(n.callee.property.name)
+      && n.callee.object.type === 'MemberExpression' && DAY_FIELDS.has(n.callee.object.property.name)) found.push(at + ': ' + n.callee.object.property.name + '.' + n.callee.property.name + '()');
+    if (n.type === 'Literal' && typeof n.value === 'string' && /\bUTC\b/.test(n.value) && key !== (utcKey || '\0')) found.push(at + ': the word UTC in a string');
+    if (n.type === 'TemplateElement' && /\bUTC\b/.test(n.value.cooked)) found.push(at + ': the word UTC in a template');
+    for (const [k, v] of Object.entries(n)) {
+      if (k === 'type' || k === 'loc') continue;
+      const next = n.type === 'Property' && k === 'value' && n.key ? (n.key.name || n.key.value) : key;
+      if (Array.isArray(v)) v.forEach((c) => walk(c, next)); else if (v && typeof v === 'object') walk(v, next);
+    }
+  })(ast, null);
+  return found;
+}
+
+await test('E10: only core/format.js formats a date or time, and only one string says UTC', () => {
+  const bad = [];
+  for (const [file, src] of sourceFiles()) {
+    if (file === 'core/format.js') continue;
+    for (const f of etViolations(src, file === 'core/strings.js' ? 'utcNote' : null)) bad.push(file + ':' + f);
+  }
+  eq(bad.join('\n'), '', 'format dates with core/format.js (fmtDay, fmtDateTime, fmtDayKey, fmtWeekStart, fmtResetLabel)');
+});
+await test('E10 guard: it fails on the shapes the review found', () => {
+  const flags = (code) => etViolations(code, null).length;
+  eq(flags("const k = new Date(t).toISOString().slice(0, 10);"), 1);
+  eq(flags("const s = new Date(t).toUTCString();"), 1);
+  eq(flags("const s = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' }).format(d);"), 2);
+  eq(flags("const s = d.date.slice(5);"), 1);
+  eq(flags("const s = 'Runs per day (UTC)';"), 1);
+  eq(flags("const s = `week of ${x} UTC`;"), 1);
+  eq(flags("const o = { utcNote: 'Days are counted in UTC' };"), 1, 'with no allowed key');
+  eq(etViolations("const o = { utcNote: 'Days are counted in UTC' };", 'utcNote').length, 0);
+  eq(flags("const s = fmtDay(parseTime(x), refMs) + fmtDayKey(w);"), 0, 'the shared formatters are fine');
+});
+
+const ET_DOC = () => Object.assign(CDOC(), {
+  generated_at: '2026-11-12T16:00:00Z',
+  hooks: { window: { from: '2026-09-21', to: '2026-11-12', weeks: 8 }, cloud_from: '2026-11-02',
+    totals: { local: [{ week: '2026-11-09', invocations: 5, blocked: 1 }, { week: '2026-11-02', invocations: 9, blocked: 2 }], ci: [{ week: '2026-11-09', invocations: 7, blocked: 3 }], cloud: [{ week: '2026-11-09', invocations: 2, blocked: 0 }] },
+    checks: [{ name: 'c1', where: 'fleet', window_totals: { invocations: 14, blocked: 3 }, verdict: 'earning', verdict_reason: 'it blocked',
+      use: [{ week: '2026-11-09', surface: 'local', repo: 'o/r', invocations: 5, blocked: 1 }, { week: '2026-11-02', surface: 'local', repo: 'o/r', invocations: 9, blocked: 2 }] }] },
+  spend: { generated_at: '2026-11-12T01:00:00Z', weeks: [{ week: '2026-11-09', eval_runs: 3, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 2, run_usd: 3, cost_per_verdict: 1 }, { week: '2026-11-02', eval_runs: 5, plan_meter_points: 2, api_usd: 2, thread_spend_usd: 4, run_usd: 6, cost_per_verdict: null }],
+    total: { since: '2026-10-19', usd: 18, run_usd: 9, thread_spend_usd: 6, api_usd: 3, verdicts: 2, cost_per_verdict: 9 } },
+  removed_skills: [{ date: '2026-09-28', name: 'old-skill', reverse_url: 'https://github.com/o/r/pull/1' }],
+  agent_made: amDoc().agent_made,
+  activity: { fetched_at: '2026-11-12T15:00:00Z', since: '2026-11-05T15:00:00Z', repos: ['o/r'], pulls: [], issues: [], runs: manyRuns(80) } });
+function manyRuns(n) {
+  return Array.from({ length: n }, (_, i) => ({ repo: 'o/r', run_id: i + 1, workflow: i % 2 ? 'Nightly sweep' : 'CI', title: i % 2 ? 'scheduled — 47 8 * * *' : 'CI', event: i % 2 ? 'schedule' : 'push',
+    state: 'completed', conclusion: i % 9 === 0 ? 'failure' : 'success', created_at: '2026-11-1' + (i % 2) + 'T1' + (i % 10) + ':00:00Z', updated_at: '2026-11-12T12:00:00Z', url: 'https://github.com/o/r/actions/runs/' + (i + 1) }));
+}
+const ET_ROUTES = [['summary', null], ['changes', null], ['hooks', null], ['hooks', 'c1'], ['skills', null], ['skills', 'a'], ['guidance', null], ['method', null], ['spend', null], ['activity', null]];
+await test('E10: no route shows an ISO date, and a route says UTC at most once, in the footnote', () => {
+  for (const [name, id] of ET_ROUTES) {
+    const t = textOf(renderRoute(ET_DOC(), { name, id }, {})).replace(/\s+/g, ' ');
+    eq((t.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).join(','), '', name + ' shows an ISO date');
+    const utc = (t.match(/\bUTC\b/g) || []).length;
+    ok(utc <= 1, name + ' says UTC ' + utc + ' times');
+    eq(utc, usesUtcDays({ name, id }) ? 1 : 0, name + ' footnote');
+  }
+  const spend = textOf(renderRoute(ET_DOC(), { name: 'spend', id: null }, {})).replace(/\s+/g, ' ');
+  ok(spend.includes('Mon Nov 9') && spend.includes('Since Oct 19'), spend);
+  ok(textOf(renderRoute(ET_DOC(), { name: 'changes', id: 'removed' }, {})).includes('Sep 28'), 'a removal date is a day, not ISO');
+});
+await test('E10: the private build shows no UTC and no cron expression either', () => {
+  const dash = fakeDash({ routines: okData([{ name: 'R1', what: 'does', schedule: 'Daily 06:53 UTC, GitHub Actions (1:53 AM ET)', last_run: '2026-11-12T10:00:00Z', health: 'OK', link: null },
+    { name: 'R2', what: 'does', schedule: 'Every 6 hours (UTC hours 0, 6, 12 and 18: 7 AM, 1 PM, 7 PM and 1 AM ET), fired by x', last_run: null, health: 'OK', link: null }]),
+  run_stream: okData([{ key: 'k1', at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'Nightly', title: 'scheduled — 47 8 * * *', state: 'Failed', duration_s: 5, link: 'https://github.com/o/r/actions/runs/1' }]),
+  usage_rows: okData([{ kind: 'skill', name: 'a', repo: 'o/r', week: '2026-11-09', surface: 'local', invocations: 2, sessions: 1, blocked: 0, overridden: 0 }]),
+  cost_benefit_weeks: okData([{ week: '2026-11-09', run_count: 1, run_points_est: 1, api_usd: 1, build_usd: 1, build_points: 1, changes: 1, real_work_reach: 1, owner_messages: 1 }]) });
+  for (const name of ['activity', 'spend', 'needs']) {
+    const t = textOf(renderRoute(ET_DOC(), { name, id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) })).replace(/\s+/g, ' ');
+    eq((t.match(/\bUTC\b/g) || []).length, usesUtcDays({ name }) ? 1 : 0, name);
+    ok(!/\d+ \d+ \* \* \*/.test(t), name + ' prints a cron expression');
+    eq((t.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []).join(','), '', name + ' shows an ISO date');
+  }
+  eq(etSchedule('Daily 06:53 UTC, GitHub Actions (1:53 AM ET)'), 'Daily 1:53 AM ET, GitHub Actions');
+  eq(etSchedule('Full plan Tuesdays 07:00 UTC (2:00 AM ET), plus a re-plan'), 'Full plan Tuesdays 2:00 AM ET, plus a re-plan');
+  eq(etSchedule('Every 6 hours (UTC hours 0, 6, 12 and 18: 7 AM, 1 PM, 7 PM and 1 AM ET), fired by x'), 'Every 6 hours (7 AM, 1 PM, 7 PM and 1 AM ET), fired by x');
+  eq(etSchedule('Daily, 4:00 AM ET'), 'Daily, 4:00 AM ET');
+});
+await test('E10: the shared formatters give Eastern days, week labels and reset times', () => {
+  eq(fmtDayKey('2026-11-12', NaN), 'Nov 12');
+  eq(fmtDayKey('2025-12-30', Date.parse('2026-11-12T00:00:00Z')), 'Dec 30, 2025');
+  eq(fmtWeekStart('2026-11-09'), 'Mon Nov 9');
+  eq(fmtWeekOf('2026-11-09'), 'week of Mon Nov 9');
+  eq(fmtDayKey('nonsense'), 'unknown');
+  eq(weekKeyOf(Date.parse('2026-11-12T16:00:00Z')), '2026-11-09');
+  eq(weekKeyOf(Date.parse('2026-11-09T00:00:00Z')), '2026-11-09');
+  eq(weekKeyOf(Date.parse('2026-11-08T23:59:00Z')), '2026-11-02');
+  eq(dayKeysBetween('2026-11-05', '2026-11-08').join(','), '2026-11-05,2026-11-06,2026-11-07,2026-11-08');
+  eq(fmtResetLabel(Date.parse('2026-11-09T17:00:00Z')), 'Monday noon ET');
+  eq(fmtResetLabel(Date.parse('2026-07-06T17:00:00Z')), 'Monday 1:00 PM ET');
+});
+
+// Recommendation 11: Activity log, problems first, one Run column.
+const rowsOfTable = (node, i) => findAll(node, (n) => n.tag === 'table')[i || 0];
+const headsOf = (t) => findAll(t, (n) => n.tag === 'th').map((th) => th.children.map(textOf).join('').trim());
+await test('E11: the Activity log opens on problems only, one Run column, no cron expression, capped at 50', () => {
+  const node = renderRoute(ET_DOC(), { name: 'activity', id: null }, {});
+  const sec = findAll(node, (n) => n.tag === 'section' && textOf(n).includes(STRINGS.opsRuns))[0];
+  ok(sec.attrs.class.split(' ').includes('problems-only'), 'the panel starts in problems-only mode');
+  const box = findAll(sec, (n) => n.tag === 'input' && n.attrs.type === 'checkbox')[0];
+  ok(box.attrs.checked === true, 'the switch starts on');
+  eq(headsOf(rowsOfTable(sec)).join(','), 'When,State,Repo,Run');
+  const text = textOf(sec);
+  ok(!/\d+ \d+ \* \* \*/.test(text), 'no cron expression');
+  ok(text.includes('Nightly sweep'), 'a scheduled run takes its workflow name');
+});
+await test('E11: a long runs table shows the first 50 counted rows and a Show all button', () => {
+  const d = ET_DOC();
+  d.activity.runs = manyRuns(300).map((r, i) => Object.assign(r, { conclusion: i % 2 ? 'failure' : 'success' }));
+  const sec = findAll(renderRoute(d, { name: 'activity', id: null }, {}), (n) => n.tag === 'section' && textOf(n).includes(STRINGS.opsRuns))[0];
+  const trs = findAll(rowsOfTable(sec), (n) => n.tag === 'tr' && n.children[0].tag === 'td');
+  eq(trs.length, 300);
+  eq(trs.filter((r) => r.attrs.hidden && !('data-ok' in r.attrs)).length, 100, 'of 150 problems, 50 show and 100 are behind the button');
+  const btn = findAll(sec, (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || ''))[0];
+  eq(textOf(btn).trim(), 'Show all 150');
+  const small = findAll(renderRoute(Object.assign(ET_DOC()), { name: 'activity', id: null }, {}), (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || ''));
+  eq(small.length, 0, 'no button when the problems fit');
+});
+await test('E11: applyCap counts only the rows the switch leaves showing', () => {
+  const rows = Array.from({ length: 10 }, (_, i) => ({ hidden: false, filtered: i % 2 === 0 }));
+  eq(applyCap(rows, 3, false), 5);
+  eq(rows.map((r) => (r.hidden ? 'h' : '.')).join(''), '.......h.h', 'the first three counted (odd) rows show, the next two hide');
+  eq(applyCap(rows, 3, true), 5);
+  ok(rows.every((r) => !r.hidden), 'open shows all');
+});
+await test('E11: runName never returns a cron expression', () => {
+  eq(runName('scheduled — 47 8 * * *', 'Nightly sweep'), 'Nightly sweep');
+  eq(runName('47 8 * * *', null), STRINGS.scheduledRun);
+  eq(runName('Fix the thing', 'CI'), 'Fix the thing');
+  eq(runName('', 'CI'), 'CI');
+  ok(hasCron('scheduled — 47 8 * * *') && !hasCron('PR #4743 — tools: sync Evals Explorer to e805c6e'), 'cron detection');
+});
+await test('E11: the dashboard runs table has one Run column, starts on problems and the threads list leads with the ones not done', () => {
+  const dash = fakeDash({ run_stream: okData([{ key: 'k1', at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'Nightly', title: 'scheduled — 47 8 * * *', state: 'Failed', duration_s: 5, link: 'https://github.com/o/r/actions/runs/1' }]),
+    threads: okData([{ title: 'Doing', state: 'Working', last_active: '2026-11-12T10:00:00Z', link: null }, { title: 'Finished', state: 'Done', last_active: '2026-11-12T09:00:00Z', link: null }]) });
+  const node = renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
+  const runs = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Workflow and routine runs'))[0];
+  eq(headsOf(rowsOfTable(runs)).join(','), 'When,State,Where,Run,Took');
+  ok(runs.attrs.class.includes('problems-only'), 'problems first');
+  const th = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Project threads'))[0];
+  const first = rowsOfTable(th, 0);
+  ok(textOf(first).includes('Doing') && !textOf(first).includes('Finished'), 'open threads first');
+  const fold = findAll(th, (n) => n.tag === 'details')[0];
+  ok(textOf(fold).includes('Done (1)') && textOf(fold).includes('Finished'), 'done threads folded');
+});
+
+// Recommendation 12: phone tables.
+const allTables = (node) => findAll(node, (n) => n.tag === 'table');
+function renderEverything() {
+  const dash = fakeDash({ routines: okData([routine('A', 'OK'), routine('B', 'Late')]), run_stream: okData([{ key: 'k1', at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'N', title: 'T', state: 'Failed', duration_s: 5, link: null }]),
+    threads: okData([{ title: 'Doing', state: 'Working', last_active: '2026-11-12T10:00:00Z', link: null }]), eval_allowance: SNAP_OK(), budget: BUDGET,
+    waiting: okData([{ id: 'w', item: 'Do it', why: 'because', where: 'here', since: '2026-11-11T10:00:00Z' }]) });
+  const out = [];
+  for (const [name, id] of ET_ROUTES.concat([['needs', null]])) out.push(renderRoute(ET_DOC(), { name, id }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) }));
+  return out;
+}
+await test('E12: every cell of every rendered table carries the data-label of its column heading', () => {
+  let tables = 0, cells = 0;
+  for (const node of renderEverything()) for (const t of allTables(node)) {
+    const heads = headsOf(t);
+    tables += 1;
+    for (const tr of findAll(t, (n) => n.tag === 'tr' && n.children.length && n.children[0].tag === 'td')) {
+      eq(tr.children.length, heads.length, 'cells per row');
+      tr.children.forEach((td, i) => { cells += 1; eq(td.attrs['data-label'], heads[i], 'data-label of column ' + i + ' of ' + heads.join('|')); });
+    }
+  }
+  ok(tables >= 20 && cells >= 100, 'the check saw real tables: ' + tables + ' tables, ' + cells + ' cells');
+});
+await test('E12: tables with more than three columns stack on a phone, except the numeric run table, which scrolls with a hint', () => {
+  let stacked = 0;
+  for (const node of renderEverything()) for (const t of allTables(node)) {
+    const n = headsOf(t).length;
+    const cls = (t.attrs.class || '').split(' ');
+    eq(cls.includes('stack'), n > 3, 'stack class on a ' + n + '-column table');
+    if (n > 3) stacked += 1;
+  }
+  ok(stacked >= 8, 'saw stacked tables: ' + stacked);
+  const runs = runsTable([{ fired_at: '2026-11-10T10:00:00Z', fixture: 'f', model: 'claude-sonnet-4-5', with_share: 1, without_share: 0, judge: 'not run', cost_usd: 1 }], NaN);
+  ok(!(runsTable && findAll(runs, (n) => n.tag === 'table')[0].attrs.class || '').includes('stack'), 'run table does not stack');
+  ok(findAll(runs, (n) => n.tag === 'p' && n.attrs.class === 'scroll-hint').length === 1, 'a visible scroll hint');
+});
+await test('E12: under 560px the CSS stacks rows, prints the label above the value and drops the nested vertical scroll', () => {
+  const css = fs.readFileSync(path.join(EXPLORER, 'template', 'base.css'), 'utf8');
+  const start = css.indexOf('@media (max-width: 560px) {\n  .ex .tablewrap.tall');
+  ok(start >= 0, 'a phone block for tables');
+  const block = css.slice(start, css.indexOf('\n}\n', start));
+  ok(/\.tablewrap\.tall \{ max-height: none; overflow-y: visible; \}/.test(block), 'no inner vertical scroll');
+  ok(/table\.stack tr[^{]*\{[^}]*display: block/.test(block) || /table\.stack tr,[^{]*\{[^}]*display: block/.test(block), 'rows are blocks');
+  ok(/td\[data-label\][^{]*::before \{ content: attr\(data-label\)/.test(block), 'the label comes from data-label');
+});
+
+// Recommendation 20: keyboard and focus.
+await test('E20: every sortable heading is a tab stop that sorts on Enter and Space, and ignores other keys', () => {
+  const t = rowsOfTable(renderRoute(ET_DOC(), { name: 'spend', id: null }, {}), 0);
+  const ths = findAll(t, (n) => n.tag === 'th');
+  ok(ths.length >= 2, 'headings');
+  for (const th of ths) {
+    eq(th.attrs.tabindex, 0, 'tabindex');
+    eq(typeof th.attrs.onkeydown, 'function'); eq(typeof th.attrs.onclick, 'function');
+    ok(th.attrs['aria-sort'] === 'none', 'aria-sort');
+  }
+  for (const [key, sorts] of [['Enter', true], [' ', true], ['a', false], ['Tab', false]]) {
+    const log = { prevented: 0, sorted: 0 };
+    const tbody = { children: [], appendChild() {} };
+    const tableEl = { querySelector: () => tbody, querySelectorAll: () => [th], closest: () => null };
+    const th = { getAttribute: () => 'none', setAttribute: (k) => { if (k === 'aria-sort') log.sorted += 1; }, closest: () => tableEl };
+    ths[0].attrs.onkeydown({ type: 'keydown', key, currentTarget: th, preventDefault() { log.prevented += 1; } });
+    eq(log.sorted > 0, sorts, 'key ' + JSON.stringify(key));
+    eq(log.prevented, sorts ? 1 : 0, 'preventDefault for ' + JSON.stringify(key));
+  }
+});
+await test('E20: a scrolling table is a focusable, labeled region named by its panel, with a Skip table button when long', () => {
+  for (const node of renderEverything()) for (const w of findAll(node, (n) => n.attrs && /\btablewrap\b/.test(n.attrs.class || ''))) {
+    eq(w.attrs.role, 'region'); eq(w.attrs.tabindex, 0);
+    ok(typeof w.attrs['aria-label'] === 'string' && w.attrs['aria-label'].trim().length > 0, 'aria-label');
+    const rows = findAll(w, (n) => n.tag === 'tr' && n.children[0] && n.children[0].tag === 'td').length;
+    const skip = findAll(w, (n) => n.tag === 'button' && n.attrs.class === 'skip-table');
+    eq(skip.length, rows > SKIP_OVER ? 1 : 0, 'skip button for ' + rows + ' rows');
+    eq(findAll(w, (n) => n.attrs && n.attrs.class === 'table-end').length, rows > SKIP_OVER ? 1 : 0, 'skip target');
+  }
+  const sec = findAll(renderRoute(ET_DOC(), { name: 'activity', id: null }, {}), (n) => n.tag === 'section' && textOf(n).includes(STRINGS.opsRuns))[0];
+  eq(findAll(sec, (n) => n.attrs && n.attrs.role === 'region')[0].attrs['aria-label'], STRINGS.opsRuns, 'the region is named for the heading above it');
+});
+await test('E20: Tab reaches the second panel of the Activity log in under 15 presses, public and private', () => {
+  const focusable = (n) => (n.tag === 'a' && n.attrs.href) || ['button', 'input', 'select', 'textarea', 'summary'].includes(n.tag) || (typeof n.attrs.tabindex === 'number' && n.attrs.tabindex >= 0);
+  // Tab presses from the top of the page (the top bar's brand, six group links and the search box come first)
+  // to the first stop in the second panel, pressing "Skip table" wherever it is offered.
+  function presses(node) {
+    let stops = 8, panels = 0, found = null;
+    (function walk(n, skipping) {
+      if (found !== null || typeof n === 'string' || skipping) return;
+      if (n.attrs && n.attrs.hidden) return;
+      if (n.tag === 'h2') panels += 1;
+      if (panels === 2 && found === null && focusable(n)) { found = stops + 1; return; }
+      if (focusable(n)) stops += 1;
+      const pressed = n.tag === 'button' && n.attrs.class === 'skip-table';
+      let skip = false;
+      for (const c of n.children) {
+        if (skip && typeof c !== 'string' && c.attrs && c.attrs.class === 'table-end') skip = false;
+        walk(c, skip);
+        if (pressed) skip = true;
+      }
+    })(node, false);
+    return found;
+  }
+  // the skip button lives inside the wrapper, so "pressing" it hides what follows up to the table's end
+  function pressesInWrap(node) {
+    const copy = JSON.parse(JSON.stringify(node, (k, v) => (typeof v === 'function' ? true : v)));
+    (function cut(n) {
+      if (typeof n === 'string') return;
+      const i = n.children.findIndex((c) => typeof c !== 'string' && c.tag === 'button' && c.attrs.class === 'skip-table');
+      if (i >= 0) { const end = n.children.findIndex((c) => typeof c !== 'string' && c.attrs.class === 'table-end'); n.children.splice(i + 1, end - i - 1); }
+      n.children.forEach(cut);
+    })(copy);
+    return presses(copy);
+  }
+  const d = ET_DOC();
+  d.activity.runs = manyRuns(300).map((r, i) => Object.assign(r, { conclusion: i % 2 ? 'failure' : 'success' }));
+  d.activity.pulls = [{ repo: 'o/r', number: 3, title: 'T', head_ref: 'b', state: 'open', created_at: '2026-11-10T00:00:00Z', updated_at: '2026-11-10T00:00:00Z', merged_at: null, url: 'https://github.com/o/r/pull/3' }];
+  const pub = pressesInWrap(renderRoute(d, { name: 'activity', id: null }, {}));
+  ok(pub !== null && pub < 15, 'public: ' + pub);
+  const dash = fakeDash({ routines: okData(Array.from({ length: 15 }, (_, i) => routine('R' + i, 'OK'))), checkins: okData([{ id: 'c', when: '2026-11-12T10:00:00Z', what: 'x' }]),
+    run_stream: okData(Array.from({ length: 200 }, (_, i) => ({ key: 'k' + i, at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'N', title: 'T' + i, state: 'Failed', duration_s: 5, link: 'https://github.com/o/r/actions/runs/' + i }))) });
+  const priv = pressesInWrap(renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) }));
+  ok(priv !== null && priv < 15, 'private: ' + priv);
+  // Without the skip button the same page costs far more: the control is what makes it work.
+  ok(presses(renderRoute(d, { name: 'activity', id: null }, {})) > 40, 'the baseline is long');
+});
+await test('E20: the CSS gives every keyboard stop a visible focus style, and nothing hides it', () => {
+  const css = fs.readFileSync(path.join(EXPLORER, 'template', 'base.css'), 'utf8').replace(/\n/g, ' ');
+  for (const sel of ['.ex th:focus-visible', '.ex .tablewrap:focus-visible', '.ex .skip-table:focus-visible', '.ex .mark:focus-visible', '.ex .n:focus-visible', '.ex .show-all:focus-visible', '.ex a:focus-visible']) ok(css.includes(sel), sel);
+  const rule = /\.ex \.tablewrap:focus-visible[^{]*\{([^}]*)\}/.exec(css);
+  ok(rule && /outline: 3px solid/.test(rule[1]), 'a 3px outline');
+  ok(!/\.tablewrap[^{]*\{[^}]*outline: none/.test(css), 'no table rule removes the outline');
+  ok(/\.skip-table:focus \{[^}]*position: static/.test(css), 'the skip button appears when focused');
+  ok(!/\.ex th[^{,]*\{[^}]*outline: none/.test(css), 'headings keep their ring');
 });
 
 for (const f of failures) console.log('FAIL ' + f);
