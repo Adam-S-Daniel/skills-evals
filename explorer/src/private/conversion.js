@@ -4,7 +4,7 @@
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
-import { fmtCount, fmtUsd } from '../core/format.js';
+import { fmtCount, fmtUsd, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';
@@ -17,12 +17,10 @@ export const PARTWAY = 0.3;
 /* A rough share of each group's building runs expected to end up decisive.
    An estimate made 2026-11-07, not a measurement. */
 export const EXPECTED_YIELD = { near: 0.7, partway: 0.3, far: 0.1, never: 0 };
-/* The deep-before-wide planner change, merged 2026-11-08 02:53 UTC. */
+/* The deep-before-wide planner change, merged on the evening of Nov 7 ET (the data's day Nov 8). */
 export const PLANNER_CHANGE = { day: '2026-11-08', pr: 842, url: 'https://github.com/' + DATA_REPO + '/pull/842' };
 export const GROUPS = ['near', 'partway', 'far', 'never'];
 
-const DAY_MS = 86400000;
-const isDay = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 const blank = () => ({ runs: 0, cost: 0, unknown: 0 });
 const MODES = [{ key: 'share' }, { key: 'count' }];
 const DEFAULT_MODE = 'share';
@@ -70,7 +68,7 @@ export function conversionTotals(doc) {
         groups[g].runs += r.runs;
         if (typeof r.cost_usd === 'number' && isFinite(r.cost_usd)) groups[g].cost += r.cost_usd;
       }
-      if (isDay(r.date)) {
+      if (isDayKey(r.date)) {
         const d = byDay[r.date] = byDay[r.date] || { date: r.date, decided: 0, building: 0, stranded: 0, after: 0 };
         d[seg] += r.runs;
         const side = r.date < PLANNER_CHANGE.day ? planner.before : planner.since;
@@ -80,7 +78,7 @@ export function conversionTotals(doc) {
     }
     if (hasBuilding) groups[g].subjects += 1;
     for (const d of Array.isArray(s.decisions) ? s.decisions : []) {
-      if (d && isDay(d.decided)) decisionDays[d.decided] = (decisionDays[d.decided] || 0) + 1;
+      if (d && isDayKey(d.decided)) decisionDays[d.decided] = (decisionDays[d.decided] || 0) + 1;
     }
   }
   const groupsTotal = { subjects: 0, runs: 0, cost: 0, expected: 0 };
@@ -94,11 +92,7 @@ export function conversionTotals(doc) {
   const keys = Object.keys(byDay).sort();
   const days = [];
   if (keys.length) {
-    const end = Date.parse(keys[keys.length - 1] + 'T00:00:00Z');
-    for (let t = Date.parse(keys[0] + 'T00:00:00Z'); t <= end; t += DAY_MS) {
-      const k = new Date(t).toISOString().slice(0, 10);
-      days.push(byDay[k] || { date: k, decided: 0, building: 0, stranded: 0, after: 0 });
-    }
+    for (const k of dayKeysBetween(keys[0], keys[keys.length - 1])) days.push(byDay[k] || { date: k, decided: 0, building: 0, stranded: 0, after: 0 });
   }
   return {
     decided: sum.decided, building: sum.building, stranded: sum.stranded, after: sum.after, resolved,
@@ -142,11 +136,11 @@ function dayChart(days, mode) {
         y -= hgt;
       }
     }
-    const tip = total ? P.conversionTip(d.date, fmtCount(total), SEGMENTS.filter((k) => d[k])
-      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : d.date + ': 0 runs';
+    const tip = total ? P.conversionTip(fmtDayKey(d.date), fmtCount(total), SEGMENTS.filter((k) => d[k])
+      .map((k) => P.conversionLegend[k].toLowerCase() + ' ' + (count ? fmtCount(d[k]) : pct(d[k], total))).join(', ')) : fmtDayKey(d.date) + ': 0 runs';
     kids.push(h('rect', { x: (cx - step / 2).toFixed(1), y: T, width: step.toFixed(1), height: B - T, fill: 'transparent', class: 'mark', tabindex: 0, 'data-tip': tip }));
     if (days.length <= 8 || i === 0 || i === days.length - 1) {
-      kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), d.date.slice(5)));
+      kids.push(h('text', Object.assign({ x: cx.toFixed(1), y: B + 17, 'text-anchor': 'middle' }, lab), fmtDayKey(d.date)));
     }
   });
   const at = days.findIndex((d) => d.date === PLANNER_CHANGE.day);
@@ -187,7 +181,7 @@ export function conversionBody(doc, mode) {
     t.days.length ? chartTitle(count ? P.conversionTitleCount : P.conversionTitle) : null,
     dayChart(t.days, mode),
     h('p', { class: 'meta' }, count ? P.conversionCaptionCount : P.conversionCaption),
-    t.decisionsByDay.length ? h('p', { class: 'meta' }, P.conversionDecisionsByDay(t.decisionsByDay.map((d) => d.date.slice(5) + ' ' + d.cells).join(', '))) : null,
+    t.decisionsByDay.length ? h('p', { class: 'meta' }, P.conversionDecisionsByDay(t.decisionsByDay.map((d) => fmtDayKey(d.date) + ' ' + d.cells).join(', '))) : null,
     table(cols, rows),
     h('p', { class: 'meta' }, P.conversionNote),
     plannerLine);

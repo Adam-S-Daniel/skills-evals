@@ -1,6 +1,6 @@
 /* Git hook checks from the document's `hooks`: one item per check, and the
    weekly totals the summary and impact views read. */
-import { parseTime } from './format.js';
+import { parseTime, weekKeyOf, dayKeyMs } from './format.js';
 
 export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never-fires', 'never-ran'];
 
@@ -8,9 +8,9 @@ export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never
    the agent-made checks, else the first week it ran; null when neither. */
 function sinceOf(doc, c) {
   const made = doc.agent_made && Array.isArray(doc.agent_made.items) ? doc.agent_made.items.find((i) => i && i.kind === 'check' && i.id === c.name) : null;
-  const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => Date.parse(u.week + 'T00:00:00Z'));
+  const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => dayKeyMs(u.week));
   // A first run in the data window's first week may be older than the data: unknown, not the window start.
-  const from = doc.hooks && doc.hooks.window && typeof doc.hooks.window.from === 'string' ? Date.parse(mondayOf(Date.parse(doc.hooks.window.from + 'T00:00:00Z')) + 'T00:00:00Z') : -Infinity;
+  const from = doc.hooks && doc.hooks.window && typeof doc.hooks.window.from === 'string' ? dayKeyMs(weekKeyOf(dayKeyMs(doc.hooks.window.from))) : -Infinity;
   const first = Math.min(...weeks);
   const at = made ? parseTime(made.created) : first > from ? first : NaN;
   return isFinite(at) ? at : null;
@@ -46,15 +46,6 @@ export function hookItems(doc) {
     const ra = HOOK_RANK.indexOf(a.verdict), rb = HOOK_RANK.indexOf(b.verdict);
     return (ra < 0 ? 9 : ra) - (rb < 0 ? 9 : rb) || (b.blocked || 0) - (a.blocked || 0) || (a.name < b.name ? -1 : 1);
   });
-}
-
-/* The UTC Monday (YYYY-MM-DD) of the week holding `ms`: the week label the
-   usage producers use. */
-export function mondayOf(ms) {
-  if (!isFinite(ms)) return null;
-  const d = new Date(ms);
-  const back = (d.getUTCDay() + 6) % 7;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
 }
 
 /* Whether the document counts cloud sessions' hook runs: true when
@@ -94,7 +85,7 @@ export function hookTile(doc, n) {
   if (!doc || !doc.hooks || !doc.hooks.totals) return null;
   const at = parseTime(doc.generated_at);
   if (!isFinite(at)) return null;
-  const week = mondayOf(at);
+  const week = weekKeyOf(at);
   const day = 24 * 3600 * 1000;
   const rows = hookWeeks(doc);
   const sum = (r, k) => r.local[k] + r.ci[k] + r.cloud[k];
@@ -105,16 +96,16 @@ export function hookTile(doc, n) {
   };
   // Weeks the counts cover start at the window's start: a week there with
   // no rows was measured as zero, not missing.
-  const from = doc.hooks.window && typeof doc.hooks.window.from === 'string' ? mondayOf(Date.parse(doc.hooks.window.from + 'T00:00:00Z')) : null;
+  const from = doc.hooks.window && typeof doc.hooks.window.from === 'string' ? weekKeyOf(dayKeyMs(doc.hooks.window.from)) : null;
   const oldest = from || (rows.length ? rows[rows.length - 1].week : week);
   const weeks = [];
-  for (let t = Date.parse(week + 'T00:00:00Z'), k = 0; k < (n || 6); t -= 7 * day, k++) {
-    const w = mondayOf(t);
+  for (let t = dayKeyMs(week), k = 0; k < (n || 6); t -= 7 * day, k++) {
+    const w = weekKeyOf(t);
     if (w < oldest) break;
     weeks.unshift(cell(w));
   }
-  const prev = mondayOf(Date.parse(week + 'T00:00:00Z') - 7 * day);
+  const prev = weekKeyOf(dayKeyMs(week) - 7 * day);
   return { last: prev >= oldest ? cell(prev) : null, now: cell(week),
-    days: Math.min(7, Math.floor((at - Date.parse(week + 'T00:00:00Z')) / day) + 1),
+    days: Math.min(7, Math.floor((at - dayKeyMs(week)) / day) + 1),
     weeks, cloud: cloudCounted(doc) };
 }

@@ -1,7 +1,7 @@
 /* Spend and use: what the loop cost, what agents made (checks, skills,
    guidance sections), and real-work use of skills and git hook checks by week. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtUtcDay, fmtDateTime, fmtCount, fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtUtcDay, fmtDay, fmtDayKey, fmtWeekStart, fmtDateTime, fmtCount, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
@@ -13,14 +13,13 @@ import { noUseShare } from './utility.js';
 import { weekChart, weekScale } from './weekchart.js';
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
-const dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + 'T00:00:00Z'), refMs);
 
 function hookWeeksView(doc, refMs) {
   const weeks = hookWeeks(doc);
   if (!weeks.length) return null;
   const old = weeks.slice().reverse();
   const cloud = cloudCounted(doc) === true;
-  const data = old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked }));
+  const data = old.map((w) => ({ label: fmtDayKey(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked }));
   const { cut } = weekScale(data);
   // What the listed checks add up to for the cut-off week, so the rest is named as unattributed.
   const surfaces = cut && cut.k === 1 ? ['ci'] : cloud ? ['local', 'cloud'] : ['local'];
@@ -29,7 +28,7 @@ function hookWeeksView(doc, refMs) {
   return [weekChart(data, [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
     cut && listed < cut.v ? h('p', { class: 'note' }, STRINGS.hookCutCause(fmtCount(listed))) : null,
     table([
-      { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+      { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => fmtWeekStart(w.week, refMs) },
       { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
       { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.local.blocked, cell: (w) => fmtCount(w.local.blocked) },
       { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ci.runs, cell: (w) => fmtCount(w.ci.runs) },
@@ -65,7 +64,7 @@ function checkUseView(doc) {
 export function spendTotalLine(s) {
   const t = s && s.total;
   if (!t || typeof t !== 'object' || typeof t.usd !== 'number') return null;
-  return h('p', null, STRINGS.impactSpendTotal(dayOf(t.since, NaN), usd(t.usd), fmtCount(t.verdicts || 0),
+  return h('p', null, STRINGS.impactSpendTotal(fmtDayKey(t.since, NaN), usd(t.usd), fmtCount(t.verdicts || 0),
     typeof t.cost_per_verdict === 'number' ? usd(t.cost_per_verdict) : STRINGS.noValue, usd(t.run_usd), usd(t.thread_spend_usd), usd(t.api_usd)));
 }
 
@@ -102,15 +101,15 @@ function spendView(doc, refMs) {
   const share = noUseShare(doc, refMs);
   const cell = (r, k) => (r && r[k] !== null ? usd(r[k]) : STRINGS.noValue);
   const rows = [{ label: STRINGS.spendTests, k: 'tests' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendApi, k: 'api' }, { label: STRINGS.spendTotal, k: 'total' }];
-  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), s.generated_at ? srcLineFor(doc, 'spend') : null,
-    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), weekStart(w.week)), num: true,
+  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs)) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
+    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), fmtWeekStart(w.week, refMs)), num: true,
       cell: (r) => cell(w, r.k) + (r.k === 'tests' && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : '') }))), rows) : null,
     share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', usd(share.noUse), usd(share.total), share.top.map(([name, cost]) => name + ' (' + usd(cost) + ')').join(' and ')),
       ' ', navLink(hashFor('summary'), STRINGS.spendUsefulnessLink)) : null,
     spendTotalLine(s),
     h('details', { class: 'history' }, h('summary', null, STRINGS.spendAllWeeks),
       table([
-        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
+        { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => fmtWeekStart(w.week, refMs) },
         { label: STRINGS.colEvalRuns, num: true, sort: (w) => w.eval_runs, cell: (w) => (w.eval_runs === null ? STRINGS.noValue : fmtCount(w.eval_runs)) },
         { label: STRINGS.colMeter, num: true, sort: (w) => w.plan_meter_points, cell: (w) => (w.plan_meter_points === null ? STRINGS.noValue : w.plan_meter_points.toFixed(1)) },
         { label: STRINGS.colRunsUsd, num: true, sort: (w) => w.run_usd, cell: (w) => (typeof w.run_usd === 'number' ? usd(w.run_usd) : STRINGS.noValue) },
@@ -159,7 +158,7 @@ function itemImpact(i) {
 const itemsTable = (rows, refMs) => table([
   { label: STRINGS.colKind, sort: (i) => i.kind, cell: (i) => STRINGS.agentMadeKind[i.kind] },
   { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE[i.kind], i.id), clean(i.id)) },
-  { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtUtcDay(parseTime(i.created), refMs) },
+  { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtDay(parseTime(i.created), refMs) },
   { label: STRINGS.colAfterRule, sort: (i) => (i.under_rule ? 1 : 0), cell: (i) => (i.under_rule ? '✓' : '') },
   { label: STRINGS.colImpact, sort: (i) => itemImpact(i), cell: (i) => itemImpact(i) }
 ], rows, { tall: true });
@@ -172,7 +171,7 @@ function agentMadeView(doc, refMs) {
   if (!r) return null;
   const cut = isFinite(refMs) ? refMs - AGENT_MADE_DAYS * 86400000 : -Infinity;
   const recent = r.items.filter((i) => !(parseTime(i.created) < cut)), older = r.items.filter((i) => parseTime(i.created) < cut);
-  return [h('p', { class: 'note' }, STRINGS.agentMadeNote(r.since ? fmtUtcDay(parseTime(r.since), refMs) : STRINGS.unknown)),
+  return [h('p', { class: 'note' }, STRINGS.agentMadeNote(r.since ? fmtDay(parseTime(r.since), refMs) : STRINGS.unknown)),
     table([
       { label: STRINGS.colKind, sort: (k) => k.kind, cell: (k) => STRINGS.agentMadeKinds[k.kind] },
       { label: STRINGS.colTotal, num: true, sort: (k) => k.total, cell: (k) => fmtCount(k.total) },

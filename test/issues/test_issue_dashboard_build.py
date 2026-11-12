@@ -670,7 +670,7 @@ class DashboardBuildTests(unittest.TestCase):
             return {r["key"]: r for r in rows}
         sm = bars(self.cb_now())
         self.assertEqual((sm["bar_changes"]["status"], sm["bar_build"]["status"]), ("Not met", "Met"))
-        self.assertIn("Due 2026-12-15", sm["bar_build"]["note"])
+        self.assertIn("Due Dec 15", sm["bar_build"]["note"])
         self.assertNotIn("bar_verdict", sm)
         prs = [{"repo": "o/r", "number": n, "url": "u", "head_ref": f"eval-improve/s{n}", "title": "t",
                 "state": "closed", "merged_at": "2026-10-20T10:00:00Z"} for n in (1, 2, 3)]
@@ -683,6 +683,20 @@ class DashboardBuildTests(unittest.TestCase):
         sm = bars(late, prs=prs, usage_rows=usage, samples=hot, plan_rows=ppu_rows)
         self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
                          ("Not met", "Missed: cut back to guidance-only evals"))
+
+    def test_summary_notes_show_no_iso_dates_only_eastern_day_labels(self):
+        import re
+        _, rows = self.cb(now=self.cb_now())
+        notes = {r["key"]: r["note"] for r in rows}
+        for key, note in notes.items():
+            self.assertIsNone(re.search(r"\d{4}-\d{2}-\d{2}", note), f"{key}: {note}")
+        self.assertIn("since Oct 19:", notes["cost_per_verdict"])
+        self.assertIn("merged since Oct 19 out of", notes["decision_yield"])
+        self.assertIn("in the week of Mon Oct 26", notes["real_work_reach"])
+        self.assertIn("Due Dec 15.", notes["bar_build"])
+        self.assertIn("the week of Mon Oct 26", notes["bar_build"])
+        self.assertEqual(build.day_text("2026-12-15"), "Dec 15")
+        self.assertEqual(build.week_text("2026-11-02"), "week of Mon Nov 2")
 
     def test_cost_benefit_placeholder_before_the_first_week(self):
         weeks, summary_rows = self.cb(now=datetime(2026, 10, 1, tzinfo=timezone.utc))

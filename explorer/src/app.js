@@ -9,6 +9,7 @@ import { renderRoute } from './views/page.js';
 import { buildFailure } from './views/failure.js';
 import { DEFAULT_DATA_URL } from './adapters/web.js';
 import { installDefs } from './core/terms.js';
+import { markScrollers } from './views/bits.js';
 
 /* opts: { groups (the top-level groups this build has, in order), home (the
    route an empty address opens), ext (state -> the private overlays, or
@@ -60,6 +61,7 @@ export function boot(source, opts) {
   function mount(node) {
     while (content.firstChild) content.removeChild(content.firstChild);
     content.appendChild(toDom(node, document));
+    markScrollers(content);
     document.title = STRINGS.title;
   }
   function clearSearch() {
@@ -121,6 +123,7 @@ export function boot(source, opts) {
   root.addEventListener('pointerdown', () => { tip.hidden = true; });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { tip.hidden = true; toggleMenu(false); } });
   root.addEventListener('focusout', () => { tip.hidden = true; });
+  window.addEventListener('resize', () => markScrollers(content), { passive: true });
   window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
   installDefs(document);
