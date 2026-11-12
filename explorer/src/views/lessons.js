@@ -61,7 +61,7 @@ export function lessonSource(it) {
 }
 
 export function lessonStatus(it) {
-  if (it.kind !== 'new-skill') return STRINGS.lessonWaiting;
+  if (it.kind !== 'new-skill') return STRINGS.lessonWaiting[it.kind];
   if (!it.draft) return STRINGS.lessonNotDrafted;
   return [link(it.draft.url, STRINGS.lessonDraft(it.draft.number)), ' (' + STRINGS.lessonDraftStates[it.draft.state] + ')'];
 }
@@ -123,20 +123,24 @@ export function lessonsView(doc, mode) {
     : it.kind === 'new-skill' || it.subject.startsWith('skill:'))));
   const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
   const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
-  const minerRows = items.map((it) => h('tr', null,
+  const entry = (closed, n, tr) => ({ closed, n, tr });
+  const minerRows = items.map((it) => entry(!!it.draft && it.draft.state !== 'open', it.n, h('tr', null,
     h('td', null, lessonTitle(it.subject, headings)), h('td', null, STRINGS.lessonKinds[it.kind]),
     h('td', null, lessonSource(it)),
     h('td', { class: 'num' }, STRINGS.lessonSeen(it.n)), h('td', { class: 'num' }, day(it.first)),
-    h('td', { class: 'num' }, day(it.last)), h('td', null, lessonStatus(it))));
-  const issueRows = issues.map((it) => h('tr', null,
+    h('td', { class: 'num' }, day(it.last)), h('td', null, lessonStatus(it)))));
+  const issueRows = issues.map((it) => entry(it.state !== 'open', 0, h('tr', null,
     h('td', null, lessonIssueTitle(it)), h('td', null, STRINGS.lessonIssueKinds[it.source]),
     h('td', null, STRINGS.lessonIssueSources[it.source]),
     h('td', { class: 'num' }, STRINGS.lessonNoValue), h('td', { class: 'num' }, day(it.opened)),
     h('td', { class: 'num' }, STRINGS.lessonNoValue),
-    h('td', null, link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')')));
-  const rows = minerRows.concat(issueRows);
-  const table = rows.length ? h('div', { class: 'tablewrap' }, h('table', null,
-    h('thead', null, h('tr', null, cols.map((c) => h('th', null, c)))), h('tbody', null, rows)))
+    h('td', null, link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')'))));
+  // Open proposals first, the most-seen on top; closed ones fold away.
+  const rows = minerRows.concat(issueRows).sort((a, b) => a.closed - b.closed || b.n - a.n);
+  const grid = (list) => h('div', { class: 'tablewrap' }, h('table', null,
+    h('thead', null, h('tr', null, cols.map((c) => h('th', null, c)))), h('tbody', null, list.map((r) => r.tr))));
+  const open = rows.filter((r) => !r.closed), shut = rows.filter((r) => r.closed);
+  const table = rows.length ? [open.length ? grid(open) : null, shut.length ? h('details', { class: 'history' }, h('summary', null, STRINGS.lessonClosed + ' (' + shut.length + ')'), grid(shut)) : null]
     : h('p', null, mode === 'guidance' ? STRINGS.lessonsEmptyGuidance : STRINGS.lessonsEmptySkills);
   return h('section', null, head,
     h('p', { class: 'lead' }, miner ? STRINGS.lessonsLead(day(L.date)) : STRINGS.lessonMinerNone), table,

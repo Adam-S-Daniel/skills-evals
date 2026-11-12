@@ -76,7 +76,7 @@ function hooksTile(doc, tip, refMs) {
 function guidanceTile(doc, tip) {
   const whole = wholeGuidance(doc);
   const g = whole.pooled.all.gain;
-  const secs = sectionItems(doc, 'next');
+  const secs = sectionItems(doc);
   const counts = {};
   secs.forEach((s) => { counts[s.chip] = (counts[s.chip] || 0) + 1; });
   const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));

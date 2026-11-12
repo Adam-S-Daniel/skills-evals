@@ -16,5 +16,5 @@ export function wholeView(whole, refMs) {
       h('p', { class: 'note' }, STRINGS.wholeNote),
       h('p', { class: 'sent' }, termify(clean(whole.sentence), SENTENCE_TERMS)),
       legendFor('whole', whole.pooled), h('div', { class: 'cols' }, modelCharts(whole.pooled, 'whole')),
-      trendChart(whole.trend, refMs, false, 'whole')));
+      trendChart(whole.trend, refMs, 'whole')));
 }

@@ -8,8 +8,7 @@ import { skillItems, sectionItems, wholeGuidance, purposeOf } from '../core/item
 import { groupOf, GROUPS, hashFor } from '../core/route.js';
 import { DEFAULT_DATA_URL } from '../adapters/web.js';
 import { wholeView } from './whole.js';
-import { skillCard, sectionCard, chipSummary } from './cards.js';
-import { readingGuide } from './range.js';
+import { chipSummary, subjectTable } from './cards.js';
 import { coverageView } from './coverage.js';
 import { alertsView } from './alerts.js';
 import { summaryView } from './summary.js';
@@ -21,29 +20,32 @@ import { opsView } from './ops.js';
 import { methodView } from './method.js';
 import { searchView } from './search.js';
 import { navLink, srcLine, rangeLine, srcLineFor } from './bits.js';
+import { fmtUtcDay } from '../core/format.js';
 import { indexDoc } from '../core/terms.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
 
-/* The Skills or the Guidance list: every card, the coverage and that kind's
-   alerts. */
+/* How many tested skills had no real-work use in the census window: the ones
+   whose count is 0. Nothing without a census. */
+function unusedSkills(items, u, refMs) {
+  const have = items.filter((i) => i.raw.usage && Number.isInteger(i.raw.usage.invocations));
+  if (!u || !have.length) return null;
+  const none = have.filter((i) => i.raw.usage.invocations === 0).length;
+  return h('p', { class: 'headline-num' }, STRINGS.unusedLine(none, have.length, fmtUtcDay(parseTime(u.from), refMs), fmtUtcDay(parseTime(u.to), refMs)));
+}
+
+/* The Skills or the Guidance list: one table row per subject, the coverage and
+   that kind's alerts. */
 export function buildPage(doc, mode, opts) {
   const o = opts || {};
   const refMs = parseTime(doc.generated_at);
   if (mode === 'guidance') {
-    const items = sectionItems(doc, o.sortBy);
-    const hd = o.handlers || {};
+    const items = sectionItems(doc);
     return h('div', null,
       rangeLine(doc),
       wholeView(wholeGuidance(doc), refMs),
       h('section', null, h('h2', null, STRINGS.sectionsHeading), h('p', { class: 'note' }, STRINGS.sectionsNote),
         chipSummary(items, mode),
-        items.length ? readingGuide(doc.policy, 'guidance') : null,
-        h('div', { class: 'toolbar' }, h('span', { class: 'note' }, STRINGS.sortLabel),
-          h('div', { class: 'seg', role: 'group', 'aria-label': STRINGS.sortLabel },
-            h('button', { type: 'button', 'aria-pressed': o.sortBy !== 'size' && o.sortBy !== 'value' ? 'true' : 'false', onclick: hd.sortNext || null }, STRINGS.sortNext),
-            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'value' ? 'true' : 'false', onclick: hd.sortValue || null }, STRINGS.sortValue),
-            h('button', { type: 'button', 'aria-pressed': o.sortBy === 'size' ? 'true' : 'false', onclick: hd.sortSize || null }, STRINGS.sortSize))),
-        items.length ? h('div', { class: 'cards' }, items.map((it) => sectionCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+        items.length ? subjectTable(items, 'guidance', refMs) : h('p', null, STRINGS.noCards)),
       coverageView(doc, mode), alertsView(doc, mode));
   }
   const items = skillItems(doc);
@@ -53,8 +55,8 @@ export function buildPage(doc, mode, opts) {
     h('section', null, h('h2', null, STRINGS.skillsHeading), h('p', { class: 'note' }, STRINGS.skillsNote),
       u && typeof u.sessions_scanned === 'number' ? h('p', { class: 'note' }, STRINGS.usageNote(u.sessions_scanned.toLocaleString('en-US'))) : null,
       chipSummary(items, mode),
-      items.length ? readingGuide(doc.policy, 'skills') : null,
-      items.length ? h('div', { class: 'cards' }, items.map((it) => skillCard(it, refMs, doc))) : h('p', null, STRINGS.noCards)),
+      unusedSkills(items, u, refMs),
+      items.length ? subjectTable(items, 'skills', refMs) : h('p', null, STRINGS.noCards)),
     coverageView(doc, mode), alertsView(doc, mode));
 }
 
@@ -67,7 +69,7 @@ function isSearching(q) {
   return !!(q && (q.text || q.registry || q.verdict || q.model || q.stakes));
 }
 
-/* opts: { sortBy, handlers, url, ext, search, onFilter, onClear }. `ext` is
+/* opts: { url, ext, search, onFilter, onClear }. `ext` is
    the private build's overlays; the public build passes none. */
 export function renderRoute(doc, route, opts) {
   const o = opts || {};

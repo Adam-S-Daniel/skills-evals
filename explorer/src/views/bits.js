@@ -66,6 +66,12 @@ export function panel(title, kids, attrs) {
   return h('section', Object.assign({ class: 'block' }, attrs || {}), h('h2', null, title), list);
 }
 
+/* A closed fold with a heading, or null when it has nothing to show. */
+export function fold(title, kids) {
+  const list = (Array.isArray(kids) ? kids : [kids]).filter((k) => k !== null && k !== undefined && k !== false);
+  return list.length ? h('details', { class: 'block history' }, h('summary', null, title), list) : null;
+}
+
 function cellValue(td) {
   const raw = td.getAttribute('data-sort');
   return raw === null ? td.textContent : raw;

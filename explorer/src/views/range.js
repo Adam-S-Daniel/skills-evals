@@ -89,7 +89,7 @@ export function rangeChart(rows, margin, cap) {
     'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
 }
 
-/* The decision rules the policy sets, shared by every card on a list. */
+/* The decision rules the policy sets, shared by a subject's page. */
 function policyFigures(policy) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   return {
@@ -103,21 +103,7 @@ function policyFigures(policy) {
 
 const whole = (x) => Math.round(x * 100) + '%';
 
-/* One "How to read each card" block above a list of cards, so the rules
-   every card shares are said once instead of on every card. */
-export function readingGuide(policy, subject) {
-  const f = policyFigures(policy);
-  return h('details', { class: 'guide' }, h('summary', null, STRINGS.guideHeading),
-    h('p', null, STRINGS.trendCaption),
-    h('p', null, STRINGS.rangeWhat),
-    h('p', null, STRINGS.rangeRule(f.margin)),
-    h('p', null, STRINGS.rangeLevels(whole(f.keep), whole(f.remove), subject, f.versions)),
-    f.cap ? h('p', null, STRINGS.confidenceCap(f.cap)) : null,
-    h('p', null, STRINGS.confPace));
-}
-
-/* compact: a card on a list, where readingGuide says the shared rules once. */
-export function confidenceView(c, policy, subject, compact) {
+export function confidenceView(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   if (!c || !ok(c.helps)) return h('p', { class: 'meta' }, STRINGS.confidenceNone);
   const { margin, keep, remove, versions, cap } = policyFigures(policy);
@@ -126,7 +112,7 @@ export function confidenceView(c, policy, subject, compact) {
   if (chart) {
     kids.push(chartTitle(STRINGS.rangeTitle), chart);
   }
-  if (chart && !compact) {
+  if (chart) {
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeWhat));
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeRule(margin)));
     kids.push(h('p', { class: 'meta' }, STRINGS.rangeLevels(whole(keep), whole(remove), subject, versions)));
@@ -139,8 +125,8 @@ export function confidenceView(c, policy, subject, compact) {
     removeEst = estimateLine(STRINGS.confRemoveWord, c.no_help, remove, c.no_help_pairs, cap);
     kids.push(removeEst.node);
   }
-  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, compact ? STRINGS.confRunsShort(c.max_pairs, cap) : STRINGS.confRuns(c.max_pairs, cap)));
-  else if (cap && !compact) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
-  if (!compact && (keepEst.projected || removeEst.projected)) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
+  if (cap && Number.isInteger(c.max_pairs)) kids.push(h('p', { class: 'meta' }, STRINGS.confRuns(c.max_pairs, cap)));
+  else if (cap) kids.push(h('p', { class: 'meta' }, STRINGS.confidenceCap(cap)));
+  if ((keepEst.projected || removeEst.projected)) kids.push(h('p', { class: 'meta' }, STRINGS.confPace));
   return h('div', { class: 'conf' }, kids);
 }

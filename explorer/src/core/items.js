@@ -1,7 +1,7 @@
 /* View models: one item per card, sorted the way the page shows them. */
 import { STRINGS } from './strings.js';
 import { parseTime } from './format.js';
-import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainPerKb, gainOf } from './stats.js';
+import { poolRuns, hasRegression, chipFor, sentenceFor, weeklyGains, gainOf } from './stats.js';
 
 export function context(doc) {
   const refMs = parseTime(doc.generated_at);
@@ -67,24 +67,16 @@ export function purposeOf(desc) {
   return (m ? m[0] : text).trim();
 }
 
-export function sectionItems(doc, sortBy) {
+export function sectionItems(doc) {
   const c = context(doc);
   const secs = (doc.guidance && Array.isArray(doc.guidance.sections)) ? doc.guidance.sections : [];
   const items = secs.filter((s) => s && s.id).map((s) => {
     const pooled = poolRuns(s.runs, 'guidance', c.refMs, c.order);
     return { id: String(s.id), name: String(s.id), raw: s, pooled: pooled, bytes: Number(s.bytes) || 0,
       chip: chipFor(pooled, { subject: 'guidance', verdict: s.verdict || null, regression: hasRegression(c.alerts, 'guidance', s.id) }),
-      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs),
-      perKb: gainPerKb(pooled, s.bytes) };
+      sentence: sentenceFor(pooled, 'guidance', c.refMs), trend: weeklyGains(s.runs, 'guidance', c.refMs) };
   });
-  if (sortBy === 'size') items.sort((a, b) => b.bytes - a.bytes || (a.id < b.id ? -1 : 1));
-  else if (sortBy !== 'value') items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
-  else items.sort((a, b) => {
-    if (a.perKb === null && b.perKb === null) return a.id < b.id ? -1 : 1;
-    if (a.perKb === null) return 1;
-    if (b.perKb === null) return -1;
-    return b.perKb - a.perKb || (a.id < b.id ? -1 : 1);
-  });
+  items.sort((a, b) => byNext(a, b) || byFaring(SECTION_RANK, 'guidance')(a, b) || byName(a, b));
   return items;
 }
 
