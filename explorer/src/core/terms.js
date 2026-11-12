@@ -16,8 +16,16 @@ function place(btn, box) {
   const left = Math.min(vw - w - 8, Math.max(8, r.left));
   let top = r.bottom + 6;
   if (top + hh > vh - 8 && r.top - hh - 6 >= 8) top = r.top - hh - 6;
+  top = Math.max(8, top);
   box.style.left = left + 'px';
-  box.style.top = Math.max(8, top) + 'px';
+  box.style.top = top + 'px';
+  // A size container (the dashboard page's #ex-root) anchors a fixed box to
+  // itself, not the viewport: shift by however far it actually landed off.
+  const at = box.getBoundingClientRect();
+  if (at.left !== left || at.top !== top) {
+    box.style.left = (2 * left - at.left) + 'px';
+    box.style.top = (2 * top - at.top) + 'px';
+  }
 }
 
 export function closeDef(returnFocus) {
