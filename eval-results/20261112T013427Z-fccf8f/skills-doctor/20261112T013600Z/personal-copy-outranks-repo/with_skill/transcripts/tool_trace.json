@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01VqtdKtvJCVLTfc12urfczp",
+      "name": "Bash",
+      "input": "git status --short | head; find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 83,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01VqtdKtvJCVLTfc12urfczp",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/.skills-bootstrap-installed.json\n./session/skills/release-notes/SKILL.md\n./...",
+      "output_chars": 464,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JXnn37Nf9MBM56CodMvC8U",
+      "name": "Bash",
+      "input": "for f in README.md session/skills/.skills-bootstrap-installed.json session/skills/release-notes/SKILL.md session/skills/writing-adrs/SKILL.md repo/skills.lock repo/dot-claude/skills/release-notes/SKIL...",
+      "input_chars": 264,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JXnn37Nf9MBM56CodMvC8U",
+      "is_error": false,
+      "output": "=== README.md\n# Session capture \u2014 cloud session on example-app, 2026-10-14\n\nCopied out of the container so the delivery question can be answered after it\nwas gone.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `repo/` \u2014 the...",
+      "output_chars": 3189,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01728qgGtWgk7JxB5RK8fM4k",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:skills-doctor",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01728qgGtWgk7JxB5RK8fM4k",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:skills-doctor",
+      "output_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TKqpDvMLNMB87xKz2A32j4",
+      "name": "Bash",
+      "input": "ls -la --time-style=full-iso session/skills session/skills/* repo repo/dot-claude/skills/*; cat .gitmodules; diff session/skills/release-notes/SKILL.md repo/dot-claude/skills/release-notes/SKILL.md",
+      "input_chars": 197,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TKqpDvMLNMB87xKz2A32j4",
+      "is_error": false,
+      "output": "repo:\ntotal 16\ndrwxr-xr-x 3 root root 4096 2026-11-08 18:32:33.223262220 +0000 .\ndrwxr-xr-x 6 root root 4096 2026-11-12 01:36:17.816426610 +0000 ..\ndrwxr-xr-x 3 root root 4096 2026-11-08 18:32:33.223262220 +0000 dot-claude\n-rw-r--r-- 1 root root  353 2026-11-08 18:32:33.223262220 +0000 skills.lock\n\n...",
+      "output_chars": 2031,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01JwL6UXxTuvwKHuiUrWhhGS",
+      "name": "Bash",
+      "input": "S=<path>; ls $S && CLAUDE_CODE_REMOTE_SESSION_ID=session_00000000example CLAUDE_CODE_ENTRYPOINT=remote python3 -I $S --lock repo/skills.lock --skills-dir session/skills --project-dir repo 2>&1; echo \"...",
+      "input_chars": 360,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01JwL6UXxTuvwKHuiUrWhhGS",
+      "is_error": false,
+      "output": "<path>\nprovenance: 2 on disk, 1 hook-installed, 1 unattributed, 0 not in the store \u2014 record present \u2014 surface ephemeral \u2014 1 finding\n\nRECORD   session/skills/.skills-bootstrap-installed.json\n  present \u2014 1 install(s) recorded. The rows below are the hook's own account\n  of what it wrote, not an infere...",
+      "output_chars": 2853,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KEjyat9VvPmv3HgozYC4oR",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KEjyat9VvPmv3HgozYC4oR",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
