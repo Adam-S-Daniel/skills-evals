@@ -2704,7 +2704,7 @@ test's error rate); a high cell undecided after 20 pairs
 (`max_runs_high_cell`), whose no-harm test has rejected and whose without
 arm averages at least 0.90, stops as `ceiling-unconfirmed`, which does not
 vote either, and any other high cell is fired on to the cap; one undecided
-after 40 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
+after 20 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
 propose a removal, when no test crossed and its pairs span two CLI
 versions, and otherwise stays `insufficient`, unfired, as a `cell-at-cap`
 work item; a fixture the eval scope pass paused keeps its cells, parked as

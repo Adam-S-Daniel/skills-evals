@@ -185,7 +185,7 @@ class ShapeAndMathTests(unittest.TestCase):
                                                  "reason": "invented judge reason"}})
         self.assertEqual(d["policy"], {"benefit_confidence": 0.80, "retire_confidence": 0.90,
                                        "min_cli_versions": 2, "objective_margin": 0.15,
-                                       "max_runs_per_cell": 40})
+                                       "max_runs_per_cell": 20})
         self.assertIsInstance(d["skills"], list)
         self.assertIsInstance(d["guidance"]["sections"], list)
         self.assertIsInstance(d["alerts"], list)

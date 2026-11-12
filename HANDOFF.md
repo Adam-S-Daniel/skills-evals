@@ -61,7 +61,7 @@ September pause, and is not updated any more.
 - **The betting bound (2026-11-03; Adam's decision pending):** after that
   day's statistics review and threshold sweep, the gate decides on paired
   fires with a betting confidence sequence (no variance prior), keeps at
-  80% per subject, parks cells at the ceiling, stops a cell at 40 pairs as
+  80% per subject, parks cells at the ceiling, stops a cell at 20 pairs (Adam, 2026-11-12; 40 before) as
   `no-clear-effect`, ignores the judge for decisions, and allows an
   automatic removal only with two or more headroom cells, all no-benefit.
   See ADR 0014's betting-bound addendum and `harness/gates.py`.

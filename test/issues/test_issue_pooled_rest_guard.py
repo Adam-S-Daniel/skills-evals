@@ -1030,7 +1030,9 @@ class SimulationTests(unittest.TestCase):
         # rest with no gain (removed about as often as under `current`) or
         # one that helps by exactly the margin (removed under the level).
         import simulate_rest_guard as sim
-        policy = gates.load_gate_policy()["guidance"]
+        # The simulation was calibrated at the 40-pair cap the policy had
+        # before 2026-11-12 (Adam cut it to 20); pin the cap it assumes.
+        policy = {**gates.load_gate_policy()["guidance"], "max_runs_per_cell": 40}
         stale = sim.at_cap(sim.random.Random(20261107), 60, policy, 40, 0.30, 0.0, 0.55)
         self.assertGreaterEqual(stale["pooled-with-current-guard"]["no-benefit"], 0.8)
         margin = sim.at_cap(sim.random.Random(20261107), 60, policy, 40, 0.30,

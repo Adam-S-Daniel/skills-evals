@@ -763,7 +763,7 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   undecided (`paused`, below); the subject is then `insufficient`, not
   `ceiling`, when every cell is parked, and otherwise a `retire` proposal
   (a parked cell beside decided `no-benefit` cells), never automatic.
-- *The cap.* A cell still undecided after 40 pairs (`max_runs_per_cell`)
+- *The cap.* A cell still undecided after 20 pairs (`max_runs_per_cell`)
   is `no-clear-effect` when no test crossed and its pairs span two Claude
   Code versions. Otherwise (one version, or a test that crossed but has
   not decided) it stays `insufficient`: it is no longer fired, blocks its
