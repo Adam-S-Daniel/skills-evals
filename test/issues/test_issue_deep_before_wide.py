@@ -28,8 +28,10 @@ import gates  # noqa: E402
 import plan_week  # noqa: E402
 
 NOW = datetime(2026, 11, 8, 12, 0, 0, tzinfo=timezone.utc)
-POLICY = gates.load_gate_policy()["skills"]
-GUIDANCE_POLICY = gates.load_gate_policy()["guidance"]
+# These orderings were calibrated at the 40-pair cap the policy had before
+# 2026-11-12 (Adam cut it to 20); pin the cap they assume.
+POLICY = {**gates.load_gate_policy()["skills"], "max_runs_per_cell": 40}
+GUIDANCE_POLICY = {**gates.load_gate_policy()["guidance"], "max_runs_per_cell": 40}
 MARGIN = POLICY["objective_margin"]
 KEEP_ALPHA = 1 - POLICY["benefit_confidence"]
 REMOVE_ALPHA = 1 - POLICY["retire_confidence"]
