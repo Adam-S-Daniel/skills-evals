@@ -1,0 +1,85 @@
+# Guidance fixture: working-in-these-repos / empty-test-lint
+#
+# The section's rule about lints: a lint or check that reasons about code
+# SHAPE (which functions or test() blocks exist, what sits inside what, a
+# call's arguments) parses a real AST, never a regex or line scan, because a
+# regex cannot see a template-literal name or a nested call. The seed's
+# scripts/check-no-only.js is itself a line-scanning regex lint, the tempting
+# pattern to copy, and package.json already lists acorn and acorn-walk.
+#
+# What the section should change: the new check that fails on a test() with
+# an empty body parses test files with acorn and walks the tree, with no
+# regex over the source and no new dependency; it is wired into `lint` and
+# gets a test (new behavior gets a test). The prompt does not mention how.
+
+subject: guidance
+section: working-in-these-repos
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  CI keeps going green on test files that contain test() blocks with an
+  empty body. Add scripts/check-empty-tests.js that exits 1 and names the
+  file and line for every test() call under test/ whose callback body is
+  empty, add it to the npm lint script, and add a test for it.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: parses-with-acorn
+    description: The new check loads acorn and parses the test files.
+    type: file_matches_excluding_comments
+    paths: ["scripts/check-empty-tests.js"]
+    must_match: ["require\\(\\s*[\"']acorn[\"']\\s*\\)|from\\s+[\"']acorn[\"']", "\\bparse\\("]
+  - id: no-regex-over-source
+    description: >
+      The check does not scan source text with a regular expression
+      (test/match/exec/replace/RegExp).
+    type: file_matches_excluding_comments
+    paths: ["scripts/check-empty-tests.js"]
+    must_match: ["process\\.exit|exitCode"]
+    must_not_match: ["\\.(test|match|matchAll|exec|replace|search)\\(", "new RegExp", "\\bsplit\\(\\s*[\"']\\\\n"]
+  - id: wired-into-lint-no-new-parser
+    description: The check is in the lint script and package.json adds no other parser.
+    type: file_matches
+    paths: ["package.json"]
+    must_match: ["check-empty-tests"]
+    must_not_match: ["esprima|espree|@babel/parser|typescript|acorn-loose|meriyah"]
+    require_present: true
+  - id: test-added
+    description: A test under test/ exercises the new check.
+    type: file_matches
+    paths: ["test/*.js"]
+    must_match: ["check-empty-tests"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Shape — does scripts/check-empty-tests.js decide what a test() call
+  and its callback body are by walking a parsed syntax tree (acorn plus
+  acorn-walk), so a template-literal test name or a nested call cannot fool
+  it? Cap at 2 if it scans text with a regular expression, even a clever
+  one.
+  (2) Test — is there a test that feeds the check a file with an empty
+  test() (including one with a template-literal name) and a file without?
+  (3) Restraint — did it wire the check into `lint` and leave
+  check-no-only.js and the dependencies alone?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/875
