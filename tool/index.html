@@ -63,7 +63,6 @@
 .ex input.search:focus { outline: 3px solid var(--s2); outline-offset: 2px; box-shadow: 4px 4px 0 var(--ink); }
 .ex .menu:focus-visible { outline: 3px solid var(--s2); outline-offset: 2px; }
 @media (max-width: 760px) {
-  .ex .tile { padding-left: 0; padding-right: 0; }
   .ex .menu { display: inline-block; }
   .ex .drawer { display: none; flex-basis: 100%; padding: 0 0 12px; }
   .ex .topbar.open .drawer { display: flex; }
@@ -135,6 +134,39 @@
 .ex .tile-note { font-size: 0.92rem; color: var(--muted); }
 .ex .tile:first-child { flex: 1.7 1 300px; padding-left: 0; }
 .ex .tile:first-child .tile-num { font-size: clamp(6rem, 15vw, 11rem); line-height: 0.8; color: var(--s2); margin: 10px 0 10px -0.04em; }
+.ex .tile-num .unit { font-size: 0.32em; font-weight: 700; letter-spacing: 0; margin-left: 0.08em; }
+.ex .tile-note .lede, .ex .tile-note .fine { display: block; }
+.ex .tile-note .lede { color: var(--ink-2); }
+.ex .tile-note .lede .chip { margin-right: 4px; }
+.ex .tile-note .fine { font-size: 0.8rem; margin-top: 8px; }
+.ex .statebar { display: block; margin-top: 12px; }
+.ex .statebar .sbar { display: flex; height: 12px; gap: 2px; transform-origin: left center; }
+.ex .statebar .sb { flex-basis: 0; min-width: 3px; }
+.ex .statebar .legend-mini { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px; font-size: 0.8rem; line-height: 1.5; }
+.ex .statebar .li { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ex .statebar .sw { width: 9px; height: 9px; flex: none; }
+.ex :is(.sb, .sw).helps { background: var(--good); }
+.ex :is(.sb, .sw).early { background: color-mix(in srgb, var(--good) 45%, var(--page)); }
+.ex :is(.sb, .sw).alone { background: var(--warning); }
+.ex :is(.sb, .sw).none { background: var(--axis); }
+.ex :is(.sb, .sw).worse { background: var(--critical); }
+.ex :is(.sb, .sw).canttell { background: repeating-linear-gradient(135deg, var(--axis) 0 2px, transparent 2px 5px); }
+.ex :is(.sb, .sw).insufficient { background: color-mix(in srgb, var(--axis) 35%, var(--page)); }
+.ex :is(.sb, .sw).skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--axis); }
+.ex :is(.sb, .sw).gap { background: repeating-linear-gradient(135deg, var(--muted) 0 1px, transparent 1px 4px); }
+.ex .weekbars { display: flex; align-items: flex-end; gap: 6px; height: 74px; margin-top: 14px; max-width: 340px; }
+.ex .weekbars .wk { flex: 1 1 0; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; }
+.ex .weekbars .wn { font-family: var(--ex-mono); font-size: 0.68rem; text-align: center; color: var(--ink-2); }
+.ex .weekbars .wb { display: block; background: var(--s2); min-height: 0; transform-origin: bottom center; }
+.ex .weekbars .wd { font-family: var(--ex-mono); font-size: 0.6rem; letter-spacing: 0.04em; text-align: center; color: var(--muted); border-top: 1px solid var(--ink); padding-top: 3px; white-space: nowrap; }
+.ex .weekbars .partial .wb { background: repeating-linear-gradient(135deg, var(--s2) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--s2); }
+.ex .weekbars .partial .wd { text-transform: uppercase; color: var(--s2); }
+@media (max-width: 760px) {
+  /* Stacked tiles share one left edge (they keep 22px only side by side). */
+  .ex .tile, .ex .tile:first-child { padding-left: 0; padding-right: 0; border-left: 0; }
+}
+@keyframes ex-bar-rise { from { transform: scaleY(0.05); opacity: 0.2; } }
+@keyframes ex-bar-fill { from { transform: scaleX(0.05); opacity: 0.2; } }
 .ex .headline-num { font-family: var(--ex-serif, var(--ex-serif-stack)); font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; line-height: 1; max-width: 26ch; }
 
 /* Cards */
@@ -224,7 +256,7 @@
 .ex-tip[hidden] { display: none; }
 .ex .headline .answer { font-size: 1.2rem; font-weight: 700; }
 @media (forced-colors: active) {
-  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw { forced-color-adjust: none; }
+  .ex .chip .ic, .ex .brand::before, .ex .meter .fill, .ex .meter-mark, .ex .sw, .ex .sb, .ex .weekbars .wb { forced-color-adjust: none; }
   .ex a.group[aria-current="page"], .ex .seg button[aria-pressed="true"], .ex .subnav a[aria-current="page"] { outline: 3px solid Highlight; outline-offset: -3px; }
 }
 .ex .conf { margin: 12px 0 0; }
@@ -283,6 +315,8 @@
   .ex .content.enter .tiles > :nth-child(3) { animation-delay: 150ms; }
   .ex .content.enter .tiles > :nth-child(4) { animation-delay: 210ms; }
   .ex .content.enter .tiles > :nth-child(n+5) { animation-delay: 270ms; }
+  .ex .content.enter .weekbars .wb { animation: ex-bar-rise 520ms var(--ex-ease) 260ms backwards; }
+  .ex .content.enter .statebar .sbar { animation: ex-bar-fill 620ms var(--ex-ease) 260ms backwards; }
   .ex .content.enter .meter .fill { animation: ex-fill 900ms 200ms var(--ex-ease) backwards; }
   .ex .defbox { animation: ex-pop 140ms var(--ex-ease) backwards; }
 }
@@ -867,23 +901,35 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       kinds: { skill: "Skill", section: "Guidance section", check: "Git hook check", pr: "Pull request", issue: "Issue" },
       colWhat: "What",
       colDetail: "Detail",
-      tileStopped: "Commits and pushes stopped by git hook checks, this week so far",
-      tileTrendingNote: (n) => " " + n + (n === 1 ? " subject trending toward removal is" : " subjects trending toward removal are") + " listed separately.",
-      // The data holds weekly totals only, so this is the calendar week so far (it starts Monday, UTC) beside the last full week.
-      tileStoppedNote: (l, c, week, pl, pc, prev) => l + " on " + W.whose + " computers and " + c + " in CI so far in the week starting Monday " + week + " (UTC)" + (prev ? ". Last week (" + prev + "): " + pl + " and " + pc + "." : "."),
+      tileHooks: "Hooks",
       tileStoppedNone: "No git hook counts in this build.",
-      tileHelped: "Skills that help",
-      tileHelpedNote: (n, all) => "of " + n + " tested skills, by the loop's own keep decision. All " + all + " skills:",
+      // Counts come in weekly totals only, so the headline is the last full week
+      // and the week in progress is shown apart, never compared as if whole.
+      hooksLastWeek: (day, local, ci, cloud) => "commits and pushes stopped the week of " + day + ": " + local + " on " + W.whose + " computers, " + ci + " in CI" + (cloud === null ? "" : ", " + cloud + " in cloud sessions") + ".",
+      hooksNoFullWeek: "No full week of git hook counts yet.",
+      hooksSoFar: (n, days) => "This week so far (" + days + (days === 1 ? " day" : " days") + "): " + n + ".",
+      hooksSoFarWord: "so far",
+      hooksCloudNot: "Cloud sessions are not counted yet.",
+      hooksBarsAria: (list) => "Commits and pushes stopped by week: " + list + ".",
+      tileSkills: "Skills",
+      skillsHelpLine: (n) => "help, of " + n + " tested.",
+      skillsOf: (n) => n + " skills in all.",
+      skillsBarAria: (n) => "States of all " + n + " skills.",
       skillStateExtra: { skipped: "Left out on purpose", gap: "Not yet tested" },
       skillStateDefs: {
         skipped: "Deliberately not tested. Each has a recorded reason, such as a task a self-contained fixture cannot exercise.",
         gap: "Should be tested but has no test yet."
       },
       skillStatesAll: "No other skills.",
-      tileWhole: "Does the guidance help at all?",
+      tileGuidance: "Guidance",
+      ptsUnit: " pts",
+      guidanceGainLine: (runs, models) => "more checks passed with the guidance than without, over " + runs + " runs on " + models + (models === 1 ? " model." : " models."),
+      guidanceNoRuns: "No comparison runs in the window yet.",
+      sectionsOf: (n) => n + " sections.",
+      sectionsBarAria: (n) => "States of " + n + " guidance sections.",
       tileNewest: "Newest run",
-      tileAlerts: "Open alerts",
-      tileAlertsNote: "From the results document's own checks",
+      tileAlerts: "Alerts",
+      tileAlertsNote: "open, listed under Needs you.",
       summaryLead: "What the self-improvement loop measured: git hook checks, skills and guidance, each kept only while it earns its place.",
       hooksHeading: "Does each git hook check earn its place?",
       hooksNote: (weeks, from, to) => "Each check runs before a commit or push on " + W.whose + " computers (git hooks) and again in CI. Counts cover the " + weeks + " weeks from " + from + " to " + to + '. "Blocked" is a refused commit or push on a computer, or a red check in CI.',
@@ -910,6 +956,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       hookSourceLink: "source",
       hookByWeek: "Runs and blocks by week",
       hookByRepo: "By repo",
+      colCloudRuns: "Cloud runs",
+      colCloudBlocked: "Cloud blocks",
+      colLocalCloudBlocked: "Local and cloud blocks",
+      hooksCloudNotLong: "Cloud Claude Code sessions are not counted yet, so these counts cover " + W.whose + " computers and CI only.",
+      hooksCloudFrom: (day) => "Cloud Claude Code sessions are counted" + (day ? " from the week of " + day : "") + ".",
       colWeek: "Week of",
       colLocalRuns: "Local runs",
       colLocalBlocked: "Local blocks",
@@ -2736,14 +2787,19 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const back = (d.getUTCDay() + 6) % 7;
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
   }
+  function cloudCounted(doc) {
+    const t = doc && doc.hooks && doc.hooks.totals;
+    if (!t || typeof t !== "object") return null;
+    return Array.isArray(t.cloud);
+  }
   function hookWeeks(doc) {
     const t = doc && doc.hooks && doc.hooks.totals;
     if (!t || typeof t !== "object") return [];
     const by = /* @__PURE__ */ new Map();
-    for (const surface of ["local", "ci"]) {
+    for (const surface of ["local", "ci", "cloud"]) {
       for (const u of Array.isArray(t[surface]) ? t[surface] : []) {
         if (!u || typeof u.week !== "string") continue;
-        if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 } });
+        if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 }, cloud: { runs: 0, blocked: 0 } });
         const cell = by.get(u.week)[surface];
         cell.runs += Number(u.invocations) || 0;
         cell.blocked += Number(u.blocked) || 0;
@@ -2751,19 +2807,41 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     }
     return Array.from(by.values()).sort((a, b) => a.week < b.week ? 1 : -1);
   }
-  function blockedThisWeek(doc) {
+  function hookTile(doc, n) {
     if (!doc || !doc.hooks || !doc.hooks.totals) return null;
-    const week = mondayOf(parseTime(doc.generated_at));
-    const weeks = hookWeeks(doc);
-    const row = weeks.find((w) => w.week === week);
-    const before = isFinite(parseTime(doc.generated_at)) ? mondayOf(parseTime(doc.generated_at) - 7 * 24 * 3600 * 1e3) : null;
-    const prevRow = weeks.find((w) => w.week === before);
-    const reaches = weeks.some((w) => w.week <= before);
+    const at = parseTime(doc.generated_at);
+    if (!isFinite(at)) return null;
+    const week = mondayOf(at);
+    const day = 24 * 3600 * 1e3;
+    const rows = hookWeeks(doc);
+    const sum = (r, k) => r.local[k] + r.ci[k] + r.cloud[k];
+    const cell = (w) => {
+      const r = rows.find((x) => x.week === w);
+      return {
+        week: w,
+        blocked: r ? sum(r, "blocked") : 0,
+        runs: r ? sum(r, "runs") : 0,
+        local: r ? r.local.blocked : 0,
+        ci: r ? r.ci.blocked : 0,
+        cloud: r ? r.cloud.blocked : 0,
+        partial: w === week
+      };
+    };
+    const from = doc.hooks.window && typeof doc.hooks.window.from === "string" ? mondayOf(Date.parse(doc.hooks.window.from + "T00:00:00Z")) : null;
+    const oldest = from || (rows.length ? rows[rows.length - 1].week : week);
+    const weeks = [];
+    for (let t = Date.parse(week + "T00:00:00Z"), k = 0; k < (n || 6); t -= 7 * day, k++) {
+      const w = mondayOf(t);
+      if (w < oldest) break;
+      weeks.unshift(cell(w));
+    }
+    const prev = mondayOf(Date.parse(week + "T00:00:00Z") - 7 * day);
     return {
-      week,
-      local: row ? row.local.blocked : 0,
-      ci: row ? row.ci.blocked : 0,
-      prev: reaches ? { week: before, local: prevRow ? prevRow.local.blocked : 0, ci: prevRow ? prevRow.ci.blocked : 0 } : null
+      last: prev >= oldest ? cell(prev) : null,
+      now: cell(week),
+      days: Math.min(7, Math.floor((at - Date.parse(week + "T00:00:00Z")) / day) + 1),
+      weeks,
+      cloud: cloudCounted(doc)
     };
   }
 
@@ -2959,12 +3037,12 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const newest = parseTime(doc.newest_run);
     return h("p", { class: "src asof-line" }, defn("dataBuilt"), " " + fmtDateTime(refMs), " · ", defn("newestRun"), " " + (isFinite(newest) ? fmtDateTime(newest) : STRINGS.noRunsYet));
   }
-  function skillStates(doc, tested) {
+  function skillStateCounts(doc, tested) {
     const counts = {};
     tested.forEach((s) => {
       counts[s.chip] = (counts[s.chip] || 0) + 1;
     });
-    const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => [counts[k] + " ", term(STRINGS.chips[k].toLowerCase(), STRINGS.chipRules[k], { title: STRINGS.chips[k] })]);
+    const out = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));
     const listed = Array.isArray(doc.skills) ? doc.skills.filter(Boolean) : [];
     const testedNames = new Set(tested.map((s) => s.name));
     const rest = { skipped: 0, gap: 0 };
@@ -2972,55 +3050,113 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       if (!testedNames.has(String(s.name)) && Object.prototype.hasOwnProperty.call(rest, s.status)) rest[s.status] += 1;
     });
     for (const k of Object.keys(rest)) {
-      if (rest[k]) parts.push([rest[k] + " ", term(STRINGS.skillStateExtra[k].toLowerCase(), STRINGS.skillStateDefs[k], { title: STRINGS.skillStateExtra[k] })]);
+      if (rest[k]) out.push({ key: k, n: rest[k], label: STRINGS.skillStateExtra[k], rule: STRINGS.skillStateDefs[k] });
     }
-    const out = [];
-    parts.forEach((p, i) => {
-      if (i) out.push(" · ");
-      out.push(p);
+    return out;
+  }
+  function stateBar(parts, aria) {
+    const total = parts.reduce((a, p) => a + p.n, 0);
+    if (!total) return null;
+    return h(
+      "span",
+      { class: "statebar" },
+      h("span", { class: "sbar", role: "img", "aria-label": aria }, parts.map((p) => h("span", { class: "sb " + p.key, style: "flex-grow:" + p.n }))),
+      h("span", { class: "legend-mini" }, parts.map((p) => h(
+        "span",
+        { class: "li" },
+        h("span", { class: "sw " + p.key, "aria-hidden": "true" }),
+        h("b", null, fmtCount(p.n)),
+        " ",
+        term(p.label.toLowerCase(), p.rule, { title: p.label })
+      )))
+    );
+  }
+  function hookBars(t, refMs) {
+    const top = Math.max(1, ...t.weeks.map((w) => w.blocked));
+    return h(
+      "span",
+      { class: "weekbars", role: "img", "aria-label": STRINGS.hooksBarsAria(t.weeks.map((w) => fmtUtcDay(Date.parse(w.week), refMs) + " " + w.blocked + (w.partial ? " " + STRINGS.hooksSoFarWord : "")).join(", ")) },
+      t.weeks.map((w) => h(
+        "span",
+        { class: "wk" + (w.partial ? " partial" : "") },
+        h("span", { class: "wn" }, fmtCount(w.blocked)),
+        // Square root, so one bad week does not flatten every other bar.
+        h("span", { class: "wb", style: "height:" + (w.blocked ? Math.max(8, Math.round(100 * Math.sqrt(w.blocked / top))) : 0) + "%" }),
+        h("span", { class: "wd" }, w.partial ? STRINGS.hooksSoFarWord : fmtUtcDay(Date.parse(w.week), refMs))
+      ))
+    );
+  }
+  function hooksTile(doc, tip, refMs) {
+    const t = hookTile(doc, 6);
+    if (!t) return tile({ label: STRINGS.tileHooks, href: hashFor("hooks"), tip, value: STRINGS.noValue, note: STRINGS.tileStoppedNone });
+    const last = t.last;
+    return tile({
+      label: STRINGS.tileHooks,
+      href: hashFor("hooks"),
+      tip,
+      value: last ? fmtCount(last.blocked) : STRINGS.noValue,
+      note: [
+        h("span", { class: "lede" }, last ? STRINGS.hooksLastWeek(fmtUtcDay(Date.parse(last.week), refMs), fmtCount(last.local), fmtCount(last.ci), t.cloud ? fmtCount(last.cloud) : null) : STRINGS.hooksNoFullWeek),
+        hookBars(t, refMs),
+        h("span", { class: "fine" }, STRINGS.hooksSoFar(fmtCount(t.now.blocked), t.days), " ", t.cloud ? null : STRINGS.hooksCloudNot)
+      ]
     });
-    return out.length ? out : STRINGS.skillStatesAll;
+  }
+  function guidanceTile(doc, tip) {
+    const whole2 = wholeGuidance(doc);
+    const g = whole2.pooled.all.gain;
+    const secs = sectionItems(doc, "next");
+    const counts = {};
+    secs.forEach((s) => {
+      counts[s.chip] = (counts[s.chip] || 0) + 1;
+    });
+    const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => ({ key: k, n: counts[k], label: STRINGS.chips[k], rule: STRINGS.chipRules[k] }));
+    const models = whole2.pooled.models.length;
+    return tile({
+      label: STRINGS.tileGuidance,
+      href: hashFor("guidance"),
+      tip,
+      value: g === null || !isFinite(g) ? STRINGS.noValue : [(Math.round(g * 100) >= 0 ? "+" : "−") + Math.abs(Math.round(g * 100)), h("span", { class: "unit" }, STRINGS.ptsUnit)],
+      note: [
+        h("span", { class: "lede" }, chip(whole2.chip, STRINGS.wholeRule), " ", g === null || !isFinite(g) ? STRINGS.guidanceNoRuns : STRINGS.guidanceGainLine(fmtCount(whole2.pooled.all.n), models)),
+        stateBar(parts, STRINGS.sectionsBarAria(secs.length)),
+        h("span", { class: "fine" }, STRINGS.sectionsOf(secs.length))
+      ]
+    });
   }
   function summaryView(doc, ctx) {
     const refMs = parseTime(doc.generated_at);
     const src = STRINGS.srcDoc;
     const tip = srcTip(src, refMs);
-    const tiles = [];
-    const b = blockedThisWeek(doc);
-    tiles.push(tile({
-      label: STRINGS.tileStopped,
-      href: hashFor("hooks"),
-      tip,
-      value: b ? fmtCount(b.local + b.ci) : STRINGS.noValue,
-      note: b ? STRINGS.tileStoppedNote(fmtCount(b.local), fmtCount(b.ci), b.week, b.prev ? fmtCount(b.prev.local) : "", b.prev ? fmtCount(b.prev.ci) : "", b.prev ? b.prev.week : "") : STRINGS.tileStoppedNone
-    }));
+    const priv = !!(ctx && ctx.ext);
+    const tiles = [hooksTile(doc, tip, refMs)];
     const skills = skillItems(doc);
     const tested = skills.filter((s) => s.raw.status === "covered" || s.pooled.all.n > 0);
+    const states = skillStateCounts(doc, tested);
+    const all = Array.isArray(doc.skills) ? doc.skills.filter(Boolean).length : tested.length;
     tiles.push(tile({
-      label: STRINGS.tileHelped,
+      label: STRINGS.tileSkills,
       href: hashFor("skills"),
       tip,
       value: fmtCount(tested.filter((s) => s.chip === "helps").length),
-      note: [STRINGS.tileHelpedNote(tested.length, Array.isArray(doc.skills) ? doc.skills.filter(Boolean).length : tested.length), " ", skillStates(doc, tested)]
+      note: [
+        h("span", { class: "lede" }, STRINGS.skillsHelpLine(tested.length)),
+        stateBar(states, STRINGS.skillsBarAria(all)) || STRINGS.skillStatesAll,
+        h("span", { class: "fine" }, STRINGS.skillsOf(all))
+      ]
     }));
-    const whole2 = wholeGuidance(doc);
-    tiles.push(tile({
-      label: STRINGS.tileWhole,
-      href: hashFor("guidance"),
-      tip,
-      value: chip(whole2.chip, STRINGS.wholeRule),
-      note: STRINGS.wholeAnswer[whole2.chip]
-    }));
-    const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
-    const trending = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => isTrending(doc, a));
-    const names = new Set(trending.map((a) => a.subject + ":" + a.name));
-    tiles.push(tile({
-      label: STRINGS.tileAlerts,
-      value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)),
-      tip,
-      note: STRINGS.tileAlertsNote + "." + (names.size ? STRINGS.tileTrendingNote(names.size) : "")
-    }));
-    const extra = ctx && ctx.ext && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
+    tiles.push(guidanceTile(doc, tip));
+    if (priv) {
+      const alerts = Array.isArray(doc.alerts) ? doc.alerts.filter((a) => a && !isTrending(doc, a)) : [];
+      tiles.push(tile({
+        label: STRINGS.tileAlerts,
+        href: hashFor("needs"),
+        tip,
+        value: fmtCount(alerts.length + (firesFigures(doc) ? 1 : 0)),
+        note: STRINGS.tileAlertsNote
+      }));
+    }
+    const extra = priv && ctx.ext.summaryTiles ? ctx.ext.summaryTiles(ctx) : [];
     return h(
       "div",
       null,
@@ -3028,8 +3164,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       asOfLine(doc, refMs),
       h("div", { class: "tiles" }, tiles, extra),
       hasUtility(doc) ? panel(STRINGS.utilityFleetHeading, utilityView(fleetGroups(doc), refMs)) : null,
-      ctx && ctx.ext && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
-      alertsView(doc, "all")
+      priv && ctx.ext.summaryPanels ? ctx.ext.summaryPanels(ctx, doc) : null,
+      priv ? alertsView(doc, "all") : trendingView(doc, "all")
     );
   }
 
@@ -3121,6 +3257,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       h("h2", null, STRINGS.hooksHeading),
       srcLine(STRINGS.srcDoc, refMs),
       w.from ? h("p", { class: "note" }, STRINGS.hooksNote(w.weeks, day(w.from), day(w.to))) : null,
+      cloudNote(doc),
       typeof policy.max_override_rate === "number" ? h("p", { class: "note" }, STRINGS.hookRule(pct2(policy.max_override_rate), w.weeks || 8)) : null,
       items.length ? rows : h("p", null, STRINGS.hooksNone),
       items.length ? h("p", { class: "note" }, STRINGS.hookRunsNote) : null,
@@ -3129,12 +3266,18 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       hk.private_repos_shown ? h("p", { class: "note" }, STRINGS.hookPrivateFold) : null
     );
   }
+  function cloudNote(doc) {
+    const c = cloudCounted(doc);
+    if (c === null) return null;
+    const from = doc.hooks && typeof doc.hooks.cloud_from === "string" ? fmtUtcDay(Date.parse(doc.hooks.cloud_from + "T00:00:00Z")) : null;
+    return h("p", { class: "note" }, c ? STRINGS.hooksCloudFrom(from) : STRINGS.hooksCloudNotLong);
+  }
   function checkWeeks(it) {
     const by = /* @__PURE__ */ new Map();
     for (const u of it.use) {
-      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, ciUnknown: false, overridden: null });
+      if (!by.has(u.week)) by.set(u.week, { week: u.week, localRuns: 0, localBlocked: 0, ciRuns: 0, ciBlocked: 0, cloudRuns: 0, cloudBlocked: 0, ciUnknown: false, overridden: null });
       const r = by.get(u.week);
-      const s = u.surface === "ci" ? "ci" : "local";
+      const s = u.surface === "ci" || u.surface === "cloud" ? u.surface : "local";
       if (Number.isInteger(u.invocations)) r[s + "Runs"] += u.invocations;
       else r[s + "Unknown"] = true;
       r[s + "Blocked"] += Number(u.blocked) || 0;
@@ -3151,6 +3294,7 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     if (!it) return h("div", null, back, h("p", null, STRINGS.hookNotFound));
     const day = (d) => fmtUtcDay(Date.parse(d + "T00:00:00Z"), refMs);
     const weeks = checkWeeks(it);
+    const cloud = cloudCounted(doc) === true;
     const gloss = Object.prototype.hasOwnProperty.call(HOOK_GLOSSES, it.name) ? HOOK_GLOSSES[it.name] : STRINGS.hookEnforcesMissing;
     const src = link(it.raw.source_url, STRINGS.hookSourceLink);
     const byRepo = /* @__PURE__ */ new Map();
@@ -3189,8 +3333,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       ),
       panel(STRINGS.hookByWeek, weeks.length ? [
         weekChart(
-          weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked, b: w.ciBlocked })),
-          [STRINGS.colLocalBlocked, STRINGS.colCiBlocked],
+          weeks.map((w) => ({ label: day(w.week), short: day(w.week), a: w.localBlocked + (cloud ? w.cloudBlocked : 0), b: w.ciBlocked })),
+          [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked],
           STRINGS.hookByWeek,
           STRINGS.weekTitles.hooks,
           [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]
@@ -3201,8 +3345,11 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
           { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.localBlocked, cell: (w) => fmtCount(w.localBlocked) },
           { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ciRuns === null ? -1 : w.ciRuns, cell: (w) => w.ciRuns === null ? STRINGS.runsNotCounted : fmtCount(w.ciRuns) },
           { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ciBlocked, cell: (w) => fmtCount(w.ciBlocked) },
+          cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloudRuns, cell: (w) => fmtCount(w.cloudRuns) } : null,
+          cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloudBlocked, cell: (w) => fmtCount(w.cloudBlocked) } : null,
           { label: STRINGS.colOverrides, num: true, sort: (w) => w.overridden, cell: (w) => it.measured && w.overridden !== null ? fmtCount(w.overridden) : STRINGS.overridesNotCounted }
-        ], weeks.slice().reverse())
+        ].filter(Boolean), weeks.slice().reverse()),
+        cloudNote(doc)
       ] : null),
       panel(STRINGS.hookByRepo, byRepo.size ? table([
         { label: STRINGS.colRepo, sort: (r) => r.repo, cell: (r) => clean(r.repo) },
@@ -3508,15 +3655,19 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     const weeks = hookWeeks(doc);
     if (!weeks.length) return null;
     const old = weeks.slice().reverse();
+    const cloud = cloudCounted(doc) === true;
     return [
-      weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+      weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked })), [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
       table([
         { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
         { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
         { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.local.blocked, cell: (w) => fmtCount(w.local.blocked) },
         { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ci.runs, cell: (w) => fmtCount(w.ci.runs) },
-        { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) }
-      ], weeks)
+        { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) },
+        cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloud.runs, cell: (w) => fmtCount(w.cloud.runs) } : null,
+        cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloud.blocked, cell: (w) => fmtCount(w.cloud.blocked) } : null
+      ].filter(Boolean), weeks),
+      cloudNote(doc)
     ];
   }
   function skillUseView(doc, refMs) {
@@ -4188,7 +4339,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     GROUPS,
     hookItems,
     hookWeeks,
-    blockedThisWeek,
+    hookTile,
+    cloudCounted,
     mondayOf,
     checkWeeks,
     fixtureQueue,
@@ -4203,7 +4355,8 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     firesFigures,
     firesNode,
     asOfLine,
-    skillStates,
+    skillStateCounts,
+    stateBar,
     term,
     defn,
     closeDef,

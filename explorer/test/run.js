@@ -24,6 +24,7 @@ import { agentMadeRows } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
 import { utilityTotals, periodStart, inPeriod, NO_USE } from '../src/views/utility.js';
 import { textOf, findAll } from '../src/core/h.js';
+import { hashFor } from '../src/core/route.js';
 import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
@@ -207,8 +208,15 @@ await test('a regression alert on a subject the loop decided to keep is not tren
   const rows = attentionRows(fakeDash({}), d);
   eq(rows.length, 2, 'both kept subjects are ordinary alerts');
   ok(rows.every((r) => r.kind.includes(STRINGS.alertRegressionDecided)), JSON.stringify(rows));
-  const t = textOf(renderRoute(d, { name: 'summary', id: null }, {})).replace(/\s+/g, ' ');
+  // Alerts are listed on the private dashboard's summary only.
+  const t = textOf(renderRoute(d, { name: 'summary', id: null }, { ext: {} })).replace(/\s+/g, ' ');
   ok(t.includes(STRINGS.alertRegressionDecided + ': kept-section'), t);
+  ok(!textOf(renderRoute(d, { name: 'summary', id: null }, {})).includes(STRINGS.alertRegressionDecided), 'the public summary lists no alerts');
+  const priv = renderRoute(d, { name: 'summary', id: null }, { ext: {} });
+  const alertTile = findAll(priv, (n) => n.attrs && /\btile\b/.test(n.attrs.class || '') && textOf(n).startsWith(STRINGS.tileAlerts))[0];
+  ok(alertTile, 'the dashboard has an alerts tile');
+  eq(textOf(findAll(alertTile, (n) => n.attrs && /tile-num/.test(n.attrs.class || ''))[0]).trim().split(' ').pop(), String(attentionRows(fakeDash({}), d).length), 'the tile counts the rows Needs you lists');
+  eq(findAll(alertTile, (n) => n.tag === 'a')[0].attrs.href, hashFor('needs'), 'it opens Needs you');
 });
 await test('the allowance and routine health come from their datasets', () => {
   const cap = capUse([{ points: 40.5, account_week_used: 70, pace_room_points: 3, account_reading_at: '2026-11-04T03:30:10Z', week_resets_at: '2026-11-09T17:00:00Z' }],
