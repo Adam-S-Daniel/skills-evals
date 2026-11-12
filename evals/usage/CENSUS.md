@@ -94,9 +94,11 @@ skill listing (the `attachment` entry of type `skill_listing` with
 
 Sessions are counted the way guidance rows are (one per session, in the week
 of its first entry, cross-root deduped, subagents left out). While any local
-session in a skill's 4-week window was `truncated`, `skill_usage.zero_use`
-answers unknown for the local surface, so the eval scope pass pauses nothing
-for zero use until the budget or the descriptions are fixed.
+session in a skill's window was `truncated`, that session is left out of
+`skill_usage.exposure` (only `full` local listings count); a zero needs 500
+full-listing sessions on the surfaces the skill reaches, so a census made
+mostly of cut listings pauses nothing for zero use until the budget or the
+descriptions are fixed.
 
 ## Guidance rows
 

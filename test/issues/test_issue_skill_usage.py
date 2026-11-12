@@ -969,45 +969,86 @@ class CloudUseTests(unittest.TestCase):
         stale = self.doc(generated="2026-08-01T00:00:00Z")
         self.assertIsNone(skill_usage.zero_use(stale, "finding-unknowns", NOW))
 
-    def test_zero_use_is_unknown_when_a_surface_is_not_covered(self):
-        missing = self.doc(cloud_from=None)
-        self.assertIsNone(skill_usage.zero_use(missing, "finding-unknowns", NOW))
-        # Cloud counted from 2026-08-17 + 7 days, after the window start 08-10.
-        recent = self.doc(cloud_from=datetime(2026, 8, 17, tzinfo=timezone.utc))
-        self.assertIsNone(skill_usage.zero_use(recent, "finding-unknowns", NOW))
+    def busy(self, rows=(), local=300, cloud=300, **kw):
+        """A document with `local` full local sessions and `cloud` cloud ones."""
+        return self.doc([skill_usage.listing_row("2026-W36", "full", local),
+                         skill_usage.guidance_row("2026-W36", "full", cloud,
+                                                  skill_usage.SURFACE_CLOUD), *rows], **kw)
 
-    def test_zero_use_true_when_covered_and_unused(self):
-        doc = self.doc([self.cloud_row(name="workflow-path-audit")])
+    def test_zero_use_true_when_exposed_enough_and_unused(self):
+        doc = self.busy([self.cloud_row(name="workflow-path-audit")])
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
 
-    def test_zero_use_false_for_a_cloud_only_use(self):
-        doc = self.doc([self.cloud_row()])
+    def test_zero_use_is_unknown_with_too_few_sessions(self):
+        doc = self.busy(local=100, cloud=399)
+        self.assertEqual(skill_usage.exposure(doc, NOW), 499)
+        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW, min_sessions=499), True)
+
+    def test_any_use_wins_whatever_the_exposure(self):
+        doc = self.busy([self.cloud_row()], local=0, cloud=0)
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
 
-    def test_zero_use_local_surface_ignores_a_missing_cloud_source(self):
-        doc = self.doc(cloud_from=None)
-        self.assertIs(skill_usage.zero_use(
-            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)), True)
+    def test_zero_use_matches_a_prefixed_row_by_basename(self):
+        doc = self.busy([skill_usage.row("2026-W36", "skill",
+                                         "adam-coding-anywhere:finding-unknowns", 1, 1)])
+        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
+        self.assertEqual(skill_usage.weight(doc, "adam:finding-unknowns", NOW), 1)
+        self.assertEqual(skill_usage.weight(doc, "workflow-path-audit", NOW), 0)
 
+    def test_the_other_row_is_never_a_skill(self):
+        doc = self.busy([skill_usage.row("2026-W36", "skill", "other", 9, 1)])
+        self.assertEqual(skill_usage.weight(doc, "other", NOW), 0)
+        self.assertEqual(skill_usage.weight(doc, "finding-unknowns", NOW), 0)
 
-    def test_zero_use_is_unknown_while_a_local_listing_was_cut(self):
-        """#668: a skill listed by name only can rarely trigger, so a zero in a
-        window holding a cut listing says nothing about its value."""
-        cut = skill_usage.listing_row("2026-W35", "truncated", 1)
-        doc = self.doc([self.cloud_row(name="workflow-path-audit"), cut])
-        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
-        self.assertIsNone(skill_usage.zero_use(
-            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)))
-        # Cloud-only skills are not judged by the local listing.
-        self.assertIs(skill_usage.zero_use(
-            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_CLOUD,)), True)
+    def test_skill_basename(self):
+        self.assertEqual(skill_usage.skill_basename("adam-coding-anywhere:debug-github-workflows"),
+                         "debug-github-workflows")
+        self.assertEqual(skill_usage.skill_basename("a:b:c"), "c")
+        self.assertEqual(skill_usage.skill_basename("plain"), "plain")
 
-    def test_a_cut_listing_outside_the_window_or_a_full_one_does_not_block(self):
-        old = skill_usage.listing_row("2026-W30", "truncated", 4)
-        full = skill_usage.listing_row("2026-W36", "full", 9)
-        doc = self.doc([self.cloud_row(name="workflow-path-audit"), old, full])
-        self.assertEqual(skill_usage.truncated_listings(doc, NOW), 0)
+    def test_zero_use_is_unknown_without_a_fresh_document(self):
+        self.assertIsNone(skill_usage.zero_use(None, "finding-unknowns", NOW))
+        self.assertIsNone(skill_usage.exposure(None, NOW))
+        stale = self.busy(generated="2026-08-01T00:00:00Z")
+        self.assertIsNone(skill_usage.zero_use(stale, "finding-unknowns", NOW))
+        self.assertIsNone(skill_usage.exposure(stale, NOW))
+
+    def test_truncated_and_unknown_listings_are_not_exposure(self):
+        """#668: a cut listing is excluded, not a veto."""
+        doc = self.busy([skill_usage.listing_row("2026-W35", "truncated", 900),
+                         skill_usage.listing_row("2026-W35", "unknown", 900)],
+                        local=500, cloud=0)
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW),
+                         {"local": 500, "cloud": 0})
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
+
+    def test_guidance_check_rows_are_never_exposure(self):
+        doc = self.busy([skill_usage.guidance_check_row("2026-W36", "match", 800)],
+                        local=0, cloud=10)
+        self.assertEqual(skill_usage.exposure(doc, NOW), 10)
+
+    def test_cloud_counts_every_guidance_state_and_only_from_counted_from(self):
+        rows = [skill_usage.guidance_row("2026-W36", "stub-only", 5, skill_usage.SURFACE_CLOUD),
+                skill_usage.guidance_row("2026-W36", "invalid", 7, skill_usage.SURFACE_CLOUD),
+                # Cloud counts from 2026-07-27: W30 (07-20) is before it.
+                skill_usage.guidance_row("2026-W30", "full", 100, skill_usage.SURFACE_CLOUD),
+                skill_usage.guidance_row("2026-W31", "full", 11, skill_usage.SURFACE_CLOUD),
+                skill_usage.guidance_row("2026-W36", "full", 50)]  # a local guidance row
+        doc = self.doc(rows)
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW), {"local": 0, "cloud": 23})
+
+    def test_a_surface_without_counted_from_contributes_zero(self):
+        doc = self.busy(cloud_from=None)
+        self.assertEqual(skill_usage.exposure_by_surface(doc, NOW), {"local": 300, "cloud": 0})
+        self.assertEqual(skill_usage.exposure(doc, NOW, (skill_usage.SURFACE_LOCAL,)), 300)
+
+    def test_exposure_window_is_eight_weeks(self):
+        # NOW is in W36; the eight weeks run W29 to W36.
+        rows = [skill_usage.listing_row("2026-W28", "full", 1000),
+                skill_usage.listing_row("2026-W29", "full", 4)]
+        self.assertEqual(skill_usage.exposure(self.doc(rows), NOW,
+                                              (skill_usage.SURFACE_LOCAL,)), 4)
 
 
 class ListingRowTests(unittest.TestCase):

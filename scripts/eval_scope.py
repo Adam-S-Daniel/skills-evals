@@ -24,9 +24,10 @@ Rules, each deterministic (thresholds are the constants below):
             The gate keeps a paused fixture's cells as parked `paused` cells
             (decided keep and no-benefit cells still count), so the guard is
             not needed for safety; it keeps a kept subject's fixtures measured.
-  zero-use  a skill with no use in the last ZERO_USE_WEEKS weeks on the
+  zero-use  a skill with no use over the census's CENSUS_WEEKS weeks, in at
+            least ZERO_USE_MIN_SESSIONS sessions that listed it in full on the
             surfaces it reaches (`skill_usage.zero_use`; unknown means do
-            nothing). All of its scheduled fixtures are paused. A skill in
+            nothing; a truncated listing is not a full-listing session). All of its scheduled fixtures are paused. A skill in
             evals/usage-unknown.yml has unknown use: never paused for zero
             use, and an earlier zero-use pause of it resumes.
   resume    a fixture this pass paused earlier returns when its content digest
@@ -77,7 +78,10 @@ FLOOR_SHARE = 0.10
 #: no-benefit cells still count), so this is not needed for safety; it keeps a
 #: kept subject's fixtures measured.
 KEEP_GUARD = 0.5
-ZERO_USE_WEEKS = 8
+#: Single source: harness/skill_usage.py. A zero needs this many full-listing
+#: sessions on the surfaces the skill reaches over the census's window.
+ZERO_USE_MIN_SESSIONS = skill_usage.ZERO_USE_MIN_SESSIONS
+CENSUS_WEEKS = skill_usage.CENSUS_WEEKS
 LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
 RULES = ("ceiling", "floor", "zero-use")
 AUTO_PREFIX = "Auto scope ("
@@ -394,11 +398,11 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                       f"{unknown_use[subject]})"})
                 resumed.add(path)
                 continue
-            used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
+            used = skill_usage.zero_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
             if used is False:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
-                               "why": f"the skill was used in the last {ZERO_USE_WEEKS} weeks"})
+                               "why": f"the skill was used in the last {CENSUS_WEEKS} weeks"})
                 resumed.add(path)
 
     pause = []
@@ -414,11 +418,12 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
         if since is not None and not protected(explorer, kind, subject):
             found = per_model(kind, fixture_runs(explorer, kind, subject, path, since), models)
         if found is None and kind == "skill" and subject not in unknown_use:
-            used = skill_usage.zero_use(usage_doc, subject, now, weeks=ZERO_USE_WEEKS,
+            used = skill_usage.zero_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
                                         surfaces=_surfaces(subject, plugins))
             if used is True:
-                found = ("zero-use", f"no recorded use of the skill in the last {ZERO_USE_WEEKS} "
-                         "weeks on the surfaces it reaches; it returns when the skill is used again")
+                found = ("zero-use", f"no recorded use of the skill in {ZERO_USE_MIN_SESSIONS} or more "
+                         f"full-listing sessions over the last {CENSUS_WEEKS} weeks on the "
+                         "surfaces it reaches; it returns when the skill is used again")
         if found is None:
             continue
         pause.append({"path": path, "kind": kind, "subject": subject, "rule": found[0],

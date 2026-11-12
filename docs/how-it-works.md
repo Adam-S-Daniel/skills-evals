@@ -1342,15 +1342,20 @@ The rules, in order:
   paused fixture's cells as parked `paused` cells (below), and a decided
   `keep` or `no-benefit` cell still counts, so the guard is not needed for
   safety; it keeps a kept subject's fixtures measured.
-- **Zero use.** A skill with no use in the last 8 weeks
-  (`skill_usage.zero_use`, local surface only for the two local-only plugins
-  in adam-agentskills' `plugin_layout.json`, both surfaces otherwise; an
-  unknown answer does nothing) has all its scheduled fixtures paused. Use is
-  unknown while any local session in the window had its skill listing cut by
-  Claude Code's listing budget (`listing` rows in the census,
-  [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)). A skill
-  listed in `evals/usage-unknown.yml` has unknown use whatever the census says:
-  it is never paused for zero use, and an earlier zero-use pause of it resumes.
+- **Zero use.** A skill with no use over the census's 8 weeks, in at least
+  500 sessions that listed it in full on the surfaces it reaches
+  (`skill_usage.zero_use`; both surfaces, or local only for the two local-only
+  plugins in adam-agentskills' `plugin_layout.json`; an unknown answer does
+  nothing), has all its scheduled fixtures paused. Exposure
+  (`skill_usage.exposure`) is the count of those sessions: local sessions
+  whose skill listing was `full` (a `truncated` or `unknown` listing is left
+  out, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)) plus
+  cloud sessions (cloud writes no listing record, so each cloud `guidance`
+  row session counts as a full listing), each surface only for the weeks from
+  its `counted_from`. Any use wins whatever the exposure. A skill listed in
+  `evals/usage-unknown.yml` has unknown use whatever the census says: it is
+  never paused for zero use, and an earlier zero-use pause of it resumes. The
+  improvement lane skips a zero-use skill the same way.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its

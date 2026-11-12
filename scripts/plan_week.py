@@ -316,7 +316,12 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      is `retire` or `retire-pending`, or a `retire-skill/<skill>` pull
      request is open in adam-agentskills. An owned skill gets no
      `needs-fixtures` or `needs-harder-fixtures` item either.
-  5. not paused (rule C, `pause`): no open improve pull request
+  5. not a zero-use skill (`zero_use_skills`, 2026-11-12): a skill with no
+     use over the census's 8 weeks in at least 500 full-listing sessions on
+     the surfaces it reaches (`skill_usage.zero_use` True) is not improved;
+     a skill in evals/usage-unknown.yml is never excluded, and an unknown
+     answer (stale or missing census, too few sessions) stays eligible.
+  6. not paused (rule C, `pause`): no open improve pull request
      (`eval-improve/<skill>` in adam-agentskills), no attempt in flight, no
      open issue or pull request labeled `on-hold` whose title names the
      skill, no cooldown. Outcomes come from scripts/improve_outcomes.py.
@@ -2502,6 +2507,8 @@ def improve_items(ctx: dict, now: datetime) -> tuple:
             reasons.append("no failing check to target")
         if owner:
             reasons.append(owner)
+        if name in (ctx.get("zero_use_skills") or ()):
+            reasons.append("zero use: no recorded use in the census window")
         if not reasons and skill["pause"]:
             reasons.append(skill["pause"])
         status[name] = {"eligible": not reasons, "reasons": reasons, "headroom": headroom,
@@ -4012,6 +4019,27 @@ def skill_weights(tree: Path, skills: list, now: datetime,
     return out
 
 
+def zero_use_skills(tree: Path, skills: list, now: datetime, registries: dict,
+                    evals_dir: Path) -> frozenset:
+    """The skills whose `skill_usage.zero_use` is True on the surfaces they
+    reach (surfaces from adam-agentskills' scripts/plugin_layout.json, as
+    eval_scope reads them). A skill in evals/usage-unknown.yml is never in
+    it; unknown (None) is not in it either, so it stays improvable."""
+    import eval_scope  # noqa: PLC0415
+    import skill_usage  # noqa: PLC0415
+    try:
+        doc = skill_usage.load(tree / "usage" / "weekly-local.json")
+        exempt = eval_scope.usage_unknown(evals_dir.parent)
+        root = (registries.get("adam-agentskills") or {}).get("path")
+        layout = Path(root) / "scripts" / "plugin_layout.json" if root else None
+        plugins = eval_scope._skill_plugins(layout if layout and layout.is_file() else None)
+    except (OSError, ValueError, eval_scope.ScopeError):
+        return frozenset()
+    return frozenset(
+        skill for skill in skills if skill not in exempt
+        and skill_usage.zero_use(doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is True)
+
+
 def guidance_use(tree: Path, now: datetime) -> float | None:
     """The expected uses of every guidance section over USE_WINDOW_DAYS: all
     of it loads in every session, so the census's transcript sessions
@@ -4221,6 +4249,8 @@ def gather(args, now: datetime) -> dict:
             # Out of scope (`scope_holds`): sections whose row is skipped.
             "guidance_skipped": guidance_skipped(args.guidance),
             "guidance_use": guidance_use(args.results_tree, now),
+            "zero_use_skills": zero_use_skills(args.results_tree, sorted(skills), now,
+                                               registries, evals_dir),
             "triggers": triggers,
             "trims": trim_busy(trim_contexts(registries), records, prs),
             "skill_weights": skill_weights(args.results_tree, sorted(set(skills) | set(triggers)),

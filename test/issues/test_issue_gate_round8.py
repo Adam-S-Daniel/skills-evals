@@ -17,12 +17,13 @@ no clock.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -149,6 +150,62 @@ class ImproveNeedsFixturesOwnedByRetirementTests(unittest.TestCase):
         fires, work, status, *_ = self.run_ctx("insufficient", removal={"zz-demo"})
         self.assertEqual((fires, work), ([], []))
         self.assertIn("owned by retirement (open removal PR)", status["zz-demo"]["reasons"])
+
+
+class ImproveSkipsAZeroUseSkillTests(unittest.TestCase):
+    """2026-11-12: a skill whose `zero_use` is True is not improved."""
+
+    def run_ctx(self, zero):
+        ctx = {"skills": {"zz-demo": skill()}, "skill_weights": {"zz-demo": 0},
+               "removal_prs": set(), "gate_verdicts": {"zz-demo": "insufficient"},
+               "private_skills": [], "improve_charge": 0.05, "zero_use_skills": zero}
+        return plan_week.improve_items(ctx, NOW)
+
+    def test_a_zero_use_skill_is_ineligible(self):
+        fires, _, status, *_ = self.run_ctx(frozenset({"zz-demo"}))
+        self.assertEqual(fires, [])
+        self.assertFalse(status["zz-demo"]["eligible"])
+        self.assertTrue(any("zero use" in r for r in status["zz-demo"]["reasons"]))
+
+    def test_the_control_without_it_is_eligible(self):
+        fires, _, status, *_ = self.run_ctx(frozenset())
+        self.assertEqual([f["skill"] for f in fires], ["zz-demo"])
+        self.assertTrue(status["zz-demo"]["eligible"])
+
+
+class ZeroUseSkillsTests(unittest.TestCase):
+    """`plan_week.zero_use_skills`: True only, and never an exempt skill."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="zero-use-skills-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / "evals").mkdir()
+        (self.tmp / "usage").mkdir()
+
+    def census(self, sessions):
+        import skill_usage
+        floor = NOW - timedelta(weeks=20)
+        label = "2026-W45"
+        rows = [skill_usage.listing_row(label, "full", sessions),
+                skill_usage.guidance_row(label, "full", sessions, skill_usage.SURFACE_CLOUD)]
+        doc = skill_usage.document(rows, NOW, floor, sessions_scanned=1)
+        skill_usage.add_rows(doc, [], skill_usage.digest_source(
+            floor, NOW, 0, surface=skill_usage.SURFACE_CLOUD))
+        (self.tmp / "usage" / "weekly-local.json").write_text(json.dumps(doc), encoding="utf-8")
+
+    def test_only_an_unexempt_zero_use_skill_is_listed(self):
+        self.census(300)
+        (self.tmp / "evals" / "usage-unknown.yml").write_text(
+            'skills:\n  - skill: zz-exempt\n    reason: "x"\n', encoding="utf-8")
+        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo", "zz-exempt"], NOW, {},
+                                                   self.tmp / "evals"), frozenset({"zz-demo"}))
+
+    def test_too_few_sessions_or_no_census_is_unknown_so_eligible(self):
+        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo"], NOW, {},
+                                                   self.tmp / "evals"), frozenset())
+        self.census(10)
+        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo"], NOW, {},
+                                                   self.tmp / "evals"), frozenset())
 
 
 class LanesSkipAnOpenRemovalPrTests(unittest.TestCase):

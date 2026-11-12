@@ -79,7 +79,10 @@ name that week; `sessions_scanned` is how many transcript files were read
 inside the window. Neither carries an id.
 
 UNKNOWN IS NOT ZERO. `weight()` returns None when there is no census or it is
-stale, and 0 only when a fresh census saw no invocation of the skill. A
+stale, and 0 only when a fresh census saw no invocation of the skill. A skill
+name is matched by its BASENAME (`skill_basename`): a census row may carry a
+plugin prefix (`adam-coding-anywhere:debug-github-workflows`) and the registry
+lists the bare name. A
 planner that read a missing census as "nobody uses anything" would rank every
 skill last on the strength of a machine that did not run.
 
@@ -360,6 +363,17 @@ def is_fresh(doc, now: datetime, max_age_days: int = 14) -> bool:
     return now - generated <= timedelta(days=max_age_days)
 
 
+#: The census's catch-all skill name: never a real skill.
+OTHER_NAME = "other"
+
+
+def skill_basename(name: str) -> str:
+    """`name` without any plugin prefix: everything up to the last `:` goes,
+    so `adam-coding-anywhere:debug-github-workflows` is
+    `debug-github-workflows` and a bare name is unchanged."""
+    return name.rsplit(":", 1)[-1]
+
+
 def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     """Invocations of `skill` over the `weeks` ISO weeks ending with `now`'s,
     summed across every surface and repo.
@@ -376,12 +390,17 @@ def weight(doc, skill: str, now: datetime, weeks: int = 4) -> int | None:
     if doc is None or not is_fresh(doc, now) or not isinstance(doc.get("rows"), list):
         return None
     mondays = {week_monday(label) for label in window_weeks(now, weeks)}
+    wanted = skill_basename(skill)
+    if wanted == OTHER_NAME:
+        return 0
     return sum(entry["invocations"] for entry in doc["rows"]
                if isinstance(entry, dict)
                and (entry.get("kind") == "skill"
                     or (entry.get("kind") == DIGEST_KIND
                         and entry.get("surface") == SURFACE_CLOUD))
-               and entry.get("name") == skill and entry.get("week") in mondays
+               and isinstance(entry.get("name"), str)
+               and skill_basename(entry["name"]) == wanted
+               and entry.get("week") in mondays
                and _count(entry.get("invocations")))
 
 
@@ -414,36 +433,89 @@ def counted_from(doc, surface: str) -> datetime | None:
     return None
 
 
-def zero_use(doc, skill: str, now: datetime, weeks: int = 4,
-             surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD)) -> bool | None:
-    """True when `skill` had no use on any of `surfaces` over the `weeks`
-    window ending with `now`'s week; False when it had one; None when that
-    cannot be known.
+#: Sessions on the surfaces a skill reaches in which it was listed, with no
+#: use, before a zero reads as evidence rather than a quiet fortnight. The
+#: single source: scripts/eval_scope.py and the removal policy import it.
+ZERO_USE_MIN_SESSIONS = 500
+#: The census's window, in ISO weeks.
+CENSUS_WEEKS = 8
+
+
+def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
+                        weeks: int = CENSUS_WEEKS) -> dict | None:
+    """{surface: sessions} in which a skill reaching that surface was listed
+    in full, over the `weeks` ISO weeks ending with `now`'s week. A surface
+    counts only the weeks whose Monday is on or after its `counted_from`; a
+    surface with no `counted_from` contributes 0.
+
+    Local: the `listing` rows named `full`. A `truncated` listing cut some
+    descriptions and an `unknown` one has no record, so neither counts (they
+    are left out, not a veto). Cloud: the `guidance` rows with surface cloud,
+    in every state. Cloud sessions write no listing record, so each cloud
+    session is COUNTED AS A FULL LISTING: the skill list is delivered whole
+    to a cloud session. `guidance-check` rows are a second view of the same
+    sessions and are never counted.
+
+    None when `doc` is None or stale (unknown, never 0).
+    """
+    if doc is None or not is_fresh(doc, now) or not isinstance(doc.get("rows"), list):
+        return None
+    mondays = {week_monday(label) for label in window_weeks(now, weeks)}
+    out = {}
+    for surface in surfaces:
+        counted = counted_from(doc, surface)
+        total = 0
+        if counted is not None:
+            usable = {m for m in mondays
+                      if datetime.fromisoformat(m).replace(tzinfo=timezone.utc) >= counted}
+            for entry in doc["rows"]:
+                if (not isinstance(entry, dict) or entry.get("surface") != surface
+                        or entry.get("week") not in usable
+                        or not _count(entry.get("sessions"))):
+                    continue
+                if surface == SURFACE_LOCAL:
+                    hit = entry.get("kind") == "listing" and entry.get("name") == "full"
+                else:
+                    hit = entry.get("kind") == "guidance"
+                if hit:
+                    total += entry["sessions"]
+        out[surface] = total
+    return out
+
+
+def exposure(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
+             weeks: int = CENSUS_WEEKS) -> int | None:
+    """The sum of `exposure_by_surface`; None when it is unknown."""
+    by_surface = exposure_by_surface(doc, now, surfaces, weeks)
+    return None if by_surface is None else sum(by_surface.values())
+
+
+def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
+             surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
+             min_sessions: int = ZERO_USE_MIN_SESSIONS) -> bool | None:
+    """True when `skill` had no use over the `weeks` ISO weeks ending with
+    `now`'s AND the surfaces it reaches listed it in full in at least
+    `min_sessions` sessions (`exposure`); False when it had any use (any use
+    wins, whatever the exposure); None when that cannot be known.
 
     This is the contract the eval-scope automation uses to stop evals on
-    skills nobody uses. Unknown (None) when `doc` is None or stale, or when
-    any surface in `surfaces` is not counted back to the window's start
-    (`counted_from` is missing or later than the Monday of its earliest week):
-    a surface that was not yet counting must not read as zero. Pass only the
-    surfaces the skill actually reaches, for example `(SURFACE_LOCAL,)` for a
-    plugin delivered only to the owner's machines. Cloud coverage means
-    sessions that can push to the private usage store: records seen, never
-    complete. Also unknown when any local session in the window had its skill
-    listing cut (`truncated_listings`): a skill listed by name only can rarely
-    trigger, so its zero says nothing about its value (#668).
+    skills nobody uses. UNKNOWN IS NOT ZERO: None when `doc` is None or stale,
+    and None when there was no use but too few sessions to say so (a skill
+    nobody could have used has no zero). Exposure replaces the older
+    truncated-listing and per-surface coverage vetoes: a truncated listing is
+    not counted, and a surface counted for fewer weeks has fewer sessions.
+    Pass only the surfaces the skill actually reaches, for example
+    `(SURFACE_LOCAL,)` for a plugin delivered only to the owner's machines.
     """
     if doc is None or not is_fresh(doc, now):
         return None
-    earliest = week_monday(window_weeks(now, weeks)[-1])
-    start = datetime.fromisoformat(earliest).replace(tzinfo=timezone.utc)
-    for surface in surfaces:
-        counted = counted_from(doc, surface)
-        if counted is None or counted > start:
-            return None
-    if SURFACE_LOCAL in surfaces and truncated_listings(doc, now, weeks):
-        return None
     used = weight(doc, skill, now, weeks)
-    return None if used is None else used == 0
+    if used is None:
+        return None
+    if used > 0:
+        return False
+    seen = exposure(doc, now, surfaces, weeks)
+    return True if seen is not None and seen >= min_sessions else None
 
 
 def session_rate(doc, now: datetime, days: int = 28) -> float | None:
