@@ -37,7 +37,7 @@ export function registerLoaders(dash) {
           .map((method) => call('pull_request_read', { ...q, method }).then(unwrap, () => null)));
         return {
           repo, number: p.number, title: p.title,
-          author: (p.user && p.user.login) || '', draft: !!p.draft,
+          author: (p.user && p.user.login) || '', author_type: (p.user && p.user.type) || '', draft: !!p.draft,
           labels: (p.labels || []).map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean).join(', '),
           created_at: p.created_at, updated_at: p.updated_at, url: p.html_url,
           branch: (pr && pr.head && pr.head.ref) || '', session, run_url,

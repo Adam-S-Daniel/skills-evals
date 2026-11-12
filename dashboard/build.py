@@ -48,6 +48,20 @@ def parse(ts):
     return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
 
+def day_text(d):
+    """A date as shown on the page: "Oct 19" (no ISO dates in visible text)."""
+    if isinstance(d, str):
+        d = datetime.fromisoformat(d[:10]).date()
+    return f"{d:%b} {d.day}"
+
+
+def week_text(d):
+    """A week key as "week of Mon Nov 2"."""
+    if isinstance(d, str):
+        d = datetime.fromisoformat(d[:10]).date()
+    return f"week of {d:%a} {d:%b} {d.day}"
+
+
 def load(path, default=None):
     if not os.path.exists(path):
         if default is None:
@@ -457,20 +471,6 @@ COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
 WEEK = timedelta(days=7)
 DEFAULT_POINTS_PER_USD = 0.07
 BAR_DUE = "2026-12-15"
-
-
-def day_text(d):
-    """A date as shown on the page: "Oct 19" (no ISO dates in visible text)."""
-    if isinstance(d, str):
-        d = datetime.fromisoformat(d[:10]).date()
-    return f"{d:%b} {d.day}"
-
-
-def week_text(d):
-    """A week key as "week of Mon Nov 2"."""
-    if isinstance(d, str):
-        d = datetime.fromisoformat(d[:10]).date()
-    return f"week of {d:%a} {d:%b} {d.day}"
 BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
 BAR_MIN_CHANGES = 3
 BAR_MAX_BUILD_POINTS = 10

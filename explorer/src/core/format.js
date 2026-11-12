@@ -109,9 +109,33 @@ export function fmtResetLabel(ms) {
 /* "06:53" on the UTC clock as an Eastern clock time ("1:53 AM ET"), using the
    offset in force on the reference day (daylight saving moves it). */
 export function fmtClockUtcToEt(hour, minute, refMs) {
+  return utcClockToEt(hour, minute, refMs).text;
+}
+/* The same, with `shift`: -1 when the Eastern time falls on the day before the
+   UTC one (02:00 UTC is 9:00 PM ET the evening before), else 0. */
+export function utcClockToEt(hour, minute, refMs) {
   const base = isFinite(refMs) ? new Date(refMs) : new Date(0);
-  const at = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute));
-  return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(at)) + ' ' + STRINGS.et;
+  const at = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute)));
+  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o));
+  const etDay = f({ day: 'numeric' }).format(at);
+  const utcDay = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: 'numeric' }).format(at);
+  return { text: f({ hour: 'numeric', minute: '2-digit' }).format(at) + ' ' + STRINGS.et, shift: etDay === utcDay ? 0 : -1 };
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* "Oct 30 at 16:57 UTC" as the moment it names, in US Eastern: the date and the
+   clock, each in the offset in force then (daylight saving moves it). The year is
+   the reference's, or the one before when that day is still ahead of the reference.
+   Null when the month is not one. */
+export function utcMomentToEt(mon, day, hour, minute, refMs) {
+  const idx = MONTH_ABBR.indexOf(String(mon).charAt(0).toUpperCase() + String(mon).slice(1, 3).toLowerCase());
+  if (idx < 0) return null;
+  const year = isFinite(refMs) ? new Date(refMs).getUTCFullYear() : 2001;
+  let at = Date.UTC(year, idx, Number(day), Number(hour), Number(minute));
+  if (isFinite(refMs) && at > refMs) at = Date.UTC(year - 1, idx, Number(day), Number(hour), Number(minute));
+  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o)).format(new Date(at));
+  return { date: f({ month: 'short', day: 'numeric' }), clock: f({ hour: 'numeric', minute: '2-digit' }) + ' ' + STRINGS.et,
+    named: MONTH_ABBR[idx] + ' ' + Number(day) };
 }
 
 /* A UTC calendar day (a census window edge, which is a UTC Monday), shown
