@@ -99,7 +99,7 @@ prompt that tells it to.
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Skip `eval_allowance` when
+4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `cleanup`, `decisions`, `gate`, `roster`, `loop_grid`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
    only its timestamps and pace moved.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's
    `url`, `asset: true` and `file_path`, one file per call. Then run one
@@ -107,10 +107,9 @@ prompt that tells it to.
    `if_version`, that sets `source: {kind: "file", url: "/_blob/<id>", name}` and
    `updated: {at, by}`.
 6. **Page changes.** Build the page in `explorer/` (`npm ci && npm run build`).
-   Smoke-test first. Put d3@7.9.0's `dist/d3.js` in a work dir
-   (`npm pack d3@7.9.0`; the harness still loads it, though the page draws its
-   charts by hand), then run
-   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`.
+   Smoke-test first with
+   `python3 dashboard/smoke/mk.py dashboard/page/index.html <ds> <work> && node dashboard/smoke/run.js <work>`
+   (`<work>` is any empty directory).
    It exits non-zero on any page error. Then write the page to ArtifactData
    `files/index.html` (field `text`) with `if_version`.
 7. **Check the merge relays.** For each "Dashboard refresh: <repo> merges" task,
@@ -147,8 +146,9 @@ table's "By week" view carries a "Red in CI" column.
 
 With `--spend <file>`, `build.py` also writes the weeks' totals in the shape of
 `spend/weekly.json` (`spend_file` in `explorer/schema.json`): per week `eval_runs`,
-`plan_meter_points`, `api_usd` and `thread_spend_usd`, with `cost_per_verdict` on
-the latest week, at full precision, and `plan` when `site.json` names one. No
+`plan_meter_points`, `run_usd`, `api_usd` and `thread_spend_usd`, and one `total`
+(`since`, `usd`, `run_usd`, `thread_spend_usd`, `api_usd`, `verdicts`, `cost_per_verdict`:
+the three weekly dollar columns sum to it), at full precision, and `plan` when `site.json` names one. No
 session or thread row goes in. At `spend/weekly.json` on the results branch,
 `scripts/explorer_public.py` copies it into the public document's `spend` (when
 `evals/public-export.yml` sets `include_spend`), and the public Impact group shows
@@ -203,7 +203,7 @@ source holds them:
 2. Create a Dashboard artifact. Write `page/index.html` to `files/index.html`,
    and each entry of `page/datasets.json` to `datasets/<id>`, with your owner and
    repo names in the live queries.
-3. Run one refresh by hand, then schedule `tasks/refresh.md` every 2 hours.
+3. Run one refresh by hand, then schedule `tasks/refresh.md` every 12 hours (7:29 AM and 7:29 PM ET; `REFRESH_INTERVAL_HOURS` in `build.py`).
    Add `tasks/merge-relay.md` as a GitHub-triggered task on each repo whose
    merges should refresh the page.
 4. The page's words are in `explorer/src/core/strings.js` (shared) and
