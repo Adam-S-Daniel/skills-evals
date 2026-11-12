@@ -1065,8 +1065,8 @@ test('the fixture findings name what they are and link each one, and say who cle
   const t = flat(page);
   ok(t.includes('2 fixtures were added but never ran. The loop files an issue for each one and closes it when the finding clears.'), t);
   ok(!t.includes('need a look') && !t.includes('high severity'), 'the old wording is gone');
-  const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
-  ok(hrefs.includes('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.includes('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
+  const hrefs = new Set(P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href));
+  ok(hrefs.has('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.has('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
 });
 test('lessons name who acts on each proposal, list open ones by times seen and fold closed ones', () => {
   for (const kind of ['skill-edit', 'guidance-edit', 'fixture-candidate']) ok(P.STRINGS.lessonWaiting[kind].length > 10, kind);
