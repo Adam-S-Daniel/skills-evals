@@ -348,6 +348,15 @@ await test('C3: the allowance label names its basis and reset, and a bar over th
   const none = needs(ALLOW({ measure: 'eval_spend_7d', points: 90, pace_room_points: 0 }));
   eq(full(none), 1, 'no room and over the cap is red');
 });
+await test('C3: the guard\'s own room_points is used when present, and rows without it still re-derive room', () => {
+  const rows = (extra) => [Object.assign({ points: 54.4, pace_room_points: 14.1, account_reading_at: '2026-11-12T17:00:00Z', week_resets_at: '2026-11-16T17:00:00Z' }, extra)];
+  const budget = BUDGET.data;
+  eq(capUse(rows({ room_points: 3.5 }), budget).room, 3.5, 'room_points wins');
+  eq(capUse(rows({ room_points: 0 }), budget).room, 0, 'zero room is zero, not the pace figure');
+  eq(capUse(rows({}), budget).room, 14.1, 'old rows keep the derived room');
+  const t = textOf(needs(ALLOW({ room_points: 0, points: 90 }))).replace(/\s+/g, ' ');
+  ok(t.includes('Room for new tests now: about 0.0 points'), t);
+});
 await test('C4: each panel prints its own block time, never one document time, and the page says the range', () => {
   const d = doc({ generated_at: '2026-11-12T16:54:13Z', activity: { fetched_at: '2026-11-12T17:45:57Z', since: '2026-10-29T17:00:00Z', repos: ['Adam-S-Daniel/skills-evals'],
     runs: [{ repo: 'Adam-S-Daniel/skills-evals', run_id: 5, workflow: 'CI', title: 'CI', event: 'push', state: 'completed', conclusion: 'success', created_at: '2026-11-12T17:36:00Z', updated_at: '2026-11-12T17:40:00Z', url: 'https://github.com/Adam-S-Daniel/skills-evals/actions/runs/5' }],

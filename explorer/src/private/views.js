@@ -54,7 +54,8 @@ export function capUse(allowance, budget) {
   const cap = (Number(b.weekly_cap) || 0) * 100;
   const left = Math.max(0, cap - (Number(a.points) || 0));
   return { spent: Number(a.points) || 0, cap, stop: (Number(b.stop_when_account_above) || 0) * 100, accountUsed: a.account_week_used,
-    room: Math.max(left, Number(a.pace_room_points) || 0), reservation: ((Number(b.per_run_cap) || 0) + (Number(b.per_run_overrun) || 0)) * 100,
+    /* The guard's own room when the row carries it, else re-derived. */
+    room: typeof a.room_points === 'number' ? Math.max(0, a.room_points) : Math.max(left, Number(a.pace_room_points) || 0), reservation: ((Number(b.per_run_cap) || 0) + (Number(b.per_run_overrun) || 0)) * 100,
     readingAt: a.account_reading_at, resetsAt: a.week_resets_at, resetLabel: resetLabel(a.week_resets_at),
     /* eval_spend_7d is a rolling window; anything naming the reset is counted since it. */
     basis: a.measure === 'eval_spend_7d' ? 'rolling' : /since_reset|reset/.test(String(a.measure || '')) ? 'reset' : 'plain' };
