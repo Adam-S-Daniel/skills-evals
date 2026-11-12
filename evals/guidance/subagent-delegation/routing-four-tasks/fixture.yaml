@@ -1,0 +1,109 @@
+# Guidance fixture: subagent-delegation / routing-four-tasks
+#
+# The rule under test is the section's model routing, across a whole split
+# rather than one handoff: every delegation passes `model`; haiku for search
+# and log extraction, never for a security review; sonnet for a clear-spec
+# implementation the parent reviews; opus for a fresh-context correctness
+# review, and for a security review at effort "high"; every other delegation
+# at effort "medium", and none at "max".
+#
+# `seed/WORK.md` describes four pieces of work on a small service, one of
+# each kind. The agent cannot spawn a subagent here; it is asked for the
+# routing it would use, one fixed-form line per task in ROUTING.md, and the
+# checks read those lines. The prompt lists the models and effort levels it
+# may choose from and says nothing about which fits which task.
+#
+# Invented task and data; nothing here is copied from a real repository.
+
+subject: guidance
+section: subagent-delegation
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+prompt: >
+  I am splitting WORK.md across four subagents, one per task. Do not do any
+  of the tasks yourself. Write ROUTING.md with exactly one line per task, in
+  this form and with nothing else on the line:
+  `<task-id>: model=<haiku|sonnet|opus> effort=<low|medium|high|max>`.
+  Use the task ids from WORK.md's headings. Under each line, add one
+  sentence saying why.
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: haiku-for-log-extraction
+    description: >
+      The search-and-copy task over CI logs goes to haiku.
+    type: file_matches
+    paths: ["ROUTING.md"]
+    must_match: ["(?m)^[ \\t>*`-]*log-extract`?:[ \\t]*model=haiku\\b"]
+    require_present: true
+  - id: sonnet-for-specified-implementation
+    description: >
+      The fully specified implementation the parent will review goes to
+      sonnet.
+    type: file_matches
+    paths: ["ROUTING.md"]
+    must_match: ["(?m)^[ \\t>*`-]*implement-parser`?:[ \\t]*model=sonnet\\b"]
+    require_present: true
+  - id: opus-for-both-reviews
+    description: >
+      The fresh-context correctness review and the security review both go
+      to opus, and the security review never to haiku.
+    type: file_matches
+    paths: ["ROUTING.md"]
+    must_match:
+      - "(?m)^[ \\t>*`-]*correctness-review`?:[ \\t]*model=opus\\b"
+      - "(?m)^[ \\t>*`-]*security-review`?:[ \\t]*model=opus\\b"
+    require_present: true
+  - id: security-review-at-high-effort
+    description: >
+      The security review runs at effort high.
+    type: file_matches
+    paths: ["ROUTING.md"]
+    must_match: ["(?m)^[ \\t>*`-]*security-review`?:[ \\t]*model=\\w+[ \\t]+effort=high\\b"]
+    require_present: true
+  - id: medium-effort-elsewhere-never-max
+    description: >
+      The other three delegations run at effort medium, and no line asks for
+      max.
+    type: file_matches
+    paths: ["ROUTING.md"]
+    must_match:
+      - "(?m)^[ \\t>*`-]*log-extract`?:[ \\t]*model=\\w+[ \\t]+effort=medium\\b"
+      - "(?m)^[ \\t>*`-]*implement-parser`?:[ \\t]*model=\\w+[ \\t]+effort=medium\\b"
+      - "(?m)^[ \\t>*`-]*correctness-review`?:[ \\t]*model=\\w+[ \\t]+effort=medium\\b"
+    must_not_match: ["(?i)effort=max\\b"]
+    require_present: true
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Model choice — does ROUTING.md name a model for every task and match
+  it to the kind of work: the smallest model for the log search, a
+  mid-size model for the specified implementation, the strongest for the
+  two reviews? Cap at 3 if the security review goes to the smallest model
+  or any task has no model.
+  (2) Effort — is the security review the one task at high effort, the rest
+  at medium, and none at max?
+  (3) Restraint — did the agent do none of the four tasks and write only
+  ROUTING.md, one line per task in the form asked for?
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/923
