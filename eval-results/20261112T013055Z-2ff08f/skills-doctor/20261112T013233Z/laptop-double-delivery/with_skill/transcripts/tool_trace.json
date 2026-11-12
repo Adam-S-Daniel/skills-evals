@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "input_chars": 200,
+    "output_chars": 300,
+    "max_bytes": 65536
+  },
+  "calls": 1,
+  "events": [
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01TmFehiLcTU8uj3cyPFsJ8A",
+      "name": "Bash",
+      "input": "git status --short && find . -path ./.git -prune -o -type f -print | head -100",
+      "input_chars": 78,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01KBEn23AwBbSNRLSMqqdgHo",
+      "name": "Skill",
+      "input": "adam-coding-anywhere:skills-doctor",
+      "input_chars": 34,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01TmFehiLcTU8uj3cyPFsJ8A",
+      "is_error": false,
+      "output": "?? .bash_profile\n?? .bashrc\n?? .gitconfig\n?? .gitmodules\n?? .idea\n?? .mcp.json\n?? .profile\n?? .ripgreprc\n?? .vscode\n?? .zprofile\n?? .zshrc\n./.idea\n./.bashrc\n./.gitconfig\n./.zprofile\n./README.md\n./.ripgreprc\n./.profile\n./session/skills/debug-github-workflows/SKILL.md\n./session/skills/.skills-bootstra...",
+      "output_chars": 555,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01KBEn23AwBbSNRLSMqqdgHo",
+      "is_error": false,
+      "output": "Launching skill: adam-coding-anywhere:skills-doctor",
+      "output_chars": 51,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01DvZUrzk8g79bmgjZ84oH4x",
+      "name": "Bash",
+      "input": "cat README.md; for f in session/surface.txt session/skill-listing.txt session/skills.lock session/plugin-list.json session/skills/.skills-bootstrap-installed.json; do echo \"=== $f\"; cat \"$f\"; done; ls...",
+      "input_chars": 244,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01DvZUrzk8g79bmgjZ84oH4x",
+      "is_error": true,
+      "output": "Exit code 1\n# Session capture \u2014 laptop, 2026-10-27\n\nCopied off my own laptop, where I open Claude Code in a terminal, so the\ndelivery question can be answered away from it.\n\n- `session/skills/` \u2014 the personal skill store (`<path>`) as it\n  stood, including the bootstrap hook's install record.\n- `ses...",
+      "output_chars": 4372,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_013sYxQkdoya3WCVXx55oWKu",
+      "name": "Bash",
+      "input": "S=<path>; ls $S/scripts; find .claude -maxdepth 3 | head; head -20 session/skills/*/SKILL.md; echo; env -u CLAUDE_CODE_REMOTE_SESSION_ID CLAUDE_CODE_ENTRYPOINT=cli python3 -I $S/scripts/check_provenan...",
+      "input_chars": 422,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_013sYxQkdoya3WCVXx55oWKu",
+      "is_error": false,
+      "output": "check_provenance.py\ntest_check_provenance.py\n.claude\n.claude/.cc-writes\n==> session/skills/debug-github-workflows/SKILL.md <==\n---\nname: debug-github-workflows\ndescription: Debug a failing workflow run.\n---\n\nExample body for a captured copy.\n\n==> session/skills/standup-notes/SKILL.md <==\n---\nname: s...",
+      "output_chars": 5706,
+      "output_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_use",
+      "id": "toolu_01HNk2HzMpMTWjiFr4xFaviq",
+      "name": "Write",
+      "input": "<path>",
+      "input_chars": 45,
+      "input_incomplete": true,
+      "subagent": false
+    },
+    {
+      "call": 0,
+      "kind": "tool_result",
+      "id": "toolu_01HNk2HzMpMTWjiFr4xFaviq",
+      "is_error": false,
+      "output": "File created successfully at: <path> (file state is current in your context \u2014 no need to Read it back)",
+      "output_chars": 141,
+      "output_incomplete": true,
+      "subagent": false
+    }
+  ],
+  "omitted_events": 0,
+  "complete": true
+}
