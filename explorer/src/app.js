@@ -38,6 +38,7 @@ export function boot(source, opts) {
     // keep the template's loading line until the first render
     content.appendChild(root.firstChild);
   }
+  if (root.classList) root.classList.add('shell');
   root.appendChild(top);
   root.appendChild(content);
   const searchBox = top.querySelector('input.search');
