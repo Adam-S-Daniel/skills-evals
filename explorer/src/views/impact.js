@@ -1,7 +1,7 @@
 /* Impact: what agents made (checks, skills, guidance sections), real-work use
    of skills and git hook checks by week, pull request outcomes, red CI runs, and cost when the document carries it. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, fmtDateTime, fmtCount } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, fmtDateTime, fmtCount , fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, mondayOf } from '../core/hooks.js';
@@ -9,7 +9,7 @@ import { hashFor } from '../core/route.js';
 import { table, srcLine, panel, navLink, rangeLine, srcLineFor } from './bits.js';
 import { weekChart } from './weekchart.js';
 
-const usd = (x) => (typeof x === 'number' && isFinite(x) ? '$' + x.toFixed(2) : STRINGS.noValue);
+const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 const dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + 'T00:00:00Z'), refMs);
 
 function hookWeeksView(doc, refMs) {

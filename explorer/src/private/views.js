@@ -3,7 +3,7 @@
    itself when its datasets are empty, so a dashboard with only the explorer
    dataset shows the public views alone. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDateTime, fmtCount } from '../core/format.js';
+import { clean, parseTime, fmtDateTime, fmtCount , fmtUsd } from '../core/format.js';
 import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, srcLine, tile, badge } from '../views/bits.js';
@@ -19,7 +19,7 @@ import { LOOP_BRANCH } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
-const usd = (v) => (typeof v === 'number' ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : STRINGS.noValue);
+const usd = (v) => (typeof v === 'number' ? fmtUsd(v) : STRINGS.noValue);
 const SAFE = /^https:\/\/(github\.com|claude\.ai)\//;
 export function plink(url, text) {
   return typeof url === 'string' && SAFE.test(url) ? h('a', { href: url, rel: 'noopener', target: '_blank' }, text) : text;
@@ -56,7 +56,9 @@ export function capUse(allowance, budget) {
   return { spent: Number(a.points) || 0, cap, stop: (Number(b.stop_when_account_above) || 0) * 100, accountUsed: a.account_week_used,
     /* The guard's own room when the row carries it, else re-derived. */
     room: typeof a.room_points === 'number' ? Math.max(0, a.room_points) : Math.max(left, Number(a.pace_room_points) || 0), reservation: ((Number(b.per_run_cap) || 0) + (Number(b.per_run_overrun) || 0)) * 100,
-    readingAt: a.account_reading_at, resetsAt: a.week_resets_at, resetLabel: resetLabel(a.week_resets_at),
+    readingAt: a.account_reading_at, resetsAt: a.week_resets_at,
+    /* The window's own start when the row has it (a manual reset can fall mid-week), else the week's reset. */
+    resetLabel: resetLabel(a.window_start || a.week_resets_at),
     /* eval_spend_7d is a rolling window; anything naming the reset is counted since it. */
     basis: a.measure === 'eval_spend_7d' ? 'rolling' : /since_reset|reset/.test(String(a.measure || '')) ? 'reset' : 'plain' };
 }
@@ -123,7 +125,7 @@ export function allowanceView(cap, source) {
   return [srcLine(source, parseTime(cap.readingAt)),
     h('p', null, use),
     meter(cap.spent, scale, scale > 0 ? (cap.cap / scale) * 100 : undefined, cap.spent > cap.cap && !room),
-    cap.basis === 'rolling' && cap.spent > cap.cap && room ? h('p', { class: 'note' }, P.allowancePace) : null,
+    cap.spent > cap.cap && room ? h('p', { class: 'note' }, P.allowancePace) : null,
     cap.accountUsed !== null && cap.accountUsed !== undefined ? [h('p', null, P.allowanceAccount(Math.round(cap.accountUsed), cap.stop.toFixed(0))), meter(cap.accountUsed, 100, cap.stop)] : null,
     h('p', { class: 'note' }, P.allowanceRoom(cap.room.toFixed(1), cap.reservation.toFixed(1))),
     h('p', { class: 'note' }, P.allowanceReading(at(cap.readingAt), at(cap.resetsAt), cap.resetLabel))];

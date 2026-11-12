@@ -480,6 +480,7 @@ function buildStrings(you) {
   fqNote: 'When a test finds a subject too easy to measure, the loop asks for harder fixtures, ideally rebuilt from real work. Each request is followed to the fixtures that ran.',
   fqNone: 'This build does not report the fixture queue.',
   fqTotals: (o, c, m, rw, inv, runs) => o + ' open, ' + c + ' closed, ' + m + ' pull requests merged, ' + rw + ' fixtures from real work and ' + inv + ' invented, ' + runs + ' runs.',
+  fqNoRequest: 'Fixtures with no request issue',
   fqUnlisted: 'Requests not listed (closed before the queue report began)',
   fqFindings: (n, high) => n + (n === 1 ? ' finding needs' : ' findings need') + ' a look (' + high + ' high severity).',
   colSubject: 'Subject', colState: 'State', colAge: 'Age', colPr: 'Pull request', colFixtures: 'Fixtures (real work)',

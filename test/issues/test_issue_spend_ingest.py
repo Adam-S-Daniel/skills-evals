@@ -104,6 +104,19 @@ class SpendBranchTests(GitCase):
         self.assertEqual([p for p in (self.tmp / "staged").rglob("*") if p.is_file()],
                          [self.tmp / "staged" / ingest.SPEND_DEST])
 
+    def test_a_total_in_the_dashboards_shape_is_accepted(self):
+        # The shape dashboard/build.py's spend_file writes (#980): since the
+        # first week, over the decided verdicts, split into its three parts.
+        total = {"since": "2026-10-19", "verdicts": 12, "usd": 5541.65, "run_usd": 991.75,
+                 "thread_spend_usd": 4335.49, "api_usd": 214.41, "cost_per_verdict": 461.8}
+        doc = spend_doc(total=total)
+        doc["weeks"] = [{k: v for k, v in w.items() if k != "cost_per_verdict"} | {"run_usd": 1.0}
+                        for w in doc["weeks"]]
+        data = spend_bytes(doc)
+        self.commit({ingest.SPEND_SOURCE: data})
+        self.validate_spend()
+        self.assertEqual((self.tmp / "staged" / ingest.SPEND_DEST).read_bytes(), data)
+
     def test_a_minimal_file_is_accepted(self):
         self.commit({ingest.SPEND_SOURCE: spend_bytes(
             {"schema": 1, "generated_at": "2026-11-04T12:00:00Z", "weeks": []})})
@@ -146,7 +159,6 @@ class SpendBranchTests(GitCase):
             "a week's session id": spend_doc(weeks=[{**week, "session_id": MARKER}]),
             "a week's thread rows": spend_doc(weeks=[{**week, "threads": [MARKER]}]),
             "a week's per-thread spend": spend_doc(weeks=[{**week, "thread": 1.0}]),
-            "a total's thread rows": spend_doc(total={"since": "2026-10-19", "threads": [MARKER]}),
         }
         for label, doc in cases.items():
             with self.subTest(label):
@@ -154,6 +166,11 @@ class SpendBranchTests(GitCase):
                 self.git("checkout", "-q", "-B", SPEND_BRANCH)
                 self.commit({ingest.SPEND_SOURCE: spend_bytes(doc)})
                 self.assertSpendRejected("not a weekly total")
+
+    def test_rejects_a_field_in_the_total_that_is_not_a_total(self):
+        self.commit({ingest.SPEND_SOURCE: spend_bytes(
+            spend_doc(total={"since": "2026-10-19", "threads": [MARKER]}))})
+        self.assertSpendRejected("the total carries")
 
     def test_rejects_ids_and_addresses_in_values(self):
         for label, plan, pattern in (

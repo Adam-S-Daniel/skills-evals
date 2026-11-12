@@ -19,7 +19,7 @@ export const P = {
   allowanceUseRolling: (spent, cap) => 'Test use, last 7 days: ' + spent + ' points (weekly cap ' + cap + ').',
   allowanceUseReset: (spent, cap, reset) => 'Test use since the ' + reset + ' reset: ' + spent + ' of ' + cap + ' points.',
   allowanceUsePlain: (spent, cap) => 'Test use: ' + spent + ' points (weekly cap ' + cap + ').',
-  allowancePace: 'The cap is checked against the whole account as well as this rolling total, so tests still run while there is pace room below.',
+  allowancePace: 'Use is above the weekly cap, but the guard still reports room, so new tests keep running.',
   allowanceAccount: (used, stop) => 'Whole account this week: ' + used + '%, stop line ' + stop + '%.',
   allowanceRoom: (room, res) => 'Room for new tests now: about ' + room + ' points. Each test reserves ' + res + '.',
   allowanceReading: (when, resets, reset) => 'Account reading taken ' + when + '; the account week resets ' + resets + ' (' + reset + ').',

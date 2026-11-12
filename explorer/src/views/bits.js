@@ -19,16 +19,17 @@ export function srcLine(source, ms) {
 export function blockMs(doc, which) {
   const d = doc || {};
   const at = { doc: d.generated_at, activity: d.activity && d.activity.fetched_at, queue: d.fixture_queue && d.fixture_queue.generated_at,
-    spend: d.spend && d.spend.generated_at, usage: d.usage && d.usage.to }[which];
+    spend: d.spend && d.spend.generated_at, usage: d.usage && d.usage.to, coverage: d.coverage && d.coverage.as_of }[which];
   const ms = parseTime(at);
   return isFinite(ms) ? ms : parseTime(d.generated_at);
 }
+export const BLOCKS = ['doc', 'activity', 'queue', 'spend', 'usage', 'coverage'];
 export function srcLineFor(doc, which, source) { return srcLine(source || STRINGS.srcDoc, blockMs(doc, which)); }
 
 /* The page's one line: the document's time when every block was read at
    once, else the oldest and newest read. */
 export function rangeLine(doc) {
-  const times = ['doc', 'activity', 'queue', 'spend', 'usage'].map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
+  const times = BLOCKS.map((k) => blockMs(doc, k)).filter((m) => isFinite(m));
   if (!times.length) return srcLine(STRINGS.srcDoc, NaN);
   const lo = Math.min.apply(null, times), hi = Math.max.apply(null, times);
   if (fmtDateTime(lo) === fmtDateTime(hi)) return srcLine(STRINGS.srcDoc, blockMs(doc, 'doc'));
@@ -105,5 +106,6 @@ export function table(cols, rows, opts) {
     return h('td', { class: [c.num ? 'num' : null, c.cls || null].filter(Boolean).join(' ') || null, 'data-sort': v === null || v === undefined ? null : String(v) }, c.cell(r));
   })));
   return h('div', { class: 'tablewrap' + (o.tall ? ' tall' : '') },
-    h('table', { class: o.cls || null }, h('thead', null, head), h('tbody', null, body)));
+    h('table', { class: o.cls || null }, h('thead', null, head), h('tbody', null, body),
+      o.foot && o.foot.length ? h('tfoot', null, o.foot.map((r) => h('tr', null, cols.map((c) => h('td', { class: c.num ? 'num' : null }, c.cell(r)))))) : null));
 }

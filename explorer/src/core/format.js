@@ -64,6 +64,12 @@ export function fmtUtcDay(ms, refMs) {
   return new Intl.DateTimeFormat('en-US', opts).format(new Date(ms));
 }
 
+/* Dollars with thousands separators and cents: $5,541.65. The one place that
+   formats money, so no view prints "$5541.65". */
+export function fmtUsd(x) {
+  return '$' + Number(x).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function fmtCount(x) {
   const n = Number(x) || 0;
   const r = Math.round(n);
