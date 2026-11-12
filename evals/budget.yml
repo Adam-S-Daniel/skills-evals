@@ -49,19 +49,24 @@ per_run_cap: 0.01
 # 2026-11-06 (docs/how-it-works.md, "The weekly allowance guard").
 per_run_overrun: 0.0005
 
-# The allowance one dollar of API-equivalent spend uses: $20 per point, the
-# low end of the rate measured on 2026-11-04 (about $24 per point, range $20
-# to $35), so charges err high. scripts/allowance_guard.py charges each run
+# The allowance one dollar of API-equivalent spend uses: about $6.70 per
+# point (0.0015, $6.67), measured on 2026-11-10 from quiet overnight windows
+# when evals were the only use ($6-7.3 per point; Adam chose this rate on
+# 2026-11-11). scripts/allowance_guard.py charges each run
 # `usage.cost_estimate.usd` times this plus `per_run_overrun`, not the
 # account meter's movement: the meter is the whole account's, so it charged
 # each run with every other thread's use and booked 116 points of eval spend
 # against about 23 real in the week to 2026-11-04. A run with no usable
 # dollar figure falls back to the meter. `per_run_cap` is charged the same way
 # (harness/run_eval.py), so the in-run stop and the weekly cap now share a
-# rate. Before 2026-11-04 it was 0.214 points per dollar over 288 metered
-# runs (2026-11-03, `python3 scripts/run_costs.py --results-tree
-# <persistent/eval-results>`), which is $4.67 per point.
-points_per_usd: 0.0005
+# rate. From 2026-11-06 to 2026-11-11 it was 0.0005 ($20 per point, from a
+# 2026-11-04 account-wide measurement): that booked the $153 of eval calls
+# after the 2026-11-09 reset as about 18 points when the meter showed about
+# 25 to 30, so fires ran on past the weekly cap. Before 2026-11-04 it was
+# 0.214 points per dollar over 288 metered runs (2026-11-03, `python3
+# scripts/run_costs.py --results-tree <persistent/eval-results>`), which is
+# $4.67 per point.
+points_per_usd: 0.0015
 
 # 80 points: once the account's own weekly meter reads this high, a run stops
 # starting new work, whatever it has spent, so evals never take the last of
