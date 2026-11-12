@@ -3,7 +3,7 @@
    itself when its datasets are empty, so a dashboard with only the explorer
    dataset shows the public views alone. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel } from '../core/format.js';
+import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, fmtClockUtcToEt } from '../core/format.js';
 import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, fold, srcLine, tile, badge } from '../views/bits.js';
@@ -13,7 +13,7 @@ import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
 import { conversionView } from './conversion.js';
 import { isTrending, alertKindLabel } from '../core/stats.js';
-import { LOOP_BRANCH } from '../views/loop.js';
+import { LOOP_BRANCH, LIST_CAP } from '../views/loop.js';
 
 const at = (s) => (s ? fmtDateTime(parseTime(s)) : STRINGS.noValue);
 const n = (v) => (v === null || v === undefined ? '' : fmtCount(v));
@@ -42,13 +42,15 @@ export function resetLabel(iso) {
    schedules as "Daily 06:53 UTC, GitHub Actions (1:53 AM ET)": the Eastern time
    in the parentheses replaces the UTC one, and a "UTC hours ..." aside keeps
    only its Eastern list. */
-export function etSchedule(text) {
+export function etSchedule(text, refMs) {
   return String(text === null || text === undefined ? '' : text)
     .replace(/\d{1,2}:\d{2} UTC([^()]*)\(([^()]*\bET)\)/g, (m, mid, et) => {
       const rest = mid.trim();
       return et + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
     })
-    .replace(/\(UTC hours [^:()]*: /g, '(');
+    .replace(/\(UTC hours [^:()]*: /g, '(')
+    // A bare "07:00 UTC" with no Eastern time beside it is converted on the reference day.
+    .replace(/\b(\d{1,2}):(\d{2}) UTC\b/g, (m, hh, mm) => fmtClockUtcToEt(hh, mm, refMs));
 }
 
 /* Test use this week against the cap, from eval_allowance and budget. */
@@ -380,10 +382,10 @@ export function makeExt(dash, opts) {
       return [panel(P.routinesTable, ok('routines') ? [asOf('routines'), table([
         { label: P.colRoutine, sort: (r) => r.name, cell: (r) => plink(r.link, clean(r.name)) },
         { label: P.colDoes, cell: (r) => clean(r.what) },
-        { label: P.colSchedule, cell: (r) => clean(etSchedule(r.schedule)) },
+        { label: P.colSchedule, cell: (r) => clean(etSchedule(r.schedule, now())) },
         { label: P.colLastRun, sort: (r) => r.last_run, cell: (r) => at(r.last_run) },
         { label: P.colHealth, sort: (r) => r.health, cell: (r) => pill(r.health) },
-        { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'routines'))] : null),
+        { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'routines'), { cap: 10 })] : null),
       panel(P.checkinsHeading, ok('checkins') ? table([
         { label: P.colWhen, sort: (r) => r.when, cell: (r) => at(r.when) },
         { label: P.colWhat, cell: (r) => clean(r.what) }], some(dash, 'checkins')) : null)];
@@ -405,23 +407,18 @@ export function makeExt(dash, opts) {
       const open = some(dash, 'open_prs') || [];
       const merged = some(dash, 'merged_prs') || [];
       return panel(P.prsHeading, [srcLine(P.srcLive, NaN), open.length ? [h('h3', null, P.openPrs), table([
-        { label: P.colRepo, sort: (p) => p.repo, cell: (p) => clean(p.repo) },
-        { label: P.colNumber, num: true, sort: (p) => p.number, cell: (p) => plink(p.url, '#' + p.number) },
-        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null] },
-        { label: P.colOpenedBy, sort: (p) => p.author, cell: (p) => clean(String(p.author || '').replace('[bot]', ' (bot)')) },
-        { label: P.colOpened, sort: (p) => p.created_at, cell: (p) => at(p.created_at) },
-        { label: P.colChecks, sort: (p) => p.checks, cell: (p) => plink(p.checks_url, pill(p.checks)) },
-        { label: P.colLabels, cell: (p) => clean(p.labels || '') }], open, { tall: true })] : null,
+        { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => plink(p.url, repoNum(p)) },
+        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)),
+          p.labels ? [' ', h('span', { class: 'sub' }, clean(p.labels))] : null] },
+        { label: P.colOpened, sort: (p) => p.created_at, cell: (p) => at(p.created_at) }], open, { tall: true, cap: LIST_CAP })] : null,
       merged.length ? [h('h3', null, P.mergedPrs), prRows(merged.map((p) => Object.assign({ state: 'merged' }, p)))] : null]);
     },
     issues() {
       return panel(P.issuesHeading, [srcLine(P.srcLive, NaN), table([
-        { label: P.colRepo, sort: (i) => i.repo, cell: (i) => clean(i.repo) },
-        { label: P.colNumber, num: true, sort: (i) => i.number, cell: (i) => plink(i.url, '#' + i.number) },
-        { label: P.colTitle, sort: (i) => i.title, cell: (i) => plink(i.url, clean(i.title)) },
-        { label: P.colLabels, cell: (i) => clean(i.labels || '') },
+        { label: STRINGS.colRepoNumber, sort: (i) => i.repo + '#' + String(i.number).padStart(9, '0'), cell: (i) => plink(i.url, repoNum(i)) },
+        { label: P.colTitle, sort: (i) => i.title, cell: (i) => [plink(i.url, clean(i.title)), i.labels ? [' ', h('span', { class: 'sub' }, clean(i.labels))] : null] },
         { label: P.colUpdated, sort: (i) => i.updated_at, cell: (i) => at(i.updated_at) }],
-      some(dash, 'open_issues').slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))), { tall: true })]);
+      some(dash, 'open_issues').slice().sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))), { tall: true, cap: LIST_CAP })]);
     },
     opsBottom() {
       return [
@@ -452,12 +449,12 @@ export function threadTables(threads) {
   return [open.length ? table(cols, open) : h('p', null, P.threadsNoneOpen), fold(P.threadsDone(done.length), done.length ? table(cols, done, { tall: true }) : null)];
 }
 
+const repoNum = (p) => clean(String(p.repo).split('/').pop()) + ' #' + p.number;
+
 function prRows(rows) {
   return table([
-    { label: P.colRepo, sort: (p) => p.repo, cell: (p) => clean(p.repo) },
-    { label: P.colNumber, num: true, sort: (p) => p.number, cell: (p) => plink(p.url, '#' + p.number) },
+    { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => plink(p.url, repoNum(p)) },
     { label: P.colTitle, sort: (p) => p.title, cell: (p) => plink(p.url, clean(p.title)) },
-    { label: P.colState, sort: (p) => p.state, cell: (p) => clean(p.state) },
-    { label: P.colMerged, sort: (p) => p.closed_at || p.created_at, cell: (p) => at(p.closed_at || p.created_at) }],
-  rows.slice().sort((a, b) => String(b.closed_at || b.created_at).localeCompare(String(a.closed_at || a.created_at))), { tall: true });
+    { label: P.colMerged, sort: (p) => p.closed_at || p.created_at, cell: (p) => clean(p.state) + ' ' + at(p.closed_at || p.created_at) }],
+  rows.slice().sort((a, b) => String(b.closed_at || b.created_at).localeCompare(String(a.closed_at || a.created_at))), { tall: true, cap: LIST_CAP });
 }

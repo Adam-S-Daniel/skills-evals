@@ -63,6 +63,12 @@ const DAY_MS = 86400000;
 export const dayKeyMs = (key) => (typeof key === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(key) ? Date.parse(key + 'T00:00:00Z') : NaN);
 export const isDayKey = (key) => isFinite(dayKeyMs(key));
 
+/* A calendar day the data names without a time ('2026-11-10'), shown as that
+   day in US Eastern: read at noon, so no zone moves it to another date. */
+export function fmtCalendarDay(key, refMs) {
+  return isDayKey(key) ? fmtDay(dayKeyMs(key) + 12 * 3600 * 1000, refMs) : STRINGS.unknown;
+}
+
 /* The day key of an instant, and of the Monday that starts its week. */
 export function dayKeyOf(ms) {
   return isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
@@ -98,6 +104,14 @@ export function fmtResetLabel(ms) {
   const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o)).format(new Date(ms));
   const clock = f({ hour: 'numeric', minute: '2-digit', hour12: false });
   return f({ weekday: 'long' }) + ' ' + (clock === '12:00' ? 'noon' : f({ hour: 'numeric', minute: '2-digit' })) + ' ' + STRINGS.et;
+}
+
+/* "06:53" on the UTC clock as an Eastern clock time ("1:53 AM ET"), using the
+   offset in force on the reference day (daylight saving moves it). */
+export function fmtClockUtcToEt(hour, minute, refMs) {
+  const base = isFinite(refMs) ? new Date(refMs) : new Date(0);
+  const at = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute));
+  return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(at)) + ' ' + STRINGS.et;
 }
 
 /* A UTC calendar day (a census window edge, which is a UTC Monday), shown

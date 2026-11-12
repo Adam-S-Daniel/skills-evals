@@ -238,6 +238,7 @@
 .ex .skip-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ex .skip-table:focus { position: static; width: auto; height: auto; clip-path: none; margin: 0 0 6px; padding: 4px 10px; font: inherit; font-size: 0.9rem; border: 2px solid var(--ink); background: var(--surface); color: var(--ink); cursor: pointer; }
 .ex .show-all { display: block; margin: 6px 0 0; }
+.ex button[hidden] { display: none; }
 .ex .table-end { display: block; height: 0; outline: none; }
 /* Every control the keyboard can reach shows where it is. */
 .ex .tablewrap:focus-visible, .ex .skip-table:focus-visible, .ex .show-all:focus-visible, .ex .linkish:focus-visible, .ex .n:focus-visible, .ex .mark:focus-visible, .ex input:focus-visible, .ex select:focus-visible, .ex summary:focus-visible, .ex button:focus-visible { outline: 3px solid var(--s2); outline-offset: 2px; }
@@ -247,6 +248,7 @@
 @media (max-width: 560px) {
   .ex .tablewrap.tall { max-height: none; overflow-y: visible; }
   .ex .scroll-hint { display: block; }
+  .ex table:not(.stack) td.num, .ex table:not(.stack) th.num { white-space: normal; }
   .ex table.stack, .ex table.stack tbody, .ex table.stack tfoot, .ex table.stack tr, .ex table.stack td { display: block; width: 100%; }
   .ex table.stack thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
   .ex table.stack tr { border-bottom: 3px solid var(--ink); padding: 6px 0; }

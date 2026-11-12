@@ -85,12 +85,19 @@ export function isLoopPull(p) {
   return typeof p.title === 'string' && LOOP_TITLE.test(p.title);
 }
 
+/* Pull request and issue lists show this many rows before "Show all". */
+export const LIST_CAP = 6;
+/* "skills-evals #961", linked, so the repo and the number share one column. */
+export function repoNumber(repo, number, url) {
+  const text = clean(String(repo).split('/').pop()) + ' #' + number;
+  return link(url, text) || text;
+}
+
 export function prTable(rows, refMs) {
   return table([
-    { label: STRINGS.colRepo, sort: (p) => p.repo, cell: (p) => clean(String(p.repo).split('/').pop()) },
-    { label: STRINGS.colNumber, num: true, sort: (p) => p.number, cell: (p) => link(p.url, '#' + p.number) },
+    { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => repoNumber(p.repo, p.number, p.url) },
     { label: STRINGS.colTitle, sort: (p) => p.title, cell: (p) => clean(p.title) },
-    { label: STRINGS.colState, sort: (p) => p.state, cell: (p) => STRINGS.prStates[p.state] || clean(p.state) },
-    { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at, cell: (p) => fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
-  ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || '').localeCompare(String(x.merged_at || x.updated_at || ''))), { tall: true });
+    { label: STRINGS.colUpdated, sort: (p) => p.merged_at || p.updated_at || p.created_at,
+      cell: (p) => (STRINGS.prStates[p.state] || clean(p.state)) + ' ' + fmtDay(parseTime(p.merged_at || p.updated_at || p.created_at), refMs) }
+  ], rows.slice().sort((x, y) => String(y.merged_at || y.updated_at || '').localeCompare(String(x.merged_at || x.updated_at || ''))), { tall: true, cap: LIST_CAP });
 }

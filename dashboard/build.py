@@ -457,6 +457,20 @@ COST_START = datetime(2026, 10, 19, 17, 0, tzinfo=timezone.utc)
 WEEK = timedelta(days=7)
 DEFAULT_POINTS_PER_USD = 0.07
 BAR_DUE = "2026-12-15"
+
+
+def day_text(d):
+    """A date as shown on the page: "Oct 19" (no ISO dates in visible text)."""
+    if isinstance(d, str):
+        d = datetime.fromisoformat(d[:10]).date()
+    return f"{d:%b} {d.day}"
+
+
+def week_text(d):
+    """A week key as "week of Mon Nov 2"."""
+    if isinstance(d, str):
+        d = datetime.fromisoformat(d[:10]).date()
+    return f"week of {d:%a} {d:%b} {d.day}"
 BAR_JUDGED_AT = datetime(2026, 12, 16, tzinfo=timezone.utc)
 BAR_MIN_CHANGES = 3
 BAR_MAX_BUILD_POINTS = 10
@@ -663,32 +677,32 @@ def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, 
             reached += 1
     bar_changes = reached >= BAR_MIN_CHANGES
     bar_build = last is not None and last["build_points"] < BAR_MAX_BUILD_POINTS
-    due = f"Due {BAR_DUE}"
+    due = f"Due {day_text(BAR_DUE)}"
     status = lambda ok: "Met" if ok else "Not met"
     summary = [
         {"key": "cost_per_verdict", "label": "Cost per decided verdict", "value": total_usd / verdicts if verdicts else None,
          "target": None, "status": None,
-         "note": f"API-equivalent dollars since {start.date()}: ${total_usd:,.2f} over {verdicts} decided verdicts"},
+         "note": f"API-equivalent dollars since {day_text(start.date())}: ${total_usd:,.2f} over {verdicts} decided verdicts"},
         {"key": "decision_yield", "label": "Decision yield", "value": f"{len(changes)} of {verdicts}",
          "target": None, "status": None,
-         "note": "Loop changes merged since " + str(start.date()) + " out of decided verdicts"
+         "note": "Loop changes merged since " + day_text(start.date()) + " out of decided verdicts"
                  + ("" if verdicts else " (no decided verdicts yet)")},
         {"key": "real_work_reach", "label": "Real-work reach, latest complete week",
          "value": last["real_work_reach"] if last else None, "target": None, "status": None,
-         "note": "Uses of changed skills and guidance in the week of " + last["week"] if last else "No complete week yet"},
+         "note": "Uses of changed skills and guidance in the " + week_text(last["week"]) if last else "No complete week yet"},
         {"key": "bar_changes", "label": "Changes used in real work", "value": reached,
          "target": f"at least {BAR_MIN_CHANGES}", "status": status(bar_changes),
          "note": f"{due}. Merged loop changes whose subject was used at least once after the merge"},
         {"key": "bar_build", "label": "Build cost, latest complete week", "value": r2(last["build_points"]) if last else None,
          "target": f"< {BAR_MAX_BUILD_POINTS} points a week", "status": status(bar_build),
-         "note": f"{due}. " + ("Build spend in the week of " + last["week"] if last else "No complete week yet")},
+         "note": f"{due}. " + ("Build spend in the " + week_text(last["week"]) if last else "No complete week yet")},
         {"key": "points_per_usd", "label": "Points per dollar", "value": round(ppu, 4), "target": None,
          "status": None, "note": basis},
     ]
     if now >= BAR_JUDGED_AT:
         summary.append({"key": "bar_verdict", "label": "Dec 15 bar", "target": None, "status": None,
                         "value": "Met: keep the eval system" if bar_changes and bar_build
-                        else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {BAR_DUE}"})
+                        else "Missed: cut back to guidance-only evals", "note": f"Both bars were due {day_text(BAR_DUE)}"})
     if raw is not None:
         raw["weeks"] = [{**w, "run_usd": u} for w, u in zip(weeks, week_run_usds)]
         raw["cost_per_verdict"] = summary[0]["value"]

@@ -62,8 +62,8 @@ export function tile(t) {
    takes the heading of the panel or fold that holds it. */
 function nameTables(kids, title) {
   for (const k of [].concat(kids).flat(Infinity)) {
-    findAll(k, (n) => n.attrs && n.attrs['data-auto-label'] === '' && n.attrs.role === 'region').forEach((n) => {
-      n.attrs['aria-label'] = title;
+    findAll(k, (n) => n.attrs && n.attrs['data-auto-label'] === '').forEach((n) => {
+      n.attrs['data-region'] = title;
       n.attrs['data-auto-label'] = null;
     });
   }
@@ -95,7 +95,7 @@ function cellValue(td) {
 export const ROW_CAP = 50;
 /* A table with more rows than this gets a "Skip table" button before it, so
    a keyboard reader is not made to tab through every link in it. */
-export const SKIP_OVER = 10;
+export const SKIP_OVER = 5;
 /* Above this many columns a phone shows each row as a stacked block. */
 export const STACK_OVER = 3;
 
@@ -126,6 +126,41 @@ export function refreshCap(wrap) {
     btn.hidden = counted <= cap;
     btn.textContent = wrap.getAttribute('data-open') === 'true' ? STRINGS.showFewer(cap) : STRINGS.showAll(counted);
   }
+  markScroller(wrap);
+}
+
+/* A table wrapper is a focusable, labeled region only while it actually
+   scrolls (a table that fits is not a tab stop). The label was set on the
+   wrapper as `data-region` when the table was built. */
+export function markScroller(wrap) {
+  const scrolls = wrap.scrollWidth > wrap.clientWidth + 1 || wrap.scrollHeight > wrap.clientHeight + 1;
+  if (scrolls) {
+    wrap.setAttribute('role', 'region');
+    wrap.setAttribute('tabindex', '0');
+    wrap.setAttribute('aria-label', wrap.getAttribute('data-region') || '');
+  } else {
+    wrap.removeAttribute('role');
+    wrap.removeAttribute('tabindex');
+    wrap.removeAttribute('aria-label');
+  }
+}
+export function markScrollers(root) {
+  root.querySelectorAll('.tablewrap').forEach(markScroller);
+}
+
+/* Where "Skip table" sends the keyboard: the Show all button while it is
+   showing, else the next heading after the table (made focusable on the
+   spot). Null when the page has neither. */
+export function skipTarget(wrap) {
+  const btn = wrap.querySelector('button.show-all');
+  if (btn && !btn.hidden) return btn;
+  for (let n = wrap; n; n = n.parentElement) {
+    for (let s = n.nextElementSibling; s; s = s.nextElementSibling) {
+      const hd = /^H[1-6]$/.test(s.tagName) ? s : (s.querySelector ? s.querySelector('h1,h2,h3,h4') : null);
+      if (hd) return hd;
+    }
+  }
+  return wrap.querySelector('.table-end');
 }
 
 /* Clicking a heading sorts the rows already on the page, so a sort needs no
@@ -179,21 +214,24 @@ export function table(cols, rows, opts) {
         'data-sort': v === null || v === undefined ? null : String(v) }, c.cell(r));
     }));
   });
-  const more = cap > 0 && counted.length > cap;
-  const wrap = h('div', { class: 'tablewrap' + (o.tall ? ' tall' : ''), role: 'region', tabindex: 0, 'data-auto-label': o.label ? null : '',
-    'aria-label': o.label || STRINGS.tableLabel(cols.map((c) => c.label).filter(Boolean).join(', ')), 'data-cap': cap > 0 ? cap : null },
+  const more = cap > 0 && rows.length > cap;
+  const visible = cap > 0 ? Math.min(counted.length, cap) : counted.length;
+  const wrap = h('div', { class: 'tablewrap' + (o.tall ? ' tall' : ''), 'data-auto-label': o.label ? null : '',
+    'data-region': o.label || STRINGS.tableLabel(cols.map((c) => c.label).filter(Boolean).join(', ')), 'data-cap': cap > 0 ? cap : null },
   o.scroll ? h('p', { class: 'scroll-hint' }, STRINGS.scrollHint) : null,
-  rows.length > SKIP_OVER ? h('button', { type: 'button', class: 'skip-table', onclick: (e) => {
-    const end = e.currentTarget.closest('.tablewrap').querySelector('.table-end');
-    if (end) end.focus();
+  visible > SKIP_OVER ? h('button', { type: 'button', class: 'skip-table', onclick: (e) => {
+    const to = skipTarget(e.currentTarget.closest('.tablewrap'));
+    if (!to) return;
+    if (!to.hasAttribute('tabindex') && !/^(BUTTON|A|INPUT)$/.test(to.tagName)) to.setAttribute('tabindex', '-1');
+    to.focus();
   } }, STRINGS.skipTable) : null,
   h('table', { class: [o.cls || null, cols.length > STACK_OVER && !o.scroll ? 'stack' : null].filter(Boolean).join(' ') || null }, h('thead', null, head), h('tbody', null, body),
     o.foot && o.foot.length ? h('tfoot', null, o.foot.map((r) => h('tr', null, cols.map((c) => h('td', { class: c.num ? 'num' : null, 'data-label': c.label }, c.cell(r)))))) : null),
-  more ? h('button', { type: 'button', class: 'linkish show-all', onclick: (e) => {
+  more ? h('button', { type: 'button', class: 'linkish show-all', hidden: counted.length <= cap ? true : null, onclick: (e) => {
     const w = e.currentTarget.closest('.tablewrap');
     w.setAttribute('data-open', w.getAttribute('data-open') === 'true' ? 'false' : 'true');
     refreshCap(w);
   } }, STRINGS.showAll(counted.length)) : null,
-  rows.length > SKIP_OVER ? h('span', { class: 'table-end', tabindex: -1 }) : null);
+  visible > SKIP_OVER ? h('span', { class: 'table-end', tabindex: -1 }) : null);
   return wrap;
 }

@@ -21,7 +21,7 @@ import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
 import { renderRoute, usesUtcDays } from '../src/views/page.js';
 import { runName, hasCron } from '../src/views/ops.js';
-import { applyCap, SKIP_OVER } from '../src/views/bits.js';
+import { applyCap, SKIP_OVER, refreshCap, markScroller, skipTarget } from '../src/views/bits.js';
 import { runsTable } from '../src/views/subject.js';
 import { agentMadeRows, spendWeeks } from '../src/views/impact.js';
 import { conversionTotals, conversionView, conversionBody, PLANNER_CHANGE } from '../src/private/conversion.js';
@@ -33,8 +33,8 @@ import { hashFor, parseRoute, GROUPS as ROUTE_GROUPS } from '../src/core/route.j
 import { sectionItems, skillItems } from '../src/core/items.js';
 import { trendingRows } from '../src/views/trending.js';
 import { changeRows, pullKind, pullSubject } from '../src/views/changes.js';
-import { LOOP_KINDS, LOOP_TITLE, LOOP_BRANCH, isLoopPull } from '../src/views/loop.js';
-import { fmtUsd, fmtDayKey, fmtWeekStart, fmtWeekOf, fmtResetLabel, weekKeyOf, dayKeysBetween } from '../src/core/format.js';
+import { LOOP_KINDS, LOOP_TITLE, LOOP_BRANCH, isLoopPull, LIST_CAP } from '../src/views/loop.js';
+import { fmtUsd, fmtDay, fmtCalendarDay, fmtDayKey, fmtWeekStart, fmtWeekOf, fmtResetLabel, weekKeyOf, dayKeysBetween } from '../src/core/format.js';
 import { weekChart } from '../src/views/weekchart.js';
 import { STRINGS, useVoice } from '../src/core/strings.js';
 
@@ -1185,19 +1185,20 @@ await test('recommendation 6: spend shows this week and last week side by side i
   eq(Math.round(share.share * 100), 41);
   eq(share.top.map((x) => x[0]).join(','), 'fixture changed,fixture no longer scheduled');
   const t = flat(renderRoute(d, { name: 'spend', id: null }, {}));
-  ok(t.includes('This week (from Nov 9, 2026, 12:00 PM ET)') && t.includes('Last week (from Nov 2, 2026, 12:00 PM ET)'), 'week starts in ET: ' + t.slice(0, 600));
+  ok(t.includes('this week from Nov 9, 2026, 12:00 PM ET, last week from Nov 2, 2026, 12:00 PM ET'), 'week starts in ET, in a note: ' + t.slice(0, 600));
+  ok(!t.includes('This week (from'), 'the starts are not in the column headers');
   ok(t.includes('$91.75 · 1.0 points') && t.includes('$335.49') && t.includes('$14.41') && t.includes('$441.65'), 'this week\'s parts and total');
-  ok(t.includes('In the last 30 days 41% of test dollars bought nothing ($41.00 of $100.00), mostly fixture changed ($25.00) and fixture no longer scheduled ($15.00).'), t);
+  ok(t.includes('In the last 30 days 41% of test dollars bought nothing ($41.00 of $100.00), mostly fixture changed ($25.00) and fixture no longer scheduled ($15.00).'), t.slice(0, 2500));
   ok(t.includes('Dollars are list price, not what is paid.'), 'said once');
   eq(t.split('not what is paid').length - 1, 1, 'once');
   const old = flat(renderRoute(doc({ spend: { generated_at: '2026-11-12T01:00:00Z', weeks: weeks.map((w) => ({ week: w.week, eval_runs: 1, plan_meter_points: 1, api_usd: 1, thread_spend_usd: 1 })) } }), { name: 'spend', id: null }, {}));
-  ok(old.includes('Week (from') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
+  ok(old.includes('Mon Nov 9') && !old.includes('In the last 30 days'), 'data without run_usd or a ledger still renders, with no total or share');
   eq(spendWeeks(doc({ spend: { weeks: [{ week: '2026-11-09', api_usd: 1, thread_spend_usd: 1 }] } }))[0].total, null, 'a missing part is no total');
   // Old data does not call an old week this one: the label follows the data's own time.
   const stale = flat(renderRoute(doc({ generated_at: '2026-11-25T17:00:00Z', spend: { weeks } }), { name: 'spend', id: null }, {}));
-  ok(!stale.includes('This week (from') && !stale.includes('Last week (from') && stale.includes('Week (from Nov 9, 2026, 12:00 PM ET)'), stale.slice(0, 500));
+  ok(!stale.includes('This week') && !stale.includes('Last week') && stale.includes('Mon Nov 9 from Nov 9, 2026, 12:00 PM ET'), stale.slice(0, 500));
   const prior = flat(renderRoute(doc({ generated_at: '2026-11-17T12:00:00Z', spend: { weeks } }), { name: 'spend', id: null }, {}));
-  ok(prior.includes('Last week (from Nov 9, 2026, 12:00 PM ET)') && !prior.includes('This week (from'), 'the day before the new week starts: still last week');
+  ok(prior.includes('last week from Nov 9, 2026, 12:00 PM ET') && !prior.includes('This week'), 'the day before the new week starts: still last week');
 });
 await test('recommendation 19: every route of the old six groups still opens a page, and each group leads with one question', () => {
   const all = Object.keys(ROUTE_GROUPS);
@@ -1236,23 +1237,29 @@ function sourceFiles() {
   return out;
 }
 const DATE_METHODS = new Set(['toISOString', 'toUTCString', 'toGMTString', 'toDateString', 'toTimeString', 'toLocaleDateString', 'toLocaleTimeString',
-  'getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCDay', 'getUTCHours', 'getUTCMinutes', 'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours', 'getMinutes', 'getTimezoneOffset']);
-const DAY_FIELDS = new Set(['date', 'week', 'day', 'since', 'created', 'from', 'to', 'when', 'at']);
+  'toJSON', 'getUTCFullYear', 'getUTCMonth', 'getUTCDate', 'getUTCDay', 'getUTCHours', 'getUTCMinutes', 'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours', 'getMinutes', 'getTimezoneOffset']);
+const DAY_FIELDS = new Set(['date', 'week', 'day', 'since', 'created', 'from', 'to', 'when', 'at', 'decided', 'opened', 'first', 'last']);
+const isDayField = (name) => DAY_FIELDS.has(name) || /_at$/.test(name);
+const isNewDate = (n) => !!n && n.type === 'NewExpression' && n.callee.type === 'Identifier' && n.callee.name === 'Date';
 /* What in a source file formats a date or time on its own. Parses the file;
    returns one "line: what" per finding. `utcKey` is the one property that may
    hold the word UTC (the footnote). */
-function etViolations(source, utcKey) {
+function etViolations(source, utcKeys) {
   const found = [];
   const ast = acorn.parse(source, { ecmaVersion: 'latest', sourceType: 'module', locations: true });
   (function walk(n, key) {
     if (!n || typeof n.type !== 'string') return;
     const at = n.loc.start.line;
     if (n.type === 'MemberExpression' && !n.computed && DATE_METHODS.has(n.property.name)) found.push(at + ': .' + n.property.name);
-    if (n.type === 'NewExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'DateTimeFormat') found.push(at + ': Intl.DateTimeFormat');
+    if ((n.type === 'NewExpression' || n.type === 'CallExpression') && n.callee.type === 'MemberExpression' && n.callee.property.name === 'DateTimeFormat') found.push(at + ': Intl.DateTimeFormat');
+    // new Date(x).toLocaleString(...), r.created_at.toLocaleString(...)
+    if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'toLocaleString'
+      && (isNewDate(n.callee.object) || (n.callee.object.type === 'MemberExpression' && isDayField(n.callee.object.property.name)))) found.push(at + ': toLocaleString on a date');
+    if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && n.callee.name === 'String' && isNewDate(n.arguments[0])) found.push(at + ': String(new Date())');
     // d.date.slice(5), r.created.substring(0, 10): a date cut apart by hand
     if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && ['slice', 'substring', 'substr'].includes(n.callee.property.name)
-      && n.callee.object.type === 'MemberExpression' && DAY_FIELDS.has(n.callee.object.property.name)) found.push(at + ': ' + n.callee.object.property.name + '.' + n.callee.property.name + '()');
-    if (n.type === 'Literal' && typeof n.value === 'string' && /\bUTC\b/.test(n.value) && key !== (utcKey || '\0')) found.push(at + ': the word UTC in a string');
+      && n.callee.object.type === 'MemberExpression' && isDayField(n.callee.object.property.name)) found.push(at + ': ' + n.callee.object.property.name + '.' + n.callee.property.name + '()');
+    if (n.type === 'Literal' && typeof n.value === 'string' && /\bUTC\b/.test(n.value) && ![].concat(utcKeys || []).includes(key)) found.push(at + ': the word UTC in a string');
     if (n.type === 'TemplateElement' && /\bUTC\b/.test(n.value.cooked)) found.push(at + ': the word UTC in a template');
     for (const [k, v] of Object.entries(n)) {
       if (k === 'type' || k === 'loc') continue;
@@ -1267,7 +1274,7 @@ await test('E10: only core/format.js formats a date or time, and only one string
   const bad = [];
   for (const [file, src] of sourceFiles()) {
     if (file === 'core/format.js') continue;
-    for (const f of etViolations(src, file === 'core/strings.js' ? 'utcNote' : null)) bad.push(file + ':' + f);
+    for (const f of etViolations(src, file === 'core/strings.js' ? ['utcNote', 'utcNoteSpend'] : null)) bad.push(file + ':' + f);
   }
   eq(bad.join('\n'), '', 'format dates with core/format.js (fmtDay, fmtDateTime, fmtDayKey, fmtWeekStart, fmtResetLabel)');
 });
@@ -1281,6 +1288,14 @@ await test('E10 guard: it fails on the shapes the review found', () => {
   eq(flags("const s = `week of ${x} UTC`;"), 1);
   eq(flags("const o = { utcNote: 'Days are counted in UTC' };"), 1, 'with no allowed key');
   eq(etViolations("const o = { utcNote: 'Days are counted in UTC' };", 'utcNote').length, 0);
+  eq(flags("const s = r.created_at.slice(0, 10);"), 1, 'a _at field cut by hand');
+  eq(flags("const s = p.merged_at.substring(5);"), 1);
+  eq(flags("const s = Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York' }).format(d);"), 1, 'called without new');
+  eq(flags("const s = new Date(t).toLocaleString('en-US', { timeZone: 'America/New_York' });"), 1);
+  eq(flags("const s = r.updated_at.toLocaleString();"), 1);
+  eq(flags("const s = n.toLocaleString('en-US');"), 0, 'a number may use toLocaleString');
+  eq(flags("const s = d.toJSON();"), 1);
+  eq(flags("const s = String(new Date(t));"), 1);
   eq(flags("const s = fmtDay(parseTime(x), refMs) + fmtDayKey(w);"), 0, 'the shared formatters are fine');
 });
 
@@ -1367,7 +1382,52 @@ await test('E11: a long runs table shows the first 50 counted rows and a Show al
   const btn = findAll(sec, (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || ''))[0];
   eq(textOf(btn).trim(), 'Show all 150');
   const small = findAll(renderRoute(Object.assign(ET_DOC()), { name: 'activity', id: null }, {}), (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || ''));
-  eq(small.length, 0, 'no button when the problems fit');
+  eq(small.length, 1, 'the button is always drawn when rows exceed the cap');
+  ok(small[0].attrs.hidden === true, '... and hidden while the problems fit');
+});
+/* A stand-in for a rendered .tablewrap: the rows and button of a rendered table, with the few DOM calls refreshCap makes. */
+function stubWrap(sec, problemsOnly) {
+  const rows = findAll(rowsOfTable(sec), (n) => n.tag === 'tr' && n.children[0].tag === 'td').map((r) => ({ hidden: !!r.attrs.hidden, hasAttribute: (k) => k in r.attrs }));
+  const src = findAll(sec, (n) => n.attrs && /\btablewrap\b/.test(n.attrs.class || ''))[0];
+  const attrs = { 'data-cap': String(src.attrs['data-cap']) };
+  const btnNode = findAll(src, (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || ''))[0];
+  const btn = { hidden: !!btnNode.attrs.hidden, textContent: textOf(btnNode).trim() };
+  let only = problemsOnly;
+  const wrap = { scrollWidth: 0, clientWidth: 0, scrollHeight: 0, clientHeight: 0, rows, btn, set only(v) { only = v; },
+    getAttribute: (k) => (k in attrs ? attrs[k] : null), setAttribute: (k, v) => { attrs[k] = v; }, removeAttribute: (k) => { delete attrs[k]; },
+    closest: (sel) => (sel === '.problems-only' ? (only ? {} : null) : wrap),
+    querySelector: (sel) => (sel === 'tbody' ? { children: rows } : sel === 'button.show-all' ? btn : null) };
+  btn.closest = () => wrap;
+  return { wrap, btnNode, rows, btn };
+}
+await test('E11: clearing "Problems only" shows the Show all button, and it reveals every row', () => {
+  const d = ET_DOC();
+  d.activity.runs = manyRuns(80).map((r, i) => Object.assign(r, { conclusion: i < 9 ? 'failure' : 'success' }));
+  const sec = findAll(renderRoute(d, { name: 'activity', id: null }, {}), (n) => n.tag === 'section' && textOf(n).includes(STRINGS.opsRuns))[0];
+  const { wrap, btnNode, rows, btn } = stubWrap(sec, true);
+  eq(rows.filter((r) => r.hidden).length, 0, 'nine problems all show');
+  ok(btn.hidden, 'no button while they fit');
+  wrap.only = false;
+  refreshCap(wrap);
+  eq(rows.filter((r) => r.hidden).length, 30, 'the switch is off: 50 of 80 show');
+  ok(!btn.hidden && btn.textContent === 'Show all 80', 'the button appears: ' + btn.textContent);
+  btnNode.attrs.onclick({ currentTarget: btn });
+  eq(rows.filter((r) => r.hidden).length, 0, 'Show all shows every row');
+  eq(btn.textContent, 'Show first 50');
+  wrap.only = true;
+  refreshCap(wrap);
+  ok(btn.hidden, 'back to problems only, nothing to reveal');
+});
+await test('E11: the dashboard run console draws Show all after the switch is cleared too', () => {
+  const run = (i) => ({ key: 'k' + i, at: '2026-11-12T10:00:00Z', kind: 'workflow', source: 's', name: 'N', title: 'T' + i, state: i < 9 ? 'Failed' : 'Succeeded', duration_s: 5, link: null });
+  const dash = fakeDash({ run_stream: okData(Array.from({ length: 80 }, (_, i) => run(i))) });
+  const sec = findAll(renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) }), (n) => n.tag === 'section' && textOf(n).includes('Workflow and routine runs'))[0];
+  const { wrap, rows, btn } = stubWrap(sec, true);
+  ok(btn.hidden, 'hidden while nine problems fit');
+  wrap.only = false;
+  refreshCap(wrap);
+  eq(rows.filter((r) => r.hidden).length, 30);
+  ok(!btn.hidden, 'visible after clearing the switch');
 });
 await test('E11: applyCap counts only the rows the switch leaves showing', () => {
   const rows = Array.from({ length: 10 }, (_, i) => ({ hidden: false, filtered: i % 2 === 0 }));
@@ -1464,15 +1524,51 @@ await test('E20: every sortable heading is a tab stop that sorts on Enter and Sp
 });
 await test('E20: a scrolling table is a focusable, labeled region named by its panel, with a Skip table button when long', () => {
   for (const node of renderEverything()) for (const w of findAll(node, (n) => n.attrs && /\btablewrap\b/.test(n.attrs.class || ''))) {
-    eq(w.attrs.role, 'region'); eq(w.attrs.tabindex, 0);
-    ok(typeof w.attrs['aria-label'] === 'string' && w.attrs['aria-label'].trim().length > 0, 'aria-label');
-    const rows = findAll(w, (n) => n.tag === 'tr' && n.children[0] && n.children[0].tag === 'td').length;
+    ok(w.attrs.role === undefined && w.attrs.tabindex === undefined, 'a wrapper is a region only once the page finds it scrolls');
+    ok(typeof w.attrs['data-region'] === 'string' && w.attrs['data-region'].trim().length > 0, 'a region label');
+    const trs = findAll(w, (n) => n.tag === 'tr' && n.children[0] && n.children[0].tag === 'td');
+    const visible = trs.filter((r) => !r.attrs.hidden && !('data-ok' in r.attrs)).length;
     const skip = findAll(w, (n) => n.tag === 'button' && n.attrs.class === 'skip-table');
-    eq(skip.length, rows > SKIP_OVER ? 1 : 0, 'skip button for ' + rows + ' rows');
-    eq(findAll(w, (n) => n.attrs && n.attrs.class === 'table-end').length, rows > SKIP_OVER ? 1 : 0, 'skip target');
+    eq(skip.length, visible > SKIP_OVER ? 1 : 0, 'skip button for ' + visible + ' visible rows');
+    eq(findAll(w, (n) => n.attrs && n.attrs.class === 'table-end').length, visible > SKIP_OVER ? 1 : 0, 'skip target');
   }
   const sec = findAll(renderRoute(ET_DOC(), { name: 'activity', id: null }, {}), (n) => n.tag === 'section' && textOf(n).includes(STRINGS.opsRuns))[0];
-  eq(findAll(sec, (n) => n.attrs && n.attrs.role === 'region')[0].attrs['aria-label'], STRINGS.opsRuns, 'the region is named for the heading above it');
+  eq(findAll(sec, (n) => n.attrs && n.attrs['data-region'])[0].attrs['data-region'], STRINGS.opsRuns, 'the region is named for the heading above it');
+});
+await test('E20: a table wrapper becomes a labeled, focusable region only while it scrolls', () => {
+  const log = {};
+  const label = 'Pull requests';
+  const wrap = { scrollWidth: 800, clientWidth: 400, scrollHeight: 100, clientHeight: 100, getAttribute: (k) => (k === 'data-region' ? label : null),
+    setAttribute: (k, v) => { log[k] = v; }, removeAttribute: (k) => { delete log[k]; } };
+  markScroller(wrap);
+  eq(JSON.stringify(log), JSON.stringify({ role: 'region', tabindex: '0', 'aria-label': label }));
+  wrap.scrollWidth = 400;
+  markScroller(wrap);
+  eq(JSON.stringify(log), '{}', 'a table that fits is no tab stop');
+  wrap.scrollHeight = 600;
+  markScroller(wrap);
+  eq(log.role, 'region', 'a tall table that scrolls vertically is one too');
+});
+await test('E20: Skip table lands on Show all when it is showing, else on the next heading, else on the table end', () => {
+  const heading = { tagName: 'H2', hasAttribute: () => false };
+  const after = { tagName: 'SECTION', querySelector: () => heading, nextElementSibling: null };
+  const section = { nextElementSibling: after, parentElement: null };
+  const btn = { hidden: false };
+  const end = { tagName: 'SPAN' };
+  const wrap = { nextElementSibling: null, parentElement: section, querySelector: (s) => (s === 'button.show-all' ? btn : s === '.table-end' ? end : null) };
+  eq(skipTarget(wrap), btn);
+  btn.hidden = true;
+  eq(skipTarget(wrap), heading);
+  eq(skipTarget({ nextElementSibling: null, parentElement: null, querySelector: (s) => (s === '.table-end' ? end : null) }), end);
+  // pressing the button focuses the heading and makes it focusable first
+  const set = {}; let focused = null;
+  const h2 = { tagName: 'H2', hasAttribute: () => false, setAttribute: (k, v) => { set[k] = v; }, focus() { focused = this; } };
+  const big = ET_DOC();
+  big.activity.runs = manyRuns(300).map((r) => Object.assign(r, { conclusion: 'failure' }));
+  const skip = findAll(renderRoute(big, { name: 'activity', id: null }, {}), (n) => n.tag === 'button' && n.attrs.class === 'skip-table')[0];
+  skip.attrs.onclick({ currentTarget: { closest: () => ({ querySelector: () => null, nextElementSibling: { tagName: 'H2', hasAttribute: () => false, setAttribute: h2.setAttribute, focus: h2.focus }, parentElement: null }) } });
+  eq(set.tabindex, '-1');
+  ok(focused !== null, 'focus moved');
 });
 await test('E20: Tab reaches the second panel of the Activity log in under 15 presses, public and private', () => {
   const focusable = (n) => (n.tag === 'a' && n.attrs.href) || ['button', 'input', 'select', 'textarea', 'summary'].includes(n.tag) || (typeof n.attrs.tabindex === 'number' && n.attrs.tabindex >= 0);
@@ -1527,6 +1623,76 @@ await test('E20: the CSS gives every keyboard stop a visible focus style, and no
   ok(!/\.tablewrap[^{]*\{[^}]*outline: none/.test(css), 'no table rule removes the outline');
   ok(/\.skip-table:focus \{[^}]*position: static/.test(css), 'the skip button appears when focused');
   ok(!/\.ex th[^{,]*\{[^}]*outline: none/.test(css), 'headings keep their ring');
+});
+
+// ---- Review fixes: list caps, short headers, accurate notes, ET days, no duplicated helpers ----
+const manyPulls = (n) => Array.from({ length: n }, (_, i) => ({ repo: 'o/r', number: i + 1, title: 'T' + i, head_ref: 'b', state: i % 2 ? 'merged' : 'open', created_at: '2026-11-10T00:00:00Z',
+  updated_at: '2026-11-11T00:00:00Z', merged_at: i % 2 ? '2026-11-11T00:00:00Z' : null, url: 'https://github.com/o/r/pull/' + (i + 1) }));
+const manyIssues = (n) => Array.from({ length: n }, (_, i) => ({ repo: 'o/r', number: i + 1, title: 'I' + i, state: 'open', created_at: '2026-11-10T00:00:00Z', updated_at: '2026-11-11T00:00:00Z', url: 'https://github.com/o/r/issues/' + (i + 1) }));
+const listCheck = (node, heading, rows) => {
+  const sec = findAll(node, (n) => n.tag === 'section' && textOf(n).includes(heading))[0];
+  const t = rowsOfTable(sec, 0);
+  eq(headsOf(t).join(','), 'Repo and #,Title,' + (headsOf(t)[2]), heading + ' headings');
+  ok(!(t.attrs.class || '').includes('stack'), heading + ' has three columns, so it does not stack on a phone');
+  const trs = findAll(t, (n) => n.tag === 'tr' && n.children[0].tag === 'td');
+  eq(trs.length, rows);
+  eq(trs.filter((r) => r.attrs.hidden).length, rows - LIST_CAP, heading + ': ' + LIST_CAP + ' show, the rest wait behind Show all');
+  ok(findAll(sec, (n) => n.tag === 'button' && /show-all/.test(n.attrs.class || '') && !n.attrs.hidden).length === 1, heading + ' has Show all');
+};
+await test('the Pull requests and Open issues tables are three columns capped at LIST_CAP rows, public and private', () => {
+  const d = ET_DOC();
+  d.activity.pulls = manyPulls(40); d.activity.issues = manyIssues(40);
+  const pub = renderRoute(d, { name: 'activity', id: null }, {});
+  listCheck(pub, STRINGS.opsPrs, 40); listCheck(pub, STRINGS.opsIssues, 40);
+  const dash = fakeDash({ open_prs: okData(manyPulls(40).map((p) => Object.assign(p, { author: 'a', checks: 'ok', labels: 'x' }))), merged_prs: okData(manyPulls(40).map((p) => Object.assign(p, { closed_at: '2026-11-11T00:00:00Z' }))),
+    open_issues: okData(manyIssues(40).map((i) => Object.assign(i, { labels: 'x' }))) });
+  const priv = renderRoute(d, { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) });
+  const sec = findAll(priv, (n) => n.tag === 'section' && textOf(n).includes('Pull requests'))[0];
+  for (const t of findAll(sec, (n) => n.tag === 'table')) {
+    eq(headsOf(t).length, 3, 'private PR table columns');
+    eq(findAll(t, (n) => n.tag === 'tr' && n.children[0].tag === 'td' && n.attrs.hidden).length, 40 - LIST_CAP);
+  }
+  listCheck(priv, 'Open issues', 40);
+});
+await test('no table heading is long enough to widen a phone table, and the Spend weeks are plain headings', () => {
+  for (const node of renderEverything()) for (const t of allTables(node)) for (const head of headsOf(t)) ok(head.length <= 28, 'heading too long: ' + head);
+  const spend = renderRoute(Object.assign(ET_DOC(), { generated_at: '2026-11-12T17:00:00Z' }), { name: 'spend', id: null }, {});
+  const sec = findAll(spend, (n) => n.tag === 'section' && textOf(n).includes(STRINGS.impactSpend))[0];
+  eq(headsOf(rowsOfTable(sec, 0)).join('|'), '|This week|Last week');
+  const t = flat(spend);
+  ok(t.includes('this week from Nov 9, 2026, 12:00 PM ET'), 'the start time is in a note');
+});
+await test('Spend says its own weeks start Monday at noon ET; the UTC note speaks only for the UTC-counted days', () => {
+  const spend = flat(renderRoute(ET_DOC(), { name: 'spend', id: null }, {}));
+  ok(spend.includes('Spend weeks start Monday at noon ET (1 PM during daylight saving time)'), 'the panel note');
+  ok(spend.includes(STRINGS.utcNoteSpend), 'the page note');
+  ok(!spend.includes(STRINGS.utcNote), 'not the general note, which would put a spend week at 7 PM ET');
+  ok(flat(renderRoute(ET_DOC(), { name: 'hooks', id: null }, {})).includes(STRINGS.utcNote), 'other pages keep the general note');
+  eq((spend.match(/\bUTC\b/g) || []).length, 1);
+});
+await test('a calendar day shows as its US Eastern day, and a census window edge keeps its UTC day beside the UTC note', () => {
+  const lessons = flat(renderRoute(doc({ generated_at: '2026-11-12T16:00:00Z', lessons: { date: '2026-11-10', items: [{ subject: 'skill:a', kind: 'new-skill', evidence_count: 3, first_seen: '2026-11-03', last_seen: '2026-11-09' }] } }), { name: 'changes', id: null }, {}));
+  ok(lessons.includes('Nov 10') && lessons.includes('Nov 3') && !lessons.includes('Nov 2,'), lessons.slice(0, 400));
+  eq(fmtCalendarDay('2026-11-10'), 'Nov 10');
+  const skills = flat(renderRoute(doc({ generated_at: '2026-11-12T16:00:00Z', skills: [{ name: 'a', status: 'covered', usage: { invocations: 0 } }], usage: { from: '2026-09-21T00:00:00Z', to: '2026-11-10T17:37:15Z' } }), { name: 'skills', id: null }, {}));
+  ok(skills.includes('Sep 21') && skills.includes(STRINGS.utcNote), 'the census window edges are UTC days, and the page says so: ' + skills.slice(0, 400));
+});
+await test('a bare HH:MM UTC in a routine schedule becomes Eastern time, by the offset of the day', () => {
+  eq(etSchedule('Daily at 17:00 UTC', Date.parse('2026-11-12T00:00:00Z')), 'Daily at 12:00 PM ET');
+  eq(etSchedule('Daily at 17:00 UTC', Date.parse('2026-07-01T00:00:00Z')), 'Daily at 1:00 PM ET');
+  eq(etSchedule('Daily 06:53 UTC, GitHub Actions (1:53 AM ET)', Date.parse('2026-11-12T00:00:00Z')), 'Daily 1:53 AM ET, GitHub Actions');
+});
+await test('one helper per job: no source declares its own isDay, lessonDayMs, mondayOf or LESSON_DAY', () => {
+  const banned = new Set(['isDay', 'lessonDayMs', 'mondayOf', 'LESSON_DAY']);
+  const found = [];
+  for (const [file, src] of sourceFiles()) {
+    (function walk(n) {
+      if (!n || typeof n.type !== 'string') return;
+      if ((n.type === 'VariableDeclarator' || n.type === 'FunctionDeclaration') && n.id && banned.has(n.id.name)) found.push(file + ':' + n.id.name);
+      for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+    })(acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'module' }));
+  }
+  eq(found.join(','), '');
 });
 
 for (const f of failures) console.log('FAIL ' + f);

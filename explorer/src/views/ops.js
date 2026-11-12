@@ -3,7 +3,7 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtDateTime } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { table, srcLine, panel, rangeLine, srcLineFor, refreshCap } from './bits.js';
-import { prTable } from './loop.js';
+import { prTable, repoNumber, LIST_CAP } from './loop.js';
 
 export const PROBLEM = ['failure', 'timed_out', 'startup_failure', 'cancelled', 'action_required'];
 
@@ -64,11 +64,10 @@ function issuesView(doc, refMs) {
   const a = doc.activity;
   if (!a || !Array.isArray(a.issues) || !a.issues.length) return null;
   return [srcLineFor(doc, 'activity'), table([
-    { label: STRINGS.colRepo, sort: (i) => i.repo, cell: (i) => clean(String(i.repo).split('/').pop()) },
-    { label: STRINGS.colNumber, num: true, sort: (i) => i.number, cell: (i) => link(i.url, '#' + i.number) },
+    { label: STRINGS.colRepoNumber, sort: (i) => i.repo + '#' + String(i.number).padStart(9, '0'), cell: (i) => repoNumber(i.repo, i.number, i.url) },
     { label: STRINGS.colTitle, sort: (i) => i.title, cell: (i) => clean(i.title) },
     { label: STRINGS.colUpdated, sort: (i) => i.updated_at, cell: (i) => fmtDay(parseTime(i.updated_at), refMs) }
-  ], a.issues.filter(Boolean).slice().sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at))), { tall: true })];
+  ], a.issues.filter(Boolean).slice().sort((x, y) => String(y.updated_at).localeCompare(String(x.updated_at))), { tall: true, cap: LIST_CAP })];
 }
 
 export function opsView(doc, ctx) {

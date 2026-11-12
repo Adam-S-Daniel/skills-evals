@@ -4,7 +4,7 @@
    `confidence`, `status` and `decisions`; see utility.js for the rows. */
 import { STRINGS } from '../core/strings.js';
 import { P } from './strings.js';
-import { fmtCount, fmtUsd, dayKeysBetween, fmtDayKey } from '../core/format.js';
+import { fmtCount, fmtUsd, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { table } from '../views/bits.js';
@@ -21,7 +21,6 @@ export const EXPECTED_YIELD = { near: 0.7, partway: 0.3, far: 0.1, never: 0 };
 export const PLANNER_CHANGE = { day: '2026-11-08', pr: 842, url: 'https://github.com/' + DATA_REPO + '/pull/842' };
 export const GROUPS = ['near', 'partway', 'far', 'never'];
 
-const isDay = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 const blank = () => ({ runs: 0, cost: 0, unknown: 0 });
 const MODES = [{ key: 'share' }, { key: 'count' }];
 const DEFAULT_MODE = 'share';
@@ -69,7 +68,7 @@ export function conversionTotals(doc) {
         groups[g].runs += r.runs;
         if (typeof r.cost_usd === 'number' && isFinite(r.cost_usd)) groups[g].cost += r.cost_usd;
       }
-      if (isDay(r.date)) {
+      if (isDayKey(r.date)) {
         const d = byDay[r.date] = byDay[r.date] || { date: r.date, decided: 0, building: 0, stranded: 0, after: 0 };
         d[seg] += r.runs;
         const side = r.date < PLANNER_CHANGE.day ? planner.before : planner.since;
@@ -79,7 +78,7 @@ export function conversionTotals(doc) {
     }
     if (hasBuilding) groups[g].subjects += 1;
     for (const d of Array.isArray(s.decisions) ? s.decisions : []) {
-      if (d && isDay(d.decided)) decisionDays[d.decided] = (decisionDays[d.decided] || 0) + 1;
+      if (d && isDayKey(d.decided)) decisionDays[d.decided] = (decisionDays[d.decided] || 0) + 1;
     }
   }
   const groupsTotal = { subjects: 0, runs: 0, cost: 0, expected: 0 };

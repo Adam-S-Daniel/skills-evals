@@ -71,8 +71,8 @@ function isSearching(q) {
 
 /* The routes that count days or weeks in UTC and say so once, at the foot. */
 export const UTC_ROUTES = ['summary', 'hooks', 'spend'];
-/* A skill or guidance page draws the same per-day run chart. */
-export const usesUtcDays = (route) => UTC_ROUTES.includes(route.name) || (['skills', 'guidance'].includes(route.name) && !!route.id);
+/* The skills and guidance lists show the usage census window by its UTC day edges; their pages draw the per-day run chart. */
+export const usesUtcDays = (route) => UTC_ROUTES.includes(route.name) || ['skills', 'guidance'].includes(route.name);
 
 /* opts: { url, ext, search, onFilter, onClear }. `ext` is
    the private build's overlays; the public build passes none. */
@@ -94,7 +94,7 @@ export function renderRoute(doc, route, opts) {
     case 'activity': body = opsView(doc, ctx); break;
     default: body = summaryView(doc, ctx);
   }
-  const foot = usesUtcDays(route) ? h('p', { class: 'note utc-note' }, STRINGS.utcNote) : null;
+  const foot = usesUtcDays(route) ? h('p', { class: 'note utc-note' }, route.name === 'spend' ? STRINGS.utcNoteSpend : STRINGS.utcNote) : null;
   return h('div', null,
     h('h1', { class: 'group-title' }, STRINGS.groups[group]),
     group === 'results' ? subNav(route.name) : null,

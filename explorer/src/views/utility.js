@@ -3,7 +3,7 @@
    each subject's `run_utility` (harness/gates.py, RUN UTILITY): runs and
    list-price cost per day, model, class and discard reason. */
 import { STRINGS } from '../core/strings.js';
-import { clean, fmtCount, fmtUsd, dayKeyOf, dayKeysBetween, fmtDayKey } from '../core/format.js';
+import { clean, fmtCount, fmtUsd, dayKeyOf, dayKeysBetween, fmtDayKey, isDayKey } from '../core/format.js';
 import { h, toDom } from '../core/h.js';
 import { legend, chartTitle } from '../core/charts.js';
 import { term } from '../core/terms.js';
@@ -19,7 +19,6 @@ export const PERIODS = [{ key: '7', days: 7 }, { key: '30', days: 30 }, { key: '
 export const DEFAULT_PERIOD = '30';
 
 const DAY_MS = 86400000;
-const isDay = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 
 /* The first day a period covers, counting the reference day itself, or
    null for all time (or no reference). */
@@ -34,7 +33,7 @@ export function periodStart(period, refMs) {
 export function inPeriod(rows, period, refMs) {
   const from = periodStart(period, refMs);
   const list = Array.isArray(rows) ? rows.filter((r) => r && Number.isInteger(r.runs) && r.runs > 0 && UTILITY_CLASSES.includes(r.class)) : [];
-  return from === null ? list : list.filter((r) => isDay(r.date) && r.date >= from);
+  return from === null ? list : list.filter((r) => isDayKey(r.date) && r.date >= from);
 }
 
 const blank = () => ({ runs: 0, cost: 0, unknown: 0 });
@@ -56,7 +55,7 @@ export function utilityTotals(rows, period, refMs) {
     add(out.total, r);
     if (NO_USE.includes(r.class)) add(out.noUse, r);
     if (typeof r.reason === 'string' && r.reason) add(out.reasons[r.reason] = out.reasons[r.reason] || blank(), r);
-    if (isDay(r.date)) {
+    if (isDayKey(r.date)) {
       const d = days[r.date] = days[r.date] || { date: r.date };
       d[r.class] = (d[r.class] || 0) + r.runs;
     }

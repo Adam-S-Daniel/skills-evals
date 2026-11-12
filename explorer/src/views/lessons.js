@@ -1,11 +1,9 @@
 /* Lessons from my sessions (Adam, 2026-11-03). */
 import { STRINGS } from '../core/strings.js';
-import { clean, githubLink, parseTime, fmtUtcDay } from '../core/format.js';
+import { clean, githubLink, parseTime, dayKeyMs, fmtCalendarDay } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { table } from './bits.js';
 
-export const LESSON_DAY = /^\d{4}-\d{2}-\d{2}$/;
-export const lessonDayMs = (d) => (typeof d === 'string' && LESSON_DAY.test(d) ? Date.parse(d + 'T00:00:00Z') : NaN);
 export const listWords = (parts) => parts.length < 2 ? parts.join('')
   : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
 
@@ -33,7 +31,7 @@ export function lessonItem(raw) {
   if (!raw || typeof raw !== 'object') return null;
   if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonKinds, raw.kind) || typeof raw.subject !== 'string' || !raw.subject) return null;
   if (!Number.isInteger(raw.evidence_count) || raw.evidence_count < 1) return null;
-  if (!isFinite(lessonDayMs(raw.first_seen)) || !isFinite(lessonDayMs(raw.last_seen))) return null;
+  if (!isFinite(dayKeyMs(raw.first_seen)) || !isFinite(dayKeyMs(raw.last_seen))) return null;
   let draft = null;
   const d = raw.draft;
   if (d && typeof d === 'object' && Number.isInteger(d.number) && d.number > 0
@@ -85,7 +83,7 @@ export function lessonIssue(raw) {
   if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonIssueSources, raw.source)) return null;
   if (typeof raw.repo !== 'string' || !ISSUE_REPO.test(raw.repo) || !Number.isInteger(raw.number) || raw.number < 1) return null;
   if (!Object.prototype.hasOwnProperty.call(STRINGS.lessonDraftStates, raw.state) || raw.state === 'merged') return null;
-  if (!isFinite(lessonDayMs(raw.opened))) return null;
+  if (!isFinite(dayKeyMs(raw.opened))) return null;
   const url = githubLink(raw.url);
   if (!url) return null;
   const count = Number.isInteger(raw.count) && raw.count >= 0 ? raw.count : null;
@@ -109,7 +107,7 @@ export function lessonsView(doc, mode) {
   if (!L || typeof L !== 'object') {
     return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
   }
-  const miner = isFinite(lessonDayMs(L.date)) && Array.isArray(L.items);
+  const miner = isFinite(dayKeyMs(L.date)) && Array.isArray(L.items);
   const issues = mode === 'guidance' || !Array.isArray(L.issues) ? [] : L.issues.map(lessonIssue).filter(Boolean);
   if (!miner && !issues.length) {
     return h('section', null, head, h('p', { class: 'note' }, STRINGS.lessonsNone));
@@ -122,7 +120,7 @@ export function lessonsView(doc, mode) {
   const items = (miner ? L.items : []).map(lessonItem).filter((it) => it && (mode === 'all' || (mode === 'guidance'
     ? it.subject.startsWith('guidance:')
     : it.kind === 'new-skill' || it.subject.startsWith('skill:'))));
-  const day = (d) => fmtUtcDay(lessonDayMs(d), refMs);
+  const day = (d) => fmtCalendarDay(d, refMs);
   const cols = [STRINGS.colProposal, STRINGS.colKind, STRINGS.colSource, STRINGS.colSeen, STRINGS.colFirst, STRINGS.colLast, STRINGS.colStatus];
   const entry = (closed, n, cells) => ({ closed, n, cells });
   const minerRows = items.map((it) => entry(!!it.draft && it.draft.state !== 'open', it.n, [

@@ -17,7 +17,7 @@ import { lessonTitle, lessonItem, lessonIssue, lessonsView } from '../views/less
 import { buildPage, renderRoute } from '../views/page.js';
 import { parseRoute, hashFor, groupOf, GROUPS } from '../core/route.js';
 import { weekChart, weekScale } from '../views/weekchart.js';
-import { hookItems, hookNext, hookWeeks, hookTile, cloudCounted, mondayOf } from '../core/hooks.js';
+import { hookItems, hookNext, hookWeeks, hookTile, cloudCounted } from '../core/hooks.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { searchItems, filterItems } from '../views/search.js';
 import { checkWeeks } from '../views/hooks.js';
@@ -39,7 +39,7 @@ export const EXPORTS = {
   allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
   poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPer100Words, hasRegression, hasAlone, legendFor, subjectPage, weekChart, weekScale, hookNext,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
-  useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, mondayOf, checkWeeks,
+  useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, checkWeeks,
   fixtureQueue, searchItems, filterItems, runsOf, LOOP_TITLE,
   trendingRows, trendingView, changeNodes, firesFigures, firesNode, asOfLine, skillStateCounts, stateBar, term, defn, closeDef, installDefs, fmt2, fmtSigned2, roundDecimals
 };

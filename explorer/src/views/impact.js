@@ -101,8 +101,8 @@ function spendView(doc, refMs) {
   const share = noUseShare(doc, refMs);
   const cell = (r, k) => (r && r[k] !== null ? usd(r[k]) : STRINGS.noValue);
   const rows = [{ label: STRINGS.spendTests, k: 'tests' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendApi, k: 'api' }, { label: STRINGS.spendTotal, k: 'total' }];
-  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), s.generated_at ? srcLineFor(doc, 'spend') : null,
-    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), weekStart(w.week)), num: true,
+  return [h('p', { class: 'note' }, STRINGS.impactSpendNote), two.length ? h('p', { class: 'note' }, STRINGS.spendWeeksNote(two.map((w) => (weekWhich(w.week, refMs) === 'this' ? 'this week' : weekWhich(w.week, refMs) === 'last' ? 'last week' : fmtWeekStart(w.week, refMs)) + ' from ' + weekStart(w.week)).join(', '))) : null, s.generated_at ? srcLineFor(doc, 'spend') : null,
+    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), fmtWeekStart(w.week, refMs)), num: true,
       cell: (r) => cell(w, r.k) + (r.k === 'tests' && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : '') }))), rows) : null,
     share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', usd(share.noUse), usd(share.total), share.top.map(([name, cost]) => name + ' (' + usd(cost) + ')').join(' and ')),
       ' ', navLink(hashFor('summary'), STRINGS.spendUsefulnessLink)) : null,
