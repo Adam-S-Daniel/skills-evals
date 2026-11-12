@@ -146,6 +146,18 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   the agent's workspace shows only the built state, not the machinery that
   built it.
 
+  An arm's sandbox protects the workspace's `.git/config`, so the agent can
+  never `git remote add`: a fixture that needs remotes builds them in
+  `setup:`, which runs before the sandbox and the baseline commit, and sets
+  the git identity through `env:` (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`). The
+  harness's baseline commit lands on whatever branch `setup:` leaves checked
+  out, and fails if nothing is left uncommitted. In a fixture meant for
+  routine runs, avoid `command_succeeds` checks: they need `bwrap`, which
+  cloud containers lack, so the check fails closed in every arm. Prefer
+  `file_matches` on files the agent leaves behind (reflogs, stand-in
+  records). `file_matches` reads in text mode and cannot see a carriage
+  return.
+
   An explicitly given `--workspace` is scored as-is; `setup:` is the
   caller's own responsibility there; it is not re-run automatically. A
   nonzero exit (or a `setup_timeout_s:`-bounded timeout, default 60s)
