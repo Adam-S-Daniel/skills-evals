@@ -8,82 +8,79 @@
 /*__CSS__*/
 :root {
   color-scheme: light;
-  /* A lab notebook on graph paper: warm paper, blue-black ink and three pens
-     (teal, vermilion, olive) that are also the chart series. */
-  --page: #F3F0E6;
-  --surface: #FBFAF5;
-  --ink: #17252A;
-  --ink-2: #3D4B4F;
-  --muted: #5B6769;
-  --axis: #7A8481;
-  --grid: #E3DFD2;
-  --base: #D3CEBD;
-  --ring: #DCD7C7;
-  --s1: #1B6E78;
-  --s2: #C2502A;
-  --s3: #5E7F2E;
-  --good: #3D7D3A;
-  --good-ink: #2E672B;
-  --warning: #8A5808;
-  --critical: #B53F28;
-  --link: #17636C;
-  --chip-bg: #ECE8DB;
-  --hover: #EEEADD;
+  /* Cold white poster stock, jet ink and three spot inks (cobalt, magenta,
+     teal) that are also the chart series. */
+  --page: #E8ECF1;
+  --surface: #FFFFFF;
+  --ink: #0A0C12;
+  --ink-2: #2F3644;
+  --muted: #535B6A;
+  --axis: #737B8C;
+  --grid: #D3D9E1;
+  --base: #B4BCC8;
+  --ring: #0A0C12;
+  --s1: #1F3AE0;
+  --s2: #B80F78;
+  --s3: #006E7A;
+  --good: #17702A;
+  --good-ink: #125C22;
+  --warning: #8A4F00;
+  --critical: #C4160F;
+  --link: #1A30C4;
+  --chip-bg: #DCE2EA;
+  --hover: #DDE4FA;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    /* The same pens glowing on a bench-black instrument panel. */
-    --page: #0F1614;
-    --surface: #16201D;
-    --ink: #E2ECE5;
-    --ink-2: #B6C5BC;
-    --muted: #8E9F95;
-    --axis: #6C7D75;
-    --grid: #22302B;
-    --base: #33443D;
-    --ring: #27352F;
-    --s1: #5CC8C0;
-    --s2: #F08A5D;
-    --s3: #A9CF6A;
-    --good: #8FD180;
-    --good-ink: #A6E097;
-    --warning: #E3B261;
-    --critical: #F07B62;
-    --link: #7FD6CF;
-    --chip-bg: #1D2925;
-    --hover: #1B2622;
+    /* The same poster under blacklight: the inks glow on blue-black. */
+    --page: #090A10;
+    --surface: #12141D;
+    --ink: #F1F3F8;
+    --ink-2: #C2C7D4;
+    --muted: #9299AB;
+    --axis: #6D7488;
+    --grid: #232736;
+    --base: #343A4D;
+    --ring: #434A60;
+    --s1: #7090FF;
+    --s2: #FF5FB6;
+    --s3: #2ED3CC;
+    --good: #72DC62;
+    --good-ink: #8BE87C;
+    --warning: #FFC044;
+    --critical: #FF6A55;
+    --link: #93AAFF;
+    --chip-bg: #1A1D29;
+    --hover: #191D30;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0F1614;
-  --surface: #16201D;
-  --ink: #E2ECE5;
-  --ink-2: #B6C5BC;
-  --muted: #8E9F95;
-  --axis: #6C7D75;
-  --grid: #22302B;
-  --base: #33443D;
-  --ring: #27352F;
-  --s1: #5CC8C0;
-  --s2: #F08A5D;
-  --s3: #A9CF6A;
-  --good: #8FD180;
-  --good-ink: #A6E097;
-  --warning: #E3B261;
-  --critical: #F07B62;
-  --link: #7FD6CF;
-  --chip-bg: #1D2925;
-  --hover: #1B2622;
+  --page: #090A10;
+  --surface: #12141D;
+  --ink: #F1F3F8;
+  --ink-2: #C2C7D4;
+  --muted: #9299AB;
+  --axis: #6D7488;
+  --grid: #232736;
+  --base: #343A4D;
+  --ring: #434A60;
+  --s1: #7090FF;
+  --s2: #FF5FB6;
+  --s3: #2ED3CC;
+  --good: #72DC62;
+  --good-ink: #8BE87C;
+  --warning: #FFC044;
+  --critical: #FF6A55;
+  --link: #93AAFF;
+  --chip-bg: #1A1D29;
+  --hover: #191D30;
 }
 /* The page color fills the whole window, outside the column and below short
-   pages, ruled as faint graph paper in the first pen's color. */
+   pages. Flat: nothing sits behind the charts. */
 html { -webkit-text-size-adjust: 100%; background: var(--page); min-height: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
-  background-image: linear-gradient(color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px);
-  background-size: 24px 24px; background-position: -1px -1px; }
+body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh; }
 </style>
 </head>
 <body>

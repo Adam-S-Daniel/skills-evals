@@ -3,50 +3,47 @@
 /* The dashboard host's design tokens, with the public palette as fallback,
    so the page follows the host's light and dark themes. */
 #ex-root, #ex-tip {
-  --page: var(--color-bg, #F3F0E6);
-  --surface: var(--color-panel, #FBFAF5);
-  --ink: var(--color-fg, #17252A);
-  --ink-2: var(--color-fg-muted, #3D4B4F);
-  --muted: var(--color-fg-muted, #5B6769);
-  --axis: var(--cds-chart-axis, #7A8481);
-  --grid: var(--cds-chart-grid, #E3DFD2);
-  --base: var(--color-border-line, #D3CEBD);
-  --ring: var(--color-border-line, #D3CEBD);
-  --s1: var(--cds-chart-1, #1B6E78);
-  --s2: var(--cds-chart-2, #C2502A);
-  --s3: var(--cds-chart-3, #5E7F2E);
-  --good: var(--color-ok, #3D7D3A);
-  --good-ink: var(--color-ok, #2E672B);
-  --warning: var(--color-warn, #8A5808);
-  --critical: var(--color-bad, #B53F28);
-  --link: var(--cds-chart-1, #17636C);
-  --chip-bg: var(--color-bg, #ECE8DB);
-  --hover: var(--color-bg, #EEEADD);
-  /* The notebook faces first (base.css loads them), then the host's own. */
-  --ex-font-family: "Schibsted Grotesk", var(--font-anthropic-sans, "Avenir Next", "Segoe UI Variable Text", sans-serif);
-  --ex-font: 15px/1.55 var(--ex-font-family);
-  --ex-serif: Fraunces, var(--font-anthropic-serif, "Iowan Old Style", Georgia, serif);
+  --page: var(--color-bg, #E8ECF1);
+  --surface: var(--color-panel, #FFFFFF);
+  --ink: var(--color-fg, #0A0C12);
+  --ink-2: var(--color-fg-muted, #2F3644);
+  --muted: var(--color-fg-muted, #535B6A);
+  --axis: var(--cds-chart-axis, #737B8C);
+  --grid: var(--cds-chart-grid, #D3D9E1);
+  --base: var(--color-border-line, #B4BCC8);
+  --ring: var(--color-border-line, #0A0C12);
+  --s1: var(--cds-chart-1, #1F3AE0);
+  --s2: var(--cds-chart-2, #B80F78);
+  --s3: var(--cds-chart-3, #006E7A);
+  --good: var(--color-ok, #17702A);
+  --good-ink: var(--color-ok, #125C22);
+  --warning: var(--color-warn, #8A4F00);
+  --critical: var(--color-bad, #C4160F);
+  --link: var(--cds-chart-1, #1A30C4);
+  --chip-bg: var(--color-bg, #DCE2EA);
+  --hover: var(--color-bg, #DDE4FA);
+  /* The poster faces first (base.css loads them), then the host's own. */
+  --ex-font-family: "Familjen Grotesk", var(--font-anthropic-sans, "Trebuchet MS", "Gill Sans", sans-serif);
+  --ex-font: 17px/1.55 var(--ex-font-family);
+  --ex-serif: "Big Shoulders Display", "Arial Narrow", Impact, var(--font-anthropic-sans, sans-serif);
 }
 @media (prefers-color-scheme: dark) {
   #ex-root, #ex-tip {
-    --page: var(--color-bg, #0F1614); --surface: var(--color-panel, #16201D); --ink: var(--color-fg, #E2ECE5);
-    --ink-2: var(--color-fg-muted, #B6C5BC); --muted: var(--color-fg-muted, #8E9F95); --grid: var(--cds-chart-grid, #22302B);
-    --base: var(--color-border-line, #33443D); --ring: var(--color-border-line, #27352F); --s1: var(--cds-chart-1, #5CC8C0);
-    --s2: var(--cds-chart-2, #F08A5D); --s3: var(--cds-chart-3, #A9CF6A); --good: var(--color-ok, #8FD180); --good-ink: var(--color-ok, #A6E097);
-    --warning: var(--color-warn, #E3B261); --critical: var(--color-bad, #F07B62); --link: var(--cds-chart-1, #7FD6CF);
-    --chip-bg: var(--color-bg, #1D2925); --hover: var(--color-bg, #1B2622);
+    --page: var(--color-bg, #090A10); --surface: var(--color-panel, #12141D); --ink: var(--color-fg, #F1F3F8);
+    --ink-2: var(--color-fg-muted, #C2C7D4); --muted: var(--color-fg-muted, #9299AB); --grid: var(--cds-chart-grid, #232736);
+    --base: var(--color-border-line, #343A4D); --ring: var(--color-border-line, #434A60); --s1: var(--cds-chart-1, #7090FF);
+    --s2: var(--cds-chart-2, #FF5FB6); --s3: var(--cds-chart-3, #2ED3CC); --good: var(--color-ok, #72DC62); --good-ink: var(--color-ok, #8BE87C);
+    --warning: var(--color-warn, #FFC044); --critical: var(--color-bad, #FF6A55); --link: var(--cds-chart-1, #93AAFF);
+    --chip-bg: var(--color-bg, #1A1D29); --hover: var(--color-bg, #191D30);
   }
 }
 /* The host's page color behind the whole window, outside the column and below
    short pages; the palette above is defined only inside #ex-root. */
-html, body { background: var(--color-bg, #F3F0E6); }
-@media (prefers-color-scheme: dark) { html, body { background: var(--color-bg, #0F1614); } }
+html, body { background: var(--color-bg, #E8ECF1); }
+@media (prefers-color-scheme: dark) { html, body { background: var(--color-bg, #090A10); } }
 html { min-height: 100%; }
 body { min-height: 100vh; }
-#ex-root { background: var(--page); min-height: 100vh;
-  background-image: linear-gradient(color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px);
-  background-size: 24px 24px; background-position: -1px -1px; }
+#ex-root { background: var(--page); min-height: 100vh; }
 </style>
 <div id="ex-root" class="ex">
   <div id="ex-app">

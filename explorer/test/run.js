@@ -419,8 +419,8 @@ await test('both pages paint the whole window in the theme color, not only their
   const pub = fs.readFileSync(PAGE, 'utf8'), priv = fs.readFileSync(PRIVATE_PAGE, 'utf8');
   ok(/html \{[^}]*background: var\(--page\)[^}]*min-height: 100%/.test(pub), 'public html background');
   ok(/body \{[^}]*background: var\(--page\)[^}]*min-height: 100vh/.test(pub), 'public body background');
-  ok(/html, body \{ background: var\(--color-bg, #F3F0E6\); \}/.test(priv), 'private light background');
-  ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #0F1614\); \} \}/.test(priv), 'private dark background');
+  ok(/html, body \{ background: var\(--color-bg, #E8ECF1\); \}/.test(priv), 'private light background');
+  ok(/prefers-color-scheme: dark\) \{ html, body \{ background: var\(--color-bg, #090A10\); \} \}/.test(priv), 'private dark background');
   ok(/body \{ min-height: 100vh; \}/.test(priv), 'private body fills the window');
 });
 
