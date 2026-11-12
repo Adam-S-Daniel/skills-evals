@@ -40,10 +40,10 @@ export async function bundle(entry, opts) {
   const flag = (name, dflt) => (typeof o[name] === 'boolean' ? o[name] : dflt);
   const priv = entry === 'private.js';
   const res = await bundleResult(entry, {
-    // Syntax everywhere. Whitespace and identifiers only for the private page,
+    // Syntax and whitespace everywhere; identifiers only for the private page,
     // which the console stores as one ArtifactData document of at most 262,144
-    // bytes once JSON-serialized; the public pages stay readable.
-    minifySyntax: flag('minifySyntax', true), minifyWhitespace: flag('minifyWhitespace', priv), minifyIdentifiers: flag('minifyIdentifiers', priv)
+    // bytes once JSON-serialized. Identifier names stay in the public pages.
+    minifySyntax: flag('minifySyntax', true), minifyWhitespace: flag('minifyWhitespace', true), minifyIdentifiers: flag('minifyIdentifiers', priv)
   });
   return res.outputFiles[0].text;
 }
