@@ -80,7 +80,7 @@ function buildTerms(you) {
   judge: { label: 'Judge', text: 'A separate AI model that reads each attempt and scores it from 0 to 10. It never takes part in the task.' },
   judgeScore: { label: 'Judge score', text: 'A grade from 0 to 10 that the judge, a separate AI model, gives after reading a transcript of the attempt. Ten is the best. It is not a pass count: the checks are scored separately.' },
   percentagePoint: { label: 'Percentage point', text: 'One point on the 0 to 100 percent scale of checks passed. Going from 75% to 25% is a drop of 50 percentage points.' },
-  verdict: { label: 'Verdict', text: 'The improvement loop\'s decision about a subject: keep it, remove it, or not decided yet. The colored label on each card shows it.' },
+  verdict: { label: 'Verdict', text: 'The improvement loop\'s decision about a subject: keep it, remove it, or not decided yet. The colored status label shows it.' },
   fire: { label: 'Fire', text: 'One scheduled start of a run: the loop launches a test of one subject on one model. Its results should come back to the results branch within 2 hours.' },
   sweep: { label: 'Sweep', text: 'A group of fires with no results that started within an hour of each other. A sweep usually means one outage rather than separate failures.' },
   decisive: { label: 'Decisive', text: 'A run that counted toward the point where its model-and-fixture comparison reached a keep-or-remove decision.' },

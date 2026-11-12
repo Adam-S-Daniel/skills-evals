@@ -20,6 +20,11 @@ function loadPage() {
 }
 
 const P = loadPage();
+/* The Skills or Guidance list and every subject's own page, as text: what the
+   list's cards once held now lives on each subject's page. */
+const subjectPages = (doc, mode) => P.h('div', null, (mode === 'guidance' ? P.sectionItems(doc) : P.skillItems(doc)).map((i) => P.subjectPage(doc, mode, i.name, {})));
+const pagesText = (doc, mode) => P.textOf(P.buildPage(doc, mode, {})) + ' ' + (mode === 'guidance' ? P.sectionItems(doc) : P.skillItems(doc))
+  .map((i) => P.textOf(P.subjectPage(doc, mode, i.name, {}))).join(' ');
 const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixture.json'), 'utf8'));
 const committedIds = JSON.parse(fs.readFileSync(path.join(__dirname, 'guidance-ids.json'), 'utf8'));
 // Every alert kind scripts/explorer_data.py can emit; the pytest module
@@ -216,7 +221,7 @@ test('cards sort by next test first, then by how well they are faring', () => {
   const sec = JSON.parse(JSON.stringify(fixture));
   sec.guidance.sections.find((x) => x.id === 'git-practices').next_test = { position: 1, band: 'missing', due: null, scheduled: true };
   eq(P.sectionItems(sec, 'next')[0].id, 'git-practices');
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  const text = pagesText(doc, 'skills');
   ok(text.includes('Next test: 1st skill in line for the next round of tests.'), 'queued line');
   ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
   ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
@@ -232,7 +237,7 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   doc.skills[0].stakes = { level: 'high', reason: 'a wrong pin runs third-party code' };
   doc.skills[1].stakes = { level: 'none', reason: 'a hook refuses it', covered_by: 'Adam-S-Daniel/example:hooks/check.sh' };
   doc.skills[2].stakes = { level: 'normal' };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  const text = pagesText(doc, 'skills');
   ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked every 4 weeks instead of 8.'), 'high line');
   ok(text.includes('No test needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
   eq(text.split('High stakes:').length + text.split('No test needed:').length, 4);
@@ -248,7 +253,7 @@ const withCells = (cells, over) => ({ helps: 0.5, no_help: 0.5, keep_pairs: 10, 
 test('the confidence view with no figure says so', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   doc.skills[1].confidence = { helps: null, no_help: null };
-  ok(P.textOf(P.buildPage(doc, 'skills', {})).includes(P.STRINGS.confidenceNone), 'page');
+  ok(pagesText(doc, 'skills').includes(P.STRINGS.confidenceNone), 'page');
   ok(P.textOf(cv(null)).includes(P.STRINGS.confidenceNone), 'null');
   eq(svgs(cv({ helps: null })).length, 0);
 });
@@ -349,7 +354,7 @@ test('the confidence view without cells (older data) shows the sentences only', 
 });
 test('no "Sure it helps" gauge text is left anywhere', () => {
   for (const m of ['skills', 'guidance']) {
-    const t = P.textOf(P.buildPage(fixture, m, {}));
+    const t = pagesText(fixture, m);
     ok(!/Sure it helps|Sure any gain/.test(t), m);
   }
   ok(!/Sure it helps|Sure any gain|class="gauge"|\.gauge\b|\.track\b/.test(html), 'page source');
@@ -360,42 +365,78 @@ test('real-use counts show on skill cards with the census window', () => {
   doc.skills[0].usage = { invocations: 9 };
   doc.skills[1].usage = { invocations: 1 };
   doc.skills[2].usage = { invocations: 0 };
-  const text = P.textOf(P.buildPage(doc, 'skills', {}));
+  const text = pagesText(doc, 'skills');
   ok(text.includes('Used 9 times in the owner\'s real work from Sep 7 to Oct 31.'), 'plural, UTC window start');
   ok(text.includes('Used 1 time in the owner\'s real work from Sep 7 to Oct 31.'), 'singular');
   ok(text.includes('Not used in the owner\'s real work from Sep 7 to Oct 31.'), 'zero');
   ok(text.includes('2,517 of the owner\'s Claude Code sessions'), 'session count note');
-  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('real work from'), 'no census, no line');
+  ok(!pagesText(fixture, 'skills').includes('real work from'), 'no census, no line');
 });
 test('each skill card says what the skill is for', () => {
   eq(P.purposeOf('Write ADRs under docs/decisions/. Use when asked.'), 'Write ADRs under docs/decisions/.');
   eq(P.purposeOf('Debug e.g. workflows. Trigger on CI.'), 'Debug e.g. workflows.');
   eq(P.purposeOf('No final stop'), 'No final stop');
   eq(P.purposeOf(null), null);
-  const page = P.textOf(P.buildPage(fixture, 'skills', {}));
+  const page = pagesText(fixture, 'skills');
   ok(page.includes('Invented description of what example-skill-alpha is for.'), 'purpose on the card');
   ok(!page.includes('Use when the test says so'), 'trigger text left off');
   const noDesc = JSON.parse(JSON.stringify(fixture));
   noDesc.skills.forEach((x) => { delete x.description; });
-  ok(P.textOf(P.buildPage(noDesc, 'skills', {})).includes(P.STRINGS.purposeMissing), 'fallback when absent');
+  ok(pagesText(noDesc, 'skills').includes(P.STRINGS.purposeMissing), 'fallback when absent');
   eq(P.purposeOf('   '), null);
 });
-test('sections sort by gain per KB, or by size', () => {
-  const byValue = P.sectionItems(fixture, 'value').map((i) => i.id);
-  // By in-situ gain per KB: what the section adds beside the rest.
-  const withGain = byValue.filter((id) => ['security', 'anything-you-name-gets-its-link', 'git-practices', 'dependency-updates'].includes(id));
-  eq(withGain.join(','), 'anything-you-name-gets-its-link,dependency-updates,git-practices,security');
-  const items = Object.fromEntries(P.sectionItems(fixture, 'value').map((i) => [i.id, i]));
-  ok(items['dependency-updates'].perKb !== null, 'an in-situ-only section is ranked');
-  eq(items['dependency-updates'].perKb, items['anything-you-name-gets-its-link'].perKb, 'same in-situ runs, same bytes');
-  const bySize = P.sectionItems(fixture, 'size').map((i) => i.bytes);
-  ok(bySize.every((b, i) => i === 0 || bySize[i - 1] >= b), 'size order descending');
+const heads = (page) => P.findAll(P.findAll(page, (n) => n.tag === 'table')[0], (n) => n.tag === 'th').map((n) => n.children.join('').trim());
+const tableRows = (page) => P.findAll(page, (n) => n.tag === 'tbody')[0].children.map((tr) => tr.children.map((td) => P.textOf(td).replace(/\s+/g, ' ').trim()));
+test('the Skills table lists every tested skill once, best status first, then most used, with its decision', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
+  P.skillItems(doc).forEach((it, i) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: i % 2 ? 0 : i + 3 }; });
+  const page = P.buildPage(doc, 'skills', {});
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Uses,Next test,Official decision');
+  const rows = tableRows(page);
+  const items = P.skillItems(doc);
+  eq(rows.length, items.length, 'one row per tested skill');
+  const rank = ['Helps', 'Helps only on its own', 'Early sign: helps', 'Trending toward removal', 'No measurable difference', 'Test cannot tell', 'Not enough data'];
+  rows.forEach((r, i) => {
+    if (i === 0) return;
+    const at = (c) => rank.findIndex((x) => c.endsWith(' ' + x));
+    const a = at(rows[i - 1][1]), b = at(r[1]);
+    ok(a >= 0 && b >= 0 && a <= b, 'status order at ' + r[0]);
+    if (a === b) ok(Number(rows[i - 1][4]) >= Number(r[4]), 'most used first within a status at ' + r[0]);
+  });
+  const hrefs = P.findAll(page, (n) => n.tag === 'tbody')[0] && P.findAll(P.findAll(page, (n) => n.tag === 'tbody')[0], (n) => n.tag === 'a').map((n) => n.attrs.href);
+  ok(items.every((it) => hrefs.includes('#/skills/' + encodeURIComponent(it.name))), 'every name opens its page');
+  const unused = items.filter((it) => doc.skills.find((x) => x.name === it.name).usage.invocations === 0).length;
+  ok(P.textOf(page).includes(unused + ' of ' + items.length + ' tested skills were not used in the owner\'s real work from Sep 7 to Oct 31 (cloud sessions are not counted yet).'), 'the unused count');
+  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('tested skills were not used'), 'no census, no line');
+});
+test('the Guidance table shows each section\'s size in words, not uses', () => {
+  const page = P.buildPage(fixture, 'guidance', {});
+  eq(heads(page).join(','), 'Name,Status,Gain, points,Runs,Size,Gain per 100 words,Next test,Official decision');
+  eq(tableRows(page).length, P.sectionItems(fixture).length);
+  ok(!P.findAll(page, (n) => n.attrs && n.attrs.class === 'cards').length, 'no card grid');
+  // Gain per 100 words: in-situ gain points divided by the words shown, times 100; sorts by the number.
+  const tr = P.findAll(page, (n) => n.tag === 'tbody')[0].children;
+  const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
+  let seen = 0;
+  for (const row of tr) {
+    const id = decodeURIComponent(P.findAll(row, (n) => n.tag === 'a')[0].attrs.href.split('/').pop());
+    const it = items[id];
+    const g = it.pooled.all.inSitu;
+    const want = g === null ? null : (g * 100) / P.wordsFor(it.bytes) * 100;
+    const td = row.children[5];
+    eq(td.attrs['data-sort'], want === null ? null : String(want), 'sort value for ' + id);
+    if (want !== null) { seen++; eq(P.textOf(td).trim(), want.toFixed(1), 'shown for ' + id); }
+  }
+  // A known case: 20 points of gain over 400 words is 5.0 points per 100 words.
+  eq(P.gainPer100Words({ all: { inSitu: 0.2 } }, 2400), 5);
+  ok(seen > 1, 'at least two sections have a value');
 });
 test('section-alone results show only when the data file carries them, with why', () => {
   // Owner, 2026-11-03: explorer_data.py publishes a section's section-alone
   // pair (section vs none) only when its in-situ verdict is retire.
   const items = Object.fromEntries(P.sectionItems(fixture).map((i) => [i.id, i]));
-  const card = (id) => P.sectionCard(items[id], refMs, fixture);
+  const card = (id) => P.subjectPage(fixture, 'guidance', id, {});
   const inSitu = items['dependency-updates'];
   eq(P.hasAlone(inSitu.pooled), false, 'no alone pair in the data');
   const t = P.textOf(card('dependency-updates'));
@@ -533,9 +574,9 @@ test('search finds subjects, checks and pull requests, and filters by verdict', 
   eq(twice.length, items.length, 'extra items already in the document are dropped');
 });
 test('each mode renders its own views', () => {
-  const s = P.textOf(P.buildPage(fixture, 'skills', {}));
+  const s = pagesText(fixture, 'skills');
   ok(s.includes(P.STRINGS.skillsHeading) && !s.includes(P.STRINGS.wholeHeading), 'skills view');
-  const g = P.textOf(P.buildPage(fixture, 'guidance', {}));
+  const g = pagesText(fixture, 'guidance');
   ok(g.includes(P.STRINGS.wholeHeading) && g.includes(P.STRINGS.sectionsHeading), 'guidance view');
   ok(g.includes('About 150 words'), 'section size in words');
   ok(g.includes(P.GLOSSES['security']), 'gloss on the card');
@@ -546,7 +587,7 @@ test('a not-schedulable alert gets its plain label, not the raw kind', () => {
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'not-schedulable', subject: 'skill',
     name: 'example-skill-alpha', model: 'example-large-2-0', fixture: 'evals/example-skill-alpha/x',
     reason: 'no context', text: 'The task evals/example-skill-alpha/x is not scheduled: no context.', url: null }] });
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  const t = pagesText(doc, 'skills');
   ok(sp(t).includes('Not being tested: example-skill-alpha'), 'label shown');
   ok(!t.includes('not-schedulable'), 'raw kind not shown');
 });
@@ -561,7 +602,7 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'context-drift', subject: 'skill',
     name: 'example-skill-alpha', fixture: 'evals/example-skill-alpha/x', model: null,
     repository: 'Example-Owner/example-site', drift_since: '2026-10-12T17:00:22Z' }] });
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  const t = pagesText(doc, 'skills');
   ok(sp(t).includes('Context out of date: example-skill-alpha'), 'label shown');
   ok(t.includes('in Example-Owner/example-site have changed since Oct 12'), 'repository and day shown');
   ok(!t.includes('context-drift'), 'raw kind not shown');
@@ -569,7 +610,7 @@ test('a context-drift alert names the repository and the day it drifted (#545)',
 test('a loaded-copy alert gets its plain label and names both prefixes (#562)', () => {
   const doc = Object.assign({}, fixture, { alerts: [{ kind: 'loaded-copy', subject: 'skill',
     name: 'example-skill-alpha', surface: 'local', loaded: 'aaaaaaaaaaaa', main: 'bbbbbbbbbbbb' }] });
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  const t = pagesText(doc, 'skills');
   ok(sp(t).includes('Sessions load an old copy: example-skill-alpha'), 'label shown');
   ok(t.includes('Most local uses in the last 2 weeks loaded copy aaaaaaaaaaaa, which main did not have at any point in that time. Main is bbbbbbbbbbbb.'), 'worded');
   ok(!t.includes('loaded-copy'), 'raw kind not shown');
@@ -583,11 +624,11 @@ test('the copies line counts uses by how they compare with main, and null copies
       { digest: 'unknown:gone', surface: 'local', invocations: 1, vs_main: 'unknown' }] };
   doc.skills[1].copies = { main: null, window: { from: '2026-10-19', to: '2026-10-31' }, loaded: [], alert: { local: null, cloud: null } };
   doc.skills[2].copies = null;
-  const t = P.textOf(P.buildPage(doc, 'skills', {}));
+  const t = pagesText(doc, 'skills');
   ok(t.includes('Copies loaded in the last 2 weeks: 6 match main, 3 older, 1 unknown.'), 'counts');
   ok(t.includes(P.STRINGS.copiesNone), 'no uses in the window');
   eq(t.split('Copies loaded in the last 2 weeks').length - 1, 2, 'null copies render nothing');
-  ok(!P.textOf(P.buildPage(fixture, 'skills', {})).includes('Copies loaded'), 'no copies anywhere, no line');
+  ok(!pagesText(fixture, 'skills').includes('Copies loaded'), 'no copies anywhere, no line');
 });
 test('the fires-without-results line is worded as past events since the oldest counted fire (#555)', () => {
   const f = { window_days: 14, since: '2026-10-19T14:00:00Z', without_results: 10, rejected: 2,
@@ -632,7 +673,7 @@ test('every manifest id has a gloss (when the _agent-guidance checkout is presen
 test('a section without a gloss shows a fallback, never a blank card', () => {
   const doc = JSON.parse(JSON.stringify(fixture));
   doc.guidance.sections = [{ id: 'no-such-section', heading: 'No such section', bytes: 60, status: 'gap', runs: [] }];
-  const t = P.textOf(P.buildPage(doc, 'guidance', {}));
+  const t = pagesText(doc, 'guidance');
   ok(t.includes(P.GLOSS_MISSING), 'fallback gloss shown');
 });
 
@@ -676,11 +717,11 @@ test('the skills view lists new-skill and skill items with kind, source, seen, d
   const rows = lessonRows(sec);
   eq(rows.length, 6, 'three miner rows, then three issue rows');
   eq(rows[0].join(' | '), 'Bash make commands kept failing | New skill idea | Session transcripts (Windows and WSL) a tool call kept failing ×7 | 7 times | Oct 1 | Oct 29 | Draft #41 (open)');
-  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | Not drafted yet');
-  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Waiting for review');
+  eq(rows[1].join(' | '), 'Red CI after pushes in example-site | New skill idea | Session transcripts (WSL) CI went red after a push ×5 | 5 times | Oct 2 | Oct 28 | The daily drafter takes the eligible proposal with the most evidence; some are skipped for good (sent to a git hook check, already covered, or rejected).');
+  eq(rows[2].join(' | '), 'example-skill-alpha | Change to a skill | Session transcripts (cloud) a rule the owner stated ×3 | 3 times | Oct 10 | Oct 20 | Queued for the loop: raises this skill\'s priority for an improvement run');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs[0], 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/41');
-  ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 1, 'the table scrolls inside .tablewrap');
+  ok(P.findAll(sec, (n) => n.attrs && n.attrs.class === 'tablewrap').length === 2, 'the open table scrolls inside .tablewrap, the closed one sits in its fold');
 });
 
 test('the guidance view lists guidance items by their heading', () => {
@@ -726,8 +767,10 @@ test('issue lessons show in the skills view after the miner rows, with their sou
   const rows = lessonRows(sec);
   eq(rows.length, 6);
   eq(rows[3].join(' | '), '3 facts for docs/EXAMPLE.md in Adam-S-Daniel/example-repo | Fact to move into a repo | Claude\'s auto-memory | — | Oct 29 | — | #17 (open)');
-  eq(rows[4].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
-  eq(rows[5].join(' | '), 'New skill: example-new-skill | New skill idea | The owner\'s proposal | — | Oct 27 | — | #88 (open)');
+  eq(rows[4].join(' | '), 'New skill: example-new-skill | New skill idea | The owner\'s proposal | — | Oct 27 | — | #88 (open)');
+  // A closed one folds away under the open rows.
+  eq(rows[5].join(' | '), '1 agent check in jodidaniel/example-site | Fact to move into a repo | Claude\'s auto-memory | — | Oct 28 | — | #5 (closed)');
+  eq(P.findAll(sec, (n) => n.tag === 'details').length, 1, 'one fold for the closed rows');
   const hrefs = P.findAll(sec, (n) => n.tag === 'a').map((n) => n.attrs.href);
   eq(hrefs.filter((u) => u === 'https://github.com/Adam-S-Daniel/example-repo/issues/17').length, 1, 'the issue link: ' + hrefs.join(' '));
   eq(lessonRows(lessonsSection(fixture, 'guidance')).length, 2, 'the guidance view shows no issue rows');
@@ -750,7 +793,7 @@ test('issue lessons alone still render, and bad issues are skipped', () => {
 test('lesson proposals render once, on the Loop page, not under the subject lists', () => {
   const loop = P.textOf(P.renderRoute(fixture, { name: 'changes', id: null }, {}));
   ok(loop.includes(P.STRINGS.lessonsHeading), 'on Loop');
-  for (const m of ['skills', 'guidance']) ok(!P.textOf(P.buildPage(fixture, m, {})).includes(P.STRINGS.lessonsHeading), m);
+  for (const m of ['skills', 'guidance']) ok(!pagesText(fixture, m).includes(P.STRINGS.lessonsHeading), m);
   const method = P.textOf(P.renderRoute(fixture, { name: 'method', id: null }, {}));
   ok(method.includes(P.STRINGS.rosterHeading), 'the roster is on How the tests work');
 });
@@ -808,7 +851,7 @@ test('trendChart: old weeks still span the full width', () => {
 });
 
 test('guidance bars draw "All the guidance" as its own bar, not a tick line', () => {
-  const page = P.buildPage(fixture, 'guidance', {});
+  const page = subjectPages(fixture, 'guidance');
   const txt = P.findAll(page, (n) => n.tag === 'text').map((n) => P.textOf(n).trim());
   ok(txt.includes(P.STRINGS.barAll), 'an All the guidance bar label');
   ok(txt.includes(P.STRINGS.barAblated), 'an All but this section bar label');
@@ -829,7 +872,7 @@ test('regression alerts become one Trending toward removal row per subject, mode
   eq(rows[0].models.length, 2, 'both models in the row');
   eq(rows[0].changes.length, 2);
   eq(rows[0].urls.length, 1, 'one issue link');
-  const t = sp(P.textOf(P.buildPage(trendDoc(), 'skills', {})));
+  const t = sp(pagesText(trendDoc(), 'skills'));
   ok(t.includes(P.STRINGS.trendingHeading) && t.includes('Expected'), 'section and its one-line note');
   ok(t.includes('On fixture fx-one, the skill\'s lead over running without it (the share of checks passed with it minus without it) fell from 17 to 0 percentage points.'), t);
   ok(t.includes('On fixture fx-two, judge score (out of 10) fell from 8.00 to 6.50, a drop of 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), t);
@@ -843,7 +886,7 @@ test('regression alerts become one Trending toward removal row per subject, mode
 test('an older regression alert that words itself still has its decimals rounded', () => {
   const d = Object.assign({}, fixture, { alerts: [{ kind: 'regression', subject: 'skill', name: 'example-skill-gamma',
     text: 'example-skill-gamma regressed: the judge mean fell by 1.5000000000000009 (threshold 1.0, noise 0.472189541352795).' }] });
-  const t = P.textOf(P.buildPage(d, 'skills', {}));
+  const t = pagesText(d, 'skills');
   ok(sp(t).includes('Judge score (out of 10) fell by 1.50. An alert needs a drop of at least 1.00 that is also bigger than the usual run-to-run variation (0.47).'), 'legacy text is read back into the same plain sentence');
 });
 const win = (passed, total, judge, runs) => ({ runs: runs || 4, trials: 12, checks_passed: passed, checks_total: total, judge_mean: judge === undefined ? null : judge });
@@ -889,7 +932,7 @@ test('a definition term is a real button with aria-expanded and aria-controls', 
 });
 test('every chart has a title above it and every legend item is a definition button', () => {
   for (const mode of ['skills', 'guidance']) {
-    const page = P.buildPage(fixture, mode, {});
+    const page = subjectPages(fixture, mode);
     const kids = [];
     (function walk(n) { if (n && typeof n === 'object') { kids.push(n); n.children.forEach(walk); } })(page);
     const charts = kids.filter((n) => n.tag === 'svg');
@@ -979,6 +1022,126 @@ test('the git hook verdicts say never blocked and never ran, not never fires', (
   ok(!t.includes('Never fires'), 'the old words are gone');
   const page = sp(P.textOf(P.renderRoute(hooksDoc(), { name: 'hooks', id: 'dated-phrasing' }, {})));
   ok(page.includes('ran 40 times in 8 weeks, blocked none'), page);
+});
+
+
+test('the Skills list stays short: lists fold, the unused line is a normal line, private skills keep their badge, cells are short', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  doc.usage = { from: '2026-09-07T00:00:00Z', to: '2026-10-31T16:37:13Z', sessions_scanned: 10, surface: 'local' };
+  P.skillItems(doc).forEach((it) => { doc.skills.find((x) => x.name === it.name).usage = { invocations: 0 }; });
+  doc.skills.find((x) => x.name === 'example-skill-alpha').private = true;
+  const page = P.buildPage(doc, 'skills', {});
+  const unused = P.findAll(page, (n) => n.tag === 'p' && P.textOf(n).includes('tested skills were not used'))[0];
+  ok(unused && unused.attrs.class === null || unused.attrs.class === undefined, 'a plain paragraph, not the big headline');
+  const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => P.textOf(n.children[0]).trim());
+  ok(folds.includes(P.STRINGS.coverageLists), 'the coverage lists sit under a fold: ' + folds);
+  const row = tableRows(page).find((r) => r[0].startsWith('example-skill-alpha'));
+  ok(/Private/i.test(row[0]), 'the private badge is in the table: ' + row[0]);
+  ok(tableRows(page).every((r) => r[5].length < 20 && r[6].length < 20), 'next test and decision cells are short');
+  const trend = P.buildPage(trendDoc(), 'skills', {});
+  ok(P.findAll(trend, (n) => n.tag === 'details' && n.attrs.class.includes('trending')).length === 1, 'trending table folded on the list');
+  eq(P.findAll(P.renderRoute(trendDoc(), { name: 'changes', id: null }, {}), (n) => n.tag === 'section' && n.attrs.class === 'block trending').length, 1, 'but open on the Changes page');
+});
+
+// --- batch D: results pages ---------------------------------------------------------------
+const route = (doc, name, id) => P.renderRoute(doc, { name, id: id || null }, {});
+const flat = (n) => P.textOf(n).replace(/\s+/g, ' ');
+const hookDoc = () => Object.assign({}, fixture, { generated_at: '2026-11-12T20:00:00Z',
+  hooks: { window: { from: '2026-08-03', to: '2026-11-12', weeks: 8 }, policy: {}, unlisted: 0, totals: { local: [], ci: [] }, checks: [
+    { name: 'young-check', where: 'fleet', verdict: 'never-blocked', use: [], window_totals: { invocations: 5, blocked: 0 } },
+    { name: 'old-check', where: 'fleet', verdict: 'never-blocked', use: [{ week: '2026-09-07', surface: 'local', invocations: 3, blocked: 0 }], window_totals: { invocations: 3, blocked: 0 } },
+    { name: 'good-check', where: 'fleet', verdict: 'earning', use: [], window_totals: { invocations: 5, blocked: 2 } }] },
+  agent_made: { rule_since: '2026-10-26T00:00:00Z', summary: {}, items: [{ kind: 'check', id: 'young-check', created: '2026-11-04T04:30:00Z', origin: 'agent' }] } });
+test('every git hook check that has not earned its place states what happens next, with a date in Eastern time', () => {
+  const rows = tableRows(route(hookDoc(), 'hooks'));
+  const by = Object.fromEntries(rows.map((r) => [r[0], r]));
+  const last = (r) => r[r.length - 1], since = (r) => r[r.length - 2];
+  eq(since(by['young-check']), 'Nov 3', 'the day it was made, in Eastern time');
+  eq(last(by['young-check']), 'Too new to judge: a candidate for removal if it has blocked nothing by Dec 29');
+  eq(since(by['old-check']), 'Sep 6', 'no made-by record: the first week it ran');
+  eq(last(by['old-check']), 'Blocked nothing in its first 8 weeks (to Nov 1): a candidate for removal');
+  eq(last(by['good-check']), '—');
+  eq(heads(route(hookDoc(), 'hooks')).slice(-2).join(','), 'Since,What happens next');
+  // A first run in the data window's first week may predate the data: Since is unknown, and the next step makes no date up.
+  const d2 = hookDoc();
+  d2.hooks.checks[1].use = [{ week: '2026-08-03', surface: 'local', invocations: 3, blocked: 0 }];
+  const r2 = tableRows(route(d2, 'hooks')).find((r) => r[0] === 'old-check');
+  eq(r2[r2.length - 2], '\u2014', 'Since unknown');
+  eq(r2[r2.length - 1], 'Not enough data yet');
+  eq(P.hookItems(d2).find((i) => i.name === 'old-check').since, null);
+});
+test('the weekly chart caps its axis at the second tallest bar and draws an outlier cut off with its count', () => {
+  const wk = (a, b) => ({ label: 'w', a, b });
+  const out = [wk(0, 0), wk(498, 0), wk(1, 11), wk(0, 3)];
+  const sc = P.weekScale(out);
+  eq(sc.top, 11, 'axis stops at the second tallest');
+  eq(sc.cut.v, 498);
+  const chart = P.weekChart(out, ['Local blocks', 'CI blocks'], 'a', 't', []);
+  const rects = P.findAll(chart, (n) => n.tag === 'rect' && n.attrs.fill === 'var(--s2)');
+  const heights = rects.map((r) => Number(r.attrs.height));
+  ok(Math.max(...heights) > 90, 'the 11 CI blocks fill the axis: ' + heights);
+  ok(Math.min(...heights) > 20, 'and the 3 are visibly tall: ' + heights);
+  ok(P.findAll(chart, (n) => n.tag === 'text').some((n) => P.textOf(n).trim() === '498'), 'the cut-off bar is labeled 498');
+  ok(P.textOf(chart).includes('cut off') && P.textOf(chart).includes('498 local blocks'), 'a note says so');
+  eq(P.weekScale([wk(5, 0), wk(9, 0), wk(3, 0)]).cut, null, 'no outlier, no cut');
+  eq(P.weekScale([wk(100, 0), wk(100, 0), wk(3, 0)]).cut, null, 'a tie is no outlier');
+  eq(P.weekScale([wk(100, 0), wk(10, 0)]).cut, null, 'two bars are never cut');
+});
+test('the fixture findings name what they are and link each one, and say who clears them', () => {
+  const f = (slug) => ({ finding_id: 'skills-evals/fixture-queue-unused-fixture-' + slug, kind: 'broken', severity: 'high', subject: 'guidance/' + slug, url: 'https://github.com/example-owner/example-repo/tree/main/' + slug });
+  const d = Object.assign({}, fixture, { fixture_queue: { requests: [], fixtures: [], totals: {}, findings: [f('a'), f('b')] } });
+  const page = route(d, 'changes');
+  const t = flat(page);
+  ok(t.includes('2 fixtures were added but never ran. The loop files an issue for each one and closes it when the finding clears.'), t);
+  ok(!t.includes('need a look') && !t.includes('high severity'), 'the old wording is gone');
+  const hrefs = new Set(P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href));
+  ok(hrefs.has('https://github.com/example-owner/example-repo/tree/main/a') && hrefs.has('https://github.com/example-owner/example-repo/tree/main/b'), 'each finding links');
+});
+test('lessons name who acts on each proposal, list open ones by times seen and fold closed ones', () => {
+  for (const kind of ['skill-edit', 'guidance-edit', 'fixture-candidate']) ok(P.STRINGS.lessonWaiting[kind].length > 10, kind);
+  ok(!P.STRINGS.lessonWaiting['skill-edit'].includes('Waiting for review'));
+  const L = { date: '2026-10-30', left_out: {}, items: [
+    { kind: 'new-skill', subject: 'tool-aaa', evidence_count: 2, first_seen: '2026-10-01', last_seen: '2026-10-02', draft: { number: 9, state: 'merged', url: 'https://github.com/example-owner/example-repo/pull/9' } },
+    { kind: 'new-skill', subject: 'tool-bbb', evidence_count: 3, first_seen: '2026-10-01', last_seen: '2026-10-02' },
+    { kind: 'new-skill', subject: 'tool-ccc', evidence_count: 9, first_seen: '2026-10-01', last_seen: '2026-10-02' }] };
+  const sec = P.lessonsView({ lessons: L }, 'skills');
+  const rows = lessonRows(sec).map((r) => r[0]);
+  eq(rows.join('|'), ['tool-ccc', 'tool-bbb', 'tool-aaa'].map((x) => P.lessonTitle(x)).join('|'));
+  eq(P.findAll(sec, (n) => n.tag === 'details').length, 1, 'closed folded');
+  ok(P.textOf(sec).includes('Closed proposals (1)'));
+  ok(!P.textOf(sec).includes('first published') && P.textOf(sec).includes('the newest ones the script has published, from Oct 30'), 'the date says why it is old');
+});
+test('Made by agents uses plain words, pluralizes, adds Unknown when above 0, sums, and folds items older than 30 days', () => {
+  const sum = (v) => ({ total: 5, agent_under_rule: 1, agent_verdicts: v, by_origin: { agent: 2, loop: 1, person: 1, unknown: 1 }, agent_invocations: 1, agent_runs: 1, agent_blocked: 0 });
+  const d = Object.assign({}, fixture, { generated_at: '2026-11-12T20:00:00Z', agent_made: { rule_since: '2026-10-26T00:00:00Z',
+    summary: { check: sum({ 'never-blocked': 1, 'never-ran': 1, earning: 1 }), skill: sum({ insufficient: 1, keep: 1, retire: 1 }), section: sum({ insufficient: 2 }) },
+    items: [{ kind: 'skill', id: 'new-one', created: '2026-11-10T00:00:00Z', origin: 'agent', under_rule: true, impact: { invocations: 1, verdict: 'insufficient' } },
+      { kind: 'check', id: 'old-one', created: '2026-09-01T00:00:00Z', origin: 'agent', under_rule: false, impact: { runs: 1, blocked: 0, verdict: 'never-blocked' } }] } });
+  const page = route(d, 'spend');
+  const t = flat(page);
+  for (const raw of ['insufficient', 'never-blocked', 'never-ran', 'earning', 'retire']) ok(!new RegExp('(^|[ ,;])' + raw + '( \\d|;|,|$)').test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'raw key shown: ' + raw);
+  ok(t.includes('1 use') && !t.includes('1 uses'), 'singular');
+  ok(heads(P.findAll(page, (n) => n.tag === 'section' && flat(n).startsWith('Made by agents'))[0]).includes('Unknown'), 'Unknown column');
+  ok(t.includes('Older items (1)'), 'older folded');
+  ok(t.includes('Decided: remove 1') && !t.includes('No measurable difference 1'), 'a retire verdict reads as a decision, not as done');
+  ok(!/Removed/.test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'nothing in the fixture is retired yet, so nothing says Removed');
+  eq(P.STRINGS.agentVerdicts['retire-pending'], 'Removal pending');
+  eq(P.STRINGS.agentVerdicts.retired, 'Removed');
+  ok(t.includes('Never blocked 1') && t.includes('Not enough data 1'), 'plain labels with counts');
+});
+test('a skill page leads with what its tests cost, folds the long tables, and has no Checks or Report columns', () => {
+  const doc = JSON.parse(JSON.stringify(fixture));
+  const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
+  s.run_utility = [{ date: '2026-10-30', class: 'decisive', runs: 2, cost_usd: 1.25 }];
+  const page = P.subjectPage(doc, 'skills', 'example-skill-alpha', {});
+  ok(flat(page).includes('Its tests cost $1.25 in the last 30 days, at list price.'), 'cost line');
+  const folds = P.findAll(page, (n) => n.tag === 'details').map((n) => flat(n.children[0]).trim());
+  ok(folds.includes(P.STRINGS.runsHeading) && folds.includes(P.STRINGS.fixturesHeading), 'folds: ' + folds);
+  const runsFold = P.findAll(page, (n) => n.tag === 'details')[0];
+  const hs = heads(runsFold);
+  ok(!hs.includes('Checks') && !hs.includes('Report'), hs.join(','));
+  const noCost = JSON.parse(JSON.stringify(fixture));
+  ok(!flat(P.subjectPage(noCost, 'skills', 'example-skill-alpha', {})).includes('Its tests cost'), 'nothing without usefulness rows');
 });
 
 // --- size -----------------------------------------------------------------------------

@@ -124,17 +124,19 @@ function issueNumber(url) {
   return m ? m[1] : null;
 }
 
-export function trendingView(doc, mode) {
+export function trendingView(doc, mode, folded) {
   const rows = trendingRows(doc, mode);
   if (!rows.length) return null;
   const C = STRINGS.trendingCols;
-  return h('section', { class: 'block trending' }, h('h2', null, STRINGS.trendingHeading),
-    h('p', { class: 'note' }, STRINGS.trendingNote),
+  // On the Skills and Guidance lists the table sits under a closed fold.
+  const body = [h('p', { class: 'note' }, STRINGS.trendingNote),
     table([
       { label: C.subject, sort: (r) => r.name, cell: subjectCell },
       { label: C.models, sort: (r) => r.models.join(', '), cell: (r) => r.models.join(', ') || STRINGS.noValue },
       { label: C.what, cell: (r) => h('ul', { class: 'plain' }, r.changes.map((c) => h('li', null, cap(changeNodes(c.alert)),
         r.models.length > 1 && c.model ? STRINGS.trendModelSuffix(c.model) : null))) },
       { label: C.details, cell: (r) => r.urls.map((u, i) => [i ? ', ' : null, link(u, STRINGS.trendingIssue(issueNumber(u)))]) }
-    ], rows, { cls: 'trending-table' }));
+    ], rows, { cls: 'trending-table' })];
+  return folded ? h('details', { class: 'block history trending' }, h('summary', null, STRINGS.trendingHeading + ' (' + rows.length + ')'), body)
+    : h('section', { class: 'block trending' }, h('h2', null, STRINGS.trendingHeading), body);
 }

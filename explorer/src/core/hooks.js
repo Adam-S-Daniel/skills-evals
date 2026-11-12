@@ -4,6 +4,30 @@ import { parseTime } from './format.js';
 
 export const HOOK_RANK = ['earning', 'overridden-often', 'never-blocked', 'never-fires', 'never-ran'];
 
+/* When a check began: the day it was made when the document lists it among
+   the agent-made checks, else the first week it ran; null when neither. */
+function sinceOf(doc, c) {
+  const made = doc.agent_made && Array.isArray(doc.agent_made.items) ? doc.agent_made.items.find((i) => i && i.kind === 'check' && i.id === c.name) : null;
+  const weeks = (Array.isArray(c.use) ? c.use : []).filter((u) => u && Number.isInteger(u.invocations) && u.invocations > 0).map((u) => Date.parse(u.week + 'T00:00:00Z'));
+  // A first run in the data window's first week may be older than the data: unknown, not the window start.
+  const from = doc.hooks && doc.hooks.window && typeof doc.hooks.window.from === 'string' ? Date.parse(mondayOf(Date.parse(doc.hooks.window.from + 'T00:00:00Z')) + 'T00:00:00Z') : -Infinity;
+  const first = Math.min(...weeks);
+  const at = made ? parseTime(made.created) : first > from ? first : NaN;
+  return isFinite(at) ? at : null;
+}
+
+/* What the loop does with a check next, and when: a check that has not
+   blocked anything has until `weeks` weeks after it began to do so; after that it
+   is a candidate for removal (nothing removes it by itself).
+   {key: 'young'|'due'|'overridden'|'earning'|'unknown', at}. */
+export function hookNext(it, weeks, refMs) {
+  if (it.verdict === 'earning') return { key: 'earning', at: null };
+  if (it.verdict === 'overridden-often') return { key: 'overridden', at: null };
+  if (it.since === null) return { key: 'unknown', at: null };
+  const at = it.since + weeks * 7 * 86400000;
+  return { key: at > refMs ? 'young' : 'due', at };
+}
+
 export function hookItems(doc) {
   const h = doc && doc.hooks;
   const checks = h && Array.isArray(h.checks) ? h.checks : [];
@@ -15,7 +39,7 @@ export function hookItems(doc) {
       blocked: t ? t.blocked : null,
       overridden: t && Number.isInteger(t.overridden) ? t.overridden : null,
       overrideRate: t && typeof t.override_rate === 'number' ? t.override_rate : null,
-      measured: c.overrides_measured === true, verdict: typeof c.verdict === 'string' ? c.verdict : null,
+      since: sinceOf(doc, c), measured: c.overrides_measured === true, verdict: typeof c.verdict === 'string' ? c.verdict : null,
       reason: typeof c.verdict_reason === 'string' ? c.verdict_reason : '',
       use: Array.isArray(c.use) ? c.use.filter((u) => u && typeof u.week === 'string') : [] };
   }).sort((a, b) => {

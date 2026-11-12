@@ -1,9 +1,9 @@
 /* Git hooks: one row per check, and a page per check. */
 import { STRINGS } from '../core/strings.js';
 import { HOOK_GLOSSES } from '../core/glosses.js';
-import { clean, parseTime, fmtCount, fmtUtcDay } from '../core/format.js';
+import { clean, parseTime, fmtCount, fmtUtcDay, fmtDay } from '../core/format.js';
 import { h, link } from '../core/h.js';
-import { hookItems, cloudCounted } from '../core/hooks.js';
+import { hookItems, hookNext, cloudCounted } from '../core/hooks.js';
 import { hashFor } from '../core/route.js';
 import { table, srcLine, navLink, panel, badge, rangeLine, srcLineFor } from './bits.js';
 import { weekChart } from './weekchart.js';
@@ -33,6 +33,12 @@ function overrides(it) {
   return fmtCount(it.overridden || 0) + (it.overrideRate !== null ? ' (' + pct(it.overrideRate) + ')' : '');
 }
 
+/* The next step for a check, with its date in Eastern time. */
+export function nextStep(it, weeks, refMs) {
+  const n = hookNext(it, weeks, refMs);
+  return STRINGS.hookNext[n.key](n.at === null ? null : fmtDay(n.at, refMs), weeks);
+}
+
 function where(it) {
   return STRINGS.hookWhere[it.where];
 }
@@ -53,7 +59,9 @@ export function hooksList(doc) {
     { label: STRINGS.colRunsWindow(w.weeks || 8), num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: runsCell },
     { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: blockedCell },
     anyMeasured ? { label: STRINGS.colOverrides, num: true, sort: (it) => (it.measured ? it.overridden : -1), cell: overrides } : null,
-    { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || '', cell: hookVerdict }
+    { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || '', cell: hookVerdict },
+    { label: STRINGS.colSince, sort: (it) => it.since, cell: (it) => (it.since === null ? STRINGS.noValue : fmtDay(it.since, refMs)) },
+    { label: STRINGS.colNextStep, sort: (it) => (hookNext(it, w.weeks || 8, refMs).at || 0), cell: (it) => nextStep(it, w.weeks || 8, refMs) }
   ].filter(Boolean), items, { cls: 'hooks' });
   const policy = hk.policy || {};
   return h('section', { class: 'block' }, h('h2', null, STRINGS.hooksHeading),

@@ -19,7 +19,7 @@ export function searchItems(doc, extra) {
     out.push({ kind: 'skill', title: s.name, href: hashFor('skills', s.name), text: [s.name, s.raw.description].join(' '),
       registry: s.raw.registry || null, verdict: s.chip, models: modelsOf(s.pooled), stakes: stakesOf(s.raw), subject: true, priv: s.raw.private === true });
   }
-  for (const s of sectionItems(doc, 'next')) {
+  for (const s of sectionItems(doc)) {
     out.push({ kind: 'section', title: s.raw.heading || s.id, href: hashFor('guidance', s.id), text: [s.id, s.raw.heading].join(' '),
       registry: null, verdict: s.chip, models: modelsOf(s.pooled), stakes: stakesOf(s.raw), subject: true });
   }

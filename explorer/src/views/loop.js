@@ -9,15 +9,26 @@ import { barChart, chartTitle } from '../core/charts.js';
 
 const usd = (x) => fmtUsd(Number(x) || 0);
 
+/* What fixture_queue.py's findings say, by kind (read off the finding id), and
+   each one as a link to what it names. */
+const FINDING_ID = /fixture-queue-(stale-request|stuck-pr|unused-fixture)-/;
+const findingKind = (f) => { const m = FINDING_ID.exec(String(f.finding_id || '')); return m ? m[1] : 'other'; };
+function findingsView(list) {
+  if (!list.length) return null;
+  const kinds = Object.keys(STRINGS.fqFindingKinds).filter((k) => list.some((f) => findingKind(f) === k))
+    .map((k) => STRINGS.fqFindingKinds[k](list.filter((f) => findingKind(f) === k).length)).join('; ');
+  return [h('p', { class: 'warn' }, STRINGS.fqFindings(kinds)),
+    h('ul', { class: 'plain' }, list.map((f) => h('li', null, link(f.url, clean(f.subject || f.finding_id)) || clean(f.subject || f.finding_id))))];
+}
+
 export function fixtureRequestsView(doc, refMs) {
   const fq = fixtureQueue(doc, refMs);
   if (!fq) return h('p', { class: 'note' }, STRINGS.fqNone);
   const t = fq.totals;
   const n = (k) => fmtCount(Number(t[k]) || 0);
-  const high = fq.findings.filter((f) => f.severity === 'high').length;
   return [srcLineFor(doc, 'queue'), h('p', { class: 'note' }, STRINGS.fqNote),
     h('p', null, STRINGS.fqTotals(n('requests_open'), n('requests_closed'), n('prs_merged'), n('fixtures_real_work'), n('fixtures_invented'), n('fixture_runs'))),
-    fq.findings.length ? h('p', { class: 'warn' }, STRINGS.fqFindings(fq.findings.length, high)) : null,
+    findingsView(fq.findings),
     fq.rows.length ? table([
       { label: STRINGS.colSubject, sort: (r) => r.subject, cell: (r) => link(r.issueUrl, clean(r.subject)) || clean(r.subject) },
       { label: STRINGS.colKind, sort: (r) => r.kind, cell: (r) => r.kind },

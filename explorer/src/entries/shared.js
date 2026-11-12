@@ -5,23 +5,23 @@ import { STRINGS, useVoice } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING, HOOK_GLOSSES } from '../core/glosses.js';
 import { clean, githubLink, friendlyModel, fmtDay, fmtDateTime, fmtCount, wordsFor } from '../core/format.js';
 import { validateDoc } from '../core/validate.js';
-import { VERDICT_CHIPS, poolRuns, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression } from '../core/stats.js';
+import { VERDICT_CHIPS, poolRuns, chipFor, sentenceFor, weeklyGains, gainPer100Words, hasRegression } from '../core/stats.js';
 import { h, textOf, findAll, toDom } from '../core/h.js';
 import { purposeOf, skillItems, sectionItems, wholeGuidance } from '../core/items.js';
 import { DEFAULT_DATA_URL, allowedDataUrl, dataUrlFromSearch, cacheBust, loadData } from '../adapters/web.js';
 import { trendChart } from '../views/trend.js';
 import { hasAlone, legendFor } from '../views/models.js';
-import { sectionCard } from '../views/cards.js';
 import { confidenceView, clipName } from '../views/range.js';
 import { alertText } from '../views/alerts.js';
 import { lessonTitle, lessonItem, lessonIssue, lessonsView } from '../views/lessons.js';
 import { buildPage, renderRoute } from '../views/page.js';
 import { parseRoute, hashFor, groupOf, GROUPS } from '../core/route.js';
-import { hookItems, hookWeeks, hookTile, cloudCounted, mondayOf } from '../core/hooks.js';
+import { weekChart, weekScale } from '../views/weekchart.js';
+import { hookItems, hookNext, hookWeeks, hookTile, cloudCounted, mondayOf } from '../core/hooks.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { searchItems, filterItems } from '../views/search.js';
 import { checkWeeks } from '../views/hooks.js';
-import { runsOf } from '../views/subject.js';
+import { runsOf, subjectPage } from '../views/subject.js';
 import { LOOP_TITLE } from '../views/loop.js';
 import { buildFailure } from '../views/failure.js';
 import { trendingRows, trendingView, changeNodes } from '../views/trending.js';
@@ -37,7 +37,7 @@ export const EXPORTS = {
   STRINGS, GLOSSES, GLOSS_MISSING, purposeOf,
   clean, githubLink, friendlyModel, alertText, fmtDay, fmtDateTime, fmtCount, wordsFor,
   allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
-  poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
+  poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPer100Words, hasRegression, hasAlone, legendFor, subjectPage, weekChart, weekScale, hookNext,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
   useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, mondayOf, checkWeeks,
   fixtureQueue, searchItems, filterItems, runsOf, LOOP_TITLE,

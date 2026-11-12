@@ -7,9 +7,10 @@ import { skillItems } from '../core/items.js';
 import { hookItems, hookWeeks, cloudCounted } from '../core/hooks.js';
 import { cloudNote } from './hooks.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, navLink, rangeLine, srcLineFor } from './bits.js';
+import { table, panel, navLink, rangeLine, srcLineFor, fold } from './bits.js';
+import { VERDICT_CHIPS } from '../core/stats.js';
 import { noUseShare } from './utility.js';
-import { weekChart } from './weekchart.js';
+import { weekChart, weekScale } from './weekchart.js';
 
 const usd = (x) => (typeof x === 'number' && isFinite(x) ? fmtUsd(x) : STRINGS.noValue);
 const dayOf = (d, refMs) => fmtUtcDay(Date.parse(d + 'T00:00:00Z'), refMs);
@@ -19,7 +20,14 @@ function hookWeeksView(doc, refMs) {
   if (!weeks.length) return null;
   const old = weeks.slice().reverse();
   const cloud = cloudCounted(doc) === true;
-  return [weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked })), [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+  const data = old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked }));
+  const { cut } = weekScale(data);
+  // What the listed checks add up to for the cut-off week, so the rest is named as unattributed.
+  const surfaces = cut && cut.k === 1 ? ['ci'] : cloud ? ['local', 'cloud'] : ['local'];
+  const listed = cut ? hookItems(doc).reduce((n, it) => n + it.use.filter((u) => u.week === old[cut.i].week && surfaces.includes(u.surface))
+    .reduce((m, u) => m + (Number(u.blocked) || 0), 0), 0) : 0;
+  return [weekChart(data, [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+    cut && listed < cut.v ? h('p', { class: 'note' }, STRINGS.hookCutCause(fmtCount(listed))) : null,
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
       { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
@@ -121,10 +129,10 @@ export function agentMadeRows(doc) {
   const kinds = ['check', 'skill', 'section'].filter((k) => a.summary[k]).map((k) => {
     const s = a.summary[k];
     const verdicts = Object.keys(s.agent_verdicts || {}).filter((v) => v !== 'none').sort()
-      .map((v) => v + ' ' + s.agent_verdicts[v]).join(', ');
+      .map((v) => verdictLabel(k, v) + ' ' + s.agent_verdicts[v]).join(', ');
     const use = k === 'check' ? STRINGS.agentMadeImpact.check(fmtCount(s.agent_runs || 0), fmtCount(s.agent_blocked || 0))
       : k === 'skill' ? STRINGS.agentMadeImpact.skill(fmtCount(s.agent_invocations || 0)) : '';
-    return { kind: k, total: s.total, agent: s.by_origin.agent, loop: s.by_origin.loop, person: s.by_origin.person,
+    return { kind: k, total: s.total, agent: s.by_origin.agent, loop: s.by_origin.loop, person: s.by_origin.person, unknown: s.by_origin.unknown || 0,
       afterRule: s.agent_under_rule, impact: [use, STRINGS.agentMadeVerdicts(verdicts)].filter(Boolean).join('; ') };
   });
   const items = a.items.filter((i) => i && i.origin === 'agent')
@@ -132,16 +140,38 @@ export function agentMadeRows(doc) {
   return { since: a.rule_since, kinds, items };
 }
 
+/* A verdict key in plain words: a check's by the hook labels, a skill's or
+   section's by the label of the chip it earns. */
+function verdictLabel(kind, v) {
+  if (kind === 'check') return STRINGS.hookVerdicts[v] || clean(v);
+  if (STRINGS.agentVerdicts[v]) return STRINGS.agentVerdicts[v];
+  const chip = VERDICT_CHIPS[v] || v;
+  return STRINGS.chips[chip] || clean(v);
+}
+
 function itemImpact(i) {
   const m = i.impact || {};
   const use = i.kind === 'check' ? STRINGS.agentMadeImpact.check(fmtCount(m.runs || 0), fmtCount(m.blocked || 0))
     : i.kind === 'skill' ? STRINGS.agentMadeImpact.skill(fmtCount(m.invocations || 0)) : '';
-  return [use, m.verdict ? clean(m.verdict) : null].filter(Boolean).join('; ') || STRINGS.noValue;
+  return [use, m.verdict ? verdictLabel(i.kind, m.verdict) : null].filter(Boolean).join('; ') || STRINGS.noValue;
 }
+
+const itemsTable = (rows, refMs) => table([
+  { label: STRINGS.colKind, sort: (i) => i.kind, cell: (i) => STRINGS.agentMadeKind[i.kind] },
+  { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE[i.kind], i.id), clean(i.id)) },
+  { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtUtcDay(parseTime(i.created), refMs) },
+  { label: STRINGS.colAfterRule, sort: (i) => (i.under_rule ? 1 : 0), cell: (i) => (i.under_rule ? '✓' : '') },
+  { label: STRINGS.colImpact, sort: (i) => itemImpact(i), cell: (i) => itemImpact(i) }
+], rows, { tall: true });
+
+/* Items made in the last 30 days show; older ones fold away. */
+export const AGENT_MADE_DAYS = 30;
 
 function agentMadeView(doc, refMs) {
   const r = agentMadeRows(doc);
   if (!r) return null;
+  const cut = isFinite(refMs) ? refMs - AGENT_MADE_DAYS * 86400000 : -Infinity;
+  const recent = r.items.filter((i) => !(parseTime(i.created) < cut)), older = r.items.filter((i) => parseTime(i.created) < cut);
   return [h('p', { class: 'note' }, STRINGS.agentMadeNote(r.since ? fmtUtcDay(parseTime(r.since), refMs) : STRINGS.unknown)),
     table([
       { label: STRINGS.colKind, sort: (k) => k.kind, cell: (k) => STRINGS.agentMadeKinds[k.kind] },
@@ -150,15 +180,10 @@ function agentMadeView(doc, refMs) {
       { label: STRINGS.colAfterRule, num: true, sort: (k) => k.afterRule, cell: (k) => fmtCount(k.afterRule) },
       { label: STRINGS.colByLoop, num: true, sort: (k) => k.loop, cell: (k) => fmtCount(k.loop) },
       { label: STRINGS.colByPeople, num: true, sort: (k) => k.person, cell: (k) => fmtCount(k.person) },
+      r.kinds.some((k) => k.unknown) ? { label: STRINGS.colUnknown, num: true, sort: (k) => k.unknown, cell: (k) => fmtCount(k.unknown) } : null,
       { label: STRINGS.colAgentImpact, sort: (k) => k.impact, cell: (k) => k.impact }
-    ], r.kinds),
-    r.items.length ? table([
-      { label: STRINGS.colKind, sort: (i) => i.kind, cell: (i) => STRINGS.agentMadeKind[i.kind] },
-      { label: STRINGS.colName, sort: (i) => i.id, cell: (i) => navLink(hashFor(KIND_ROUTE[i.kind], i.id), clean(i.id)) },
-      { label: STRINGS.colMade, sort: (i) => i.created, cell: (i) => fmtUtcDay(parseTime(i.created), refMs) },
-      { label: STRINGS.colAfterRule, sort: (i) => (i.under_rule ? 1 : 0), cell: (i) => (i.under_rule ? '✓' : '') },
-      { label: STRINGS.colImpact, sort: (i) => itemImpact(i), cell: (i) => itemImpact(i) }
-    ], r.items, { tall: true }) : null];
+    ].filter(Boolean), r.kinds),
+    recent.length ? itemsTable(recent, refMs) : null, fold(STRINGS.agentMadeOlder(older.length), older.length ? itemsTable(older, refMs) : null)];
 }
 
 export function impactView(doc, ctx) {

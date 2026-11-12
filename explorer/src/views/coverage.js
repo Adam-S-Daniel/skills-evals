@@ -19,5 +19,5 @@ export function coverageView(doc, mode) {
     : null;
   return h('section', null, h('h2', null, STRINGS.coverageHeading),
     h('p', { class: 'lead' }, mode === 'guidance' ? STRINGS.coverageIntroGuidance : STRINGS.coverageIntroSkills), census,
-    h('div', { class: 'cols' }, group('covered', STRINGS.covered), group('skipped', STRINGS.skipped), group('gap', STRINGS.gap)));
+    h('details', { class: 'history' }, h('summary', null, STRINGS.coverageLists), h('div', { class: 'cols' }, group('covered', STRINGS.covered), group('skipped', STRINGS.skipped), group('gap', STRINGS.gap))));
 }

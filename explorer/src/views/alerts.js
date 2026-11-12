@@ -36,18 +36,18 @@ export function firesNode(x) {
     defn('sweep', x.sweeps === 1 ? P.sweep : P.sweeps), '); ' + x.rejected + of + ' produced results that did not validate.');
 }
 
-export function alertsView(doc, mode) {
+export function alertsView(doc, mode, folded) {
   const want = mode === 'guidance' ? 'guidance' : 'skill';
   // A regression on an undecided subject is "trending toward removal", a
   // table of its own; on a decided one it is listed here (isTrending).
   const alerts = (Array.isArray(doc.alerts) ? doc.alerts : []).filter((a) => a && !isTrending(doc, a) && (mode === 'all' || a.subject === want));
   const x = firesFigures(doc);
-  const trending = trendingView(doc, mode);
+  const trending = trendingView(doc, mode, folded);
   return h('div', null, trending, h('section', null, h('h2', null, STRINGS.alertsHeading), x ? firesNode(x) : null,
-    alerts.length ? h('ul', { class: 'plain' }, alerts.map((a) => {
+    alerts.length ? (folded ? (ul) => h('details', { class: 'history' }, h('summary', null, STRINGS.alertsShow(alerts.length)), ul) : (ul) => ul)(h('ul', { class: 'plain' }, alerts.map((a) => {
       const kind = clean(alertKindLabel(doc, a));
       const l = link(a.url, STRINGS.alertDetails);
       return h('li', null, h('strong', null, kind + ': ', a.subject === 'guidance' ? sectionTerm(a.name, clean(a.name)) : skillTerm(a.name, clean(a.name))), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
         a.text ? ' ' + clean(roundDecimals(a.text)) : (alertText(a) ? ' ' + alertText(a) : null), l ? [' ', l] : null);
-    })) : h('p', null, x || trending ? STRINGS.alertsNoneOther : STRINGS.alertsNone)));
+    }))) : h('p', null, x || trending ? STRINGS.alertsNoneOther : STRINGS.alertsNone)));
 }

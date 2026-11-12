@@ -9,12 +9,12 @@ import { skillItems, sectionItems, purposeOf } from '../core/items.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { fixtureTerm, defn, termify, SENTENCE_TERMS } from '../core/terms.js';
 import { hashFor } from '../core/route.js';
-import { table, rangeLine, navLink, panel, badge } from './bits.js';
+import { table, rangeLine, navLink, panel, badge, fold } from './bits.js';
 import { verdictLine, nextLine, stakesLine, usageLine, copiesLine, discardedLine } from './cards.js';
 import { modelCharts, legendFor, hasData, hasAlone } from './models.js';
 import { trendChart } from './trend.js';
 import { confidenceView } from './range.js';
-import { utilityView, decisionsView } from './utility.js';
+import { utilityView, decisionsView, utilityTotals } from './utility.js';
 import { lessonItem, lessonIssue, lessonTitle, lessonStatus, lessonIssueTitle } from './lessons.js';
 
 const share = (x) => (typeof x === 'number' && isFinite(x) ? Math.round(x * 100) + '%' : STRINGS.noValue);
@@ -57,17 +57,16 @@ export function runsTable(runs, refMs) {
   if (!runs.length) return h('p', { class: 'note' }, STRINGS.runsNone);
   const points = runs.some((r) => typeof r.meter_points === 'number');
   const cols = [
-    { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => fmtDateTime(parseTime(r.fired_at)) },
+    // The start time links to the report, so the table needs no column for it.
+    { label: STRINGS.colStarted, sort: (r) => r.fired_at, cell: (r) => link(r.report_url, fmtDateTime(parseTime(r.fired_at))) || fmtDateTime(parseTime(r.fired_at)) },
     { label: STRINGS.colFixture, sort: (r) => r.fixture, cell: (r) => fixtureTerm(clean(r.fixture)) },
     { label: STRINGS.colModel, sort: (r) => r.model, cell: (r) => friendlyModel(r.model) },
     { label: STRINGS.colWith, num: true, sort: (r) => r.with_share, cell: (r) => one(r.with_skill) + ' (' + share(r.with_share) + ')' },
     { label: STRINGS.colWithout, num: true, sort: (r) => r.without_share, cell: (r) => one(r.without_skill) + ' (' + share(r.without_share) + ')' },
-    { label: STRINGS.colChecks, num: true, sort: (r) => r.checks, cell: (r) => one(r.checks) },
     { label: STRINGS.colJudge, sort: (r) => r.judge, cell: judgeCell },
     { label: STRINGS.colCost, num: true, sort: (r) => r.cost_usd, cell: (r) => usd(r.cost_usd) }
   ];
   if (points) cols.push({ label: STRINGS.colPoints, num: true, sort: (r) => r.meter_points, cell: (r) => one(r.meter_points) });
-  cols.push({ label: STRINGS.colReport, cell: (r) => link(r.report_url, STRINGS.report) });
   return table(cols, runs, { tall: true });
 }
 
@@ -124,10 +123,17 @@ function lessonsAbout(doc, kind, name, refMs) {
     issues.map((it) => h('li', null, lessonIssueTitle(it), ' — ', link(it.url, STRINGS.lessonIssueStatus(it.number)), ' (' + STRINGS.lessonDraftStates[it.state] + ')')));
 }
 
+/* What the subject's tests cost over the last 30 days, at list price, from its
+   run usefulness rows; nothing when it has none. */
+function testCost(rows, refMs) {
+  const t = Array.isArray(rows) && rows.length ? utilityTotals(rows, '30', refMs).total : null;
+  return t && t.runs ? h('p', { class: 'meta' }, STRINGS.testCost(usd(t.cost))) : null;
+}
+
 export function subjectPage(doc, kind, name, ctx) {
   const refMs = parseTime(doc.generated_at);
   const guidance = kind === 'guidance';
-  const items = guidance ? sectionItems(doc, 'next') : skillItems(doc);
+  const items = guidance ? sectionItems(doc) : skillItems(doc);
   const it = items.find((x) => (guidance ? x.id : x.name) === name);
   const back = h('p', { class: 'back' }, navLink(hashFor(kind), STRINGS.back(STRINGS.subjectBack[kind])));
   if (!it) {
@@ -158,6 +164,8 @@ export function subjectPage(doc, kind, name, ctx) {
       !guidance && raw.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(raw.registry))) : null,
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,
       nextLine(raw.next_test, refMs, guidance ? 'section' : 'skill'),
+      guidance ? null : usageLine(raw.usage, doc.usage, refMs),
+      testCost(raw.run_utility, refMs),
       stakesLine(raw.stakes),
       h('h3', null, defn('verdict', STRINGS.verdictHeading)),
       verdictLine(raw.verdict) || h('p', { class: 'meta' }, STRINGS.verdict.insufficient),
@@ -165,15 +173,15 @@ export function subjectPage(doc, kind, name, ctx) {
       discardedLine(raw.discarded_runs),
       h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
       guidance && hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null),
-    panel(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
-      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs, false, subj))) : null]),
+    fold(STRINGS.gainHeading, [confidenceView(raw.confidence, doc.policy, subj),
+      hasData(it.pooled) ? h('div', { class: 'cols' }, h('div', null, legendFor(subj, it.pooled), modelCharts(it.pooled, subj)), h('div', null, trendChart(it.trend, refMs, subj))) : null]),
     Array.isArray(raw.run_utility) && raw.run_utility.length
-      ? panel(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
+      ? fold(STRINGS.utilityHeading, [utilityView([{ label: STRINGS.utilityThis, rows: raw.run_utility }], refMs),
         decisionsView(raw.decisions, friendlyModel)]) : null,
-    panel(STRINGS.runsHeading, runsTable(runs, refMs)),
-    panel(STRINGS.bareHeading, bareTable(bare)),
-    guidance ? null : panel(STRINGS.useHeading, [usageLine(raw.usage, doc.usage, refMs), ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null]),
-    guidance ? null : panel(STRINGS.copiesHeading, [copiesLine(raw.copies), copiesTable(raw.copies)]),
-    panel(defn('fixture', STRINGS.fixturesHeading), fixturesPanel(doc, runs, name, refMs)),
+    fold(STRINGS.runsHeading, runsTable(runs, refMs)),
+    fold(STRINGS.bareHeading, bareTable(bare)),
+    guidance ? null : panel(STRINGS.useHeading, ext && ext.subjectUse ? ext.subjectUse(ctx, name) : null),
+    guidance ? null : fold(STRINGS.copiesHeading, [copiesLine(raw.copies), copiesTable(raw.copies)]),
+    fold(STRINGS.fixturesHeading, fixturesPanel(doc, runs, name, refMs)),
     panel(STRINGS.lessonsAbout, lessonsAbout(doc, kind, name, refMs)));
 }

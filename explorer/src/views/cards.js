@@ -1,16 +1,13 @@
-/* Skill and section cards, and the counts line above them. */
+/* The lines a subject's page and the Skills and Guidance tables share, and the counts line above the table. */
 import { STRINGS } from '../core/strings.js';
-import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
-import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd } from '../core/format.js';
+import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
 import { h } from '../core/h.js';
-import { termify, SENTENCE_TERMS } from '../core/terms.js';
 import { chip } from '../core/charts.js';
-import { purposeOf } from '../core/items.js';
+import { purposeOf, nextKey } from '../core/items.js';
+import { gainOf, gainPer100Words, runsOf } from '../core/stats.js';
 import { hashFor } from '../core/route.js';
-import { navLink, badge } from './bits.js';
-import { trendChart } from './trend.js';
-import { modelCharts, hasAlone, legendFor, hasData } from './models.js';
-import { confidenceView } from './range.js';
+import { navLink, table, badge } from './bits.js';
+import { signedPoints } from './range.js';
 
 export function verdictLine(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -18,14 +15,13 @@ export function verdictLine(v) {
   return h('p', { class: 'meta' }, Object.prototype.hasOwnProperty.call(STRINGS.verdict, key) ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key)));
 }
 
-export function nextLine(nt, refMs, kind) {
+export function nextText(nt, refMs, kind) {
   const n = nt && typeof nt === 'object' ? nt : {};
-  let text;
-  if (typeof n.position === 'number' && isFinite(n.position)) text = STRINGS.nextQueued(n.position, kind);
-  else if (isFinite(parseTime(n.due))) text = STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
-  else text = n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
-  return h('p', { class: 'meta' }, text);
+  if (typeof n.position === 'number' && isFinite(n.position)) return STRINGS.nextQueued(n.position, kind);
+  if (isFinite(parseTime(n.due))) return STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
+  return n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
 }
+export const nextLine = (nt, refMs, kind) => h('p', { class: 'meta' }, nextText(nt, refMs, kind));
 
 export function stakesLine(st) {
   if (!st || typeof st !== 'object' || typeof st.reason !== 'string') return null;
@@ -68,40 +64,41 @@ export function copiesLine(c) {
   return h('p', { class: 'meta' }, STRINGS.copies(n.match, n.older, n.unknown));
 }
 
-export function skillCard(it, refMs, doc) {
-  return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, navLink(hashFor('skills', it.name), clean(it.name))), chip(it.chip),
-      it.raw.private === true ? badge(STRINGS.privateBadge, 'private') : null),
-    h('p', { class: 'gl' }, clean(purposeOf(it.raw.description) || STRINGS.purposeMissing)),
-    usageLine(it.raw.usage, doc && doc.usage, refMs),
-    copiesLine(it.raw.copies),
-    nextLine(it.raw.next_test, refMs, 'skill'),
-    stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
-    hasData(it.pooled) ? [legendFor('skills', it.pooled), modelCharts(it.pooled, 'skills'), trendChart(it.trend, refMs, true, 'skills')] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'skills', true),
-    verdictLine(it.raw.verdict));
-}
-
-export function sectionCard(it, refMs, doc) {
-  const gloss = Object.prototype.hasOwnProperty.call(GLOSSES, it.id) ? GLOSSES[it.id] : GLOSS_MISSING;
-  return h('article', { class: 'card' },
-    h('div', { class: 'head' }, h('h3', null, navLink(hashFor('guidance', it.id), clean(it.raw.heading || it.id))), chip(it.chip)),
-    h('p', { class: 'gl' }, gloss),
-    h('p', { class: 'meta', style: 'margin:0 0 6px' }, STRINGS.size(wordsFor(it.bytes))),
-    nextLine(it.raw.next_test, refMs, 'section'),
-    stakesLine(it.raw.stakes),
-    h('p', { class: 'sent' }, termify(clean(it.sentence), SENTENCE_TERMS)),
-    hasAlone(it.pooled) ? h('p', { class: 'meta' }, STRINGS.aloneShown) : null,
-    hasData(it.pooled) ? [legendFor('guidance', it.pooled), modelCharts(it.pooled, 'guidance'), trendChart(it.trend, refMs, true, 'guidance')] : null,
-    confidenceView(it.raw.confidence, doc && doc.policy, 'guidance', true),
-    verdictLine(it.raw.verdict));
-}
-
 export function chipSummary(items, mode) {
   const counts = {};
   items.forEach((i) => { counts[i.chip] = (counts[i.chip] || 0) + 1; });
   const parts = STRINGS.chipOrder.filter((k) => counts[k]).map((k) => counts[k] + ' ' + STRINGS.chips[k].toLowerCase());
   if (!parts.length) return null;
   return h('p', { class: 'summary-line' }, STRINGS.summaryCounts(parts.join(', ')));
+}
+
+/* Best first: the loop's keep, then early signs, trending toward removal,
+   no difference, the test cannot tell, not enough data. */
+const TABLE_RANK = ['helps', 'alone', 'early', 'worse', 'none', 'canttell', 'insufficient'];
+/* The Next test column in a few words. */
+function nextCell(nt, refMs) {
+  const n = nt && typeof nt === 'object' ? nt : {};
+  if (typeof n.position === 'number' && isFinite(n.position)) return STRINGS.nextCell.queued(n.position);
+  if (isFinite(parseTime(n.due))) return STRINGS.nextCell.due(fmtDay(parseTime(n.due), refMs));
+  return n.scheduled ? STRINGS.nextCell.none : STRINGS.nextCell.unscheduled;
+}
+
+/* One sortable row per skill or section. Skills show real-work
+   uses, sections their size; each name opens its page. */
+export function subjectTable(items, kind, refMs) {
+  const guidance = kind === 'guidance';
+  const uses = (it) => (it.raw.usage && Number.isInteger(it.raw.usage.invocations) ? it.raw.usage.invocations : -1);
+  const gain = (it) => gainOf(it.pooled.all, guidance ? 'guidance' : 'skills');
+  const rows = items.slice().sort((a, b) => TABLE_RANK.indexOf(a.chip) - TABLE_RANK.indexOf(b.chip) || (guidance ? 0 : uses(b) - uses(a)));
+  return table([
+    { label: STRINGS.colName, sort: (it) => it.name, cell: (it) => [navLink(hashFor(kind, it.id || it.name), clean(guidance ? it.raw.heading || it.id : it.name)), it.raw.private === true ? [' ', badge(STRINGS.privateBadge, 'private')] : null] },
+    { label: STRINGS.colStatus, sort: (it) => TABLE_RANK.indexOf(it.chip), cell: (it) => chip(it.chip) },
+    { label: STRINGS.colGain, num: true, sort: (it) => gain(it), cell: (it) => (gain(it) === null ? STRINGS.noValue : signedPoints(gain(it) * 100)) },
+    { label: STRINGS.colRuns, num: true, sort: (it) => runsOf(it.pooled.all, guidance ? 'guidance' : 'skills'), cell: (it) => fmtCount(runsOf(it.pooled.all, guidance ? 'guidance' : 'skills')) },
+    guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
+      : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
+    guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
+    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs) },
+    { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => STRINGS.verdictCell[it.raw.verdict || 'insufficient'] || clean(it.raw.verdict) }
+  ].filter(Boolean), rows);
 }
