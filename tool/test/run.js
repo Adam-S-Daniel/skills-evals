@@ -1059,7 +1059,7 @@ test('every git hook check that has not earned its place states what happens nex
   eq(since(by['young-check']), 'Nov 3', 'the day it was made, in Eastern time');
   eq(last(by['young-check']), 'Too new to judge: a candidate for removal if it has blocked nothing by Dec 29');
   eq(since(by['old-check']), 'Sep 6', 'no made-by record: the first week it ran');
-  eq(last(by['old-check']), 'Blocked nothing since Nov 1: a candidate for removal');
+  eq(last(by['old-check']), 'Blocked nothing in its first 8 weeks (to Nov 1): a candidate for removal');
   eq(last(by['good-check']), '—');
   eq(heads(route(hookDoc(), 'hooks')).slice(-2).join(','), 'Since,What happens next');
   // A first run in the data window's first week may predate the data: Since is unknown, and the next step makes no date up.
@@ -1123,8 +1123,10 @@ test('Made by agents uses plain words, pluralizes, adds Unknown when above 0, su
   ok(t.includes('1 use') && !t.includes('1 uses'), 'singular');
   ok(heads(P.findAll(page, (n) => n.tag === 'section' && flat(n).startsWith('Made by agents'))[0]).includes('Unknown'), 'Unknown column');
   ok(t.includes('Older items (1)'), 'older folded');
-  ok(t.includes('Removed 1') && !t.includes('No measurable difference 1'), 'retire reads Removed');
-  ok(P.STRINGS.agentVerdicts['retire-pending'] === 'Removal pending');
+  ok(t.includes('Decided: remove 1') && !t.includes('No measurable difference 1'), 'a retire verdict reads as a decision, not as done');
+  ok(!/Removed/.test(t.split('Made by agents')[1].split('Git hook runs')[0]), 'nothing in the fixture is retired yet, so nothing says Removed');
+  eq(P.STRINGS.agentVerdicts['retire-pending'], 'Removal pending');
+  eq(P.STRINGS.agentVerdicts.retired, 'Removed');
   ok(t.includes('Never blocked 1') && t.includes('Not enough data 1'), 'plain labels with counts');
 });
 test('a skill page leads with what its tests cost, folds the long tables, and has no Checks or Report columns', () => {
