@@ -16,7 +16,8 @@ export const GROUPS = {
 /* The dashboard's tab names before the six groups, as `#overview`. */
 export const LEGACY = { overview: 'needs', loop: 'changes', impact: 'spend', costbenefit: 'spend', evals: 'skills',
   cleanup: 'activity', work: 'activity', routines: 'activity', console: 'activity', decisions: 'activity' };
-/* Route names an older link used (`#/loop`), and where each opens now. */
+/* Route names an older link used (`#/loop`), and where each opens now,
+   whatever trails them (`#/loop/x`, `#/removed/`). */
 export const ALIASES = { loop: { name: 'changes', id: null }, impact: { name: 'spend', id: null }, ops: { name: 'activity', id: null },
   removed: { name: 'changes', id: 'removed' } };
 /* The filters the changes list takes as its id. */
@@ -40,14 +41,14 @@ export function parseRoute(hash, search, groups, home) {
     const to = LEGACY[raw.slice(1)];
     return have.includes(groupOf(to)) ? { name: to, id: null } : { name: 'summary', id: null };
   }
-  const m = /^#\/([a-z]+)(?:\/(.+))?$/.exec(raw);
+  const m = /^#\/([a-z]+)(?:\/(.*))?$/.exec(raw);
   if (!m) {
     const q = new URLSearchParams(search || '');
     if (q.get('subject') === 'guidance') return { name: 'guidance', id: null };
     if (!raw && home && have.includes(groupOf(home))) return { name: home, id: null };
     return { name: 'summary', id: null };
   }
-  if (Object.prototype.hasOwnProperty.call(ALIASES, m[1]) && !m[2]) {
+  if (Object.prototype.hasOwnProperty.call(ALIASES, m[1])) {
     const to = ALIASES[m[1]];
     return have.includes(groupOf(to.name)) ? { name: to.name, id: to.id } : { name: 'summary', id: null };
   }

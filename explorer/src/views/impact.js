@@ -76,7 +76,14 @@ export function spendWeeks(doc) {
 }
 
 /* The week's boundary as Eastern time: a spend week starts Monday 17:00 UTC. */
+const WEEK_MS = 7 * 86400000;
 const weekStart = (w) => fmtDateTime(Date.parse(w + 'T17:00:00Z'));
+/* "this" for the week that contains the data's time, "last" for the one before
+   it, else a plain "Week": a page of old data does not call an old week this one. */
+const weekWhich = (w, refMs) => {
+  const from = Date.parse(w + 'T17:00:00Z');
+  return refMs >= from && refMs < from + WEEK_MS ? 'this' : refMs - WEEK_MS >= from && refMs - WEEK_MS < from + WEEK_MS ? 'last' : '';
+};
 
 /* One panel for the loop's money: this week and last week side by side, the
    share of test dollars that bought nothing, and every week below. */
@@ -88,7 +95,7 @@ function spendView(doc, refMs) {
   const cell = (r, k) => (r && r[k] !== null ? usd(r[k]) : STRINGS.noValue);
   const rows = [{ label: STRINGS.spendTests, k: 'tests' }, { label: STRINGS.spendBuilding, k: 'build' }, { label: STRINGS.spendApi, k: 'api' }, { label: STRINGS.spendTotal, k: 'total' }];
   return [h('p', { class: 'note' }, STRINGS.impactSpendNote), s.generated_at ? srcLineFor(doc, 'spend') : null,
-    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w, i) => ({ label: STRINGS.spendWeekHead(i === 0, weekStart(w.week)), num: true,
+    two.length ? table([{ label: '', cell: (r) => r.label }].concat(two.map((w) => ({ label: STRINGS.spendWeekHead(weekWhich(w.week, refMs), weekStart(w.week)), num: true,
       cell: (r) => cell(w, r.k) + (r.k === 'tests' && w.points !== null ? STRINGS.spendPoints(w.points.toFixed(1)) : '') }))), rows) : null,
     share ? h('p', null, STRINGS.spendNoUse(Math.round(share.share * 100) + '%', usd(share.noUse), usd(share.total), share.top.map(([name, cost]) => name + ' (' + usd(cost) + ')').join(' and ')),
       ' ', navLink(hashFor('summary'), STRINGS.spendUsefulnessLink)) : null,

@@ -274,5 +274,16 @@
   },
   "staleAfterHours": 192,
   "title": "Private-skill results (optional)"
+ },
+ "refresh": {
+  "description": "When this refresh ran and how often refreshes are due, so the page can warn when one did not land. Always uploaded, changed or not.",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET)",
+  "source": {
+   "kind": "file",
+   "name": "refresh.json",
+   "url": "/_blob/<uploaded id>"
+  },
+  "staleAfterHours": 26,
+  "title": "Refresh clock"
  }
 }

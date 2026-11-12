@@ -61,14 +61,14 @@ export function capUse(allowance, budget) {
     basis: a.measure === 'eval_spend_7d' ? 'rolling' : /since_reset|reset/.test(String(a.measure || '')) ? 'reset' : 'plain' };
 }
 
-/* Every active routine is counted once: healthy, not run yet, or needing a
-   look, so the three add up to `active`, the rows the table lists. */
+/* Every routine is counted once: healthy, not run yet, or needing a look, so
+   the three add up to `active`, the rows the table lists (build.py leaves
+   retired routines out of the dataset). */
 export function routineHealth(routines) {
   if (!routines) return null;
-  const active = routines.filter((r) => r.health !== 'Retired');
-  const ok = active.filter((r) => r.health === 'OK').length;
-  const fresh = active.filter((r) => r.health === 'Not run yet').length;
-  return { active: active.length, ok, fresh, attention: active.length - ok - fresh };
+  const ok = routines.filter((r) => r.health === 'OK').length;
+  const fresh = routines.filter((r) => r.health === 'Not run yet').length;
+  return { active: routines.length, ok, fresh, attention: routines.length - ok - fresh };
 }
 
 function meter(value, max, mark, over) {
@@ -91,7 +91,7 @@ export function attentionRows(dash, doc) {
   const rows = [];
   for (const r of some(dash, 'half_built_issues') || []) {
     if (r.state !== 'open') continue;
-    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days });
+    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt });
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
@@ -99,7 +99,7 @@ export function attentionRows(dash, doc) {
     // item that needs attention: its own table. On a decided one it is listed.
     if (isTrending(doc, a)) continue;
     const k = alertKindLabel(doc, a);
-    rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null, name: a.name, alertKind: a.kind, since: a.drift_since });
+    rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null, name: a.name, alertKind: a.kind, since: a.drift_since, acts: P.actsAlert });
   }
   const f = doc.fires_without_results;
   if (f && Number.isInteger(f.without_results) && (f.without_results || f.rejected) && typeof f.since === 'string') {
@@ -107,32 +107,39 @@ export function attentionRows(dash, doc) {
   }
   const q = doc.fixture_queue;
   for (const x of q && Array.isArray(q.findings) ? q.findings : []) {
-    if (x) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null });
+    if (x) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null, acts: P.actsFixture(x.kind || '') });
   }
   const order = { high: 0, medium: 1, low: 2 };
   return rows.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
 }
 
-/* The dashboard refreshes every REFRESH_HOURS (dashboard/build.py's
-   REFRESH_INTERVAL_HOURS); a snapshot older than that plus an hour's grace
-   means a refresh did not land. */
+/* The refresh clock the dashboard uploads on every refresh (dashboard/build.py's
+   `refresh` dataset): when the snapshot was built and how many hours a refresh
+   is due every. The allowance row's own clock is the fallback for a dashboard
+   without that dataset; 12 is the fallback interval. */
 export const REFRESH_HOURS = 12;
-export const STALE_AFTER_HOURS = REFRESH_HOURS + 1;
 const HOUR_MS = 3600000;
+const refreshRow = (dash) => (rowsOf(dash, 'refresh') || [])[0] || null;
 
-/* When the newest snapshot was built: every dataset is built in one run, and
-   the allowance row carries that run's clock (`computed_at`). NaN when the
-   dataset is missing. */
+export function refreshHours(dash) {
+  const r = refreshRow(dash);
+  return r && Number.isFinite(r.refresh_every_hours) && r.refresh_every_hours > 0 ? r.refresh_every_hours : REFRESH_HOURS;
+}
+
+/* When the newest snapshot was built; NaN when no dataset says. */
 export function snapshotMs(dash) {
+  const r = refreshRow(dash);
+  if (r && isFinite(parseTime(r.refreshed_at))) return parseTime(r.refreshed_at);
   const a = rowsOf(dash, 'eval_allowance');
   return a && a[0] ? parseTime(a[0].computed_at) : NaN;
 }
 
-/* Whole hours the snapshot is old when that is past the grace, else null. */
-export function staleHours(snapMs, nowMs) {
+/* Whole hours the snapshot is old when that is more than an hour past a
+   refresh interval, else null. */
+export function staleHours(snapMs, nowMs, every) {
   if (!isFinite(snapMs) || !isFinite(nowMs)) return null;
   const hours = (nowMs - snapMs) / HOUR_MS;
-  return hours > STALE_AFTER_HOURS ? Math.floor(hours) : null;
+  return hours > (every || REFRESH_HOURS) + 1 ? Math.floor(hours) : null;
 }
 
 /* "As of <time ET>", the dataset id kept for the hover text. */
@@ -161,7 +168,7 @@ export function attentionGroups(rows) {
     const since = list.map((r) => r.since).filter((x) => typeof x === 'string').sort()[0];
     const worst = list.reduce((a, r) => ((SEVERITY[r.severity] ?? 3) < (SEVERITY[a] ?? 3) ? r.severity : a), list[0].severity);
     out.push({ kind: list[0].kind, severity: worst, what: drift ? P.driftTitle(list.length, names.size) : P.groupTitle(list.length, list[0].kind),
-      note: drift ? P.driftNote(since ? fmtDay(parseTime(since)) : STRINGS.unknown) : null, url: drift ? P.driftHelpUrl : null,
+      note: drift ? P.driftNote(since ? fmtDay(parseTime(since)) : STRINGS.unknown) : list[0].acts || null, url: drift ? P.driftHelpUrl : null,
       where: null, age: null, children: list });
   }
   return out.sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3));
@@ -219,8 +226,7 @@ function needsView(dash, ctx, nowMs) {
   const hb = (rowsOf(dash, 'half_built_summary') || [])[0];
   const att = attentionGroups(attentionRows(dash, doc));
   const cap = capUse(rowsOf(dash, 'eval_allowance'), rowsOf(dash, 'budget'));
-  const listed = some(dash, 'routines');
-  const routines = listed ? listed.filter((r) => r.health !== 'Retired') : null;
+  const routines = some(dash, 'routines');
   const rh = routineHealth(routines);
   const snap = snapshotMs(dash);
   const problems = (routines || []).filter((r) => r.health !== 'OK'), healthy = (routines || []).filter((r) => r.health === 'OK');
@@ -230,13 +236,13 @@ function needsView(dash, ctx, nowMs) {
       { label: P.colWhy, sort: (r) => r.why || '', cell: (r) => clean(r.why || '') },
       { label: P.colWhere, sort: (r) => r.where, cell: (r) => clean(r.where || '') },
       { label: P.colSince, sort: (r) => r.since, cell: (r) => at(r.since) }], waiting)] : h('p', null, P.waitingNone)) : null,
-    panel(P.healthHeading, h('p', { class: 'big' }, healthStrip(doc, rh, staleHours(snap, nowMs)))),
+    panel(P.healthHeading, h('p', { class: 'big' }, healthStrip(doc, rh, staleHours(snap, nowMs, refreshHours(dash))))),
     panel(P.attentionHeading, [h('p', { class: 'note' }, P.attentionNote), att.length ? table([
       { label: P.colKind, sort: (r) => r.kind, cell: (r) => r.kind },
       { label: P.colSeverity, sort: (r) => r.severity, cell: (r) => pill(r.severity) },
       { label: P.colWhat, sort: (r) => r.what, cell: attentionWhat },
       { label: P.colWhere, sort: (r) => r.where || '', cell: (r) => clean(r.where || '') },
-      { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att, { tall: true })
+      { label: P.colAge, num: true, sort: (r) => r.age, cell: (r) => (r.age === null || r.age === undefined ? '' : r.age + ' d') }], att)
       : h('p', null, P.attentionNone)]),
     cap ? panel(P.allowanceHeading, allowanceView(cap, snap, 'eval_allowance')) : null,
     rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.active, rh.attention, rh.fresh)),
@@ -269,7 +275,7 @@ export function makeExt(dash, opts) {
   const ext = {
     covers(key) {
       if (key === 'prs') return ok('open_prs') || ok('merged_prs');
-      if (key === 'use') return usage().some((r) => r.kind !== 'repo' && r.kind !== 'hook_all');
+      if (key === 'use') return usage().some((r) => r.kind !== 'hook_all');
       if (key === 'cost') return ok('cost_benefit_summary');
       if (key === 'runs') return ok('run_stream');
       if (key === 'issues') return ok('open_issues');
@@ -279,8 +285,9 @@ export function makeExt(dash, opts) {
     /* One line above every group when the snapshot is older than a refresh allows. */
     banner() {
       const snap = snapshotMs(dash);
-      const hours = staleHours(snap, now());
-      return hours === null ? null : h('p', { class: 'panel failure', role: 'status' }, P.staleBanner(fmtDateTime(snap), hours, REFRESH_HOURS));
+      const every = refreshHours(dash);
+      const hours = staleHours(snap, now(), every);
+      return hours === null ? null : h('p', { class: 'panel failure', role: 'status' }, P.staleBanner(fmtDateTime(snap), hours, every));
     },
     summaryPanels(ctx, doc) {
       const v = conversionView(doc);
@@ -316,7 +323,7 @@ export function makeExt(dash, opts) {
         merged_at: p.closed_at, url: p.url }));
     },
     impactUse() {
-      const rows = usage().filter((r) => r.kind !== 'repo' && r.kind !== 'hook_all');
+      const rows = usage().filter((r) => r.kind !== 'hook_all');
       const sources = some(dash, 'usage_sources');
       return [panel(P.useHeading, rows.length ? [h('p', { class: 'note' }, P.useNote), asOf('usage_rows'), table([
         { label: P.colKind, sort: (g) => g.kind, cell: (g) => (g.kind === 'hook' ? 'git hook' : clean(g.kind)) },
@@ -349,7 +356,7 @@ export function makeExt(dash, opts) {
         { label: P.colTarget, cell: (r) => clean(r.target || '') },
         { label: P.colStatus, cell: (r) => (r.status ? pill(r.status) : '') },
         { label: P.colNote, cell: (r) => clean(r.note || '') }], some(dash, 'cost_benefit_summary')),
-      weeks ? [h('h3', null, P.byWeekHeading), table([
+      weeks ? [h('details', { class: 'history' }, h('summary', null, P.costByWeek), table([
         { label: P.colWeek, sort: (r) => r.week, cell: (r) => r.week },
         { label: P.colEvalRuns, num: true, sort: (r) => r.run_count, cell: (r) => n(r.run_count) },
         { label: P.colRunPoints, num: true, sort: (r) => r.run_points_est, cell: (r) => n(r.run_points_est) },
@@ -359,7 +366,7 @@ export function makeExt(dash, opts) {
         { label: P.colChanges, num: true, sort: (r) => r.changes, cell: (r) => n(r.changes) },
         { label: P.colReach, num: true, sort: (r) => r.real_work_reach, cell: (r) => n(r.real_work_reach) },
         { label: P.colMessages, num: true, sort: (r) => r.owner_messages, cell: (r) => n(r.owner_messages) }], weeks.slice().sort((a, b) => (a.week < b.week ? 1 : -1))),
-      h('p', { class: 'note' }, P.estimatedNote)] : null]);
+      h('p', { class: 'note' }, P.estimatedNote))] : null]);
     },
     opsTop() {
       return [panel(P.routinesTable, ok('routines') ? [asOf('routines'), table([
@@ -378,7 +385,7 @@ export function makeExt(dash, opts) {
       const took = (v, r) => (v === null || v === undefined ? (r.state === 'Queued' ? 'queued' : 'running')
         : v >= 3600 ? Math.floor(v / 3600) + 'h ' + String(Math.floor((v % 3600) / 60)).padStart(2, '0') + 'm'
           : Math.floor(v / 60) + 'm ' + String(v % 60).padStart(2, '0') + 's');
-      return panel(P.runsHeading, [h('p', { class: 'note' }, P.runsNote), asOf('run_stream'), problemsToggle(), table([
+      return panel(P.runsHeading, [h('p', { class: 'note' }, P.runsNote(refreshHours(dash))), asOf('run_stream'), problemsToggle(), table([
         { label: P.colWhen, cls: 'when', sort: (r) => r.at, cell: (r) => at(r.at) },
         { label: P.colState, sort: (r) => r.state, cell: (r) => pill(r.state) },
         { label: P.colWhere, sort: (r) => r.source, cell: (r) => clean(r.source || '') },

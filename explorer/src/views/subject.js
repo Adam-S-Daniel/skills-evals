@@ -2,7 +2,7 @@
    about it in one place. */
 import { STRINGS } from '../core/strings.js';
 import { GLOSSES, GLOSS_MISSING } from '../core/glosses.js';
-import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor , fmtUsd } from '../core/format.js';
+import { clean, friendlyModel, parseTime, fmtDay, fmtDateTime, fmtCount, wordsFor, fmtUsd } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { skillItems, sectionItems, purposeOf } from '../core/items.js';

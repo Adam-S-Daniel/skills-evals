@@ -36,9 +36,24 @@ const artifactAdapter = {
 
 /* The bundle of one entry, as a string. Exported for test/run.js. */
 export async function bundle(entry, opts) {
-  const whitespace = opts && typeof opts.minifyWhitespace === 'boolean' ? opts.minifyWhitespace : entry === 'private.js';
-  const res = await build({
+  const o = opts || {};
+  const flag = (name, dflt) => (typeof o[name] === 'boolean' ? o[name] : dflt);
+  const priv = entry === 'private.js';
+  const res = await bundleResult(entry, {
+    // Syntax everywhere. Whitespace and identifiers only for the private page,
+    // which the console stores as one ArtifactData document of at most 262,144
+    // bytes once JSON-serialized; the public pages stay readable.
+    minifySyntax: flag('minifySyntax', true), minifyWhitespace: flag('minifyWhitespace', priv), minifyIdentifiers: flag('minifyIdentifiers', priv)
+  });
+  return res.outputFiles[0].text;
+}
+
+/* The esbuild result (output text and, for test/run.js, the metafile of which
+   input files went in). */
+export async function bundleResult(entry, min) {
+  return build({
     plugins: entry === 'artifact.js' ? [artifactAdapter] : [],
+    metafile: true,
     entryPoints: [path.join(HERE, 'src', 'entries', entry)],
     bundle: true,
     write: false,
@@ -46,17 +61,14 @@ export async function bundle(entry, opts) {
     platform: 'browser',
     target: 'es2020',
     charset: 'utf8',
-    // The console stores the private page as one ArtifactData document, which
-    // holds at most 262,144 bytes once JSON-serialized. Whitespace and syntax only
-    // (no renaming, so names stay readable); the public bundles are unchanged.
-    minifyWhitespace: whitespace,
-    minifySyntax: whitespace,
+    minifyWhitespace: min.minifyWhitespace,
+    minifySyntax: min.minifySyntax,
+    minifyIdentifiers: min.minifyIdentifiers,
     legalComments: 'none',
     // The page was a strict-mode script before the split; keep it one.
     banner: { js: "'use strict';" },
     logLevel: 'silent'
   });
-  return res.outputFiles[0].text;
 }
 
 /* A template with its CSS and one bundle filled in. */

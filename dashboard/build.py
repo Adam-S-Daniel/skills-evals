@@ -150,9 +150,6 @@ def roster(cfg):
 
 # --- Impact tab ----------------------------------------------------------------
 
-# Outcome keys from _agent-guidance scripts/impact-report.js (kind "repo" rows from CI).
-OUTCOME_KEYS = ["prs_opened", "prs_merged", "prs_closed_unmerged", "prs_reverted", "agent_prs_merged", "ci_red_after"]
-
 # Each producer names what it read in its own field: the transcript census counts sessions,
 # the local hook log counts git hook runs, the CI report counts repos, the cloud guidance
 # records count cloud sessions.
@@ -193,21 +190,21 @@ def usage(er):
                                 "surface": r.get("surface"), "digest": r.get("digest"),
                                 "invocations": r.get("invocations", 0), "sessions": r.get("sessions")})
                 continue
-            o = r.get("outcome") or {}
+            if r["kind"] == "repo":
+                continue  # CI pull request outcomes by repo: no panel shows them (they cover every repo, loop or not)
             # A git hook row named "all" is that week's total across checks; its own kind keeps
             # per-check sums from counting it twice.
             kind = "hook_all" if r["kind"] == "hook" and r["name"] == "all" else r["kind"]
             rows.append({"week": r["week"], "kind": kind, "name": r["name"], "repo": r.get("repo") or "(any repo)",
                          "surface": r.get("surface"), "invocations": r.get("invocations", 0),
                          "sessions": r.get("sessions"), "blocked": r.get("blocked"),
-                         "overridden": r.get("overridden"), **{k: o.get(k) for k in OUTCOME_KEYS}})
+                         "overridden": r.get("overridden")})
     if not sources:
         sources = [{"key": PLACEHOLDER_ID, "file": PLACEHOLDER_ID, "surface": None, "scope": None, "from": None,
                     "to": None, "scanned": None, "scanned_unit": None, "generated_at": None}]
     if not rows:
         rows = [{"week": None, "kind": PLACEHOLDER_ID, "name": "No usage counts yet", "repo": None, "surface": None,
-                 "invocations": 0, "sessions": None, "blocked": None, "overridden": None,
-                 **{k: None for k in OUTCOME_KEYS}}]
+                 "invocations": 0, "sessions": None, "blocked": None, "overridden": None}]
     if not digests:
         digests = [{"week": None, "name": "No loaded-copy counts yet", "repo": None, "surface": None,
                     "digest": PLACEHOLDER_ID, "invocations": 0, "sessions": None}]
@@ -627,7 +624,7 @@ def r2(v):
 
 def cost_benefit(er, plan_rows, usage_rows, samples, owner_msgs, prs, explorer, now, start=COST_START,
                  raw=None):
-    """(weeks rows, summary rows) for the Impact group's cost panel. `raw`, a
+    """(weeks rows, summary rows) for the Spend and use group's cost panel. `raw`, a
     dict, receives the week rows and the cost per verdict before rounding."""
     plan = [r for r in plan_rows if r.get("run_id") != PLACEHOLDER_ID]
     usage_rows = [r for r in usage_rows if r["kind"] != PLACEHOLDER_ID]
@@ -777,6 +774,8 @@ def build(results, inputs, config, now, raw=None):
     # The page reads test runs from the explorer document; the rows here only
     # feed the cost weeks.
     plan_rows, _ = eval_rows(results, site["report_base"])
+    # Always uploaded: the page reads the refresh clock from here, not from a dataset a quiet day leaves unchanged.
+    out["refresh"] = [{"refreshed_at": iso(now), "refresh_every_hours": REFRESH_INTERVAL_HOURS}]
     out["eval_allowance"] = allowance(results, now)
     out["budget"] = budget()
     out["roster"] = roster(load(os.path.join(config, "roster.json"), {}))
