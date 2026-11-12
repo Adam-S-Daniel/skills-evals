@@ -684,6 +684,13 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual((sm["bar_build"]["status"], sm["bar_verdict"]["value"]),
                          ("Not met", "Missed: cut back to guidance-only evals"))
 
+    def test_the_day_label_helpers_sit_with_the_other_helpers_not_the_bar_constants(self):
+        src = Path(build.__file__).read_text(encoding="utf-8")
+        self.assertLess(src.index("def day_text("), src.index("def load("))
+        self.assertLess(src.index("def week_text("), src.index("def load("))
+        self.assertGreater(src.index("BAR_JUDGED_AT ="), src.index("BAR_DUE ="))
+        self.assertEqual(src.index("BAR_JUDGED_AT =") - src.index("BAR_DUE ="), len('BAR_DUE = "2026-12-15"\n'))
+
     def test_summary_notes_show_no_iso_dates_only_eastern_day_labels(self):
         import re
         _, rows = self.cb(now=self.cb_now())

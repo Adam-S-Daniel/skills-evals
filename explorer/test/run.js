@@ -15,7 +15,7 @@ import { DATA_REPO } from '../src/config.js';
 import { SCHEMA_VERSION } from '../src/core/rules.js';
 import { fixtureQueue, requestIssue } from '../src/core/fixtures.js';
 import { privateSource, PRIVATE_DATASET_ID, GROUPS } from '../src/entries/private.js';
-import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, etSchedule } from '../src/private/views.js';
+import { makeExt, attentionRows, attentionGroups, capUse, routineHealth, snapshotMs, staleHours, etSchedule, byLine } from '../src/private/views.js';
 import { mergePrivate } from '../src/private/merge.js';
 import { rowsOf, some } from '../src/private/datasets.js';
 import { judgeCell } from '../src/views/subject.js';
@@ -1683,7 +1683,7 @@ await test('a bare HH:MM UTC in a routine schedule becomes Eastern time, by the 
   eq(etSchedule('Daily 06:53 UTC, GitHub Actions (1:53 AM ET)', Date.parse('2026-11-12T00:00:00Z')), 'Daily 1:53 AM ET, GitHub Actions');
 });
 await test('one helper per job: no source declares its own isDay, lessonDayMs, mondayOf or LESSON_DAY', () => {
-  const banned = new Set(['isDay', 'lessonDayMs', 'mondayOf', 'LESSON_DAY']);
+  const banned = new Set(['isDay', 'lessonDayMs', 'mondayOf', 'LESSON_DAY', 'repoNum']);
   const found = [];
   for (const [file, src] of sourceFiles()) {
     (function walk(n) {
@@ -1693,6 +1693,50 @@ await test('one helper per job: no source declares its own isDay, lessonDayMs, m
     })(acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'module' }));
   }
   eq(found.join(','), '');
+});
+
+// ---- Second review: schedule weekdays, notes, who opened a PR, folds, nits ----
+await test('a bare UTC clock time moves its weekday or date back a day when Eastern time is the evening before', () => {
+  const winter = Date.parse('2026-11-12T00:00:00Z'), summer = Date.parse('2026-07-01T00:00:00Z');
+  eq(etSchedule('Mondays 02:00 UTC', winter), 'Sundays 9:00 PM ET');
+  eq(etSchedule('Mondays 02:00 UTC', summer), 'Sundays 10:00 PM ET');
+  eq(etSchedule('Tuesdays 02:00 UTC', winter), 'Mondays 9:00 PM ET');
+  eq(etSchedule('Sundays 02:00 UTC', winter), 'Saturdays 9:00 PM ET');
+  eq(etSchedule('Mondays 17:00 UTC', winter), 'Mondays 12:00 PM ET', 'same day: the weekday stays');
+  eq(etSchedule('Daily 02:00 UTC', winter), 'Daily 9:00 PM ET');
+  eq(etSchedule('Mon-Fri 02:00 UTC', winter), 'Mon-Fri 02:00 UTC', 'a weekday shape it cannot parse is left alone');
+  eq(etSchedule('Mondays and Thursdays 02:00 UTC', winter), 'Mondays and Thursdays 02:00 UTC');
+});
+await test('"Mon D at HH:MM UTC" in a routine note becomes Eastern, with the date moved when needed', () => {
+  const ref = Date.parse('2026-11-12T00:00:00Z');
+  eq(etSchedule('late on Nov 2 at 16:57 UTC and Nov 9 at 17:15 UTC', ref), 'late on Nov 2 at 11:57 AM ET and Nov 9 at 12:15 PM ET');
+  eq(etSchedule('ran Nov 3 at 02:00 UTC', ref), 'ran Nov 2 at 9:00 PM ET');
+  eq(etSchedule('ran Mar 1 at 02:00 UTC', ref), 'ran Feb 28 at 9:00 PM ET', '2026 is not a leap year');
+  const dash = fakeDash({ routines: okData([{ name: 'R', what: 'w', schedule: 'Daily, 4:00 AM ET', note: 'Ran Nov 2 at 16:57 UTC', last_run: null, health: 'OK', link: null }]) });
+  ok(!/UTC/.test(flat(renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) })).replace(STRINGS.utcNote, '')), 'no UTC in the routine table');
+});
+await test('an open pull request says who opened it, a bot or a person, beside the title and without a new column', () => {
+  eq(byLine('dependabot[bot]'), 'by a bot'); eq(byLine('adam'), 'by adam'); eq(byLine(''), ''); eq(byLine(null), '');
+  const dash = fakeDash({ open_prs: okData([Object.assign(manyPulls(2)[0], { author: 'renovate[bot]', checks: 'ok', labels: '' }), Object.assign(manyPulls(2)[1], { number: 2, author: 'adam', checks: 'ok', labels: '' })]) });
+  const sec = findAll(renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) }), (n) => n.tag === 'section' && textOf(n).includes('Pull requests'))[0];
+  const t = flat(sec);
+  ok(t.includes('by a bot') && t.includes('by adam'), t);
+  eq(headsOf(rowsOfTable(sec, 0)).length, 3, 'still three columns');
+});
+await test('the page re-checks which tables scroll when a fold opens (toggle, in the capture phase)', () => {
+  const src = fs.readFileSync(path.join(EXPLORER, 'src', 'app.js'), 'utf8');
+  let found = false;
+  (function walk(n) {
+    if (!n || typeof n.type !== 'string') return;
+    if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression' && n.callee.property.name === 'addEventListener'
+      && n.arguments[0] && n.arguments[0].value === 'toggle' && n.arguments[2] && n.arguments[2].value === true) found = true;
+    for (const [k, v] of Object.entries(n)) { if (k === 'type') continue; if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') walk(v); }
+  })(acorn.parse(src, { ecmaVersion: 'latest', sourceType: 'module' }));
+  ok(found, 'a capture-phase toggle listener');
+});
+await test('Spend says "noon ET" once: in the panel note, not again in the footnote', () => {
+  const spend = flat(renderRoute(ET_DOC(), { name: 'spend', id: null }, {}));
+  eq(spend.split('noon ET').length - 1, 1);
 });
 
 for (const f of failures) console.log('FAIL ' + f);

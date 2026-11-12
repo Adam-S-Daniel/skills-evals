@@ -109,9 +109,25 @@ export function fmtResetLabel(ms) {
 /* "06:53" on the UTC clock as an Eastern clock time ("1:53 AM ET"), using the
    offset in force on the reference day (daylight saving moves it). */
 export function fmtClockUtcToEt(hour, minute, refMs) {
+  return utcClockToEt(hour, minute, refMs).text;
+}
+/* The same, with `shift`: -1 when the Eastern time falls on the day before the
+   UTC one (02:00 UTC is 9:00 PM ET the evening before), else 0. */
+export function utcClockToEt(hour, minute, refMs) {
   const base = isFinite(refMs) ? new Date(refMs) : new Date(0);
-  const at = Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute));
-  return new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, hour: 'numeric', minute: '2-digit' }).format(new Date(at)) + ' ' + STRINGS.et;
+  const at = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(), Number(hour), Number(minute)));
+  const f = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: TIME_ZONE }, o));
+  const etDay = f({ day: 'numeric' }).format(at);
+  const utcDay = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: 'numeric' }).format(at);
+  return { text: f({ hour: 'numeric', minute: '2-digit' }).format(at) + ' ' + STRINGS.et, shift: etDay === utcDay ? 0 : -1 };
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* "Nov 3" moved by `delta` days ("Nov 2"), in the reference's year. */
+export function shiftMonthDay(mon, day, delta, refMs) {
+  const year = isFinite(refMs) ? new Date(refMs).getUTCFullYear() : 2001;
+  const d = new Date(Date.UTC(year, MONTH_ABBR.indexOf(mon), Number(day) + delta));
+  return MONTH_ABBR[d.getUTCMonth()] + ' ' + d.getUTCDate();
 }
 
 /* A UTC calendar day (a census window edge, which is a UTC Monday), shown

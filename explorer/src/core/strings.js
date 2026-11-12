@@ -21,7 +21,7 @@ function buildStrings(you) {
   unknown: 'unknown',
   weekOf: (start) => 'week of ' + start,
   utcNote: 'Days and weeks on this page are counted in UTC, so a day here starts at 7 PM ET the evening before (8 PM during daylight saving time). Every clock time is US Eastern.',
-  utcNoteSpend: 'Hook and test-run days and weeks on this page are counted in UTC, so a day there starts at 7 PM ET the evening before (8 PM during daylight saving time). Spend weeks are different: each starts on Monday at noon ET (1 PM during daylight saving time). Every clock time is US Eastern.',
+  utcNoteSpend: 'Hook and test-run days and weeks on this page are counted in UTC, so a day there starts at 7 PM ET the evening before (8 PM during daylight saving time). Every clock time is US Eastern.',
   spendWeeksNote: (list) => 'Spend weeks start Monday at noon ET (1 PM during daylight saving time): ' + list + '.',
   showAll: (n) => 'Show all ' + n,
   showFewer: (n) => 'Show first ' + n,

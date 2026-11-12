@@ -124,6 +124,8 @@ export function boot(source, opts) {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { tip.hidden = true; toggleMenu(false); } });
   root.addEventListener('focusout', () => { tip.hidden = true; });
   window.addEventListener('resize', () => markScrollers(content), { passive: true });
+  // A fold that opens changes what fits; toggle does not bubble, so listen in the capture phase.
+  content.addEventListener('toggle', () => markScrollers(content), true);
   window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
   installDefs(document);
