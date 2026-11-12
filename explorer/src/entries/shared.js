@@ -17,7 +17,7 @@ import { alertText } from '../views/alerts.js';
 import { lessonTitle, lessonItem, lessonIssue, lessonsView } from '../views/lessons.js';
 import { buildPage, renderRoute } from '../views/page.js';
 import { parseRoute, hashFor, groupOf, GROUPS } from '../core/route.js';
-import { hookItems, hookWeeks, blockedThisWeek, mondayOf } from '../core/hooks.js';
+import { hookItems, hookWeeks, hookTile, cloudCounted, mondayOf } from '../core/hooks.js';
 import { fixtureQueue } from '../core/fixtures.js';
 import { searchItems, filterItems } from '../views/search.js';
 import { checkWeeks } from '../views/hooks.js';
@@ -27,7 +27,7 @@ import { LOOP_TITLE } from '../views/loop.js';
 import { buildFailure } from '../views/failure.js';
 import { trendingRows, trendingView, changeNodes } from '../views/trending.js';
 import { firesFigures, firesNode } from '../views/alerts.js';
-import { asOfLine, skillStates } from '../views/summary.js';
+import { asOfLine, skillStateCounts, stateBar } from '../views/summary.js';
 import { term, defn, closeDef, installDefs } from '../core/terms.js';
 import { fmt2, fmtSigned2, roundDecimals } from '../core/format.js';
 
@@ -40,7 +40,7 @@ export const EXPORTS = {
   allowedDataUrl, dataUrlFromSearch, cacheBust, validateDoc, loadData,
   poolRuns, trendChart, chipFor, sentenceFor, weeklyGains, gainPerKb, hasRegression, hasAlone, legendFor, sectionCard,
   skillItems, sectionItems, wholeGuidance, lessonTitle, lessonItem, lessonIssue, lessonsView, buildPage, renderRoute, buildFailure, confidenceView, clipName, h, textOf, findAll, toDom,
-  useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, blockedThisWeek, mondayOf, checkWeeks,
+  useVoice, HOOK_GLOSSES, parseRoute, hashFor, groupOf, GROUPS, hookItems, hookWeeks, hookTile, cloudCounted, mondayOf, checkWeeks,
   fixtureQueue, searchItems, filterItems, prWeeks, runsOf, LOOP_TITLE,
-  trendingRows, trendingView, changeNodes, firesFigures, firesNode, asOfLine, skillStates, term, defn, closeDef, installDefs, fmt2, fmtSigned2, roundDecimals
+  trendingRows, trendingView, changeNodes, firesFigures, firesNode, asOfLine, skillStateCounts, stateBar, term, defn, closeDef, installDefs, fmt2, fmtSigned2, roundDecimals
 };

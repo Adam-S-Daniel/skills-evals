@@ -33,15 +33,25 @@ export function mondayOf(ms) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - back)).toISOString().slice(0, 10);
 }
 
-/* Rows of hook use summed by week and surface: [{week, local:{runs,blocked}, ci:{...}}], newest first. */
+/* Whether the document counts cloud sessions' hook runs: true when
+   `hooks.totals.cloud` is a list, false when the totals leave it out (no
+   cloud records were read, so cloud is not counted, not zero), null with no
+   totals at all. */
+export function cloudCounted(doc) {
+  const t = doc && doc.hooks && doc.hooks.totals;
+  if (!t || typeof t !== 'object') return null;
+  return Array.isArray(t.cloud);
+}
+
+/* Rows of hook use summed by week and surface: [{week, local:{runs,blocked}, ci:{...}, cloud:{...}}], newest first. */
 export function hookWeeks(doc) {
   const t = doc && doc.hooks && doc.hooks.totals;
   if (!t || typeof t !== 'object') return [];
   const by = new Map();
-  for (const surface of ['local', 'ci']) {
+  for (const surface of ['local', 'ci', 'cloud']) {
     for (const u of Array.isArray(t[surface]) ? t[surface] : []) {
       if (!u || typeof u.week !== 'string') continue;
-      if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 } });
+      if (!by.has(u.week)) by.set(u.week, { week: u.week, local: { runs: 0, blocked: 0 }, ci: { runs: 0, blocked: 0 }, cloud: { runs: 0, blocked: 0 } });
       const cell = by.get(u.week)[surface];
       cell.runs += Number(u.invocations) || 0;
       cell.blocked += Number(u.blocked) || 0;
@@ -50,18 +60,34 @@ export function hookWeeks(doc) {
   return Array.from(by.values()).sort((a, b) => (a.week < b.week ? 1 : -1));
 }
 
-/* Commits and pushes stopped in the week holding the document's time:
-   {week, local, ci} or null when the document has no hook totals. */
-export function blockedThisWeek(doc) {
+/* What the summary's hooks tile shows. Counts come in weekly totals only,
+   so the headline is the last FULL week (never a partial week beside a full
+   one) and the week in progress is shown apart, as "so far", with how many
+   days it has run. {last, now, days, weeks: [{week, blocked, runs, partial}]
+   oldest first (at most `n`), cloud: cloudCounted(doc)}, or null without
+   hook totals or a document time. */
+export function hookTile(doc, n) {
   if (!doc || !doc.hooks || !doc.hooks.totals) return null;
-  const week = mondayOf(parseTime(doc.generated_at));
-  const weeks = hookWeeks(doc);
-  const row = weeks.find((w) => w.week === week);
-  // The data holds weekly totals only, so the week so far sits beside the
-  // week before it; that one is shown only when the data reaches back to it.
-  const before = isFinite(parseTime(doc.generated_at)) ? mondayOf(parseTime(doc.generated_at) - 7 * 24 * 3600 * 1000) : null;
-  const prevRow = weeks.find((w) => w.week === before);
-  const reaches = weeks.some((w) => w.week <= before);
-  return { week, local: row ? row.local.blocked : 0, ci: row ? row.ci.blocked : 0,
-    prev: reaches ? { week: before, local: prevRow ? prevRow.local.blocked : 0, ci: prevRow ? prevRow.ci.blocked : 0 } : null };
+  const at = parseTime(doc.generated_at);
+  if (!isFinite(at)) return null;
+  const week = mondayOf(at);
+  const day = 24 * 3600 * 1000;
+  const rows = hookWeeks(doc);
+  const sum = (r, k) => r.local[k] + r.ci[k] + r.cloud[k];
+  const cell = (w) => {
+    const r = rows.find((x) => x.week === w);
+    return { week: w, blocked: r ? sum(r, 'blocked') : 0, runs: r ? sum(r, 'runs') : 0,
+      local: r ? r.local.blocked : 0, ci: r ? r.ci.blocked : 0, cloud: r ? r.cloud.blocked : 0, partial: w === week };
+  };
+  const oldest = rows.length ? rows[rows.length - 1].week : week;
+  const weeks = [];
+  for (let t = Date.parse(week + 'T00:00:00Z'), k = 0; k < (n || 6); t -= 7 * day, k++) {
+    const w = mondayOf(t);
+    if (w < oldest) break;
+    weeks.unshift(cell(w));
+  }
+  const prev = mondayOf(Date.parse(week + 'T00:00:00Z') - 7 * day);
+  return { last: prev >= oldest ? cell(prev) : null, now: cell(week),
+    days: Math.min(7, Math.floor((at - Date.parse(week + 'T00:00:00Z')) / day) + 1),
+    weeks, cloud: cloudCounted(doc) };
 }

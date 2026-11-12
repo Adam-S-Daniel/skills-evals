@@ -911,18 +911,36 @@ test('the top of the summary has one line saying what each time refers to', () =
 });
 test('the skills tile counts every state, the untested ones too, each a definition button', () => {
   const t = P.renderRoute(fixture, { name: 'summary', id: null }, {});
-  const tile = P.findAll(t, (n) => n.attrs && n.attrs.class && /\btile\b/.test(n.attrs.class) && P.textOf(n).includes(P.STRINGS.tileHelped))[0];
+  const tile = P.findAll(t, (n) => n.attrs && n.attrs.class && /\btile\b/.test(n.attrs.class) && P.textOf(n).includes(P.STRINGS.tileSkills))[0];
   ok(tile, 'tile');
   ok(P.findAll(tile, (n) => n.tag === 'button').length >= 2, 'states are buttons');
   eq(P.findAll(tile, (n) => n.tag === 'a').length, 1, 'one link per tile, never a button inside a link');
   ok(/\d+ (helps|no measurable|not enough data|early sign)/i.test(sp(P.textOf(tile))), sp(P.textOf(tile)));
 });
-test('this week\'s blocked count sits beside last week\'s, since the data holds weekly totals only', () => {
-  const d = Object.assign({}, fixture, { generated_at: '2026-11-09T16:02:23Z', hooks: Object.assign({}, fixture.hooks, { totals: {
+test('the hooks tile leads with the last full week and shows the week in progress apart', () => {
+  const d = Object.assign({}, fixture, { generated_at: '2026-11-12T16:02:23Z', hooks: Object.assign({}, fixture.hooks, { totals: {
     local: [{ week: '2026-11-02', blocked: 4, invocations: 9 }, { week: '2026-11-09', blocked: 1, invocations: 2 }], ci: [{ week: '2026-11-02', blocked: 2, invocations: 5 }] } }) });
-  const b = P.blockedThisWeek(d);
-  eq(b.local, 1); eq(b.prev.week, '2026-11-02'); eq(b.prev.local, 4); eq(b.prev.ci, 2);
-  ok(P.STRINGS.tileStoppedNote(1, 0, '2026-11-09', 4, 2, '2026-11-02').includes('Last week (2026-11-02): 4 and 2'), 'note');
+  const t = P.hookTile(d, 6);
+  eq(t.last.week, '2026-11-02'); eq(t.last.blocked, 6); eq(t.last.local, 4); eq(t.last.ci, 2);
+  eq(t.now.blocked, 1); ok(t.now.partial, 'the current week is partial'); eq(t.days, 4);
+  eq(t.weeks.map((w) => w.week).join(','), '2026-11-02,2026-11-09', 'no weeks before the data starts');
+  eq(t.cloud, false, 'no cloud totals reads as not counted');
+  const page = P.renderRoute(d, { name: 'summary', id: null }, {});
+  const tile = P.findAll(page, (n) => n.attrs && n.attrs.class && /\btile\b/.test(n.attrs.class) && P.textOf(n).includes(P.STRINGS.tileHooks))[0];
+  const text = sp(P.textOf(tile));
+  ok(text.includes('6 commits and pushes stopped the week of Nov 2: 4 on'), 'headline is the last full week: ' + text);
+  ok(text.includes('This week so far (4 days): 1.'), text);
+  ok(text.includes(P.STRINGS.hooksCloudNot), 'says cloud is not counted');
+  const cloud = Object.assign({}, d, { hooks: Object.assign({}, d.hooks, { cloud_from: '2026-11-09', totals: Object.assign({}, d.hooks.totals, { cloud: [{ week: '2026-11-09', blocked: 2, invocations: 3 }] }) }) });
+  const t2 = P.hookTile(cloud, 6);
+  eq(t2.cloud, true); eq(t2.now.blocked, 3, 'cloud blocks count in the week');
+  ok(!sp(P.textOf(P.renderRoute(cloud, { name: 'summary', id: null }, {}))).includes(P.STRINGS.hooksCloudNot), 'no not-counted line once cloud is counted');
+  ok(sp(P.textOf(P.renderRoute(d, { name: 'hooks', id: null }, {}))).includes(P.STRINGS.hooksCloudNotLong), 'the hooks page says cloud is not counted');
+});
+test('the public summary has no alerts tile or alerts list', () => {
+  const t = sp(P.textOf(P.renderRoute(fixture, { name: 'summary', id: null }, {})));
+  ok(!t.includes(P.STRINGS.tileAlerts + ' '), 'no alerts tile: ' + t.slice(0, 400));
+  ok(!t.includes(P.STRINGS.alertsHeading), 'no alerts list');
 });
 
 // --- git hook table: runs, blocks and verdict words ---------------------------------------

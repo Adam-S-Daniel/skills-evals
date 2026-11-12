@@ -4,7 +4,8 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtUtcDay, fmtDateTime, fmtCount } from '../core/format.js';
 import { h, link } from '../core/h.js';
 import { skillItems } from '../core/items.js';
-import { hookItems, hookWeeks, mondayOf } from '../core/hooks.js';
+import { hookItems, hookWeeks, mondayOf, cloudCounted } from '../core/hooks.js';
+import { cloudNote } from './hooks.js';
 import { hashFor } from '../core/route.js';
 import { table, srcLine, panel, navLink } from './bits.js';
 import { weekChart } from './weekchart.js';
@@ -16,14 +17,17 @@ function hookWeeksView(doc, refMs) {
   const weeks = hookWeeks(doc);
   if (!weeks.length) return null;
   const old = weeks.slice().reverse();
-  return [weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked, b: w.ci.blocked })), [STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
+  const cloud = cloudCounted(doc) === true;
+  return [weekChart(old.map((w) => ({ label: dayOf(w.week, refMs), a: w.local.blocked + (cloud ? w.cloud.blocked : 0), b: w.ci.blocked })), [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.impactUseWeeks, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
     table([
       { label: STRINGS.colWeek, sort: (w) => w.week, cell: (w) => dayOf(w.week, refMs) },
       { label: STRINGS.colLocalRuns, num: true, sort: (w) => w.local.runs, cell: (w) => fmtCount(w.local.runs) },
       { label: STRINGS.colLocalBlocked, num: true, sort: (w) => w.local.blocked, cell: (w) => fmtCount(w.local.blocked) },
       { label: STRINGS.colCiRuns, num: true, sort: (w) => w.ci.runs, cell: (w) => fmtCount(w.ci.runs) },
-      { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) }
-    ], weeks)];
+      { label: STRINGS.colCiBlocked, num: true, sort: (w) => w.ci.blocked, cell: (w) => fmtCount(w.ci.blocked) },
+      cloud ? { label: STRINGS.colCloudRuns, num: true, sort: (w) => w.cloud.runs, cell: (w) => fmtCount(w.cloud.runs) } : null,
+      cloud ? { label: STRINGS.colCloudBlocked, num: true, sort: (w) => w.cloud.blocked, cell: (w) => fmtCount(w.cloud.blocked) } : null
+    ].filter(Boolean), weeks), cloudNote(doc)];
 }
 
 function skillUseView(doc, refMs) {
