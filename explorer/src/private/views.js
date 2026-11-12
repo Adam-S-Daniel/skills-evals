@@ -3,7 +3,7 @@
    itself when its datasets are empty, so a dashboard with only the explorer
    dataset shows the public views alone. */
 import { STRINGS } from '../core/strings.js';
-import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, utcClockToEt, shiftMonthDay } from '../core/format.js';
+import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, utcClockToEt, utcMomentToEt } from '../core/format.js';
 import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
 import { table, panel, fold, srcLine, tile, badge } from '../views/bits.js';
@@ -38,41 +38,64 @@ export function resetLabel(iso) {
   return fmtResetLabel(parseTime(iso));
 }
 
-/* Who opened a pull request, in a few words beside its title: "by a bot" or "by <login>". */
-export function byLine(author) {
+/* Who opened a pull request, in a few words beside its title: "by a bot" or "by <login>".
+   GitHub's own account type says so (`Bot`); a login ending in [bot] is the fallback. */
+export function byLine(author, type) {
   const a = String(author || '').trim();
   if (!a) return '';
-  return /\[bot\]$|-bot$/i.test(a) ? 'by a bot' : 'by ' + clean(a);
+  return type === 'Bot' || /\[bot\]$/i.test(a) ? 'by a bot' : 'by ' + clean(a);
 }
 
-/* A routine's schedule in US Eastern only. The routine list words some
+const WEEKDAY_STEMS = ['Mon', 'Tues', 'Wednes', 'Thurs', 'Fri', 'Satur', 'Sun'];
+const WEEKDAY_WORD = /\b(?:Mon|Tues?|Wed(?:nes)?|Thu(?:rs?)?|Fri|Sat(?:ur)?|Sun)(?:days?|s)?\b/i;
+const MONTH_WORD = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b|\b\d{4}-\d{2}-\d{2}\b/i;
+/* "Mondays 02:00 UTC", "Nov 2 at 16:57 UTC", "at 07:00 UTC" or a bare "07:00 UTC". */
+const BARE_UTC = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+|\b(?:(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)) (\d{1,2}) at\s+|\bat\s+)?\b(\d{1,2}):(\d{2}) UTC\b/gi;
+/* A UTC clock time that already has its Eastern time beside it: "06:53 UTC, GitHub Actions (1:53 AM ET)". */
+const UTC_WITH_ET = /(?:\b((?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days?)\s+)?(\d{1,2}):(\d{2}) UTC([^()]*)\(([^()]*\bET)\)/gi;
+/* The text of the clause before a match: since the last ; . or ( . */
+const clauseBefore = (whole, offset) => whole.slice(0, offset).split(/[;.(]/).pop();
+
+/* The weekday one day earlier, keeping the word's shape: Mondays to Sundays, TUESDAY to MONDAY. */
+function prevWeekday(word) {
+  const m = /^(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)(days?)$/i.exec(word);
+  const i = WEEKDAY_STEMS.findIndex((x) => x.toLowerCase() === m[1].toLowerCase());
+  const out = WEEKDAY_STEMS[(i + 6) % 7] + m[2].toLowerCase();
+  return word === word.toLowerCase() ? out.toLowerCase() : word === word.toUpperCase() ? out.toUpperCase() : out;
+}
+
+/* A routine's schedule or note in US Eastern only. The routine list words some
    schedules as "Daily 06:53 UTC, GitHub Actions (1:53 AM ET)": the Eastern time
    in the parentheses replaces the UTC one, and a "UTC hours ..." aside keeps
-   only its Eastern list. */
+   only its Eastern list. A bare UTC time is converted, and a weekday word before
+   it moves back a day when Eastern time is the evening before. A dated one
+   ("Oct 30 at 16:57 UTC") is converted at its own moment. Anything else that
+   names a weekday or date it cannot move is left as the data wrote it. */
 export function etSchedule(text, refMs) {
   return String(text === null || text === undefined ? '' : text)
-    .replace(/\d{1,2}:\d{2} UTC([^()]*)\(([^()]*\bET)\)/g, (m, mid, et) => {
+    .replace(UTC_WITH_ET, (m, wd, hh, mm, mid, et, offset, whole) => {
+      const { shift } = utcClockToEt(hh, mm, refMs);
+      const before = clauseBefore(whole, offset);
+      if (shift !== 0 && WEEKDAY_WORD.test(before)) return m;
       const rest = mid.trim();
-      return et + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
+      return (wd ? (shift !== 0 ? prevWeekday(wd) : wd) + ' ' : '') + et + (rest ? (rest.startsWith(',') ? rest : ' ' + rest) : '');
     })
     .replace(/\(UTC hours [^:()]*: /g, '(')
-    // A bare "07:00 UTC" with no Eastern time beside it is converted on the reference day.
     .replace(BARE_UTC, (m, wd, mon, day, hh, mm, offset, whole) => {
+      const before = clauseBefore(whole, offset);
+      if (mon) {
+        const r = utcMomentToEt(mon, day, hh, mm, refMs);
+        if (!r) return m;
+        if (r.date !== r.named && WEEKDAY_WORD.test(before)) return m;
+        return r.date + ' at ' + r.clock;
+      }
       const { text, shift } = utcClockToEt(hh, mm, refMs);
-      const clause = whole.slice(0, offset).split(/[;.(]/).pop();
-      if (shift !== 0 && WEEKDAY_WORD.test(clause)) return m;
-      if (shift === 0) return (wd ? wd + 'days ' : mon ? mon + ' ' + day + ' at ' : /^at\s/.test(m) ? 'at ' : '') + text;
-      // Before the weekday or date it names, the Eastern time is the evening before: move the word with it.
-      if (wd) return WEEKDAYS[(WEEKDAYS.indexOf(wd) + 6) % 7] + 'days ' + text;
-      if (mon) return shiftMonthDay(mon, day, -1, refMs) + ' at ' + text;
-      // (A weekday this cannot tie to the time, "Mon-Fri 02:00 UTC", was left as the data wrote it above.)
-      return (/^at\s/.test(m) ? 'at ' : '') + text;
+      const at = /^at\s/i.test(m);
+      if (shift === 0) return (wd ? wd + ' ' : at ? 'at ' : '') + text;
+      if (WEEKDAY_WORD.test(before) || MONTH_WORD.test(before)) return m;
+      return wd ? prevWeekday(wd) + ' ' + text : (at ? 'at ' : '') + text;
     });
 }
-const WEEKDAYS = ['Mon', 'Tues', 'Wednes', 'Thurs', 'Fri', 'Satur', 'Sun'];
-const WEEKDAY_WORD = /\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\b/;
-/* "Mondays 02:00 UTC", "Nov 2 at 16:57 UTC", "at 07:00 UTC" or a bare "07:00 UTC". */
-const BARE_UTC = /(?:\b(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)days\s+|\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}) at\s+|\bat\s+)?\b(\d{1,2}):(\d{2}) UTC\b/g;
 
 /* Test use this week against the cap, from eval_allowance and budget. */
 export function capUse(allowance, budget) {
@@ -429,7 +452,7 @@ export function makeExt(dash, opts) {
       const merged = some(dash, 'merged_prs') || [];
       return panel(P.prsHeading, [srcLine(P.srcLive, NaN), open.length ? [h('h3', null, P.openPrs), table([
         { label: STRINGS.colRepoNumber, sort: (p) => p.repo + '#' + String(p.number).padStart(9, '0'), cell: (p) => repoNumber(p.repo, p.number, p.url) },
-        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author) ? [' ', h('span', { class: 'sub' }, byLine(p.author))] : null,
+        { label: P.colTitle, sort: (p) => p.title, cell: (p) => [plink(p.url, clean(p.title)), isLoopBranch(p.branch) ? [' ', badge('loop')] : null, ' ', plink(p.checks_url, pill(p.checks)), byLine(p.author, p.author_type) ? [' ', h('span', { class: 'sub' }, byLine(p.author, p.author_type))] : null,
           p.labels ? [' ', h('span', { class: 'sub' }, clean(p.labels))] : null] },
         { label: P.colOpened, sort: (p) => p.created_at, cell: (p) => at(p.created_at) }], open, { tall: true, cap: LIST_CAP })] : null,
       merged.length ? [h('h3', null, P.mergedPrs), prRows(merged.map((p) => Object.assign({ state: 'merged' }, p)))] : null]);

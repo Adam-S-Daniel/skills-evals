@@ -1739,6 +1739,45 @@ await test('Spend says "noon ET" once: in the panel note, not again in the footn
   eq(spend.split('noon ET').length - 1, 1);
 });
 
+// ---- Third review: dated notes at their own moment, other date shapes, case, weekday before "(… ET)", bot type ----
+await test('a dated note converts at its own moment: the offset then, not today\'s', () => {
+  const nov = Date.parse('2026-11-12T00:00:00Z');
+  eq(etSchedule('Oct 30 at 16:57 UTC', nov), 'Oct 30 at 12:57 PM ET', 'before daylight saving ended');
+  eq(etSchedule('Nov 2 at 16:57 UTC', nov), 'Nov 2 at 11:57 AM ET', 'after it');
+  eq(etSchedule('Jul 4 at 04:30 UTC', nov), 'Jul 4 at 12:30 AM ET');
+  eq(etSchedule('Dec 2 at 16:00 UTC', nov), 'Dec 2 at 11:00 AM ET', 'a day still ahead of the reading is last year');
+  eq(etSchedule('Nov 3 at 02:00 UTC', nov), 'Nov 2 at 9:00 PM ET', 'the date moves with the clock');
+});
+await test('a date shape it cannot move is left alone when Eastern time is the day before', () => {
+  const nov = Date.parse('2026-11-12T00:00:00Z');
+  for (const t of ['Nov 3, 02:00 UTC', 'Nov 3 02:00 UTC', '2026-11-03 02:00 UTC']) eq(etSchedule(t, nov), t);
+  eq(etSchedule('Nov 3, 17:00 UTC', nov), 'Nov 3, 12:00 PM ET', 'no shift, so it converts');
+});
+await test('weekday words are matched as words, in any case', () => {
+  const nov = Date.parse('2026-11-12T00:00:00Z');
+  eq(etSchedule('mondays 02:00 UTC', nov), 'sundays 9:00 PM ET');
+  eq(etSchedule('MONDAYS 02:00 UTC', nov), 'SUNDAYS 9:00 PM ET');
+  eq(etSchedule('Monday 02:00 UTC', nov), 'Sunday 9:00 PM ET');
+  eq(etSchedule('Monthly 02:00 UTC', nov), 'Monthly 9:00 PM ET', 'Monthly is not a weekday');
+  eq(etSchedule('Friendly sunset 02:00 UTC', nov), 'Friendly sunset 9:00 PM ET');
+});
+await test('a weekday before a UTC time that already has its Eastern time moves with it', () => {
+  const nov = Date.parse('2026-11-12T00:00:00Z');
+  eq(etSchedule('Mondays 02:00 UTC (9:00 PM ET), GitHub Actions', nov), 'Sundays 9:00 PM ET, GitHub Actions');
+  eq(etSchedule('Mondays 17:00 UTC (12:00 PM ET)', nov), 'Mondays 12:00 PM ET');
+  eq(etSchedule('Mon-Fri 02:00 UTC (9:00 PM ET)', nov), 'Mon-Fri 02:00 UTC (9:00 PM ET)', 'unparseable weekday shape: unchanged');
+});
+await test('a pull request is by a bot when GitHub says its account is one, with [bot] as the fallback', () => {
+  eq(byLine('claude', 'Bot'), 'by a bot');
+  eq(byLine('renovate[bot]', ''), 'by a bot');
+  eq(byLine('deploy-bot', 'User'), 'by deploy-bot', 'a person whose login ends in -bot');
+  eq(byLine('adam', 'User'), 'by adam');
+  const dash = fakeDash({ open_prs: okData([Object.assign(manyPulls(1)[0], { author: 'claude', author_type: 'Bot', checks: 'ok', labels: '' })]) });
+  const sec = findAll(renderRoute(ET_DOC(), { name: 'activity', id: null }, { ext: makeExt(dash, { now: () => NOW_ET4PM }) }), (n) => n.tag === 'section' && textOf(n).includes('Pull requests'))[0];
+  ok(flat(sec).includes('by a bot'), 'the row carries the type');
+  ok(fs.readFileSync(path.join(EXPLORER, 'src', 'private', 'loaders.js'), 'utf8').includes('author_type'), 'the loader keeps user.type');
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);
