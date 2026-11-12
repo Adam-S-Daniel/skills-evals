@@ -5,80 +5,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Evals Explorer</title>
 <style>
+/*__CSS__*/
 :root {
   color-scheme: light;
-  /* adamdaniel.ai's tool palette, matched to the Claude Memory Map page:
-     warm paper, soft ink, muted earth accents. */
-  --page: #FDFBF7;
-  --surface: #FFFFFF;
-  --ink: #3D3A34;
-  --ink-2: #5A564E;
-  --muted: #6B675E;
-  --axis: #8A8478;
-  --grid: #EDE8DD;
-  --base: #E4DFD4;
-  --ring: #E4DFD4;
-  --s1: #4A6B8F;
-  --s2: #B06A4F;
-  --s3: #54805C;
-  --good: #54805C;
-  --good-ink: #3F6646;
-  --warning: #9A6F33;
-  --critical: #B06A4F;
-  --link: #4A6B8F;
-  --chip-bg: #F3EFE6;
-  --hover: #F7F4EC;
+  /* A lab notebook on graph paper: warm paper, blue-black ink and three pens
+     (teal, vermilion, olive) that are also the chart series. */
+  --page: #F3F0E6;
+  --surface: #FBFAF5;
+  --ink: #17252A;
+  --ink-2: #3D4B4F;
+  --muted: #5B6769;
+  --axis: #858E8B;
+  --grid: #E3DFD2;
+  --base: #D3CEBD;
+  --ring: #DCD7C7;
+  --s1: #1B6E78;
+  --s2: #C2502A;
+  --s3: #5E7F2E;
+  --good: #3D7D3A;
+  --good-ink: #2E672B;
+  --warning: #9A620E;
+  --critical: #B53F28;
+  --link: #17636C;
+  --chip-bg: #ECE8DB;
+  --hover: #EEEADD;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #1E1C19;
-    --surface: #272420;
-    --ink: #EDE8DD;
-    --ink-2: #CFC8BA;
-    --muted: #A9A294;
-    --axis: #8A8478;
-    --grid: #36322C;
-    --base: #45403A;
-    --ring: #3A362F;
-    --s1: #7F9FC2;
-    --s2: #D08B70;
-    --s3: #7FAA86;
-    --good: #7FAA86;
-    --good-ink: #9CC4A2;
-    --warning: #C99B5C;
-    --critical: #D08B70;
-    --link: #9DB8D6;
-    --chip-bg: #322E28;
-    --hover: #2E2A25;
+    /* The same pens glowing on a bench-black instrument panel. */
+    --page: #0F1614;
+    --surface: #16201D;
+    --ink: #E2ECE5;
+    --ink-2: #B6C5BC;
+    --muted: #8E9F95;
+    --axis: #6C7D75;
+    --grid: #22302B;
+    --base: #33443D;
+    --ring: #27352F;
+    --s1: #5CC8C0;
+    --s2: #F08A5D;
+    --s3: #A9CF6A;
+    --good: #8FD180;
+    --good-ink: #A6E097;
+    --warning: #E3B261;
+    --critical: #F07B62;
+    --link: #7FD6CF;
+    --chip-bg: #1D2925;
+    --hover: #1B2622;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #1E1C19;
-  --surface: #272420;
-  --ink: #EDE8DD;
-  --ink-2: #CFC8BA;
-  --muted: #A9A294;
-  --axis: #8A8478;
-  --grid: #36322C;
-  --base: #45403A;
-  --ring: #3A362F;
-  --s1: #7F9FC2;
-  --s2: #D08B70;
-  --s3: #7FAA86;
-  --good: #7FAA86;
-  --good-ink: #9CC4A2;
-  --warning: #C99B5C;
-  --critical: #D08B70;
-  --link: #9DB8D6;
-  --chip-bg: #322E28;
-  --hover: #2E2A25;
+  --page: #0F1614;
+  --surface: #16201D;
+  --ink: #E2ECE5;
+  --ink-2: #B6C5BC;
+  --muted: #8E9F95;
+  --axis: #6C7D75;
+  --grid: #22302B;
+  --base: #33443D;
+  --ring: #27352F;
+  --s1: #5CC8C0;
+  --s2: #F08A5D;
+  --s3: #A9CF6A;
+  --good: #8FD180;
+  --good-ink: #A6E097;
+  --warning: #E3B261;
+  --critical: #F07B62;
+  --link: #7FD6CF;
+  --chip-bg: #1D2925;
+  --hover: #1B2622;
 }
-/* The page color fills the whole window, outside the column and below short pages. */
+/* The page color fills the whole window, outside the column and below short
+   pages, ruled as faint graph paper in the first pen's color. */
 html { -webkit-text-size-adjust: 100%; background: var(--page); min-height: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh; }
-/*__CSS__*/
+body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
+  background-image: linear-gradient(color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--s1) 6%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px; background-position: -1px -1px; }
 </style>
 </head>
 <body>
