@@ -367,7 +367,7 @@ const FONT_IMPORT = /@import url\("https:\/\/fonts\.googleapis\.com\/css2\?[^"\s
 function loadsOnlyFonts(html) {
   const imports = html.match(/@import\b/g) || [];
   const fonts = html.match(FONT_IMPORT) || [];
-  const remote = (html.replace(FONT_IMPORT, '').match(/url\(\s*["']?(?!data:)[a-z]+:/gi) || []);
+  const remote = (html.replace(FONT_IMPORT, '').match(/url\(\s*["']?(?!data:)(?:[a-z]+:|\/\/)/gi) || []);
   return imports.length === 1 && fonts.length === 1 && remote.length === 0;
 }
 await test('tool/index.html is one self-contained file', () => {
@@ -412,7 +412,7 @@ await test('motion plays only for readers who have not asked for less', () => {
   let depth = 1, end = at + open.length;
   while (depth && end < css.length) { if (css[end] === '{') depth++; else if (css[end] === '}') depth--; end++; }
   const outside = css.slice(0, at) + css.slice(end);
-  eq((outside.match(/(?:^|[;{\s])(?:animation|transition)\s*:/g) || []).length, 0, 'animation or transition outside the reduced-motion block');
+  eq((outside.match(/(?:^|[;{\s])(?:-webkit-)?(?:animation|transition)(?:-[a-z-]+)?\s*:/g) || []).length, 0, 'animation or transition outside the reduced-motion block');
 });
 await test('both pages paint the whole window in the theme color, not only their column', () => {
   // Regression: the dark private page showed a white frame outside the column and below short pages.

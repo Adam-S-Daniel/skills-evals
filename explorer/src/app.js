@@ -57,8 +57,6 @@ export function boot(source, opts) {
   // view rises in once and never on a keystroke, a sort or a data refresh.
   let entering = true;
   function mount(node) {
-    content.classList.toggle('enter', entering);
-    entering = false;
     while (content.firstChild) content.removeChild(content.firstChild);
     content.appendChild(toDom(node, document));
     document.title = STRINGS.title;
@@ -77,6 +75,9 @@ export function boot(source, opts) {
     markNav();
     if (!state.doc) return;
     try {
+      const enter = entering;
+      entering = false;
+      content.classList.toggle('enter', enter);
       mount(renderRoute(state.doc, state.route, { sortBy: state.sortBy, url: state.url, notice: state.notice,
         ext: o.ext ? o.ext(state) : null, search: state.search,
         onFilter: (k, v) => { state.search[k] = v; renderContent(); }, onClear: clearSearch,

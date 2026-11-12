@@ -191,7 +191,10 @@
 .ex-tip { font-family: var(--ex-font-family, var(--ex-sans-stack)); position: fixed; z-index: 10; pointer-events: none; max-width: 260px; background: var(--ink); color: var(--page); border: 0; border-radius: 4px; padding: 6px 9px; font-size: 0.8rem; line-height: 1.4; box-shadow: 3px 3px 0 color-mix(in srgb, var(--s2) 55%, transparent); }
 .ex-tip[hidden] { display: none; }
 .ex .headline .answer { font-size: 1.1rem; font-weight: 600; }
-@media (forced-colors: active) { .ex .chip .ic { forced-color-adjust: none; } }
+@media (forced-colors: active) {
+  .ex .chip .ic, .ex .brand::before { forced-color-adjust: none; }
+  .ex a.group[aria-current="page"]::after { background: Highlight; forced-color-adjust: none; }
+}
 .ex .conf { margin: 12px 0 0; }
 .ex .conf-h { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
 .ex .chart.range { max-width: 420px; margin-top: 4px; }
@@ -237,19 +240,19 @@
   .ex .tile, .ex .card { transition: transform 180ms var(--ex-ease), box-shadow 180ms var(--ex-ease), border-color 180ms; }
   .ex .seg button, .ex .subnav a, .ex .defbox-close, .ex input.search, .ex tbody tr > td { transition: background-color 160ms, color 160ms, border-color 160ms, box-shadow 160ms; }
   .ex .brand::before { animation: ex-pulse 2.8s var(--ex-ease) infinite; }
-  .ex .content.enter > * > * { animation: ex-rise 520ms var(--ex-ease) both; }
+  .ex .content.enter > * > * { animation: ex-rise 520ms var(--ex-ease) backwards; }
   .ex .content.enter > * > :nth-child(2) { animation-delay: 50ms; }
   .ex .content.enter > * > :nth-child(3) { animation-delay: 100ms; }
   .ex .content.enter > * > :nth-child(4) { animation-delay: 150ms; }
   .ex .content.enter > * > :nth-child(5) { animation-delay: 200ms; }
   .ex .content.enter > * > :nth-child(n+6) { animation-delay: 250ms; }
-  .ex .content.enter .tiles > * { animation: ex-rise 480ms var(--ex-ease) both; }
+  .ex .content.enter .tiles > * { animation: ex-rise 480ms var(--ex-ease) backwards; }
   .ex .content.enter .tiles > :nth-child(2) { animation-delay: 90ms; }
   .ex .content.enter .tiles > :nth-child(3) { animation-delay: 140ms; }
   .ex .content.enter .tiles > :nth-child(4) { animation-delay: 190ms; }
   .ex .content.enter .tiles > :nth-child(n+5) { animation-delay: 240ms; }
-  .ex .content.enter .meter .fill { animation: ex-fill 900ms 200ms var(--ex-ease) both; }
-  .ex .defbox { animation: ex-pop 160ms var(--ex-ease) both; }
+  .ex .content.enter .meter .fill { animation: ex-fill 900ms 200ms var(--ex-ease) backwards; }
+  .ex .defbox { animation: ex-pop 160ms var(--ex-ease) backwards; }
 }
 @keyframes ex-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 @keyframes ex-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
@@ -264,7 +267,7 @@
   --ink: #17252A;
   --ink-2: #3D4B4F;
   --muted: #5B6769;
-  --axis: #858E8B;
+  --axis: #7A8481;
   --grid: #E3DFD2;
   --base: #D3CEBD;
   --ring: #DCD7C7;
@@ -273,7 +276,7 @@
   --s3: #5E7F2E;
   --good: #3D7D3A;
   --good-ink: #2E672B;
-  --warning: #9A620E;
+  --warning: #8A5808;
   --critical: #B53F28;
   --link: #17636C;
   --chip-bg: #ECE8DB;
@@ -4221,8 +4224,6 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
     }
     let entering = true;
     function mount(node) {
-      content.classList.toggle("enter", entering);
-      entering = false;
       while (content.firstChild) content.removeChild(content.firstChild);
       content.appendChild(toDom(node, document));
       document.title = STRINGS.title;
@@ -4244,6 +4245,9 @@ body { margin: 0; background: var(--page); color: var(--ink); min-height: 100vh;
       markNav();
       if (!state.doc) return;
       try {
+        const enter = entering;
+        entering = false;
+        content.classList.toggle("enter", enter);
         mount(renderRoute(state.doc, state.route, {
           sortBy: state.sortBy,
           url: state.url,
