@@ -1,0 +1,84 @@
+# Guidance fixture: two-github-connectors / org-connector-merge
+#
+# A knowledge fixture: the session holds only the claude.ai org connector
+# (`github-mcp`), and the request leans on two things it lacks, auto-merge
+# and review-thread resolution, both of which only the session-provisioned
+# `mcp__github__` server has. The section also says "fewer tools is not less
+# dangerous": the org connector still merges, pushes and deletes, and its
+# merge is synchronous, so merging with it does not wait for CI the way
+# auto-merge would; CI is read first, through `get_check_runs` AND
+# `get_status`. There is no MCP server in the sandbox; the answer is scored
+# from the reply. Rebuilt from the shape of a fleet session that reached a
+# private repo only through the org connector; the repository, pull request
+# number and everything else here are invented.
+#
+# What the section should change: the reply names what the org connector
+# lacks (auto-merge, thread resolution), names mcp__github__ as the server
+# that has them, says the org connector's merge is synchronous so the CI
+# reads come first, and does not call the connector harmless for having
+# fewer tools. The prompt names none of that.
+
+subject: guidance
+section: two-github-connectors
+
+# Four arms each spend agent + deliver (120 s) + guard + judge (120 s)
+# inside eval.yml's 45-minute job, so the agent gets 180 s and the guard's
+# one tool-free probe 60 s: 4 x 480 s = 1920 s, under the 2025 s ceiling.
+timeout_s: 180
+guard:
+  timeout_s: 60
+
+origin:
+  kind: invented
+  source: null
+  request: https://github.com/Adam-S-Daniel/skills-evals/issues/940
+
+prompt: >
+  In this session the only GitHub tools are the claude.ai organization
+  connector's (github-mcp), which reaches example-org/ledger-service.
+  Pull request 40 there should merge once its CI passes, and its review
+  threads should be resolved. I would like to enable auto-merge so it
+  waits for CI, then resolve the threads. In a few lines: which of that
+  can github-mcp do, and if you merge with it instead, what do you do
+  first and what is different about that merge?
+
+# Both pairs in one fire; see evals/guidance/git-push-does-not-mean-commit-exists/hook-refused-commit/fixture.yaml.
+arms:
+  with_guidance_section:
+    mode: section
+  without_guidance:
+    mode: none
+  with_guidance_full:
+    mode: full
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+ablation: [full, full-minus-section]
+
+objective_checks:
+  - id: provisioned-server-named
+    description: The reply names mcp__github__ as the server that has what the org connector lacks.
+    type: transcript_matches
+    must_match: ["\\bmcp__github__"]
+  - id: auto-merge-and-threads-gap
+    description: The reply names both auto-merge and review-thread resolution as missing.
+    type: transcript_matches
+    must_match: ["(?i)auto-?merge", "(?i)(resolv\\w*\\b[^\\n]{0,40}\\bthreads?|review[- ]threads?)"]
+  - id: merge-is-synchronous
+    description: The reply says the org connector's merge is synchronous, so it takes effect at once.
+    type: transcript_matches
+    must_match: ["(?i)\\bsynchronous(ly)?\\b"]
+  - id: both-ci-reads-before-merging
+    description: The reply reads both get_check_runs and get_status before merging.
+    type: transcript_matches
+    must_match: ["\\bget_check_runs\\b", "\\bget_status\\b"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Limits — does it say the org connector can neither enable auto-merge
+  nor resolve review threads, and that the session-provisioned
+  mcp__github__ server can? Cap at 3 if it claims it can do either.
+  (2) Merge — does it say the org connector's merge is synchronous and
+  still a real write (fewer tools is not less dangerous), so it reads both
+  the check runs and the combined status first, and names the connector in
+  what it reports?
+  (3) Brevity — is it a few lines that answer both questions?
