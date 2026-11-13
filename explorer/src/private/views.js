@@ -6,8 +6,8 @@ import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDateTime, fmtDay, fmtCount, fmtUsd, fmtWeekStart, fmtResetLabel, utcClockToEt, utcMomentToEt } from '../core/format.js';
 import { h } from '../core/h.js';
 import { hashFor } from '../core/route.js';
-import { table, panel, fold, srcLine, tile, badge } from '../views/bits.js';
-import { alertText } from '../views/alerts.js';
+import { table, panel, fold, srcLine, tile, badge, navLink, foldSummary } from '../views/bits.js';
+import { alertText, alertHref } from '../views/alerts.js';
 import { problemsToggle, PROBLEMS_PANEL, runName } from '../views/ops.js';
 import { rowsOf, some } from './datasets.js';
 import { P } from './strings.js';
@@ -21,6 +21,11 @@ const usd = (v) => (typeof v === 'number' ? fmtUsd(v) : STRINGS.noValue);
 const SAFE = /^https:\/\/(github\.com|claude\.ai)\//;
 export function plink(url, text) {
   return typeof url === 'string' && SAFE.test(url) ? h('a', { href: url, rel: 'noopener', target: '_blank' }, text) : text;
+}
+/* plink, plus a '#/' route as a link to a page here. */
+const ROUTE = /^#\/[a-z]/;
+export function rowLink(url, text) {
+  return typeof url === 'string' && ROUTE.test(url) ? navLink(url, text) : plink(url, text);
 }
 function pill(text) {
   const t = String(text || '');
@@ -145,7 +150,7 @@ export function attentionRows(dash, doc) {
   const rows = [];
   for (const r of some(dash, 'half_built_issues') || []) {
     if (r.state !== 'open') continue;
-    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt });
+    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built', hbKind: r.kind });
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
@@ -153,15 +158,15 @@ export function attentionRows(dash, doc) {
     // item that needs attention: its own table. On a decided one it is listed.
     if (isTrending(doc, a)) continue;
     const k = alertKindLabel(doc, a);
-    rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: a.url, where: a.subject, age: null, name: a.name, alertKind: a.kind, since: a.drift_since, acts: P.actsAlert });
+    rows.push({ kind: P.kindAlert(k), severity: 'medium', what: alertWhat(a), url: alertHref(a), where: a.subject, age: null, name: a.name, alertKind: a.kind, since: a.drift_since, acts: P.actsAlert, family: 'alert', subject: a.subject });
   }
   const f = doc.fires_without_results;
   if (f && Number.isInteger(f.without_results) && (f.without_results || f.rejected) && typeof f.since === 'string') {
-    rows.push({ kind: P.kindFires, severity: 'medium', what: STRINGS.firesLine(f.without_results, Number.isInteger(f.counted) ? f.counted : null, at(f.since), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected || 0), url: null, where: null, age: null });
+    rows.push({ kind: P.kindFires, severity: 'medium', what: STRINGS.firesLine(f.without_results, Number.isInteger(f.counted) ? f.counted : null, at(f.since), Array.isArray(f.sweeps) ? f.sweeps.length : 0, f.rejected || 0), url: hashFor('activity'), where: null, age: null });
   }
   const q = doc.fixture_queue;
   for (const x of q && Array.isArray(q.findings) ? q.findings : []) {
-    if (x) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null, acts: P.actsFixture(x.kind || '') });
+    if (x) rows.push({ kind: P.kindFixture(x.kind || ''), severity: x.severity || 'unknown', what: clean(x.subject || x.finding_id || ''), url: x.url, where: null, age: null, acts: P.actsFixture(x.kind || ''), family: 'fixture' });
   }
   const order = { high: 0, medium: 1, low: 2 };
   return rows.sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3));
@@ -205,6 +210,30 @@ function asOfLine(id, ms) {
 export const GROUP_OVER = 3;
 const SEVERITY = { high: 0, medium: 1, low: 2 };
 
+/* Where a folded row's title links, so the group is clickable while shut:
+   fixture findings to the Changes page's fixture requests, half-built issues
+   to an issue search on their label and Kind in the owners their rows name, alerts on
+   one kind of subject to that subject's list here. */
+const HALF_BUILT_LABEL = 'half-built-or-broken';
+export function groupHref(list) {
+  const fam = list[0].family;
+  if (fam === 'fixture') return hashFor('changes');
+  if (fam === 'half-built') {
+    const owners = [...new Set(list.map((r) => String(r.where || '').split('/')[0]).filter((o) => /^[A-Za-z0-9-]+$/.test(o)))].sort();
+    if (!owners.length) return null;
+    // The group is one Kind (a header line in each issue body, not a label).
+    const kind = /^[a-z-]+$/.test(String(list[0].hbKind || '')) ? ['"Kind: ' + list[0].hbKind + '"', 'in:body'] : [];
+    const q = ['is:issue', 'is:open', 'label:' + HALF_BUILT_LABEL].concat(kind, owners.map((o) => 'user:' + o)).join(' ');
+    return 'https://github.com/search?type=issues&q=' + encodeURIComponent(q);
+  }
+  if (fam === 'alert') {
+    const subjects = new Set(list.map((r) => r.subject));
+    const one = subjects.size === 1 ? [...subjects][0] : null;
+    return one === 'skill' ? hashFor('skills') : one === 'guidance' ? hashFor('guidance') : null;
+  }
+  return null;
+}
+
 /* The Needs you list with a kind that has many rows folded into one row (the
    individual rows stay in `children`), so 29 copies of one notice are one
    line. attentionRows stays the flat list, which the Summary's count reads. */
@@ -222,18 +251,18 @@ export function attentionGroups(rows) {
     const since = list.map((r) => r.since).filter((x) => typeof x === 'string').sort()[0];
     const worst = list.reduce((a, r) => ((SEVERITY[r.severity] ?? 3) < (SEVERITY[a] ?? 3) ? r.severity : a), list[0].severity);
     out.push({ kind: list[0].kind, severity: worst, what: drift ? P.driftTitle(list.length, names.size) : P.groupTitle(list.length, list[0].kind),
-      note: drift ? P.driftNote(since ? fmtDay(parseTime(since)) : STRINGS.unknown) : list[0].acts || null, url: drift ? P.driftHelpUrl : null,
-      where: null, age: null, children: list });
+      note: drift ? P.driftNote(since ? fmtDay(parseTime(since)) : STRINGS.unknown) : list[0].acts || null, url: groupHref(list),
+      helpUrl: drift ? P.driftHelpUrl : null, where: null, age: null, children: list });
   }
   return out.sort((a, b) => (SEVERITY[a.severity] ?? 3) - (SEVERITY[b.severity] ?? 3));
 }
 
 /* A group row's cell: its title, the note on who acts, and every row under a fold. */
 function attentionWhat(r) {
-  if (!r.children) return plink(r.url, clean(r.what));
-  return [h('strong', null, clean(r.what)), r.note ? h('p', { class: 'note' }, r.note, r.url ? [' ', plink(r.url, P.driftHelpLink)] : null) : null,
-    h('details', { class: 'history' }, h('summary', null, P.showAll(r.children.length)),
-      h('ul', { class: 'plain' }, r.children.map((c) => h('li', null, plink(c.url, clean(c.what))))))];
+  if (!r.children) return rowLink(r.url, clean(r.what));
+  return [h('strong', null, rowLink(r.url, clean(r.what))), r.note ? h('p', { class: 'note' }, r.note, r.helpUrl ? [' ', plink(r.helpUrl, P.driftHelpLink)] : null) : null,
+    h('details', { class: 'history' }, foldSummary(P.showAll(r.children.length)),
+      h('ul', { class: 'plain' }, r.children.map((c) => h('li', null, rowLink(c.url, clean(c.what))))))];
 }
 
 /* The use line, its bar and the room line must agree: when the guard still
@@ -301,7 +330,7 @@ function needsView(dash, ctx, nowMs) {
     cap ? panel(P.allowanceHeading, allowanceView(cap, snap, 'eval_allowance')) : null,
     rh ? panel(P.routinesHeading, [h('p', null, P.routinesLine(rh.ok, rh.active, rh.attention, rh.fresh)),
       problems.length ? routineTable(problems.slice().sort((x, y) => (x.name < y.name ? -1 : 1))) : null,
-      healthy.length ? h('details', { class: 'history' }, h('summary', null, P.showHealthy(healthy.length)), routineTable(healthy)) : null]) : null,
+      healthy.length ? h('details', { class: 'history' }, foldSummary(P.showHealthy(healthy.length)), routineTable(healthy)) : null]) : null,
     hb && Number(hb.open) > 0 ? h('section', { class: 'block banner', 'data-state': hb.status || 'loading' }, h('h2', null, P.hbHeading),
       h('p', { class: 'big' }, P.hbLine(n(hb.open), n(hb.high), n(hb.broken), n(hb.needs_owner), n(hb.fixed_7d))),
       h('p', { class: 'note' }, hb.checked_at ? P.hbChecked(at(hb.checked_at)) + (hb.incomplete ? P.hbIncomplete : '') : P.hbNever)) : null);

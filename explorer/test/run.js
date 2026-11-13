@@ -1778,6 +1778,53 @@ await test('a pull request is by a bot when GitHub says its account is one, with
   ok(fs.readFileSync(path.join(EXPLORER, 'src', 'private', 'loaders.js'), 'utf8').includes('author_type'), 'the loader keeps user.type');
 });
 
+// Owner report 2026-11-13: a folded row had nothing to click until it was
+// opened, its "Show all" kept its label once open, and a retirement alert
+// with no url had no link at all.
+const hrefsIn = (node) => findAll(node, (n) => n.tag === 'a').map((a) => a.attrs.href);
+await test('Needs you: every row links to its evidence, a folded row while still shut', () => {
+  const retire = { kind: 'retire', name: 'demo-skill', subject: 'skill', text: 'demo-skill is due for retirement.', url: null };
+  const fx = Array.from({ length: 5 }, (_, i) => ({ finding_id: 'skills-evals/fixture-queue-unused-fixture-x' + i, kind: 'broken', severity: 'high', subject: 'guidance/x' + i,
+    url: 'https://github.com/example-owner/r/tree/main/evals/x' + i }));
+  const hb = Array.from({ length: 4 }, (_, i) => ({ key: 'h' + i, state: 'open', kind: 'broken', severity: 'high', title: 'T' + i, url: 'https://github.com/example-owner/r/issues/' + i, repo: 'example-owner/r', age_days: 1 }));
+  const dash = needsDash({ half_built_issues: okData(hb) });
+  const d = doc({ alerts: [retire], fixture_queue: { findings: fx }, generated_at: '2026-11-12T19:00:00Z' });
+  const rows = attentionRows(dash, d);
+  eq(rows.find((r) => r.name === 'demo-skill').url, '#/skills/demo-skill', 'an alert with no url links to its subject page');
+  const groups = attentionGroups(rows);
+  const fixGroup = groups.find((g) => /Fixture queue/.test(g.kind));
+  eq(fixGroup.url, '#/changes', 'the fixture group links to the fixture requests on Changes');
+  const hbGroup = groups.find((g) => /Half-built/.test(g.kind));
+  ok(hbGroup.url.startsWith('https://github.com/search?') && decodeURIComponent(hbGroup.url).includes('label:half-built-or-broken') && decodeURIComponent(hbGroup.url).includes('user:example-owner') && decodeURIComponent(hbGroup.url).includes('"Kind: broken" in:body'), hbGroup.url);
+  const node = needsPage(dash, d);
+  const panelNode = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Needs attention'))[0] || node;
+  // Outside every fold: the group titles and the single alert are links.
+  const shut = (n) => n.tag === 'a' && !findAll(node, (x) => x.tag === 'details' && findAll(x, (y) => y === n).length).length;
+  const shutHrefs = hrefSet(findAll(panelNode, shut).map((a) => a.attrs.href));
+  ok(shutHrefs.has('#/changes'), 'fixture group title is a link while shut');
+  ok(shutHrefs.has('#/skills/demo-skill'), 'the retirement alert links to its subject page');
+  ok(shutHrefs.has(hbGroup.url), 'half-built group title is a link while shut');
+  // The fold names both states.
+  const fold = findAll(node, (n) => n.tag === 'details' && textOf(n).includes('Show all 5'))[0];
+  ok(fold, 'fold labeled with the count');
+  const summary = fold.children.find((c) => c.tag === 'summary');
+  ok(findAll(summary, (n) => (n.attrs.class || '') === 'fold-open' && textOf(n).includes('Show fewer')).length === 1, 'an open fold says Show fewer');
+  ok(findAll(summary, (n) => (n.attrs.class || '') === 'fold-shut' && textOf(n).includes('Show all 5')).length === 1, 'a shut fold says Show all 5');
+});
+await test('Folds swap their label on open in every build', async () => {
+  for (const html of [await buildPublicPage(), await buildPrivatePage(), await buildArtifactPage()]) {
+    ok(html.includes('details[open] > summary > .fold-open { display: inline; }') && html.includes('.ex details > summary > .fold-open, .ex details[open] > summary > .fold-shut { display: none; }'), 'the swap rules ship');
+  }
+});
+await test('Public alerts: an alert with no url links to its subject page', () => {
+  const retire = { kind: 'retire', name: 'demo-skill', subject: 'skill', text: 'demo-skill is due for retirement.', url: null };
+  const sec = { kind: 'retire', name: 'demo-section', subject: 'guidance', text: 'demo-section is due for removal.', url: null };
+  const node = renderRoute(doc({ alerts: [retire, sec], skills: [{ name: 'demo-skill', status: 'covered', runs: [] }] }), { name: 'skills', id: null }, {});
+  ok(hrefSet(hrefsIn(node)).has('#/skills/demo-skill'), [...hrefsIn(node)].join(' '));
+  const g = renderRoute(doc({ alerts: [retire, sec] }), { name: 'guidance', id: null }, {});
+  ok(hrefSet(hrefsIn(g)).has('#/guidance/demo-section'), [...hrefsIn(g)].join(' '));
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);

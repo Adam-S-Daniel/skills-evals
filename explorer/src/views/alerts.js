@@ -5,6 +5,20 @@ import { h, link } from '../core/h.js';
 import { defn, skillTerm, sectionTerm } from '../core/terms.js';
 import { trendingView } from './trending.js';
 import { isTrending, alertKindLabel } from '../core/stats.js';
+import { githubLink } from '../core/format.js';
+import { hashFor } from '../core/route.js';
+import { navLink, foldSummary } from './bits.js';
+
+/* Where an alert's evidence is: its own issue or pull request when it names
+   one, else the subject's page here (a retirement or drift alert carries no
+   url). A '#/' hash is a page here; anything else is a GitHub URL. */
+const SUBJECT_ROUTE = { skill: 'skills', guidance: 'guidance' };
+export function alertHref(a) {
+  const gh = githubLink(a && a.url);
+  if (gh) return gh;
+  const route = a && SUBJECT_ROUTE[a.subject];
+  return route && typeof a.name === 'string' && a.name ? hashFor(route, a.name) : null;
+}
 
 // The sentence for an alert that carries fields instead of `text` (#545);
 // null when it has neither, so the label stands alone.
@@ -44,9 +58,10 @@ export function alertsView(doc, mode, folded) {
   const x = firesFigures(doc);
   const trending = trendingView(doc, mode, folded);
   return h('div', null, trending, h('section', null, h('h2', null, STRINGS.alertsHeading), x ? firesNode(x) : null,
-    alerts.length ? (folded ? (ul) => h('details', { class: 'history' }, h('summary', null, STRINGS.alertsShow(alerts.length)), ul) : (ul) => ul)(h('ul', { class: 'plain' }, alerts.map((a) => {
+    alerts.length ? (folded ? (ul) => h('details', { class: 'history' }, foldSummary(STRINGS.alertsShow(alerts.length)), ul) : (ul) => ul)(h('ul', { class: 'plain' }, alerts.map((a) => {
       const kind = clean(alertKindLabel(doc, a));
-      const l = link(a.url, STRINGS.alertDetails);
+      const href = alertHref(a);
+      const l = !href ? null : href.startsWith('#/') ? navLink(href, STRINGS.alertDetails) : link(href, STRINGS.alertDetails);
       return h('li', null, h('strong', null, kind + ': ', a.subject === 'guidance' ? sectionTerm(a.name, clean(a.name)) : skillTerm(a.name, clean(a.name))), a.model ? ' (' + friendlyModel(a.model) + ')' : null,
         a.text ? ' ' + clean(roundDecimals(a.text)) : (alertText(a) ? ' ' + alertText(a) : null), l ? [' ', l] : null);
     }))) : h('p', null, x || trending ? STRINGS.alertsNoneOther : STRINGS.alertsNone)));

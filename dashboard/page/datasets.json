@@ -10,13 +10,13 @@
    "connector": "github-mcp",
    "tool": "get_file_contents"
   },
-  "schedule": "Updated by Claude when the cap changes (standing values since the Oct 26 reset, skills-evals#431)",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET), read from evals/budget.yml",
   "source": {
    "kind": "file",
    "name": "budget.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 48,
+  "staleAfterHours": 26,
   "title": "Test budget settings"
  },
  "checkins": {
@@ -178,13 +178,13 @@
  },
  "roster": {
   "description": "Which models the skill tests run on, judge with and quick-check with, read by Claude from skills-evals evals/roster.yml on main, plus models dropped in the last change.",
-  "schedule": "Updated by Claude when the model list changes (it is recomputed every Monday)",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET), read from evals/roster.yml",
   "source": {
    "kind": "file",
    "name": "roster.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 192,
+  "staleAfterHours": 26,
   "title": "Models in the tests"
  },
  "routines": {
@@ -266,13 +266,13 @@
  },
  "explorer_private": {
   "description": "Optional. Private-skill results in the same schema as the evals document, kept in adam-agentskills-private, never published. The page merges its skills and runs in with a Private badge; until it is uploaded the page shows public subjects only.",
-  "schedule": "Updated by Claude with the evals document when a private-skill results file exists",
+  "schedule": "Rebuilt on every refresh (7:29 AM and 7:29 PM ET), read from the private results branch",
   "source": {
    "kind": "file",
    "name": "explorer_private.json",
    "url": "/_blob/<uploaded id>"
   },
-  "staleAfterHours": 192,
+  "staleAfterHours": 26,
   "title": "Private-skill results (optional)"
  },
  "refresh": {

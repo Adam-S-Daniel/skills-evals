@@ -25,6 +25,8 @@ function buildStrings(you) {
   spendWeeksNote: (list) => 'Spend weeks start Monday at noon ET (1 PM during daylight saving time): ' + list + '.',
   showAll: (n) => 'Show all ' + n,
   showFewer: (n) => 'Show first ' + n,
+  /* A fold's summary while it is open (foldSummary). */
+  foldLess: 'Show fewer',
   skipTable: 'Skip table',
   scrollHint: 'Swipe the table sideways for the other columns.',
   tableLabel: (labels) => 'Table: ' + labels,

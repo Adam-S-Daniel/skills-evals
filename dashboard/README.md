@@ -30,7 +30,7 @@ raw.githubusercontent.com URL, fetches no literal URL and leaks nothing private.
 | Group | Route | Private only |
 |---|---|---|
 | Summary | `#/summary` | Its waiting, routine and allowance tiles |
-| Needs you | `#/needs` | Yes, and the page opens on it. Waiting on you (or "Nothing is waiting on you"), a loop health strip, one "Needs attention" list (a kind with more than 3 rows folds into one row), this week's allowance, routine health (problems first, healthy ones folded), the half-built banner only above 0 |
+| Needs you | `#/needs` | Yes, and the page opens on it. Waiting on you (or "Nothing is waiting on you"), a loop health strip, one "Needs attention" list (a kind with more than 3 rows folds into one row whose title links to the whole set; every row links to its evidence, an alert with no URL to its subject's page), this week's allowance, routine health (problems first, healthy ones folded), the half-built banner only above 0 |
 | Changes | `#/changes`, `#/changes/removed` | What the loop changed in 30 days with the reason, trending toward removal, where lessons went, fixture requests, lesson proposals; the live merged pull requests join the list |
 | Results | `#/hooks`, `#/hooks/<check>`, `#/skills`, `#/skills/<name>`, `#/guidance`, `#/guidance/<id>`, `#/method` | Use by repo on a skill's page, the roster's "why" |
 | Spend and use | `#/spend` | One spend panel, use across private repos, cost and benefit |
@@ -94,12 +94,16 @@ prompt that tells it to.
 3. **Build.** `python3 dashboard/build.py --results <results> --inputs <inputs> --config <config> --out <ds>`.
    Add `--spend <file>` to also write the weekly cost totals (below).
    It needs PyYAML and imports `scripts/allowance_guard.py` and `scripts/eval_facts.py`.
+   When `page/datasets.json` defines `explorer_private`, also copy `explorer/private.json` from
+   adam-agentskills-private's `persistent/eval-results` branch to `<ds>/explorer_private.json`
+   on every run (build.py never writes it); stop if it cannot be read, since an unstamped copy
+   ages the header (step 4).
    It copies `explorer/latest.json` unchanged into the `explorer` dataset, which
    carries every test run, lesson, fixture request and activity row the page
    shows, and refuses to build without it. It refuses to write
    an empty dataset: an empty list reads as "failed to load" on the page, so
    empty lists get one placeholder row (key field `none`), which the page hides.
-4. **Compare.** Upload only datasets that changed. Still set `updated` on every dataset except the hand-kept ones (`budget`, `roster`, `explorer_private`), changed or not: every other dataset goes stale after 26 hours (two refresh intervals plus two), and only the hand-kept ones keep a longer value. Skip `eval_allowance` when
+4. **Compare.** Upload only datasets that changed. Still set `updated` on every `file` dataset the build wrote, changed or not, `budget`, `roster` and `explorer_private` included (each is read fresh every run). The dashboard header's "Updated <age>" is the OLDEST `updated.at` of all file datasets, so one dataset left unstamped makes the whole page read days old (2026-11-13: `budget`, last stamped Nov 9, made it say "Updated 4 days ago" after a run that morning). Every dataset goes stale after 26 hours (two refresh intervals plus two). Skip `eval_allowance` when
    only its timestamps and pace moved. Never skip `refresh`: it changes every run, and the page's
    "refresh did not land" banner reads it.
 5. **Publish.** For each changed file, run Artifact `publish` with the dashboard's

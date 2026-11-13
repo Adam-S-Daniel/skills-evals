@@ -90,6 +90,12 @@ function cellValue(td) {
   return raw === null ? td.textContent : raw;
 }
 
+/* A fold's summary whose words follow its state: `shut` while closed,
+   "Show fewer" (or `open`) while open. Both are in the page; CSS shows one. */
+export function foldSummary(shut, open) {
+  return h('summary', null, h('span', { class: 'fold-shut' }, shut), h('span', { class: 'fold-open' }, open || STRINGS.foldLess));
+}
+
 /* Rows a table shows before "Show all <n>". Every table taller than this is
    capped, so a page of hundreds of rows opens as a short one. */
 export const ROW_CAP = 50;
