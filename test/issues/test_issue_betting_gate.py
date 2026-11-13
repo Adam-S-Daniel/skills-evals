@@ -13,7 +13,7 @@ Covered here, beside the module's own suites:
   * the review's repro: identical runs never give `no-benefit` before the
     bound can show it, whatever prior the clamps allow;
   * ceiling parking, in the gate and in the planner;
-  * the run cap: `no-clear-effect`, which can only propose a removal;
+  * the run cap: `no-clear-effect`, which counts as headroom for a removal;
   * the removal mode: one headroom cell proposes, two or more no-benefit
     cells may remove automatically;
   * the judge is reported and does not vote;

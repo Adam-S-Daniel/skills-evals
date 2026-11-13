@@ -1,123 +1,48 @@
-# Thresholds for the retirement verdict, read by harness/gates.py (#70).
-# harness/gates.py's docstring says how each number is used.
+# The keep, remove and re-check rules for skills and guidance sections: the
+# source of truth. harness/gates.py reads it (`load_gate_policy`, which
+# refuses a missing, unknown or out-of-range key); scripts/plan_week.py and
+# scripts/retire_skill.py read it too. The rules in plain English, with the
+# current values: docs/rules.md, generated from this file by
+# scripts/build_rules.py. Edit the values here, then run
+# `python3 scripts/build_rules.py`. The statistics behind each test:
+# harness/gates.py's docstring. Decisions and their history:
+# docs/decisions/0014-removal-pull-requests-merge-without-review.md.
 #
-# THE RULE SINCE 2026-11-03 (Adam's decision of that day is pending; these
-# are the recommended values). A statistics review of the gate that day found
-# the old bound invalid where it decided: a normal-mixture confidence
-# sequence over run means whose variance came from a prior, which removed a
-# skill after four identical runs per arm and wrongly removed subjects that
-# helped by exactly the margin 15-53% of the time against a 5% target. It
-# also found cells at the ceiling deciding removals they could not show, and
-# a weighting across guidance strata that favored removal. A threshold sweep
-# the same day simulated the replacement on the real outcome shapes and
-# chose these levels. So:
-#
-#   * The bound is a betting confidence sequence on the PAIRED per-fire
-#     difference D = with - without (Waudby-Smith and Ramdas, aGRAPA bets
-#     capped at 0.9 of the safe stake). It needs no variance prior and holds
-#     at every run count, so a cell is checked after every pair.
-#   * Keep when the subject's keep test shows D > 0 at `benefit_confidence`
-#     (0.80), split over the subject's cells (Bonferroni). A cell shows no
-#     benefit when its test shows D < `objective_margin` (0.15) at
-#     `retire_confidence` (0.90). Removal is the silent, unchecked error, so
-#     it takes the stricter level.
-#   * A cell whose without arm a betting bound at `retire_confidence` shows
-#     above 1 - `objective_margin` cannot show the margin: it parks as
-#     `ceiling`, does not vote on removal and is not fired again; it needs a
-#     harder fixture. A retire verdict beside one still removes automatically
-#     (2026-11-13: every retire is automatic), the parked cell only shows in
-#     the verdict's `removal_reason`. A
-#     harm test (D < 0) runs at such cells and makes a harmful one
-#     no-benefit once it decides, and the cell parks only when a no-harm
-#     test (D > -margin) agrees, so a harm beyond the margin parks only at
-#     that test's error rate (for a fixture the eval scope pass did not
-#     pause: a pause stops the firing, so an undecided harm stays undecided
-#     and its subject `insufficient` when every cell is parked, else a
-#     `retire`). A milder harm can still end parked or
-#     with no clear effect.
-#   * `max_runs_high_cell` (20): a cell whose without arm is above
-#     1 - `objective_margin`, still undecided after this many pairs, whose
-#     no-harm test has rejected and whose without arm averages at least
-#     0.90 (harness/gates.py HIGH_STOP_MIN_WITHOUT) stops being fired as
-#     `ceiling-unconfirmed`. It does not vote either, so a retire verdict
-#     beside it rests on the other cells. A budget rule: a bound at 0.95 needs about 28
-#     pairs, at 0.90 more than the cap. A high cell that does not meet it is
-#     fired on to the cap.
-#   * A cell that reaches `max_runs_per_cell` (20) pairs with neither test
-#     crossed, on pairs spanning `min_cli_versions`, has `no-clear-effect`,
-#     which counts as headroom for a removal (it still retires, 2026-11-13). With one version, or with a test that
-#     crossed but has not decided, it stays `insufficient`: it is no longer
-#     fired, and the planner lists it as a `cell-at-cap` work item (a step
-#     summary count, not an issue). Every retire verdict's removal is
-#     `auto` (Adam, 2026-11-13: "I want removals to occur without requiring
-#     my intervention/approval"); `removal_reason` records the evidence.
-#   * A fixture the eval scope pass paused keeps its cells: a `benefit` cell
-#     still keeps, a decided `no-benefit` cell still votes, and any other is
-#     `paused`, parked like a ceiling cell, so it never votes for removal. A subject whose every cell is parked
-#     is `ceiling` only when each shows it on its own runs (a ceiling class,
-#     or a ceiling pause of a cell that was one, or whose no-harm test had
-#     rejected with a without arm of at least 0.90); otherwise it is
-#     `insufficient` and a `paused-unmeasured` work item. A `ceiling` subject
-#     with a paused cell among them is a `paused-ceiling` work item asking for
-#     a harder fixture.
-#   * The judge is reported but no longer votes on keep or removal (its
-#     margin, `judge_margin` 1.5 on its 0-to-10 scale, is used for the
-#     figure the explorer shows). Single checks no longer keep on their own.
-#   * Removals still need runs on `min_cli_versions` (2) Claude Code
-#     versions: a removal decides at the first pair where its test is at
-#     its level and the pairs so far span them.
-#   * In-situ guidance cells (the guidance block's `rest_policy`, Adam's
-#     decision of 2026-11-07, "Pool + removal guard"): under
-#     `pooled-with-current-guard` a cell pools the pairs made beside EVERY
-#     rest of the guidance (the guidance minus the section), each pair at
-#     equal weight in one betting sequence, a pair formed only within one
-#     rest. Two keep tests at half the keep alpha each: the pooled one,
-#     counted once the current rest has `rest_guard_min_pairs` pairs, and
-#     one over the current rest alone. A pooled keep is not final: a
-#     removal on the current rest's evidence overrides it, and it lapses at
-#     the current rest's cap (a current-rest keep is final). Every decision
-#     toward removal is guarded by the current rest (the rest on main): a
-#     no-benefit or harm decision needs at least `rest_guard_min_pairs` (6)
-#     pairs beside it, spanning `min_cli_versions`, and the current rest's
-#     own evidence (its share of the test's wealth averaged with its own
-#     test's) at the retire level on its own; the ceiling, no-harm,
-#     high-cell and floor rules and the `max_runs_per_cell` cap read the
-#     current rest only (each rest's window caps at that count). A cell
-#     with one rest is a `current` cell. `current`
-#     is the rule of 2026-11-03, runs beside the current rest only; set it
-#     to switch back. Both keys are optional and the guidance block's only
-#     (ADR 0014, "Pooled-rest addendum (2026-11-07)").
-#
-# A cell whose arms both pass at most `floor_fraction` over harness/gates.py
-# FLOOR_MIN_RUNS pairs is set aside as a broken fixture and left out of the
-# verdict.
-#
-# Every validated run counts, from `results/` and `routine-results/` alike
-# (scripts/compute_gates.py): the gate guards against honest mistakes (a
-# changed fixture or skill, a different guidance or skill set between the
-# arms, errored trials, a copy of a run ingested twice), not against forged
-# results, since anyone who can write the results can also remove a skill.
-#
-# `retirement_mode` is `auto` (a `retire` verdict whose removal may be
-# automatic opens a removal PR that auto-merges with no human review) or
-# `proposal` (an issue is filed and a human removes; nothing is automatic in
-# that mode). A missing or invalid
-# value is `proposal`. It was `auto` by Adam's 2026-10-26 decision (ADR 0014
-# and adam-agentskills ADR 0021); Adam set both blocks to `proposal` on
-# 2026-11-03 ("Resume, auto-removal off") after the statistics review, and
-# pre-approved setting them back to `auto` once a loop withdrawal was
-# hardened (PR #740 and its round-7 fixes; skills-evals#645), which they now
-# are. Even in `auto`, scripts/retire_skill.py files the owner's `proposal`
-# issue only when plugin-runtime-review would hold the removal (the owner's
-# approval is a standing rule there). Since 2026-11-13 it files an
-# `agent-ready` issue for the fleet worker instead of a pull request when the
-# skill lives in cms-platform or adamdaniel.ai, adam-agentskills' mechanical
-# path refuses (last skill, layout, waiver, citing test), or the scheduled
-# workflow has no write token; it opens nothing while another loop pull request is open, and acts only from
-# the scheduled workflow, never a dispatched or pull-request run.
-#
-# `max_runs_per_cell` history: 40 pairs from the 2026-11-03 statistics review;
-# 2026-11-12, Adam: 20 pairs (both blocks), so an undecided cell stops sooner.
+# Keys of each block (`skills:` and `guidance:`, kept apart so they can
+# diverge):
+#   objective_margin       a cell shows no benefit when its gain D = with -
+#                          without is confidently below this (0 to 1).
+#   judge_margin           the judge's margin on its 0-to-10 scale; the judge
+#                          is reported but does not vote.
+#   benefit_confidence     the keep test's level, split over the subject's
+#                          cells (Bonferroni).
+#   retire_confidence      the level of the remove, harm, no-harm and ceiling
+#                          tests, per cell.
+#   min_cli_versions       Claude Code versions a removal's pairs must span.
+#   max_runs_per_cell      the pair cap: a cell is not fired past it.
+#   max_runs_high_cell     pairs after which a high cell may stop as
+#                          `ceiling-unconfirmed` (at most max_runs_per_cell).
+#   high_stop_min_without  the least without-arm mean such a stop needs.
+#   floor_fraction         a cell whose arms both pass at most this share is a
+#                          broken fixture (`cannot-discriminate`) ...
+#   floor_min_runs         ... once it has this many pairs.
+#   recheck_weeks          a decided subject is re-checked this many weeks
+#                          after its newest run (scripts/plan_week.py) ...
+#   recheck_weeks_high     ... or this many for a `stakes: high` one
+#                          (evals/stakes.yml).
+#   max_removal_pauses     removals the loop may withdraw for one subject
+#                          before it files the owner's proposal issue instead
+#                          (scripts/retire_skill.py; the same in both blocks).
+#   retirement_mode        `auto` (a retire verdict opens a removal that
+#                          merges with no human review) or `proposal` (an
+#                          issue; a person removes). Missing or invalid is
+#                          `proposal`.
+# Guidance block only (ADR 0014, "Pooled-rest addendum (2026-11-07)"):
+#   rest_policy            `pooled-with-current-guard` pools pairs made beside
+#                          every rest of the guidance, guarded by the current
+#                          rest; `current` reads the current rest only.
+#   rest_guard_min_pairs   pairs beside the current rest a removal-direction
+#                          decision needs.
 skills:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -127,16 +52,12 @@ skills:
   max_runs_per_cell: 20
   max_runs_high_cell: 20
   floor_fraction: 0.10
+  floor_min_runs: 3
+  high_stop_min_without: 0.90
+  recheck_weeks: 8
+  recheck_weeks_high: 4
+  max_removal_pauses: 3
   retirement_mode: auto
-# Guidance sections (skills-evals#124): the same verdict over each section's
-# ablation pair (full vs full-minus-section), with the section-vs-none pair
-# read only for the `shorten-or-merge` outcome (harness/gates.py,
-# `guidance_verdict`). Kept apart from skills so the two can diverge; today
-# they are the same. Each removal is tracked and can be reverted (#564). The
-# write path for an automatic removal is the eval-improve GitHub App's token
-# for _agent-guidance alone; with no token, scripts/retire_skill.py --target
-# guidance files the issue instead. `rest_policy` and
-# `rest_guard_min_pairs` are this block's own (see the in-situ bullet above).
 guidance:
   objective_margin: 0.15
   judge_margin: 1.5
@@ -146,6 +67,11 @@ guidance:
   max_runs_per_cell: 20
   max_runs_high_cell: 20
   floor_fraction: 0.10
+  floor_min_runs: 3
+  high_stop_min_without: 0.90
+  recheck_weeks: 8
+  recheck_weeks_high: 4
+  max_removal_pauses: 3
   retirement_mode: auto
   rest_policy: pooled-with-current-guard
   rest_guard_min_pairs: 6

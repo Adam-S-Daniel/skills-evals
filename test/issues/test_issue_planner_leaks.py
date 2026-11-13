@@ -67,7 +67,7 @@ from test_issue_pooled_rest_guard import POOLED, cell_of, verdict  # noqa: E402
 NOW = datetime(2026, 11, 8, 12, 0, 0, tzinfo=timezone.utc)
 A, B = "claude-sonnet-5-5", "claude-opus-5-5"
 #: Equal arms with a without arm of 0.93 (high: above 1 - 0.15, and above
-#: HIGH_STOP_MIN_WITHOUT) and of 0.87 (high, but below it).
+#: `high_stop_min_without`) and of 0.87 (high, but below it).
 HIGH = [(93, 93, 93), (93, 93, 92)] * 20
 MID = [(87, 87, 87), (87, 87, 86)] * 20
 

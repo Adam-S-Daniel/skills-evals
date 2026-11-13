@@ -8,32 +8,33 @@ writes the pauses and resumes the rules below produce; `apply` makes them in
 the tree; `summary` renders a plan as Markdown. `.github/workflows/eval-scope.yml`
 runs the three and opens one auto-merging pull request.
 
-Rules, each deterministic (thresholds are the constants below):
+Rules, each deterministic (thresholds in evals/scope-policy.yml, current
+values in docs/rules.md):
 
-  ceiling   a scheduled fixture with at least CEILING_MIN_RUNS runs after the
+  ceiling   a scheduled fixture with at least `ceiling_min_runs` runs after the
             fixture directory's last commit whose WITHOUT arm passes
-            CEILING_SHARE of its checks on average, and (when the without arm
-            has judge figures) scores at least CEILING_JUDGE. It cannot show a
+            `ceiling_share` of its checks on average, and (when the without arm
+            has judge figures) scores at least `ceiling_judge`. It cannot show a
             gain. Paused. Read per cell: every roster model's own runs must
             trip it, since the gate decides per model and a pooled mean can
             hide a model with room to gain.
-  floor     the same run filter, both arms pass at most FLOOR_SHARE, again on
+  floor     the same run filter, both arms pass at most `floor_share`, again on
             every roster model's own runs. Paused.
   keep      neither ceiling nor floor pauses a subject whose explorer verdict
-            is keep or whose confidence that it helps is at least KEEP_GUARD.
+            is keep or whose confidence that it helps is at least `keep_guard`.
             The gate keeps a paused fixture's cells as parked `paused` cells
             (decided keep and no-benefit cells still count), so the guard is
             not needed for safety; it keeps a kept subject's fixtures measured.
   zero-use  a skill with no recorded use in real work over the census's
-            CENSUS_WEEKS weeks (`skill_usage.has_recorded_use` is False: a
+            last `first_use_weeks` weeks (evals/removal-policy.yml) (`skill_usage.has_recorded_use` is False: a
             fresh census that tracks the skill by name and counts no use).
             All of its scheduled fixtures are paused, `stakes: high` skills
             included, and they resume on its first recorded use. Adam,
             2026-11-13: "Do we/should we run evals on skills before they have
             been recorded used in real work? I think we should not." There is
-            no exposure minimum (the earlier 500 full-listing sessions are
-            for an irreversible removal, `harness/removal_policy.py`, not for
-            pausing an eval that comes back). Unknown (a missing or stale
+            no exposure minimum (that is for an irreversible removal,
+            `harness/removal_policy.py`, not for pausing an eval that comes
+            back). Unknown (a missing or stale
             census, an untracked skill) does nothing. A skill in
             evals/usage-unknown.yml keeps being evaluated and an earlier
             zero-use pause of it resumes: its use cannot be measured, so
@@ -62,9 +63,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 from datetime import datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -75,20 +78,19 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import removal_policy  # noqa: E402
 import skill_usage  # noqa: E402
 import stakes as stakes_file  # noqa: E402
 
-CEILING_MIN_RUNS = 4
-CEILING_SHARE = 0.85
-CEILING_JUDGE = 8.5
-FLOOR_SHARE = 0.10
-#: A subject whose explorer confidence that it helps is at least this, or
-#: whose verdict is keep, is never paused for ceiling or floor. The gate keeps
-#: a paused fixture's cells as parked `paused` cells (decided keep and
-#: no-benefit cells still count), so this is not needed for safety; it keeps a
-#: kept subject's fixtures measured.
-KEEP_GUARD = 0.5
-CENSUS_WEEKS = skill_usage.CENSUS_WEEKS
+SCOPE_POLICY = REPO_ROOT / "evals" / "scope-policy.yml"
+#: Each scope-policy key and whether a value is valid for it.
+SCOPE_KEYS = {
+    "ceiling_min_runs": lambda v: type(v) is int and v >= 1,
+    "ceiling_share": lambda v: _fraction(v),
+    "ceiling_judge": lambda v: _number(v) and 0 <= v <= 10,
+    "floor_share": lambda v: _fraction(v),
+    "keep_guard": lambda v: _fraction(v),
+}
 LOCAL_ONLY_PLUGINS = ("adam-coding-local", "adam-non-coding-local")
 RULES = ("ceiling", "floor", "zero-use")
 AUTO_PREFIX = "Auto scope ("
@@ -128,6 +130,48 @@ def _load_yaml(path: Path):
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
         raise ScopeError(f"{path.name} could not be read as YAML") from exc
+
+
+def _number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) \
+        and math.isfinite(value)
+
+
+def _fraction(value) -> bool:
+    return _number(value) and 0 <= value <= 1
+
+
+def parse_scope_policy(text: str) -> dict:
+    """evals/scope-policy.yml's thresholds, checked: every key in SCOPE_KEYS
+    is required and no other is allowed; ScopeError names a bad one."""
+    try:
+        doc = yaml.safe_load(text)
+    except (yaml.YAMLError, ValueError):
+        raise ScopeError("the scope policy is not valid YAML") from None
+    if not isinstance(doc, dict):
+        raise ScopeError("the scope policy must be a mapping")
+    if set(doc) != set(SCOPE_KEYS):
+        raise ScopeError(f"the scope policy must have exactly the keys {sorted(SCOPE_KEYS)}")
+    for key, valid in SCOPE_KEYS.items():
+        if not valid(doc[key]):
+            raise ScopeError(f"the scope policy's {key} is out of range")
+    return dict(doc)
+
+
+@functools.lru_cache(maxsize=1)
+def scope_policy() -> dict:
+    """`parse_scope_policy` of evals/scope-policy.yml, read once."""
+    try:
+        text = SCOPE_POLICY.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise ScopeError(f"{SCOPE_POLICY.name} could not be read") from None
+    return parse_scope_policy(text)
+
+
+def first_use_weeks() -> int:
+    """evals/removal-policy.yml's `first_use_weeks`: the census window a
+    skill's first recorded use is looked for in."""
+    return removal_policy.load()["first_use_weeks"]
 
 
 def read_rows(root: Path, rel: str, key: str) -> list[dict]:
@@ -308,23 +352,26 @@ def protected(explorer: dict, kind: str, name: str) -> str | None:
             return "its verdict is keep"
         helps = (entry.get("confidence") or {}).get("helps") if isinstance(
             entry.get("confidence"), dict) else None
-        if isinstance(helps, (int, float)) and not isinstance(helps, bool) and helps >= KEEP_GUARD:
+        if isinstance(helps, (int, float)) and not isinstance(helps, bool) \
+                and helps >= scope_policy()["keep_guard"]:
             return f"the confidence that it helps is {helps:.2f}"
     return None
 
 
 def ceiling_or_floor(m: dict) -> tuple[str, str] | None:
     """(rule, why) when measurements trip the ceiling or the floor."""
-    if m["without_runs"] >= CEILING_MIN_RUNS and m["without_share"] >= CEILING_SHARE and (
-            m["without_judge"] is None or m["without_judge"] >= CEILING_JUDGE):
+    policy = scope_policy()
+    if m["without_runs"] >= policy["ceiling_min_runs"] \
+            and m["without_share"] >= policy["ceiling_share"] and (
+            m["without_judge"] is None or m["without_judge"] >= policy["ceiling_judge"]):
         judge = ("" if m["without_judge"] is None
                  else f" and the judge scored it {m['without_judge']:.1f}")
         return "ceiling", (f"the without arm passed {m['without_share']:.2f} of its checks{judge} "
                            f"over {m['without_runs']} runs since the fixture last changed, so it "
                            "cannot show a gain; it returns when the fixture's content changes")
-    if (m["both_runs"] >= CEILING_MIN_RUNS and m["with_share"] <= FLOOR_SHARE
-            and m["both_without_share"] <= FLOOR_SHARE):
-        return "floor", (f"both arms passed at most {FLOOR_SHARE:.2f} of their checks "
+    if (m["both_runs"] >= policy["ceiling_min_runs"] and m["with_share"] <= policy["floor_share"]
+            and m["both_without_share"] <= policy["floor_share"]):
+        return "floor", (f"both arms passed at most {policy['floor_share']:.2f} of their checks "
                          f"(with {m['with_share']:.2f}, without {m['both_without_share']:.2f}) over "
                          f"{m['both_runs']} runs since the fixture last changed, so it cannot show "
                          "a gain; it returns when the fixture's content changes")
@@ -405,11 +452,11 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                       f"{unknown_use[subject]})"})
                 resumed.add(path)
                 continue
-            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=first_use_weeks(),
                                                surfaces=_surfaces(subject, plugins))
             if used is True:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
-                               "why": f"the skill was used in the last {CENSUS_WEEKS} weeks"})
+                               "why": f"the skill was used in the last {first_use_weeks()} weeks"})
                 resumed.add(path)
 
     pause = []
@@ -427,10 +474,10 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                 and stakes_file.level_of(table, kind, subject) != "high"):
             found = per_model(kind, fixture_runs(explorer, kind, subject, path, since), models)
         if found is None and kind == "skill" and subject not in unknown_use:
-            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=first_use_weeks(),
                                                surfaces=_surfaces(subject, plugins))
             if used is False:
-                found = ("zero-use", f"no recorded use in real work in the last {CENSUS_WEEKS} weeks; "
+                found = ("zero-use", f"no recorded use in real work in the last {first_use_weeks()} weeks; "
                          "its evals resume on its first recorded use")
         if found is None:
             continue

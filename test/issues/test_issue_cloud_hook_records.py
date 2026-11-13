@@ -290,7 +290,7 @@ class ExplorerPublicTests(unittest.TestCase):
     def build(self, rows, sources=()):
         (self.tree / "usage" / "weekly-local.json").write_text(
             json.dumps(usage_doc(rows, sources)), encoding="utf-8")
-        return pub.build_hooks(self.tree, NOW, None, {}, PUBLIC, dict(pub.HOOK_POLICY_DEFAULTS))
+        return pub.build_hooks(self.tree, NOW, None, {}, PUBLIC, pub.load_hook_policy())
 
     @staticmethod
     def rows():

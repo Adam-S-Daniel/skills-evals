@@ -9,7 +9,7 @@ It runs harness/gates.py's own cell classifier (`_classify`) on synthetic
 pairs and reports two things.
 
 DRIFT (the false-removal rate). A section that helps by `--effect` (default
-exactly the margin, 0.15) beside the CURRENT rest, after `--old-pairs`
+exactly the margin) beside the CURRENT rest, after `--old-pairs`
 (default 40, a full window) pairs beside an older rest that already covered
 its content, so the older pairs show no gain (D about 0). Pairs beside the
 current rest arrive one at a time up to the cap. A removal is false. It is
@@ -24,7 +24,7 @@ reported for:
     margin that has not rejected (no contradiction on the current rest's
     own bound).
 
-The target is at most 1 - `retire_confidence` (0.10).
+The target is at most 1 - `retire_confidence`.
 
 AT THE CAP (`at_cap`, CAP_CASES). How cells end once the current rest's
 window is full, under `current` and the committed rule: the share that

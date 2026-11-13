@@ -54,6 +54,12 @@ import test_issue_gate_round3 as round3  # noqa: E402
 from test_issue_gate_round3 import MODELS, classify, expect, pairs  # noqa: E402
 
 
+def shows_ceiling(cell: dict) -> bool:
+    """`gates._shows_ceiling` under the committed skills policy."""
+    return gates._shows_ceiling(cell, gates.load_gate_policy()["skills"])
+
+
+
 def verdict(runs, expected):
     return gates.retirement({"runs": runs}, MODELS, "demo", POLICY, expected)
 
@@ -106,7 +112,7 @@ class PausedHarmTests(unittest.TestCase):
         self.assertEqual(v["verdict"], "insufficient", v["reason"])
         self.assertEqual({c["class"] for c in v["cells"]}, {"paused"})
         for cell in v["cells"]:
-            self.assertFalse(gates._shows_ceiling(cell), cell)
+            self.assertFalse(shows_ceiling(cell), cell)
 
     def test_ceiling_from_a_pause_needs_the_cells_own_evidence(self):
         # 20 pairs at 96/96: each cell was `ceiling-unconfirmed` itself.
@@ -129,7 +135,7 @@ class PausedHarmTests(unittest.TestCase):
                                                        model=MODELS[1]),
                         expect("a", paused="a"))
         self.assertEqual(short["verdict"], "insufficient", short["reason"])
-        # The without arm under HIGH_STOP_MIN_WITHOUT is no ceiling, even
+        # The without arm under `high_stop_min_without` is no ceiling, even
         # where the no-harm test rejected.
         low = verdict(pairs("a", 30, 88, 88) + pairs("a", 30, 88, 88, start=1000,
                                                      model=MODELS[1]),
@@ -227,7 +233,7 @@ class UnmeasuredItemTests(unittest.TestCase):
         self.assertEqual(cell["class"], "paused")
         self.assertIsNotNone(cell["harm_at"])
         self.assertIsNotNone(cell["noharm_at"])
-        self.assertFalse(gates._shows_ceiling(cell))
+        self.assertFalse(shows_ceiling(cell))
 
     def test_a_ceiling_class_before_the_pause_shows_the_ceiling_by_itself(self):
         """Round 5's m3: the `class_before_pause` branch is kept, and named
@@ -236,9 +242,9 @@ class UnmeasuredItemTests(unittest.TestCase):
         the pause was a ceiling class, whatever else the cell records)."""
         base = {"class": "paused", "scope_paused": "ceiling"}
         for before in gates.CEILING_CLASSES:
-            self.assertTrue(gates._shows_ceiling({**base, "class_before_pause": before}))
-        self.assertFalse(gates._shows_ceiling({**base, "class_before_pause": "insufficient"}))
-        self.assertFalse(gates._shows_ceiling({**base, "class_before_pause": "ceiling",
+            self.assertTrue(shows_ceiling({**base, "class_before_pause": before}))
+        self.assertFalse(shows_ceiling({**base, "class_before_pause": "insufficient"}))
+        self.assertFalse(shows_ceiling({**base, "class_before_pause": "ceiling",
                                                "scope_paused": "floor"}))
 
 

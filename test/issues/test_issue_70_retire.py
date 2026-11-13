@@ -772,7 +772,7 @@ class VerdictTests(Base):
         }
         for reason, cells in cases.items():
             with self.subTest(reason):
-                verdict = gates_module._verdict(cells, True)
+                verdict = gates_module._verdict(cells, True, gates_module.load_gate_policy()["skills"])
                 self.assertEqual((verdict["verdict"], verdict["removal"]), ("retire", "auto"))
                 self.assertIn(reason, verdict["removal_reason"])
 

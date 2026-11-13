@@ -56,14 +56,13 @@ THE BANDS (rule D), in order:
   2026-10-31: Sonnet first, Opus only while that has not settled it).
   They hold skill cells only: an undecided guidance cell (class missing or
   insufficient) goes to band 4 or band 8.
-  4. guidance focus, at least 15% (`guidance_focus`; Adam's rule,
-     2026-11-02 18:42 UTC: remove a section at 90% confidence it does not
-     improve results by 0.15 or more): the undecided cells of the
+  4. guidance focus, at least 15% (`guidance_focus`; Adam's rule of
+     2026-11-02: decide guidance sections, docs/rules.md): the undecided cells of the
      GUIDANCE_FOCUS_SECTIONS (2) eligible sections nearest a verdict.
        progress: a cell's retire progress is its objective's no-help
          confidence (the level its remove test reached) over
          `retire_confidence` (the verdict document's `guidance_policy`,
-         else DEFAULT_RETIRE_CONFIDENCE); its keep progress is its
+         else evals/gate-policy.yml's, `policy_value`); its keep progress is its
          objective's helps confidence over `benefit_confidence`. The judge
          does not vote (harness/gates.py, 2026-11-03). An absent value is
          0.
@@ -167,8 +166,9 @@ THE BANDS (rule D), in order:
      share of weekly_cap for the account week, at least one fire of each
      kind). Cut items count as unplanned. The share above is of one sweep's
      room; this one is of the whole week's cap, and binds every dispatcher.
-  6. re-checks: decided cells whose newest run is over 8 weeks old (4
-     weeks for a high-stakes subject).
+  6. re-checks: decided cells whose newest run is older than the gate
+     policy's `recheck_weeks` (`recheck_weeks_high` for a high-stakes
+     subject; `recheck_age`).
   STAKES (evals/stakes.yml, scripts/stakes.py; Adam, 2026-11-01): within
   bands 2, 3, 4, 6 and 8 a high-stakes subject's cells go first, before
   the band's own order; a `none` subject (a named check enforces it) plans
@@ -318,7 +318,7 @@ IMPROVE ELIGIBILITY (rule A), per skill with fixtures under evals/<skill>/:
      `needs-fixtures` or `needs-harder-fixtures` item either.
   5. not a zero-use skill (`zero_use_skills`, 2026-11-12, reworded
      2026-11-13): a skill with no recorded use in real work over the
-     census's 8 weeks (`skill_usage.has_recorded_use` False, no exposure
+     census's `first_use_weeks` (`skill_usage.has_recorded_use` False, no exposure
      minimum, the eval scope pass's own rule) is not improved; a skill in
      evals/usage-unknown.yml is never excluded, and an unknown answer (stale
      or missing census, untracked skill) stays eligible.
@@ -515,6 +515,7 @@ and a status code.
 from __future__ import annotations
 
 import argparse
+import functools
 from datetime import datetime, timedelta, timezone
 import json
 import math
@@ -563,9 +564,6 @@ COOLDOWN = timedelta(days=14)
 STOP_AFTER_REJECTIONS = 3
 STOP_FOR = timedelta(days=90)
 INFRA_RETRIES = 2
-RECHECK_AFTER = timedelta(weeks=8)
-#: A decided high-stakes subject is re-checked this soon (evals/stakes.yml).
-RECHECK_AFTER_HIGH = timedelta(weeks=4)
 BROKEN_AFTER_FIRES = 2
 #: A successful eval fire this old with no run on its cell produced nothing.
 FIRE_RESULT_WINDOW = timedelta(hours=2)
@@ -615,9 +613,8 @@ OUTAGE_REPORT_WINDOW = timedelta(hours=24)
 PROBE_WAIT = timedelta(minutes=45)
 SHARES = (("missing", 0.30), ("near", 0.20), ("focus", 0.15), ("improve", 0.20))
 BANDS = ("safety", "missing", "near", "focus", "improve", "recheck", "bare", "guidance-rest")
-#: The guidance focus (module docstring, band 4; Adam's rule, 2026-11-02
-#: 18:42 UTC: remove a section at 90% confidence it does not improve results
-#: by 0.15 or more). Every section had a missing cell and runs were spread
+#: The guidance focus (module docstring, band 4; Adam's rule of 2026-11-02:
+#: decide guidance sections). Every section had a missing cell and runs were spread
 #: over all of them, so none came near a verdict; the focus spends guidance
 #: fires on the sections nearest one. Fires stay at one trial: the harness
 #: refuses `--trials > 1` for a guidance fixture, and trials collapse into
@@ -628,10 +625,17 @@ GUIDANCE_FOCUS_SECTIONS = 2
 #: frozen: an accepted one edits base.md and resets every section's in-situ
 #: evidence.
 GUIDANCE_IMPROVE_HELD = False
-#: The decision levels a cell's progress is normalized by when the verdict
-#: document carries no `guidance_policy` (evals/gate-policy.yml's).
-DEFAULT_RETIRE_CONFIDENCE = 0.90
-DEFAULT_BENEFIT_CONFIDENCE = 0.80
+
+
+def policy_value(policy: dict | None, key: str, guidance: bool):
+    """`policy[key]`, or evals/gate-policy.yml's own value (its guidance or
+    skills block) when the verdict document carries no policy: never a
+    number written here (docs/rules.md)."""
+    if policy and policy.get(key) is not None:
+        return policy[key]
+    committed = _committed_gate_policy()
+    return (committed["guidance"] if guidance and committed["guidance"] else committed["skills"])[key]
+
 #: The verdicts more runs on the current content may still change: every
 #: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
 #: shorten-or-merge, ceiling, cannot-discriminate) is decided or blocked.
@@ -646,8 +650,8 @@ FOCUS_VERDICTS = (None, "insufficient")
 #: removal when its in-situ verdict is `retire`, or when its retire progress
 #: (the lowest over its cells, as `guidance_focus` scores it) is at least
 #: this share of the retire level: the alone pair needs runs of its own
-#: before a retire lands (the gate makes a retire whose alone pair is
-#: unfinished a proposal, never an automatic removal), and from halfway the
+#: before a retire lands (the gate keeps a section whose alone pair is
+#: unfinished `insufficient`), and from halfway the
 #: remaining in-situ runs leave it time to collect them.
 ALONE_PAIR_FROM_PROGRESS = 0.5
 #: A cell more runs on the current content cannot move toward removal: one
@@ -1012,10 +1016,25 @@ def model_costs(cells: list) -> dict:
     return {m: statistics.median(v) for m, v in known.items()}
 
 
+@functools.lru_cache(maxsize=1)
+def _committed_gate_policy() -> dict:
+    """evals/gate-policy.yml, read once (gates is imported lazily here)."""
+    import gates
+    return gates.load_gate_policy()
+
+
+def recheck_age(kind: str, stakes: str | None) -> timedelta:
+    """How long after its newest run a decided `kind` ("skill" or
+    "guidance") subject is re-checked: the gate policy's `recheck_weeks`, or
+    `recheck_weeks_high` for a high-stakes subject (evals/stakes.yml)."""
+    policy = _committed_gate_policy()
+    block = policy["guidance" if kind == "guidance" else "skills"] or policy["skills"]
+    return timedelta(weeks=block["recheck_weeks_high" if stakes == "high" else "recheck_weeks"])
+
+
 def recheck_after(cell: dict) -> timedelta:
-    """How long after its newest run a decided cell is re-checked: sooner
-    for a high-stakes subject (evals/stakes.yml)."""
-    return RECHECK_AFTER_HIGH if cell.get("stakes") == "high" else RECHECK_AFTER
+    """`recheck_age` of a planner cell."""
+    return recheck_age("guidance" if cell.get("section") else "skill", cell.get("stakes"))
 
 
 def section_retire_progress(ctx: dict, section: str) -> float:
@@ -1024,7 +1043,7 @@ def section_retire_progress(ctx: dict, section: str) -> float:
     `guidance_focus` scores it), at the policy's retire level; 0 when it
     has no cell."""
     policy = ctx.get("guidance_policy") or {}
-    level = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
+    level = policy_value(policy, "retire_confidence", True)
     progress = [retire_progress(c, level) for c in ctx["cells"] if c.get("section") == section]
     return min(progress, default=0.0)
 
@@ -1156,8 +1175,8 @@ def guidance_focus(ctx: dict) -> tuple:
     each focused section to its place in that order, the side its score
     came from ("keep" or "retire") and the levels used."""
     policy = ctx.get("guidance_policy") or {}
-    retire_level = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
-    benefit_level = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
+    retire_level = policy_value(policy, "retire_confidence", True)
+    benefit_level = policy_value(policy, "benefit_confidence", True)
     removals = set(ctx.get("guidance_removal_prs") or ())
     members = batch_members(ctx)
     sections: dict = {}
@@ -2111,10 +2130,6 @@ MIN_BET_VARIANCE = 1e-6
 #: gate's learned bet prior weighs PRIOR_PSEUDO_RUNS (3) pairs, so before
 #: that the projection is mostly the prior's, not the cell's.
 PROJECTION_MIN_PAIRS = 3
-#: harness/gates.py's HIGH_STOP_MIN_WITHOUT (pinned equal by a test): a high
-#: cell is stopped `ceiling-unconfirmed` at `max_runs_high_cell` pairs only
-#: with a without arm averaging at least this.
-HIGH_STOP_MIN_WITHOUT = 0.90
 #: `pairs_to_verdict`'s `blocked` when a crossed remove test still waits for
 #: a second CLI version (`min_cli_versions`): more pairs on today's version
 #: cannot decide it, so the projection is unknown, not zero.
@@ -2221,7 +2236,7 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
         rejected; harness/gates.py rule 6) is never decided by the remove
         test, crossed or not: its route is the `ceiling-unconfirmed` stop at
         `max_runs_high_cell` pairs, when the without arm averages at least
-        HIGH_STOP_MIN_WITHOUT and the no-harm test has rejected or can
+        the policy's `high_stop_min_without` and the no-harm test has rejected or can
         (mean D above -margin); otherwise only the cap, past which it is.
       * A crossed remove test on an open cell that is neither waits for a
         second CLI version (`min_cli_versions`), which no number of pairs
@@ -2232,9 +2247,9 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
         return None
     guidance = bool(cell.get("section"))
     policy = (ctx.get("guidance_policy") if guidance else None) or ctx.get("policy") or {}
-    margin = policy.get("objective_margin", 0.15)
-    benefit = policy.get("benefit_confidence") or DEFAULT_BENEFIT_CONFIDENCE
-    retire = policy.get("retire_confidence") or DEFAULT_RETIRE_CONFIDENCE
+    margin = policy_value(policy, "objective_margin", guidance)
+    benefit = policy_value(policy, "benefit_confidence", guidance)
+    retire = policy_value(policy, "retire_confidence", guidance)
     pooled = isinstance(cell.get("rest_guard"), dict)
     provisional = bool(cell.get("provisional_keep"))
     family = cell.get("keep_family") if isinstance(cell.get("keep_family"), int) \
@@ -2292,8 +2307,9 @@ def pairs_to_verdict(cell: dict, ctx: dict) -> dict | None:
     high = (_real(without) and without > 1 - margin) or cell.get("ceiling_at") is not None
     if high:
         stop = policy.get("max_runs_high_cell")
-        can_stop = isinstance(stop, int) and _real(without) \
-            and without >= HIGH_STOP_MIN_WITHOUT \
+        least = policy.get("high_stop_min_without")
+        can_stop = isinstance(stop, int) and _real(without) and _real(least) \
+            and without >= least \
             and (cell.get("noharm_at") is not None or mu > -margin)
         remove = max(0, stop - held) if can_stop else math.inf
     else:

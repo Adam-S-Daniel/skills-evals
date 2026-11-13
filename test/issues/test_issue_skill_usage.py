@@ -957,7 +957,7 @@ class CloudGuidanceTests(unittest.TestCase):
 
 
 class CloudUseTests(unittest.TestCase):
-    """`weight` adds cloud `skill-digest` uses; `counted_from` and `zero_use`
+    """`weight` adds cloud `skill-digest` uses; `counted_from` and `exposure`
     say whether a surface was counted back to the window's start."""
 
     # NOW is in W36; a 4-week window starts Monday 2026-08-10.
@@ -1015,33 +1015,21 @@ class CloudUseTests(unittest.TestCase):
         bad["sources"][0]["from"] = "yesterday"
         self.assertIsNone(skill_usage.counted_from(bad, skill_usage.SURFACE_LOCAL))
 
-    def test_zero_use_is_unknown_without_a_fresh_document(self):
-        self.assertIsNone(skill_usage.zero_use(None, "finding-unknowns", NOW))
-        stale = self.doc(generated="2026-08-01T00:00:00Z")
-        self.assertIsNone(skill_usage.zero_use(stale, "finding-unknowns", NOW))
-
     def busy(self, rows=(), local=300, cloud=300, **kw):
         """A document with `local` full local sessions and `cloud` cloud ones."""
         return self.doc([skill_usage.listing_row("2026-W36", "full", local),
                          skill_usage.listing_row("2026-W36", "full", cloud,
                                                  skill_usage.SURFACE_CLOUD), *rows], **kw)
 
-    def test_zero_use_true_when_exposed_enough_and_unused(self):
-        doc = self.busy([self.cloud_row(name="workflow-path-audit")])
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
-
-    def test_zero_use_is_unknown_with_too_few_sessions(self):
+    def test_exposure_sums_the_surfaces(self):
         doc = self.busy(local=100, cloud=399)
         self.assertEqual(skill_usage.exposure(doc, NOW), 499)
-        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW, min_sessions=499), True)
 
     def test_has_recorded_use_needs_no_exposure(self):
         """2026-11-13: False for a tracked skill with no use however few
         sessions; True for any use; None when unknown (never zero)."""
         none = self.busy(local=0, cloud=0)
         self.assertIs(skill_usage.has_recorded_use(none, "finding-unknowns", NOW), False)
-        self.assertIsNone(skill_usage.zero_use(none, "finding-unknowns", NOW))
         used = self.busy([self.cloud_row()], local=0, cloud=0)
         self.assertIs(skill_usage.has_recorded_use(used, "finding-unknowns", NOW), True)
         prefixed = self.busy([skill_usage.row("2026-W36", "skill",
@@ -1064,14 +1052,9 @@ class CloudUseTests(unittest.TestCase):
         self.assertIsNone(skill_usage.has_recorded_use(
             self.busy(), "some-private-skill", NOW))
 
-    def test_any_use_wins_whatever_the_exposure(self):
-        doc = self.busy([self.cloud_row()], local=0, cloud=0)
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
-
-    def test_zero_use_matches_a_prefixed_row_by_basename(self):
+    def test_weight_matches_a_prefixed_row_by_basename(self):
         doc = self.busy([skill_usage.row("2026-W36", "skill",
                                          "adam-coding-anywhere:finding-unknowns", 1, 1)])
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
         self.assertEqual(skill_usage.weight(doc, "adam:finding-unknowns", NOW), 1)
         self.assertEqual(skill_usage.weight(doc, "workflow-path-audit", NOW), 0)
 
@@ -1086,11 +1069,9 @@ class CloudUseTests(unittest.TestCase):
         self.assertEqual(skill_usage.skill_basename("a:b:c"), "c")
         self.assertEqual(skill_usage.skill_basename("plain"), "plain")
 
-    def test_zero_use_is_unknown_without_a_fresh_document(self):
-        self.assertIsNone(skill_usage.zero_use(None, "finding-unknowns", NOW))
+    def test_exposure_is_unknown_without_a_fresh_document(self):
         self.assertIsNone(skill_usage.exposure(None, NOW))
         stale = self.busy(generated="2026-08-01T00:00:00Z")
-        self.assertIsNone(skill_usage.zero_use(stale, "finding-unknowns", NOW))
         self.assertIsNone(skill_usage.exposure(stale, NOW))
 
     def test_truncated_and_unknown_listings_are_not_exposure(self):
@@ -1100,7 +1081,6 @@ class CloudUseTests(unittest.TestCase):
                         local=500, cloud=0)
         self.assertEqual(skill_usage.exposure_by_surface(doc, NOW),
                          {"local": 500, "cloud": 0})
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
 
     def test_guidance_check_rows_are_never_exposure(self):
         doc = self.busy([skill_usage.guidance_check_row("2026-W36", "match", 800)],
@@ -1138,22 +1118,14 @@ class CloudUseTests(unittest.TestCase):
     def test_a_pause_rests_on_the_surfaces_whose_exposure_is_known(self):
         doc = self.busy(recorded=False, local=600, cloud=0)
         self.assertEqual(skill_usage.exposure(doc, NOW), 600)
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), True)
         # Unknown cloud exposure adds nothing: local alone must reach the floor.
         short = self.busy(recorded=False, local=499, cloud=10 ** 6)
-        self.assertIsNone(skill_usage.zero_use(short, "finding-unknowns", NOW))
 
-    def test_a_cloud_use_stops_the_pause_even_with_unknown_cloud_exposure(self):
-        doc = self.busy([self.cloud_row()], recorded=False, local=600)
-        self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)
-
-    def test_an_untracked_skill_is_neither_zero_use_nor_known(self):
+    def test_a_document_with_no_list_tracks_nothing(self):
         doc = self.busy()
-        self.assertIsNone(skill_usage.zero_use(doc, "some-private-skill", NOW))
         # A document with no list cannot say which names it tracks.
         del doc["sources"][0]["skill_keys"]
         self.assertIsNone(skill_usage.tracked_skills(doc))
-        self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
 
     def test_census_current_wants_every_reached_source_within_a_day(self):
         doc = self.busy()

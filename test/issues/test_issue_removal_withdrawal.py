@@ -1832,7 +1832,7 @@ class RemovedMachineryTests(unittest.TestCase):
         cells = retire()["cells"] + [{"fixture": f, "model": "model-c", "class": "missing",
                                       "reason": "no run on this model"}
                                      for f in ("fx-a", "fx-b")]
-        entry = {"reason": "", "cells": cells, **gates_mod._verdict(cells, True)}
+        entry = {"reason": "", "cells": cells, **gates_mod._verdict(cells, True, gates_mod.load_gate_policy()["skills"])}
         self.assertEqual(entry["verdict"], "insufficient")
         self.assertEqual(rs.removal_support(doc(), entry)[0], "stale")
         self.assertEqual(rs.withdrawal_decision(pr(), doc({SKILL: entry}))["action"], "withdraw")

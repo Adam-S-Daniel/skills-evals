@@ -77,7 +77,10 @@ ACTIVITY_DAYS = 14
 FETCH_SKEW = timedelta(minutes=5)
 FETCH_MAX_LAG = timedelta(days=1)
 
-HOOK_POLICY_DEFAULTS = {"window_weeks": 8, "max_override_rate": 0.20, "min_private_repos": 3}
+#: evals/hook-policy.yml: every key is required (`load_hook_policy`).
+HOOK_POLICY_FILE = Path(__file__).resolve().parent.parent / "evals" / "hook-policy.yml"
+#: Each hook-policy key and the type its value must have.
+HOOK_POLICY_TYPES = {"window_weeks": int, "max_override_rate": float, "min_private_repos": int}
 VERDICTS = ("earning", "never-blocked", "never-ran", "overridden-often")
 
 
@@ -161,6 +164,21 @@ def load_policy(path: Path | None, defaults: dict) -> dict:
             raise ValueError(f"{path}: {key} must be a {want.__name__}")
         out[key] = value
     return out
+
+
+def load_hook_policy(path: Path | None = None) -> dict:
+    """evals/hook-policy.yml (or `path`), checked: exactly HOOK_POLICY_TYPES'
+    keys, each of its type, none negative. ValueError otherwise."""
+    path = Path(path) if path is not None else HOOK_POLICY_FILE
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(doc, dict) or set(doc) != set(HOOK_POLICY_TYPES):
+        raise ValueError(f"{path}: must have exactly the keys {sorted(HOOK_POLICY_TYPES)}")
+    for key, want in HOOK_POLICY_TYPES.items():
+        value = doc[key]
+        if isinstance(value, bool) or not isinstance(
+                value, (int, float) if want is float else want) or value < 0:
+            raise ValueError(f"{path}: {key} must be a non-negative {want.__name__}")
+    return dict(doc)
 
 
 def include_spend(path: Path | None) -> bool:

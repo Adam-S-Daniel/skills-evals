@@ -40,7 +40,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "explorer-data.yml"
 NOW = datetime(2026, 10, 31, 21, 0, tzinfo=timezone.utc)
 PUBLIC = frozenset({"Adam-S-Daniel/open-one", "Adam-S-Daniel/open-two", "jodidaniel/open-three",
                     "Adam-S-Daniel/skills-evals"})
-POLICY = dict(pub.HOOK_POLICY_DEFAULTS)
+POLICY = pub.load_hook_policy()
 
 _spec = importlib.util.spec_from_file_location("dashboard_build_contract", ROOT / "dashboard" / "build.py")
 dashboard_build = importlib.util.module_from_spec(_spec)
@@ -370,13 +370,18 @@ class HookUseTests(unittest.TestCase):
         self.assertIsNone(pub.build_hooks(self.t.tree / "none", NOW, None, {}, PUBLIC, POLICY))
 
     def test_the_policy_file_is_held_to_its_keys_and_types(self):
-        committed = pub.load_policy(ROOT / "evals" / "hook-policy.yml", pub.HOOK_POLICY_DEFAULTS)
+        committed = pub.load_hook_policy(ROOT / "evals" / "hook-policy.yml")
         self.assertEqual(committed, {"window_weeks": 8, "max_override_rate": 0.2,
                                      "min_private_repos": 3})
-        for text in ("surprise: 1\n", "window_weeks: eight\n", "max_override_rate: true\n"):
+        good = "window_weeks: 8\nmax_override_rate: 0.2\nmin_private_repos: 3\n"
+        for text in (good + "surprise: 1\n", good.replace("window_weeks: 8", "window_weeks: eight"),
+                     good.replace("max_override_rate: 0.2", "max_override_rate: true"),
+                     good.replace("min_private_repos: 3\n", ""),
+                     good.replace("window_weeks: 8", "window_weeks: -1")):
             path = write(self.t.root / "p.yml", text)
             with self.subTest(text=text), self.assertRaises(ValueError):
-                pub.load_policy(path, pub.HOOK_POLICY_DEFAULTS)
+                pub.load_hook_policy(path)
+        self.assertEqual(pub.load_hook_policy(write(self.t.root / "p.yml", good)), committed)
 
 
 class LessonFunnelTests(unittest.TestCase):
