@@ -10,6 +10,7 @@
                    [--fire-runs FILE] [--fixture-queue FILE]
                    [--lessons DIR] [--lesson-records DIR] [--draft-prs FILE]
                    [--lesson-issues FILE] [--public-repos FILE] [--activity FILE]
+                   [--removal-state FILE]
                    [--agent-checks DIR] [--hook-policy FILE] [--export-policy FILE]
                    [--lesson-funnel FILE] [--source-repository OWNER/REPO]
   explorer_data.py --subjects private --registry PRIVATE_NAME=PATH
@@ -58,7 +59,10 @@ Each skill and section also carries `confidence` (the levels its gate
 bounds reach, and per cell the gain measured so far and the range it likely
 falls in, `subject_confidence`; a cell's `task` is its fixture name, which
 for a listed subject is a public registry's fixture under evals/) and `next_test` (its place in the
-planner's eval queue or its next re-check, `test_queue`) and `stakes`
+planner's eval queue or its next re-check, `test_queue`; none (no place, no due) for a subject
+whose verdict is retire or retire-pending, which is removed instead) and `removal` (only for a
+subject being removed or with a removal pull request or issue: `state`, `url`, `since`, from
+`--removal-state`, `removal_of`; `unknown` without that file) and `stakes`
 (its evals/stakes.yml level, `normal` with no row; scripts/stakes.py); each
 skill carries
 `usage`, its invocations in `usage/weekly-local.json`, whose window is the
@@ -211,7 +215,8 @@ private mode:
     `plan_week.private_skills` is not subtracted, so `evals` covers them.
   * The public-only inputs (`--context-repo`, `--fire-runs`, `--fixture-queue`,
     `--lessons`, `--lesson-records`, `--lesson-issues`, `--draft-prs`,
-    `--public-repos`, `--activity`, `--agent-checks`, `--lesson-funnel`) are
+    `--public-repos`, `--activity`, `--agent-checks`, `--lesson-funnel`,
+    `--removal-state`) are
     refused, and `hooks`, `activity`, `lessons`, `lesson_funnel`,
     `fixture_queue`, `fires_without_results` and `spend` are null.
   * `source.repository` comes from `--source-repository` (the default,
@@ -263,6 +268,7 @@ import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
 import regression  # noqa: E402  (harness/, via compute_gates)
+import retire_skill  # noqa: E402
 import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
@@ -275,7 +281,7 @@ DEFAULT_SOURCE_REPOSITORY = "Adam-S-Daniel/skills-evals"
 #: Inputs only the public document reads; private mode refuses each.
 PUBLIC_ONLY_FLAGS = ("context_repo", "fire_runs", "fixture_queue", "lessons", "lesson_records",
                      "lesson_issues", "draft_prs", "public_repos", "activity", "agent_checks",
-                     "lesson_funnel")
+                     "lesson_funnel", "removal_state")
 SCHEMA_PATH = REPO_ROOT / "explorer" / "schema.json"
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: A guidance pair's role in the gate -> the mode the page names it by.
@@ -1565,6 +1571,169 @@ def confidence_cell(cell: dict) -> dict | None:
             "status": CELL_STATUS.get(cell.get("class"), "open")}
 
 
+#: A subject with one of these verdicts is being removed, so it gets no
+#: re-check and its page says where the removal stands.
+RETIRING = ("retire", "retire-pending")
+#: The repositories a removal pull request comes from, by subject kind.
+REMOVAL_REPOS = {"skill": ("Adam-S-Daniel/adam-agentskills", "Adam-S-Daniel/cms-platform",
+                           "Adam-S-Daniel/adamdaniel.ai"),
+                 "guidance": ("Adam-S-Daniel/_agent-guidance",)}
+_REMOVAL_HEAD_RE = re.compile(r"retire-(?P<kind>skill|guidance)/(?P<subject>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})")
+_ISO_RE = re.compile(r"\d{4}-\d{2}-\d{2}T[0-9:.]+Z")
+REMOVAL_PR_URL = "https://github.com/{repo}/pull/{number}"
+
+
+def _removal_when(row: dict, *keys) -> str | None:
+    for key in keys:
+        value = row.get(key)
+        if isinstance(value, str) and _ISO_RE.fullmatch(value):
+            return value
+    return None
+
+
+def load_removal_state(path: Path | None, repository: str = DEFAULT_SOURCE_REPOSITORY) -> dict | None:
+    """`--removal-state`: {"prs": [...], "issues": [...]}, or None when the file
+    is absent or unreadable (every removal is then "unknown", never guessed).
+
+    A pull request row is {repo, number, head, state: open|closed, merged:
+    bool, auto_merge: bool, created_at?, merged_at?, closed_at?, author?,
+    labels?, closed_by?} (the last three decide whether the loop itself
+    withdrew a closed one, as `retire_skill.loop_withdrawn` reads it) for a head
+    `retire-skill/<skill>` (repo adam-agentskills, cms-platform or
+    adamdaniel.ai) or `retire-guidance/<section>` (repo _agent-guidance).
+    An issue row is {number, state: open|closed, labels: [names],
+    body_markers: {target: skill|guidance, subject, kind: proposal|agent|
+    withdrawal|legacy|null}, created_at?, closed_at?} for a skills-evals issue the
+    bot opened with a `skills-evals:retire-skill:` or `retire-guidance:`
+    marker. The result's rows are validated and keyed {(kind, subject):
+    [row]}, and every URL is built here from the repo and number, never
+    copied; a row off the shape is ignored."""
+    if path is None:
+        return None
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if not isinstance(doc, dict) or not isinstance(doc.get("prs"), list) \
+            or not isinstance(doc.get("issues"), list):
+        return None
+    prs: dict = {}
+    for row in doc["prs"]:
+        if not isinstance(row, dict) or not isinstance(row.get("head"), str):
+            continue
+        match = _REMOVAL_HEAD_RE.fullmatch(row["head"])
+        number, state, merged = row.get("number"), row.get("state"), row.get("merged")
+        if (match is None or row.get("repo") not in REMOVAL_REPOS[match["kind"]]
+                or type(number) is not int or not 0 < number < 10 ** 9
+                or state not in ("open", "closed") or type(merged) is not bool
+                or (merged and state == "open")):
+            continue
+        prs.setdefault((match["kind"], match["subject"]), []).append({
+            "number": number, "state": state, "merged": merged,
+            "url": REMOVAL_PR_URL.format(repo=row["repo"], number=number),
+            # A pull request the loop withdrew is a pause, not a decline
+            # (retire_skill.deciding); its rule is that function's.
+            "withdrawn": retire_skill.loop_withdrawn(
+                {"merged": merged, "author": row.get("author"),
+                 "labels": row.get("labels"), "closed_by": row.get("closed_by")}),
+            "since": _removal_when(row, "merged_at", "closed_at", "created_at")
+            if state == "closed" else _removal_when(row, "created_at")})
+    issues: dict = {}
+    for row in doc["issues"]:
+        if not isinstance(row, dict):
+            continue
+        markers, number, state = row.get("body_markers"), row.get("number"), row.get("state")
+        labels = row.get("labels")
+        if (not isinstance(markers, dict) or markers.get("target") not in ("skill", "guidance")
+                or not isinstance(markers.get("subject"), str)
+                or not _REMOVAL_HEAD_RE.fullmatch(f"retire-{markers['target']}/{markers['subject']}")
+                or type(number) is not int or not 0 < number < 10 ** 9
+                or state not in ("open", "closed") or not isinstance(labels, list)):
+            continue
+        kind = markers.get("kind")
+        if kind == "withdrawal":
+            continue  # the pause cap's notice, not a removal in flight
+        issues.setdefault((markers["target"], markers["subject"]), []).append({
+            "number": number, "state": state,
+            # No stamp ("legacy") reads as a proposal, as retire_skill.issue_origin does.
+            "proposal": kind in ("proposal", "legacy"),
+            "labels": {x for x in labels if isinstance(x, str)},
+            "url": ISSUE_URL.format(repo=repository, number=number),
+            "since": _removal_when(row, "closed_at" if state == "closed" else "created_at",
+                                   "created_at")})
+    return {"prs": prs, "issues": issues}
+
+
+def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None:
+    """Where a subject's removal stands: {"state", "url"?, "since"?}, or None
+    for a subject that is not being removed. `state` is `load_removal_state`'s
+    result (None: unknown). First match: a merged removal pull request
+    (removed), an open one (pr-open), an open proposal issue the worker has
+    not taken (owner: it waits on the owner), one labeled agent-blocked
+    (blocked), one labeled agent-ready or agent-working (worker), then the
+    verdict alone: retire-pending (waiting-turn), a closed issue or
+    closed-unmerged pull request (declined), else queued for the bot's next
+    daily run. A closed pull request the loop withdrew is a pause, so it
+    reads queued, not declined. An open issue labeled `on-hold` is the
+    owner's (`reason: on-hold`). A merged or closed removal only counts while the verdict is
+    still a retire one, so a skill that came back is not shown as removed."""
+    retiring = verdict in RETIRING
+    if state is None:
+        return {"state": "unknown"} if retiring else None
+    prs = sorted(state["prs"].get((kind, name), []), key=lambda r: -r["number"])
+    issues = sorted(state["issues"].get((kind, name), []), key=lambda r: -r["number"])
+    opened = [i for i in issues if i["state"] == "open"]
+
+    def found(label, row, reason=None):
+        out = {"state": label, "url": row["url"]}
+        if reason:
+            out["reason"] = reason
+        if row["since"]:
+            out["since"] = row["since"]
+        return out
+
+    for row in prs:
+        if row["merged"] and retiring:
+            return found("removed", row)
+    for row in prs:
+        if row["state"] == "open":
+            return found("pr-open", row)
+    working = ("agent-ready", "agent-working")
+    for row in opened:
+        if "on-hold" in row["labels"]:
+            return found("owner", row, "on-hold")
+    for row in opened:
+        if row["proposal"] and not row["labels"] & set(working):
+            return found("owner", row, "proposal")
+    for row in opened:
+        if "agent-blocked" in row["labels"]:
+            return found("blocked", row)
+    for row in opened:
+        if row["labels"] & set(working) or not row["proposal"]:
+            return found("worker", row)
+    if not retiring:
+        return None
+    if verdict == "retire-pending":
+        return {"state": "waiting-turn"}
+    declined = [r for r in prs if r["state"] == "closed" and not r["merged"]
+                and not r["withdrawn"]] \
+        + [r for r in issues if r["state"] == "closed"]
+    if declined:
+        return found("declined", max(declined, key=lambda r: (r["since"] or "", r["number"])))
+    return {"state": "queued"}
+
+
+def without_test(subjects: list) -> None:
+    """A subject being removed (verdict retire or retire-pending) whose
+    removal is in motion, done or unknown is not tested again, so it has no
+    place in line and no re-check due (in place); the planner's rule
+    (`plan_week.removal_frozen`) over the subject's `removal`, so a declined
+    or owner-held removal keeps the next test the planner would plan."""
+    for subject in subjects:
+        if plan_week.removal_frozen(subject["verdict"], (subject.get("removal") or {}).get("state")):
+            subject["next_test"] = {**subject["next_test"], "position": None, "due": None}
+
+
 #: The eval bands the page lists as the test queue, in the planner's order
 #: (plan_week.BANDS without its improve and bare bands).
 QUEUE_BANDS = ("safety", "missing", "near", "focus", "recheck", "guidance-rest")
@@ -1849,7 +2018,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
           hook_policy: dict | None = None, spend: bool = False,
           lesson_funnel: Path | None = None, lesson_issues_path: Path | None = None,
           private_subjects: tuple | None = None,
-          source_repository: str = DEFAULT_SOURCE_REPOSITORY) -> dict:
+          source_repository: str = DEFAULT_SOURCE_REPOSITORY,
+          removal_state: dict | None = None) -> dict:
     """The public document. `fire_runs` is `load_fire_runs`' result (None:
     `fires_without_results` is unknown) and `wall_clock` the build's clock,
     used only to bound the fire file's `fetched_at` (#555). `fixture_queue`
@@ -1870,7 +2040,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     `private_subjects` is `private_census`' result, for PRIVATE MODE: the
     subjects come from it instead of the results tree's census, no private
     skill is subtracted, and the public-only sections are None.
-    `source_repository` is `source.repository`."""
+    `source_repository` is `source.repository`. `removal_state` is
+    `load_removal_state`'s result (None: each removal reads "unknown")."""
     private = private_subjects is not None
     compact = compute_gates.parse_as_of(as_of)
     gates_doc = compute_gates.compute(tree, roster_path, policy_path, evals_dir, compact,
@@ -1932,6 +2103,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "decisions": decisions(verdict),
                        "runs": by_skill.get(name, [])})
 
+    for subject in skills:
+        removal = removal_of("skill", subject["name"], subject["verdict"], removal_state)
+        if removal:
+            subject["removal"] = removal
+    without_test(skills)
     renumber(skills)
 
     guidance_verdicts = gates_doc.get("guidance") or {}
@@ -1957,6 +2133,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "decisions": decisions(verdict),
             "runs": runs if alone else without_alone(runs)})
 
+    for subject in sections:
+        removal = removal_of("guidance", subject["id"], subject["verdict"], removal_state)
+        if removal:
+            subject["removal"] = removal
+    without_test(sections)
     renumber(sections)
 
     try:
@@ -2279,6 +2460,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lesson-funnel", type=Path, metavar="FILE",
                         help="{hook_proposals: [issue rows], lesson_check_prs: [{head, number, "
                              "state, merged}]}; absent is unknown")
+    parser.add_argument("--removal-state", type=Path, metavar="FILE",
+                        help="{prs: [...], issues: [...]}: removal pull requests and issues "
+                             "(load_removal_state); absent is unknown")
     parser.add_argument("--subjects", choices=("public", "private"), default="public",
                         help="private: PRIVATE MODE, the --registry private registries' skills "
                              "(never published)")
@@ -2323,7 +2507,8 @@ def main(argv: list[str] | None = None) -> int:
                                                 explorer_public.HOOK_POLICY_DEFAULTS),
                     explorer_public.include_spend(args.export_policy),
                     args.lesson_funnel, args.lesson_issues, private_subjects,
-                    args.source_repository)
+                    args.source_repository,
+                    load_removal_state(args.removal_state, args.source_repository))
         # The agent-made checks, skills and sections (_agent-guidance#451);
         # public mode only, since it dates subjects from public history.
         doc["agent_made"] = (

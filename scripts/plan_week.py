@@ -1841,6 +1841,13 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     model (`model_costs`) is still open (`cheaper_first`). A keep there keeps
     the subject, and a removal needs both cells, so only the cost changes.
 
+    RETIRING SUBJECTS ARE NOT RE-CHECKED (2026-11-13): a cell bound for the
+    recheck band whose subject's verdict is `retire` or `retire-pending`
+    (ctx["gate_verdicts"], a section's ctx["guidance"] entry) plans no fire,
+    since the removal bot is acting on it and the run would be wasted. A
+    removal that is declined, or waits on the owner, is not in motion, so
+    that subject is re-checked (`removal_frozen`, ctx["removal_states"]).
+
     A cell bound for the missing, near, recheck, focus or guidance-rest
     band with at least BROKEN_AFTER_FIRES `empty_fires` is a
     `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
@@ -1948,6 +1955,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
+        if band == "recheck" and _retiring(ctx, subject):
+            continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
                 and not provisional:
             # THE BATCH: measured once its subject joins one. A provisional
@@ -2660,6 +2669,52 @@ def hook_candidate(text: str) -> bool:
             total += 1
             under += level is not None
     return bool(total) and under / total >= HOOK_RULE_SHARE
+
+
+#: The removal states (explorer_data.removal_of) in which a removal is in
+#: motion or done: its subject is not re-checked. A declined or owner-held
+#: removal is not in motion, so a retire verdict may still change by a
+#: re-check (and gates pick one `retire` at a time, so a frozen one would
+#: block every retire-pending behind it).
+RECHECK_FROZEN_STATES = ("pr-open", "worker", "waiting-turn", "queued", "removed")
+
+
+def removal_frozen(verdict, state) -> bool:
+    """True when a subject with this gate verdict and removal state (None or
+    "unknown": not known) gets no re-check: it is being removed and the
+    removal is in motion or done, or its state is not known."""
+    if verdict not in ("retire", "retire-pending"):
+        return False
+    return state is None or state == "unknown" or state in RECHECK_FROZEN_STATES
+
+
+def removal_states(tree: Path) -> dict | None:
+    """{(kind, name): removal state} from the results tree's
+    explorer/latest.json (`removal` of each skill and guidance section), or
+    None when it is missing or unreadable (every state is then unknown)."""
+    try:
+        doc = json.loads((tree / "explorer" / "latest.json").read_text(encoding="utf-8"))
+        out = {}
+        for row in doc["skills"]:
+            out[("skill", row["name"])] = (row.get("removal") or {}).get("state")
+        for row in doc["guidance"]["sections"]:
+            out[("guidance", row["id"])] = (row.get("removal") or {}).get("state")
+        return out
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def _retiring(ctx: dict, subject: tuple) -> bool:
+    """True when the subject's own verdict is `retire` or `retire-pending`
+    and its removal is in motion, done or unknown (`removal_frozen`): its
+    cells get no re-check. ctx["removal_states"] (`removal_states`) is
+    {(kind, name): state}; without it every state is unknown."""
+    kind, name = subject
+    if kind == "guidance":
+        verdict = ((ctx.get("guidance") or {}).get(name) or {}).get("verdict")
+    else:
+        verdict = (ctx.get("gate_verdicts") or {}).get(name)
+    return removal_frozen(verdict, (ctx.get("removal_states") or {}).get(subject))
 
 
 def gate_verdicts(gates_doc: dict) -> dict:
@@ -4230,6 +4285,7 @@ def gather(args, now: datetime) -> dict:
             "roster_models": list(gates_doc["roster_models"]),
             "removal_prs": removal,
             "gate_verdicts": gate_verdicts(gates_doc),
+            "removal_states": removal_states(args.results_tree),
             # The guidance focus's inputs (`guidance_focus`): its decision
             # levels, a separate top-level key of the verdict document, and
             # the sections whose removal pull request is open.

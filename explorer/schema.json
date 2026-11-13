@@ -2508,6 +2508,41 @@
    ],
    "additionalProperties": false
   },
+  "removal": {
+   "type": "object",
+   "properties": {
+    "state": {
+     "enum": [
+      "removed",
+      "pr-open",
+      "owner",
+      "blocked",
+      "worker",
+      "waiting-turn",
+      "queued",
+      "declined",
+      "unknown"
+     ]
+    },
+    "url": {
+     "type": "string",
+     "pattern": "^https://github\\.com/"
+    },
+    "since": {
+     "type": "string"
+    },
+    "reason": {
+     "enum": [
+      "proposal",
+      "on-hold"
+     ]
+    }
+   },
+   "required": [
+    "state"
+   ],
+   "additionalProperties": false
+  },
   "next_test": {
    "type": "object",
    "properties": {
@@ -2682,6 +2717,9 @@
     "next_test": {
      "$ref": "#/$defs/next_test"
     },
+    "removal": {
+     "$ref": "#/$defs/removal"
+    },
     "stakes": {
      "$ref": "#/$defs/stakes"
     },
@@ -2813,6 +2851,9 @@
     },
     "next_test": {
      "$ref": "#/$defs/next_test"
+    },
+    "removal": {
+     "$ref": "#/$defs/removal"
     },
     "stakes": {
      "$ref": "#/$defs/stakes"
