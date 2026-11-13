@@ -12,8 +12,11 @@ name: Arm queued guidance improvements in the merge window
 # * The bounds are read from a sparse checkout of _agent-guidance's default
 #   branch by scripts/guidance_merge_window.py, which treats an unreadable or
 #   malformed file as closed and arms nothing. The two cron entries below are
-#   a schedule constant: they sit inside the shipped window (a test pins
-#   that), and the second is a retry for a first run GitHub skipped or delayed.
+#   a schedule constant: cron is UTC and the window is US Eastern, so both
+#   sit in 17:00 to 17:30 UTC, inside the window with the 30-minute arming
+#   margin left (guidance_merge_window.ARM_MARGIN) in winter (EST, 17:00 to
+#   19:00 UTC) and in summer (EDT, 16:00 to 18:00 UTC); a test pins that.
+#   The second is a retry for a first run GitHub skipped or delayed.
 #   A run outside the window is harmless, it arms nothing.
 # * Backstop (skills-evals#915): GitHub skips crons, and a skipped Monday
 #   would leave queued pull requests waiting a week. So the workflow also
@@ -38,7 +41,7 @@ name: Arm queued guidance improvements in the merge window
 on:
   schedule:
     - cron: "7 17 * * 1"
-    - cron: "7 18 * * 1"
+    - cron: "27 17 * * 1"
   workflow_run:
     workflows: [Ingest routine eval results]
     types: [completed]

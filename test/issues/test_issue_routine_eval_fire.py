@@ -429,7 +429,7 @@ class WorkflowShapeTests(unittest.TestCase):
         # (Recommended)") reads _agent-guidance's default branch, checked
         # out before this step, credentials not kept.
         [ag] = [i for i, s in enumerate(self.steps) if (s.get("with") or {}).get("repository")
-                == "Adam-S-Daniel/_agent-guidance"]
+                == "Adam-S-Daniel/_agent-guidance" and s["with"].get("path") == "_agent-guidance"]
         self.assertLess(ag, snap)
         self.assertTrue(self.steps[ag]["uses"].startswith("actions/checkout@"))
         self.assertEqual(self.steps[ag]["with"], {
@@ -460,8 +460,9 @@ class WorkflowShapeTests(unittest.TestCase):
                     if str(s.get("uses", "")).startswith("actions/checkout@")]
         # The default branch, persistent/eval-results for the allowance
         # guard (#68), the private repository's results for it too (#81),
-        # _agent-guidance for scaffold mode and the lessons for draft mode.
-        self.assertEqual(len(checkout), 5)
+        # _agent-guidance for scaffold mode, the lessons for draft mode, and
+        # _agent-guidance's window file for the eval pause (ADR 0017).
+        self.assertEqual(len(checkout), 6)
         for step in checkout:
             self.assertIs(step["with"]["persist-credentials"], False)
 

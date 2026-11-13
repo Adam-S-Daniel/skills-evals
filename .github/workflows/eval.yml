@@ -450,6 +450,11 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
+      # The _agent-guidance commit the pause was judged on. Every eval leg
+      # checks out exactly this commit, so a leg that starts after the
+      # window opens (legs queue behind the roster jobs and max-parallel)
+      # still reads the guidance as it was before any merge in the window.
+      guidance_sha: ${{ steps.plan.outputs.guidance_sha }}
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@v7.0.1
@@ -462,12 +467,39 @@ jobs:
           python-version: "3.12"
       - name: Install planning dependency
         run: pip install pyyaml==6.0.3
+      # The eval pause (Adam, 2026-11-13; ADR 0017's addendum): inside
+      # _agent-guidance's weekly guidance merge window the plan is empty
+      # (count 0), so no leg runs. Bounds read from its default branch
+      # (public; no credentials); an unreadable window fails the plan.
+      - name: Check out the guidance window (_agent-guidance)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: guidance-window
+          sparse-checkout: scripts/base-md-merge-window.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
       # Also refuses in-place fixtures and lists them, with the reason, in
       # the step summary (skills-evals#587).
       - name: Plan reviewed fixtures
         id: plan
         working-directory: skills-evals
-        run: python3 scripts/plan_scheduled_evals.py
+        run: |
+          set -euo pipefail
+          rc=0
+          sha="$(git -C "$GITHUB_WORKSPACE/guidance-window" rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::the _agent-guidance commit could not be read"; exit 1; }
+          echo "guidance_sha=$sha" >> "$GITHUB_OUTPUT"
+          python3 scripts/guidance_merge_window.py eval-pause --tree "$GITHUB_WORKSPACE/guidance-window" || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "::notice::the eval pause (weekly guidance merge window): nothing is run"
+            printf 'matrix={"include":[]}\ncount=0\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
+          python3 scripts/plan_scheduled_evals.py
 
   roster:
     runs-on: ubuntu-latest
@@ -1585,6 +1617,10 @@ jobs:
         with:
           repository: Adam-S-Daniel/_agent-guidance
           path: _agent-guidance
+          # The commit the plan judged the eval pause on (plan job output),
+          # never a later main: a leg starting inside the weekly guidance
+          # merge window must not read half-merged guidance (ADR 0017).
+          ref: ${{ needs.plan.outputs.guidance_sha }}
           # Full history: the context resolver reads pinned revisions and
           # walks this repo's origin/main ancestry.
           fetch-depth: 0

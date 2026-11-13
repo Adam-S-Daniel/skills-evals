@@ -761,7 +761,23 @@ jobs:
         if: steps.private-results.outputs.exists == 'true'
         run: python3 scripts/overlay_private_results.py --private private-eval-results --tree eval-results-branch
 
-      # Every mode, before the fire: refused (exit 1, numbers-only log) when
+      # The eval pause (Adam, 2026-11-13; ADR 0017's addendum): no fire, in
+      # any mode, starts inside _agent-guidance's weekly guidance merge window,
+      # so no run reads guidance that is half merged. The bounds come from a
+      # sparse checkout of its default branch (public; no credentials), read
+      # by scripts/guidance_merge_window.py eval-pause, never copied here.
+      # A fire refused for the pause ends cancelled, as a guard refusal does;
+      # an unreadable window fails this run (closed, and visible).
+      - name: Check out the guidance window (_agent-guidance)
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: guidance-window
+          sparse-checkout: scripts/base-md-merge-window.yml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # Every mode, before the fire (after the eval pause, first in this step): refused (exit 1, numbers-only log) when
       # this run's reservation (an improve or guidance-improve run's own,
       # larger charge) would
       # take the last seven days past the weekly cap, or when the spend
@@ -777,6 +793,15 @@ jobs:
         run: |
           set -euo pipefail
           rc=0
+          python3 scripts/guidance_merge_window.py eval-pause --tree guidance-window || rc=$?
+          if [ "$rc" -eq 3 ]; then
+            echo "refused=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::the eval pause (weekly guidance merge window) refused this fire; ending the run cancelled"
+            exit 0
+          fi
+          if [ "$rc" -ne 0 ]; then
+            exit "$rc"
+          fi
           python3 scripts/allowance_guard.py check --results-tree eval-results-branch --mode "$MODE" || rc=$?
           if [ "$rc" -eq 3 ]; then
             echo "refused=true" >> "$GITHUB_OUTPUT"

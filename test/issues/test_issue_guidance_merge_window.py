@@ -10,7 +10,8 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from unittest import mock
 
@@ -23,16 +24,20 @@ sys.path.insert(0, str(REPO_ROOT / "harness"))
 
 import guidance_improve_gate as gate  # noqa: E402
 import guidance_merge_window as gmw  # noqa: E402
+import plan_week  # noqa: E402
 import retire_skill as rs  # noqa: E402
 from ingest_routine_results import Rejected  # noqa: E402
 
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "guidance-merge-window.yml"
-# The bounds _agent-guidance ships (ADR 0039): Monday 17:00 to 19:00 UTC.
-BOUNDS = "weekday: 1\nstart: \"17:00\"\nend: \"19:00\"\n"
-OPEN = datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)       # a Monday
+# The bounds _agent-guidance ships (ADR 0039, 2026-11-13 addendum): Monday
+# noon to 2 PM US Eastern. 2026-11-09 is a Monday in EST (UTC-5).
+BOUNDS = "timezone: America/New_York\nweekday: 1\nstart: \"12:00\"\nend: \"14:00\"\n"
+OPEN = datetime(2026, 11, 9, 17, 0, tzinfo=timezone.utc)       # a Monday, noon EST
 LAST = datetime(2026, 11, 9, 18, 59, 59, tzinfo=timezone.utc)
 CLOSED = datetime(2026, 11, 9, 19, 0, tzinfo=timezone.utc)
 TUESDAY = datetime(2026, 11, 10, 17, 30, tzinfo=timezone.utc)
+#: A Monday in EST and one in EDT (UTC midnight): a UTC cron must sit inside both.
+MONDAYS = (datetime(2026, 11, 9, tzinfo=timezone.utc), datetime(2026, 6, 15, tzinfo=timezone.utc))
 
 
 def tree_with(bounds: str | None, test: unittest.TestCase) -> Path:
@@ -47,16 +52,24 @@ def tree_with(bounds: str | None, test: unittest.TestCase) -> Path:
 
 class ParseTests(unittest.TestCase):
     def test_the_shipped_shape_parses(self):
-        self.assertEqual(gmw.parse_window(BOUNDS), {"weekday": 1, "start": "17:00", "end": "19:00"})
+        self.assertEqual(gmw.parse_window(BOUNDS),
+                         {"timezone": ZoneInfo("America/New_York"), "weekday": 1,
+                          "start": "12:00", "end": "14:00"})
 
     def test_anything_else_is_refused(self):
-        for text in ("", "- a\n", "weekday: 1\nstart: '17:00'\n",
-                     BOUNDS + "tz: UTC\n", "weekday: 0\nstart: '17:00'\nend: '19:00'\n",
-                     "weekday: 8\nstart: '17:00'\nend: '19:00'\n",
-                     "weekday: true\nstart: '17:00'\nend: '19:00'\n",
-                     "weekday: 1\nstart: 17:00\nend: '19:00'\n",
-                     "weekday: 1\nstart: '19:00'\nend: '17:00'\n",
-                     "weekday: 1\nstart: '17:00'\nend: '24:00'\n", "weekday: [1\n"):
+        z = "timezone: UTC\n"
+        for text in ("", "- a\n", z + "weekday: 1\nstart: '17:00'\n",
+                     "weekday: 1\nstart: '17:00'\nend: '19:00'\n",
+                     BOUNDS + "tz: UTC\n",
+                     "timezone: Eastern\nweekday: 1\nstart: '17:00'\nend: '19:00'\n",
+                     "timezone: ../../etc/passwd\nweekday: 1\nstart: '17:00'\nend: '19:00'\n",
+                     "timezone: 5\nweekday: 1\nstart: '17:00'\nend: '19:00'\n",
+                     z + "weekday: 0\nstart: '17:00'\nend: '19:00'\n",
+                     z + "weekday: 8\nstart: '17:00'\nend: '19:00'\n",
+                     z + "weekday: true\nstart: '17:00'\nend: '19:00'\n",
+                     z + "weekday: 1\nstart: 17:00\nend: '19:00'\n",
+                     z + "weekday: 1\nstart: '19:00'\nend: '17:00'\n",
+                     z + "weekday: 1\nstart: '17:00'\nend: '24:00'\n", "weekday: [1\n"):
             with self.subTest(text=text), self.assertRaises(gmw.WindowError):
                 gmw.parse_window(text)
 
@@ -72,7 +85,6 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(gmw.in_window(TUESDAY, self.W))
 
     def test_a_non_utc_instant_is_converted(self):
-        from datetime import timedelta
         plus2 = timezone(timedelta(hours=2))
         self.assertTrue(gmw.in_window(datetime(2026, 11, 9, 19, 30, tzinfo=plus2), self.W))
         self.assertFalse(gmw.in_window(datetime(2026, 11, 9, 17, 30, tzinfo=plus2), self.W))
@@ -84,6 +96,26 @@ class WindowTests(unittest.TestCase):
     def test_next_start(self):
         self.assertEqual(gmw.next_start(OPEN, self.W), datetime(2026, 11, 16, 17, 0, tzinfo=timezone.utc))
         self.assertEqual(gmw.next_start(OPEN.replace(hour=9), self.W), OPEN)
+
+    def test_daylight_saving_time_moves_the_utc_instants(self):
+        # 2026-06-15 is a Monday in EDT (UTC-4): noon ET is 16:00 UTC.
+        summer = datetime(2026, 6, 15, 16, 0, tzinfo=timezone.utc)
+        self.assertFalse(gmw.in_window(summer - timedelta(seconds=1), self.W))
+        self.assertTrue(gmw.in_window(summer, self.W))
+        self.assertTrue(gmw.in_window(summer.replace(hour=17, minute=59), self.W))
+        self.assertFalse(gmw.in_window(summer.replace(hour=18), self.W))
+        self.assertEqual(gmw.window_end(summer, self.W), summer.replace(hour=18))
+        self.assertEqual(gmw.window_end(OPEN, self.W), OPEN.replace(hour=19))
+        # Across the clock changes (2026-11-01 back, 2027-03-14 forward).
+        self.assertEqual(gmw.next_start(datetime(2026, 10, 27, tzinfo=timezone.utc), self.W),
+                         datetime(2026, 11, 2, 17, 0, tzinfo=timezone.utc))
+        self.assertEqual(gmw.next_start(datetime(2027, 3, 9, tzinfo=timezone.utc), self.W),
+                         datetime(2027, 3, 15, 16, 0, tzinfo=timezone.utc))
+
+    def test_the_weekday_is_the_zones_not_utcs(self):
+        late = gmw.parse_window("timezone: America/New_York\nweekday: 1\nstart: '18:00'\nend: '21:00'\n")
+        self.assertTrue(gmw.in_window(datetime(2026, 11, 10, 1, 0, tzinfo=timezone.utc), late))
+        self.assertFalse(gmw.in_window(datetime(2026, 11, 10, 2, 0, tzinfo=timezone.utc), late))
 
     def test_window_open_fails_closed(self):
         self.assertTrue(gmw.window_open(tree_with(BOUNDS, self), OPEN))
@@ -138,8 +170,17 @@ class ArmQueuedTests(unittest.TestCase):
                                  "--merge", "--match-head-commit", "a" * 40])
         self.assertFalse(any("--squash" in c or "--admin" in c for c in gh.calls))
 
-    def test_the_last_second_of_the_window_still_arms(self):
-        self.assertEqual(self.arm(FakeGh([queued(5)]), LAST), ["#5: armed"])
+    def test_the_arming_margin(self):
+        # Arming stops ARM_MARGIN before the end, so the merge lands while
+        # the eval pause still holds.
+        margin_start = CLOSED - gmw.ARM_MARGIN
+        self.assertEqual(self.arm(FakeGh([queued(5)]), margin_start), ["#5: armed"])
+        gh = FakeGh([queued(5)])
+        self.assertIn("nothing armed", self.arm(gh, margin_start + timedelta(seconds=1))[0])
+        self.assertEqual(gh.calls, [])
+        self.assertIn("nothing armed", self.arm(FakeGh([queued(5)]), LAST)[0])
+        self.assertFalse(gmw.window_open(tree_with(BOUNDS, self), LAST))
+        self.assertTrue(gmw.window_open(tree_with(BOUNDS, self), margin_start))
 
     def test_pull_requests_that_are_not_the_loops_or_are_held_are_left_alone(self):
         gh = FakeGh([queued(1, author="someone"), queued(2, labels=[]),
@@ -207,7 +248,7 @@ class OpenerTests(unittest.TestCase):
         (staged / "report.md").write_text("report\n", encoding="utf-8")
         queued_body = gate.pr_body(staged, "1", "b" * 40, "claude/x", "auto", True)
         self.assertIn("queued", queued_body)
-        self.assertIn("Monday 17:00 to 19:00 UTC", queued_body)
+        self.assertIn("Monday noon to 2 PM US Eastern", queued_body)
         self.assertNotIn("queued", gate.pr_body(staged, "1", "b" * 40, "claude/x", "auto", False))
         self.assertNotIn("queued", gate.pr_body(staged, "1", "b" * 40, "claude/x", "draft", True)
                          .replace("not queued", ""))
@@ -246,8 +287,10 @@ class WorkflowTests(unittest.TestCase):
         for entry in self.on["schedule"]:
             minute, hour, dom, month, dow = entry["cron"].split()
             self.assertEqual((dom, month, dow), ("*", "*", str(w["weekday"])), entry)
-            when = datetime(2026, 11, 9, int(hour), int(minute), tzinfo=timezone.utc)
-            self.assertTrue(gmw.in_window(when, w), entry)
+            # Cron is UTC: inside the window in winter (EST) and summer (EDT).
+            for monday in MONDAYS:
+                when = monday.replace(hour=int(hour), minute=int(minute))
+                self.assertTrue(gmw.arming_open(when, w), (entry, monday))
 
     def test_skill_coverage_has_a_pass_inside_the_window(self):
         doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "skill-coverage.yml")
@@ -258,8 +301,8 @@ class WorkflowTests(unittest.TestCase):
         for entry in on["schedule"]:
             minute, hour, dom, month, dow = entry["cron"].split()
             if dow == str(w["weekday"]):
-                inside.append(gmw.in_window(
-                    datetime(2026, 11, 9, int(hour), int(minute), tzinfo=timezone.utc), w))
+                inside.append(all(gmw.arming_open(
+                    m.replace(hour=int(hour), minute=int(minute)), w) for m in MONDAYS))
         self.assertEqual(inside, [True])
 
     def test_runs_are_serialized_never_cancelled(self):
@@ -316,6 +359,133 @@ class WorkflowTests(unittest.TestCase):
         run = next(s["run"] for s in gate_doc["jobs"]["guidance-pr"]["steps"]
                    if s.get("name") == "Open the pull request in _agent-guidance")
         self.assertIn("queued", run)
+
+
+class EvalPauseTests(unittest.TestCase):
+    """The eval pause (Adam, 2026-11-13): no eval run starts inside the
+    window. One source: the same bounds file the merge window reads."""
+
+    def cli(self, bounds, now):
+        out = io.StringIO()
+        rc = gmw.main(["eval-pause", "--tree", str(tree_with(bounds, self)), "--now", now.isoformat()],
+                      env={}, out=out)
+        return rc, out.getvalue()
+
+    def test_inside_the_window_it_is_paused_until_the_end(self):
+        paused, message = gmw.eval_pause(tree_with(BOUNDS, self), OPEN)
+        self.assertTrue(paused)
+        self.assertIn("2026-11-09T19:00:00+00:00", message)
+        self.assertTrue(gmw.eval_pause(tree_with(BOUNDS, self), LAST)[0])
+
+    def test_outside_the_window_evals_may_start(self):
+        for when in (CLOSED, OPEN - timedelta(seconds=1), TUESDAY):
+            with self.subTest(when=when):
+                self.assertFalse(gmw.eval_pause(tree_with(BOUNDS, self), when)[0])
+
+    def test_summer_pause_is_16_to_18_utc(self):
+        tree = tree_with(BOUNDS, self)
+        self.assertFalse(gmw.eval_pause(tree, datetime(2026, 6, 15, 15, 59, tzinfo=timezone.utc))[0])
+        paused, message = gmw.eval_pause(tree, datetime(2026, 6, 15, 16, 0, tzinfo=timezone.utc))
+        self.assertTrue(paused)
+        self.assertIn("2026-06-15T18:00:00+00:00", message)
+
+    def test_cli_exit_codes(self):
+        self.assertEqual(self.cli(BOUNDS, OPEN)[0], gmw.PAUSED_EXIT)
+        self.assertEqual(gmw.PAUSED_EXIT, 3)
+        self.assertEqual(self.cli(BOUNDS, CLOSED)[0], 0)
+
+    def test_cli_unreadable_bounds_fail_closed_with_exit_1(self):
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(self.cli(None, CLOSED)[0], 1)
+            self.assertEqual(self.cli("weekday: 1\nstart: '17:00'\nend: '19:00'\n", CLOSED)[0], 1)
+        self.assertIn("fail closed", err.getvalue())
+
+    def test_cli_needs_no_token(self):
+        # eval-pause reads nothing but the bounds; arm-queued's token rule
+        # (no token, nothing armed, exit 0) must not swallow it.
+        self.assertEqual(self.cli(BOUNDS, OPEN)[0], 3)
+
+
+class PlanPauseTests(unittest.TestCase):
+    """plan_week.py: a sweep inside the window plans no fire."""
+
+    def plan(self):
+        return {"fires": [{"slot": 1}], "matrix": {"include": [{"slot": 1}]}, "work": [{"kind": "x"}],
+                "room": 0.5}
+
+    def test_inside_the_window_no_fire_is_planned_and_the_rest_stands(self):
+        out = plan_week.hold_for_eval_pause(self.plan(), tree_with(BOUNDS, self), OPEN)
+        self.assertEqual(out["fires"], [])
+        self.assertEqual(out["matrix"], {"include": []})
+        self.assertEqual(out["work"], [{"kind": "x"}])
+        self.assertIn("evals paused", out["paused"])
+        lines = plan_week.summary_lines({**out, "skills": {}})
+        self.assertTrue(lines[0].startswith("### Weekly plan: 0 fire(s)"))
+        self.assertTrue(lines[2].startswith("Eval pause: evals paused"), lines[:4])
+
+    def test_outside_the_window_the_plan_is_untouched(self):
+        self.assertEqual(plan_week.hold_for_eval_pause(self.plan(), tree_with(BOUNDS, self), CLOSED),
+                         self.plan())
+
+    def test_unreadable_bounds_plan_no_fire(self):
+        out = plan_week.hold_for_eval_pause(self.plan(), tree_with(None, self), CLOSED)
+        self.assertEqual(out["fires"], [])
+        self.assertIn("cannot be read", out["paused"])
+
+    def test_no_checkout_skips_the_check(self):
+        self.assertEqual(plan_week.hold_for_eval_pause(self.plan(), None, OPEN), self.plan())
+
+    def test_the_sweep_passes_the_checkout(self):
+        doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "routine-eval-weekly.yml")
+                             .read_text(encoding="utf-8"))
+        run = next(st["run"] for st in doc["jobs"]["plan"]["steps"] if st.get("id") == "plan")
+        self.assertIn('--guidance "$GITHUB_WORKSPACE/agent-guidance"', run)
+
+
+class LauncherWiringTests(unittest.TestCase):
+    """Every automated eval launcher asks eval-pause before it runs anything,
+    from a credential-free sparse checkout of the one bounds file."""
+
+    def steps(self, workflow, job):
+        doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / workflow).read_text(encoding="utf-8"))
+        return doc["jobs"][job]["steps"]
+
+    def check(self, steps, gate_id, later):
+        co = next(i for i, st in enumerate(steps) if st.get("with", {}).get("path") == "guidance-window")
+        self.assertEqual(steps[co]["with"]["repository"], "Adam-S-Daniel/_agent-guidance")
+        self.assertEqual(steps[co]["with"]["sparse-checkout"], gmw.WINDOW_REL)
+        self.assertIs(steps[co]["with"]["persist-credentials"], False)
+        gate = next(i for i, st in enumerate(steps) if st.get("id") == gate_id)
+        self.assertLess(co, gate)
+        run = steps[gate]["run"]
+        self.assertLess(run.index("guidance_merge_window.py eval-pause"), run.index(later))
+        self.assertIn('"$rc" -eq 3', run)
+        self.assertIn('exit "$rc"', run)
+
+    def test_the_routine_fire_workflow_checks_before_the_allowance_guard(self):
+        steps = self.steps("routine-eval-fire.yml", next(iter(yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "routine-eval-fire.yml").read_text(encoding="utf-8"))["jobs"])))
+        self.check(steps, "allowance", "allowance_guard.py check")
+        run = next(st["run"] for st in steps if st.get("id") == "allowance")
+        pause = run[:run.index("allowance_guard.py check")]
+        self.assertIn('echo "refused=true" >> "$GITHUB_OUTPUT"', pause)
+
+    def test_the_api_lane_plans_nothing_inside_the_window(self):
+        steps = self.steps("eval.yml", "plan")
+        self.check(steps, "plan", "plan_scheduled_evals.py")
+        run = next(st["run"] for st in steps if st.get("id") == "plan")
+        self.assertIn("count=0", run[:run.index("plan_scheduled_evals.py")])
+        self.assertIn('echo "guidance_sha=$sha"', run[:run.index("eval-pause")])
+
+    def test_every_api_lane_leg_reads_the_commit_the_plan_judged(self):
+        doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(encoding="utf-8"))
+        self.assertEqual(doc["jobs"]["plan"]["outputs"]["guidance_sha"],
+                         "${{ steps.plan.outputs.guidance_sha }}")
+        legs = [st for st in doc["jobs"]["eval"]["steps"]
+                if st.get("with", {}).get("repository") == "Adam-S-Daniel/_agent-guidance"]
+        self.assertEqual(len(legs), 1)
+        self.assertEqual(legs[0]["with"]["ref"], "${{ needs.plan.outputs.guidance_sha }}")
+        self.assertIn("plan", doc["jobs"]["eval"]["needs"])
 
 
 if __name__ == "__main__":
