@@ -75,10 +75,11 @@ to the procedure is a pull request here, never an edit to the task.
 
 0. **Setup.** In a skills-evals checkout run `git fetch origin main && git checkout --detach origin/main`
    before anything else (helpers are read from that commit; `refresh.sh` never checks out),
-   and `export DASHBOARD_HOME=<private folder>`. The session needs these repos attached
-   (add_repo, push access for the gh API): skills-evals, adam-agentskills-private when
-   `page/datasets.json` defines `explorer_private` (cloned beside skills-evals, or at
-   `AGENTSKILLS_PRIVATE`), and every repo in `site.json` `run_console_repos`.
+   and `export DASHBOARD_HOME=<private folder>`; run every later step from the checkout's root.
+   The session needs these repos attached (add_repo, push access for the gh API): skills-evals,
+   adam-agentskills-private when `page/datasets.json` defines `explorer_private` (cloned beside
+   skills-evals, or at `AGENTSKILLS_PRIVATE`), and every repo named in `site.json`
+   `run_console_repos`, `loop_pr_repos`, `environment_review_repos` and `extra_workflows`.
 1. **Threads.** Rebuild `inputs/threads.json` from the FULL `list_threads` listing, every page,
    never a patch: `thread_id`, `title`, `state`, `last_activity_at`, `resolved`, `session_id`.
    For each new thread, `get_session` it and add its branch suffix to `inputs/thread_branches.json`.
@@ -104,7 +105,7 @@ to the procedure is a pull request here, never an edit to the task.
      `python3 -I dashboard/refresh/append_routine_fires.py '<json list of {trigger_id, name, fired_at, finished_at, status, session_id, total_cost_usd, session_usage_cost_usd, last_served_model}>'`;
      it skips session ids already present. Only `last_run` is visible, so a task that fires more
      than once between refreshes loses the fires in between. acsi-kit's plan model reads this ledger.
-6. **Run console.** `cd /tmp && python3 -I <checkout>/dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
+6. **Run console.** `python3 -I dashboard/refresh/collect_runs.py '<list of {trigger_id,name,fired_at,finished_at,status}>'`.
    It keeps 7 days of workflow runs from `site.json` `run_console_repos` and of scheduled-task
    runs in `inputs/run_stream.json`.
 7. **Build.** `bash dashboard/refresh/refresh.sh '<arg 1>' '{}'`. It runs `half_built.sh`, reads
@@ -142,8 +143,9 @@ to the procedure is a pull request here, never an edit to the task.
    run is green.
 10. **Routine rows.** Reread each row's `schedule` and `note` in `config/routines.json` against
     what step 5 and `inputs/workflow_runs.json` show, and rewrite any sentence that is no longer
-    true. A task fired by a workflow on a cadence variable: runs whose log says "skipped" did not
-    fire it, and `expect_every_hours` must equal that cadence.
+    true. A task fired by a workflow on a cadence variable (a repository variable the fire job
+    prints): runs whose log says "skipped" did not fire it, and `expect_every_hours` must equal
+    that cadence.
 11. **Log.** Append one line to `$DASHBOARD_HOME/watch/log.md`:
     `- <UTC start> <UTC end> refresh: <counts, what changed>`.
 12. **Backstop.** `send_later` to this session at the next scheduled time plus 90 minutes, text:
@@ -156,6 +158,8 @@ to the procedure is a pull request here, never an edit to the task.
 - Fix the automation, not the data. A wrong number on the page means a step or check is
   missing; add it here or in `refresh/`, then rerun.
 - Reply in the owner thread only when something needs the owner; otherwise update the checklist.
+- Other sessions do not edit `DASHBOARD_HOME`; they send changes to the session that owns the
+  refresh, or open a pull request here.
 - Page wording: "git hook" or "Claude Code hook", never bare "hook"; "you", never the owner's
   name. Times show in US Eastern.
 - Config edits go in `$DASHBOARD_HOME/config/`, never in build code. `explorer_private.json`

@@ -1,9 +1,10 @@
 """Collect workflow runs (7 days) and merge routine runs into $DASHBOARD_HOME/inputs/run_stream.json.
 Repos come from config/site.json run_console_repos.
 usage: python3 collect_runs.py '<json list of {trigger_id,name,fired_at,finished_at,status}>'"""
-import json, subprocess, sys, datetime as dt
+import json, re, subprocess, sys, time, datetime as dt
 import os
 H = os.environ.get("DASHBOARD_HOME") or sys.exit("DASHBOARD_HOME is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/) and run again.")
+H = os.path.abspath(H)
 INP = os.path.join(H, "inputs/run_stream.json")
 REPOS = json.load(open(os.path.join(H, "config/site.json"))).get("run_console_repos") or sys.exit(
     "config/site.json has no run_console_repos: list the owner/repo names whose workflow runs the run console shows.")
@@ -14,8 +15,11 @@ wf, errs = {}, []
 for r in REPOS:
     for page in range(1, 11):
         try:
-            out = subprocess.run(["gh", "api", f"repos/{r}/actions/runs?per_page=100&page={page}&created=>={since}"],
-                                 capture_output=True, text=True, timeout=60)
+            for attempt in range(3):  # GitHub answers 5xx now and then (2026-11-13 14:03Z run): retry those twice
+                out = subprocess.run(["gh", "api", f"repos/{r}/actions/runs?per_page=100&page={page}&created=>={since}"],
+                                     capture_output=True, text=True, timeout=60)
+                if out.returncode == 0 or attempt == 2 or not re.search(r"HTTP 5\d\d", out.stderr): break
+                time.sleep(5 * (attempt + 1))
             if out.returncode: errs.append(f"{r}: exit {out.returncode}"); break
             runs = json.loads(out.stdout)["workflow_runs"]
         except Exception as e:

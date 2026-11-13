@@ -9,6 +9,7 @@ import json, sys, datetime
 
 import os
 H = os.environ.get("DASHBOARD_HOME") or sys.exit("DASHBOARD_HOME is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/) and run again.")
+H = os.path.abspath(H)
 PATH = os.path.join(H, "inputs/session_costs.jsonl")
 FIELDS = ["thread_id", "session_id", "created_at", "updated_at", "environment_kind",
           "device", "cost_usd", "output_tokens", "error"]

@@ -4,10 +4,18 @@
 # This script never checks out another commit: bash reads a script as it runs.
 set -e
 : "${DASHBOARD_HOME:?is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/)}"
+DASHBOARD_HOME=$(cd "$DASHBOARD_HOME" && pwd); export DASHBOARD_HOME
 SE=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$DASHBOARD_HOME/inputs/"
 python3 - "$1" "$2" <<'EOF'
-import json,subprocess,sys
+import json,re,subprocess,sys,time
+def gh(path):
+  # GitHub answers 5xx now and then (2026-11-13 14:03Z run): retry those twice, fail on anything else.
+  for i in range(3):
+    p=subprocess.run(["gh","api",path],capture_output=True,text=True)
+    if p.returncode==0: return json.loads(p.stdout)
+    if i<2 and re.search(r'HTTP 5\d\d',p.stderr): time.sleep(5*(i+1)); continue
+    sys.exit(f"gh api {path} failed: exit {p.returncode}, {(re.search(r'HTTP \d+',p.stderr) or [''])[0]}")
 # Arg 1 must be a FULL live read of every scheduled task the routines table
 # shows (list_triggers, every page, plus get_trigger for on-demand ones), one
 # entry per id: {enabled, cron_expression, next_run_at, last_run}. Each row is
@@ -81,24 +89,24 @@ out={}
 wfs=[(r['source']['repo'],r['source']['workflow']) for r in cfg if r.get('source',{}).get('kind')=='workflow' and not r.get('retired')]
 wfs+=[tuple(x) for x in site.get('extra_workflows',[]) if tuple(x) not in wfs]
 for repo,wf in wfs:
-  r=json.loads(subprocess.check_output(["gh","api",f"repos/{repo}/actions/workflows/{wf}/runs?per_page=4"]))
+  r=gh(f"repos/{repo}/actions/workflows/{wf}/runs?per_page=4")
   out[f"{repo}:{wf}"]=[{k:x[k] for k in("created_at","status","conclusion","html_url")} for x in r["workflow_runs"]]
 json.dump(out,open('workflow_runs.json','w'),indent=1)
-wf={k:json.loads(subprocess.check_output(["gh","api",f"repos/{k.split(':')[0]}/actions/workflows/{k.split(':')[1]}"])) for k in out}
+wf={k:gh(f"repos/{k.split(':')[0]}/actions/workflows/{k.split(':')[1]}") for k in out}
 st={k:v["state"] for k,v in wf.items()}
 filled=[]
 for r in cfg:
   s=r.get('source',{})
-  if s.get('kind')=='workflow' and not r.get('added'):
+  if s.get('kind')=='workflow' and not r.get('added') and not r.get('retired'):
     k=next((k for k in wf if k.endswith(':'+s.get('workflow',''))),None)
-    if k is None: sys.exit(f"STOP: {r['name']} has no `added` date and refresh.sh does not read workflow {s.get('workflow')}; add it to the workflow list in refresh.sh.")
+    if k is None: sys.exit(f"STOP: {r['name']} has no `added` date and refresh.sh does not read workflow {s.get('workflow')}; add it to config/site.json extra_workflows or un-retire its row.")
     r['added']=wf[k]['created_at'][:10]; filled.append(r['name'])
 if filled:
   json.dump(cfg,open(H+'/config/routines.json','w'),indent=1); print("added dates filled:",filled)
 json.dump(st,open('workflow_states.json','w'),indent=1); print("workflow states",st)
 heads={}
 for repo in site.get('environment_review_repos',[]):
-  r=json.loads(subprocess.check_output(["gh","api",f"repos/{repo}/pulls?state=open"]))
+  r=gh(f"repos/{repo}/pulls?state=open")
   print("open PRs",repo,[(p["number"],p["head"]["sha"][:7]) for p in r])
   heads[repo]=[p["head"]["sha"] for p in r]
 json.dump(heads,open('open_pr_heads.json','w'))
@@ -107,7 +115,7 @@ bash "$SE/dashboard/refresh/half_built.sh"
 # Paths are not tied to one session's container (2026-11-12: the refresh had
 # to move sessions, and its baseline lived in the old session's scratchpad).
 cd "$SE" && git fetch -q origin +persistent/eval-results:refs/remotes/origin/persistent/eval-results
-S=${REFRESH_WORK:-/tmp/dashboard-refresh}; ER=$S/er_now; DS=$S/ds_now; rm -rf $ER $DS; mkdir -p $ER $DS
+S=${REFRESH_WORK:-/tmp/dashboard-refresh}; ER=$S/er_now; DS=$S/ds_now; rm -rf "$ER" "$DS"; mkdir -p "$ER" "$DS"
 git archive origin/persistent/eval-results | tar -x -C $ER
 python3 dashboard/build.py --results $ER --inputs "$DASHBOARD_HOME/inputs/" --config "$DASHBOARD_HOME/config/" --out $DS >/dev/null
 for f in waiting threads routines cost_benefit_weeks refresh; do [ -s $DS/$f.json ] || { echo "STOP: build.py did not write $f.json this run"; exit 1; }; done
@@ -119,7 +127,7 @@ fi
 # Baseline = what was last published: $DASHBOARD_HOME/ds and watch/page_published.sha256,
 # both written by dashboard/refresh/mark_published.sh after the uploads.
 B=$DASHBOARD_HOME/ds
-for f in $DS/*.json; do b=$(basename $f); [ "$b" = explorer_private.json ] && { [ "$(sha256sum $f | cut -d' ' -f1)" = "$(cat "$DASHBOARD_HOME/watch/private_published.sha256" 2>/dev/null)" ] || echo changed $b; continue; }; cmp -s $f $B/$b || echo changed $b; done
+for f in "$DS"/*.json; do b=$(basename "$f"); [ "$b" = explorer_private.json ] && { [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$(cat "$DASHBOARD_HOME/watch/private_published.sha256" 2>/dev/null)" ] || echo changed "$b"; continue; }; cmp -s "$f" "$B/$b" || echo changed "$b"; done
 [ "$(sha256sum dashboard/page/index.html | cut -d' ' -f1)" = "$(cat "$DASHBOARD_HOME/watch/page_published.sha256" 2>/dev/null)" ] && echo page-same || echo PAGE-CHANGED
-diff <(python3 -m json.tool $B/eval_allowance.json) <(python3 -m json.tool $DS/eval_allowance.json) | grep '^[<>]' | grep -v 'pace_room\|week_elapsed\|computed_at' || true
+diff <(python3 -m json.tool "$B/eval_allowance.json") <(python3 -m json.tool "$DS/eval_allowance.json") | grep '^[<>]' | grep -v 'pace_room\|week_elapsed\|computed_at' || true
 echo "built into $DS from skills-evals $(git rev-parse --short HEAD)"

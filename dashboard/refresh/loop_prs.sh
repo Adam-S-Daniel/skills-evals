@@ -3,6 +3,7 @@
 # Pages by hand: the proxy refuses --paginate's repositories/<id> next links.
 set -euo pipefail
 : "${DASHBOARD_HOME:?is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/)}"
+DASHBOARD_HOME=$(cd "$DASHBOARD_HOME" && pwd); export DASHBOARD_HOME
 OUT=$DASHBOARD_HOME/inputs/loop_prs.json
 repos=$(jq -er '.loop_pr_repos | if length == 0 then error("empty") else .[] end' "$DASHBOARD_HOME/config/site.json") \
   || { echo "STOP: config/site.json has no loop_pr_repos"; exit 1; }

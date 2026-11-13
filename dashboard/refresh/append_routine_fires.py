@@ -17,6 +17,7 @@ import json, sys, datetime
 
 import os
 H = os.environ.get("DASHBOARD_HOME") or sys.exit("DASHBOARD_HOME is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/) and run again.")
+H = os.path.abspath(H)
 PATH = os.path.join(H, "watch/routine-fires.jsonl")
 FIELDS = ["trigger_id", "name", "fired_at", "finished_at", "status", "session_id",
           "total_cost_usd", "session_usage_cost_usd", "last_served_model"]

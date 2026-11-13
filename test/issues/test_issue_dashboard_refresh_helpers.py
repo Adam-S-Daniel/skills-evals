@@ -46,7 +46,7 @@ class RefreshHelpers(unittest.TestCase):
             self.assertIn("DASHBOARD_HOME", r.stderr + r.stdout, name)
 
     def test_no_helper_names_a_private_path(self):
-        for f in sorted(REFRESH.iterdir()):
+        for f in sorted(p for p in REFRESH.iterdir() if p.is_file()):
             text = f.read_text()
             for bad in ("/mnt/", "/home/user", "project-files"):
                 self.assertNotIn(bad, text, f.name)

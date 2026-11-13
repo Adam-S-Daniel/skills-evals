@@ -22,6 +22,7 @@ import sys
 
 import os
 H = os.environ.get("DASHBOARD_HOME") or sys.exit("DASHBOARD_HOME is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/) and run again.")
+H = os.path.abspath(H)
 LEDGER = os.path.join(H, "inputs/owner_messages.jsonl")
 MARK = os.path.join(H, "inputs/owner_messages_read.json")
 ID = re.compile(r"^cmsg_[A-Za-z0-9]+$")

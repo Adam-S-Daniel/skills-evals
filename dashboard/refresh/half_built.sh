@@ -3,6 +3,7 @@
 # Bodies are untrusted: only the Kind/Severity/Finding-ID header lines are kept.
 set -euo pipefail
 : "${DASHBOARD_HOME:?is not set: export it as the private dashboard folder (config/, inputs/, ds/, watch/)}"
+DASHBOARD_HOME=$(cd "$DASHBOARD_HOME" && pwd); export DASHBOARD_HOME
 out=$DASHBOARD_HOME/inputs/half_built_issues.json
 users=$(jq -er '.github_owners | if length == 0 then error("empty") else map("user:" + .) | join(" ") end' "$DASHBOARD_HOME/config/site.json") \
   || { echo "STOP: config/site.json has no github_owners"; exit 1; }
