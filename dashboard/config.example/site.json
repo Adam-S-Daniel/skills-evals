@@ -10,5 +10,19 @@
  ],
  "environment_review_repos": [
   "example-owner/skills-registry"
+ ],
+ "run_console_repos": [
+  "example-owner/skills-evals",
+  "example-owner/skills-registry"
+ ],
+ "loop_pr_repos": [
+  "example-owner/skills-registry",
+  "example-owner/agent-guidance"
+ ],
+ "extra_workflows": [
+  [
+   "example-owner/agent-guidance",
+   "fleet-worker-fire.yml"
+  ]
  ]
 }
