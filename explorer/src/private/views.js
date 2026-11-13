@@ -150,7 +150,7 @@ export function attentionRows(dash, doc) {
   const rows = [];
   for (const r of some(dash, 'half_built_issues') || []) {
     if (r.state !== 'open') continue;
-    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built' });
+    rows.push({ kind: P.kindHalfBuilt(r.kind), severity: r.severity, what: r.title, url: r.url, where: r.repo, age: r.age_days, acts: P.actsHalfBuilt, family: 'half-built', hbKind: r.kind });
   }
   for (const a of Array.isArray(doc.alerts) ? doc.alerts : []) {
     if (!a) continue;
@@ -212,7 +212,7 @@ const SEVERITY = { high: 0, medium: 1, low: 2 };
 
 /* Where a folded row's title links, so the group is clickable while shut:
    fixture findings to the Changes page's fixture requests, half-built issues
-   to an issue search on their label in the owners their rows name, alerts on
+   to an issue search on their label and Kind in the owners their rows name, alerts on
    one kind of subject to that subject's list here. */
 const HALF_BUILT_LABEL = 'half-built-or-broken';
 export function groupHref(list) {
@@ -220,7 +220,10 @@ export function groupHref(list) {
   if (fam === 'fixture') return hashFor('changes');
   if (fam === 'half-built') {
     const owners = [...new Set(list.map((r) => String(r.where || '').split('/')[0]).filter((o) => /^[A-Za-z0-9-]+$/.test(o)))].sort();
-    const q = ['is:issue', 'is:open', 'label:' + HALF_BUILT_LABEL].concat(owners.map((o) => 'user:' + o)).join(' ');
+    if (!owners.length) return null;
+    // The group is one Kind (a header line in each issue body, not a label).
+    const kind = /^[a-z-]+$/.test(String(list[0].hbKind || '')) ? ['"Kind: ' + list[0].hbKind + '"', 'in:body'] : [];
+    const q = ['is:issue', 'is:open', 'label:' + HALF_BUILT_LABEL].concat(kind, owners.map((o) => 'user:' + o)).join(' ');
     return 'https://github.com/search?type=issues&q=' + encodeURIComponent(q);
   }
   if (fam === 'alert') {

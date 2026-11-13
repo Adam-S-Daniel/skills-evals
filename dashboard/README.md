@@ -94,6 +94,10 @@ prompt that tells it to.
 3. **Build.** `python3 dashboard/build.py --results <results> --inputs <inputs> --config <config> --out <ds>`.
    Add `--spend <file>` to also write the weekly cost totals (below).
    It needs PyYAML and imports `scripts/allowance_guard.py` and `scripts/eval_facts.py`.
+   When `page/datasets.json` defines `explorer_private`, also copy `explorer/private.json` from
+   adam-agentskills-private's `persistent/eval-results` branch to `<ds>/explorer_private.json`
+   on every run (build.py never writes it); stop if it cannot be read, since an unstamped copy
+   ages the header (step 4).
    It copies `explorer/latest.json` unchanged into the `explorer` dataset, which
    carries every test run, lesson, fixture request and activity row the page
    shows, and refuses to build without it. It refuses to write

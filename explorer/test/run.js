@@ -1795,7 +1795,7 @@ await test('Needs you: every row links to its evidence, a folded row while still
   const fixGroup = groups.find((g) => /Fixture queue/.test(g.kind));
   eq(fixGroup.url, '#/changes', 'the fixture group links to the fixture requests on Changes');
   const hbGroup = groups.find((g) => /Half-built/.test(g.kind));
-  ok(hbGroup.url.startsWith('https://github.com/search?') && decodeURIComponent(hbGroup.url).includes('label:half-built-or-broken') && decodeURIComponent(hbGroup.url).includes('user:example-owner'), hbGroup.url);
+  ok(hbGroup.url.startsWith('https://github.com/search?') && decodeURIComponent(hbGroup.url).includes('label:half-built-or-broken') && decodeURIComponent(hbGroup.url).includes('user:example-owner') && decodeURIComponent(hbGroup.url).includes('"Kind: broken" in:body'), hbGroup.url);
   const node = needsPage(dash, d);
   const panelNode = findAll(node, (n) => n.tag === 'section' && textOf(n).includes('Needs attention'))[0] || node;
   // Outside every fold: the group titles and the single alert are links.
