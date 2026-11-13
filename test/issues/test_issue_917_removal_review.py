@@ -170,8 +170,11 @@ class ScopeTests(unittest.TestCase):
 
     def test_guidance_scope(self):
         ok = ["agents-md/base.md", "agents-md/eval-coverage.yml", "docs/guidance-impact.md",
-              "AGENTS.md", ".claude/hooks/fleet-guidance.md"]
+              "AGENTS.md", ".claude/hooks/fleet-guidance.md",
+              ".github/fleet-contributor-rules.md"]
         self.assertEqual(rr.scope_findings(ok, "guidance", "agents-md/base.md"), [])
+        self.assertEqual(len(rr.scope_findings([".github/workflows/x.yml"], "guidance",
+                                               "agents-md/base.md")), 1)
         self.assertEqual(len(rr.scope_findings(["scripts/x.js"], "guidance",
                                                "agents-md/base.md")), 1)
 

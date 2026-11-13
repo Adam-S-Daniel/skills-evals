@@ -548,6 +548,49 @@ class PrepareTests(unittest.TestCase):
         self.assertFalse(gate.allowed_change(self.tree, ".claude/hooks/fleet-guidance.md"))
 
 
+@unittest.skipUnless(shutil.which("node"), "node runs the contributor-rules stand-in")
+class ContributorRulesTests(PrepareTests):
+    """With scripts/build-contributor-rules.js in _agent-guidance, `prepare`
+    regenerates .github/fleet-contributor-rules.md and the gate accepts only
+    its build output."""
+
+    SCRIPT = ("const fs=require('fs');const out='.github/fleet-contributor-rules.md';"
+              "const want=fs.readFileSync('agents-md/base.md','utf8').split('\\n')[0]+'\\n';"
+              "if(process.argv[2]==='--write'){fs.mkdirSync('.github',{recursive:true});"
+              "fs.writeFileSync(out,want);}else{let have='';"
+              "try{have=fs.readFileSync(out,'utf8')}catch(e){}process.exit(have===want?0:1)}\n")
+
+    def install_script(self):
+        self.write({"scripts/build-contributor-rules.js": self.SCRIPT})
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "contributor script")
+        self.measured = self.git("rev-parse", "HEAD")
+        (self.staged / "summary.json").write_text(json.dumps(record(
+            guidance={"path": "/tmp/x", "sha": self.measured})))
+        self.use_patch(self.honest)
+
+    def test_the_rules_are_regenerated_and_committed(self):
+        self.install_script()
+        self.prepare()
+        changed = self.git("diff", "--name-only", f"{self.measured}..HEAD").splitlines()
+        self.assertIn(".github/fleet-contributor-rules.md", changed)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_without_the_script_nothing_new_is_written(self):
+        self.prepare()
+        changed = self.git("diff", "--name-only", f"{self.measured}..HEAD").splitlines()
+        self.assertNotIn(".github/fleet-contributor-rules.md", changed)
+
+    def test_a_stale_or_hand_edited_rules_file_is_not_allowed(self):
+        self.assertFalse(gate.allowed_change(self.tree, gate.CONTRIBUTOR_RULES))
+        self.install_script()
+        (self.tree / ".github").mkdir(exist_ok=True)
+        (self.tree / gate.CONTRIBUTOR_RULES).write_text("hand edited\n")
+        self.assertFalse(gate.allowed_change(self.tree, gate.CONTRIBUTOR_RULES))
+        subprocess.run(["node", gate.CONTRIBUTOR_SCRIPT, "--write"], cwd=self.tree, check=True)
+        self.assertTrue(gate.allowed_change(self.tree, gate.CONTRIBUTOR_RULES))
+
+
 class FakeGh:
     def __init__(self, open_heads=(), refs=(), method="MERGE"):
         self.calls, self.stdin = [], []

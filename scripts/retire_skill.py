@@ -2189,6 +2189,10 @@ GUIDANCE_AGENTS = "AGENTS.md"
 #: _agent-guidance's own fleet-memory payload: a hand-made byte copy of
 #: base.md that nothing syncs (its scripts/check-fleet-guidance-mirror.js).
 GUIDANCE_PAYLOAD = ".claude/hooks/fleet-guidance.md"
+#: _agent-guidance's generated contributor rules and the script that builds
+#: them; an older _agent-guidance has neither, and then nothing is run.
+GUIDANCE_CONTRIBUTOR_SCRIPT = "scripts/build-contributor-rules.js"
+GUIDANCE_CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 #: The heading LINE AGENTS.md is split on, never a substring of a line: the
 #: managed block's own first line quotes it (_agent-guidance AGENTS.md).
 REPO_SPECIFIC_LINE = "## Repo-specific additions"
@@ -2416,9 +2420,28 @@ def regenerate_agents_md(checkout: Path, managed: str) -> None:
     _write_exact(path, managed.rstrip("\n") + "\n" + tail + "\n")
 
 
+def _node_deps(checkout: Path) -> None:
+    """_agent-guidance's node scripts need its locked `yaml` and `markdown-it`,
+    and the workflow's checkout has no node_modules: install them, scripts
+    off, when the checkout has a lockfile and they are not there yet."""
+    if (checkout / "package-lock.json").is_file() \
+            and not (checkout / "node_modules" / "yaml").is_dir():
+        _run(checkout, "npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund")
+
+
+#: The only variables _agent-guidance's build scripts and `npm ci` see: the
+#: job's environment holds the App token and the review credential, and
+#: none of it is theirs to read.
+_BUILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def _build_env() -> dict:
+    return {k: os.environ[k] for k in _BUILD_ENV_KEYS if k in os.environ}
+
+
 def _run(checkout: Path, *args: str) -> str:
     proc = subprocess.run(list(args), cwd=checkout, capture_output=True, text=True,
-                          check=False)
+                          check=False, env=_build_env())
     if proc.returncode != 0:
         raise RetireError(f"{' '.join(args[:2])} exited {proc.returncode}")
     return proc.stdout
@@ -2605,12 +2628,16 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
             (checkout / GUIDANCE_PAYLOAD).write_bytes(source.read_bytes())
     manifest = checkout / GUIDANCE_MANIFEST
     _write_exact(manifest, manifest_without_row(_read_exact(manifest), action["section"]))
+    _node_deps(checkout)
     _run(checkout, "node", "scripts/check-guidance-coverage.js", "--write-bytes")
     impact = checkout / GUIDANCE_IMPACT
     _write_exact(impact, guidance_insert_entry(_read_exact(impact), action["impact_entry"]))
     regenerate_agents_md(checkout, _run(checkout, "bash", "scripts/build-agents-md.sh"))
+    rules = (checkout / GUIDANCE_CONTRIBUTOR_SCRIPT).is_file()
+    if rules:
+        _run(checkout, "node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write")
     _git(checkout, "add", "-A", "--", "agents-md", GUIDANCE_IMPACT, GUIDANCE_AGENTS,
-         GUIDANCE_PAYLOAD)
+         GUIDANCE_PAYLOAD, *([GUIDANCE_CONTRIBUTOR_RULES] if rules else []))
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
@@ -2634,9 +2661,12 @@ def guidance_commands(action: dict) -> list:
                 *([["copy", "agents-md/base.md", GUIDANCE_PAYLOAD]]
                   if action["file"] == "agents-md/base.md" else []),
                 ["edit", GUIDANCE_MANIFEST, f"delete row {action['section']}"],
+                ["npm", "ci", "--ignore-scripts", "(when node_modules is missing)"],
                 ["node", "scripts/check-guidance-coverage.js", "--write-bytes"],
                 ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
+                ["node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write",
+                 "(when _agent-guidance has the script)"],
                 ["git", "commit"],
                 REVIEW_COMMAND,
                 *_push_commands(action),
