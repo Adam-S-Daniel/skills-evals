@@ -66,14 +66,6 @@ fixtures:
     readiness: "In-place pair on adamdaniel.ai, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). No routine run yet; hermetic: test scores the seed and the reference fix (#93)."
   - path: evals/ci-job-performance/browser-cache
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/git-identity
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/secret-name
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/swallowed-failure
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
-  - path: evals/debug-github-workflows/wrong-branch
-    readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on cms-platform (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/closed-duplicate
     readiness: "Isolation pair baseline, unpinned (the committed roster names arm claude-sonnet-5-5 and judge claude-fable-5-1). Has earlier eval runs (explorer, 2026-11-01) but was never scheduled; hermetic checks exercised by test. In-place context added on _agent-guidance (skills-evals#574); runs from then on are in-place pairs."
   - path: evals/vendor-release-impact-issues/closing-keywords
