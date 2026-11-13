@@ -233,7 +233,7 @@ test('a subject being removed has no Next test line and says where its removal s
     removed: ['Removed on Nov 12.', PR], 'pr-open': ['Official decision: remove it. Removal pull request open.', PR],
     worker: ['Official decision: remove it. The fleet worker is making the removal pull request.', ISSUE],
     blocked: ['Official decision: remove it. The removal is stuck and needs a person to look at it.', ISSUE],
-    owner: ['Official decision: remove it. It waits on', ISSUE],
+    owner: ['Official decision: remove it. The removal waits on the owner.', ISSUE],
     'waiting-turn': ['Official decision: remove it. Next in line after another removal finishes.', null],
     queued: ['Official decision: remove it. The removal bot acts on its next daily run.', null],
     declined: ['Official decision: remove it. The removal was declined.', ISSUE]
@@ -248,13 +248,27 @@ test('a subject being removed has no Next test line and says where its removal s
       if (url) s.removal.url = url;
       const page = P.subjectPage(doc, 'skills', 'example-skill-alpha', {});
       const t = P.textOf(page).replace(/\s+/g, ' ');
-      ok(!t.includes('Next test'), state + ': no Next test line');
-      ok(!t.includes('re-check'), state + ': no re-check');
+      // A declined, owner-held or blocked removal is not in motion: the planner re-checks it, so its next test shows.
+      const rechecked = ['declined', 'owner', 'blocked'].includes(state);
+      eq(t.includes('Next test'), rechecked, state + ': the Next test line shows only while the subject is re-checked');
+      ok(!t.includes('re-check due'), state + ': no re-check due here');
       ok(t.includes(state === 'removed' ? text : text.replace('Official decision: remove it.', P.STRINGS.verdict[verdict])), state + ' text: ' + text);
       const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
       eq(hrefs.includes(url), !!url, state + ' link');
     }
   }
+  // An owner state names its reason when the data has one.
+  const held = JSON.parse(JSON.stringify(fixture));
+  const hs = held.skills.find((x) => x.name === 'example-skill-alpha');
+  hs.verdict = 'retire'; hs.next_test = { position: null, band: null, due: null, scheduled: true };
+  hs.removal = { state: 'owner', reason: 'on-hold', url: ISSUE };
+  ok(P.textOf(P.subjectPage(held, 'skills', 'example-skill-alpha', {})).replace(/\s+/g, ' ').includes('The removal is on hold until the owner releases it.'), 'on-hold reason');
+  // A declined removal's list cell shows its next test, a queued one's does not.
+  const being = () => (P.textOf(P.buildPage(held, 'skills', {})).match(/None, being removed/g) || []).length;
+  hs.removal = { state: 'queued' };
+  const whileQueued = being();
+  hs.removal = { state: 'declined', url: ISSUE };
+  eq(being(), whileQueued - 1, 'declined: the list shows the next test, a queued removal does not');
   // Without a removal object (an older document) the plain decision line stays, and no Next test line.
   const doc = JSON.parse(JSON.stringify(fixture));
   const s = doc.skills.find((x) => x.name === 'example-skill-alpha');

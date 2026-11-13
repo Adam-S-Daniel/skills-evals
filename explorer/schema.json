@@ -2530,6 +2530,12 @@
     },
     "since": {
      "type": "string"
+    },
+    "reason": {
+     "enum": [
+      "proposal",
+      "on-hold"
+     ]
     }
    },
    "required": [

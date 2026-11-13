@@ -29,6 +29,8 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import explorer_data  # noqa: E402
+import plan_week  # noqa: E402
+import retire_skill  # noqa: E402
 
 WORKFLOW = ROOT / ".github" / "workflows" / "explorer-data.yml"
 SHA_A, SHA_B = "a" * 40, "b" * 40
@@ -632,13 +634,65 @@ class RemovalStateTests(unittest.TestCase):
                                         self.load({"prs": list(prs), "issues": list(issues)}))
 
     def test_a_subject_being_removed_has_no_place_in_line_and_no_recheck(self):
-        rows = [{"verdict": v, "next_test": {"position": 3, "band": "near",
-                                             "due": "2026-12-06T00:00:00Z", "scheduled": True}}
-                for v in ("retire", "retire-pending", "retain", None)]
+        rows = [{"verdict": v, "removal": {"state": st} if st else None,
+                 "next_test": {"position": 3, "band": "near",
+                               "due": "2026-12-06T00:00:00Z", "scheduled": True}}
+                for v, st in (("retire", "queued"), ("retire-pending", "waiting-turn"),
+                              ("retain", None), (None, None), ("retire", "unknown"),
+                              ("retire", None))]
         explorer_data.without_test(rows)
         self.assertEqual([(r["next_test"]["position"], r["next_test"]["due"]) for r in rows],
-                         [(None, None), (None, None), (3, "2026-12-06T00:00:00Z"), (3, "2026-12-06T00:00:00Z")])
+                         [(None, None), (None, None), (3, "2026-12-06T00:00:00Z"),
+                          (3, "2026-12-06T00:00:00Z"), (None, None), (None, None)])
         self.assertEqual(rows[0]["next_test"]["scheduled"], True)
+
+    def test_a_declined_or_owner_held_removal_keeps_its_next_test_as_the_planner_does(self):
+        # The planner re-checks these (plan_week.removal_frozen), so the page
+        # may show the next test beside "removal declined".
+        for state in ("declined", "owner", "blocked"):
+            row = {"verdict": "retire", "removal": {"state": state},
+                   "next_test": {"position": None, "band": None,
+                                 "due": "2026-12-06T00:00:00Z", "scheduled": True}}
+            explorer_data.without_test([row])
+            self.assertEqual(row["next_test"]["due"], "2026-12-06T00:00:00Z", state)
+            self.assertFalse(plan_week.removal_frozen("retire", state), state)
+        for state in ("pr-open", "worker", "waiting-turn", "queued", "removed", "unknown", None):
+            self.assertTrue(plan_week.removal_frozen("retire-pending", state), state)
+        self.assertFalse(plan_week.removal_frozen("keep", "queued"))
+
+    def test_a_pull_request_the_loop_withdrew_is_a_pause_not_a_decline(self):
+        # Mirrors retire_skill.loop_withdrawn: the loop opened it, it carries
+        # the label, the loop closed it, and it is unmerged.
+        bot = retire_skill.LOOP_AUTHOR
+        label = retire_skill.WITHDRAWN_LABEL
+        base = {"state": "closed", "closed_at": "2026-11-01T00:00:00Z"}
+        withdrawn = self.pr("retire-skill/a", 8, author=bot, labels=[label], closed_by=bot, **base)
+        self.assertEqual(self.status("skill", "a", "retire", [withdrawn]), {"state": "queued"})
+        self.assertEqual(self.status("skill", "a", "retire-pending", [withdrawn]),
+                         {"state": "waiting-turn"})
+        for more in ({"closed_by": "a-person"}, {"closed_by": None}, {"labels": []},
+                     {"author": "a-person"}):
+            row = self.pr("retire-skill/a", 8, **{**{"author": bot, "labels": [label],
+                                                      "closed_by": bot}, **more}, **base)
+            self.assertEqual(self.status("skill", "a", "retire", [row])["state"], "declined", more)
+        # A row without the new fields (an older file) is a decline, as before.
+        self.assertEqual(self.status("skill", "a", "retire",
+                                     [self.pr("retire-skill/a", 8, **base)])["state"], "declined")
+
+    def test_an_issue_with_no_stamp_is_the_owners_and_an_on_hold_one_says_so(self):
+        legacy = self.issue("a", 21, kind="legacy")
+        self.assertEqual(self.status("skill", "a", "retire", issues=[legacy]),
+                         {"state": "owner", "reason": "proposal",
+                          "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/21"})
+        held = self.issue("a", 22, kind="agent", labels=["agent-ready", "on-hold"])
+        self.assertEqual(self.status("skill", "a", "retire", issues=[held]),
+                         {"state": "owner", "reason": "on-hold",
+                          "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/22"})
+        self.assertEqual(self.status("skill", "a", "retire", issues=[
+            self.issue("a", 23, kind="agent", labels=["agent-ready"])])["state"], "worker")
+        # The built document validates against the schema with a reason.
+        doc = self.build_with(self.load({"prs": [], "issues": [held]}))
+        explorer_data.validate(doc)
 
     def test_without_the_file_each_removal_is_unknown(self):
         doc = self.build_with()
@@ -683,7 +737,7 @@ class RemovalStateTests(unittest.TestCase):
         self.assertEqual(s("skill", "a", "retire", [self.pr("retire-skill/a", 6, repo="Adam-S-Daniel/cms-platform")])["state"], "pr-open")
         owner = self.issue("a", 11, labels=["agent-blocked"])
         self.assertEqual(s("skill", "a", "retire", issues=[owner]),
-                         {"state": "owner", "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/11"})
+                         {"state": "owner", "reason": "proposal", "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/11"})
         self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 12, labels=["agent-blocked"], kind="agent")])["state"], "blocked")
         for label in ("agent-ready", "agent-working"):
             self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 13, labels=[label])])["state"], "worker")

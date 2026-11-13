@@ -163,7 +163,7 @@ export function subjectPage(doc, kind, name, ctx) {
       h('p', { class: 'gl' }, gloss),
       !guidance && raw.registry ? h('p', { class: 'meta' }, STRINGS.registryLine(clean(raw.registry))) : null,
       guidance ? h('p', { class: 'meta' }, STRINGS.size(wordsFor(it.bytes))) : null,
-      nextLine(raw.next_test, refMs, guidance ? 'section' : 'skill', raw.verdict),
+      nextLine(raw.next_test, refMs, guidance ? 'section' : 'skill', raw.verdict, raw.removal),
       guidance ? null : usageLine(raw.usage, doc.usage, refMs),
       testCost(raw.run_utility, refMs),
       stakesLine(raw.stakes),

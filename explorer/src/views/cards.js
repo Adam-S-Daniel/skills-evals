@@ -13,6 +13,11 @@ import { signedPoints } from './range.js';
    next-test line, and the decision line says where the removal stands. */
 export const REMOVING = ['retire', 'retire-pending'];
 const isRemoving = (v) => REMOVING.includes(v);
+/* The removal states in which nothing is being removed right now (the
+   planner re-checks the subject: plan_week.removal_frozen), so its next
+   test shows beside the status. */
+const RECHECKED = ['declined', 'owner', 'blocked'];
+const noTest = (v, removal) => isRemoving(v) && !(removal && typeof removal === 'object' && RECHECKED.includes(removal.state));
 
 export function verdictLine(v, removal, refMs) {
   if (v === null || v === undefined || v === '') return null;
@@ -24,7 +29,7 @@ export function verdictLine(v, removal, refMs) {
   const since = parseTime(removal.since);
   const where = r.link ? link(removal.url, r.link) : null;
   // A merged removal replaces the decision line; any other state follows the plain one.
-  const status = r.text(isFinite(since) ? fmtDay(since, refMs) : null);
+  const status = r.text(isFinite(since) ? fmtDay(since, refMs) : null, removal.reason);
   return h('p', { class: 'meta' }, removal.state === 'removed' ? [status] : [text, ' ', status], where ? [' ', where] : null);
 }
 
@@ -34,7 +39,7 @@ export function nextText(nt, refMs, kind) {
   if (isFinite(parseTime(n.due))) return STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
   return n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
 }
-export const nextLine = (nt, refMs, kind, verdict) => (isRemoving(verdict) ? null : h('p', { class: 'meta' }, nextText(nt, refMs, kind)));
+export const nextLine = (nt, refMs, kind, verdict, removal) => (noTest(verdict, removal) ? null : h('p', { class: 'meta' }, nextText(nt, refMs, kind)));
 
 export function stakesLine(st) {
   if (!st || typeof st !== 'object' || typeof st.reason !== 'string') return null;
@@ -89,8 +94,8 @@ export function chipSummary(items, mode) {
    no difference, the test cannot tell, not enough data. */
 const TABLE_RANK = ['helps', 'alone', 'early', 'worse', 'none', 'canttell', 'insufficient'];
 /* The Next test column in a few words. */
-function nextCell(nt, refMs, verdict) {
-  if (isRemoving(verdict)) return STRINGS.nextCell.removing;
+function nextCell(nt, refMs, verdict, removal) {
+  if (noTest(verdict, removal)) return STRINGS.nextCell.removing;
   const n = nt && typeof nt === 'object' ? nt : {};
   if (typeof n.position === 'number' && isFinite(n.position)) return STRINGS.nextCell.queued(n.position);
   if (isFinite(parseTime(n.due))) return STRINGS.nextCell.due(fmtDay(parseTime(n.due), refMs));
@@ -112,7 +117,7 @@ export function subjectTable(items, kind, refMs) {
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
     guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
-    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs, it.raw.verdict) },
+    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs, it.raw.verdict, it.raw.removal) },
     { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => STRINGS.verdictCell[it.raw.verdict || 'insufficient'] || clean(it.raw.verdict) }
   ].filter(Boolean), rows);
 }

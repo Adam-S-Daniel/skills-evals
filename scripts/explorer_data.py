@@ -268,6 +268,7 @@ import mine_sessions  # noqa: E402
 import model_usage_census  # noqa: E402
 import plan_week  # noqa: E402
 import regression  # noqa: E402  (harness/, via compute_gates)
+import retire_skill  # noqa: E402
 import run_eval  # noqa: E402  (harness/, via compute_gates)
 import skill_digest  # noqa: E402
 import skill_usage  # noqa: E402
@@ -1595,12 +1596,14 @@ def load_removal_state(path: Path | None, repository: str = DEFAULT_SOURCE_REPOS
     is absent or unreadable (every removal is then "unknown", never guessed).
 
     A pull request row is {repo, number, head, state: open|closed, merged:
-    bool, auto_merge: bool, created_at?, merged_at?, closed_at?} for a head
+    bool, auto_merge: bool, created_at?, merged_at?, closed_at?, author?,
+    labels?, closed_by?} (the last three decide whether the loop itself
+    withdrew a closed one, as `retire_skill.loop_withdrawn` reads it) for a head
     `retire-skill/<skill>` (repo adam-agentskills, cms-platform or
     adamdaniel.ai) or `retire-guidance/<section>` (repo _agent-guidance).
     An issue row is {number, state: open|closed, labels: [names],
     body_markers: {target: skill|guidance, subject, kind: proposal|agent|
-    withdrawal|null}, created_at?, closed_at?} for a skills-evals issue the
+    withdrawal|legacy|null}, created_at?, closed_at?} for a skills-evals issue the
     bot opened with a `skills-evals:retire-skill:` or `retire-guidance:`
     marker. The result's rows are validated and keyed {(kind, subject):
     [row]}, and every URL is built here from the repo and number, never
@@ -1628,6 +1631,11 @@ def load_removal_state(path: Path | None, repository: str = DEFAULT_SOURCE_REPOS
         prs.setdefault((match["kind"], match["subject"]), []).append({
             "number": number, "state": state, "merged": merged,
             "url": REMOVAL_PR_URL.format(repo=row["repo"], number=number),
+            # A pull request the loop withdrew is a pause, not a decline
+            # (retire_skill.deciding); its rule is that function's.
+            "withdrawn": retire_skill.loop_withdrawn(
+                {"merged": merged, "author": row.get("author"),
+                 "labels": row.get("labels"), "closed_by": row.get("closed_by")}),
             "since": _removal_when(row, "merged_at", "closed_at", "created_at")
             if state == "closed" else _removal_when(row, "created_at")})
     issues: dict = {}
@@ -1646,7 +1654,9 @@ def load_removal_state(path: Path | None, repository: str = DEFAULT_SOURCE_REPOS
         if kind == "withdrawal":
             continue  # the pause cap's notice, not a removal in flight
         issues.setdefault((markers["target"], markers["subject"]), []).append({
-            "number": number, "state": state, "proposal": kind == "proposal",
+            "number": number, "state": state,
+            # No stamp ("legacy") reads as a proposal, as retire_skill.issue_origin does.
+            "proposal": kind in ("proposal", "legacy"),
             "labels": {x for x in labels if isinstance(x, str)},
             "url": ISSUE_URL.format(repo=repository, number=number),
             "since": _removal_when(row, "closed_at" if state == "closed" else "created_at",
@@ -1663,7 +1673,9 @@ def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None
     (blocked), one labeled agent-ready or agent-working (worker), then the
     verdict alone: retire-pending (waiting-turn), a closed issue or
     closed-unmerged pull request (declined), else queued for the bot's next
-    daily run. A merged or closed removal only counts while the verdict is
+    daily run. A closed pull request the loop withdrew is a pause, so it
+    reads queued, not declined. An open issue labeled `on-hold` is the
+    owner's (`reason: on-hold`). A merged or closed removal only counts while the verdict is
     still a retire one, so a skill that came back is not shown as removed."""
     retiring = verdict in RETIRING
     if state is None:
@@ -1672,8 +1684,10 @@ def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None
     issues = sorted(state["issues"].get((kind, name), []), key=lambda r: -r["number"])
     opened = [i for i in issues if i["state"] == "open"]
 
-    def found(label, row):
+    def found(label, row, reason=None):
         out = {"state": label, "url": row["url"]}
+        if reason:
+            out["reason"] = reason
         if row["since"]:
             out["since"] = row["since"]
         return out
@@ -1686,8 +1700,11 @@ def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None
             return found("pr-open", row)
     working = ("agent-ready", "agent-working")
     for row in opened:
+        if "on-hold" in row["labels"]:
+            return found("owner", row, "on-hold")
+    for row in opened:
         if row["proposal"] and not row["labels"] & set(working):
-            return found("owner", row)
+            return found("owner", row, "proposal")
     for row in opened:
         if "agent-blocked" in row["labels"]:
             return found("blocked", row)
@@ -1698,7 +1715,8 @@ def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None
         return None
     if verdict == "retire-pending":
         return {"state": "waiting-turn"}
-    declined = [r for r in prs if r["state"] == "closed" and not r["merged"]] \
+    declined = [r for r in prs if r["state"] == "closed" and not r["merged"]
+                and not r["withdrawn"]] \
         + [r for r in issues if r["state"] == "closed"]
     if declined:
         return found("declined", max(declined, key=lambda r: (r["since"] or "", r["number"])))
@@ -1706,10 +1724,13 @@ def removal_of(kind: str, name: str, verdict, state: dict | None) -> dict | None
 
 
 def without_test(subjects: list) -> None:
-    """A subject being removed (verdict retire or retire-pending) is not
-    tested again, so it has no place in line and no re-check due (in place)."""
+    """A subject being removed (verdict retire or retire-pending) whose
+    removal is in motion, done or unknown is not tested again, so it has no
+    place in line and no re-check due (in place); the planner's rule
+    (`plan_week.removal_frozen`) over the subject's `removal`, so a declined
+    or owner-held removal keeps the next test the planner would plan."""
     for subject in subjects:
-        if subject["verdict"] in RETIRING:
+        if plan_week.removal_frozen(subject["verdict"], (subject.get("removal") or {}).get("state")):
             subject["next_test"] = {**subject["next_test"], "position": None, "due": None}
 
 
@@ -2082,11 +2103,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
                        "decisions": decisions(verdict),
                        "runs": by_skill.get(name, [])})
 
-    without_test(skills)
     for subject in skills:
         removal = removal_of("skill", subject["name"], subject["verdict"], removal_state)
         if removal:
             subject["removal"] = removal
+    without_test(skills)
     renumber(skills)
 
     guidance_verdicts = gates_doc.get("guidance") or {}
@@ -2112,11 +2133,11 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             "decisions": decisions(verdict),
             "runs": runs if alone else without_alone(runs)})
 
-    without_test(sections)
     for subject in sections:
         removal = removal_of("guidance", subject["id"], subject["verdict"], removal_state)
         if removal:
             subject["removal"] = removal
+    without_test(sections)
     renumber(sections)
 
     try:

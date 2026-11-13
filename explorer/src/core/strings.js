@@ -112,7 +112,7 @@ function buildStrings(you) {
   removal: {
     removed: { text: (when) => 'Removed' + (when ? ' on ' + when : '') + '.', link: 'See the pull request' },
     'pr-open': { text: () => 'Removal pull request open.', link: 'See the pull request' },
-    owner: { text: () => 'It waits on ' + W.obj + ' to approve, because the removal changes plugin code.', link: 'See the issue' },
+    owner: { text: (when, reason) => (reason === 'on-hold' ? 'The removal is on hold until ' + W.obj + ' releases it.' : 'The removal waits on ' + W.obj + '.'), link: 'See the issue' },
     blocked: { text: () => 'The removal is stuck and needs a person to look at it.', link: 'See the issue' },
     worker: { text: () => 'The fleet worker is making the removal pull request.', link: 'See the issue' },
     'waiting-turn': { text: () => 'Next in line after another removal finishes.', link: null },
