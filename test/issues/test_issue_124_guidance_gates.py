@@ -2119,6 +2119,37 @@ class GuidanceRemovalTests(unittest.TestCase):
         self.assertEqual((root / "AGENTS.md").read_text(),
                          "<!-- BEGIN -->\nmanaged\n## Repo-specific additions\n\nmine\n")
 
+    def add_contributor_script(self, root):
+        """A stand-in for build-contributor-rules.js: --write copies base.md's
+        first line to the rules file."""
+        (root / "scripts" / "build-contributor-rules.js").write_text(
+            "const fs=require('fs');fs.mkdirSync('.github',{recursive:true});"
+            "fs.writeFileSync('.github/fleet-contributor-rules.md',"
+            "fs.readFileSync('agents-md/base.md','utf8').split('\\n')[0]+'\\n');\n")
+        sh(root, "git", "add", "-A")
+        sh(root, "git", "commit", "-q", "-m", "contributor script")
+
+    def test_the_contributor_rules_are_regenerated_and_committed_when_the_script_exists(self):
+        root = guidance_repo(self)
+        self.add_contributor_script(root)
+        rc, _gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root)
+        self.assertEqual(rc, 0, out)
+        changed = sh(root, "git", "show", "--name-only", "--format=", "HEAD").stdout.split()
+        self.assertIn(".github/fleet-contributor-rules.md", changed)
+        self.assertEqual(sh(root, "git", "status", "--porcelain").stdout, "")
+
+    def test_without_the_script_no_contributor_rules_file_is_written(self):
+        root = guidance_repo(self)
+        rc, _gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root)
+        self.assertEqual(rc, 0, out)
+        self.assertFalse((root / ".github" / "fleet-contributor-rules.md").exists())
+
+    def test_the_dry_run_lists_the_contributor_rules_step(self):
+        root = guidance_repo(self)
+        _rc, _gh, _pushed, out = self.run_main(guidance_gates(mode="auto"), root, env={}, dry=True)
+        self.assertIn(["node", "scripts/build-contributor-rules.js", "--write",
+                       "(when _agent-guidance has the script)"], json.loads(out)["would_run"])
+
     def test_auto_mode_notifies_adam_with_the_removal_and_its_reversal(self):
         # #557 (Adam, 2026-11-02): every removal notifies him and says how to
         # reverse it, through this repository's own token.
