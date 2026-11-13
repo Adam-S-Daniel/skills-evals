@@ -409,6 +409,8 @@ CONTENT_MANIFEST = ("the patch changes agents-md/eval-coverage.yml beyond the "
 CONTENT_IMPACT = ("the patch does more to docs/guidance-impact.md than insert one "
                   "dated entry naming the section")
 CONTENT_PAYLOAD = ".claude/hooks/fleet-guidance.md is not a byte-identical copy of base.md"
+CONTENT_NODE_DEPS = ("npm ci could not install _agent-guidance's node "
+                     "dependencies for scripts/build-contributor-rules.js")
 CONTENT_CONTRIBUTOR = (".github/fleet-contributor-rules.md is not what "
                        "scripts/build-contributor-rules.js builds from base.md")
 
@@ -573,7 +575,7 @@ def prepare(staged: Path, tree: Path, section: str, guidance_sha: str, run_id: s
                 subprocess.run(["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
                                cwd=tree, capture_output=True, check=True)
             except (OSError, subprocess.CalledProcessError) as e:
-                raise Rejected(CONTENT_CONTRIBUTOR) from e
+                raise Rejected(CONTENT_NODE_DEPS) from e
         if _contributor_rules(tree, "--write") or not contributor_rules_current(tree):
             raise Rejected(CONTENT_CONTRIBUTOR)
     changed = [entry[3:] for entry in ingest.git(

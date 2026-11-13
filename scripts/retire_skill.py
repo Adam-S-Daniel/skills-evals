@@ -2429,9 +2429,19 @@ def _node_deps(checkout: Path) -> None:
         _run(checkout, "npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund")
 
 
+#: The only variables _agent-guidance's build scripts and `npm ci` see: the
+#: job's environment holds the App token and the review credential, and
+#: none of it is theirs to read.
+_BUILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def _build_env() -> dict:
+    return {k: os.environ[k] for k in _BUILD_ENV_KEYS if k in os.environ}
+
+
 def _run(checkout: Path, *args: str) -> str:
     proc = subprocess.run(list(args), cwd=checkout, capture_output=True, text=True,
-                          check=False)
+                          check=False, env=_build_env())
     if proc.returncode != 0:
         raise RetireError(f"{' '.join(args[:2])} exited {proc.returncode}")
     return proc.stdout
