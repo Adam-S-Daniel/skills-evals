@@ -462,7 +462,11 @@ private repository: branch `persistent/usage-events` of
     `\\wsl$\<distro>\…` path as the Linux path; then symbolic links are
     resolved.
   - *`base_kind`.* `plugin-cache` (`<.claude>/plugins/cache/<marketplace>/<plugin>/<version>/skills/<name>`),
-    `account-sync` (under `<.claude>/skills/synced/`), `account-plugin` (a
+    `account-sync` (under `<.claude>/skills/synced/`), `account-plugin-sync`
+    (`<.claude>/plugins/synced/<bucket>/<plugin>/skills/<name>`, its registry from
+    the bucket's `manifest.json` marketplace name through
+    `known_marketplaces.json`; the digest is the synced copy's own, since
+    claude.ai re-serializes the frontmatter), `account-plugin` (a
     Cowork `local-agent-mode-sessions` path), `repo` (inside a git work
     tree), `user-skills` (`<.claude>/skills/<name>` outside one), `builtin`
     (`schedule`, `update-config`, `loop` or `simplify` with no base
