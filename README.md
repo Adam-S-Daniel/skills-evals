@@ -709,6 +709,11 @@ Evals Explorer, not two pages). The
 skills view is the default; an on-page toggle switches to the guidance view
 and updates the URL (`?subject=guidance` opens it directly).
 
+The page's `boot()` runs only in a browser, so the Node tests never execute
+it. After any change to `explorer/src`, load the built page or the site
+preview in a headless browser and check that it renders, in addition to
+`npm test`.
+
 It reads ONE file at load time, cache-busted with a query string:
 [`explorer/latest.json` on `persistent/eval-results`](https://raw.githubusercontent.com/Adam-S-Daniel/skills-evals/persistent/eval-results/explorer/latest.json)
 (raw.githubusercontent.com sends `access-control-allow-origin: *` and caches
