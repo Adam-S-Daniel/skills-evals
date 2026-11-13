@@ -236,8 +236,12 @@ class WorkflowTests(unittest.TestCase):
     doc = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     on = doc.get("on", doc.get(True))
 
-    def test_triggers_are_the_monday_window_schedule_and_dispatch(self):
-        self.assertEqual(set(self.on), {"schedule", "workflow_dispatch"})
+    def test_triggers_are_the_monday_window_schedule_the_ingest_backstop_and_dispatch(self):
+        self.assertEqual(set(self.on), {"schedule", "workflow_run", "workflow_dispatch"})
+        ingest = yaml.safe_load((REPO_ROOT / ".github" / "workflows"
+                                 / "routine-eval-ingest.yml").read_text(encoding="utf-8"))
+        self.assertEqual(self.on["workflow_run"],
+                         {"workflows": [ingest["name"]], "types": ["completed"]})
         w = gmw.parse_window(BOUNDS)
         for entry in self.on["schedule"]:
             minute, hour, dom, month, dow = entry["cron"].split()
@@ -269,6 +273,21 @@ class WorkflowTests(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("eval-improve", text)
         self.assertNotIn("trig_", text)
+
+    def test_a_backstop_run_outside_the_window_stops_before_the_token(self):
+        steps = self.doc["jobs"]["arm"]["steps"]
+        window = next(s for s in steps if s.get("id") == "window")
+        self.assertIn("window_open", window["run"])
+        self.assertLess(steps.index(window),
+                        min(i for i, s in enumerate(steps) if s.get("id") == "guidance-token"))
+        gate = "steps.window.outputs.open == 'true'"
+        for step in (next(s for s in steps if s.get("id") == "guidance-token"),
+                     next(s for s in steps if "arm-queued" in s.get("run", ""))):
+            self.assertIn("github.event_name != 'workflow_run' || " + gate, step["if"])
+
+    def test_no_run_block_reads_an_event_payload(self):
+        for step in self.doc["jobs"]["arm"]["steps"]:
+            self.assertNotIn("github.event.", step.get("run", ""), step.get("name"))
 
     def test_the_token_reaches_exactly_the_arming_step(self):
         steps = self.doc["jobs"]["arm"]["steps"]

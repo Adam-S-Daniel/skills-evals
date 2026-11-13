@@ -15,6 +15,11 @@ name: Arm queued guidance improvements in the merge window
 #   a schedule constant: they sit inside the shipped window (a test pins
 #   that), and the second is a retry for a first run GitHub skipped or delayed.
 #   A run outside the window is harmless, it arms nothing.
+# * Backstop (skills-evals#915): GitHub skips crons, and a skipped Monday
+#   would leave queued pull requests waiting a week. So the workflow also
+#   runs after every ingest (`workflow_run`, which keeps firing while the
+#   evals run, unlike this repository's cron). Such a run reads the window
+#   first and stops before minting the token unless it is open.
 # * Only pull requests the loop opened are armed: head `eval-guidance-improve/`
 #   in _agent-guidance, authored by the loop's App, labeled `agent-authored`,
 #   not draft, not labeled `on-hold`. Retirement pull requests are not queued:
@@ -30,6 +35,9 @@ on:
   schedule:
     - cron: "7 17 * * 1"
     - cron: "7 18 * * 1"
+  workflow_run:
+    workflows: [Ingest routine eval results]
+    types: [completed]
   workflow_dispatch:
 
 permissions: {}
@@ -66,6 +74,16 @@ jobs:
       - name: Install the script's dependencies
         run: python3 -m pip install pyyaml==6.0.3
 
+      # The clock is read here and nowhere else; a failure to read the
+      # bounds counts as closed (guidance_merge_window.window_open).
+      - name: Is the merge window open?
+        id: window
+        working-directory: skills-evals
+        run: |
+          set -euo pipefail
+          opened=$(python3 -c 'import sys; from pathlib import Path; sys.path.insert(0, "scripts"); import guidance_merge_window as g; print("true" if g.window_open(Path(sys.argv[1])) else "false")' "$GITHUB_WORKSPACE/agent-guidance")
+          echo "open=${opened}" >> "$GITHUB_OUTPUT"
+
       - name: Are the GitHub App's secrets configured?
         id: credential
         env:
@@ -79,7 +97,7 @@ jobs:
 
       - name: Mint the GitHub App token for _agent-guidance
         id: guidance-token
-        if: steps.credential.outputs.present == 'true'
+        if: steps.credential.outputs.present == 'true' && (github.event_name != 'workflow_run' || steps.window.outputs.open == 'true')
         continue-on-error: true
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -91,6 +109,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Arm the queued pull requests, inside the window only
+        if: github.event_name != 'workflow_run' || steps.window.outputs.open == 'true'
         working-directory: skills-evals
         env:
           GUIDANCE_TOKEN: ${{ steps.guidance-token.outputs.token }}
