@@ -299,7 +299,7 @@ test('stakes show on the card for high and no-eval subjects only', () => {
   doc.skills[1].stakes = { level: 'none', reason: 'a hook refuses it', covered_by: 'Adam-S-Daniel/example:hooks/check.sh' };
   doc.skills[2].stakes = { level: 'normal' };
   const text = pagesText(doc, 'skills');
-  ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked every 4 weeks instead of 8.'), 'high line');
+  ok(text.includes('High stakes: a wrong pin runs third-party code. It is tested first and re-checked sooner than other subjects.'), 'high line');
   ok(text.includes('No test needed: a hook refuses it. A check enforces it: Adam-S-Daniel/example:hooks/check.sh.'), 'none line');
   eq(text.split('High stakes:').length + text.split('No test needed:').length, 4);
 });

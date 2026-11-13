@@ -285,19 +285,21 @@ model) and improve fires (one skill, with a fixed holdout) in eight bands:
    passes at least 90% of its checks has no headroom for an edit to gain, so
    it becomes a "needs harder fixtures" work item: write a fixture it fails.
    A skill or guidance section owned by retirement gets neither item.
-6. **Re-checks**: decided cells not measured for eight weeks (four for a
-   high-stakes subject).
+6. **Re-checks**: decided cells not measured since their re-check age (current
+   values: [docs/rules.md](rules.md)). A re-check is skipped only while the
+   subject's removal is `pr-open`, `worker`, `waiting-turn`, `queued`,
+   `removed` or unknown; `declined`, `owner` and `blocked` are re-checked.
 
 Two rules from the 2026-11-03 gate change apply across the bands. A cell
 whose verdict class is `ceiling` (a bound on its without arm shows a mean
 above 1 minus the margin, so it cannot show the gain) or
-`ceiling-unconfirmed` (its without arm averages 0.90 or more and its
-no-harm test has rejected, but it is undecided after 20 pairs) plans no
+`ceiling-unconfirmed` (its without arm averages at least `high_stop_min_without` and its
+no-harm test has rejected, but it is undecided at the high-cell pair cap) plans no
 fire in any band but safety, re-checks included, and
 becomes a "fixture ceiling" work item, unless its subject is already kept:
 it needs a harder fixture, not more runs. It does not block its subject:
 the subject's other cells keep being measured. An undecided cell that has
-reached the 40-pair cap is not fired either (its window is frozen), blocks
+reached the pair cap is not fired either (its window is frozen), blocks
 its subject and becomes a "cell at cap" work item (`cell-at-cap`, with the
 gate's reason), unless its subject is already kept; a decided cell at the
 cap is not re-checked, since a new pair cannot enter its window. And the cheaper
@@ -319,13 +321,13 @@ needs to reach its level, from the level it has reached and D's mean and
 variance as the gate's next bet sees them. Fewest projected points per use
 (pairs x fire cost / (1 + the subject's use)) go first; a cell of a subject
 with some cells settled goes before one of a fresh subject; a cell projected
-past its 40-pair cap, with at least three pairs measured, goes last and is a
+past its pair cap, with at least three pairs measured, goes last and is a
 `cell-projected-past-cap` work item (a step summary count, not an issue). A
 cell with no measured difference yet keeps the band's old order behind the
 projected ones. Only a route that can still decide counts: a provisional
 pooled keep is projected to the current rest's own keep test (its lapse at
 the cap is no keep), a cell whose without arm is too high to show the margin
-to its ceiling stop at 20 pairs (its remove test cannot decide it), and a
+to its ceiling stop at the high-cell cap (its remove test cannot decide it), and a
 crossed remove test still waiting for a second Claude Code version has no
 projection. The two-week batch already caps how many subjects are open
 at once; it now also takes a partly decided subject before the longest
@@ -350,16 +352,16 @@ schedule, and the weekly sweep files no `needs-fixtures` or
    so when the 30-fire cap binds a section outside the focus can wait weeks.
 
 **The guidance focus** (`guidance_focus` in `scripts/plan_week.py`; Adam's
-rule, 2026-11-02 18:42 UTC: a section is removed at 90% confidence that it
-does not improve results by 0.15 or more). Guidance fires used to spread over
+rule, 2026-11-02 18:42 UTC: a section is removed when the gate is confident
+that it does not improve results by the objective margin; current values:
+[docs/rules.md](rules.md)). Guidance fires used to spread over
 every section's cells, so none came near a verdict; the focus spends them on
 the two sections nearest one until those decide.
 
 - **Progress.** A cell's *retire progress* is its objective's no-help
   confidence (the level the remove test has reached), divided by
-  `retire_confidence` from the verdict document's `guidance_policy` (0.90
-  when absent). Its *keep progress* is its objective's helps confidence
-  divided by `benefit_confidence` (0.80 when absent); that is a per-cell
+  `retire_confidence` from the verdict document's `guidance_policy`. Its *keep progress* is its objective's helps confidence
+  divided by `benefit_confidence`; that is a per-cell
   level, and the section's keep family asks more of it. Since 2026-11-03 the
   judge is reported and does not vote, so neither reads it. An absent value
   is 0.
@@ -372,15 +374,15 @@ the two sections nearest one until those decide.
   none): keep, every retire verdict, `shorten-or-merge` and
   cannot-discriminate and `ceiling` are not focused. (A `ceiling` cell is
   one whose ceiling test, a betting bound on the without arm's run means at
-  90%, shows a mean above 1 minus the margin, and whose no-harm test shows
+  the remove level, shows a mean above 1 minus the margin, and whose no-harm test shows
   the section costs less than the margin there: at least 18 pairs, more as
-  the arm drops below 1.0. A high cell undecided after 20 pairs, whose
-  without arm averages 0.90 or more and whose no-harm test has rejected, is
+  the arm drops below 1.0. A high cell undecided at the high-cell pair cap, whose
+  without arm averages at least `high_stop_min_without` and whose no-harm test has rejected, is
   `ceiling-unconfirmed`. Both are parked and do not vote on removal, as is
   a `paused` cell of a fixture the eval scope pass paused, and a
   section whose every cell is at the ceiling is `ceiling`. A `cannot-discriminate`
   cell is one whose arms
-  both pass almost nothing over three pairs, left out of the verdict as a
+  both pass almost nothing over `floor_min_runs` pairs, left out of the verdict as a
   broken fixture.) At least one of its cells must be
   able to plan a fire (schedulable, stakes not `none`, not a "fixture
   broken" missing cell), no `retire-guidance/<section>` pull request may be
@@ -389,7 +391,7 @@ the two sections nearest one until those decide.
   skipped as anomalous, or a cannot-discriminate cell with at least three
   counted runs on each arm. More runs on the current content cannot move a
   blocking cell toward removal; under three runs one more can still change
-  its class. An undecided cell at the 40-pair cap blocks too. A parked cell
+  its class. An undecided cell at the pair cap blocks too. A parked cell
   does not block: it is not fired, and the section's other cells are still
   measured.
 - **Order.** The higher-scored section's fires go first; within a section the
@@ -747,26 +749,27 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   and holds at every run count, so a cell is checked after every pair; four
   identical runs per arm, which removed a skill under the old bound, now
   decide nothing (identical arms need 18 pairs).
-- *Keep* when the keep test shows D above 0 at 80% (`benefit_confidence`),
-  split across the subject's cells (fixtures on main times roster models,
-  Bonferroni). *No benefit* in a cell when its test shows D below 0.15
-  (`objective_margin`) at 90% (`retire_confidence`). Whichever test rejects
+- *Keep* when the keep test shows D above 0 at the keep level
+  (`benefit_confidence`), split across the subject's cells (fixtures on main
+  times roster models, Bonferroni). *No benefit* in a cell when its test shows
+  D below the objective margin (`objective_margin`) at the remove level
+  (`retire_confidence`). Current values: [docs/rules.md](rules.md). Whichever test rejects
   first decides the cell; a tie keeps.
-- *Ceiling.* A cell whose without arm is shown, by a betting bound at 90%
+- *Ceiling.* A cell whose without arm is shown, by a betting bound at the remove level
   on its run means, to average above 1 minus the margin cannot show the
   margin (a sample mean is not enough: three perfect pairs once parked a
   cell for good). It is `ceiling`: it does not vote on removal, the planner
   stops firing it without blocking the subject's other cells, and a subject
   whose every cell is at the ceiling is `ceiling`. It parks only when a
-  no-harm test (D above minus the margin, at 90%) agrees, so the margin
+  no-harm test (D above minus the margin, at the remove level) agrees, so the margin
   cannot hide a harm beyond the margin. A cell whose without arm is high
-  but undecided after 20 pairs (`max_runs_high_cell`) stops being fired as
+  but undecided at the high-cell pair cap (`max_runs_high_cell`) stops being fired as
   `ceiling-unconfirmed`, which does not vote either, but only once the
-  no-harm test has rejected and the without arm averages at least 0.90
-  (`HIGH_STOP_MIN_WITHOUT`); otherwise it is fired on to the cap. A retire
+  no-harm test has rejected and the without arm averages at least
+  `high_stop_min_without`; otherwise it is fired on to the cap. A retire
   verdict beside either still removes automatically (2026-11-13).
 - *Harm.* A cell whose without arm is high is also tested for harm (D below
-  0 at 90%), and is `no-benefit` once that test decides: it needs no
+  0 at the remove level), and is `no-benefit` once that test decides: it needs no
   headroom to show harm. A harm beyond the margin is parked only at the
   no-harm test's error rate; a milder one can still end parked or, at the
   cap, `no-clear-effect`. A fixture the eval scope
@@ -774,9 +777,9 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   undecided (`paused`, below); the subject is then `insufficient`, not
   `ceiling`, when every cell is parked, and otherwise a `retire`
   (a parked cell beside decided `no-benefit` cells).
-- *The cap.* A cell still undecided after 20 pairs (`max_runs_per_cell`)
-  is `no-clear-effect` when no test crossed and its pairs span two Claude
-  Code versions. Otherwise (one version, or a test that crossed but has
+- *The cap.* A cell still undecided at its pair cap (`max_runs_per_cell`)
+  is `no-clear-effect` when no test crossed and its pairs span enough Claude
+  Code versions (`min_cli_versions`). Otherwise (one version, or a test that crossed but has
   not decided) it stays `insufficient`: it is no longer fired, blocks its
   subject and becomes a `cell-at-cap` work item.
 - *Paused fixtures.* A fixture the eval scope pass paused (below) keeps its
@@ -785,7 +788,7 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   any other is `paused`, parked, so it does not vote. A subject whose every cell is parked is `ceiling` only
   when each shows the ceiling on its own runs: a ceiling class, or a cell
   paused for the ceiling that was a ceiling class or whose no-harm test had
-  rejected with a without arm averaging 0.90 or more. The pause reads only
+  rejected with a without arm averaging at least `high_stop_min_without`. The pause reads only
   a pooled sample of the without arm, which is not that evidence. Otherwise
   (and for a floor or zero-use pause) the subject is `insufficient`, and a
   cell parked by a zero-use pause keeps its subject `insufficient` even beside
@@ -812,7 +815,7 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   parked cells that did not vote), and when the bot cannot open the pull
   request itself for a reason an agent can fix, `scripts/retire_skill.py`
   files an `agent-ready` issue for the fleet worker. A removal decides at the first pair
-  where its test is at its level and the pairs so far span two Claude Code
+  where its test is at its level and the pairs so far span enough Claude Code
   versions, and a skill cell with an agent-errored trial supports no
   removal at all.
 - *The judge* is reported beside each cell and does not vote; single
@@ -821,9 +824,9 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   on main. For a guidance section, the guidance block's `rest_policy`
   (2026-11-07, default `pooled-with-current-guard`) pools the runs beside
   every rest of the guidance, pair by pair at equal weight, for keeping
-  once the current rest has 6 pairs (a keep test over the current rest
+  once the current rest has `rest_guard_min_pairs` pairs (a keep test over the current rest
   alone runs beside it, each at half the keep level);
-  any removal also needs at least `rest_guard_min_pairs` (6) pairs beside
+  any removal also needs at least `rest_guard_min_pairs` pairs beside
   the current rest whose own share of the test reaches the removal level,
   and ceilings, floors and the cap read the current rest only. `current`
   reads the current rest only, as from 2026-11-03.
@@ -854,7 +857,7 @@ says how to reverse it (close it, or press Revert once merged), and the
 explorer lists removed skills and sections (#557). One loop pull request
 is open at a time: nothing is
 opened while an `eval-improve/`, `draft-skill/` or `retire-skill/` pull
-request is open there, and a closed `retire-skill/<skill>` one means the
+request, or an agent-stamped removal issue, is open there, and a closed `retire-skill/<skill>` one means the
 skill is decided, unless the loop withdrew it (below). That branch carries everything the registry's required
 checks read — the skill gone, the plugin's major version raised, a
 `docs/skill-impact.md` entry, the layout pin in its
@@ -982,7 +985,8 @@ branch already gone counting as deleted, and the push is plain. Any other
 branch fails the run rather than be pushed over; a person restores its pull
 request or deletes the branch. Nothing here pushes over a commit. A subject
 whose verdict swings back and forth is
-withdrawn and reopened each time, up to `MAX_LOOP_PAUSES` (3) pauses; from
+withdrawn and reopened each time, up to `max_removal_pauses` (gate-policy.yml; current value in
+[docs/rules.md](rules.md)) pauses; from
 then on this job files or updates the subject's proposal issue instead of
 opening a removal, and the first time it reaches an open issue it comments
 there (a comment notifies; a body edit does not), mentioning the owner. Any
@@ -1268,8 +1272,8 @@ and the same job still contextualizes drafted fixtures.
    (2026-11-13): a pin holds while its evidence is in use, and is re-pinned
    automatically only when the evidence would restart anyway.
    `explorer_data.drift_evidence` calls a drifted fixture *held* when it has
-   runs at its current pin newer than the re-check age (8 weeks, 4 for a
-   high-stakes skill), its skill is in the open batch, or its digest cannot
+   runs at its current pin newer than the re-check age (`recheck_weeks`, or
+   `recheck_weeks_high` for a high-stakes skill), its skill is in the open batch, or its digest cannot
    be measured; a held fixture raises no alert and is counted in the
    document's `context_drift_held`. Otherwise it is *free*: it alerts, and
    the same daily job's `scripts/repin_drifted_fixtures.py` points its
@@ -1332,11 +1336,12 @@ edit elsewhere in the guidance started the evidence over; since 2026-11-07
 weight, a removal still needs the current rest's own evidence, and a keep made
 on the pooled pairs alone gives way to such a removal (ADR 0014,
 "Pooled-rest addendum (2026-11-07)"). A section is `retire` by the skills' rule above, with the guidance
-block of `evals/gate-policy.yml` (today the same numbers).
+block of `evals/gate-policy.yml`.
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
 guidance already covers it. A `retire` whose alone check has not finished
-(no alone cell yet, or one still undecided) is `insufficient`, neither
+(no alone cell yet, or one still undecided) gets verdict `insufficient`
+(`in_situ_verdict` stays `retire`), neither
 removed nor proposed to the owner (2026-11-13), since the alone check could
 still turn it into `shorten-or-merge`; the planner fires the alone arm. The Evals Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
@@ -1352,7 +1357,7 @@ An open `retire-guidance/<section>` removal pull request is withdrawn (or,
 in `guidance: retirement_mode: proposal`, disarmed) the same way as a
 skill's (Withdrawal, above), from the guidance verdicts. A closed one
 decides the section, so no removal is opened for it again, unless it is a
-loop pause as for a skill (and then only up to `MAX_LOOP_PAUSES`). While any
+loop pause as for a skill (and then only up to `max_removal_pauses`). While any
 `retire-guidance/` pull request is open (one a person holds by turning its
 auto-merge off included), the guidance pass waits and writes nothing, as the
 skill pass does.
@@ -1368,22 +1373,23 @@ reason each to its job summary; the `propose` job applies them on
 commit; repo-settings ADR 0017), with the roster App token and at most one such pull request open.
 The rules, in order:
 
-- **Ceiling.** A scheduled fixture with at least 4 runs after its directory's
-  last commit whose without arm (guidance: `full_minus_section`) passes 0.85
-  or more of its checks on average, and, when that arm has judge figures,
-  scores 8.5 or more, cannot show a gain. Paused. The rule reads each roster
-  model's cell on its own: every model needs 4 runs of its own that trip it,
+- **Ceiling.** A scheduled fixture with enough runs after its directory's
+  last commit (`ceiling_min_runs`) whose without arm (guidance:
+  `full_minus_section`) passes `ceiling_share` of its checks on average, and,
+  when that arm has judge figures, scores `ceiling_judge` or more, cannot
+  show a gain. Paused. The rule reads each roster
+  model's cell on its own: every model needs its own runs that trip it,
   because the gate decides per model and a pooled mean can hide a model with
   room to gain.
 - **Floor.** The same runs, both arms (guidance: `full` and
-  `full_minus_section`) at 0.10 or less, on every roster model. Paused.
+  `full_minus_section`) at `floor_share` or less, on every roster model. Paused.
 - **Keep guard.** Neither rule pauses a subject whose explorer verdict is
-  `keep` or whose confidence that it helps is 0.5 or more. The gate keeps a
+  `keep` or whose confidence that it helps reaches `keep_guard`. The gate keeps a
   paused fixture's cells as parked `paused` cells (below), and a decided
   `keep` or `no-benefit` cell still counts, so the guard is not needed for
   safety; it keeps a kept subject's fixtures measured.
-- **Zero use.** A skill with no recorded use in real work over the census's
-  8 weeks (`skill_usage.has_recorded_use` is False: a fresh census that
+- **Zero use.** A skill with no recorded use in real work over the census
+  window (`first_use_weeks` in `removal-policy.yml`; `skill_usage.has_recorded_use` is False: a fresh census that
   tracks the skill by name and counts no use) has all its scheduled fixtures
   paused, `stakes: high` skills included (the high-stakes exemption covers the
   ceiling and floor rules only). They resume on its first recorded use. An
@@ -1397,16 +1403,11 @@ The rules, in order:
 
   *2026-11-13, Adam: "Do we/should we run evals on skills before they have
   been recorded used in real work? I think we should not."* So the pause has
-  no exposure minimum. The earlier rule (no use in at least 500 sessions that
-  listed the skill in full on the surfaces it reaches, never for `stakes:
-  high`) was written for an irreversible removal and still governs one:
-  `harness/removal_policy.py`'s unused-skill removal keeps
-  `skill_usage.zero_use`, the 500-session threshold (`exposure`: local
-  sessions whose listing was `full`, plus cloud `listing` rows that name the
-  adam-agentskills registry and a full listing, never a `guidance` row), the
-  every-reached-surface-known requirement, a census ending within 1 day of the
-  run's `as_of` and the accrued description cost. A pause is reversible and
-  costs only the evals it skips, so it does not need that evidence.
+  no session minimum, and `stakes: high` skills are paused too. Removing an
+  unused skill is a separate, irreversible step: it follows the cost formula
+  in `evals/removal-policy.yml` (`floor_weeks`, `value_per_use_usd` and the
+  rest), not a session count. A pause is reversible and costs only the evals
+  it skips. Current values: [docs/rules.md](rules.md).
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its

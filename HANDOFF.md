@@ -41,8 +41,10 @@ September pause, and is not updated any more.
   adam-agentskills that auto-merges with no human review in `auto` mode
   (the committed `retirement_mode`; Adam, 2026-10-25 and 2026-10-26;
   [ADR 0014](docs/decisions/0014-removal-pull-requests-merge-without-review.md)),
-  and files or updates an issue instead when the job has no App token or
-  the skill's plugin runs code. Still owed before a removal can merge: the
+  and files an issue instead when the skill's plugin runs code (a
+  `proposal` issue for Adam) or the bot cannot remove the skill itself (an
+  `agent-ready` issue for the fleet worker). Every `retire` verdict
+  otherwise removes automatically (#1011). Still owed before a removal can merge: the
   repo-settings exception ADR, and the App's two secrets in skills-evals.
 - **Guidance sections (#124):** all twenty-nine sections have fixtures under
   `evals/guidance/<section id>/<name>/` and are on the schedule. The same
@@ -54,17 +56,19 @@ September pause, and is not updated any more.
   again since withdrawal was hardened (PR #740, #645). See DESIGN.md, "Section
   fixtures, verdicts and removal".
 - **One removal rule (Adam, 2026-11-02, #557):** skills and sections are
-  removed at 90% confidence that they do not improve results by 0.15 or
-  more, with no confirmation step (#565, #578). Every removal files a
+  removed on evidence that they do not improve results by the margin in
+  `evals/gate-policy.yml` (current values: [docs/rules.md](docs/rules.md)),
+  with no confirmation step (#565, #578). Every removal files a
   notice issue that mentions Adam with the revert path, and the explorer
   lists removed skills and sections.
 - **The betting bound (2026-11-03; Adam's decision pending):** after that
   day's statistics review and threshold sweep, the gate decides on paired
-  fires with a betting confidence sequence (no variance prior), keeps at
-  80% per subject, parks cells at the ceiling, stops a cell at 20 pairs (Adam, 2026-11-12; 40 before) as
-  `no-clear-effect`, ignores the judge for decisions, and allows an
-  automatic removal only with two or more headroom cells, all no-benefit.
-  See ADR 0014's betting-bound addendum and `harness/gates.py`.
+  fires with a betting confidence sequence (no variance prior), keeps per
+  subject, parks cells at the ceiling, stops a capped cell as
+  `no-clear-effect` and ignores the judge for decisions. Every `retire`
+  verdict removes automatically (#1011). Levels and caps are in
+  [docs/rules.md](docs/rules.md). See ADR 0014's betting-bound addendum and
+  `harness/gates.py`.
 - **First sweep (2026-10-25):** 8 fixtures on 3 roster models, with 3 trials
   per arm. The skill raised the checks passed by 10.9 to 16.8 points on
   average, depending on the model. Numbers and per-fixture results are in
