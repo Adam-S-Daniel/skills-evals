@@ -634,7 +634,12 @@ def policy_value(policy: dict | None, key: str, guidance: bool):
     if policy and policy.get(key) is not None:
         return policy[key]
     committed = _committed_gate_policy()
-    return (committed["guidance"] if guidance and committed["guidance"] else committed["skills"])[key]
+    block = committed["guidance"] if guidance and committed["guidance"] else committed["skills"]
+    if key not in block:
+        raise KeyError(f"evals/gate-policy.yml has no {key} in the "
+                       f"{'guidance' if block is committed['guidance'] else 'skills'} block "
+                       "(a guidance-only key needs the guidance block)")
+    return block[key]
 
 #: The verdicts more runs on the current content may still change: every
 #: other section verdict (keep, retire, retire-pending, retire-unconfirmed,
