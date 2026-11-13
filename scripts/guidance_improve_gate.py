@@ -58,8 +58,12 @@ heading, only the row's `bytes` in the manifest, one inserted impact entry
 for the section; AGENTS.md is left to that repository's own staleness
 check, which regenerates it), and refuses any changed path outside
 repo-settings ADR 0014's allowlist for _agent-guidance: `agents-md/**`,
-`AGENTS.md`, `docs/guidance-impact.md`, and `.claude/hooks/fleet-guidance.md`
-only as a byte-identical copy of `agents-md/base.md`. The merge mode is
+`AGENTS.md`, `docs/guidance-impact.md`, `.claude/hooks/fleet-guidance.md`
+only as a byte-identical copy of `agents-md/base.md`, and
+`.github/fleet-contributor-rules.md` only as what `node
+scripts/build-contributor-rules.js --check` accepts (`prepare` regenerates it
+with `--write` when base.md changed and that script exists; an older
+_agent-guidance without it gets nothing new). The merge mode is
 `evals/improve-policy.yml`'s `improve_merge_mode` (improve_gate.merge_mode):
 there is no plugin runtime in _agent-guidance to lower it.
 
@@ -147,6 +151,10 @@ IMPACT = "docs/guidance-impact.md"
 AGENTS = "AGENTS.md"
 #: _agent-guidance's fleet-memory payload: a byte-identical copy of base.md.
 PAYLOAD = ".claude/hooks/fleet-guidance.md"
+#: _agent-guidance's generated contributor rules and the script that builds
+#: them. An older _agent-guidance has neither, and then nothing is run.
+CONTRIBUTOR_SCRIPT = "scripts/build-contributor-rules.js"
+CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 #: A section file: base.md, or one file directly under agents-md/sections/.
 SECTION_FILE_RE = re.compile(r"agents-md/(?:base\.md|sections/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.md)")
 #: A fixture key, relative to evals/ (propose_guidance_edit's listing).
@@ -366,7 +374,29 @@ def allowed_change(tree: Path, path: str) -> bool:
         payload, base = _no_symlink(tree, PAYLOAD), _no_symlink(tree, BASE_MD)
         return payload.is_file() and base.is_file() \
             and payload.read_bytes() == base.read_bytes()
+    if path == CONTRIBUTOR_RULES:
+        _no_symlink(tree, CONTRIBUTOR_RULES)
+        return contributor_rules_current(tree)
     return False
+
+
+def has_contributor_script(tree: Path) -> bool:
+    return _no_symlink(tree, CONTRIBUTOR_SCRIPT).is_file()
+
+
+def _contributor_rules(tree: Path, flag: str) -> int:
+    """The build script's exit code under `flag` (--write or --check) run in
+    `tree`; 2 when node cannot run it."""
+    try:
+        return subprocess.run(["node", CONTRIBUTOR_SCRIPT, flag], cwd=tree,
+                              capture_output=True, check=False).returncode
+    except OSError:
+        return 2
+
+
+def contributor_rules_current(tree: Path) -> bool:
+    """Whether the contributor rules equal the build script's output."""
+    return has_contributor_script(tree) and _contributor_rules(tree, "--check") == 0
 
 
 CONTENT_UNREADABLE = "a changed _agent-guidance file is missing or not UTF-8 text"
@@ -379,6 +409,8 @@ CONTENT_MANIFEST = ("the patch changes agents-md/eval-coverage.yml beyond the "
 CONTENT_IMPACT = ("the patch does more to docs/guidance-impact.md than insert one "
                   "dated entry naming the section")
 CONTENT_PAYLOAD = ".claude/hooks/fleet-guidance.md is not a byte-identical copy of base.md"
+CONTENT_CONTRIBUTOR = (".github/fleet-contributor-rules.md is not what "
+                       "scripts/build-contributor-rules.js builds from base.md")
 
 
 def _read_text(tree: Path, rel: str) -> str:
@@ -532,6 +564,9 @@ def prepare(staged: Path, tree: Path, section: str, guidance_sha: str, run_id: s
         payload.write_bytes((tree / BASE_MD).read_bytes())
         if payload.read_bytes() != (tree / BASE_MD).read_bytes():
             raise Rejected(CONTENT_PAYLOAD)
+    if row["file"] == BASE_MD and has_contributor_script(tree):
+        if _contributor_rules(tree, "--write") or not contributor_rules_current(tree):
+            raise Rejected(CONTENT_CONTRIBUTOR)
     changed = [entry[3:] for entry in ingest.git(
         repo, "status", "--porcelain=v1", "-z", "--untracked-files=all").decode().split("\0")
         if entry]

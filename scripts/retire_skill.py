@@ -2189,6 +2189,10 @@ GUIDANCE_AGENTS = "AGENTS.md"
 #: _agent-guidance's own fleet-memory payload: a hand-made byte copy of
 #: base.md that nothing syncs (its scripts/check-fleet-guidance-mirror.js).
 GUIDANCE_PAYLOAD = ".claude/hooks/fleet-guidance.md"
+#: _agent-guidance's generated contributor rules and the script that builds
+#: them; an older _agent-guidance has neither, and then nothing is run.
+GUIDANCE_CONTRIBUTOR_SCRIPT = "scripts/build-contributor-rules.js"
+GUIDANCE_CONTRIBUTOR_RULES = ".github/fleet-contributor-rules.md"
 #: The heading LINE AGENTS.md is split on, never a substring of a line: the
 #: managed block's own first line quotes it (_agent-guidance AGENTS.md).
 REPO_SPECIFIC_LINE = "## Repo-specific additions"
@@ -2609,8 +2613,11 @@ def guidance_prepare_branch(checkout: Path, action: dict) -> None:
     impact = checkout / GUIDANCE_IMPACT
     _write_exact(impact, guidance_insert_entry(_read_exact(impact), action["impact_entry"]))
     regenerate_agents_md(checkout, _run(checkout, "bash", "scripts/build-agents-md.sh"))
+    rules = (checkout / GUIDANCE_CONTRIBUTOR_SCRIPT).is_file()
+    if rules:
+        _run(checkout, "node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write")
     _git(checkout, "add", "-A", "--", "agents-md", GUIDANCE_IMPACT, GUIDANCE_AGENTS,
-         GUIDANCE_PAYLOAD)
+         GUIDANCE_PAYLOAD, *([GUIDANCE_CONTRIBUTOR_RULES] if rules else []))
     _git(checkout, "-c", f"user.name={COMMIT_NAME}", "-c", f"user.email={COMMIT_EMAIL}",
          "commit", "-q", "-m",
          f"Remove guidance section {action['section']}: no marginal benefit\n\n"
@@ -2637,6 +2644,8 @@ def guidance_commands(action: dict) -> list:
                 ["node", "scripts/check-guidance-coverage.js", "--write-bytes"],
                 ["edit", GUIDANCE_IMPACT, "insert the remove entry"],
                 ["bash", "scripts/build-agents-md.sh", "> AGENTS.md (managed half)"],
+                ["node", GUIDANCE_CONTRIBUTOR_SCRIPT, "--write",
+                 "(when _agent-guidance has the script)"],
                 ["git", "commit"],
                 REVIEW_COMMAND,
                 *_push_commands(action),
