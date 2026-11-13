@@ -18,6 +18,12 @@ permissions:
   contents: read
   issues: write
 
+# One run at a time, so two runs never race on the tracking issue. Queued, not
+# cancelled; this is not a required check.
+concurrency:
+  group: rules-consistency
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-24.04
@@ -34,52 +40,64 @@ jobs:
       - name: Install dependencies
         run: python3 -m pip install pyyaml==6.0.3
       - name: Clone the listed repositories
-        id: clone
         run: |
           set -euo pipefail
-          # One "<owner>/<repo>" per line, checked, from evals/rules-consistency.yml.
-          python3 - > "$RUNNER_TEMP/repos.txt" <<'PY'
-          import re, sys, yaml
+          # Checks evals/rules-consistency.yml and writes one JSON line per
+          # repo ({"repo", "dir", "exclude"}); any bad entry fails the step.
+          python3 - > "$RUNNER_TEMP/repos.jsonl" <<'PY'
+          import json, os, re, sys, yaml
           doc = yaml.safe_load(open("evals/rules-consistency.yml", encoding="utf-8"))
           rows = doc.get("repos") if isinstance(doc, dict) else None
           if not isinstance(rows, list) or not rows:
               sys.exit("evals/rules-consistency.yml must list at least one repo under `repos:`")
+          clones = os.path.join(os.environ["RUNNER_TEMP"], "clones")
           for row in rows:
               name = row.get("repo") if isinstance(row, dict) else None
               if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+", name):
                   sys.exit(f"evals/rules-consistency.yml: bad repo entry {row!r}")
-              for glob in row.get("exclude") or []:
-                  if not isinstance(glob, str) or "\n" in glob:
-                      sys.exit(f"evals/rules-consistency.yml: bad exclude for {name}")
-              print(name)
+              exclude = row.get("exclude") or []
+              if not isinstance(exclude, list) or not all(
+                      isinstance(g, str) and g and "\n" not in g for g in exclude):
+                  sys.exit(f"evals/rules-consistency.yml: bad exclude for {name}")
+              print(json.dumps({"repo": name, "dir": os.path.join(clones, name.replace("/", "__")),
+                                "exclude": exclude}))
           PY
           mkdir -p "$RUNNER_TEMP/clones"
+          python3 -c 'import json,sys; [print(json.loads(l)["repo"]) for l in open(sys.argv[1])]' \
+            "$RUNNER_TEMP/repos.jsonl" > "$RUNNER_TEMP/repos.txt"
           while IFS= read -r repo; do
-            dir="$RUNNER_TEMP/clones/${repo#*/}"
+            dir="$RUNNER_TEMP/clones/${repo/\//__}"
             ok=""
             for attempt in 1 2 3; do
               if git clone --quiet --depth 1 "https://github.com/$repo.git" "$dir"; then ok=1; break; fi
-              rm -rf "$dir"; sleep $((attempt * 10))
+              rm -rf -- "$dir"; sleep $((attempt * 10))
             done
             [ -n "$ok" ] || { echo "::error::could not clone $repo"; exit 1; }
           done < "$RUNNER_TEMP/repos.txt"
       - name: Check the clones against docs/rules.json
         id: check
         run: |
-          set -uo pipefail
-          args=()
-          while IFS= read -r repo; do
-            args+=(--root "$RUNNER_TEMP/clones/${repo#*/}")
-          done < "$RUNNER_TEMP/repos.txt"
-          # Each repo's excludes, relative to its own root.
-          while IFS= read -r glob; do
-            [ -n "$glob" ] && args+=(--exclude "$glob")
-          done < <(python3 -c 'import yaml; [print(g) for r in yaml.safe_load(open("evals/rules-consistency.yml"))["repos"] for g in (r.get("exclude") or [])]')
-          python3 scripts/check_rule_restatements.py --rules docs/rules.json "${args[@]}" \
-            > "$RUNNER_TEMP/findings.txt"
-          code=$?
-          if [ "$code" -gt 1 ]; then echo "::error::the checker failed (exit $code)"; exit "$code"; fi
-          echo "findings=$code" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          # Each repository is checked alone, with its own excludes.
+          python3 - <<'PY'
+          import json, os, subprocess, sys
+          temp = os.environ["RUNNER_TEMP"]
+          worst = 0
+          with open(os.path.join(temp, "findings.txt"), "w", encoding="utf-8") as out:
+              for line in open(os.path.join(temp, "repos.jsonl"), encoding="utf-8"):
+                  row = json.loads(line)
+                  args = [sys.executable, "scripts/check_rule_restatements.py",
+                          "--rules", "docs/rules.json", "--root", row["dir"]]
+                  for glob in row["exclude"]:
+                      args += ["--exclude", glob]
+                  done = subprocess.run(args, stdout=subprocess.PIPE, text=True)
+                  if done.returncode > 1:
+                      sys.exit(f"the checker failed on {row['repo']} (exit {done.returncode})")
+                  worst = max(worst, done.returncode)
+                  out.write(done.stdout)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"findings={worst}\n")
+          PY
           echo "Findings: $(grep -c . "$RUNNER_TEMP/findings.txt" || true)" >> "$GITHUB_STEP_SUMMARY"
       - name: Open, update or close the tracking issue
         env:
