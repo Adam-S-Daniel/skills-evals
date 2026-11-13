@@ -137,7 +137,7 @@ field checked, a malformed line skipped), and become `skill-digest` rows with
 this run's records or a machine file counts once, as local. No cloud `skill`
 rows are written, and cloud coverage is records seen, never complete. Readers
 add the cloud `skill-digest` rows' invocations to the skill rows
-(`harness/skill_usage.weight`, `zero_use`, `has_recorded_use`).
+(`harness/skill_usage.weight`, `has_recorded_use`).
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json \

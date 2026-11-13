@@ -160,8 +160,9 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(COMMITTED_POLICY, {
             "objective_margin": 0.15, "judge_margin": 1.5, "benefit_confidence": 0.80,
             "retire_confidence": 0.90, "min_cli_versions": 2, "max_runs_per_cell": 20,
-            "max_runs_high_cell": 20, "floor_fraction": 0.10,
-            "retirement_mode": "auto"})
+            "max_runs_high_cell": 20, "floor_fraction": 0.10, "floor_min_runs": 3,
+            "high_stop_min_without": 0.90, "recheck_weeks": 8, "recheck_weeks_high": 4,
+            "max_removal_pauses": 3, "retirement_mode": "auto"})
 
     def _text(self, **changes):
         values = {**POLICY, **changes}
@@ -190,7 +191,11 @@ class PolicyTests(unittest.TestCase):
                          ("objective_margin", 1), ("judge_margin", 11),
                          ("floor_fraction", 1), ("max_runs_high_cell", 0),
                          # Round 2's M2: the high-cell stop is inside the cap.
-                         ("max_runs_high_cell", 41)):
+                         ("max_runs_high_cell", 41),
+                         # Moved from code into the policy (docs/rules.md).
+                         ("floor_min_runs", 0), ("high_stop_min_without", 1.1),
+                         ("recheck_weeks", 0), ("recheck_weeks_high", 1.5),
+                         ("max_removal_pauses", 0)):
             with self.assertRaises(gates.GatePolicyError, msg=f"{key}={bad}"):
                 gates.parse_gate_policy(self._text(**{key: bad}))
 
@@ -516,7 +521,7 @@ class CellTests(unittest.TestCase):
 
     def test_the_floor_needs_floor_min_runs_pairs(self):
         low = [(1, 1, 1), (1, 1, 0)] * 3
-        n = gates.FLOOR_MIN_RUNS
+        n = POLICY["floor_min_runs"]
         result = cell(series("with", low[:n - 1], total=10),
                       series("without", low[:n - 1], total=10))
         self.assertEqual(result["class"], "insufficient")

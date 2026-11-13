@@ -19,7 +19,7 @@ missing or stale file reads as unknown, never as zero.
 
 Cloud sessions' skill uses (from the guidance-load Stop hook, _agent-guidance
 ADR 0036) are counted through the cloud `skill-digest` rows: `weight` adds
-them, and `zero_use` says whether a skill had no use on every surface it
+them, and `has_recorded_use` says whether a skill had any use on the surfaces it
 reaches, counting the cloud surface from the week after its first record. Cloud
 coverage is only the sessions that can push to adam-agentskills-private.
 
@@ -95,10 +95,8 @@ skill listing (the `attachment` entry of type `skill_listing` with
 Sessions are counted the way guidance rows are (one per session, in the week
 of its first entry, cross-root deduped, subagents left out). While any local
 session in a skill's window was `truncated`, that session is left out of
-`skill_usage.exposure` (only `full` local listings count); a zero needs 500
-full-listing sessions on the surfaces whose exposure is known, so a census made
-mostly of cut listings pauses nothing for zero use until the budget or the
-descriptions are fixed.
+`skill_usage.exposure` (only `full` local listings count). The unused-skill removal's cost formula
+reads these session counts (rules: [docs/rules.md](../../docs/rules.md)).
 
 ## Guidance rows
 
@@ -131,8 +129,8 @@ rows are described next. No guidance events go to the private events file.
 
 The local `transcripts` source carries `skill_keys`, the sorted skill names the
 census counts by name. Any other skill's use is counted under `other`, so a
-skill not listed there reads as 0 uses whatever its real use: `zero_use` and
-the unused removal return unknown for it, as they do for a document published
+skill not listed there reads as 0 uses whatever its real use: the first-use pause and
+the unused removal treat its use as unknown, as they do for a document published
 before the list existed. The names are the public allowlist, so the list adds
 nothing `check_public` does not already allow (it also checks the list is a
 subset).
@@ -188,8 +186,8 @@ those as `kind: "listing"`, `name: "full"`, `surface: "cloud"` rows. A
 `guidance` row proves neither (it is written whether or not the bundle was
 installed, and a cloud listing can be cut), so it is never exposure. When no
 counted record carries either field, the source omits `listing_recorded` and
-cloud exposure is unknown, not 0: a pause then rests on local exposure alone,
-and a removal for being unused is refused for any skill that reaches cloud.
+cloud exposure is unknown, not 0, and a removal for being unused is refused
+for any skill that reaches cloud.
 
 The source is `{surface: "cloud", scope: "guidance-records", from, to,
 records_scanned}` (plus `listing_recorded: true` when the records carried those

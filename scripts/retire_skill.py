@@ -132,7 +132,7 @@ loop withdrew (opened by `LOOP_AUTHOR`, labeled `loop-withdrawn` AND closed
 by `LOOP_AUTHOR`, read from the issue's `closed_by`) decides nothing: the
 withdrawal deleted its branch, so the next removal is a plain push, and a
 branch that still exists is refused, never replaced. After
-`MAX_LOOP_PAUSES` (3) such pauses the skill's proposal issue is filed or
+`MAX_LOOP_PAUSES` (the gate policy's `max_removal_pauses`) such pauses the skill's proposal issue is filed or
 updated instead of another removal.
 
 REFUSALS (exit 2, nothing written):
@@ -817,8 +817,9 @@ SHA_RE = re.compile(r"[0-9a-f]{40}")
 #: How many loop-paused removals a subject may have before the retirement
 #: job stops opening removals for it and files (or updates) its proposal
 #: issue instead, so a verdict near its threshold cannot open and withdraw
-#: removal pull requests without bound (PR #740 round 6's R6-6).
-MAX_LOOP_PAUSES = 3
+#: removal pull requests without bound (PR #740 round 6's R6-6): the gate
+#: policy's `max_removal_pauses` (one value for both blocks).
+MAX_LOOP_PAUSES = gates.load_gate_policy()["skills"]["max_removal_pauses"]
 
 
 def loop_withdrawn(pr: dict) -> bool:
@@ -1882,9 +1883,8 @@ def skill_notice(gates: dict, skill: str, location: dict, run_url: str | None) -
             "title": f"Skill {location['plugin']}/{skill} is being removed automatically (#557)",
             "body": (f"{marker}\n@{NOTICE_OWNER}: the skill `{location['plugin']}/{skill}` "
                      f"is being removed from adam-agentskills: its verdict is **retire** as of "
-                     f"{gates['as_of']} ({verdict.get('reason')}). The rule is 90% confidence "
-                     "that it does not improve results by 0.15 or more, on every cell with "
-                     "room to show it (`evals/gate-policy.yml` `skills:`).\n\n"
+                     f"{gates['as_of']} ({verdict.get('reason')}). The rule: [docs/rules.md]"
+                     "(https://github.com/Adam-S-Daniel/skills-evals/blob/main/docs/rules.md), from `evals/gate-policy.yml` `skills:`.\n\n"
                      "Removal pull request: {removal_pr} (auto-merges once its checks "
                      "pass).\n\n**To reverse it:** before it merges, close that pull "
                      "request. After it merges, open it and press **Revert**: GitHub opens "
@@ -2750,9 +2750,8 @@ def guidance_notice(gates: dict, section: str, row: dict, run_url: str | None) -
             "body": (f"{marker}\n@{GUIDANCE_NOTICE_OWNER}: the guidance section `{section}` "
                      f"(`## {row['heading']}` in `{row['file']}`) is being removed: its "
                      f"verdict is **retire** as of {gates['as_of']} ({verdict.get('reason')}). "
-                     "The rule is 90% confidence that it does not improve results by 0.15 "
-                     "or more beside the current rest of the guidance, on every cell with "
-                     "room to show it (`evals/gate-policy.yml` `guidance:`).\n\n"
+                     "The rule: [docs/rules.md](https://github.com/Adam-S-Daniel/skills-evals/blob/main/docs/rules.md), from `evals/gate-policy.yml` "
+                     "`guidance:`.\n\n"
                      "Removal pull request: {removal_pr} (auto-merges once its checks "
                      "pass).\n\n**To reverse it:** before it merges, close that pull "
                      "request. After it merges, open it and press **Revert**: GitHub opens "

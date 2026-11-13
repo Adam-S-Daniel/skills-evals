@@ -90,13 +90,14 @@ def decide(doc, *, d=100, surfaces=BOTH, exempt=(), policy=None, skill=SKILL):
 
 class PolicyFileTests(unittest.TestCase):
     GOOD = ("value_per_use_usd: 10\nprefix_tokens: 119000\nreread_usd_per_session:\n"
-            "  cloud: 3.50\n  local: 0.81\nfloor_weeks: 8\nlocal_removal: false\n")
+            "  cloud: 3.50\n  local: 0.81\nfloor_weeks: 8\nlocal_removal: false\n"
+            "first_use_weeks: 8\n")
 
     def test_the_committed_numbers(self):
         self.assertEqual(POLICY, {
             "value_per_use_usd": 10, "prefix_tokens": 119000,
             "reread_usd_per_session": {"cloud": 3.50, "local": 0.81},
-            "floor_weeks": 8, "local_removal": False})
+            "floor_weeks": 8, "local_removal": False, "first_use_weeks": 8})
 
     def test_a_missing_negative_or_wrong_typed_key_is_refused(self):
         bad = [self.GOOD.replace("value_per_use_usd: 10\n", ""),
@@ -115,6 +116,8 @@ class PolicyFileTests(unittest.TestCase):
                self.GOOD.replace("floor_weeks: 8", "floor_weeks: 0"),
                self.GOOD.replace("floor_weeks: 8", "floor_weeks: 8.5"),
                self.GOOD.replace("local_removal: false", "local_removal: no-way"),
+               self.GOOD.replace("first_use_weeks: 8\n", ""),
+               self.GOOD.replace("first_use_weeks: 8", "first_use_weeks: 0"),
                self.GOOD + "surprise: 1\n",
                "- a list\n", ""]
         for text in bad:
@@ -183,10 +186,9 @@ class UnusedRemovalTests(unittest.TestCase):
     def test_removal_keeps_its_exposure_rule_though_the_eval_pause_has_none(self):
         """2026-11-13: evals wait for a first use with no exposure minimum
         (`has_recorded_use`), but the irreversible removal still needs the
-        500-session and accrued-cost evidence (`zero_use`)."""
+        accrued-cost evidence of `removal_policy.unused_removal`."""
         few = census(cloud=100, local=100)
         self.assertIs(skill_usage.has_recorded_use(few, SKILL, NOW), False)
-        self.assertIsNone(skill_usage.zero_use(few, SKILL, NOW, surfaces=BOTH))
         self.assertFalse(decide(few)["remove"])
 
     def test_the_cost_adds_up_across_surfaces(self):
@@ -225,7 +227,6 @@ class UnusedRemovalTests(unittest.TestCase):
         got = decide(doc)
         self.assertFalse(got["remove"])
         self.assertIn("cloud surface is unknown", got["why"])
-        self.assertIs(skill_usage.zero_use(doc, SKILL, NOW, surfaces=BOTH), True)
         # Local-only with local removal on never looks at cloud exposure.
         self.assertTrue(decide(doc, surfaces=(LOCAL,),
                                policy={**POLICY, "local_removal": True})["remove"])
@@ -245,22 +246,15 @@ class UnusedRemovalTests(unittest.TestCase):
         got = decide(census(cloud=10 ** 6, generated=NOW - timedelta(days=2)))
         self.assertFalse(got["remove"])
         self.assertIn("within 1 day", got["why"])
-        # A pause is reversible: zero_use still accepts a census 2 days old.
-        self.assertIs(skill_usage.zero_use(
-            census(local=600, generated=NOW - timedelta(days=2)), SKILL, NOW,
-            surfaces=(LOCAL,)), True)
 
-    def test_a_skill_the_census_does_not_track_is_not_zero_use_or_removable(self):
+    def test_a_skill_the_census_does_not_track_is_not_removable(self):
         doc = census(cloud=10 ** 6, local=600, keys=(KEPT,))
         got = decide(doc)
         self.assertFalse(got["remove"])
         self.assertIn("does not track it by name", got["why"])
-        self.assertIsNone(skill_usage.zero_use(doc, SKILL, NOW))
         # An older document with no list cannot say either.
         del doc["sources"][0]["skill_keys"]
         self.assertFalse(decide(doc)["remove"])
-        self.assertIsNone(skill_usage.zero_use(doc, SKILL, NOW))
-        self.assertIs(skill_usage.zero_use(census(local=600), SKILL, NOW), True)
 
     def test_the_census_must_cover_the_floor_on_every_surface(self):
         # Cloud counts from the week after its `from`: 2026-08-31 + 7 days is

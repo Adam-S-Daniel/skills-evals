@@ -72,7 +72,7 @@ def near(section, value, name="a", **over):
     """A cell whose retire progress is `value` at the default level: a
     non-judge-carried cell whose objective and judge are both at `value` x
     the default retire confidence."""
-    level = value * plan_week.DEFAULT_RETIRE_CONFIDENCE
+    level = value * plan_week.policy_value(None, "retire_confidence", True)
     return gcell(section, name, objective=conf(level), judge=conf(level), **over)
 
 

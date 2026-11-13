@@ -86,6 +86,13 @@ on:
       - explorer/**
       - README.md
       - DESIGN.md
+      - AGENTS.md
+      - CLAUDE.md
+      - HANDOFF.md
+      - .agent-checks/**
+      - .githooks/**
+      - badges/**
+      - docs/**
       - docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
       - docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md
   # Bare — no inputs, and deliberately no `paths:`, which GitHub ignores on a
@@ -162,6 +169,13 @@ jobs:
             explorer/**
             README.md
             DESIGN.md
+            AGENTS.md
+            CLAUDE.md
+            HANDOFF.md
+            .agent-checks/**
+            .githooks/**
+            badges/**
+            docs/**
             docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md
             docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md
         run: |
@@ -325,6 +339,18 @@ jobs:
         if: steps.salient.outputs.run == 'true' && matrix.shard == 1
         working-directory: skills-evals/explorer
         run: npm run check
+      # docs/rules.md and docs/rules.json are generated from the policy YAMLs
+      # in evals/; a stale copy fails here. Then nothing in this repository
+      # may restate a rule value that disagrees with them (AGENTS.md). One
+      # shard is enough: neither depends on the shard.
+      - name: Rules page matches the policy YAMLs
+        if: steps.salient.outputs.run == 'true' && matrix.shard == 1
+        working-directory: skills-evals
+        run: python3 scripts/build_rules.py --check
+      - name: No rule restatement disagrees with docs/rules.json
+        if: steps.salient.outputs.run == 'true' && matrix.shard == 1
+        working-directory: skills-evals
+        run: python3 scripts/check_rule_restatements.py --rules docs/rules.json --root .
       # The real-work fixtures' checkers (test/issues/test_issue_real_work_fixtures.py)
       # run each seed's own tests, which need the seed's npm dependencies,
       # installed here from the seed's committed lockfile as a run's `deps:`

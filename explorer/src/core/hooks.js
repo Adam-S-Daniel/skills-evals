@@ -23,7 +23,7 @@ function sinceOf(doc, c) {
 export function hookNext(it, weeks, refMs) {
   if (it.verdict === 'earning') return { key: 'earning', at: null };
   if (it.verdict === 'overridden-often') return { key: 'overridden', at: null };
-  if (it.since === null) return { key: 'unknown', at: null };
+  if (it.since === null || !Number.isInteger(weeks)) return { key: 'unknown', at: null };
   const at = it.since + weeks * 7 * 86400000;
   return { key: at > refMs ? 'young' : 'due', at };
 }

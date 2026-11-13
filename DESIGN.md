@@ -2672,29 +2672,30 @@ section trend, help-per-word sort and early-sign chip read the in-situ gain
 sweep; Adam's decision on it is pending), the same for skills and sections
 in `gate-policy.yml`'s two blocks. A betting confidence sequence on the
 paired per-fire difference D = with minus without (aGRAPA bets, no
-variance prior). A cell shows no benefit when its test shows D below 0.15
-(`objective_margin`) at 90% (`retire_confidence`); a subject keeps when a
-cell's keep test shows D above 0 at 80% (`benefit_confidence`), split over a
+variance prior). Current values: [docs/rules.md](docs/rules.md). A cell
+shows no benefit when its test shows D below the margin (`objective_margin`)
+at the removal level (`retire_confidence`); a subject keeps when a
+cell's keep test shows D above 0 at `benefit_confidence`, split over a
 family of fixed size m = fixtures on main x roster models (Bonferroni,
-#578's per-subject keep). A cell whose without arm a betting bound at 90%
-shows above 1 minus the margin, with a no-harm test agreeing, is `ceiling`
+#578's per-subject keep). A cell whose without arm a betting bound at the
+removal level shows above 1 minus the margin, with a no-harm test agreeing, is `ceiling`
 and does not vote (a harm test runs there too and makes a cell no-benefit
 once it decides, so a harm beyond the margin parks only at the no-harm
-test's error rate); a high cell undecided after 20 pairs
-(`max_runs_high_cell`), whose no-harm test has rejected and whose without
-arm averages at least 0.90, stops as `ceiling-unconfirmed`, which does not
+test's error rate); a high cell undecided after `max_runs_high_cell` pairs,
+whose no-harm test has rejected and whose without
+arm averages at least `high_stop_min_without`, stops as `ceiling-unconfirmed`, which does not
 vote either, and any other high cell is fired on to the cap; one undecided
-after 20 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can decide a
-removal, when no test crossed and its pairs span two CLI
+after `max_runs_per_cell` pairs is `no-clear-effect`, which can decide a
+removal, when no test crossed and its pairs span `min_cli_versions` CLI
 versions, and otherwise stays `insufficient`, unfired, as a `cell-at-cap`
 work item; a fixture the eval scope pass paused keeps its cells, parked as
 `paused` (a cell paused for no recorded use, `zero-use`, keeps the subject
 `insufficient` instead of letting the other cells reach `retire`) unless they showed benefit or decided no-benefit, and a pause makes
 a subject `ceiling` only where each paused cell's own runs show the ceiling
 (else `insufficient`, a `paused-unmeasured` work item); a removal decides once its test is at
-its level on pairs spanning two CLI versions (a keep crossing wins unless
-the removal decided first); every removal is automatic (2026-11-13). The judge is reported and does not vote (`judge_margin` 1.5
-on its 0-to-10 scale sets only its reported figure). The alone pair keeps
+its level on pairs spanning `min_cli_versions` CLI versions (a keep crossing wins unless
+the removal decided first); every removal is automatic (2026-11-13). The judge is reported and does not vote (`judge_margin`
+sets only its reported figure). The alone pair keeps
 its per-cell keep for the twist above. An agent-errored trial counts 0 and
 does not block a guidance removal. `harness/gates.py`'s docstring is the
 full statement, and `test/issues/test_issue_betting_gate.py` its seeded
@@ -2722,7 +2723,8 @@ Retirement was made automatic, with no human approval (Adam, 2026-10-10,
 `auto` again since withdrawal was hardened (PR #740, #645). In `auto`, a verdict with `removal: auto` opens the
 removal pull request in `_agent-guidance` is written with the eval-improve
 GitHub App's token minted for that repository alone (`skill-coverage.yml`'s
-`retirement` job). With no token it files the issue instead. Every removal
+`retirement` job). With no write token, or for a copy the bot cannot remove itself, it files an
+`agent-ready` issue for the fleet worker instead (_agent-guidance ADR 0044); it opens no pull request while an agent-stamped issue is open. Every removal
 pull request is followed by a notice issue in skills-evals that mentions
 Adam, links the pull request and says how to reverse it (close it, or press
 Revert once merged), and the explorer lists removed sections and skills

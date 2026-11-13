@@ -9,6 +9,8 @@ import { table, srcLine, navLink, panel, badge, rangeLine, srcLineFor } from './
 import { weekChart } from './weekchart.js';
 
 const pct = (x) => Math.round(x * 100) + '%';
+/* The window's weeks from the data (evals/hook-policy.yml), or null. */
+const weeksOf = (w) => (Number.isInteger(w.weeks) && w.weeks > 0 ? w.weeks : null);
 
 /* The Runs cell: the count, or what is counted when CI's share is not. */
 function runsCell(it) {
@@ -55,19 +57,19 @@ export function hooksList(doc) {
   const rows = table([
     { label: STRINGS.colCheck, sort: (it) => it.name, cell: (it) => navLink(hashFor('hooks', it.name), clean(it.name)) },
     { label: STRINGS.colWhere, sort: (it) => it.where, cell: where },
-    { label: STRINGS.colRunsWindow(w.weeks || 8), num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: runsCell },
+    { label: STRINGS.colRunsWindow(weeksOf(w)), num: true, sort: (it) => (it.runs !== null ? it.runs : it.runsCounted), cell: runsCell },
     { label: STRINGS.colBlocked, num: true, sort: (it) => it.blocked, cell: blockedCell },
     anyMeasured ? { label: STRINGS.colOverrides, num: true, sort: (it) => (it.measured ? it.overridden : -1), cell: overrides } : null,
     { label: STRINGS.colVerdictShort, sort: (it) => it.verdict || '', cell: hookVerdict },
     { label: STRINGS.colSince, sort: (it) => it.since, cell: (it) => (it.since === null ? STRINGS.noValue : fmtDay(it.since, refMs)) },
-    { label: STRINGS.colNextStep, sort: (it) => (hookNext(it, w.weeks || 8, refMs).at || 0), cell: (it) => nextStep(it, w.weeks || 8, refMs) }
+    { label: STRINGS.colNextStep, sort: (it) => (hookNext(it, weeksOf(w), refMs).at || 0), cell: (it) => nextStep(it, weeksOf(w), refMs) }
   ].filter(Boolean), items, { cls: 'hooks' });
   const policy = hk.policy || {};
   return h('section', { class: 'block' }, h('h2', null, STRINGS.hooksHeading),
     rangeLine(doc),
     w.from ? h('p', { class: 'note' }, STRINGS.hooksNote(w.weeks, fmtDayKey(w.from, refMs), fmtDayKey(w.to, refMs))) : null,
     cloudNote(doc),
-    typeof policy.max_override_rate === 'number' ? h('p', { class: 'note' }, STRINGS.hookRule(pct(policy.max_override_rate), w.weeks || 8)) : null,
+    typeof policy.max_override_rate === 'number' ? h('p', { class: 'note' }, STRINGS.hookRule(pct(policy.max_override_rate), weeksOf(w))) : null,
     items.length ? rows : h('p', null, STRINGS.hooksNone),
     items.length ? h('p', { class: 'note' }, STRINGS.hookRunsNote) : null,
     items.length && !anyMeasured ? h('p', { class: 'note' }, STRINGS.hookOverridesNote) : null,

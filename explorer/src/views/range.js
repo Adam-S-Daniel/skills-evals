@@ -1,5 +1,5 @@
 /* The gain range chart and the "How close is a decision?" panel. */
-import { HELPS_MIN_GAIN, KEEP_AT, REMOVE_AT, pts } from '../core/rules.js';
+import { pts } from '../core/rules.js';
 import { STRINGS } from '../core/strings.js';
 import { clean, friendlyModel } from '../core/format.js';
 import { h } from '../core/h.js';
@@ -10,6 +10,7 @@ import { chartTitle } from '../core/charts.js';
    { node, projected }: `projected` is true for a line that projects a pace. */
 export function estimateLine(which, conf, level, pairs, cap) {
   const line = (text) => h('p', { class: 'meta', 'data-est': which }, text);
+  if (typeof level !== 'number') return { node: null, projected: false };
   if (conf >= level) return { node: line(STRINGS.confReached(which)), projected: false };
   if (!Number.isInteger(pairs) || pairs <= 0) return { node: null, projected: false };
   if (conf <= 0) return { node: line(STRINGS.confNoMove(which)), projected: false };
@@ -53,9 +54,11 @@ export function rangeChart(rows, margin, cap) {
     kids.push(h('text', { ...lab, x: x, y: H - 3, 'text-anchor': 'middle', 'data-axis': v }, signedPoints(v)));
   }
   kids.push(h('line', { x1: rangeX(0), x2: rangeX(0), y1: TOP - 2, y2: bottom, stroke: 'var(--axis)', 'stroke-width': 1.5, 'data-line': 'zero' }));
-  const mx = rangeX(margin);
-  kids.push(h('line', { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'data-line': 'margin' }));
-  kids.push(h('text', { ...lab, x: mx, y: TOP - 5, 'text-anchor': 'middle' }, '+' + margin));
+  if (margin !== null) {
+    const mx = rangeX(margin);
+    kids.push(h('line', { x1: mx, x2: mx, y1: TOP - 2, y2: bottom, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', 'data-line': 'margin' }));
+    kids.push(h('text', { ...lab, x: mx, y: TOP - 5, 'text-anchor': 'middle' }, '+' + margin));
+  }
   kids.push(h('text', { ...lab, x: 0, y: H - 3 }, STRINGS.rangeAxis));
   kids.push(h('text', { ...lab, x: MX, y: TOP - 5 }, STRINGS.rangeRuns));
   rows.forEach((r, i) => {
@@ -89,19 +92,21 @@ export function rangeChart(rows, margin, cap) {
     'aria-label': STRINGS.rangeAria(rows.length, margin) }, kids);
 }
 
-/* The decision rules the policy sets, shared by a subject's page. */
+/* The decision rules the policy sets, shared by a subject's page. Every
+   figure comes from the data (evals/gate-policy.yml); an absent one is null
+   and shown as unknown, never a built-in number (docs/rules.md). */
 function policyFigures(policy) {
   const ok = (x) => typeof x === 'number' && isFinite(x);
   return {
-    margin: policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : pts(HELPS_MIN_GAIN),
-    keep: policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : KEEP_AT,
-    remove: policy && ok(policy.retire_confidence) ? policy.retire_confidence : REMOVE_AT,
-    versions: policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : 2,
+    margin: policy && ok(policy.objective_margin) ? pts(policy.objective_margin) : null,
+    keep: policy && ok(policy.benefit_confidence) ? policy.benefit_confidence : null,
+    remove: policy && ok(policy.retire_confidence) ? policy.retire_confidence : null,
+    versions: policy && Number.isInteger(policy.min_cli_versions) && policy.min_cli_versions > 0 ? policy.min_cli_versions : null,
     cap: policy && Number.isInteger(policy.max_runs_per_cell) && policy.max_runs_per_cell > 0 ? policy.max_runs_per_cell : null
   };
 }
 
-const whole = (x) => Math.round(x * 100) + '%';
+const whole = (x) => (x === null ? STRINGS.unknown : Math.round(x * 100) + '%');
 
 export function confidenceView(c, policy, subject) {
   const ok = (x) => typeof x === 'number' && isFinite(x);

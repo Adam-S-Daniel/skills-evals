@@ -871,8 +871,7 @@ def drift_evidence(entry: dict, runs: list, batch_skills, stakes_level: str,
     held   the digest is None (dirty or not in Git: never re-pin what cannot
            be measured), or the skill is a `kind: skill` member of the open
            batch (`batch_skills`), or the newest run at the current pin is
-           younger than the re-check age (`plan_week.RECHECK_AFTER`, or
-           RECHECK_AFTER_HIGH at stakes `high`).
+           younger than the re-check age (`plan_week.recheck_age`).
     free   no run at the current pin, or the newest is older than that age
            (its evidence is due a re-check anyway)."""
     if digest is None or entry["skill"] in batch_skills:
@@ -890,7 +889,7 @@ def drift_evidence(entry: dict, runs: list, batch_skills, stakes_level: str,
         return "free"
     if None in stamps:
         return "held"
-    age = plan_week.RECHECK_AFTER_HIGH if stakes_level == "high" else plan_week.RECHECK_AFTER
+    age = plan_week.recheck_age("skill", stakes_level)
     return "free" if now - max(stamps) > age else "held"
 
 
@@ -2286,7 +2285,7 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
             draft_prs, lesson_origins(lesson_records), lesson_issues)
         hooks = explorer_public.build_hooks(
             tree, now, agent_checks_dir, context_repos, visible_repos,
-            hook_policy or dict(explorer_public.HOOK_POLICY_DEFAULTS))
+            hook_policy or explorer_public.load_hook_policy())
         funnel = explorer_public.build_lesson_funnel(lesson_funnel, lesson_issues_path,
                                                      draft_prs, memory_issue, proposal_issue)
         activity_doc = explorer_public.build_activity(activity, visible_repos, now,
@@ -2614,8 +2613,7 @@ def main(argv: list[str] | None = None) -> int:
                     load_draft_prs(args.draft_prs), args.lesson_records,
                     load_lesson_issues(args.lesson_issues), public_repos, args.activity,
                     args.agent_checks,
-                    explorer_public.load_policy(args.hook_policy,
-                                                explorer_public.HOOK_POLICY_DEFAULTS),
+                    explorer_public.load_hook_policy(args.hook_policy),
                     explorer_public.include_spend(args.export_policy),
                     args.lesson_funnel, args.lesson_issues, private_subjects,
                     args.source_repository,

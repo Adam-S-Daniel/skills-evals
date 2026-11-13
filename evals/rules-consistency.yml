@@ -1,0 +1,19 @@
+# The public repositories .github/workflows/rules-consistency.yml checks daily
+# with scripts/check_rule_restatements.py against docs/rules.json: the one
+# place their names live. Each is shallow-cloned read-only with no token, so
+# only public repositories belong here. `exclude` lists globs, relative to
+# the repository root, of paths that are deliberately not this fleet's rules:
+# an adopter's starter template ships its own example values, and an
+# append-only history log records what was true then (a finding there could
+# never be fixed in place).
+repos:
+  - repo: Adam-S-Daniel/_agent-guidance
+    exclude:
+      - docs/guidance-impact.md
+  - repo: Adam-S-Daniel/adam-agentskills
+    exclude:
+      - docs/skill-impact.md
+  - repo: Adam-S-Daniel/acsi-kit
+    exclude:
+      - starter/*
+  - repo: Adam-S-Daniel/adamdaniel.ai

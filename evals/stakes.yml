@@ -7,8 +7,8 @@
 #   high    it prevents irreversible or public harm: a leaked secret or
 #           personal data, a compromised dependency, a destroyed process or
 #           history, a post that reads as the owner's own. The planner tests
-#           it first within each band and re-checks a decided one after
-#           RECHECK_AFTER_HIGH (4 weeks) instead of RECHECK_AFTER (8 weeks).
+#           it first within each band and re-checks a decided one sooner
+#           (evals/gate-policy.yml `recheck_weeks_high`, docs/rules.md).
 #   normal  everything else (the default).
 #   none    it needs no eval because a check enforces it wherever it applies.
 #           The planner plans no eval fire for it. `covered_by` is required

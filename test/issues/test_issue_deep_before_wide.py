@@ -253,11 +253,11 @@ class AlonePairTests(unittest.TestCase):
 
     def test_a_section_not_leaning_toward_removal_runs_in_situ_only(self):
         cell = gcell("open", cls="insufficient",
-                     objective={"no_help_confidence": 0.3 * plan_week.DEFAULT_RETIRE_CONFIDENCE})
+                     objective={"no_help_confidence": 0.3 * GUIDANCE_POLICY["retire_confidence"]})
         self.assertEqual(self.arms([cell]), {"evals/guidance/open/a": "in-situ"})
 
     def test_a_section_halfway_to_removal_runs_the_alone_pair(self):
-        level = plan_week.ALONE_PAIR_FROM_PROGRESS * plan_week.DEFAULT_RETIRE_CONFIDENCE
+        level = plan_week.ALONE_PAIR_FROM_PROGRESS * GUIDANCE_POLICY["retire_confidence"]
         cell = gcell("leaning", cls="insufficient", objective={"no_help_confidence": level})
         self.assertEqual(self.arms([cell]), {"evals/guidance/leaning/a": "both"})
 

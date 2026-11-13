@@ -104,6 +104,7 @@ Stdlib only, no network; the caller supplies `now`.
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -543,17 +544,21 @@ def census_current(doc, surfaces: tuple, now: datetime,
     return True
 
 
-#: Sessions on the surfaces a skill reaches in which it was listed, with no
-#: use, before a zero reads as evidence rather than a quiet fortnight. The
-#: single source for the removal policy's unused-skill rule (`zero_use`). The
-#: eval scope pass does not use it: see `has_recorded_use`.
-ZERO_USE_MIN_SESSIONS = 500
-#: The census's window, in ISO weeks.
-CENSUS_WEEKS = 8
+def _window(weeks: int | None) -> int:
+    """`weeks`, or evals/removal-policy.yml's `first_use_weeks` when None:
+    the census window the first-use question reads (docs/rules.md)."""
+    return weeks if weeks is not None else _first_use_weeks()
+
+
+@functools.lru_cache(maxsize=1)
+def _first_use_weeks() -> int:
+    """evals/removal-policy.yml's `first_use_weeks`, read once."""
+    import removal_policy  # noqa: PLC0415 - it imports this module
+    return removal_policy.load()["first_use_weeks"]
 
 
 def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
-                        weeks: int = CENSUS_WEEKS) -> dict | None:
+                        weeks: int | None = None) -> dict | None:
     """{surface: sessions, or None when unknown} in which a skill reaching
     that surface was listed in full, over the `weeks` ISO weeks ending with
     `now`'s week. A surface counts only the weeks whose Monday is on or after
@@ -575,7 +580,7 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
     """
     if doc is None or not is_fresh(doc, now) or not isinstance(doc.get("rows"), list):
         return None
-    mondays = {week_monday(label) for label in window_weeks(now, weeks)}
+    mondays = {week_monday(label) for label in window_weeks(now, _window(weeks))}
     out = {}
     for surface in surfaces:
         if surface == SURFACE_CLOUD and not any(
@@ -601,44 +606,14 @@ def exposure_by_surface(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SU
 
 
 def exposure(doc, now: datetime, surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
-             weeks: int = CENSUS_WEEKS) -> int | None:
+             weeks: int | None = None) -> int | None:
     """The sum of `exposure_by_surface` over the surfaces whose exposure is
     known (a pause may rest on those); None when `doc` is stale."""
     by_surface = exposure_by_surface(doc, now, surfaces, weeks)
     return None if by_surface is None else sum(n for n in by_surface.values() if n is not None)
 
 
-def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
-             surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD),
-             min_sessions: int = ZERO_USE_MIN_SESSIONS) -> bool | None:
-    """True when `skill` had no use over the `weeks` ISO weeks ending with
-    `now`'s AND the surfaces it reaches listed it in full in at least
-    `min_sessions` sessions (`exposure`); False when it had any use (any use
-    wins, whatever the exposure); None when that cannot be known.
-
-    This is the contract the eval-scope automation uses to stop evals on
-    skills nobody uses. UNKNOWN IS NOT ZERO: None when `doc` is None or stale,
-    and None when there was no use but too few sessions to say so (a skill
-    nobody could have used has no zero). Exposure replaces the older
-    truncated-listing and per-surface coverage vetoes: a truncated listing is
-    not counted, and a surface counted for fewer weeks has fewer sessions.
-    Pass only the surfaces the skill actually reaches, for example
-    `(SURFACE_LOCAL,)` for a plugin delivered only to the owner's machines.
-    """
-    if doc is None or not is_fresh(doc, now):
-        return None
-    used = weight(doc, skill, now, weeks)
-    if used is None:
-        return None
-    if used > 0:
-        return False
-    if not is_tracked(doc, skill):
-        return None
-    seen = exposure(doc, now, surfaces, weeks)
-    return True if seen is not None and seen >= min_sessions else None
-
-
-def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
+def has_recorded_use(doc, skill: str, now: datetime, weeks: int | None = None,
                      surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD)) -> bool | None:
     """The eval-scope question: has `skill` a recorded use in real work over
     the `weeks` ISO weeks ending with `now`'s? True for any use; False when
@@ -652,14 +627,13 @@ def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
 
     Adam, 2026-11-13: "Do we/should we run evals on skills before they have
     been recorded used in real work? I think we should not." So there is NO
-    exposure minimum here, unlike `zero_use`: exposure matters for an
-    irreversible removal (`harness/removal_policy.py`, which keeps
-    `zero_use` and ZERO_USE_MIN_SESSIONS), not for pausing an eval that
-    resumes on the skill's first recorded use.
+    exposure minimum here: exposure matters for an irreversible removal
+    (`harness/removal_policy.py`), not for pausing an eval that resumes on
+    the skill's first recorded use.
     """
     if doc is None or not is_fresh(doc, now):
         return None
-    used = weight(doc, skill, now, weeks)
+    used = weight(doc, skill, now, _window(weeks))
     if used is None:
         return None
     if used > 0:

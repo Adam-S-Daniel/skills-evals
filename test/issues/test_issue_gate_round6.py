@@ -10,7 +10,7 @@ Each class pins one finding of
   * M2: the scope pass's text no longer says a pause drops a skill
     fixture's cells from the gate (they stay, parked);
   * m1: a paused cell whose no-harm test rejected shows the ceiling at
-    exactly HIGH_STOP_MIN_WITHOUT;
+    exactly the policy's `high_stop_min_without`;
   * m2: a paused `no-clear-effect` cell stays parked.
 
 Hermetic and deterministic: canned runs, temporary directories, no network,
@@ -192,12 +192,13 @@ class ScopeTextTests(unittest.TestCase):
 
 class BoundaryTests(unittest.TestCase):
     def test_exactly_the_high_stop_mean_shows_the_ceiling(self):
-        """m1: `without >= HIGH_STOP_MIN_WITHOUT`, not `>`."""
+        """m1: `without >= high_stop_min_without`, not `>`."""
         base = {"class": "paused", "scope_paused": "ceiling",
                 "class_before_pause": "insufficient", "noharm_at": 18}
-        at = gates.HIGH_STOP_MIN_WITHOUT
-        self.assertTrue(gates._shows_ceiling({**base, "without_mean": at}))
-        self.assertFalse(gates._shows_ceiling({**base, "without_mean": at - 1e-9}))
+        policy = gates.load_gate_policy()["skills"]
+        at = policy["high_stop_min_without"]
+        self.assertTrue(gates._shows_ceiling({**base, "without_mean": at}, policy))
+        self.assertFalse(gates._shows_ceiling({**base, "without_mean": at - 1e-9}, policy))
 
     def test_a_paused_no_clear_effect_cell_stays_parked(self):
         """m2: only `benefit` and `no-benefit` keep their class through a

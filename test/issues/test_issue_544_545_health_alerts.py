@@ -361,7 +361,8 @@ class EvidenceTests(unittest.TestCase):
         old, new = "20260801T000000Z", "20261001T000000Z"  # 80 and 19 days before NOW
         self.assertEqual(self.evidence([self.run_at(old)]), "free")
         self.assertEqual(self.evidence([self.run_at(old), self.run_at(new)]), "held")
-        self.assertEqual(explorer_data.plan_week.RECHECK_AFTER, timedelta(weeks=8))
+        self.assertEqual(explorer_data.plan_week.recheck_age("skill", None), timedelta(
+            weeks=explorer_data.plan_week._committed_gate_policy()["skills"]["recheck_weeks"]))
 
     def test_high_stakes_uses_four_weeks(self):
         stamp = "20260915T000000Z"  # 35 days before NOW: inside 8 weeks, past 4

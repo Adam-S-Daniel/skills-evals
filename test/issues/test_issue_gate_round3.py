@@ -9,7 +9,7 @@ Each class pins one finding of
     cells cannot remove the subject automatically, for skills and guidance;
   * M2: a high cell stops at `max_runs_high_cell` pairs only once the
     no-harm test has rejected and its without arm is at least
-    HIGH_STOP_MIN_WITHOUT; otherwise it is fired on to the cap;
+    `high_stop_min_without`; otherwise it is fired on to the cap;
   * M3: the keep is ordered against the removal's stopping time, and an
     undecided cell at the cap is a `cell-at-cap` work item;
   * M4: gates sets `at_cap` at exactly `max_runs_per_cell` pairs, and it
@@ -265,7 +265,7 @@ class HighStopTests(unittest.TestCase):
 
     def test_a_high_cell_under_the_slack_is_fired_on_and_keeps(self):
         # Without 88, with 100 (D = +0.12), a family of 4: the no-harm test
-        # rejects at pair 11, but 0.88 is under HIGH_STOP_MIN_WITHOUT.
+        # rejects at pair 11, but 0.88 is under `high_stop_min_without`.
         early = classify(20, 100, 88, family=4)
         self.assertEqual(early["class"], "insufficient", early["reason"])
         self.assertEqual(early["noharm_at"], 11)

@@ -4,11 +4,12 @@
   below), and both blocks of `evals/gate-policy.yml` commit
   `retirement_mode: auto` again. Adam set them to `proposal` on 2026-11-03
   ("Resume, auto-removal off") and pre-approved setting them back once a
-  loop withdrawal was hardened (#740), which it now is; the comment above
-  `retirement_mode` in that file is the record. The later addenda that say
+  loop withdrawal was hardened (#740), which it now is; this status line is
+  the record. The later addenda that say
   `proposal` describe that interval. In `auto`, a removal merges only once the improvement gate's
   GitHub App secrets are set in skills-evals; until then the workflow falls
   back to `proposal`.
+- **Current values:** [docs/rules.md](../rules.md).
 - **Issue:** [#70](https://github.com/Adam-S-Daniel/skills-evals/issues/70)
   (part 2; part 1, the verdict, is
   [#411](https://github.com/Adam-S-Daniel/skills-evals/pull/411)).

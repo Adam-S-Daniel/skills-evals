@@ -35,6 +35,12 @@ import plan_week  # noqa: E402
 from test_issue_70_retirement import FLAT, GAIN, LOSS, TEST_POLICY  # noqa: E402
 from test_issue_557_stratified_verdict import CEILING, EXPECT, MAIN, OLD, stratum  # noqa: E402
 
+
+def shows_ceiling(cell: dict) -> bool:
+    """`gates._shows_ceiling` under the committed skills policy."""
+    return gates._shows_ceiling(cell, gates.load_gate_policy()["skills"])
+
+
 POOLED = {**TEST_POLICY, "rest_policy": "pooled-with-current-guard", "rest_guard_min_pairs": 6}
 CURRENT = {**TEST_POLICY, "rest_policy": "current"}
 #: A with arm 0.2 above FLAT's without arm, which has headroom (0.8 < 0.85).
@@ -611,8 +617,8 @@ class NoStuckCellTests(unittest.TestCase):
         guard = {**cell_of(runs)["rest_guard"]}
         paused = {"class": "paused", "scope_paused": "ceiling", "class_before_pause": "ceiling",
                   "rest_guard": guard, "harm_at": 1}
-        self.assertTrue(gates._shows_ceiling(paused))
-        self.assertFalse(gates._shows_ceiling({**paused, "rest_guard": {
+        self.assertTrue(shows_ceiling(paused))
+        self.assertFalse(shows_ceiling({**paused, "rest_guard": {
             **guard, "harm_evidence_at": 3}}))
 
 

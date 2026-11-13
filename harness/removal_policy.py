@@ -30,10 +30,10 @@ from timeweeks import week_monday, window_weeks
 DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "evals" / "removal-policy.yml"
 SURFACES = (skill_usage.SURFACE_LOCAL, skill_usage.SURFACE_CLOUD)
 KEYS = ("value_per_use_usd", "prefix_tokens", "reread_usd_per_session", "floor_weeks",
-        "local_removal")
+        "local_removal", "first_use_weeks")
 
 
-class PolicyError(Exception):
+class PolicyError(ValueError):
     """A removal policy that is missing, unreadable or invalid."""
 
 
@@ -71,9 +71,12 @@ def parse(text: str) -> dict:
         raise PolicyError("floor_weeks must be an integer of at least 1")
     if not isinstance(doc["local_removal"], bool):
         raise PolicyError("local_removal must be true or false")
+    if type(doc["first_use_weeks"]) is not int or doc["first_use_weeks"] < 1:
+        raise PolicyError("first_use_weeks must be an integer of at least 1")
     return {"value_per_use_usd": doc["value_per_use_usd"], "prefix_tokens": doc["prefix_tokens"],
             "reread_usd_per_session": {s: reread[s] for s in SURFACES},
-            "floor_weeks": doc["floor_weeks"], "local_removal": doc["local_removal"]}
+            "floor_weeks": doc["floor_weeks"], "local_removal": doc["local_removal"],
+            "first_use_weeks": doc["first_use_weeks"]}
 
 
 def load(path: Path | None = None) -> dict:

@@ -1825,6 +1825,20 @@ await test('Public alerts: an alert with no url links to its subject page', () =
   ok(hrefSet(hrefsIn(g)).has('#/guidance/demo-section'), [...hrefsIn(g)].join(' '));
 });
 
+await test('the loop thresholds come from the data: an absent policy shows unknown, never a built-in number (docs/rules.md)', async () => {
+  const { confidenceView } = await import('../src/views/range.js');
+  const { hookNext } = await import('../src/core/hooks.js');
+  const c = { helps: 0.5, no_help: 0.3, keep_pairs: 4, no_help_pairs: 4,
+    cells: [{ model: 'm', fixture: 'f', gain: 0.1, low: -0.2, high: 0.4, votes: true }] };
+  const none = textOf(confidenceView(c, null, 'skill')).replace(/\s+/g, ' ');
+  ok(none.includes(STRINGS.unknown), 'unknown levels are shown as unknown');
+  ok(!/\b80%|\b90%|\+15\b|two Claude Code/.test(none), 'no built-in level, margin or version count: ' + none);
+  const given = textOf(confidenceView(c, { objective_margin: 0.2, benefit_confidence: 0.7,
+    retire_confidence: 0.95, min_cli_versions: 3, max_runs_per_cell: 12 }, 'skill')).replace(/\s+/g, ' ');
+  ok(given.includes('70%') && given.includes('95%') && given.includes('+20') && given.includes('three Claude Code'), given);
+  eq(hookNext({ verdict: null, since: 0 }, null, 1).key, 'unknown', 'no window length, no due date');
+});
+
 for (const f of failures) console.log('FAIL ' + f);
 console.log(passed + ' passed, ' + failures.length + ' failed');
 process.exit(failures.length ? 1 : 0);

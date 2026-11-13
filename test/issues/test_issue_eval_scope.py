@@ -864,6 +864,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("import re\n", src)
         self.assertIsNone(re.search(r"^from re import", src, re.M))
 
+class ScopePolicyTests(unittest.TestCase):
+    """The ceiling and floor thresholds live in evals/scope-policy.yml
+    (docs/rules.md), read with strict validation."""
+
+    GOOD = ("ceiling_min_runs: 4\nceiling_share: 0.85\nceiling_judge: 8.5\n"
+            "floor_share: 0.10\nkeep_guard: 0.5\n")
+
+    def test_the_committed_file_loads(self):
+        self.assertEqual(set(eval_scope.scope_policy()), set(eval_scope.SCOPE_KEYS))
+
+    def test_a_missing_unknown_or_out_of_range_key_is_refused(self):
+        for text in (self.GOOD.replace("keep_guard: 0.5\n", ""), self.GOOD + "extra: 1\n",
+                     self.GOOD.replace("ceiling_min_runs: 4", "ceiling_min_runs: 0"),
+                     self.GOOD.replace("ceiling_share: 0.85", "ceiling_share: 1.5"),
+                     self.GOOD.replace("ceiling_judge: 8.5", "ceiling_judge: 11"),
+                     self.GOOD.replace("floor_share: 0.10", "floor_share: true"),
+                     "- a list\n", "{"):
+            with self.subTest(text=text), self.assertRaises(eval_scope.ScopeError):
+                eval_scope.parse_scope_policy(text)
+        self.assertEqual(eval_scope.parse_scope_policy(self.GOOD)["ceiling_share"], 0.85)
+
 
 if __name__ == "__main__":
     unittest.main()
