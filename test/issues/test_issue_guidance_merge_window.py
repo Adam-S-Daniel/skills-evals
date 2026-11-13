@@ -262,8 +262,14 @@ class WorkflowTests(unittest.TestCase):
                     datetime(2026, 11, 9, int(hour), int(minute), tzinfo=timezone.utc), w))
         self.assertEqual(inside, [True])
 
-    def test_no_concurrency_no_path_filter_and_no_write_permission_of_its_own(self):
-        self.assertNotIn("concurrency", self.doc)
+    def test_runs_are_serialized_never_cancelled(self):
+        # Ingest runs arrive minutes apart inside the window; a later run must
+        # wait for an earlier one rather than list a pull request it already
+        # armed and merged. Not a required check, so a queue is safe.
+        self.assertEqual(self.doc["concurrency"],
+                         {"group": "guidance-merge-window", "cancel-in-progress": False})
+
+    def test_no_job_concurrency_no_path_filter_and_no_write_permission_of_its_own(self):
         self.assertEqual(self.doc["permissions"], {})
         for job in self.doc["jobs"].values():
             self.assertNotIn("concurrency", job)

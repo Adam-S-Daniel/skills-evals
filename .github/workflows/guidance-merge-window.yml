@@ -28,7 +28,11 @@ name: Arm queued guidance improvements in the merge window
 #   and used by one step. With the secrets unset or the mint failed, nothing
 #   is armed, the job says so and succeeds.
 # * No push or pull_request trigger, so no path filter, and not a required
-#   check. No `concurrency` group. Nothing from a pull request runs: the step
+#   check (the ruleset requires `test` and `agent-checks` only), so a
+#   workflow-level `concurrency` group is safe: ingest runs arrive minutes
+#   apart inside the window, and a later run must queue behind an earlier one
+#   (cancel-in-progress false) instead of listing a pull request the earlier
+#   run armed and that has since merged. Nothing from a pull request runs: the step
 #   reads a listing and calls `gh pr merge --auto`. Default branch only.
 
 on:
@@ -41,6 +45,10 @@ on:
   workflow_dispatch:
 
 permissions: {}
+
+concurrency:
+  group: guidance-merge-window
+  cancel-in-progress: false
 
 jobs:
   arm:
@@ -74,7 +82,8 @@ jobs:
       - name: Install the script's dependencies
         run: python3 -m pip install pyyaml==6.0.3
 
-      # The clock is read here and nowhere else; a failure to read the
+      # This step is the early read of the clock (arm_queued reads it again, at
+      # arming time, so the window is re-checked); a failure to read the
       # bounds counts as closed (guidance_merge_window.window_open).
       - name: Is the merge window open?
         id: window
