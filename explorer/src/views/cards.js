@@ -1,7 +1,7 @@
 /* The lines a subject's page and the Skills and Guidance tables share, and the counts line above the table. */
 import { STRINGS } from '../core/strings.js';
 import { clean, parseTime, fmtDay, fmtUtcDay, wordsFor, fmtUsd, fmtCount } from '../core/format.js';
-import { h } from '../core/h.js';
+import { h, link } from '../core/h.js';
 import { chip } from '../core/charts.js';
 import { purposeOf, nextKey } from '../core/items.js';
 import { gainOf, gainPer100Words, runsOf } from '../core/stats.js';
@@ -9,10 +9,23 @@ import { hashFor } from '../core/route.js';
 import { navLink, table, badge } from './bits.js';
 import { signedPoints } from './range.js';
 
-export function verdictLine(v) {
+/* A subject whose decision is to remove it is not tested again: it has no
+   next-test line, and the decision line says where the removal stands. */
+export const REMOVING = ['retire', 'retire-pending'];
+const isRemoving = (v) => REMOVING.includes(v);
+
+export function verdictLine(v, removal, refMs) {
   if (v === null || v === undefined || v === '') return null;
   const key = String(v);
-  return h('p', { class: 'meta' }, Object.prototype.hasOwnProperty.call(STRINGS.verdict, key) ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key)));
+  const known = Object.prototype.hasOwnProperty.call(STRINGS.verdict, key);
+  const text = known ? STRINGS.verdict[key] : STRINGS.verdictOther(clean(key));
+  const r = removal && typeof removal === 'object' && Object.prototype.hasOwnProperty.call(STRINGS.removal, removal.state) ? STRINGS.removal[removal.state] : null;
+  if (!r || !isRemoving(key)) return h('p', { class: 'meta' }, text);
+  const since = parseTime(removal.since);
+  const where = r.link ? link(removal.url, r.link) : null;
+  // A merged removal replaces the decision line; any other state follows the plain one.
+  const status = r.text(isFinite(since) ? fmtDay(since, refMs) : null);
+  return h('p', { class: 'meta' }, removal.state === 'removed' ? [status] : [text, ' ', status], where ? [' ', where] : null);
 }
 
 export function nextText(nt, refMs, kind) {
@@ -21,7 +34,7 @@ export function nextText(nt, refMs, kind) {
   if (isFinite(parseTime(n.due))) return STRINGS.nextDue(fmtDay(parseTime(n.due), refMs));
   return n.scheduled ? STRINGS.nextNone : STRINGS.nextUnscheduled;
 }
-export const nextLine = (nt, refMs, kind) => h('p', { class: 'meta' }, nextText(nt, refMs, kind));
+export const nextLine = (nt, refMs, kind, verdict) => (isRemoving(verdict) ? null : h('p', { class: 'meta' }, nextText(nt, refMs, kind)));
 
 export function stakesLine(st) {
   if (!st || typeof st !== 'object' || typeof st.reason !== 'string') return null;
@@ -76,7 +89,8 @@ export function chipSummary(items, mode) {
    no difference, the test cannot tell, not enough data. */
 const TABLE_RANK = ['helps', 'alone', 'early', 'worse', 'none', 'canttell', 'insufficient'];
 /* The Next test column in a few words. */
-function nextCell(nt, refMs) {
+function nextCell(nt, refMs, verdict) {
+  if (isRemoving(verdict)) return STRINGS.nextCell.removing;
   const n = nt && typeof nt === 'object' ? nt : {};
   if (typeof n.position === 'number' && isFinite(n.position)) return STRINGS.nextCell.queued(n.position);
   if (isFinite(parseTime(n.due))) return STRINGS.nextCell.due(fmtDay(parseTime(n.due), refMs));
@@ -98,7 +112,7 @@ export function subjectTable(items, kind, refMs) {
     guidance ? { label: STRINGS.colSize, num: true, sort: (it) => it.bytes, cell: (it) => fmtCount(wordsFor(it.bytes)) }
       : { label: STRINGS.colUses, num: true, sort: uses, cell: (it) => (uses(it) < 0 ? STRINGS.noValue : fmtCount(uses(it))) },
     guidance ? { label: STRINGS.colPerKb, num: true, sort: (it) => gainPer100Words(it.pooled, it.bytes), cell: (it) => { const g = gainPer100Words(it.pooled, it.bytes); return g === null ? STRINGS.noValue : g.toFixed(1); } } : null,
-    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs) },
+    { label: STRINGS.colNext, sort: (it) => { const k = nextKey(it.raw.next_test); return k[0] * 1e14 + k[1]; }, cell: (it) => nextCell(it.raw.next_test, refMs, it.raw.verdict) },
     { label: STRINGS.colDecision, sort: (it) => it.raw.verdict || '', cell: (it) => STRINGS.verdictCell[it.raw.verdict || 'insufficient'] || clean(it.raw.verdict) }
   ].filter(Boolean), rows);
 }

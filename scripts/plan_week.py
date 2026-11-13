@@ -1841,6 +1841,11 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
     model (`model_costs`) is still open (`cheaper_first`). A keep there keeps
     the subject, and a removal needs both cells, so only the cost changes.
 
+    RETIRING SUBJECTS ARE NOT RE-CHECKED (2026-11-13): a cell bound for the
+    recheck band whose subject's verdict is `retire` or `retire-pending`
+    (ctx["gate_verdicts"], a section's ctx["guidance"] entry) plans no fire,
+    since the removal bot is acting on it and the run would be wasted.
+
     A cell bound for the missing, near, recheck, focus or guidance-rest
     band with at least BROKEN_AFTER_FIRES `empty_fires` is a
     `fixture-broken` work item instead and enters no band: a refusal that keeps recurring (an upstream
@@ -1948,6 +1953,8 @@ def eval_items(ctx: dict, now: datetime) -> tuple:
             continue
         subject = ("guidance", cell["section"]) if cell.get("section") \
             else ("skill", cell["skill"])
+        if band == "recheck" and _retiring(ctx, subject):
+            continue  # a removal is pending: a re-check run would be wasted
         if members is not None and band in BATCH_BANDS and subject not in members \
                 and not provisional:
             # THE BATCH: measured once its subject joins one. A provisional
@@ -2660,6 +2667,17 @@ def hook_candidate(text: str) -> bool:
             total += 1
             under += level is not None
     return bool(total) and under / total >= HOOK_RULE_SHARE
+
+
+def _retiring(ctx: dict, subject: tuple) -> bool:
+    """True when the subject's own verdict is `retire` or `retire-pending`:
+    the removal bot acts on it, so its cells get no re-check."""
+    kind, name = subject
+    if kind == "guidance":
+        verdict = ((ctx.get("guidance") or {}).get(name) or {}).get("verdict")
+    else:
+        verdict = (ctx.get("gate_verdicts") or {}).get(name)
+    return verdict in ("retire", "retire-pending")
 
 
 def gate_verdicts(gates_doc: dict) -> dict:

@@ -410,7 +410,9 @@ class WorkflowTests(unittest.TestCase):
                    if any(k in (s.get("env") or {}) for k in ("GH_TOKEN", "GITHUB_TOKEN"))}
         # The regression-issue listing predates #555; publish pushes with its own;
         # the fixture queue (2026-11-03) lists and files issues with its own.
+        # The removal state (2026-11-13) lists public pull requests and issues.
         self.assertEqual(holders, {"List the recent eval fires", "List the open regression issues",
+                                   "List the removal pull requests and issues",
                                    "Commit to persistent/eval-results and push",
                                    "List the fixture requests and their pull requests",
                                    "File, keep or close the fixture queue issues",

@@ -226,6 +226,53 @@ test('cards sort by next test first, then by how well they are faring', () => {
   ok(text.includes('Next test: a re-check due Dec 1.'), 're-check line, in Eastern time');
   ok(text.includes(P.STRINGS.nextUnscheduled), 'unscheduled line');
 });
+test('a subject being removed has no Next test line and says where its removal stands', () => {
+  const PR = 'https://github.com/Adam-S-Daniel/adam-agentskills/pull/7';
+  const ISSUE = 'https://github.com/Adam-S-Daniel/skills-evals/issues/9';
+  const states = {
+    removed: ['Removed on Nov 12.', PR], 'pr-open': ['Official decision: remove it. Removal pull request open.', PR],
+    worker: ['Official decision: remove it. The fleet worker is making the removal pull request.', ISSUE],
+    blocked: ['Official decision: remove it. The removal is stuck and needs a person to look at it.', ISSUE],
+    owner: ['Official decision: remove it. It waits on', ISSUE],
+    'waiting-turn': ['Official decision: remove it. Next in line after another removal finishes.', null],
+    queued: ['Official decision: remove it. The removal bot acts on its next daily run.', null],
+    declined: ['Official decision: remove it. The removal was declined.', ISSUE]
+  };
+  for (const verdict of ['retire', 'retire-pending']) {
+    for (const [state, [text, url]] of Object.entries(states)) {
+      const doc = JSON.parse(JSON.stringify(fixture));
+      const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
+      s.verdict = verdict;
+      s.next_test = { position: null, band: null, due: null, scheduled: true };
+      s.removal = { state, since: '2026-11-12T17:00:00Z' };
+      if (url) s.removal.url = url;
+      const page = P.subjectPage(doc, 'skills', 'example-skill-alpha', {});
+      const t = P.textOf(page).replace(/\s+/g, ' ');
+      ok(!t.includes('Next test'), state + ': no Next test line');
+      ok(!t.includes('re-check'), state + ': no re-check');
+      ok(t.includes(state === 'removed' ? text : text.replace('Official decision: remove it.', P.STRINGS.verdict[verdict])), state + ' text: ' + text);
+      const hrefs = P.findAll(page, (n) => n.tag === 'a').map((n) => n.attrs.href);
+      eq(hrefs.includes(url), !!url, state + ' link');
+    }
+  }
+  // Without a removal object (an older document) the plain decision line stays, and no Next test line.
+  const doc = JSON.parse(JSON.stringify(fixture));
+  const s = doc.skills.find((x) => x.name === 'example-skill-alpha');
+  s.verdict = 'retire'; s.next_test = { position: null, band: null, due: '2026-12-06T03:47:32Z', scheduled: true };
+  const t = P.textOf(P.subjectPage(doc, 'skills', 'example-skill-alpha', {}));
+  ok(t.includes('Official decision: remove it.') && !t.includes('Next test') && !t.includes('Dec 5'), 'plain line, no due');
+  // A retire subject's list cell says it is being removed; a kept one still shows its re-check.
+  s.removal = { state: 'queued' };
+  const k = doc.skills.find((x) => x.name === 'example-skill-delta');
+  k.verdict = 'keep'; k.next_test = { position: null, band: null, due: '2026-12-20T00:00:00Z', scheduled: true };
+  const list = P.textOf(P.buildPage(doc, 'skills', {}));
+  ok(list.includes('None, being removed') && list.includes('Re-check Dec 19'), 'list column');
+  // A unknown state shows nothing extra, and a link that is not GitHub is dropped.
+  s.removal = { state: 'unknown' };
+  ok(P.textOf(P.subjectPage(doc, 'skills', 'example-skill-alpha', {})).includes('Official decision: remove it.'), 'unknown');
+  s.removal = { state: 'pr-open', url: 'https://example.com/x' };
+  eq(P.findAll(P.subjectPage(doc, 'skills', 'example-skill-alpha', {}), (n) => n.tag === 'a' && n.attrs.href === 'https://example.com/x').length, 0, 'foreign link');
+});
 test('the start-up code names the one page title, not a property of its state', () => {
   // Regression: a title rename once left `state.STRINGS.title` in boot(), which
   // only runs in a browser, so every page load showed "could not be shown".

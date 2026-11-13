@@ -589,6 +589,134 @@ class CurrentTextRunsTests(unittest.TestCase):
         self.assertEqual(counts, {"sec-one": 2, "sec-two": 0})
 
 
+class RemovalStateTests(unittest.TestCase):
+    """A subject being removed has no re-check, and says where its removal
+    stands, from `--removal-state` (never a guessed state without it)."""
+    GATES = {"skills": {"alpha": {"verdict": "retire", "reason": "flat"},
+                        "beta": {"verdict": "retire-pending", "reason": "flat"},
+                        "gamma": {"verdict": "retain", "reason": "y"}},
+             "guidance": {"sec-one": {"verdict": "retire", "in_situ_verdict": "retire",
+                                      "reason": "flat", "cells": []}}}
+
+    def build_with(self, removal_state=None):
+        t = Tree(self)
+        gates_doc = {"policy": {"benefit_confidence": 0.85, "retire_confidence": 0.95,
+                                "min_cli_versions": 2, "objective_margin": 0.05}, **self.GATES}
+        with mock.patch.object(explorer_data.compute_gates, "compute", return_value=gates_doc):
+            doc = explorer_data.build(t.tree, t.roster, t.policy, t.evals, AS_OF, SHA_A, SHA_B,
+                                      manifest=MANIFEST, removal_state=removal_state)
+        explorer_data.validate(doc)  # explorer/schema.json accepts `removal`
+        return doc
+
+    @staticmethod
+    def load(doc):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "removal-state.json"
+            path.write_text(json.dumps(doc), encoding="utf-8")
+            return explorer_data.load_removal_state(path)
+
+    @staticmethod
+    def pr(head, number=1, state="open", merged=False, repo="Adam-S-Daniel/adam-agentskills",
+           **more):
+        return {"repo": repo, "number": number, "head": head, "state": state, "merged": merged,
+                "auto_merge": False, **more}
+
+    @staticmethod
+    def issue(subject, number=2, state="open", labels=(), kind="proposal", target="skill",
+              **more):
+        return {"number": number, "state": state, "labels": list(labels), **more,
+                "body_markers": {"target": target, "subject": subject, "kind": kind}}
+
+    def status(self, kind, name, verdict, prs=(), issues=()):
+        return explorer_data.removal_of(kind, name, verdict,
+                                        self.load({"prs": list(prs), "issues": list(issues)}))
+
+    def test_a_subject_being_removed_has_no_place_in_line_and_no_recheck(self):
+        rows = [{"verdict": v, "next_test": {"position": 3, "band": "near",
+                                             "due": "2026-12-06T00:00:00Z", "scheduled": True}}
+                for v in ("retire", "retire-pending", "retain", None)]
+        explorer_data.without_test(rows)
+        self.assertEqual([(r["next_test"]["position"], r["next_test"]["due"]) for r in rows],
+                         [(None, None), (None, None), (3, "2026-12-06T00:00:00Z"), (3, "2026-12-06T00:00:00Z")])
+        self.assertEqual(rows[0]["next_test"]["scheduled"], True)
+
+    def test_without_the_file_each_removal_is_unknown(self):
+        doc = self.build_with()
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["removal"], {"state": "unknown"})
+        self.assertEqual(by["beta"]["removal"], {"state": "unknown"})
+        self.assertNotIn("removal", by["gamma"])
+        sec = {s["id"]: s for s in doc["guidance"]["sections"]}
+        self.assertEqual(sec["sec-one"]["removal"], {"state": "unknown"})
+        self.assertNotIn("removal", sec["sec-two"])
+        self.assertIsNone(explorer_data.load_removal_state(Path("/nonexistent/removal.json")))
+        self.assertIsNone(self.load({"prs": []}))
+
+    def test_a_built_document_reads_each_state_from_the_file(self):
+        state = self.load({"prs": [self.pr("retire-skill/alpha", 7, created_at="2026-11-10T01:02:03Z")],
+                           "issues": [self.issue("sec-one", 9, target="guidance",
+                                                 labels=["agent-ready"], kind="agent")]})
+        doc = self.build_with(state)
+        by = {s["name"]: s for s in doc["skills"]}
+        self.assertEqual(by["alpha"]["removal"], {
+            "state": "pr-open", "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/7",
+            "since": "2026-11-10T01:02:03Z"})
+        self.assertEqual(by["beta"]["removal"], {"state": "waiting-turn"})
+        sec = {s["id"]: s for s in doc["guidance"]["sections"]}
+        self.assertEqual(sec["sec-one"]["removal"]["state"], "worker")
+        self.assertEqual(sec["sec-one"]["removal"]["url"],
+                         "https://github.com/Adam-S-Daniel/skills-evals/issues/9")
+        for subject in (*by.values(), *sec.values()):
+            if subject.get("verdict") in ("retire", "retire-pending"):
+                self.assertEqual((subject["next_test"]["position"], subject["next_test"]["due"]),
+                                 (None, None))
+
+    def test_each_state_in_order(self):
+        s = self.status
+        merged = self.pr("retire-skill/a", 5, state="closed", merged=True,
+                         merged_at="2026-11-12T12:00:00Z")
+        self.assertEqual(s("skill", "a", "retire", [merged]),
+                         {"state": "removed", "url": "https://github.com/Adam-S-Daniel/adam-agentskills/pull/5",
+                          "since": "2026-11-12T12:00:00Z"})
+        # A merged removal of a skill whose verdict is no longer retire is not "removed".
+        self.assertIsNone(s("skill", "a", "retain", [merged]))
+        self.assertEqual(s("skill", "a", "retire", [self.pr("retire-skill/a", 6, repo="Adam-S-Daniel/cms-platform")])["state"], "pr-open")
+        owner = self.issue("a", 11, labels=["agent-blocked"])
+        self.assertEqual(s("skill", "a", "retire", issues=[owner]),
+                         {"state": "owner", "url": "https://github.com/Adam-S-Daniel/skills-evals/issues/11"})
+        self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 12, labels=["agent-blocked"], kind="agent")])["state"], "blocked")
+        for label in ("agent-ready", "agent-working"):
+            self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 13, labels=[label])])["state"], "worker")
+        self.assertEqual(s("skill", "a", "retire", issues=[self.issue("a", 14, kind="agent")])["state"], "worker")
+        self.assertEqual(s("skill", "a", "retire-pending"), {"state": "waiting-turn"})
+        self.assertEqual(s("skill", "a", "retire"), {"state": "queued"})
+        closed_pr = self.pr("retire-skill/a", 8, state="closed", closed_at="2026-11-01T00:00:00Z")
+        self.assertEqual(s("skill", "a", "retire", [closed_pr])["state"], "declined")
+        closed_issue = self.issue("a", 15, state="closed", closed_at="2026-11-02T00:00:00Z")
+        declined = s("skill", "a", "retire", issues=[closed_issue])
+        self.assertEqual((declined["state"], declined["since"]), ("declined", "2026-11-02T00:00:00Z"))
+        # A retire-pending subject with a closed issue is still waiting its turn.
+        self.assertEqual(s("skill", "a", "retire-pending", issues=[closed_issue]), {"state": "waiting-turn"})
+        # A kept subject shows only a removal in flight.
+        self.assertIsNone(s("skill", "a", "retain", issues=[closed_issue]))
+        self.assertEqual(s("skill", "a", "retain", issues=[owner])["state"], "owner")
+
+    def test_rows_off_the_shape_are_ignored(self):
+        state = self.load({"prs": [
+            self.pr("retire-skill/a", 1, repo="Evil/repo"),            # not a registry
+            self.pr("retire-guidance/a", 2),                           # guidance lives in _agent-guidance
+            self.pr("improve-skill/a", 3),                             # not a removal head
+            self.pr("retire-skill/a", 4, state="open", merged=True),   # contradictory
+            self.pr("retire-skill/a", "5")],                           # number is not an int
+            "issues": [self.issue("a", 6, kind="withdrawal"),          # the pause cap's notice
+                       self.issue("../x", 7), "junk"]})
+        self.assertEqual(state, {"prs": {}, "issues": {}})
+        guidance = self.load({"prs": [self.pr("retire-guidance/s", 3, repo="Adam-S-Daniel/_agent-guidance")],
+                              "issues": []})
+        self.assertEqual(explorer_data.removal_of("guidance", "s", "retire", guidance)["url"],
+                         "https://github.com/Adam-S-Daniel/_agent-guidance/pull/3")
+
+
 class AlertTests(unittest.TestCase):
 
     GATES = {"skills": {"alpha": {"verdict": "retire", "reason": "no benefit in any cell"},

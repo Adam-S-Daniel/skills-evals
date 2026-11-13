@@ -105,7 +105,20 @@ function buildStrings(you) {
   notTried: 'No trials in the last ' + WINDOW_WEEKS + ' weeks.',
   nextQueued: (n, kind) => 'Next test: ' + ordinal(n) + ' ' + kind + ' in line for the next round of tests.',
   nextDue: (when) => 'Next test: a re-check due ' + when + '.',
-  nextCell: { queued: (n) => ordinal(n) + ' in line', due: (d) => 'Re-check ' + d, none: 'None planned', unscheduled: 'Not scheduled' },
+  nextCell: { queued: (n) => ordinal(n) + ' in line', due: (d) => 'Re-check ' + d, none: 'None planned', unscheduled: 'Not scheduled', removing: 'None, being removed' },
+  /* What happened to a subject whose official decision is to remove it, by
+     `removal.state` (scripts/explorer_data.py `removal_of`); `link` is the
+     words on the link to the pull request or issue. */
+  removal: {
+    removed: { text: (when) => 'Removed' + (when ? ' on ' + when : '') + '.', link: 'See the pull request' },
+    'pr-open': { text: () => 'Removal pull request open.', link: 'See the pull request' },
+    owner: { text: () => 'It waits on ' + W.obj + ' to approve, because the removal changes plugin code.', link: 'See the issue' },
+    blocked: { text: () => 'The removal is stuck and needs a person to look at it.', link: 'See the issue' },
+    worker: { text: () => 'The fleet worker is making the removal pull request.', link: 'See the issue' },
+    'waiting-turn': { text: () => 'Next in line after another removal finishes.', link: null },
+    queued: { text: () => 'The removal bot acts on its next daily run.', link: null },
+    declined: { text: () => 'The removal was declined.', link: 'See what was decided' }
+  },
   verdictCell: { retain: 'Keep', keep: 'Keep', 'cannot-discriminate': 'Test cannot tell', ceiling: 'Test cannot tell', 'shorten-or-merge': 'Shorten or merge', retire: 'Remove',
     'retire-pending': 'Remove, pending', retired: 'Removed', insufficient: 'Needs more runs', 'helps-only-alone': 'Helps only alone' },
   nextNone: 'Next test: none planned right now.',
