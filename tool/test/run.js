@@ -391,7 +391,7 @@ test('the confidence view estimates the runs still needed, or says it is past th
   ok(near.includes('Keep: at this pace, about 14 more runs.'), 'keep estimate ' + near);
   ok(near.includes('Removal: at this pace, about 24 more runs.'), 'removal estimate');
   ok(near.includes(P.STRINGS.confPace), 'pace note');
-  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for the owner to decide.'), 'runs');
+  ok(near.includes('Runs that count toward a decision, busiest task and model: 10 of 40. Testing stops at 40 runs. If neither test has crossed by then, the task and model count as showing no clear effect, which counts toward removing it.'), 'runs');
   const far = P.textOf(cv(withCells(twoCells, { keep_pairs: 20, no_help_pairs: 20, max_pairs: 20 })));
   ok(far.includes('Keep: not before the 40-run cap at this pace.') && far.includes('Removal: not before the 40-run cap at this pace.'), 'past cap');
   ok(!far.includes('more run'), 'no estimate past the cap');
@@ -409,7 +409,7 @@ test('the confidence view without cells (older data) shows the sentences only', 
   const n = cv({ helps: 0.5, no_help: 0.25 });
   eq(svgs(n).length, 0);
   const t = P.textOf(n);
-  ok(t.includes('Testing a task and model stops at 40 comparison runs. If there is still no decision then, the loop does not remove it on its own; it files a removal proposal for the owner to decide.'), 'cap');
+  ok(t.includes('Testing a task and model stops at 40 comparison runs. If neither test has crossed by then, the task and model count as showing no clear effect, which counts toward removing it.'), 'cap');
   ok(!t.includes('more run') && !t.includes(P.STRINGS.confPace) && !t.includes(P.STRINGS.rangeWhat), 'no estimates, no chart notes');
   eq(svgs(cv({ helps: 0.5, no_help: 0.25, cells: [] })).length, 0);
 });
