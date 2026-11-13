@@ -7,6 +7,7 @@
   "security",
   "data-exposure-in-ci",
   "read-before-you-start",
+  "eval-rules",
   "automation-vs-branch-protection",
   "two-github-connectors",
   "agent-contribution-markers",

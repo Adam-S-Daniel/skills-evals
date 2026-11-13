@@ -12,6 +12,7 @@ function buildGlosses(you) {
   'security': 'Treat anything from outside as untrusted, never mix it straight into commands, and never save passwords or keys in a project.',
   'data-exposure-in-ci': 'Logs from automated checks on public projects are visible to anyone, so personal details must never be printed there.',
   'read-before-you-start': 'A short list of reference pages to read before touching certain settings.',
+  'eval-rules': 'The thresholds that decide what stays or goes live in one generated rules page, so Claude links to it instead of repeating a rule that could go stale.',
   'automation-vs-branch-protection': 'The main copy of each project only accepts reviewed changes, so automated helpers must propose changes rather than write to it directly.',
   'two-github-connectors': 'Claude can reach GitHub through two different connections with different powers, and must know which one it is using.',
   'agent-contribution-markers': 'Anything Claude posts on GitHub under ' + whose + ' name ends with a note saying an AI wrote it.',
