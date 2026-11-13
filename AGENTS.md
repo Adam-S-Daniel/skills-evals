@@ -71,6 +71,14 @@ read; only in replies to the user.
   automation must ask `scripts/guidance_merge_window.py` first. A manual merge
   outside the window restarts every guidance section's eval evidence.
 
+- **The keep, remove, pause and re-check rules live in `evals/*-policy.yml`**
+  (plus `usage-unknown.yml` and `stakes.yml`). [`docs/rules.md`](docs/rules.md)
+  and `docs/rules.json` are generated from them by `scripts/build_rules.py`:
+  edit only the YAMLs, then rebuild. Never restate a rule's number anywhere
+  else, in this or another repository; link `docs/rules.md`.
+  `scripts/check_rule_restatements.py` enforces it here (CI) and across the
+  fleet (`rules-consistency.yml`).
+
 - **Workflow triggers and salient paths.** `test` (ci.yml) is the one
   required check. Every workflow's triggers and salient-path handling are
   tabled in [`docs/workflows.md`](docs/workflows.md); keep that table in step

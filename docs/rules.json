@@ -1,0 +1,409 @@
+{
+  "generated_by": "scripts/build_rules.py",
+  "edit": "evals/*.yml",
+  "rules": {
+    "gate-policy.yml#guidance.benefit_confidence": {
+      "value": 0.8,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.benefit_confidence",
+      "names": [
+        "benefit_confidence"
+      ]
+    },
+    "gate-policy.yml#guidance.floor_fraction": {
+      "value": 0.1,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.floor_fraction",
+      "names": [
+        "floor_fraction"
+      ]
+    },
+    "gate-policy.yml#guidance.floor_min_runs": {
+      "value": 3,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.floor_min_runs",
+      "names": [
+        "floor_min_runs"
+      ]
+    },
+    "gate-policy.yml#guidance.high_stop_min_without": {
+      "value": 0.9,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.high_stop_min_without",
+      "names": [
+        "high_stop_min_without"
+      ]
+    },
+    "gate-policy.yml#guidance.judge_margin": {
+      "value": 1.5,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.judge_margin",
+      "names": [
+        "judge_margin"
+      ]
+    },
+    "gate-policy.yml#guidance.max_removal_pauses": {
+      "value": 3,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.max_removal_pauses",
+      "names": [
+        "max_removal_pauses"
+      ]
+    },
+    "gate-policy.yml#guidance.max_runs_high_cell": {
+      "value": 20,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.max_runs_high_cell",
+      "names": [
+        "max_runs_high_cell"
+      ]
+    },
+    "gate-policy.yml#guidance.max_runs_per_cell": {
+      "value": 20,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.max_runs_per_cell",
+      "names": [
+        "max_runs_per_cell"
+      ]
+    },
+    "gate-policy.yml#guidance.min_cli_versions": {
+      "value": 2,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.min_cli_versions",
+      "names": [
+        "min_cli_versions"
+      ]
+    },
+    "gate-policy.yml#guidance.objective_margin": {
+      "value": 0.15,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.objective_margin",
+      "names": [
+        "objective_margin"
+      ]
+    },
+    "gate-policy.yml#guidance.recheck_weeks": {
+      "value": 8,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.recheck_weeks",
+      "names": [
+        "recheck_weeks"
+      ]
+    },
+    "gate-policy.yml#guidance.recheck_weeks_high": {
+      "value": 4,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.recheck_weeks_high",
+      "names": [
+        "recheck_weeks_high"
+      ]
+    },
+    "gate-policy.yml#guidance.rest_guard_min_pairs": {
+      "value": 6,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.rest_guard_min_pairs",
+      "names": [
+        "rest_guard_min_pairs"
+      ]
+    },
+    "gate-policy.yml#guidance.rest_policy": {
+      "value": "pooled-with-current-guard",
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.rest_policy",
+      "names": [
+        "rest_policy"
+      ]
+    },
+    "gate-policy.yml#guidance.retire_confidence": {
+      "value": 0.9,
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.retire_confidence",
+      "names": [
+        "retire_confidence"
+      ]
+    },
+    "gate-policy.yml#guidance.retirement_mode": {
+      "value": "auto",
+      "source": "evals/gate-policy.yml",
+      "key": "guidance.retirement_mode",
+      "names": [
+        "retirement_mode"
+      ]
+    },
+    "gate-policy.yml#skills.benefit_confidence": {
+      "value": 0.8,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.benefit_confidence",
+      "names": [
+        "benefit_confidence"
+      ]
+    },
+    "gate-policy.yml#skills.floor_fraction": {
+      "value": 0.1,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.floor_fraction",
+      "names": [
+        "floor_fraction"
+      ]
+    },
+    "gate-policy.yml#skills.floor_min_runs": {
+      "value": 3,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.floor_min_runs",
+      "names": [
+        "floor_min_runs",
+        "FLOOR_MIN_RUNS"
+      ]
+    },
+    "gate-policy.yml#skills.high_stop_min_without": {
+      "value": 0.9,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.high_stop_min_without",
+      "names": [
+        "high_stop_min_without",
+        "HIGH_STOP_MIN_WITHOUT"
+      ]
+    },
+    "gate-policy.yml#skills.judge_margin": {
+      "value": 1.5,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.judge_margin",
+      "names": [
+        "judge_margin"
+      ]
+    },
+    "gate-policy.yml#skills.max_removal_pauses": {
+      "value": 3,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.max_removal_pauses",
+      "names": [
+        "max_removal_pauses",
+        "MAX_LOOP_PAUSES"
+      ]
+    },
+    "gate-policy.yml#skills.max_runs_high_cell": {
+      "value": 20,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.max_runs_high_cell",
+      "names": [
+        "max_runs_high_cell"
+      ]
+    },
+    "gate-policy.yml#skills.max_runs_per_cell": {
+      "value": 20,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.max_runs_per_cell",
+      "names": [
+        "max_runs_per_cell"
+      ]
+    },
+    "gate-policy.yml#skills.min_cli_versions": {
+      "value": 2,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.min_cli_versions",
+      "names": [
+        "min_cli_versions"
+      ]
+    },
+    "gate-policy.yml#skills.objective_margin": {
+      "value": 0.15,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.objective_margin",
+      "names": [
+        "objective_margin"
+      ]
+    },
+    "gate-policy.yml#skills.recheck_weeks": {
+      "value": 8,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.recheck_weeks",
+      "names": [
+        "recheck_weeks",
+        "RECHECK_AFTER"
+      ]
+    },
+    "gate-policy.yml#skills.recheck_weeks_high": {
+      "value": 4,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.recheck_weeks_high",
+      "names": [
+        "recheck_weeks_high",
+        "RECHECK_AFTER_HIGH"
+      ]
+    },
+    "gate-policy.yml#skills.retire_confidence": {
+      "value": 0.9,
+      "source": "evals/gate-policy.yml",
+      "key": "skills.retire_confidence",
+      "names": [
+        "retire_confidence"
+      ]
+    },
+    "gate-policy.yml#skills.retirement_mode": {
+      "value": "auto",
+      "source": "evals/gate-policy.yml",
+      "key": "skills.retirement_mode",
+      "names": [
+        "retirement_mode"
+      ]
+    },
+    "hook-policy.yml#max_override_rate": {
+      "value": 0.2,
+      "source": "evals/hook-policy.yml",
+      "key": "max_override_rate",
+      "names": [
+        "max_override_rate"
+      ]
+    },
+    "hook-policy.yml#min_private_repos": {
+      "value": 3,
+      "source": "evals/hook-policy.yml",
+      "key": "min_private_repos",
+      "names": [
+        "min_private_repos"
+      ]
+    },
+    "hook-policy.yml#window_weeks": {
+      "value": 8,
+      "source": "evals/hook-policy.yml",
+      "key": "window_weeks",
+      "names": [
+        "window_weeks"
+      ]
+    },
+    "removal-policy.yml#first_use_weeks": {
+      "value": 8,
+      "source": "evals/removal-policy.yml",
+      "key": "first_use_weeks",
+      "names": [
+        "first_use_weeks",
+        "CENSUS_WEEKS"
+      ]
+    },
+    "removal-policy.yml#floor_weeks": {
+      "value": 8,
+      "source": "evals/removal-policy.yml",
+      "key": "floor_weeks",
+      "names": [
+        "floor_weeks"
+      ]
+    },
+    "removal-policy.yml#local_removal": {
+      "value": false,
+      "source": "evals/removal-policy.yml",
+      "key": "local_removal",
+      "names": [
+        "local_removal"
+      ]
+    },
+    "removal-policy.yml#prefix_tokens": {
+      "value": 119000,
+      "source": "evals/removal-policy.yml",
+      "key": "prefix_tokens",
+      "names": [
+        "prefix_tokens"
+      ]
+    },
+    "removal-policy.yml#reread_usd_per_session.cloud": {
+      "value": 3.5,
+      "source": "evals/removal-policy.yml",
+      "key": "reread_usd_per_session.cloud",
+      "names": []
+    },
+    "removal-policy.yml#reread_usd_per_session.local": {
+      "value": 0.81,
+      "source": "evals/removal-policy.yml",
+      "key": "reread_usd_per_session.local",
+      "names": []
+    },
+    "removal-policy.yml#value_per_use_usd": {
+      "value": 10,
+      "source": "evals/removal-policy.yml",
+      "key": "value_per_use_usd",
+      "names": [
+        "value_per_use_usd"
+      ]
+    },
+    "scope-policy.yml#ceiling_judge": {
+      "value": 8.5,
+      "source": "evals/scope-policy.yml",
+      "key": "ceiling_judge",
+      "names": [
+        "ceiling_judge",
+        "CEILING_JUDGE"
+      ]
+    },
+    "scope-policy.yml#ceiling_min_runs": {
+      "value": 4,
+      "source": "evals/scope-policy.yml",
+      "key": "ceiling_min_runs",
+      "names": [
+        "ceiling_min_runs",
+        "CEILING_MIN_RUNS"
+      ]
+    },
+    "scope-policy.yml#ceiling_share": {
+      "value": 0.85,
+      "source": "evals/scope-policy.yml",
+      "key": "ceiling_share",
+      "names": [
+        "ceiling_share",
+        "CEILING_SHARE"
+      ]
+    },
+    "scope-policy.yml#floor_share": {
+      "value": 0.1,
+      "source": "evals/scope-policy.yml",
+      "key": "floor_share",
+      "names": [
+        "floor_share",
+        "FLOOR_SHARE"
+      ]
+    },
+    "scope-policy.yml#keep_guard": {
+      "value": 0.5,
+      "source": "evals/scope-policy.yml",
+      "key": "keep_guard",
+      "names": [
+        "keep_guard",
+        "KEEP_GUARD"
+      ]
+    }
+  },
+  "lists": {
+    "usage-unknown.yml#skills": [
+      "adam-writing-style",
+      "admin-config-render",
+      "aws-bootstrap",
+      "browser-testing",
+      "ci-watcher-loops",
+      "cms-stuck-pr-triage",
+      "code-quality",
+      "consumer-repo-provisioning",
+      "disarm-inherited-reach",
+      "editorial-label-audit",
+      "finding-unknowns",
+      "github-actions-sha-pinning",
+      "platform-release-and-bump",
+      "post-failure-comment",
+      "preview-environments",
+      "test-canary",
+      "workflow-path-audit"
+    ],
+    "stakes.yml#high": [
+      "section agent-contribution-markers",
+      "section data-exposure-in-ci",
+      "section name-becomes-scanner-data",
+      "section pinning-github-actions",
+      "section security",
+      "section test-that-can-signal-kills-every-session",
+      "skill consumer-repo-provisioning",
+      "skill disarm-inherited-reach",
+      "skill github-actions-sha-pinning"
+    ]
+  },
+  "retired_names": {
+    "ZERO_USE_MIN_SESSIONS": "the zero-use session minimum is gone: evals pause until a skill's first recorded use, with no session minimum",
+    "AUTO_MIN_HEADROOM_CELLS": "every retire verdict's removal is automatic; no headroom minimum decides it"
+  }
+}

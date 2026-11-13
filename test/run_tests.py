@@ -4738,6 +4738,8 @@ class CiDispatchTests(unittest.TestCase):
                "harness/**", "scripts/**", "test/**", "tool/**", "explorer/**",
                "README.md",
                "DESIGN.md",
+               # The rules restatement check reads every doc (docs/rules.md).
+               "AGENTS.md", "HANDOFF.md", "docs/**",
                "docs/decisions/0008-run-ready-fixtures-on-the-weekly-schedule.md",
                "docs/decisions/0010-run-ai-eval-steps-in-a-routine-fired-by-actions.md"]
 
@@ -5565,7 +5567,7 @@ class CiSalientDetectionTests(unittest.TestCase):
 
     def test_non_salient_change_skips(self):
         with tempfile.TemporaryDirectory() as tmp:
-            repo = self._repo_with_merge(Path(tmp), {"AGENTS.md": "x"})
+            repo = self._repo_with_merge(Path(tmp), {"LICENSE": "x"})
             result, outputs = self._run(repo, "pull_request")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(outputs.get("run"), "false")
