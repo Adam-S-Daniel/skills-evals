@@ -638,13 +638,17 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
     return True if seen is not None and seen >= min_sessions else None
 
 
-def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS) -> bool | None:
+def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
+                     surfaces: tuple = (SURFACE_LOCAL, SURFACE_CLOUD)) -> bool | None:
     """The eval-scope question: has `skill` a recorded use in real work over
     the `weeks` ISO weeks ending with `now`'s? True for any use; False when
     the census is fresh, tracks the skill by name (`is_tracked`) and its
     `weight` is 0; None when the census is missing or stale or does not track
     the skill (UNKNOWN IS NOT ZERO: an untracked skill is counted under
-    `other` and reads as 0).
+    `other` and reads as 0), and None unless the census has current data for
+    every one of `surfaces` (`census_current`): a missing or late source for a
+    surface the skill reaches reads 0 there, which is not evidence. Pass only
+    the surfaces the skill reaches.
 
     Adam, 2026-11-13: "Do we/should we run evals on skills before they have
     been recorded used in real work? I think we should not." So there is NO
@@ -660,6 +664,8 @@ def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS) 
         return None
     if used > 0:
         return True
+    if not census_current(doc, surfaces, now):
+        return None
     return False if is_tracked(doc, skill) else None
 
 

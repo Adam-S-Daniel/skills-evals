@@ -382,13 +382,22 @@ class ZeroUseTests(unittest.TestCase):
 
     def test_exposure_does_not_matter_for_the_pause(self):
         """2026-11-13, Adam: no evals before a first recorded use. Little or
-        unknown exposure (no cloud records, 5 local sessions) still pauses."""
-        for doc in (usage_doc({"beta": 3}, local=5, cloud_sessions=5),
-                    usage_doc({"beta": 3}, cloud=False, local=5),
+        unknown exposure (5 local sessions, a local-only skill without a
+        cloud source) still pauses when every source it needs is current."""
+        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=5, cloud_sessions=5)),
+                         ["evals/alpha/one", "evals/alpha/two"])
+        for doc in (usage_doc({"beta": 3}, cloud=False, local=5),
                     usage_doc({"beta": 3}, cloud=False, local=0)):
-            self.assertEqual(self.paused(doc), ["evals/alpha/one", "evals/alpha/two"])
+            self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
+                             ["evals/alpha/one", "evals/alpha/two"])
         self.assertEqual(self.paused(usage_doc({"beta": 3}), {"alpha": "adam-coding-local"}),
                          ["evals/alpha/one", "evals/alpha/two"])
+
+    def test_a_missing_cloud_source_for_a_cloud_skill_is_unknown_not_zero(self):
+        """UNKNOWN IS NOT ZERO: no cloud source reads 0 there, so a skill that
+        reaches the cloud is not paused (no plugin layout means both surfaces)."""
+        for plugins in (None, {"alpha": "adam-agentskills"}):
+            self.assertEqual(self.paused(usage_doc({"beta": 3}, cloud=False, local=500), plugins), [])
 
     def test_a_skill_the_census_does_not_track_is_not_paused(self):
         doc = usage_doc({"beta": 3})
@@ -429,7 +438,8 @@ class ExclusionTests(unittest.TestCase):
             for source in doc["sources"]:
                 if "skill_keys" in source:
                     source["skill_keys"] = sorted({*source["skill_keys"], "hi", "dr"})
-            plan = plan_for(root, explorer(), doc)
+            plan = plan_for(root, explorer(), doc,
+                            {"hi": "adam-coding-local", "dr": "adam-coding-local"})
             self.assertEqual([(p["path"], p["rule"]) for p in plan["pause"]],
                              [("evals/hi/one", "zero-use")])
 

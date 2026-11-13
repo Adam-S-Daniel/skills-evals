@@ -4026,18 +4026,23 @@ def zero_use_skills(tree: Path, skills: list, now: datetime, registries: dict,
     (`skill_usage.has_recorded_use` False, the eval scope pass's own
     question, 2026-11-13: no exposure minimum). A skill in
     evals/usage-unknown.yml is never in it; unknown (None) is not in it
-    either, so it stays improvable. `registries` is kept for the caller's
-    signature: surfaces no longer matter without an exposure minimum."""
+    either, so it stays improvable. The census must be current for every
+    surface the skill reaches (surfaces from adam-agentskills'
+    scripts/plugin_layout.json, as eval_scope reads them), else unknown."""
     import eval_scope  # noqa: PLC0415
     import skill_usage  # noqa: PLC0415
     try:
         doc = skill_usage.load(tree / "usage" / "weekly-local.json")
         exempt = eval_scope.usage_unknown(evals_dir.parent)
+        root = (registries.get("adam-agentskills") or {}).get("path")
+        layout = Path(root) / "scripts" / "plugin_layout.json" if root else None
+        plugins = eval_scope._skill_plugins(layout if layout and layout.is_file() else None)
     except (OSError, ValueError, eval_scope.ScopeError):
         return frozenset()
     return frozenset(
         skill for skill in skills if skill not in exempt
-        and skill_usage.has_recorded_use(doc, skill, now) is False)
+        and skill_usage.has_recorded_use(
+            doc, skill, now, surfaces=eval_scope._surfaces(skill, plugins)) is False)
 
 
 def guidance_use(tree: Path, now: datetime) -> float | None:

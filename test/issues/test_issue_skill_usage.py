@@ -1048,6 +1048,15 @@ class CloudUseTests(unittest.TestCase):
                                               "adam-coding-anywhere:finding-unknowns", 1, 1)])
         self.assertIs(skill_usage.has_recorded_use(prefixed, "finding-unknowns", NOW), True)
 
+    def test_has_recorded_use_is_unknown_without_a_source_for_a_reached_surface(self):
+        """UNKNOWN IS NOT ZERO: a census with no cloud source reads 0 on the
+        cloud, so a skill reaching it is unknown; a local-only one is not."""
+        doc = self.busy(local=5, cloud=0)
+        doc["sources"] = [s for s in doc["sources"] if s.get("surface") != skill_usage.SURFACE_CLOUD]
+        self.assertIsNone(skill_usage.has_recorded_use(doc, "finding-unknowns", NOW))
+        self.assertIs(skill_usage.has_recorded_use(
+            doc, "finding-unknowns", NOW, surfaces=(skill_usage.SURFACE_LOCAL,)), False)
+
     def test_has_recorded_use_is_unknown_when_stale_missing_or_untracked(self):
         self.assertIsNone(skill_usage.has_recorded_use(None, "finding-unknowns", NOW))
         stale = self.doc(generated="2026-08-01T00:00:00Z")

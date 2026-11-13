@@ -405,7 +405,8 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                       f"{unknown_use[subject]})"})
                 resumed.add(path)
                 continue
-            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS)
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+                                               surfaces=_surfaces(subject, plugins))
             if used is True:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
                                "why": f"the skill was used in the last {CENSUS_WEEKS} weeks"})
@@ -426,7 +427,8 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                 and stakes_file.level_of(table, kind, subject) != "high"):
             found = per_model(kind, fixture_runs(explorer, kind, subject, path, since), models)
         if found is None and kind == "skill" and subject not in unknown_use:
-            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS)
+            used = skill_usage.has_recorded_use(usage_doc, subject, now, weeks=CENSUS_WEEKS,
+                                               surfaces=_surfaces(subject, plugins))
             if used is False:
                 found = ("zero-use", f"no recorded use in real work in the last {CENSUS_WEEKS} weeks; "
                          "its evals resume on its first recorded use")
