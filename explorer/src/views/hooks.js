@@ -153,7 +153,7 @@ export function hookPage(doc, name, ctx) {
         + STRINGS.colBlocked + ': ' + blockedCell(it) + '. ' + STRINGS.colOverrides + ': ',
         overrides(it), '.'),
       it.measured ? null : h('p', { class: 'note' }, STRINGS.hookOverridesNote),
-      hidden ? h('p', { class: 'note' }, STRINGS.hookPrivateHidden(fmtCount(hidden.runs), fmtCount(hidden.blocked))) : null),
+      hidden ? h('p', { class: 'note' }, STRINGS.hookPrivateHidden(hidden.runs > 0 ? fmtCount(hidden.runs) : null, fmtCount(hidden.blocked))) : null),
     panel(STRINGS.hookByWeek, weeks.length ? [
       weekChart(weeks.map((w) => ({ label: fmtDayKey(w.week, refMs), short: fmtDayKey(w.week, refMs), a: w.localBlocked + (cloud ? w.cloudBlocked : 0), b: w.ciBlocked })),
         [cloud ? STRINGS.colLocalCloudBlocked : STRINGS.colLocalBlocked, STRINGS.colCiBlocked], STRINGS.hookByWeek, STRINGS.weekTitles.hooks, [STRINGS.weekDefs.local, STRINGS.weekDefs.ci]),
