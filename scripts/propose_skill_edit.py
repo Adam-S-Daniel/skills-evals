@@ -357,7 +357,12 @@ class Runner:
     last_usage: dict | None = None
 
     def propose(self, prompt: str, model: str) -> str:
-        """One headless call, no tools, prompt on stdin; the reply text."""
+        """One headless call, no tools, prompt on stdin; the reply text.
+
+        Once the process has started the call is billed whatever happens
+        next, so a timeout, a non-zero exit or output with no usable numbers
+        records `UNPRICED_CALL` (#577, the 2026-11-02 review). The proposal's
+        cache tokens are not recorded: `usd` already includes them."""
         self.last_usage = None
         try:
             with guarded_environment() as env:
@@ -367,18 +372,28 @@ class Runner:
                        # connector, no transcript, no tool (`--tools ""`,
                        # last in the tuple; auto-memory is off in env).
                        *run_eval.judge.JUDGE_ISOLATION_FLAGS]
-                proc = subprocess.run(cmd, input=prompt, capture_output=True,
-                                      text=True, env=env, timeout=600, check=False)
+                try:
+                    proc = subprocess.run(cmd, input=prompt, capture_output=True,
+                                          text=True, env=env, timeout=600, check=False)
+                except subprocess.TimeoutExpired:
+                    self.last_usage = dict(UNPRICED_CALL)
+                    raise
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise Refusal(f"proposal call could not run: {type(exc).__name__}") from exc
+        self.last_usage = dict(UNPRICED_CALL)
         if proc.returncode != 0:
             raise Refusal(f"proposal call exited {proc.returncode}")
         try:
             result = normalize_cli_result(json.loads(proc.stdout))
-            self.last_usage = proposal_usage(result)
+            self.last_usage = proposal_usage(result) or dict(UNPRICED_CALL)
             return result.get("result", "")
         except (ValueError, AttributeError) as exc:
             raise Refusal("proposal call printed no JSON result") from exc
+
+
+#: A proposal call that ran but reported no usable numbers: one billed call,
+#: its dollars and tokens unknown.
+UNPRICED_CALL = {"calls": 1, "usd": None, "input_tokens": None, "output_tokens": None}
 
 
 def proposal_usage(result: dict) -> dict | None:

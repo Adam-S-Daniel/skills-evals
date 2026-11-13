@@ -191,7 +191,9 @@ jobs:
           cat "$RUNNER_TEMP/revalidate.out"
 
       # Built before any credential exists: _agent-guidance is public, so it
-      # is fetched anonymously, and nothing of it runs here.
+      # is fetched anonymously. Of it, only its locked node deps (npm ci,
+      # scripts off) and scripts/build-contributor-rules.js run here, from its
+      # default branch: the patch may not touch either (check_patch).
       - name: Build the _agent-guidance commit
         id: build
         working-directory: skills-evals
