@@ -242,20 +242,10 @@ class DashboardBuildTests(unittest.TestCase):
         self.assertEqual(row["runs"], 1)
         self.assertAlmostEqual(row["points"], one)
 
-    #: Datasets kept by hand or changed rarely: only these may keep a longer stale-after
-    #: (dashboard/README.md "Compare" names the same list).
-    @staticmethod
-    def hand_kept_in_readme():
-        """The names the README's Compare step lists as hand-kept (its one list)."""
-        text = (DASH / "README.md").read_text()
-        line = next(l for l in text.splitlines() if "except the hand-kept ones" in l)
-        return set(re.findall(r"`([a-z_]+)`", line.split("except the hand-kept ones", 1)[1].split(")", 1)[0]))
-
-    @property
-    def HAND_KEPT(self):
-        return self.hand_kept_in_readme()
-
-    def test_stale_after_clears_two_refreshes_and_only_hand_kept_datasets_keep_more(self):
+    def test_every_snapshot_dataset_is_rebuilt_and_stamped_on_every_refresh(self):
+        """No dataset is hand-kept any more: the dashboard header's "Updated <age>" is
+        the OLDEST `updated.at` of all file datasets, so one left unstamped (budget,
+        2026-11-13) made the page read four days old right after a refresh."""
         interval = build.REFRESH_INTERVAL_HOURS
         floor = 2 * interval + 2
         defined = json.loads((DASH / "page" / "datasets.json").read_text())
@@ -264,15 +254,13 @@ class DashboardBuildTests(unittest.TestCase):
             if d.get("staleAfterHours") is None:
                 continue  # live datasets
             checked += 1
-            self.assertGreaterEqual(d["staleAfterHours"], floor, name)
+            self.assertEqual(d["staleAfterHours"], floor, name)
             self.assertNotRegex(d["schedule"], r"every (\d+ )?hours?\b", name)
-            if name in self.HAND_KEPT:
-                self.assertNotIn("every refresh", d["schedule"], name)
-            else:
-                self.assertEqual(d["staleAfterHours"], floor, name)
-                self.assertIn("Rebuilt on every refresh", d["schedule"], name)
+            self.assertIn("Rebuilt on every refresh", d["schedule"], name)
         self.assertGreater(checked, 10)
-        self.assertTrue(self.HAND_KEPT <= set(defined))
+        readme = " ".join((DASH / "README.md").read_text().split())
+        self.assertNotIn("hand-kept ones", readme, "the Compare step stamps every file dataset")
+        self.assertIn("OLDEST `updated.at`", readme, "the Compare step says why every dataset is stamped")
 
     def test_the_docs_state_the_refresh_interval_build_py_defines(self):
         for rel in ("README.md", "tasks/refresh.md"):
