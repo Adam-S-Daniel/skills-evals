@@ -505,7 +505,7 @@ jobs:
           if [ -n "$REGISTRY_TOKEN" ] && [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
             modes+=(--allow-mode auto)
           else
-            echo "::notice::no _agent-guidance write token or no adversarial review credential (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a retire verdict in auto mode files an issue instead"
+            echo "::notice::no _agent-guidance write token or no adversarial review credential (the GitHub App secrets EVAL_IMPROVE_APP_CLIENT_ID and EVAL_IMPROVE_APP_PEM are unset, or the mint failed); a guidance retire verdict in auto mode files nothing and the step fails so the scheduled-run health audit flags it"
             modes+=(--fallback-to-proposal)
           fi
           python3 scripts/retire_skill.py --target guidance \

@@ -224,7 +224,9 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
 
   * a `retire` verdict, re-checked as a skill's is, and its section-alone
     pair too (`guidance_proposal_only`: an alone pair with no cell, or with
-    a cell that has not decided, allows only a proposal, 2026-11-03): in `proposal` mode an
+    a cell that has not decided files nothing and removes nothing, 2026-11-13:
+    the evidence is incomplete and the scheduler runs the alone arm; the
+    gates report such a section `insufficient`): in `proposal` mode an
     issue in skills-evals (`GUIDANCE_ISSUE_MARKER`); in `auto` mode (Adam:
     removal is automatic, 2026-10-10, and its pull requests auto-merge,
     2026-10-25) a branch `retire-guidance/<section>` in the
@@ -251,8 +253,9 @@ named `guidance_*` below, kept apart from the skill path). The gates file's
     These writes to _agent-guidance go through `registry_gh` and the push
     with `REGISTRY_TOKEN`, as the skill path's do; the issues stay on `gh`.
     With `--fallback-to-proposal`, `auto` mode without `auto` allowed (no
-    token reached the run) files the issue instead of exiting 2, and the
-    issue says why;
+    token reached the run) files nothing (an infrastructure failure is not
+    the owner's decision, 2026-11-13) and exits 1 with a fixed message, so
+    the scheduled-run health audit flags the run;
   * a `shorten-or-merge` verdict (the section helps only alone): an issue in
     skills-evals (`SHORTEN_ISSUE_MARKER`) in either mode, never a removal.
 
@@ -441,8 +444,11 @@ REGISTRY_ADR = improve_gate.REGISTRY_ADR
 #: skills-evals GitHub App's installation token, minted by the workflow).
 REGISTRY_TOKEN_ENV = "REGISTRY_TOKEN"
 PR_URL_RE = re.compile(rf"https://github\.com/{re.escape(REGISTRY_REPO)}/pull/(\d+)")
-GUIDANCE_NO_CREDENTIAL = ("no write credential for _agent-guidance, or no credential for "
-                          "the adversarial review, reached this run (a token was not minted)")
+#: What a guidance run with no credential prints and fails with: fixed, and
+#: naming no identity.
+GUIDANCE_NO_CREDENTIAL_FAILURE = ("no credential for the guidance removal reached this run, "
+                                  "so nothing was filed or removed; the run fails so the "
+                                  "scheduled-run health audit flags it")
 #: The cell classes a `retire` verdict may hold, and those with headroom,
 #: of which it needs one (harness/gates.py, THE VERDICT).
 RETIRE_CELL_CLASSES = ("no-benefit", "no-clear-effect", "cannot-discriminate",
@@ -1286,8 +1292,8 @@ def guidance_proposal_only(verdict: dict) -> str | None:
     section-alone pair is re-checked here rather than trusted from the
     verdict's `removal` field: an unfinished alone pair (harness/gates.py
     `alone_unfinished`: no alone cell, or one that has not decided) could
-    still turn the verdict into shorten-or-merge, so it allows only a
-    proposal."""
+    still turn the verdict into shorten-or-merge, so the removal waits
+    (`guidance_plan` files nothing)."""
     alone = verdict.get("alone")
     if alone is not None and not isinstance(alone, dict):
         return "the verdict's alone block is malformed"
@@ -1523,7 +1529,23 @@ def plan(gates: dict, registries: dict, gh, run_url: str | None = None,
         # R10-3: lowered from `auto`, the pause cap still decides, so the
         # subject's loop pauses are counted here too.
         lowered_from_auto = mode_of(gates) == "auto"
-        paused = len(deciding(closed_removal_prs(gh, skill))[1]) if lowered_from_auto else 0
+        paused = 0
+        if lowered_from_auto:
+            declined_prs, paused_prs = deciding(closed_removal_prs(gh, skill))
+            paused = len(paused_prs)
+            if agent and declined_prs:
+                # The auto path's "already decided": a person closed this
+                # skill's removal, so no agent issue overrides the decline.
+                return {"action": "none", "mode": mode, "skill": skill,
+                        "reason": f"{skill} is already decided: removal pull request "
+                                  f"{declined_prs[0].get('url')} is closed, so none "
+                                  "is opened again"}
+            mine = [p for p in open_loop_prs(gh)
+                    if p.get("head") == f"{BRANCH_PREFIX}{skill}"] if agent else []
+            if mine:
+                return {"action": "none", "mode": mode, "skill": skill,
+                        "reason": f"{skill}'s removal pull request {mine[0].get('url')} "
+                                  "is already open, so no agent issue is filed beside it"}
         if paused >= MAX_LOOP_PAUSES:
             agent = None  # the loop stopped: a person decides (the cap note)
         action = _skill_issue(gates, registries, gh, skill, mode_reason, run_url, usage,
@@ -2631,25 +2653,29 @@ def guidance_plan(gates: dict, checkout: Path | None, gh, run_url: str | None = 
     else:
         kind = "retire"
         if mode == "auto" and guidance_proposal_only(guidance_block(gates)[section]):
-            mode_reason = guidance_proposal_only(guidance_block(gates)[section])
-            mode = _lowered(mode_reason, allowed)
+            # Evidence is incomplete, not a call for the owner (2026-11-13):
+            # file nothing; the scheduler runs the alone arm. harness/gates.py
+            # already reports such a section `insufficient`, so this guards a
+            # verdict document that predates that.
+            return {"action": "none", "mode": mode, "section": section,
+                    "reason": f"{section}'s removal waits: "
+                              + guidance_proposal_only(guidance_block(gates)[section])}
         if mode == "auto" and "auto" not in allowed and fallback:
-            mode_reason = GUIDANCE_NO_CREDENTIAL
-            mode = _lowered(mode_reason, allowed)
+            # An infrastructure failure, not a decision for the owner: file
+            # nothing and fail the run, so the scheduled-run health audit
+            # flags it (`main` exits 1 on `failure`).
+            return {"action": "none", "mode": mode, "section": section,
+                    "failure": GUIDANCE_NO_CREDENTIAL_FAILURE,
+                    "reason": GUIDANCE_NO_CREDENTIAL_FAILURE}
         if mode not in allowed:
             raise RetireError(f"guidance_retirement_mode is {mode}, which this caller has "
                               f"not wired (allowed: {', '.join(allowed)})")
     if kind == "shorten" or mode == "proposal":
-        # R10-3: a retire lowered from `auto` still honors the pause cap.
-        lowered_from_auto = kind == "retire" and guidance_mode(gates) == "auto"
-        paused = len(deciding(guidance_closed_removal_prs(gh, section))[1]) \
-            if lowered_from_auto else 0
-        action = _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url,
-                                 withdrawn_decides=kind == "shorten"
-                                 or guidance_mode(gates) != "auto", paused=paused)
-        # R12-1: as for a skill, the rewritten body keeps CAP_MARKER.
-        return cap_notice(action, gh, section, paused) if paused >= MAX_LOOP_PAUSES \
-            else action
+        # No guidance retire is lowered from `auto` any more (2026-11-13: an
+        # unfinished alone pair or no credential files nothing for the
+        # owner), so the pause cap and the withdrawal stamp concern only
+        # the auto path below.
+        return _guidance_issue(gates, section, kind, mode, mode_reason, gh, run_url)
     prs = guidance_open_prs(gh)
     if prs:
         # R8-5: as for a skill, an open removal (one a person holds by
@@ -4044,6 +4070,9 @@ def main(argv: list | None = None, *, env=None, gh=default_gh, push=None,
                       file=sys.stderr)
             out.write(guidance_execute(action, args.guidance, gh, push, env,
                                        registry_gh, review=review) + "\n")
+            if action.get("failure"):
+                print(f"retire_skill: {action['failure']}", file=sys.stderr)
+                return 1
             return 0
         if not args.dry_run and mode_of(gates) == "auto" and "auto" in allowed:
             check_auto_env(env)

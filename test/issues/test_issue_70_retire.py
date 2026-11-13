@@ -542,6 +542,26 @@ class AutoTests(Base):
         self.assertEqual(fake.pushes, [])
         self.assertUntouched()
 
+    def test_no_credential_agent_route_respects_a_person_closing_the_removal(self):
+        # Review finding: the agent route skipped the auto path's "already
+        # decided" refusal, so a declined skill still got an agent issue.
+        fake = FakeGitHub(closed=[{"number": 8, "head": f"retire-skill/{SKILL}", "url":
+                                   "https://github.com/Adam-S-Daniel/adam-agentskills/pull/8"}])
+        code, out, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
+                                             "--fallback-to-proposal", fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already decided", out)
+        self.assertEqual(fake.writes(), [])
+
+    def test_no_credential_agent_route_files_nothing_beside_an_open_removal_pr(self):
+        fake = FakeGitHub(prs=[{"number": 3, "head": f"retire-skill/{SKILL}", "url":
+                                "https://github.com/Adam-S-Daniel/adam-agentskills/pull/3"}])
+        code, out, err, fake = self.run_main(gates_doc("auto"), "--allow-mode", "proposal",
+                                             "--fallback-to-proposal", fake=fake)
+        self.assertEqual(code, 0, err)
+        self.assertIn("already open", out)
+        self.assertEqual(fake.writes(), [])
+
     def test_the_fallback_does_not_touch_a_proposal_or_an_allowed_auto(self):
         code, _, err, fake = self.run_main(gates_doc("proposal"), "--allow-mode", "proposal",
                                            "--fallback-to-proposal")

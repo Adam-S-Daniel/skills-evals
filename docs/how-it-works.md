@@ -776,7 +776,11 @@ pending, and `harness/gates.py`'s docstring is the full statement):
   paused for the ceiling that was a ceiling class or whose no-harm test had
   rejected with a without arm averaging 0.90 or more. The pause reads only
   a pooled sample of the without arm, which is not that evidence. Otherwise
-  (and for a floor or zero-use pause) the subject is `insufficient`, and the
+  (and for a floor or zero-use pause) the subject is `insufficient`, and a
+  cell parked by a zero-use pause keeps its subject `insufficient` even beside
+  cells that show no benefit: a never-used skill is not removed by the cells
+  that voted while its other fixtures never did (an unused skill leaves by
+  the removal policy instead), and the
   planner lists it as a `paused-unmeasured` work item: a paused fixture is
   off the schedule, so it has no planner cell to carry a `fixture-ceiling`
   item. A `ceiling` subject with a paused cell among its cells (round 6's
@@ -900,8 +904,7 @@ bot, `skills-evals-improve[bot]`. It skips any labeled `on-hold`.
 
 The pull request is withdrawn when the verdict no longer supports an
 automatic removal: `keep`, `insufficient` (a roster model just added
-included), a `retire` lowered to a proposal (for a section, also an
-unfinished section-alone pair), or a `retire-pending` that was not a
+included, and a section whose alone pair is unfinished), or a `retire-pending` that was not a
 supported `retire` before
 `finalize` ranked it. A `retire-pending` whose raw verdict is a supported
 `retire` keeps its pull request, since only one subject retires per
@@ -1305,9 +1308,9 @@ block of `evals/gate-policy.yml` (today the same numbers).
 There is no separate confirmation step. If a `retire` section helps only
 when alone, it is `shorten-or-merge` instead, because the rest of the
 guidance already covers it. A `retire` whose alone check has not finished
-(no alone cell yet, or one still undecided) is only ever proposed, never
-removed automatically, since the alone check could still turn it into
-`shorten-or-merge`. The Evals Explorer shows a section's alone results only
+(no alone cell yet, or one still undecided) is `insufficient`, neither
+removed nor proposed to the owner (2026-11-13), since the alone check could
+still turn it into `shorten-or-merge`; the planner fires the alone arm. The Evals Explorer shows a section's alone results only
 when its in-situ verdict is `retire`, because only then do they count; its
 whole-guidance headline still pools every run with no guidance, and each
 section card's trend, help-per-word order and early sign use the in-situ

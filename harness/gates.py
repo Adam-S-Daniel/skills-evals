@@ -2313,6 +2313,15 @@ def _verdict(cells: list, any_fixture: bool) -> dict:
                 "parked, and a cell the eval scope pass paused does not show a ceiling on "
                 "its own runs (or was paused for a floor or no use): no fixture is "
                 "measuring the subject"}
+    if any(c["class"] == "paused" and c.get("scope_paused") == "zero-use" for c in counted):
+        # A fixture the eval scope pass paused for no recorded use never
+        # voted: with every retire automatic (2026-11-13), the cells that did
+        # vote must not remove a never-used skill beside it. It stays
+        # `insufficient` until those fixtures run again (the skill is used);
+        # an unused skill leaves through harness/removal_policy.py instead.
+        # A ceiling or floor pause keeps the parked-cell behavior below.
+        return {"verdict": "insufficient", "reason": "a fixture paused for no recorded use "
+                "of the skill has not voted, so the other cells do not remove it"}
     if not headroom or not classes <= PARKED_CLASSES | {"no-benefit", "no-clear-effect"}:
         # No cell (no roster model) or a class this verdict does not know:
         # never a retirement without evidence.
@@ -2448,8 +2457,10 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
     THE UNFINISHED ALONE PAIR (2026-11-03): the alone pair runs only for a
     section leaning toward removal (scripts/plan_week.py, THE ALONE PAIR),
     so a `retire` whose alone pair is unfinished (`alone_unfinished`) could
-    still turn into shorten-or-merge. Its `removal` is then `proposal`,
-    never `auto`, with ALONE_UNFINISHED_REASON.
+    still turn into shorten-or-merge. Its verdict is then `insufficient`
+    with ALONE_UNFINISHED_REASON (2026-11-13: neither a removal nor an owner
+    proposal; the scheduler runs the alone arm), and `in_situ_verdict` stays
+    `retire`.
 
     The in-situ cells are `retirement` with `strata`: by the policy's
     `rest_policy`, the runs beside the rest on main only (`current`), or
@@ -2472,9 +2483,12 @@ def guidance_verdict(index: dict, models: list, section: str, policy: dict,
                            "guidance, but a cell shows benefit alone (section vs "
                            "none): the rest of the guidance covers it")
         extra = {}
-    elif verdict == "retire" and extra.get("removal") == "auto" \
-            and alone_unfinished(alone["cells"]):
-        extra = {**extra, "removal": "proposal", "removal_reason": ALONE_UNFINISHED_REASON}
+    elif verdict == "retire" and alone_unfinished(alone["cells"]):
+        # Not a removal and not a proposal for a person: the evidence is
+        # incomplete. `in_situ_verdict` stays `retire`, so the planner still
+        # fires the alone pair (scripts/plan_week.py `leans_to_removal`).
+        verdict, reason = "insufficient", ALONE_UNFINISHED_REASON
+        extra = {}
     return {"verdict": verdict, "reason": reason, "in_situ_verdict": in_situ["verdict"],
             **extra, "cells": in_situ["cells"],
             "alone": {"verdict": alone["verdict"], "reason": alone["reason"],

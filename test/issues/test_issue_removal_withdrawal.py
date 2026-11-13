@@ -2655,8 +2655,8 @@ class ClosedProposalIssueTests(t70.Base):
     def test_a_guidance_section_is_declined_the_same_way(self):
         from unittest import mock
         gates = doc(guidance={SECTION: gretire()})
-        filed = rs.guidance_plan(gates, None, FakeGh(), allowed=("proposal",),
-                                 fallback=True)
+        filed = rs.guidance_plan(doc(guidance={SECTION: gretire()}, mode="proposal"), None,
+                                 FakeGh(), allowed=("proposal",))
         self.assertEqual(filed["action"], "create-issue")
         self.assertIn(rs.PROPOSAL_STAMP, filed["body"])
         item = {"subject": SECTION, "url": GUIDANCE_URL, "verdict": "keep", "reason": "r",
@@ -3306,21 +3306,13 @@ class ClosedWithdrawalIssueProposalTests(t70.Base):
         self.assertIn("already decided", out)
         self.assertEqual((fake.pushes, fake.writes()), ([], []))
 
-    def test_a_guidance_section_files_a_fresh_issue_too(self):
-        gates = doc(guidance={SECTION: gretire(alone=("insufficient", "insufficient"))})
+    def test_a_guidance_section_in_proposal_mode_is_decided_by_a_closed_issue(self):
+        # No guidance retire is lowered from auto any more (2026-11-13), so a
+        # closed withdrawal issue decides in proposal mode like any close.
+        gates = doc(guidance={SECTION: gretire()}, mode="proposal")
         closed = stamped(900, rs.WITHDRAWAL_STAMP, subject=SECTION,
                          marker=rs.GUIDANCE_ISSUE_MARKER)
         plan = rs.guidance_plan(gates, None, FakeGh(issues=[closed]),
-                                allowed=("auto", "proposal"))
-        self.assertEqual(plan["action"], "create-issue")
-        self.assertIn(rs.PROPOSAL_STAMP, plan["body"])
-        proposal = stamped(900, rs.PROPOSAL_STAMP, subject=SECTION,
-                           marker=rs.GUIDANCE_ISSUE_MARKER)
-        plan = rs.guidance_plan(gates, None, FakeGh(issues=[proposal]),
-                                allowed=("auto", "proposal"))
-        self.assertEqual((plan["action"], plan["issue"]), ("none", 900))
-        plan = rs.guidance_plan(doc(guidance={SECTION: gretire(alone=("insufficient", "insufficient"))},
-                                    mode="proposal"), None, FakeGh(issues=[closed]),
                                 allowed=("auto", "proposal"))
         self.assertEqual((plan["action"], plan["issue"]), ("none", 900))
 
@@ -3521,10 +3513,6 @@ class RoundTenTests(t70.Base):
         paused = [closed_pr(n, head=head) for n in (7, 8, 9)]
         closed = stamped(900, rs.WITHDRAWAL_STAMP, subject=SECTION,
                          marker=rs.GUIDANCE_ISSUE_MARKER)
-        lowered = rs.guidance_plan(doc(guidance={SECTION: gretire(alone=("insufficient", "insufficient"))}), None,
-                                   FakeGh(issues=[closed], closed=paused),
-                                   allowed=("auto", "proposal"))
-        self.assertEqual((lowered["action"], lowered["issue"]), ("none", 900))
         # R11-1: beside the closed issue, the open one gets the cap comment
         # once; with the comment recorded on it, the closed issue decides.
         opened = stamped(901, rs.WITHDRAWAL_STAMP, subject=SECTION,
@@ -4089,24 +4077,6 @@ class RoundTwelveTests(t70.Base):
                 if a[:2] == ["issue", "comment"] and marker in (s or "")]
         self.assertEqual(len(caps), 1)
         self.assertIn(f"@{rs.NOTICE_OWNER}", caps[0])
-
-    def test_the_guidance_lowered_path_at_the_cap_keeps_the_note(self):
-        head = f"{rs.GUIDANCE_BRANCH_PREFIX}{SECTION}"
-        paused = [closed_pr(n, head=head) for n in (7, 8, 9)]
-        opened = stamped(901, rs.WITHDRAWAL_STAMP, subject=SECTION,
-                         marker=rs.GUIDANCE_ISSUE_MARKER, state="open")
-        gates = doc(guidance={SECTION: gretire(alone=("insufficient", "insufficient"))})
-        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused),
-                                  allowed=("auto", "proposal"))
-        self.assertEqual((action["action"], action["issue"]), ("update-issue", 901))
-        self.assertIn(rs.CAP_MARKER.format(subject=SECTION), action["body"])
-        self.assertIn("cap_comment", action)
-        # Short of the cap the lowered body carries no cap note.
-        action = rs.guidance_plan(gates, None, FakeGh(issues=[opened], closed=paused[:2]),
-                                  allowed=("auto", "proposal"))
-        self.assertNotIn(rs.CAP_PREFIX, action["body"])
-        self.assertNotIn("cap_comment", action)
-
 
 
 class RoundThirteenTests(t70.Base):

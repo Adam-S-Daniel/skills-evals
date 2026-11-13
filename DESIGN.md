@@ -2679,8 +2679,10 @@ what it teaches. That verdict never removes anything. Because the alone pair
 now runs only near removal, it may have few or no runs when the in-situ test
 reaches `retire`: a `retire` whose alone pair is unfinished (no alone cell,
 or one still `missing`, `insufficient`, `cannot-discriminate` or `paused`)
-has `removal: proposal`, never `auto`, and `scripts/retire_skill.py`
-re-checks the alone cells itself rather than trusting the field. The
+is `insufficient` (2026-11-13), keeping `in_situ_verdict: retire` so the
+planner still fires the alone arm: it is neither removed nor proposed to the
+owner, and `scripts/retire_skill.py` re-checks the alone cells itself and
+files nothing for a verdict document that predates this. The
 explorer publishes a section's alone results (the `section` mode and
 `alone_verdict`) only when its in-situ verdict is `retire`, the one case
 they factor into its decision; it keeps every `none` run, which the page's
@@ -2708,7 +2710,8 @@ after 20 pairs (`max_runs_per_cell`) is `no-clear-effect`, which can only
 propose a removal, when no test crossed and its pairs span two CLI
 versions, and otherwise stays `insufficient`, unfired, as a `cell-at-cap`
 work item; a fixture the eval scope pass paused keeps its cells, parked as
-`paused` unless they showed benefit or decided no-benefit, and a pause makes
+`paused` (a cell paused for no recorded use, `zero-use`, keeps the subject
+`insufficient` instead of letting the other cells reach `retire`) unless they showed benefit or decided no-benefit, and a pause makes
 a subject `ceiling` only where each paused cell's own runs show the ceiling
 (else `insufficient`, a `paused-unmeasured` work item); a removal decides once its test is at
 its level on pairs spanning two CLI versions (a keep crossing wins unless
@@ -2725,7 +2728,7 @@ acts on at most one section per evaluation. `shorten-or-merge` always
 becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode,
 and in `auto` mode (the committed `guidance.retirement_mode`) a branch
 `retire-guidance/<id>` in the `_agent-guidance` checkout that auto-merges
-(a verdict an unfinished alone pair lowered to `removal: proposal` files the issue in either mode).
+(a section whose alone pair is unfinished files nothing: the gates report it `insufficient`; with no credential in `auto` mode the run files nothing and exits 1 so the scheduled-run health audit flags it).
 That branch removes the extent from `base.md` (or `git rm`s a `sections/`
 file when this was its only `##`) and re-copies `base.md` to
 `.claude/hooks/fleet-guidance.md`. It also deletes the manifest row, runs

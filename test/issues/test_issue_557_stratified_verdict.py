@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ISSUES = Path(__file__).resolve().parent
@@ -63,7 +64,11 @@ CURRENT_POLICY = {**TEST_POLICY, "rest_policy": "current"}
 
 
 def verdict(runs, models=("model-a",), expect=EXPECT, policy=CURRENT_POLICY):
-    return gates.guidance_verdict({"runs": runs}, list(models), "sec", policy, expect)
+    # These tests concern the in-situ pair; an unfinished alone pair would
+    # make a `retire` `insufficient` (harness/gates.py, THE UNFINISHED ALONE
+    # PAIR), so it counts as finished here.
+    with mock.patch.object(gates, "alone_unfinished", return_value=False):
+        return gates.guidance_verdict({"runs": runs}, list(models), "sec", policy, expect)
 
 
 class PoolingTests(unittest.TestCase):
@@ -112,8 +117,8 @@ class ClassifyTests(unittest.TestCase):
         cell = v["cells"][0]
         self.assertEqual((v["verdict"], cell["class"]), ("retire", "no-benefit"), cell["reason"])
         self.assertEqual(cell["key"]["rest_digest"], MAIN)
-        # One cell with headroom: a removal can only be proposed.
-        self.assertEqual(v["removal"], "proposal")
+        # Every retire is automatic since 2026-11-13, one headroom cell too.
+        self.assertEqual(v["removal"], "auto")
 
     def test_older_rests_are_ignored(self):
         # Ten pairs beside an old rest and ten beside main: only main's ten

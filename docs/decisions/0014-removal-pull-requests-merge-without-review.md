@@ -1765,3 +1765,26 @@ adam-agentskills' `plugin-runtime-review` (ADR 0016 and 0021: owner approval
 is a standing rule there) is still a `proposal` issue for Adam.
 adam-agentskills-private is never a target, and a basename found zero or two
 or more times stays a refusal (exit 2).
+
+**Follow-up (2026-11-13, review of the same change).**
+
+- The agent route for a skill with no registry credential now honors the
+  auto path's refusals: a removal pull request a person closed (the owner
+  declined) files no agent issue, and neither does a bot removal pull
+  request that is already open. Only the pause count lowered the route
+  before.
+- A guidance section never goes to the owner for a non-runtime reason. A
+  `retire` whose section-alone pair is unfinished is `insufficient`
+  (`in_situ_verdict` stays `retire`, so the planner fires the alone arm):
+  the evidence is incomplete. A run with no credential files nothing and
+  exits 1 with a fixed message, so the scheduled-run health audit flags the
+  infrastructure failure.
+- A cell parked because the eval scope pass paused its fixture for `zero-use`
+  keeps the subject `insufficient`: with every retire automatic, the other
+  cells must not remove a never-used skill while its paused fixtures never
+  voted. Ceiling and floor pauses keep the parked-cell behavior. Unused skills
+  leave through the removal policy (`harness/removal_policy.py`).
+- Not changed: `closed_removal_prs` reads only adam-agentskills. The
+  workflow's tokens reach skills-evals and adam-agentskills only, so a person
+  closing an unmerged `retire-skill/*` pull request in cms-platform or
+  adamdaniel.ai is not read as a decline.
