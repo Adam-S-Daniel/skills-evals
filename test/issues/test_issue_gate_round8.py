@@ -203,12 +203,17 @@ class ZeroUseSkillsTests(unittest.TestCase):
         self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo", "zz-exempt"], NOW, {},
                                                    self.tmp / "evals"), frozenset({"zz-demo"}))
 
-    def test_too_few_sessions_or_no_census_is_unknown_so_eligible(self):
+    def test_no_census_or_an_untracked_skill_is_unknown_so_eligible(self):
         self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo"], NOW, {},
                                                    self.tmp / "evals"), frozenset())
         self.census(10)
-        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo"], NOW, {},
+        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-other"], NOW, {},
                                                    self.tmp / "evals"), frozenset())
+
+    def test_little_exposure_still_counts_since_2026_11_13(self):
+        self.census(10)
+        self.assertEqual(plan_week.zero_use_skills(self.tmp, ["zz-demo"], NOW, {},
+                                                   self.tmp / "evals"), frozenset({"zz-demo"}))
 
 
 class LanesSkipAnOpenRemovalPrTests(unittest.TestCase):

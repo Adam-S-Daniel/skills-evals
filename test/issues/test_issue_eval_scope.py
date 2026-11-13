@@ -380,27 +380,37 @@ class ZeroUseTests(unittest.TestCase):
         doc["generated_at"] = "2026-10-01T00:00:00Z"
         self.assertEqual(self.paused(doc), [])
 
-    def test_a_local_only_plugin_skill_counts_only_local_sessions(self):
-        doc = usage_doc({"beta": 1}, cloud=False, local=600)
-        self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
+    def test_exposure_does_not_matter_for_the_pause(self):
+        """2026-11-13, Adam: no evals before a first recorded use. Little or
+        unknown exposure (5 local sessions, a local-only skill without a
+        cloud source) still pauses when every source it needs is current."""
+        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=5, cloud_sessions=5)),
                          ["evals/alpha/one", "evals/alpha/two"])
-        self.assertEqual(self.paused(doc, {"alpha": "adam-non-coding-local"}),
+        for doc in (usage_doc({"beta": 3}, cloud=False, local=5),
+                    usage_doc({"beta": 3}, cloud=False, local=0)):
+            self.assertEqual(self.paused(doc, {"alpha": "adam-coding-local"}),
+                             ["evals/alpha/one", "evals/alpha/two"])
+        self.assertEqual(self.paused(usage_doc({"beta": 3}), {"alpha": "adam-coding-local"}),
                          ["evals/alpha/one", "evals/alpha/two"])
-        # 300 local sessions plus 300 cloud ones: enough for a skill that
-        # reaches both surfaces, not for one that reaches only local.
-        both = usage_doc({"beta": 1})
-        self.assertEqual(self.paused(both, {"alpha": "adam-coding-anywhere"}),
-                         ["evals/alpha/one", "evals/alpha/two"])
-        self.assertEqual(self.paused(both, {"alpha": "adam-coding-local"}), [])
 
-    def test_too_few_full_listing_sessions_is_unknown_not_zero(self):
-        # Truncated listings (700 in the helper) are not full-listing sessions.
-        self.assertEqual(self.paused(usage_doc({"beta": 3}, local=100, cloud_sessions=100)), [])
+    def test_a_missing_cloud_source_for_a_cloud_skill_is_unknown_not_zero(self):
+        """UNKNOWN IS NOT ZERO: no cloud source reads 0 there, so a skill that
+        reaches the cloud is not paused (no plugin layout means both surfaces)."""
+        for plugins in (None, {"alpha": "adam-agentskills"}):
+            self.assertEqual(self.paused(usage_doc({"beta": 3}, cloud=False, local=500), plugins), [])
 
-    def test_the_why_names_the_session_threshold(self):
+    def test_a_skill_the_census_does_not_track_is_not_paused(self):
+        doc = usage_doc({"beta": 3})
+        for source in doc["sources"]:
+            if "skill_keys" in source:
+                source["skill_keys"] = ["beta"]
+        self.assertEqual(self.paused(doc), [])
+
+    def test_the_why_names_no_recorded_use(self):
         plan = plan_for(self.root, explorer(), usage_doc({"beta": 3}))
         why = next(p["why"] for p in plan["pause"] if p["rule"] == "zero-use")
-        self.assertIn("500 or more full-listing sessions over the last 8 weeks", why)
+        self.assertEqual(why, "no recorded use in real work in the last 8 weeks; "
+                              "its evals resume on its first recorded use")
 
 
 class ExclusionTests(unittest.TestCase):
@@ -415,8 +425,23 @@ class ExclusionTests(unittest.TestCase):
                 {"hg": [guidance_run("fx", arm(10), arm(10)) for _ in range(4)]})
             plan = plan_for(root, exp, usage_doc())
             self.assertEqual([p["path"] for p in plan["pause"]], ["evals/ok/one"])
-            # Zero use hits hi and dr too (nothing used) and still skips them.
-            self.assertNotIn("evals/hi/one", [p["path"] for p in plan["pause"]])
+            # Ceiling and floor skip a high-stakes subject; zero use does not
+            # (below), and a draft is skipped by every rule.
+            self.assertNotIn("evals/dr/one", [p["path"] for p in plan["pause"]])
+
+    def test_zero_use_pauses_a_high_stakes_skill_but_not_a_draft(self):
+        """2026-11-13: the high-stakes exemption is for ceiling and floor only."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = make_repo(tmp, ["evals/hi/one", "evals/dr/one"],
+                             draft=("evals/dr/one",), high_skills=("hi",))
+            doc = usage_doc({"zzz": 1}, cloud=False, local=5)
+            for source in doc["sources"]:
+                if "skill_keys" in source:
+                    source["skill_keys"] = sorted({*source["skill_keys"], "hi", "dr"})
+            plan = plan_for(root, explorer(), doc,
+                            {"hi": "adam-coding-local", "dr": "adam-coding-local"})
+            self.assertEqual([(p["path"], p["rule"]) for p in plan["pause"]],
+                             [("evals/hi/one", "zero-use")])
 
     def test_an_unscheduled_row_the_pass_did_not_write_survives_apply_and_resume(self):
         with tempfile.TemporaryDirectory() as tmp:

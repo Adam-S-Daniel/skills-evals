@@ -1353,38 +1353,36 @@ The rules, in order:
   paused fixture's cells as parked `paused` cells (below), and a decided
   `keep` or `no-benefit` cell still counts, so the guard is not needed for
   safety; it keeps a kept subject's fixtures measured.
-- **Zero use.** A skill with no use over the census's 8 weeks, in at least
-  500 sessions that listed it in full on the surfaces it reaches
-  (`skill_usage.zero_use`; both surfaces, or local only for the two local-only
-  plugins in adam-agentskills' `plugin_layout.json`; an unknown answer does
-  nothing), has all its scheduled fixtures paused. Exposure
-  (`skill_usage.exposure`) is the count of those sessions: local sessions
-  whose skill listing was `full` (a `truncated` or `unknown` listing is left
-  out, [#668](https://github.com/Adam-S-Daniel/skills-evals/issues/668)) plus
-  cloud `listing` rows, which count only sessions whose guidance record names
-  the adam-agentskills registry in `sources` AND reports a full listing. A
-  cloud `guidance` row proves neither (a record is written whether or not the
-  bundle was installed, and a cloud listing can be cut), so it is never
-  exposure. When the cloud records carry neither field the cloud source lacks
-  `listing_recorded` and cloud exposure is unknown, not 0. A pause is
-  reversible and resumes on the first use, so it rests on the surfaces whose
-  exposure is known (an unknown one adds nothing); a removal for being unused
-  needs every surface the skill reaches known (`harness/removal_policy.py`), so
-  while cloud is unknown no cloud-reaching skill is removed. Each surface
-  counts only the weeks from its `counted_from`. A skill the census does not
-  track by name (`skill_keys` on its transcripts source) is counted under
-  `other` and reads as 0 uses, so it is neither zero-use nor removable. A
-  removal also needs the census to end where its floor window does: its
-  `generated_at` and the `to` of every source on a reached surface within 1 day
-  of the run's `as_of`. Any use wins whatever the exposure. A skill listed in
-  `evals/usage-unknown.yml` has unknown use whatever the census says: it is
-  never paused for zero use, and an earlier zero-use pause of it resumes. The
-  improvement lane skips a zero-use skill the same way.
+- **Zero use.** A skill with no recorded use in real work over the census's
+  8 weeks (`skill_usage.has_recorded_use` is False: a fresh census that
+  tracks the skill by name and counts no use) has all its scheduled fixtures
+  paused, `stakes: high` skills included (the high-stakes exemption covers the
+  ceiling and floor rules only). They resume on its first recorded use. An
+  unknown answer (a missing or stale census, a skill the census does not
+  track by name, which it counts under `other` and reads as 0 uses) does
+  nothing. A skill listed in `evals/usage-unknown.yml` has unknown use
+  whatever the census says: it keeps being evaluated, since its use cannot be
+  measured and its eval verdict is its only path to removal, and an earlier
+  zero-use pause of it resumes. The improvement lane skips a zero-use skill
+  the same way (`plan_week.zero_use_skills`).
+
+  *2026-11-13, Adam: "Do we/should we run evals on skills before they have
+  been recorded used in real work? I think we should not."* So the pause has
+  no exposure minimum. The earlier rule (no use in at least 500 sessions that
+  listed the skill in full on the surfaces it reaches, never for `stakes:
+  high`) was written for an irreversible removal and still governs one:
+  `harness/removal_policy.py`'s unused-skill removal keeps
+  `skill_usage.zero_use`, the 500-session threshold (`exposure`: local
+  sessions whose listing was `full`, plus cloud `listing` rows that name the
+  adam-agentskills registry and a full listing, never a `guidance` row), the
+  every-reached-surface-known requirement, a census ending within 1 day of the
+  run's `as_of` and the accrued description cost. A pause is reversible and
+  costs only the evals it skips, so it does not need that evidence.
 - **Resume.** A ceiling or floor pause ends when the fixture directory's
   content digest (sha256 over sorted relative paths and bytes) differs from
   the one recorded at the pause, when the subject is now kept, or when its
   runs no longer trip the rule per model; a zero-use pause ends when
-  `zero_use` is false.
+  `has_recorded_use` is true.
 
 A pause removes the path from `evals/scheduled.yml`, records it in
 `evals/scope-auto.yml` (rule, date, digest, and the readiness note a resume
