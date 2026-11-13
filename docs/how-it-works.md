@@ -678,9 +678,20 @@ proposer writes `$RESULTS/proposal-<ts>.json` from `Runner.last_usage`), the
 trigger loop's call count (its dollars are unknown), the arm and proposal
 models, busy and span seconds, and the weekly meter's first and last
 snapshot across all trials with their `delta` (null across a window reset or
-with fewer than two snapshots). The guard does not charge it yet: that, and
-recomputing the improve fire's reservation from these records, is a
-follow-up once at least six exist.
+with fewer than two snapshots). A proposal call that failed or timed out is
+recorded as `{calls: 1, usd: null, input_tokens: null, output_tokens: null}`:
+it was billed, its cost is unknown. The proposal's cache tokens are not
+recorded, because its `usd` already includes them.
+
+Since 2026-11-13 (#577) `scripts/allowance_guard.py` charges a matched fire
+its record: one-to-one, oldest first, by mode, target and a run id stamp from
+2 minutes before to 30 minutes after the fire's start, at the record's
+dollars times `points_per_usd` (or, when those are only a floor, the larger of
+that and a clean bracket's meter delta). Unmatched fires keep
+`IMPROVE_FIRE_UNITS` times the mean eval fire, and
+`python3 scripts/allowance_guard.py units --results-tree <persistent/eval-results>`
+prints how those units follow from the records, flagging brackets with a low
+busy/span ratio.
 
 The routine's saved prompt is not in this repository. Its improve sections,
 and the rule sentence that allows the cost branch, read as follows (a test

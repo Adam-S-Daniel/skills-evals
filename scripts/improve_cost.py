@@ -260,9 +260,11 @@ def check_record(doc) -> None:
     if proposal is not None:
         _keys(proposal, "proposal", PROPOSAL_KEYS)
         _int(proposal["calls"], "proposal.calls", MAX_COUNT)
-        _num(proposal["usd"], "proposal.usd", 0, MAX_USD)
-        _int(proposal["input_tokens"], "proposal.input_tokens", MAX_TOKENS)
-        _int(proposal["output_tokens"], "proposal.output_tokens", MAX_TOKENS)
+        # A call that failed or timed out was still billed: usd and tokens
+        # are null then (#577, the 2026-11-02 review).
+        _num(proposal["usd"], "proposal.usd", 0, MAX_USD, null=True)
+        _int(proposal["input_tokens"], "proposal.input_tokens", MAX_TOKENS, null=True)
+        _int(proposal["output_tokens"], "proposal.output_tokens", MAX_TOKENS, null=True)
     stage = doc["stage_reached"]
     expected = ("candidate" if trials["candidate"] else
                 "none" if not trials["baseline"] else
@@ -484,9 +486,9 @@ def read_proposal(results: Path) -> dict | None:
            "input_tokens": doc["input_tokens"], "output_tokens": doc["output_tokens"]}
     try:
         _int(out["calls"], "calls", MAX_COUNT)
-        _num(out["usd"], "usd", 0, MAX_USD)
-        _int(out["input_tokens"], "input_tokens", MAX_TOKENS)
-        _int(out["output_tokens"], "output_tokens", MAX_TOKENS)
+        _num(out["usd"], "usd", 0, MAX_USD, null=True)
+        _int(out["input_tokens"], "input_tokens", MAX_TOKENS, null=True)
+        _int(out["output_tokens"], "output_tokens", MAX_TOKENS, null=True)
     except Invalid:
         return None
     return out

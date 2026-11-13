@@ -13,6 +13,7 @@ network, no clock.
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import shutil
@@ -86,6 +87,58 @@ def agentskills_generator():
             spec.loader.exec_module(module)
             return module
     return None
+
+
+def guidance_hook_test():
+    """_agent-guidance's test/test_guidance_load_record.py, or None."""
+    for checkout in (REPO_ROOT.parent / "_agent-guidance",
+                     Path.home() / "repos" / "_agent-guidance"):
+        script = checkout / "test" / "test_guidance_load_record.py"
+        if script.is_file():
+            return script
+    return None
+
+
+def literal_set_assignment(source: str, name: str) -> frozenset:
+    """The set literal assigned to the module-level `name` in `source`,
+    read with `ast` (the hook test is not imported: it runs the hook)."""
+    for node in ast.parse(source).body:
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == name
+                        for t in node.targets)):
+            return frozenset(ast.literal_eval(node.value))
+    raise LookupError(f"no module-level assignment to {name}")
+
+
+class CloudShardKeysTests(unittest.TestCase):
+    """The hook's shard keys and the census reader's `CLOUD_KEYS` are two
+    copies of one list: a line with any other key set is skipped by the
+    reader, so a key added or renamed on one side silently drops every
+    cloud line (skills-evals#726)."""
+
+    def test_the_literal_reader_finds_a_set_and_names_a_missing_one(self):
+        source = 'OTHER = 1\nKEYS = {"a", "b"}\n'
+        self.assertEqual(literal_set_assignment(source, "KEYS"), {"a", "b"})
+        with self.assertRaises(LookupError):
+            literal_set_assignment(source, "MISSING")
+
+    def test_the_hook_test_shard_keys_equal_the_census_cloud_keys(self):
+        script = guidance_hook_test()
+        if script is None:
+            reason = ("no _agent-guidance checkout beside this repo or at "
+                      "~/repos/_agent-guidance: skipping the cloud shard "
+                      "key agreement check")
+            print(reason)
+            self.skipTest(reason)
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        try:
+            import model_usage_census as census
+        finally:
+            sys.path.pop(0)
+        self.assertEqual(
+            literal_set_assignment(script.read_text(encoding="utf-8"),
+                                   "SHARD_KEYS"),
+            frozenset(census.CLOUD_KEYS))
 
 
 class VectorTests(unittest.TestCase):

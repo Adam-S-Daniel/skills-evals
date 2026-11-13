@@ -219,6 +219,40 @@ class ResolveTests(unittest.TestCase):
             "digest": skill_digest.lock_digest(skill), "digest_null_reason": None,
             "base_kind": "account-sync", "registry": None, "ref": None})
 
+    def synced_plugin(self, plugins, bucket="org_account", plugin="example-plugin"):
+        """A skill under `plugins/synced/<bucket>/<plugin>/skills/` with the
+        bucket's manifest.json listing `plugins` (skills-evals#953)."""
+        root = self.claude / "plugins" / "synced" / bucket
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "manifest.json").write_text(json.dumps({"plugins": plugins}),
+                                            encoding="utf-8")
+        return make_skill(root / plugin / "skills" / SKILL)
+
+    def test_account_plugin_sync_names_its_marketplace_from_the_manifest(self):
+        skill = self.synced_plugin([
+            {"name": "other-plugin", "marketplaceName": "wrong-mkt"},
+            {"name": "example-plugin", "marketplaceName": "example-mkt"}])
+        self.known({"example-mkt": {"source": {"source": "github",
+                                               "repo": "example-owner/registry"}}})
+        self.assertEqual(self.resolve(skill), {
+            "digest": skill_digest.lock_digest(skill), "digest_null_reason": None,
+            "base_kind": "account-plugin-sync", "registry": "example-owner/registry",
+            "ref": None})
+
+    def test_account_plugin_sync_without_a_usable_manifest_entry_has_no_registry(self):
+        for label, plugins in (("no entry", [{"name": "other-plugin",
+                                              "marketplaceName": "example-mkt"}]),
+                               ("no marketplace", [{"name": "example-plugin"}]),
+                               ("not a list", {"name": "example-plugin"})):
+            with self.subTest(label):
+                skill = self.synced_plugin(plugins)
+                self.known({"example-mkt": {"source": {
+                    "source": "github", "repo": "example-owner/registry"}}})
+                copy = self.resolve(skill)
+                self.assertEqual((copy["base_kind"], copy["registry"]),
+                                 ("account-plugin-sync", None))
+                self.assertIsNotNone(copy["digest"])
+
     def test_account_plugin_from_a_cowork_session(self):
         skill = make_skill(self.tmp / "Claude" / "local-agent-mode-sessions"
                            / "skills-plugin" / "abc" / "skills" / SKILL)
@@ -318,7 +352,7 @@ class ResolveTests(unittest.TestCase):
 
     def test_every_reason_and_kind_is_in_its_fixed_tuple(self):
         self.assertEqual(len(census.DIGEST_NULL_REASONS), 8)
-        self.assertEqual(len(census.BASE_KINDS), 7)
+        self.assertEqual(len(census.BASE_KINDS), 8)
         for name, base in (("simplify", None), (SKILL, None), ("a:b:c", None)):
             copy = self.resolve(base, name=name)
             self.assertIn(copy["digest_null_reason"], census.DIGEST_NULL_REASONS)
