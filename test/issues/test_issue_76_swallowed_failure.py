@@ -162,6 +162,14 @@ class SwallowedFailureFixtureTests(unittest.TestCase):
         }
         for label, fix in fixes.items():
             with self.subTest(fix=label):
+                # The scorer's commands run with PATH `/usr/bin:/bin` only
+                # (commands.SYSTEM_PATH), so a `jq` installed elsewhere (a
+                # package manager under /usr/local, /snap, a home directory)
+                # is invisible to this fix and its probe fails for the host.
+                if "| jq" in fix and shutil.which("jq", path=os.pathsep.join(
+                        commands.SYSTEM_PATH)) is None:
+                    self.skipTest("`jq` is not in /usr/bin or /bin, the only PATH "
+                                  "the scorer's commands get (#987)")
                 ws = self._logged()
                 self._edit(ws, LISTING, fix)
                 self.assertEqual(self._score(ws), dict.fromkeys(PRISTINE, True))

@@ -7,6 +7,7 @@
 #   bash scripts/dev_setup.sh                  install everything
 #   bash scripts/dev_setup.sh --print-pins     list the pip pins, install nothing
 #   bash scripts/dev_setup.sh --print-npm-dirs list the npm dirs, install nothing
+#                                              (the Gemfile dirs are a separate list below)
 #   bash scripts/dev_setup.sh --print-bundler-dirs list the Gemfile dirs, install nothing
 #   bash scripts/dev_setup.sh --print-git-pin  print GIT_MIN, GIT_PIN and GIT_PIN_SHA256
 #   bash scripts/dev_setup.sh --check-git      exit 0 when `git` is GIT_MIN or later
@@ -139,5 +140,5 @@ if ! command -v bwrap >/dev/null 2>&1; then
   echo "dev_setup: bubblewrap (bwrap) not found; tests of workspace-executing scorers fail closed without it. CI installs it; see .github/workflows/ci.yml." >&2
 fi
 
-echo "dev_setup: done."
+echo "dev_setup: done. It installed the npm directories (--print-npm-dirs) AND the Gemfile directories (--print-bundler-dirs); installing only the npm ones leaves the bundler fixtures failing."
 echo "Run one module:  python3 -m pytest test/issues/<file>.py -q -n 2      Full suite:  python3 test/run_tests.py --jobs auto"
