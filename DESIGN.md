@@ -2725,7 +2725,7 @@ acts on at most one section per evaluation. `shorten-or-merge` always
 becomes a skills-evals issue. `retire` becomes an issue in `proposal` mode,
 and in `auto` mode (the committed `guidance.retirement_mode`) a branch
 `retire-guidance/<id>` in the `_agent-guidance` checkout that auto-merges
-(a verdict with `removal: proposal` files the issue in either mode).
+(a verdict an unfinished alone pair lowered to `removal: proposal` files the issue in either mode).
 That branch removes the extent from `base.md` (or `git rm`s a `sections/`
 file when this was its only `##`) and re-copies `base.md` to
 `.claude/hooks/fleet-guidance.md`. It also deletes the manifest row, runs

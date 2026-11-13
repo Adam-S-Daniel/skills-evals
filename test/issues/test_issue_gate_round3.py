@@ -126,26 +126,27 @@ class ScopePauseTests(unittest.TestCase):
             self.assertEqual([c["class"] for c in a], ["benefit", "benefit"])
             self.assertEqual({c["scope_paused"] for c in a}, {"ceiling"})
 
-    def test_a_paused_fixture_never_frees_an_auto_removal(self):
+    def test_a_paused_fixture_parks_its_cells_beside_an_auto_removal(self):
         # Paused after 3 pairs, before its keep: its cells are parked, not
-        # dropped, so b's two no-benefit cells can only propose.
-        for verdict, runs, expected in (
-                (self.skill_verdict, self.runs(3), expect("a", "b", paused="a")),
+        # dropped, and say so in the removal reason (every retire is
+        # automatic since 2026-11-13).
+        # A section with no alone pair yet is still held to a proposal.
+        for verdict, runs, expected, removal, why in (
+                (self.skill_verdict, self.runs(3), expect("a", "b", paused="a"), "auto",
+                 "paused by the eval scope pass"),
                 (self.guidance_verdict, self.runs(3, in_situ=True, skill="sec"),
-                 expect("a", "b", paused="a", rest=True))):
+                 expect("a", "b", paused="a", rest=True), "proposal",
+                 gates.ALONE_UNFINISHED_REASON)):
             v = verdict(runs, expected)
-            self.assertEqual((v["verdict"], v["removal"]), ("retire", "proposal"),
+            self.assertEqual((v["verdict"], v["removal"]), ("retire", removal),
                              v["reason"])
-            self.assertIn("paused by the eval scope pass", v["removal_reason"])
+            self.assertIn(why, v["removal_reason"])
             a = [c for c in v["cells"] if c["fixture"] == "a"]
             self.assertEqual([(c["class"], c["class_before_pause"]) for c in a],
                              [("paused", "insufficient")] * 2)
-            self.assertFalse(retire_skill.cells_allow_auto(v))
-            self.assertIsNotNone(retire_skill.proposal_only({**v, "removal": "auto"}))
             gates_doc = {"skills": {"demo": v}, "roster_models": MODELS}
             self.assertEqual(retire_skill.retiring(gates_doc), "demo")
-        # The same runs with a's cells dropped, as before the fix, would
-        # have been automatic: the parking is what stops it.
+        # The same runs with a's cells dropped differ only in the reason.
         dropped = self.skill_verdict(self.runs(3), expect("b"))
         self.assertEqual(dropped["removal"], "auto")
 

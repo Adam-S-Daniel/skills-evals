@@ -24,35 +24,36 @@
 #   * A cell whose without arm a betting bound at `retire_confidence` shows
 #     above 1 - `objective_margin` cannot show the margin: it parks as
 #     `ceiling`, does not vote on removal and is not fired again; it needs a
-#     harder fixture. A retire verdict beside one is only a proposal. A
+#     harder fixture. A retire verdict beside one still removes automatically
+#     (2026-11-13: every retire is automatic), the parked cell only shows in
+#     the verdict's `removal_reason`. A
 #     harm test (D < 0) runs at such cells and makes a harmful one
 #     no-benefit once it decides, and the cell parks only when a no-harm
 #     test (D > -margin) agrees, so a harm beyond the margin parks only at
 #     that test's error rate (for a fixture the eval scope pass did not
 #     pause: a pause stops the firing, so an undecided harm stays undecided
 #     and its subject `insufficient` when every cell is parked, else a
-#     `retire` proposal, never automatic). A milder harm can still end parked or
+#     `retire`). A milder harm can still end parked or
 #     with no clear effect.
 #   * `max_runs_high_cell` (20): a cell whose without arm is above
 #     1 - `objective_margin`, still undecided after this many pairs, whose
 #     no-harm test has rejected and whose without arm averages at least
 #     0.90 (harness/gates.py HIGH_STOP_MIN_WITHOUT) stops being fired as
 #     `ceiling-unconfirmed`. It does not vote either, so a retire verdict
-#     beside it is a proposal. A budget rule: a bound at 0.95 needs about 28
+#     beside it rests on the other cells. A budget rule: a bound at 0.95 needs about 28
 #     pairs, at 0.90 more than the cap. A high cell that does not meet it is
 #     fired on to the cap.
 #   * A cell that reaches `max_runs_per_cell` (20) pairs with neither test
 #     crossed, on pairs spanning `min_cli_versions`, has `no-clear-effect`,
-#     which can only PROPOSE a removal. With one version, or with a test that
+#     which counts as headroom for a removal (it still retires, 2026-11-13). With one version, or with a test that
 #     crossed but has not decided, it stays `insufficient`: it is no longer
 #     fired, and the planner lists it as a `cell-at-cap` work item (a step
-#     summary count, not an issue). An
-#     automatic removal needs two or more cells with headroom, every one
-#     no-benefit, and no parked cell; with one, the removal is a proposal too.
+#     summary count, not an issue). Every retire verdict's removal is
+#     `auto` (Adam, 2026-11-13: "I want removals to occur without requiring
+#     my intervention/approval"); `removal_reason` records the evidence.
 #   * A fixture the eval scope pass paused keeps its cells: a `benefit` cell
 #     still keeps, a decided `no-benefit` cell still votes, and any other is
-#     `paused`, parked like a ceiling cell, so it never lets the other cells
-#     remove the subject automatically. A subject whose every cell is parked
+#     `paused`, parked like a ceiling cell, so it never votes for removal. A subject whose every cell is parked
 #     is `ceiling` only when each shows it on its own runs (a ceiling class,
 #     or a ceiling pause of a cell that was one, or whose no-harm test had
 #     rejected with a without arm of at least 0.90); otherwise it is
@@ -99,16 +100,20 @@
 #
 # `retirement_mode` is `auto` (a `retire` verdict whose removal may be
 # automatic opens a removal PR that auto-merges with no human review) or
-# `proposal` (an issue is filed and a human removes). A missing or invalid
+# `proposal` (an issue is filed and a human removes; nothing is automatic in
+# that mode). A missing or invalid
 # value is `proposal`. It was `auto` by Adam's 2026-10-26 decision (ADR 0014
 # and adam-agentskills ADR 0021); Adam set both blocks to `proposal` on
 # 2026-11-03 ("Resume, auto-removal off") after the statistics review, and
 # pre-approved setting them back to `auto` once a loop withdrawal was
 # hardened (PR #740 and its round-7 fixes; skills-evals#645), which they now
-# are. Even in `auto`, scripts/retire_skill.py files the issue instead for
-# a verdict whose `removal` is `proposal`, when plugin-runtime-review would
-# hold the removal, or when the scheduled workflow has no write token; it
-# opens nothing while another loop pull request is open, and acts only from
+# are. Even in `auto`, scripts/retire_skill.py files the owner's `proposal`
+# issue only when plugin-runtime-review would hold the removal (the owner's
+# approval is a standing rule there). Since 2026-11-13 it files an
+# `agent-ready` issue for the fleet worker instead of a pull request when the
+# skill lives in cms-platform or adamdaniel.ai, adam-agentskills' mechanical
+# path refuses (last skill, layout, waiver, citing test), or the scheduled
+# workflow has no write token; it opens nothing while another loop pull request is open, and acts only from
 # the scheduled workflow, never a dispatched or pull-request run.
 #
 # `max_runs_per_cell` history: 40 pairs from the 2026-11-03 statistics review;

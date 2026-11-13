@@ -2191,11 +2191,11 @@ class GuidanceRemovalTests(unittest.TestCase):
                                               allow=("proposal",), fallback=True, dry=True)
         self.assertEqual(json.loads(out)["mode_reason"], rs.GUIDANCE_NO_CREDENTIAL)
 
-    def test_a_proposal_only_guidance_verdict_files_the_issue_in_auto_mode(self):
-        # The review's surviving mutation (round 1): guidance's `removal !=
-        # "auto"` lowering was untested. A verdict that says proposal, or
-        # says auto over cells that do not allow it (round 1's m3), files
-        # the issue and pushes nothing, with auto allowed.
+    def test_every_guidance_retire_verdict_is_removed_in_auto_mode(self):
+        # Adam, 2026-11-13: removals occur without his approval. A parked
+        # cell, a no-clear-effect cell or a `removal` field that says
+        # proposal no longer lowers a guidance removal to an issue; only an
+        # unfinished alone pair does (harness/gates.py, `alone_unfinished`).
         for doc in (guidance_gates(mode="auto", removal="proposal"),
                     guidance_gates(mode="auto", classes={"model-b": "no-clear-effect"}),
                     guidance_gates(mode="auto", classes={"model-b": "ceiling"})):
@@ -2204,12 +2204,8 @@ class GuidanceRemovalTests(unittest.TestCase):
                 root = guidance_repo(self)
                 rc, gh, pushed, out = self.run_main(doc, root, allow=("auto", "proposal"))
                 self.assertEqual(rc, 0, out)
-                self.assertEqual(pushed, [])
-                self.assertEqual(gh.calls[-1][0][:4], ["issue", "create", "-R", rs.EVALS_REPO])
-                self.assertEqual(sh(root, "git", "branch", "--list").stdout.split(),
-                                 ["*", "main"])
-        # Both cells no-benefit and `removal: auto`: the auto path stands.
-        self.assertIsNone(rs.proposal_only(guidance_gates(mode="auto")["guidance"]["bravo"]))
+                self.assertNotEqual(pushed, [])
+        self.assertIsNone(rs.guidance_proposal_only(guidance_gates(mode="auto")["guidance"]["bravo"]))
 
     def test_without_fallback_auto_not_allowed_still_exits_2(self):
         root = guidance_repo(self)

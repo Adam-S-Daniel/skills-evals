@@ -1722,3 +1722,46 @@ breaks elsewhere.
 Findings are model text in a public pull request body: each is flattened to
 one line, cut to 500 characters and HTML-escaped with `@` encoded, so it can
 neither mention anyone nor start a line that forges the record.
+
+## Addendum (2026-11-13): every retire removes without the owner
+
+Adam, 2026-11-13: "I want removals to occur without requiring my
+intervention/approval." A `retire` verdict often ended as a proposal issue
+that nobody acted on: `consumer-repo-provisioning` (cms-platform) was a
+`retire` with `removal: proposal` because a cell reached the run cap with no
+clear effect, and skills-evals#998 said a human removes it. Also,
+`scripts/retire_skill.py`'s auto mode only wrote adam-agentskills, so a skill
+whose copy lives in cms-platform or adamdaniel.ai could never be removed
+automatically. Two changes:
+
+1. **Every `retire` verdict's `removal` is `auto`** (harness/gates.py,
+   `_verdict`). The 2026-11-03 rule that an automatic removal needs two
+   headroom cells, every one no-benefit and no parked cell, is gone, and with
+   it the constant `AUTO_MIN_HEADROOM_CELLS`. `removal_reason` still names the
+   evidence (one headroom cell, a cell at the run cap with no clear effect,
+   parked cells that did not vote), since the dashboard shows it. The
+   adversarial review, the door check and the registry's required checks are
+   the safeguards, as before. `retire_skill.py` no longer lowers a skill's
+   removal to a proposal because the field or the cells say so.
+2. **A refusal an agent can fix routes to the fleet worker, not to a
+   person.** In `auto` mode, when no removal pull request can be opened
+   mechanically because the skill's one copy is in a public registry other
+   than adam-agentskills (cms-platform, adamdaniel.ai), adam-agentskills'
+   path refuses (the skill is its plugin's last, the layout file does not
+   list it, a `skills_waivers.yml` waiver, a test a tracked source cites by
+   name), or the run has no registry write credential
+   (`--fallback-to-proposal`), the script files or updates the skill's one
+   skills-evals issue (same marker), stamped `AGENT_STAMP`, labeled
+   `agent-ready` unless it carries `agent-working`, `agent-blocked` or
+   `on-hold`. The fleet worker removes the skill with a `retire-skill/<skill>`
+   pull request in the registry that closes the issue
+   (Adam-S-Daniel/_agent-guidance, docs/reference/agent-issue-worker.md,
+   "Skill removal issues"). An open proposal-stamped issue that now qualifies
+   is rewritten in place; a closed agent-stamped issue decides the skill, as
+   a closed proposal does.
+
+**The runtime-review case stays with the owner.** A removal that would wait on
+adam-agentskills' `plugin-runtime-review` (ADR 0016 and 0021: owner approval
+is a standing rule there) is still a `proposal` issue for Adam.
+adam-agentskills-private is never a target, and a basename found zero or two
+or more times stays a refusal (exit 2).

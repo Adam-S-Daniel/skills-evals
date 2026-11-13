@@ -197,7 +197,7 @@ class VerdictTests(unittest.TestCase):
                          ["ceiling-unconfirmed"] * 2)
         self.assertEqual(stop["verdict"], "ceiling")
 
-    def test_a_three_pair_ceiling_never_parks_a_cell_or_frees_an_auto_removal(self):
+    def test_a_three_pair_ceiling_never_parks_a_cell_or_frees_a_removal(self):
         # Round 1's C1, the reviewer's direct repro: three perfect pairs on
         # fixture a, eighteen flat pairs on b and c. A sample mean once
         # parked a for good and let b and c remove the subject automatically.
@@ -212,13 +212,13 @@ class VerdictTests(unittest.TestCase):
                          ["insufficient", "no-benefit", "no-benefit"])
         self.assertEqual(result["verdict"], "insufficient")
         self.assertNotEqual(result.get("removal"), "auto")
-        # Even once a's ceiling is confirmed, the removal is only proposed.
+        # Even once a's ceiling is confirmed, it parks and does not vote.
         runs = pairs("a", 18, 100, 100, 70) + pairs("b", 18, 50, 50, 10) \
             + pairs("c", 18, 50, 50, 40)
         result = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, expect)
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["ceiling", "no-benefit", "no-benefit"])
-        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "auto"))
 
     def test_harm_at_the_ceiling_is_not_hidden(self):
         # Round 1's M1, the reviewer's repro: without 95/100, with 40/100 on
@@ -258,7 +258,7 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(result["objective"]["keep_at"], result["objective"]["remove_at"])
         self.assertEqual(result["class"], "benefit", result["reason"])
 
-    def test_the_cap_gives_no_clear_effect_which_only_proposes(self):
+    def test_the_cap_gives_no_clear_effect_which_still_retires_automatically(self):
         # A swing of D = +0.3, -0.2 (a gain of 0.05): neither test decides
         # in the cap's 40 pairs.
         swing = [(50, 50, 50), (0, 0, 0)] * 20
@@ -267,7 +267,8 @@ class VerdictTests(unittest.TestCase):
         result = self.verdict(capped + self.arms(FLAT, FLAT, "model-b"))
         classes = {c["model"]: c["class"] for c in result["cells"]}
         self.assertEqual(classes, {"model-a": "no-clear-effect", "model-b": "no-benefit"})
-        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+        # Adam, 2026-11-13: every retire is automatic.
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "auto"))
         self.assertIn("run cap", result["removal_reason"])
         # One pair short of the cap, it is still open.
         short = self.verdict(self.arms(swing[:CAP - 1], mid[:CAP - 1], "model-a"),
@@ -359,9 +360,10 @@ class VerdictTests(unittest.TestCase):
         c = cell(top[:18], top[18:], policy=POLICY)
         self.assertEqual((c["class"], c["ceiling_at"], c["noharm_at"]), ("ceiling", 18, 18))
 
-    def test_a_ceiling_unconfirmed_cell_never_frees_an_auto_removal(self):
+    def test_a_ceiling_unconfirmed_cell_does_not_vote_beside_a_removal(self):
         # Round 2's M2: beside two no-benefit cells, a stopped high cell
-        # makes the removal a proposal, as a ceiling cell does.
+        # does not vote, as a ceiling cell does (the removal is automatic
+        # all the same since 2026-11-13).
         def pairs(fixture, n, without, with_, start):
             return (series("with", [(with_,)] * n, start=start, fixture=fixture)
                     + series("without", [(without,)] * n, start=start, fixture=fixture))
@@ -371,17 +373,18 @@ class VerdictTests(unittest.TestCase):
         result = gates.retirement({"runs": runs}, ["model-a"], "demo", POLICY, expect)
         self.assertEqual([c["class"] for c in result["cells"]],
                          ["ceiling-unconfirmed", "no-benefit", "no-benefit"])
-        self.assertEqual((result["verdict"], result["removal"]), ("retire", "proposal"))
+        self.assertEqual((result["verdict"], result["removal"]), ("retire", "auto"))
+        self.assertIn("parked cell", result["removal_reason"])
 
-    def test_one_headroom_cell_proposes_and_two_may_remove(self):
+    def test_one_headroom_cell_and_two_both_remove_automatically(self):
         one = self.verdict(self.arms(FLAT, FLAT, "model-a"), ["model-a"])
-        self.assertEqual((one["verdict"], one["removal"]), ("retire", "proposal"))
+        self.assertEqual((one["verdict"], one["removal"]), ("retire", "auto"))
         self.assertIn("only 1 cell with headroom", one["removal_reason"])
         top = [(100, 100, 100)] * 18
         beside_a_ceiling = self.verdict(self.arms(FLAT, FLAT, "model-a")
                                         + self.arms(top, top, "model-b"))
         self.assertEqual((beside_a_ceiling["verdict"], beside_a_ceiling["removal"]),
-                         ("retire", "proposal"))
+                         ("retire", "auto"))
         two = self.verdict(self.arms(FLAT, FLAT, "model-a") + self.arms(FLAT, FLAT, "model-b"))
         self.assertEqual((two["verdict"], two["removal"]), ("retire", "auto"))
 
