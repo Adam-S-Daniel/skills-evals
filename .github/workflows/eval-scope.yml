@@ -77,8 +77,8 @@ jobs:
           sparse-checkout: scripts/plugin_layout.json
           sparse-checkout-cone-mode: false
       # The removed rule reads only which skill directories exist, so each
-      # checkout is sparse (the layout's SKILL.md files, no history, no blobs
-      # beyond them). A checkout that fails stops the job: the rule treats a
+      # checkout is sparse (only the layout's SKILL.md files in the working
+      # tree, no history). A checkout that fails stops the job: the rule treats a
       # missing one as unknown, but a half-checked-out tree is not trusted.
       - name: Check out adam-agentskills' skills (the removed rule)
         uses: actions/checkout@v7.0.1

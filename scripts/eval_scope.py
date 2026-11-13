@@ -405,6 +405,29 @@ def skill_exists(skill: str, registry: str | None, checkouts: dict[str, Path],
     return False
 
 
+def registry_names(path: Path = REGISTRIES_YML) -> dict[str, str]:
+    """{registry url: registry name} from harness/registries.yml."""
+    doc = _load_yaml(path)
+    rows = doc.get("registries") if isinstance(doc, dict) else None
+    if not isinstance(rows, list):
+        raise ScopeError("harness/registries.yml has no registries list")
+    return {r["url"].rstrip("/"): r["name"] for r in rows
+            if isinstance(r, dict) and isinstance(r.get("name"), str)
+            and isinstance(r.get("url"), str)}
+
+
+def fixture_registry(directory: Path, names: dict[str, str]) -> str | None:
+    """The registry a skill fixture names in its own `registry:` field. The
+    fixture outlives the skill, while the explorer's skill list is built from
+    the coverage census and drops a removed skill the next day."""
+    try:
+        doc = yaml.safe_load((directory / "fixture.yaml").read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return None
+    url = doc.get("registry") if isinstance(doc, dict) else None
+    return names.get(url.rstrip("/")) if isinstance(url, str) else None
+
+
 def explorer_registry(explorer: dict, skill: str) -> str | None:
     for entry in explorer.get("skills") or []:
         if isinstance(entry, dict) and entry.get("name") == skill and isinstance(
@@ -458,8 +481,11 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
     checkouts = checkouts or {}
     layouts = layouts if layouts is not None else registry_layouts()
 
-    def exists(skill: str) -> bool | None:
-        return skill_exists(skill, explorer_registry(explorer, skill), checkouts, layouts)
+    names = registry_names()
+
+    def exists(skill: str, directory: Path) -> bool | None:
+        registry = fixture_registry(directory, names) or explorer_registry(explorer, skill)
+        return skill_exists(skill, registry, checkouts, layouts)
 
     resume, resumed = [], set()
     for row in auto:
@@ -487,7 +513,7 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
                                "why": why})
                 resumed.add(path)
         elif rule == "removed" and subject_kind == "skill" and directory.is_dir():
-            if exists(subject) is True:
+            if exists(subject, directory) is True:
                 resume.append({"path": path, "kind": subject_kind, "subject": subject, "rule": rule,
                                "why": "the skill exists in its registry again"})
                 resumed.add(path)
@@ -516,7 +542,7 @@ def build_plan(root: Path, explorer: dict, usage_doc, plugins: dict[str, str],
         # an eval on a skill nobody has used is not worth running at any stakes.
         found = None
         # A removed skill is paused first: nothing else about it matters.
-        if kind == "skill" and exists(subject) is False:
+        if kind == "skill" and exists(subject, directory) is False:
             found = ("removed", "the skill no longer exists in its registry; the fixture is "
                      "kept, and its evals resume if the skill comes back")
         since = last_commit_time(root, path)

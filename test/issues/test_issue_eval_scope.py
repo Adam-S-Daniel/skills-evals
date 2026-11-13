@@ -525,6 +525,27 @@ class RemovedTests(unittest.TestCase):
                                      {"cms-platform": self.cms}, {})
         self.assertEqual(self.removed(plan), [])
 
+    def test_the_fixtures_own_registry_finds_a_skill_the_explorer_no_longer_lists(self):
+        # The review of #1016's F1: the explorer's skill list comes from the
+        # coverage census, which drops a removed skill the next day. The
+        # fixture's own `registry:` field still names where it lived.
+        for path in ("evals/alpha/one", "evals/alpha/two"):
+            write(self.root, f"{path}/fixture.yaml",
+                  "draft: false\nregistry: https://github.com/Adam-S-Daniel/cms-platform\n")
+        gone = {**self.exp, "skills": [s for s in self.exp["skills"] if s["name"] != "alpha"]}
+        self.assertEqual(self.removed(self.plan(exp=gone)), ["evals/alpha/one", "evals/alpha/two"])
+        # Back in the registry, the same fixtures resume with no explorer entry.
+        plan = self.plan(exp=gone)
+        eval_scope.apply_plan(self.root, plan)
+        write(self.cms, "skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
+        self.assertEqual(sorted(r["path"] for r in self.plan(exp=gone)["resume"]),
+                         ["evals/alpha/one", "evals/alpha/two"])
+        # A registry URL harness/registries.yml does not know is unknown.
+        write(self.root, "evals/alpha/one/fixture.yaml",
+              "draft: false\nregistry: https://example.com/nope\n")
+        (self.cms / "skills/alpha/SKILL.md").unlink()
+        self.assertNotIn("evals/alpha/one", self.removed(self.plan(exp=gone)))
+
     def test_a_skill_present_in_its_registry_or_another_visible_one_is_kept(self):
         write(self.cms, "skills/alpha/SKILL.md", "---\nname: alpha\n---\n")
         self.assertEqual(self.removed(self.plan()), [])
