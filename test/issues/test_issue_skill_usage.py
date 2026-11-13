@@ -1036,6 +1036,25 @@ class CloudUseTests(unittest.TestCase):
         self.assertIsNone(skill_usage.zero_use(doc, "finding-unknowns", NOW))
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW, min_sessions=499), True)
 
+    def test_has_recorded_use_needs_no_exposure(self):
+        """2026-11-13: False for a tracked skill with no use however few
+        sessions; True for any use; None when unknown (never zero)."""
+        none = self.busy(local=0, cloud=0)
+        self.assertIs(skill_usage.has_recorded_use(none, "finding-unknowns", NOW), False)
+        self.assertIsNone(skill_usage.zero_use(none, "finding-unknowns", NOW))
+        used = self.busy([self.cloud_row()], local=0, cloud=0)
+        self.assertIs(skill_usage.has_recorded_use(used, "finding-unknowns", NOW), True)
+        prefixed = self.busy([skill_usage.row("2026-W36", "skill",
+                                              "adam-coding-anywhere:finding-unknowns", 1, 1)])
+        self.assertIs(skill_usage.has_recorded_use(prefixed, "finding-unknowns", NOW), True)
+
+    def test_has_recorded_use_is_unknown_when_stale_missing_or_untracked(self):
+        self.assertIsNone(skill_usage.has_recorded_use(None, "finding-unknowns", NOW))
+        stale = self.doc(generated="2026-08-01T00:00:00Z")
+        self.assertIsNone(skill_usage.has_recorded_use(stale, "finding-unknowns", NOW))
+        self.assertIsNone(skill_usage.has_recorded_use(
+            self.busy(), "some-private-skill", NOW))
+
     def test_any_use_wins_whatever_the_exposure(self):
         doc = self.busy([self.cloud_row()], local=0, cloud=0)
         self.assertIs(skill_usage.zero_use(doc, "finding-unknowns", NOW), False)

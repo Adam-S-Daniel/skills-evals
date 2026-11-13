@@ -545,7 +545,8 @@ def census_current(doc, surfaces: tuple, now: datetime,
 
 #: Sessions on the surfaces a skill reaches in which it was listed, with no
 #: use, before a zero reads as evidence rather than a quiet fortnight. The
-#: single source: scripts/eval_scope.py and the removal policy import it.
+#: single source for the removal policy's unused-skill rule (`zero_use`). The
+#: eval scope pass does not use it: see `has_recorded_use`.
 ZERO_USE_MIN_SESSIONS = 500
 #: The census's window, in ISO weeks.
 CENSUS_WEEKS = 8
@@ -635,6 +636,31 @@ def zero_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS,
         return None
     seen = exposure(doc, now, surfaces, weeks)
     return True if seen is not None and seen >= min_sessions else None
+
+
+def has_recorded_use(doc, skill: str, now: datetime, weeks: int = CENSUS_WEEKS) -> bool | None:
+    """The eval-scope question: has `skill` a recorded use in real work over
+    the `weeks` ISO weeks ending with `now`'s? True for any use; False when
+    the census is fresh, tracks the skill by name (`is_tracked`) and its
+    `weight` is 0; None when the census is missing or stale or does not track
+    the skill (UNKNOWN IS NOT ZERO: an untracked skill is counted under
+    `other` and reads as 0).
+
+    Adam, 2026-11-13: "Do we/should we run evals on skills before they have
+    been recorded used in real work? I think we should not." So there is NO
+    exposure minimum here, unlike `zero_use`: exposure matters for an
+    irreversible removal (`harness/removal_policy.py`, which keeps
+    `zero_use` and ZERO_USE_MIN_SESSIONS), not for pausing an eval that
+    resumes on the skill's first recorded use.
+    """
+    if doc is None or not is_fresh(doc, now):
+        return None
+    used = weight(doc, skill, now, weeks)
+    if used is None:
+        return None
+    if used > 0:
+        return True
+    return False if is_tracked(doc, skill) else None
 
 
 def session_rate(doc, now: datetime, days: int = 28) -> float | None:

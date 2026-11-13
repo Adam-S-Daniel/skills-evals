@@ -180,6 +180,15 @@ class UnusedRemovalTests(unittest.TestCase):
         self.assertAlmostEqual(at["accrued_usd"], 10.0)
         self.assertFalse(decide(census(cloud=3399))["remove"])
 
+    def test_removal_keeps_its_exposure_rule_though_the_eval_pause_has_none(self):
+        """2026-11-13: evals wait for a first use with no exposure minimum
+        (`has_recorded_use`), but the irreversible removal still needs the
+        500-session and accrued-cost evidence (`zero_use`)."""
+        few = census(cloud=100, local=100)
+        self.assertIs(skill_usage.has_recorded_use(few, SKILL, NOW), False)
+        self.assertIsNone(skill_usage.zero_use(few, SKILL, NOW, surfaces=BOTH))
+        self.assertFalse(decide(few)["remove"])
+
     def test_the_cost_adds_up_across_surfaces(self):
         # 1800 cloud sessions cost 5.29 and 7000 local ones 4.76: together over 10.
         both = decide(census(cloud=1800, local=7000))
