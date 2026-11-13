@@ -1,22 +1,28 @@
 {
   "fixture_readiness": {
     "context_declared": 76,
-    "context_missing": 90,
+    "context_missing": 93,
     "draft": 11,
     "guidance_unproven": 0,
     "paired_context_delivery_verified": false,
-    "total": 166
+    "total": 169
   },
-  "generated_at": "2026-11-12T13:58:13Z",
+  "generated_at": "2026-11-13T13:24:43Z",
   "include_private_names": false,
-  "problems": [],
+  "problems": [
+    {
+      "kind": "orphan_fixture",
+      "registry": "adam-agentskills",
+      "skill": "debug-github-workflows"
+    }
+  ],
   "registries": [
     {
       "counts": {
-        "covered": 16,
+        "covered": 15,
         "gap": 1,
         "skipped": 7,
-        "total": 24
+        "total": 23
       },
       "layout": "plugins/*/skills/*/SKILL.md",
       "name": "adam-agentskills",
@@ -45,14 +51,6 @@
           "reason": null,
           "registry": "adam-agentskills",
           "skill": "ci-job-performance",
-          "status": "covered"
-        },
-        {
-          "bundle": "adam-coding-anywhere",
-          "fixtures": 4,
-          "reason": null,
-          "registry": "adam-agentskills",
-          "skill": "debug-github-workflows",
           "status": "covered"
         },
         {
@@ -374,10 +372,10 @@
   "schema": 2,
   "status": "complete",
   "totals": {
-    "covered": 28,
+    "covered": 27,
     "gap": 3,
     "skipped": 10,
-    "total": 41
+    "total": 40
   },
   "unresolved": []
 }

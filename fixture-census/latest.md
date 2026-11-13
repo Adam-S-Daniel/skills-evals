@@ -2,11 +2,11 @@
 
 | Registry | Skills | Covered | Skipped | GAP |
 |---|---:|---:|---:|---:|
-| adam-agentskills | 24 | 16 | 7 | 1 |
+| adam-agentskills | 23 | 15 | 7 | 1 |
 | cms-platform | 13 | 10 | 3 | 0 |
 | adamdaniel.ai | 1 | 1 | 0 | 0 |
 | adam-agentskills-private | 3 | 1 | 0 | 2 |
-| **Total** | 41 | 28 | 10 | 3 |
+| **Total** | 40 | 27 | 10 | 3 |
 
 ## adam-agentskills
 
@@ -15,7 +15,6 @@
 | adam-anything-anywhere | finding-unknowns | covered | 1 |  |
 | adam-anything-anywhere | writing-adrs | covered | 5 |  |
 | adam-coding-anywhere | ci-job-performance | covered | 5 |  |
-| adam-coding-anywhere | debug-github-workflows | covered | 4 |  |
 | adam-coding-anywhere | disarm-inherited-reach | covered | 1 |  |
 | adam-coding-anywhere | fan-out-triage | covered | 5 |  |
 | adam-coding-anywhere | github-actions-repo-settings | covered | 4 |  |
@@ -67,10 +66,10 @@ Skill names withheld for this private registry; counts above. `--include-private
 
 ## Problems
 
-None.
+- orphan_fixture: adam-agentskills `debug-github-workflows`
 
 ## Fixture metadata readiness
 
-- Fixtures: 166; draft: 11.
-- Context declared: 76; missing: 90; guidance unproven: 0.
+- Fixtures: 169; draft: 11.
+- Context declared: 76; missing: 93; guidance unproven: 0.
 - Paired context delivery verified: no. These counts validate metadata only; ADR 0012 currently resolves context without delivering it to either arm.
