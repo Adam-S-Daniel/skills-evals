@@ -7,7 +7,6 @@ Deterministic: no network, no wall-clock assertions.
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,11 +17,23 @@ PY_HELPERS = ["append_owner_messages.py", "append_session_costs.py", "append_rou
 SH_HELPERS = ["refresh.sh", "half_built.sh", "loop_prs.sh", "mark_published.sh"]
 
 
-def run(cmd, home=None, **kw):
+def _env(home):
     env = {k: v for k, v in os.environ.items() if k != "DASHBOARD_HOME"}
     if home is not None:
         env["DASHBOARD_HOME"] = str(home)
-    return subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=60, **kw)
+    return env
+
+
+def run_py(name, arg, home=None):
+    """One helper script from dashboard/refresh/, never the test runner: bash
+    execs python3 on that one file, so no argv here can name the suite."""
+    return subprocess.run(["bash", "-c", 'exec python3 -I "$0" "$1"', str(REFRESH / name), arg],
+                          env=_env(home), capture_output=True, text=True, timeout=60)
+
+
+def run_sh(name, home=None):
+    return subprocess.run(["bash", str(REFRESH / name), "{}", "{}"], env=_env(home),
+                          capture_output=True, text=True, timeout=60)
 
 
 class RefreshHelpers(unittest.TestCase):
@@ -37,11 +48,11 @@ class RefreshHelpers(unittest.TestCase):
 
     def test_every_helper_stops_without_dashboard_home(self):
         for name in PY_HELPERS:
-            r = run([sys.executable, "-I", str(REFRESH / name), "[]"])
+            r = run_py(name, "[]")
             self.assertNotEqual(r.returncode, 0, name)
             self.assertIn("DASHBOARD_HOME", r.stderr + r.stdout, name)
         for name in SH_HELPERS:
-            r = run(["bash", str(REFRESH / name), "{}", "{}"])
+            r = run_sh(name)
             self.assertNotEqual(r.returncode, 0, name)
             self.assertIn("DASHBOARD_HOME", r.stderr + r.stdout, name)
 
@@ -60,7 +71,7 @@ class RefreshHelpers(unittest.TestCase):
             {"trigger_id": "trig_c", "finished_at": "2026-01-05T11:00:00Z"},
         ]
         for _ in range(2):
-            r = run([sys.executable, "-I", str(REFRESH / "append_routine_fires.py"), json.dumps(items)], self.home)
+            r = run_py("append_routine_fires.py", json.dumps(items), self.home)
             self.assertEqual(r.returncode, 0, r.stderr)
         rows = [json.loads(l) for l in (self.home / "watch" / "routine-fires.jsonl").read_text().splitlines()]
         self.assertEqual(len(rows), 1)
@@ -71,14 +82,14 @@ class RefreshHelpers(unittest.TestCase):
 
     def test_session_cost_ledger_writes_under_dashboard_home(self):
         item = [{"thread_id": "thread-0001", "session_id": "session_abc", "cost_usd": 2.5}]
-        r = run([sys.executable, "-I", str(REFRESH / "append_session_costs.py"), json.dumps(item)], self.home)
+        r = run_py("append_session_costs.py", json.dumps(item), self.home)
         self.assertEqual(r.returncode, 0, r.stderr)
         row = json.loads((self.home / "inputs" / "session_costs.jsonl").read_text())
         self.assertEqual((row["session_id"], row["cost_usd"], row["source"]), ("cse_abc", 2.5, "refresh"))
 
     def test_collect_runs_needs_its_repo_list_in_site_json(self):
         (self.home / "config" / "site.json").write_text("{}")
-        r = run([sys.executable, "-I", str(REFRESH / "collect_runs.py"), "[]"], self.home)
+        r = run_py("collect_runs.py", "[]", self.home)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("run_console_repos", r.stderr)
 
