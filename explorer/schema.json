@@ -223,6 +223,10 @@
    "type": "integer",
    "minimum": 0
   },
+  "context_drift_held": {
+   "type": "integer",
+   "minimum": 0
+  },
   "fires_without_results": {
    "anyOf": [
     {
@@ -391,6 +395,7 @@
   "activity",
   "alerts",
   "context_drift_unknown",
+  "context_drift_held",
   "coverage",
   "discarded_runs",
   "evals",

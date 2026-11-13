@@ -45,6 +45,16 @@ name: Fixture supply
 #   It reads the context repositories and registries as data, from their
 #   default branches, with no credential; the same pull request carries both
 #   changes.
+# * Then `scripts/repin_drifted_fixtures.py`: a scheduled in-place fixture
+#   whose context drifted (explorer's `context-drift`, #545) is re-pinned to
+#   its context repository's HEAD, but only when its evidence is free
+#   (`explorer_data.drift_evidence`): no run at its current pin, or the
+#   newest is past the re-check age, and its skill is not in the open batch.
+#   Otherwise the pin holds, because a re-pin restarts the fixture's runs.
+#   The committed budget stays; a fixture the re-measured context no longer
+#   fits is not re-pinned, and gets one `Re-pin needs a budget raise` issue
+#   (opened with the workflow's own token, `issues: write`, unless one with
+#   that title is already open). The re-pin rides the same pull request.
 #
 # * The results branch is bot-written and untrusted: it is checked out
 #   without credentials and read as data; nothing from it runs.
@@ -67,9 +77,12 @@ jobs:
   promote:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 30, not 15: a full re-pin pass measures every free fixture (36 took over
+    # 10 minutes against lazily fetched blob:none clones on 2026-11-13).
+    timeout-minutes: 30
     permissions:
       contents: read
+      issues: write
       pull-requests: read
     steps:
       - name: Check out the default branch
@@ -92,6 +105,8 @@ jobs:
           sparse-checkout: |
             results
             routine-results
+            batches
+            coverage
       # As of the results commit's committer time, as compute_gates reads it.
       - name: Promote drafts that ran cleanly
         id: promote
@@ -140,6 +155,13 @@ jobs:
           path: ctx/wsl-automation
           fetch-depth: 0
           persist-credentials: false
+      - name: Check out repo-settings
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: Adam-S-Daniel/repo-settings
+          path: ctx/repo-settings
+          fetch-depth: 0
+          persist-credentials: false
       - name: Give drafted fixtures a context and schedule them
         id: contextualize
         run: |
@@ -155,9 +177,70 @@ jobs:
             --registry adamdaniel.ai=ctx/adamdaniel.ai \
             --as-of "$as_of" --apply > "$RUNNER_TEMP/contextualize.out"
           cat "$RUNNER_TEMP/contextualize.out" >> "$GITHUB_OUTPUT"
+      - name: Re-pin drifted fixtures whose evidence is not in use
+        id: repin
+        run: |
+          set -euo pipefail
+          as_of="$(git -C eval-results-branch log -1 --format=%cI)"
+          args=()
+          for repo in _agent-guidance adam-agentskills cms-platform adamdaniel.ai wsl-automation repo-settings; do
+            args+=(--context-repo "Adam-S-Daniel/${repo}=ctx/${repo}")
+          done
+          python3 scripts/repin_drifted_fixtures.py "${args[@]}" \
+            --registry adam-agentskills=ctx/adam-agentskills \
+            --registry cms-platform=ctx/cms-platform \
+            --registry adamdaniel.ai=ctx/adamdaniel.ai \
+            --results-tree eval-results-branch \
+            --as-of "$as_of" --apply > "$RUNNER_TEMP/repin.out" || {
+            # A refusal writes nothing (every text is checked before any is
+            # written), so the day's promotions still publish; the fixture's
+            # context-drift alert stays on the explorer until a run succeeds.
+            echo "::warning::the re-pin step failed; nothing was re-pinned"
+            printf 'count=0\nfixtures=\nover_budget=\n' > "$RUNNER_TEMP/repin.out"
+          }
+          cat "$RUNNER_TEMP/repin.out" >> "$GITHUB_OUTPUT"
+      - name: Ask for a budget raise where a re-pin does not fit
+        if: steps.repin.outputs.over_budget != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OVER_BUDGET: ${{ steps.repin.outputs.over_budget }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$OVER_BUDGET" =~ ^[A-Za-z0-9/_.\ -]*$ ]]; then
+            echo "::error::the re-pin's over-budget output has an unexpected shape"
+            exit 1
+          fi
+          for path in $OVER_BUDGET; do
+            export TITLE="Re-pin needs a budget raise: ${path}"
+            title="$TITLE"
+            existing="$(gh issue list --repo "$REPO" --state open --label agent-authored \
+              --limit 200 --json title --jq '[.[] | select(.title == $ENV.TITLE)] | length' \
+              2> /dev/null)" || existing=""
+            case "$existing" in
+              0) ;;
+              [1-9]*)
+                echo "an issue for ${path} is already open"
+                continue ;;
+              *)
+                echo "::error::could not tell whether an issue for ${path} is open"
+                exit 1 ;;
+            esac
+            body="$RUNNER_TEMP/issue.md"
+            {
+              echo "The context repository of \`${path}\` has drifted (explorer's \`context-drift\` alert, #545), and the fixture's evidence is free: it has no run at its current pin, or its newest is past the re-check age, and its skill is not in the open batch. So \`scripts/repin_drifted_fixtures.py\` would re-pin it, but the re-measured larger arm exceeds the committed \`context.budget\`."
+              echo
+              echo "To close this: a person or agent raises the budget (ADR 0012, \"Context budgets\": the larger arm's bytes plus 25%), updates \`MEASURED\` and \`REMEASURED\` in \`test/issues/test_issue_371_scheduled_fixtures.py\`, then re-pins with \`scripts/repin_drifted_fixtures.py\`."
+              echo
+              echo "<sub>🤖 Written by skills-evals routine-fixture-supply.yml</sub>"
+            } > "$body"
+            gh issue create --repo "$REPO" --title "$title" --body-file "$body" \
+              --label agent-ready --label agent-authored
+          done
       - name: Mint the roster App token
         id: app-token
-        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0'
+        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0' || steps.repin.outputs.count != '0'
         continue-on-error: true
         uses: actions/create-github-app-token@v3.3.0
         with:
@@ -168,7 +251,7 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
       - name: Open the promotion pull request and turn on auto-merge
-        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0'
+        if: steps.promote.outputs.count != '0' || steps.contextualize.outputs.count != '0' || steps.repin.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -179,6 +262,8 @@ jobs:
           PROMOTED_FIXTURES: ${{ steps.promote.outputs.fixtures }}
           CONTEXTUALIZED: ${{ steps.contextualize.outputs.count }}
           CONTEXTUALIZED_FIXTURES: ${{ steps.contextualize.outputs.fixtures }}
+          REPINNED: ${{ steps.repin.outputs.count }}
+          REPINNED_FIXTURES: ${{ steps.repin.outputs.fixtures }}
         run: |
           set -euo pipefail
           app_token=""
@@ -194,13 +279,14 @@ jobs:
             GH_TOKEN="$app_token" GITHUB_TOKEN="" gh "$@"
           }
           if ! [[ "$RUN_ID" =~ ^[0-9]+$ ]] || ! [[ "$PROMOTED" =~ ^[0-9]+$ ]] \
-             || ! [[ "$CONTEXTUALIZED" =~ ^[0-9]+$ ]] \
+             || ! [[ "$CONTEXTUALIZED" =~ ^[0-9]+$ ]] || ! [[ "$REPINNED" =~ ^[0-9]+$ ]] \
              || ! [[ "$PROMOTED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]] \
-             || ! [[ "$CONTEXTUALIZED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]]; then
+             || ! [[ "$CONTEXTUALIZED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]] \
+             || ! [[ "$REPINNED_FIXTURES" =~ ^[A-Za-z0-9/_.\ -]*$ ]]; then
             echo "::error::the promotion's outputs have an unexpected shape"
             exit 1
           fi
-          COUNT=$((PROMOTED + CONTEXTUALIZED))
+          COUNT=$((PROMOTED + CONTEXTUALIZED + REPINNED))
           open="$(gh api "repos/${REPO}/pulls?state=open&base=${BASE}&per_page=100" \
             --jq '[.[] | select(.head.ref | startswith("fixture-promotion/"))] | length')" || open=""
           case "$open" in
@@ -259,6 +345,14 @@ jobs:
               echo "Given an in-place context (\`scripts/contextualize_fixtures.py\`): drafted isolation pairs whose skill is now on adam-agentskills' main, each pinned to its context repository's main and a byte-matching guidance revision, with budgets measured plus 25%, and moved off \`evals/unscheduled.yml\`."
               echo
               for path in $CONTEXTUALIZED_FIXTURES; do
+                echo "- \`${path}\`"
+              done
+              echo
+            fi
+            if [ "$REPINNED" != 0 ]; then
+              echo "Re-pinned (\`scripts/repin_drifted_fixtures.py\`): each one's context repository moved on, and its evidence was not in use: no ingested run at its old pin was newer than the re-check age, and its skill is in no open batch. Each fixture's runs at the old pin no longer pool, which is intended, because no verdict or open batch was using them. The committed budgets are unchanged."
+              echo
+              for path in $REPINNED_FIXTURES; do
                 echo "- \`${path}\`"
               done
               echo

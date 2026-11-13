@@ -161,7 +161,7 @@ class ShapeAndMathTests(unittest.TestCase):
         # The public data contract adds evals, hooks, lesson_funnel, activity and
         # spend, keeping schema_version 1
         # (test_issue_public_data_contract.py covers them).
-        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_unknown",
+        self.assertEqual(sorted(d), ["activity", "alerts", "context_drift_held", "context_drift_unknown",
                                      "coverage", "discarded_runs", "evals", "fires_without_results",
                                      "fixture_queue", "generated_at",
                                      "guidance", "hooks", "lesson_funnel", "lessons",
@@ -177,6 +177,7 @@ class ShapeAndMathTests(unittest.TestCase):
         # No --lessons directory: unknown, not an empty list.
         self.assertIsNone(d["lessons"])
         self.assertEqual(d["context_drift_unknown"], 0)
+        self.assertEqual(d["context_drift_held"], 0)
         self.assertEqual(d["schema_version"], 1)
         self.assertEqual(d["generated_at"], AS_OF)
         self.assertEqual(d["newest_run"], "2026-10-30T10:00:00Z")

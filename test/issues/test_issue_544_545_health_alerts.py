@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import ast
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -156,8 +157,14 @@ class World:
         git(self.repo, "add", "-A")
 
     def run(self, names=("subj",), now=NOW):
+        """(alerts, context_drift_unknown, rows); no run is known, so every
+        alerting fixture is free of evidence."""
+        return self.run_full(names, now)[:3]
+
+    def run_full(self, names=("subj",), now=NOW, **evidence):
         self.commit()
-        return explorer_data.health_alerts(self.evals, set(names), self.repositories, now)
+        return explorer_data.health_alerts(self.evals, set(names), self.repositories, now,
+                                           **evidence)
 
 
 def kinds(alerts: list) -> list:
@@ -325,6 +332,109 @@ class DriftTests(unittest.TestCase):
                 reader.run(*args)
 
 
+class EvidenceTests(unittest.TestCase):
+    """A pin holds while its evidence is in use (owner policy, 2026-11-13):
+    a held fixture's drift alert is not emitted but counted, and a free one
+    still alerts."""
+
+    ENTRY = {"fixture": "evals/subj", "skill": "subj"}
+    DIGEST = "d" * 64
+
+    def run_at(self, stamp, **extra):
+        return {"skill": "subj", "fixture": None, "fixture_digest": self.DIGEST,
+                "timestamp": stamp, **extra}
+
+    def evidence(self, runs, batch=(), level="normal", digest=DIGEST, entry=None):
+        return explorer_data.drift_evidence(entry or self.ENTRY, runs, set(batch), level,
+                                            NOW, digest)
+
+    def test_no_run_at_the_current_pin_is_free(self):
+        self.assertEqual(self.evidence([]), "free")
+        self.assertEqual(self.evidence([self.run_at("20261001T000000Z",
+                                                    fixture_digest="e" * 64)]), "free")
+        self.assertEqual(self.evidence([self.run_at("20261019T000000Z", skill="other")]), "free")
+
+    def test_an_open_batch_member_is_held(self):
+        self.assertEqual(self.evidence([], batch=["subj"]), "held")
+
+    def test_the_newest_run_decides_against_the_recheck_age(self):
+        old, new = "20260801T000000Z", "20261001T000000Z"  # 80 and 19 days before NOW
+        self.assertEqual(self.evidence([self.run_at(old)]), "free")
+        self.assertEqual(self.evidence([self.run_at(old), self.run_at(new)]), "held")
+        self.assertEqual(explorer_data.plan_week.RECHECK_AFTER, timedelta(weeks=8))
+
+    def test_high_stakes_uses_four_weeks(self):
+        stamp = "20260915T000000Z"  # 35 days before NOW: inside 8 weeks, past 4
+        self.assertEqual(self.evidence([self.run_at(stamp)]), "held")
+        self.assertEqual(self.evidence([self.run_at(stamp)], level="high"), "free")
+
+    def test_a_none_digest_is_held(self):
+        self.assertEqual(self.evidence([], digest=None), "held")
+
+    def test_a_nested_fixture_is_matched_by_name(self):
+        entry = {"fixture": "evals/subj/one", "skill": "subj"}
+        stamp = "20261001T000000Z"
+        self.assertEqual(self.evidence([self.run_at(stamp)], entry=entry), "free")
+        self.assertEqual(self.evidence([self.run_at(stamp, fixture="one")], entry=entry), "held")
+
+    def test_an_aliased_flat_run_counts_for_its_target(self):
+        # gates.FIXTURE_ALIASES pools a flat run at the target's digest into
+        # the target, so it is evidence in use there too.
+        entry = {"fixture": "evals/review-bash-ci-reliability/release-pipeline",
+                 "skill": "review-bash-ci-reliability"}
+        self.assertEqual(
+            explorer_data.gates.FIXTURE_ALIASES[("review-bash-ci-reliability", "")],
+            "release-pipeline")
+        flat = self.run_at("20261001T000000Z", skill="review-bash-ci-reliability")
+        self.assertEqual(self.evidence([flat], entry=entry), "held")
+
+    def test_the_open_batch_is_read_from_the_results_tree(self):
+        tree = Path(tempfile.mkdtemp(prefix="batch-"))
+        self.addCleanup(shutil.rmtree, tree, ignore_errors=True)
+        self.assertEqual(explorer_data.open_batch_skills(tree), frozenset())
+        (tree / "batches").mkdir()
+        record = {"schema_version": 1, "number": 2, "started_at": "2026-11-01T00:00:00Z",
+                  "due_at": "2026-11-08T00:00:00Z",
+                  "members": [{"kind": "skill", "subject": "subj", "joined": 1},
+                              {"kind": "guidance", "subject": "other", "joined": 2}]}
+        (tree / explorer_data.plan_week.BATCH_RECORD).write_text(json.dumps(record))
+        self.assertEqual(explorer_data.open_batch_skills(tree), frozenset({"subj"}))
+
+    def alerting_world(self):
+        w = World(self)
+        w.skill("adam-agentskills", "b1", "subj")
+        c = Consumer(w.root, "c")
+        base = {"b1/subj": CURRENT, "b1/sib": "2" * 64}
+        pin = c.commit(base, 1)
+        c.commit({**base, "b1/sib": "4" * 64}, 5)
+        w.repositories[CONSUMER] = c.checkout()
+        w.fixture("subj", "subj", pin)
+        return w
+
+    def digest_of(self, w):
+        return explorer_data.run_eval.fixture_digest(w.repo / "evals" / "subj")
+
+    def test_a_held_alert_is_counted_not_emitted(self):
+        w = self.alerting_world()
+        w.commit()
+        run = self.run_at("20261015T000000Z", fixture_digest=self.digest_of(w))
+        alerts, du, rows, held = w.run_full(runs=[run])
+        self.assertEqual((alerts, du, held, rows[0]["evidence"]), ([], 0, 1, "held"))
+        self.assertEqual(rows[0]["drift"], "alert")
+
+    def test_a_free_alert_is_emitted(self):
+        w = self.alerting_world()
+        alerts, du, rows, held = w.run_full(runs=[])
+        self.assertEqual([a["kind"] for a in alerts], ["context-drift"])
+        self.assertEqual((du, held, rows[0]["evidence"]), (0, 0, "free"))
+
+    def test_a_fixture_that_is_not_alerting_has_no_evidence_state(self):
+        w = self.alerting_world()
+        _alerts, _du, rows, held = w.run_full(now=datetime(2026, 10, 6, tzinfo=timezone.utc),
+                                              runs=[])
+        self.assertEqual((rows[0]["drift"], rows[0]["evidence"], held), ("ok", None, 0))
+
+
 class PrivacyTests(unittest.TestCase):
     """The HEALTH FILTER runs before any read or count, for both alerts."""
 
@@ -462,10 +572,12 @@ class ReportTests(unittest.TestCase):
                 "--context-repo", f"{CONSUMER}={c.checkout()}"])
         self.assertEqual(code, 0)
         lines = out.getvalue().splitlines()
-        self.assertEqual(lines[0].split(), ["fixture", "drift", "adopted", "scope",
-                                            "changed", "added", "removed", "drift_since"])
+        self.assertEqual(lines[0].split(), ["fixture", "drift", "evidence", "adopted",
+                                            "scope", "changed", "added", "removed",
+                                            "drift_since"])
         self.assertEqual(lines[1].split(),
-                         ["evals/subj", "alert", "True", "b1", "1", "1", "0", day(5)])
+                         ["evals/subj", "alert", "free", "True", "b1", "1", "1", "0",
+                          day(5)])
 
 
 class WorkflowAndPageTests(unittest.TestCase):

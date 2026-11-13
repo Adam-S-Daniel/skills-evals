@@ -180,6 +180,7 @@ class Measurer:
         alone = dict(frozen.manifest["measurements"])
         with_arm = run_eval.with_arm_sizes(frozen, plan["subject"])
         return {**metadata, "budget": budgets(alone, with_arm),
+                "measured": {key: max(alone[key], with_arm[key]) for key in context.BUDGET_KEYS},
                 "action": plan["subject"].action}
 
 

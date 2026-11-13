@@ -99,6 +99,12 @@ date; never a SHA, digest, path, count or a sibling skill's name.
     default branch since the pin, and stayed moved for `CONTEXT_DRIFT_DAYS`.
     `drift_since` is the committer date of the lock commit that last left the
     pin's entries. `context_drift_unknown` counts the undecided fixtures.
+    A drifted fixture whose evidence is in use (`drift_evidence`: runs at its
+    current pin that are not due a re-check, or its skill in the open batch,
+    or no digest) emits no alert, because re-pinning would restart that
+    evidence; `context_drift_held` counts them. Only a free fixture alerts,
+    and scripts/repin_drifted_fixtures.py (the daily routine-fixture-supply
+    job) re-pins it.
     `context-drift-report` prints the per-fixture detail locally (never in CI).
 
 #544's `broken` alert (reason `pin-deploys-older-copy`: the pin's lock
@@ -823,22 +829,78 @@ def _drift_since(git, pin: str, in_scope, base: dict, path: Path, cache: dict) -
     return {"at": plan_week._iso(moment), "head": head_scope}
 
 
+def drift_evidence(entry: dict, runs: list, batch_skills, stakes_level: str,
+                   now: datetime, digest: str | None) -> str:
+    """"held" or "free": whether a drifted fixture's pin still has evidence in
+    use. Owner policy (2026-11-13): a pin holds while its evidence is in use,
+    and is re-pinned automatically only when the evidence would restart
+    anyway, because a re-pin changes `fixture_digest` and every ingested run
+    at the old pin stops pooling. `runs` is `compute_gates.build_index`'s
+    "runs"; `digest` is `run_eval.fixture_digest` of the fixture directory.
+
+    held   the digest is None (dirty or not in Git: never re-pin what cannot
+           be measured), or the skill is a `kind: skill` member of the open
+           batch (`batch_skills`), or the newest run at the current pin is
+           younger than the re-check age (`plan_week.RECHECK_AFTER`, or
+           RECHECK_AFTER_HIGH at stakes `high`).
+    free   no run at the current pin, or the newest is older than that age
+           (its evidence is due a re-check anyway)."""
+    if digest is None or entry["skill"] in batch_skills:
+        return "held"
+    # The pooling's own naming: run_eval's positional rule, plus each old
+    # name gates.FIXTURE_ALIASES pools into this fixture (the digest match
+    # below is the alias's own check).
+    name = run_eval.nested_fixture_name(Path(entry["fixture"]), entry["skill"]) or ""
+    names = {name} | {old for (skill, old), target in gates.FIXTURE_ALIASES.items()
+                      if skill == entry["skill"] and target == name}
+    stamps = [plan_week._stamp_time(r["timestamp"]) for r in runs
+              if r["skill"] == entry["skill"] and (r["fixture"] or "") in names
+              and r["fixture_digest"] == digest]
+    if not stamps:
+        return "free"
+    if None in stamps:
+        return "held"
+    age = plan_week.RECHECK_AFTER_HIGH if stakes_level == "high" else plan_week.RECHECK_AFTER
+    return "free" if now - max(stamps) > age else "held"
+
+
+def open_batch_skills(tree: Path) -> frozenset:
+    """The skills that are `kind: skill` members of the open batch (empty
+    with none). A malformed record raises plan_week.PlanError."""
+    batch = plan_week.read_batch(tree)
+    return frozenset(m["subject"] for m in (batch or {}).get("members", [])
+                     if m["kind"] == "skill")
+
+
 def health_alerts(evals_dir: Path, skill_names: set, repositories: dict | None,
-                  now: datetime) -> tuple:
-    """(alerts, context_drift_unknown, report rows) over the HEALTH FILTER's
-    fixtures only, so a private fixture moves no count."""
+                  now: datetime, runs: list | None = None, batch_skills=frozenset(),
+                  stakes_level=lambda skill: "normal") -> tuple:
+    """(alerts, context_drift_unknown, report rows, context_drift_held) over
+    the HEALTH FILTER's fixtures only, so a private fixture moves no count.
+    A fixture in `alert` state whose evidence is held (`drift_evidence`)
+    emits no alert and is counted in the last element; `runs` None means no
+    run is known, so every alerting fixture is free. Each row's `evidence` is
+    held or free for an alerting fixture, else None."""
     alerts, rows, cache = [], [], {}
-    drift_unknown = 0
+    drift_unknown = held_count = 0
     for entry in health_fixtures(evals_dir, skill_names):
         state = check_fixture_health(entry, repositories or {}, now, cache)
         drift_unknown += state["drift"] == "unknown"
-        rows.append({"fixture": entry["fixture"], "drift": state["drift"], **state["detail"]})
+        evidence = None
         if state["drift"] == "alert":
+            evidence = "free" if runs is None else drift_evidence(
+                entry, runs, batch_skills, stakes_level(entry["skill"]), now,
+                run_eval.fixture_digest(evals_dir.parent / entry["fixture"]))
+        rows.append({"fixture": entry["fixture"], "drift": state["drift"],
+                     "evidence": evidence, **state["detail"]})
+        if evidence == "held":
+            held_count += 1
+        elif evidence == "free":
             alerts.append({"kind": "context-drift", "subject": "skill", "name": entry["skill"],
                            "fixture": entry["fixture"], "model": None,
                            "repository": entry["context"]["repository"],
                            "drift_since": state["drift_since"]})
-    return alerts, drift_unknown, rows
+    return alerts, drift_unknown, rows, held_count
 
 
 #: #555 (2026-11-02): the fire-runs window the workflow fetches and the
@@ -2147,10 +2209,15 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
     alerts = build_alerts(gates_doc, regressions if isinstance(regressions, dict) else None,
                           issues or {}, {s["name"] for s in skills}, {s["id"] for s in sections}, cells)
     alerts += copy_alerts
-    drift_unknown = 0
+    drift_unknown = drift_held = 0
     if (evals_dir / "scheduled.yml").is_file():
-        health, drift_unknown, _rows = health_alerts(
-            evals_dir, {s["name"] for s in skills}, context_repos, now)
+        try:
+            batch_skills = open_batch_skills(tree)
+        except plan_week.PlanError:
+            batch_skills = frozenset()  # as the queue above: the unbatched view
+        health, drift_unknown, _rows, drift_held = health_alerts(
+            evals_dir, {s["name"] for s in skills}, context_repos, now, index["runs"],
+            batch_skills, lambda skill: stakes_mod.level_of(table, "skill", skill))
         alerts += health
     fires = None
     if (evals_dir / "scheduled.yml").is_file():
@@ -2206,7 +2273,8 @@ def build(tree: Path, roster_path: Path, policy_path: Path, evals_dir: Path, as_
         "guidance": {"sections": sections, "removed": removed_sections(guidance_dir)},
         "discarded_runs": fleet_discards(skills, sections),
         "coverage": coverage, "alerts": alerts,
-        "context_drift_unknown": drift_unknown, "fires_without_results": fires,
+        "context_drift_unknown": drift_unknown,
+        "context_drift_held": drift_held, "fires_without_results": fires,
         "fixture_queue": fixture_queue, "lessons": lesson_doc, "usage": usage_window,
         "evals": evals_doc, "hooks": hooks, "lesson_funnel": funnel, "activity": activity_doc,
         "spend": explorer_public.build_spend(tree, spend)}
@@ -2391,12 +2459,17 @@ def context_drift_report(argv: list[str]) -> int:
     try:
         now = plan_week._stamp_time(compute_gates.parse_as_of(args.as_of))
         names = set(public_census(load_census(args.results_tree))[0])
-        _alerts, _du, rows = health_alerts(
-            args.evals_dir, names, context_mod.parse_context_repos(args.context_repo), now)
-    except (ValueError, OSError, context_mod.ContextError) as exc:
+        compact = compute_gates.parse_as_of(args.as_of)
+        index = compute_gates.build_index(args.results_tree, args.evals_dir, compact)
+        table = stakes_mod.load(args.evals_dir / "stakes.yml", args.evals_dir)
+        _alerts, _du, rows, _held = health_alerts(
+            args.evals_dir, names, context_mod.parse_context_repos(args.context_repo), now,
+            index["runs"], open_batch_skills(args.results_tree),
+            lambda skill: stakes_mod.level_of(table, "skill", skill))
+    except (ValueError, OSError, plan_week.PlanError, context_mod.ContextError) as exc:
         print(f"explorer_data: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
-    cols = ("fixture", "drift", "adopted", "scope", "changed", "added", "removed",
+    cols = ("fixture", "drift", "evidence", "adopted", "scope", "changed", "added", "removed",
             "drift_since")
     table = [cols] + [tuple("-" if r[c] is None else str(r[c]) for c in cols) for r in rows]
     widths = [max(len(line[i]) for line in table) for i in range(len(cols))]
