@@ -68,3 +68,61 @@ fixtures:
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
   - path: evals/github-actions-repo-settings/scratch-repo-partial-manage
     reason: "Isolation pair with no context: its runs cannot pool (ADR 0012); convert with a context before scheduling."
+  - path: evals/embeddable-tool-pages
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/review-bash-ci-reliability/release-pipeline
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/skills-doctor/bucketed-account-store
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/github-actions-sha-pinning
+    reason: "Auto scope (removed), 2026-11-13: the skill no longer exists in its registry; the fixture is kept, and its evals resume if the skill comes back."
+  - path: evals/consumer-repo-provisioning
+    reason: "Auto scope (removed), 2026-11-13: the skill no longer exists in its registry; the fixture is kept, and its evals resume if the skill comes back."
+  - path: evals/ci-job-performance/browser-cache
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/github-actions-repo-settings/drift-diagnosis
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/review-bash-ci-reliability/drift-report-capture
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/review-bash-ci-reliability/nightly-snapshot
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/review-bash-ci-reliability/test-runner-assertions
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/skills-doctor/personal-copy-outranks-repo
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/fan-out-triage/keyword-lookalikes
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/fan-out-triage/shifted-draft
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/fan-out-triage/single-file
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/fan-out-triage/three-files
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/red-ci-adamdaniel-ai/paths-required
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/red-ci-adamdaniel-ai/timeout-wall
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/review-bash-ci-reliability/pages-temp-repo-commit
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/tool-powershell/robocopy-exit-one
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/fan-out-triage/indirect-surfaces
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/ci-job-performance/fast-suite-sharding
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/ci-job-performance/spawn-per-test
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/ci-job-performance/sharded-required-check
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/ci-job-performance/act-local-loop
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/red-ci-adamdaniel-ai/release-bump-blocked
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/skills-doctor/laptop-double-delivery
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/tool-powershell/spaced-path-silent-exit
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/tool-powershell/two-strikes-unreachable-host
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
+  - path: evals/tool-powershell/installer-exit-3010
+    reason: "Auto scope (zero-use), 2026-11-13: no recorded use in real work in the last 8 weeks; its evals resume on its first recorded use."
