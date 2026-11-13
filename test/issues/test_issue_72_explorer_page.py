@@ -34,6 +34,19 @@ def manifest_path() -> Path:
     return ROOT.parent / "_agent-guidance" / "agents-md" / "eval-coverage.yml"
 
 
+def sibling_is_behind(committed: list, manifest: list) -> list:
+    """The committed ids the manifest lacks, when the manifest is an older
+    copy of what the committed list was built from: every row it does have is
+    committed, and the committed list names rows it lacks. That is a sibling
+    checkout behind its remote, not drift in this repo, so the caller skips.
+    Empty when the manifest is current or differs any other way (an id the
+    committed list does not have is real drift and must fail)."""
+    missing = [i for i in committed if i not in manifest]
+    if missing and all(i in committed for i in manifest):
+        return missing
+    return []
+
+
 class ExplorerPageTests(unittest.TestCase):
     def test_node_suite_passes(self):
         node = shutil.which("node")
@@ -71,10 +84,32 @@ class ExplorerPageTests(unittest.TestCase):
         rows = yaml.safe_load(path.read_text(encoding="utf-8"))
         manifest = [row["id"] for row in rows]
         committed = json.loads(COMMITTED_IDS.read_text(encoding="utf-8"))
+        behind = sibling_is_behind(committed, manifest)
+        if behind:
+            self.skipTest(f"the _agent-guidance checkout at {path} is behind its "
+                          f"remote: its manifest lacks {behind}. This repo records "
+                          "no pinned ref for that sibling, so `git pull` there (or "
+                          "set AGENT_GUIDANCE_MANIFEST) to compare")
         self.assertEqual(committed, manifest,
                          "tool/test/guidance-ids.json is out of step with "
                          "agents-md/eval-coverage.yml; update the list and add a "
                          "gloss to GLOSSES in explorer/src/core/glosses.js for any new id")
+
+
+class SiblingStalenessTests(unittest.TestCase):
+    """#987: a sibling checkout behind its remote is a named skip, never a pass
+    and never a failure; a real mismatch still fails."""
+
+    def test_a_manifest_missing_a_committed_row_is_behind(self):
+        self.assertEqual(sibling_is_behind(["a", "b", "c"], ["a", "b"]), ["c"])
+
+    def test_a_current_manifest_is_not_behind(self):
+        self.assertEqual(sibling_is_behind(["a", "b"], ["a", "b"]), [])
+
+    def test_a_reordered_or_extra_row_is_drift_not_staleness(self):
+        self.assertEqual(sibling_is_behind(["a", "b"], ["b", "a"]), [])
+        self.assertEqual(sibling_is_behind(["a"], ["a", "z"]), [])
+        self.assertEqual(sibling_is_behind(["a", "b"], ["a", "z"]), [])
 
 
 if __name__ == "__main__":

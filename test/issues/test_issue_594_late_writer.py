@@ -355,12 +355,19 @@ class OwnSessionLaunchTests(_Scratch):
 class RunAgentLaunchTests(OwnSessionLaunchTests):
     """run_agent starts the CLI through the helper, every way it can end."""
 
+    CLI = "claude"
     REPLY = {"type": "result", "is_error": False, "result": "done",
              "total_cost_usd": 0.25, "usage": {"input_tokens": 2},
              "num_turns": 1, "duration_ms": 8, "session_id": "s-1",
              "modelUsage": {"fake-default-model": {"inputTokens": 2}}}
 
     def run_agent(self, **arm):
+        # The CLI name is resolved on the host's PATH (`run_canary.cli_bin`),
+        # so a real `claude` anywhere on it would change what is launched.
+        # Pin the resolved name: these tests are about the session and group
+        # handling, not about where the CLI lives.
+        self.enterContext(mock.patch.object(run_eval.run_canary, "cli_bin",
+                                            return_value=self.CLI))
         return run_eval.run_agent(self.root, "prompt",
                                   {"name": "without_skill", "timeout": 30, **arm})
 
@@ -371,7 +378,7 @@ class RunAgentLaunchTests(OwnSessionLaunchTests):
         self.assertEqual(answer["transcript"], "done")
         (child,) = self.children
         self.assertIs(child.kwargs["start_new_session"], True)
-        self.assertEqual(child.args[0], os.environ.get("CLAUDE_BIN", "claude"))
+        self.assertEqual(child.args[0], self.CLI)
         self.assert_reaped_once()
 
     def test_each_followup_call_ends_its_own_group(self):
