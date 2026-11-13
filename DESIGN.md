@@ -2732,7 +2732,10 @@ file when this was its only `##`) and re-copies `base.md` to
 `check-guidance-coverage.js --write-bytes`, adds a typed `remove` entry to
 `docs/guidance-impact.md` whose `Eval:` line gives the pooled run count
 (`n=`) and the fixtures, and rebuilds `AGENTS.md`, split on the
-`## Repo-specific additions` heading line. A dry run lists every step.
+`## Repo-specific additions` heading line. When `_agent-guidance` has
+`scripts/build-contributor-rules.js`, it also runs it with `--write` and commits
+`.github/fleet-contributor-rules.md`; without the script nothing changes. A dry
+run lists every step.
 Retirement was made automatic, with no human approval (Adam, 2026-10-10,
 #124); Adam's 2026-11-03 "Resume, auto-removal off" set
 `guidance.retirement_mode` to `proposal`, and `evals/gate-policy.yml` commits
