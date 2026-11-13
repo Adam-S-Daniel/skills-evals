@@ -359,8 +359,9 @@ def render_md(doc: dict) -> str:
         "",
         "A check that blocked but whose overrides no source counts is `earning`, marked "
         "unmeasured; `overridden-often` needs a measured rate. Non-public repositories "
-        f"are shown only when at least {v(H + 'min_private_repos')} feed the data "
-        f"({ref(H + 'min_private_repos')}). **No rule removes a hook check**: the verdicts "
+        f"get their own row only when at least {v(H + 'min_private_repos')} feed the data "
+        f"({ref(H + 'min_private_repos')}); below that, their runs and blocks still count, "
+        "unnamed, in each check's totals and verdict. **No rule removes a hook check**: the verdicts "
         "are reported, not acted on.",
         "",
     ]
