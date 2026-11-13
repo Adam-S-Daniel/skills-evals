@@ -239,7 +239,9 @@ class WorkflowGatesTests(unittest.TestCase):
         self.assertNotIn("secrets.", json.dumps(plan))
         self.assertEqual(plan["outputs"]["count"], "${{ steps.plan.outputs.count }}")
         step = next(s for s in plan["steps"] if s.get("id") == "plan")
-        self.assertEqual(step["run"], "python3 scripts/plan_scheduled_evals.py")
+        # The eval pause runs first (ADR 0017's addendum), then the planner.
+        self.assertEqual(step["run"].strip().splitlines()[-1], "python3 scripts/plan_scheduled_evals.py")
+        self.assertIn("guidance_merge_window.py eval-pause", step["run"])
         self.assertNotIn("${{", step["run"])
 
     def test_every_minting_job_runs_after_the_plan(self):

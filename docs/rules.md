@@ -49,6 +49,7 @@ The eval scope pass ([`scripts/eval_scope.py`](../scripts/eval_scope.py)) pauses
 - **Ceiling:** after 4 runs since the fixture changed ([`ceiling_min_runs`](../evals/scope-policy.yml#L17)), a without arm passing at least 0.85 of checks ([`ceiling_share`](../evals/scope-policy.yml#L18)) and, when judged, scoring at least 8.5 ([`ceiling_judge`](../evals/scope-policy.yml#L19)), on every roster model.
 - **Floor:** both arms passing at most 0.1 ([`floor_share`](../evals/scope-policy.yml#L20)) over the same runs.
 - Ceiling and floor never pause a `stakes: high` subject, a kept one, or one whose confidence that it helps is at least 0.5 ([`keep_guard`](../evals/scope-policy.yml#L21)).
+- **Weekly guidance window:** no automated eval run, in any mode, starts while _agent-guidance's weekly guidance merge window is open ([`base-md-merge-window.yml`](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/scripts/base-md-merge-window.yml), US Eastern, so its UTC hours move with daylight saving time); a run already going finishes. Planned fires wait for the next sweep after it closes ([ADR 0017](decisions/0017-guidance-loop-merges-wait-for-the-weekly-window.md)).
 
 ## Re-checks and stakes
 

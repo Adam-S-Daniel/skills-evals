@@ -337,6 +337,11 @@ def render_md(doc: dict) -> str:
         "- Ceiling and floor never pause a `stakes: high` subject, a kept one, or one whose "
         f"confidence that it helps is at least {v(C + 'keep_guard')} "
         f"({ref(C + 'keep_guard')}).",
+        "- **Weekly guidance window:** no automated eval run, in any mode, starts while "
+        f"_agent-guidance's weekly guidance merge window is open ([`base-md-merge-window.yml`]({MERGE_WINDOW}), "
+        "US Eastern, so its UTC hours move with daylight saving time); a run already going "
+        "finishes. Planned fires wait for the next sweep after it closes "
+        "([ADR 0017](decisions/0017-guidance-loop-merges-wait-for-the-weekly-window.md)).",
         "",
         "## Re-checks and stakes",
         "",

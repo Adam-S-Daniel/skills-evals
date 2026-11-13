@@ -599,7 +599,7 @@ def pr_body(staged: Path, run_id: str, sha: str, branch: str, mode: str = "draft
     report = (staged / "report.md").read_text(encoding="utf-8")
     if mode == "auto" and queued:
         review = ("This pull request is queued: fleet guidance merges by automation are "
-                  "batched into one weekly window (Monday 17:00 to 19:00 UTC, "
+                  "batched into one weekly window (Monday noon to 2 PM US Eastern, "
                   "_agent-guidance ADR 0039), and it opened outside it. "
                   "guidance-merge-window.yml arms auto-merge (merge commit) inside the "
                   "next window, and it merges once this repository's required checks "

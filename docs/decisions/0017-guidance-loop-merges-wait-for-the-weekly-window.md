@@ -48,3 +48,46 @@ Each merged whenever its checks finished.
   while one is queued waits on its branch.
 - `retire_skill.py`'s `guidance_execute` takes a `window_open` callable so its
   tests do not read a clock or a checkout.
+
+## Addendum (2026-11-13): US Eastern bounds, and the eval pause
+
+Adam asked that evals pause Mondays from noon to 2 PM Eastern, so that no eval
+run lands on guidance that is half merged.
+
+1. **The bounds are in US Eastern time.** _agent-guidance's bounds file gains
+   a required `timezone` key (`America/New_York`) and reads 12:00 to 14:00
+   ([its ADR 0039 addendum](https://github.com/Adam-S-Daniel/_agent-guidance/blob/main/docs/decisions/0039-fleet-guidance-merges-are-batched-into-one-weekly-window.md)).
+   `guidance_merge_window.py` converts with `zoneinfo`, so the window is
+   17:00 to 19:00 UTC in winter and 16:00 to 18:00 UTC in summer. Cron is
+   UTC, so every Monday cron entry that must land inside the window sits in
+   17:00 to 17:30 UTC, inside it in both seasons (`guidance-merge-window.yml`
+   at 17:07 and 17:27, `skill-coverage.yml` at 17:19); a test pins each.
+   Automation arms only while at least 30 minutes of the window are left
+   (`ARM_MARGIN`), so an armed pull request merges, after _agent-guidance's
+   few-minute required checks, before the pause lifts.
+2. **The same window is the eval pause.** `guidance_merge_window.py
+   eval-pause` (exit 0 may start, 3 paused, 1 unreadable) is asked by every
+   automated launcher: `routine-eval-fire.yml` in every mode, before the
+   allowance guard (a paused fire ends cancelled, as a guard refusal does);
+   `eval.yml`'s plan job (an empty plan); and `plan_week.py`, so a sweep
+   inside the window plans no fire instead of dispatching legs that would be
+   refused. The bounds are read from the same file; no launcher holds a copy.
+   An unreadable file pauses (fail closed) and fails the run so it is seen.
+   `scripts/local_eval.py`, run by a person on their own machine, is not
+   gated.
+3. **A run already going when the window opens finishes.** A routine fire
+   clones _agent-guidance once, at its start, so a fire dispatched before the
+   window measures one consistent version; stopping it would waste its spend
+   for no gain. `eval.yml`'s legs can start well after its plan (they queue
+   behind the roster jobs and `max-parallel`), so every leg checks out the
+   exact _agent-guidance commit the plan judged the pause on, never a later
+   main. The residual risk is a routine fire dispatched in the last minutes
+   before the window that clones after a merge has already landed in it;
+   the earliest in-window merges come from the arming runs and the fleet
+   worker, both minutes after the window opens.
+4. **Planned fires resume on their own.** The watchdog's half-hourly check
+   re-plans after the window closes; no fire is lost, only delayed.
+
+Consequence: the ingest-driven backstop run of `guidance-merge-window.yml`
+fires less inside the window, since no new runs start there; the two cron
+entries remain the primary arming path.

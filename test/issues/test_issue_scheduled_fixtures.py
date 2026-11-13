@@ -321,10 +321,12 @@ class TestScheduledFixtures(unittest.TestCase):
             {"fixture": p, "eval_key": p[len("evals/"):], "slot": i}
             for i, p in enumerate(EXPECTED)]})
         plan_step = step("plan", "Plan reviewed fixtures")
-        self.assertEqual(plan_step["run"], "python3 scripts/plan_scheduled_evals.py")
+        self.assertEqual(plan_step["run"].strip().splitlines()[-1],
+                         "python3 scripts/plan_scheduled_evals.py")
         self.assertEqual(doc()["jobs"]["plan"]["outputs"],
                          {"matrix": "${{ steps.plan.outputs.matrix }}",
-                          "count": "${{ steps.plan.outputs.count }}"})
+                          "count": "${{ steps.plan.outputs.count }}",
+                          "guidance_sha": "${{ steps.plan.outputs.guidance_sha }}"})
 
     def test_dispatch_defaults_and_explicit_fixture_are_unchanged(self):
         trigger = doc().get("on", doc().get(True))

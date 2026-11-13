@@ -534,6 +534,7 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(REPO_ROOT / "harness"))
 
 import allowance_guard as guard  # noqa: E402
+import guidance_merge_window as merge_window  # noqa: E402
 import improve_outcomes as outcomes_mod  # noqa: E402
 import lesson_evidence  # noqa: E402
 import plan_scheduled_evals as schedule  # noqa: E402
@@ -4393,6 +4394,8 @@ def summary_lines(plan: dict) -> list:
     """Public-safe lines: counts, bands, public skill and fixture names."""
     lines = [f"### Weekly plan: {len(plan['fires'])} fire(s), room "
              f"{plan['room'] * 100:.1f} points", ""]
+    if plan.get("paused"):
+        lines += [f"Eval pause: {plan['paused']}.", ""]
     for fire in plan["fires"]:
         target = fire["fixture"] or (f"{fire['skill'] or fire.get('section', '')} "
                                      f"(holdout {fire['holdout']})")
@@ -4720,6 +4723,27 @@ def guidance_headroom(section: str, tree: Path, evals_dir: Path, guidance_dir: P
     return True, f"section {section}: train headroom {headroom:.3f}"
 
 
+def hold_for_eval_pause(plan: dict, guidance: Path | None, now: datetime) -> dict:
+    """THE EVAL PAUSE (Adam, 2026-11-13; ADR 0017's addendum): inside
+    _agent-guidance's weekly guidance merge window a sweep plans no fire, so
+    no leg is dispatched only to be refused. The rest of the plan (work
+    items, the ranking, a batch record) stands. Bounds that cannot be read
+    plan no fire either (fail closed). With no `--guidance` checkout at all
+    (a local plan; the sweep always passes one) this check is skipped:
+    routine-eval-fire.yml refuses a fire inside the window on its own."""
+    if guidance is None:
+        return plan
+    try:
+        paused, message = merge_window.eval_pause(guidance, now)
+    except merge_window.WindowError as exc:
+        paused, message = True, f"the eval pause cannot be read ({exc})"
+    if paused:
+        plan["paused"] = message + "; no fire is planned"
+        plan["fires"] = []
+        plan["matrix"] = {"include": []}
+    return plan
+
+
 def _utcnow() -> datetime:
     """The plan's `now` (a seam for the plan command's tests)."""
     return datetime.now(timezone.utc)
@@ -4818,7 +4842,8 @@ def main(argv: list | None = None) -> int:
         if not 1 <= args.max_fires <= MAX_FIRES_CAP:
             raise PlanError(f"the fire cap must be 1 to {MAX_FIRES_CAP}")
         now = _utcnow()
-        plan = build_plan(gather(args, now), now, args.max_fires)
+        plan = hold_for_eval_pause(build_plan(gather(args, now), now, args.max_fires),
+                                   args.guidance, now)
     except (PlanError, outcomes_mod.EvidenceError, guard.GuardError,
             guard.budget_file.BudgetError) as exc:
         print(f"::error::weekly plan: {exc}")
