@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 import sys
 
@@ -65,6 +66,10 @@ LEGACY_NAMES = {
     "scope-policy.yml#keep_guard": ["KEEP_GUARD"],
     "hook-policy.yml#window_weeks": [],
 }
+#: Keys whose UPPER_CASE or camelCase form names something that is not this
+#: rule: explorer/src/core/rules.js's WINDOW_WEEKS is the page's own pooling
+#: window, not the hook policy's.
+OWN_FORMS_ELSEWHERE = {"window_weeks"}
 #: Rule names that no longer exist: a number set next to one in code is a
 #: stale restatement whatever its value.
 RETIRED_NAMES = {
@@ -108,9 +113,13 @@ def load(root: Path) -> dict:
     def add(file: str, path: list[str], value, text: str) -> None:
         rule_id = f"{file}#{'.'.join(path)}"
         # A nested key (`reread_usd_per_session.cloud`) is too generic a
-        # word to check by name.
-        names = ([path[-1]] if len(path) == 1 or file == "gate-policy.yml" else []) \
-            + LEGACY_NAMES.get(rule_id, [])
+        # word to check by name. A key is also checked in its UPPER_CASE
+        # and camelCase forms, except where that names something else.
+        key = path[-1] if len(path) == 1 or file == "gate-policy.yml" else None
+        names = [] if key is None else [key] + (
+            [] if key in OWN_FORMS_ELSEWHERE else
+            [key.upper(), re.sub(r"_([a-z])", lambda m: m.group(1).upper(), key)])
+        names = list(dict.fromkeys(names + LEGACY_NAMES.get(rule_id, [])))
         rules[rule_id] = {"value": value, "source": f"{EVALS}/{file}",
                           "key": ".".join(path), "line": _line_of(text, path),
                           "names": names}
@@ -345,8 +354,8 @@ def render_md(doc: dict) -> str:
         "- `earning`: blocked at least once, and overridden in at most "
         f"{p(H + 'max_override_rate')} of its blocks ({ref(H + 'max_override_rate')});",
         "- `overridden-often`: overridden in more than that;",
-        "- `never-blocked`: ran and blocked nothing;",
-        "- `never-ran`: no recorded run and no block.",
+        "- `never-blocked`: blocked nothing, and either ran or has runs no source counts;",
+        "- `never-ran`: its runs are counted, none was recorded, and nothing was blocked.",
         "",
         "A check that blocked but whose overrides no source counts is `earning`, marked "
         "unmeasured; `overridden-often` needs a measured rate. Non-public repositories "

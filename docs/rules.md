@@ -60,7 +60,7 @@ Each git hook check gets a verdict over the last 8 weeks ([`window_weeks`](../ev
 
 - `earning`: blocked at least once, and overridden in at most 20% of its blocks ([`max_override_rate`](../evals/hook-policy.yml#L21));
 - `overridden-often`: overridden in more than that;
-- `never-blocked`: ran and blocked nothing;
-- `never-ran`: no recorded run and no block.
+- `never-blocked`: blocked nothing, and either ran or has runs no source counts;
+- `never-ran`: its runs are counted, none was recorded, and nothing was blocked.
 
 A check that blocked but whose overrides no source counts is `earning`, marked unmeasured; `overridden-often` needs a measured rate. Non-public repositories are shown only when at least 3 feed the data ([`min_private_repos`](../evals/hook-policy.yml#L24)). **No rule removes a hook check**: the verdicts are reported, not acted on.

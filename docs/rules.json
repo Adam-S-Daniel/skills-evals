@@ -7,7 +7,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.benefit_confidence",
       "names": [
-        "benefit_confidence"
+        "benefit_confidence",
+        "BENEFIT_CONFIDENCE",
+        "benefitConfidence"
       ]
     },
     "gate-policy.yml#guidance.floor_fraction": {
@@ -15,7 +17,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.floor_fraction",
       "names": [
-        "floor_fraction"
+        "floor_fraction",
+        "FLOOR_FRACTION",
+        "floorFraction"
       ]
     },
     "gate-policy.yml#guidance.floor_min_runs": {
@@ -23,7 +27,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.floor_min_runs",
       "names": [
-        "floor_min_runs"
+        "floor_min_runs",
+        "FLOOR_MIN_RUNS",
+        "floorMinRuns"
       ]
     },
     "gate-policy.yml#guidance.high_stop_min_without": {
@@ -31,7 +37,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.high_stop_min_without",
       "names": [
-        "high_stop_min_without"
+        "high_stop_min_without",
+        "HIGH_STOP_MIN_WITHOUT",
+        "highStopMinWithout"
       ]
     },
     "gate-policy.yml#guidance.judge_margin": {
@@ -39,7 +47,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.judge_margin",
       "names": [
-        "judge_margin"
+        "judge_margin",
+        "JUDGE_MARGIN",
+        "judgeMargin"
       ]
     },
     "gate-policy.yml#guidance.max_removal_pauses": {
@@ -47,7 +57,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.max_removal_pauses",
       "names": [
-        "max_removal_pauses"
+        "max_removal_pauses",
+        "MAX_REMOVAL_PAUSES",
+        "maxRemovalPauses"
       ]
     },
     "gate-policy.yml#guidance.max_runs_high_cell": {
@@ -55,7 +67,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.max_runs_high_cell",
       "names": [
-        "max_runs_high_cell"
+        "max_runs_high_cell",
+        "MAX_RUNS_HIGH_CELL",
+        "maxRunsHighCell"
       ]
     },
     "gate-policy.yml#guidance.max_runs_per_cell": {
@@ -63,7 +77,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.max_runs_per_cell",
       "names": [
-        "max_runs_per_cell"
+        "max_runs_per_cell",
+        "MAX_RUNS_PER_CELL",
+        "maxRunsPerCell"
       ]
     },
     "gate-policy.yml#guidance.min_cli_versions": {
@@ -71,7 +87,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.min_cli_versions",
       "names": [
-        "min_cli_versions"
+        "min_cli_versions",
+        "MIN_CLI_VERSIONS",
+        "minCliVersions"
       ]
     },
     "gate-policy.yml#guidance.objective_margin": {
@@ -79,7 +97,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.objective_margin",
       "names": [
-        "objective_margin"
+        "objective_margin",
+        "OBJECTIVE_MARGIN",
+        "objectiveMargin"
       ]
     },
     "gate-policy.yml#guidance.recheck_weeks": {
@@ -87,7 +107,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.recheck_weeks",
       "names": [
-        "recheck_weeks"
+        "recheck_weeks",
+        "RECHECK_WEEKS",
+        "recheckWeeks"
       ]
     },
     "gate-policy.yml#guidance.recheck_weeks_high": {
@@ -95,7 +117,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.recheck_weeks_high",
       "names": [
-        "recheck_weeks_high"
+        "recheck_weeks_high",
+        "RECHECK_WEEKS_HIGH",
+        "recheckWeeksHigh"
       ]
     },
     "gate-policy.yml#guidance.rest_guard_min_pairs": {
@@ -103,7 +127,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.rest_guard_min_pairs",
       "names": [
-        "rest_guard_min_pairs"
+        "rest_guard_min_pairs",
+        "REST_GUARD_MIN_PAIRS",
+        "restGuardMinPairs"
       ]
     },
     "gate-policy.yml#guidance.rest_policy": {
@@ -111,7 +137,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.rest_policy",
       "names": [
-        "rest_policy"
+        "rest_policy",
+        "REST_POLICY",
+        "restPolicy"
       ]
     },
     "gate-policy.yml#guidance.retire_confidence": {
@@ -119,7 +147,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.retire_confidence",
       "names": [
-        "retire_confidence"
+        "retire_confidence",
+        "RETIRE_CONFIDENCE",
+        "retireConfidence"
       ]
     },
     "gate-policy.yml#guidance.retirement_mode": {
@@ -127,7 +157,9 @@
       "source": "evals/gate-policy.yml",
       "key": "guidance.retirement_mode",
       "names": [
-        "retirement_mode"
+        "retirement_mode",
+        "RETIREMENT_MODE",
+        "retirementMode"
       ]
     },
     "gate-policy.yml#skills.benefit_confidence": {
@@ -136,6 +168,8 @@
       "key": "skills.benefit_confidence",
       "names": [
         "benefit_confidence",
+        "BENEFIT_CONFIDENCE",
+        "benefitConfidence",
         "DEFAULT_BENEFIT_CONFIDENCE",
         "KEEP_AT"
       ]
@@ -145,7 +179,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.floor_fraction",
       "names": [
-        "floor_fraction"
+        "floor_fraction",
+        "FLOOR_FRACTION",
+        "floorFraction"
       ]
     },
     "gate-policy.yml#skills.floor_min_runs": {
@@ -154,7 +190,8 @@
       "key": "skills.floor_min_runs",
       "names": [
         "floor_min_runs",
-        "FLOOR_MIN_RUNS"
+        "FLOOR_MIN_RUNS",
+        "floorMinRuns"
       ]
     },
     "gate-policy.yml#skills.high_stop_min_without": {
@@ -163,7 +200,8 @@
       "key": "skills.high_stop_min_without",
       "names": [
         "high_stop_min_without",
-        "HIGH_STOP_MIN_WITHOUT"
+        "HIGH_STOP_MIN_WITHOUT",
+        "highStopMinWithout"
       ]
     },
     "gate-policy.yml#skills.judge_margin": {
@@ -171,7 +209,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.judge_margin",
       "names": [
-        "judge_margin"
+        "judge_margin",
+        "JUDGE_MARGIN",
+        "judgeMargin"
       ]
     },
     "gate-policy.yml#skills.max_removal_pauses": {
@@ -180,6 +220,8 @@
       "key": "skills.max_removal_pauses",
       "names": [
         "max_removal_pauses",
+        "MAX_REMOVAL_PAUSES",
+        "maxRemovalPauses",
         "MAX_LOOP_PAUSES"
       ]
     },
@@ -188,7 +230,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.max_runs_high_cell",
       "names": [
-        "max_runs_high_cell"
+        "max_runs_high_cell",
+        "MAX_RUNS_HIGH_CELL",
+        "maxRunsHighCell"
       ]
     },
     "gate-policy.yml#skills.max_runs_per_cell": {
@@ -196,7 +240,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.max_runs_per_cell",
       "names": [
-        "max_runs_per_cell"
+        "max_runs_per_cell",
+        "MAX_RUNS_PER_CELL",
+        "maxRunsPerCell"
       ]
     },
     "gate-policy.yml#skills.min_cli_versions": {
@@ -204,7 +250,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.min_cli_versions",
       "names": [
-        "min_cli_versions"
+        "min_cli_versions",
+        "MIN_CLI_VERSIONS",
+        "minCliVersions"
       ]
     },
     "gate-policy.yml#skills.objective_margin": {
@@ -212,7 +260,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.objective_margin",
       "names": [
-        "objective_margin"
+        "objective_margin",
+        "OBJECTIVE_MARGIN",
+        "objectiveMargin"
       ]
     },
     "gate-policy.yml#skills.recheck_weeks": {
@@ -221,6 +271,8 @@
       "key": "skills.recheck_weeks",
       "names": [
         "recheck_weeks",
+        "RECHECK_WEEKS",
+        "recheckWeeks",
         "RECHECK_AFTER"
       ]
     },
@@ -230,6 +282,8 @@
       "key": "skills.recheck_weeks_high",
       "names": [
         "recheck_weeks_high",
+        "RECHECK_WEEKS_HIGH",
+        "recheckWeeksHigh",
         "RECHECK_AFTER_HIGH"
       ]
     },
@@ -239,6 +293,8 @@
       "key": "skills.retire_confidence",
       "names": [
         "retire_confidence",
+        "RETIRE_CONFIDENCE",
+        "retireConfidence",
         "DEFAULT_RETIRE_CONFIDENCE",
         "REMOVE_AT"
       ]
@@ -248,7 +304,9 @@
       "source": "evals/gate-policy.yml",
       "key": "skills.retirement_mode",
       "names": [
-        "retirement_mode"
+        "retirement_mode",
+        "RETIREMENT_MODE",
+        "retirementMode"
       ]
     },
     "hook-policy.yml#max_override_rate": {
@@ -256,7 +314,9 @@
       "source": "evals/hook-policy.yml",
       "key": "max_override_rate",
       "names": [
-        "max_override_rate"
+        "max_override_rate",
+        "MAX_OVERRIDE_RATE",
+        "maxOverrideRate"
       ]
     },
     "hook-policy.yml#min_private_repos": {
@@ -264,7 +324,9 @@
       "source": "evals/hook-policy.yml",
       "key": "min_private_repos",
       "names": [
-        "min_private_repos"
+        "min_private_repos",
+        "MIN_PRIVATE_REPOS",
+        "minPrivateRepos"
       ]
     },
     "hook-policy.yml#window_weeks": {
@@ -281,6 +343,8 @@
       "key": "first_use_weeks",
       "names": [
         "first_use_weeks",
+        "FIRST_USE_WEEKS",
+        "firstUseWeeks",
         "CENSUS_WEEKS"
       ]
     },
@@ -289,7 +353,9 @@
       "source": "evals/removal-policy.yml",
       "key": "floor_weeks",
       "names": [
-        "floor_weeks"
+        "floor_weeks",
+        "FLOOR_WEEKS",
+        "floorWeeks"
       ]
     },
     "removal-policy.yml#local_removal": {
@@ -297,7 +363,9 @@
       "source": "evals/removal-policy.yml",
       "key": "local_removal",
       "names": [
-        "local_removal"
+        "local_removal",
+        "LOCAL_REMOVAL",
+        "localRemoval"
       ]
     },
     "removal-policy.yml#prefix_tokens": {
@@ -305,7 +373,9 @@
       "source": "evals/removal-policy.yml",
       "key": "prefix_tokens",
       "names": [
-        "prefix_tokens"
+        "prefix_tokens",
+        "PREFIX_TOKENS",
+        "prefixTokens"
       ]
     },
     "removal-policy.yml#reread_usd_per_session.cloud": {
@@ -325,7 +395,9 @@
       "source": "evals/removal-policy.yml",
       "key": "value_per_use_usd",
       "names": [
-        "value_per_use_usd"
+        "value_per_use_usd",
+        "VALUE_PER_USE_USD",
+        "valuePerUseUsd"
       ]
     },
     "scope-policy.yml#ceiling_judge": {
@@ -334,7 +406,8 @@
       "key": "ceiling_judge",
       "names": [
         "ceiling_judge",
-        "CEILING_JUDGE"
+        "CEILING_JUDGE",
+        "ceilingJudge"
       ]
     },
     "scope-policy.yml#ceiling_min_runs": {
@@ -343,7 +416,8 @@
       "key": "ceiling_min_runs",
       "names": [
         "ceiling_min_runs",
-        "CEILING_MIN_RUNS"
+        "CEILING_MIN_RUNS",
+        "ceilingMinRuns"
       ]
     },
     "scope-policy.yml#ceiling_share": {
@@ -352,7 +426,8 @@
       "key": "ceiling_share",
       "names": [
         "ceiling_share",
-        "CEILING_SHARE"
+        "CEILING_SHARE",
+        "ceilingShare"
       ]
     },
     "scope-policy.yml#floor_share": {
@@ -361,7 +436,8 @@
       "key": "floor_share",
       "names": [
         "floor_share",
-        "FLOOR_SHARE"
+        "FLOOR_SHARE",
+        "floorShare"
       ]
     },
     "scope-policy.yml#keep_guard": {
@@ -370,7 +446,8 @@
       "key": "keep_guard",
       "names": [
         "keep_guard",
-        "KEEP_GUARD"
+        "KEEP_GUARD",
+        "keepGuard"
       ]
     }
   },

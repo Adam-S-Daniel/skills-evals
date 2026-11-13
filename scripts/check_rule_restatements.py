@@ -56,21 +56,25 @@ TEXT_SUFFIXES = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".svelte",
 SKIP_DIRS = {".git", "node_modules", "test", "tests", "results", "routine-results",
              "__pycache__", ".venv", "venv", "vendor", ".claude"}
 SKIP_PATHS = ("tool/index.html", "explorer/dist/*", "dashboard/page/*", "evals/*/seed/*",
-              # A fixture's scoring rubric ("cap at 3 if ...") is task data.
+              # A fixture's scoring rubric ("cap at 3 if ...") is task data;
+              # skipped preventively, none disagrees today.
               "evals/*/fixture.yaml",
               "*.css", "scripts/check_rule_restatements.py", "docs/decisions/*", "docs/rules.md",
               "docs/rules.json", "evals/gate-policy.yml", "evals/removal-policy.yml",
               "evals/hook-policy.yml", "evals/scope-policy.yml", "evals/usage-unknown.yml",
               "evals/stakes.yml")
 MAX_BYTES = 2_000_000
-#: A numeric literal, not a format spec (`:.0%`, `:.2f`) or part of a word.
-NUMBER = r"(-?(?:\d+(?:\.\d+)?|\.\d+))(?![\w%.-])"
+#: A numeric literal, not a format spec (`:.0%`, `:.2f`), part of a word, a
+#: date or a version; a full stop that ends the sentence is fine.
+NUMBER = r"(-?(?:\d+(?:\.\d+)?|\.\d+))(?![\w%-]|\.\d)"
 #: What may sit between a rule's name and its number: quotes or a closing
 #: bracket, then a colon, an equals sign, a comma, an opening parenthesis
-#: (`max_runs_per_cell` (20)), `??`/`||`, `) or` (`.get("key") or 0.9`), or a
-#: type annotation (`NAME: int = 3`), then optionally `timedelta(weeks=`.
+#: (`max_runs_per_cell` (20)), `??`/`||`, `) or` (`.get("key") or 0.9`), a
+#: type annotation (`NAME: int = 3`), or the words `is` / `defaults to`,
+#: then optionally `timedelta(weeks=`.
 GAP = (r"""["'`\]\s]{0,2}\s*"""
-       r"""(?:\)\s*or\b|:\s*[A-Za-z_][\w\[\], |.]{0,30}?\s*=(?!=)|[:=,(]|\?\?|\|\|)"""
+       r"""(?:\)\s*or\b|:\s*[A-Za-z_][\w\[\], |.]{0,30}?\s*=(?!=)|[:=,(]|\?\?|\|\|"""
+       r"""|\bis\b|\bdefaults?\s+to\b)"""
        r"""\s*(?:timedelta\(weeks=)?["'`]?\s*""")
 
 #: The prose table. Each row: a regex whose group 1 is the number, how to
@@ -82,7 +86,8 @@ WINDOW = 120
 PHRASES = [
     {
         "name": "confidence level",
-        "regex": r"(\d{1,3}(?:\.\d+)?)\s?%\s+(?:confiden|level)|confiden\w*\s+(?:of\s+|at\s+)?(\d{1,3}(?:\.\d+)?)\s?%",
+        "regex": r"(\d{1,3}(?:\.\d+)?)\s?(?:%|\s+percent\b)\s+(?:confiden|level)"
+                 r"|confiden\w*\s+(?:of\s+|at\s+)?(\d{1,3}(?:\.\d+)?)\s?(?:%|\s+percent\b)",
         "scale": "pct",
         "contexts": [
             (r"\bkeep|\bbenefit\b|\bhelps?\b", ["gate-policy.yml#*.benefit_confidence"]),
@@ -92,7 +97,7 @@ PHRASES = [
     {
         "name": "confidence level",
         # The same as a fraction: "0.85 confidence", "confidence of 0.9".
-        "regex": r"(?<![\w.])(0?\.\d+)\s+confiden|confiden\w*\s+(?:level\s+)?(?:of\s+|at\s+)?(0?\.\d+)(?![\w.%])",
+        "regex": r"(?<![\w.])(0?\.\d+)\s+confiden|confiden\w*\s+(?:level\s+)?(?:of\s+|at\s+)?(0?\.\d+)(?![\w%]|\.\d)",
         "scale": "frac",
         "contexts": [
             (r"\bkeep|\bbenefit\b|\bhelps?\b", ["gate-policy.yml#*.benefit_confidence"]),
