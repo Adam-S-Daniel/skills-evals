@@ -276,6 +276,19 @@ class HookUseTests(unittest.TestCase):
         self.assertIn(("repo-local", pub.PRIVATE_BUCKET), {(c["name"], c["repo"]) for c in h["checks"]})
         self.assertNotIn("hidden", json.dumps(h))
 
+    def test_hidden_private_repositories_still_count_in_the_verdict(self):
+        # Every block in a private repository, with public runs that blocked
+        # nothing: the verdict and totals count the blocks, the rows hide them.
+        h = self.hooks([hook_row("2026-10-26", "rules-dir", "other", 1103, 1095),
+                        hook_row("2026-10-26", "rules-dir", "Adam-S-Daniel/open-one", 8, 0)])
+        self.assertFalse(h["private_repos_shown"])
+        c = self.check(h, "rules-dir")
+        self.assertEqual([u["repo"] for u in c["use"]], ["Adam-S-Daniel/open-one"])
+        self.assertEqual((c["window_totals"]["invocations"], c["window_totals"]["blocked"]),
+                         (1111, 1095))
+        self.assertEqual(c["verdict"], "earning")
+        self.assertNotIn(pub.PRIVATE_BUCKET, json.dumps(h))
+
     def test_without_a_visibility_list_no_repository_is_named(self):
         h = self.hooks([hook_row("2026-10-26", "rules-dir", "Adam-S-Daniel/open-one", 1, 0)],
                        public=None)

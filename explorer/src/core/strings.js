@@ -430,6 +430,7 @@ function buildStrings(you) {
   colWeek: 'Week of', colLocalRuns: 'Local runs', colLocalBlocked: 'Local blocks', colCiRuns: 'CI runs', colCiBlocked: 'CI blocks', colRepo: 'Repo',
   hookUnlisted: (n) => n + ' more ' + (n === 1 ? 'check ran but is' : 'checks ran but are') + ' not listed.',
   hookPrivateFold: 'Checks in private repos are counted in one "private repos" row.',
+  hookPrivateHidden: (runs, blocked) => 'The totals above include ' + runs + ' runs and ' + blocked + ' blocks in private repos, which are too few to show as their own row, so the tables below leave them out.',
   hookBack: 'All git hook checks',
   hookNotFound: 'No git hook check by that name is in this build.',
 
