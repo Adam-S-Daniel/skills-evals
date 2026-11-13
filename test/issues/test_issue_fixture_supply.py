@@ -425,7 +425,7 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
         self.assertEqual(self.doc["permissions"], {})
         self.assertNotIn("concurrency", self.doc)
         self.assertEqual({name: job["permissions"] for name, job in self.jobs.items()}, {
-            "promote": {"contents": "read", "pull-requests": "read"}})
+            "promote": {"contents": "read", "issues": "write", "pull-requests": "read"}})
         for name, job in self.jobs.items():
             with self.subTest(job=name):
                 self.assertNotIn("concurrency", job)
@@ -487,6 +487,51 @@ class SupplyWorkflowShapeTests(unittest.TestCase):
                     self.assertIs(s["with"]["persist-credentials"], False)
         mint = steps[ids.index("app-token")]
         self.assertIn("steps.contextualize.outputs.count != '0'", mint["if"])
+
+    def test_repin_runs_after_contextualize_and_feeds_the_pull_request(self):
+        steps = self.jobs["promote"]["steps"]
+        ids = [s.get("id") for s in steps]
+        self.assertLess(ids.index("contextualize"), ids.index("repin"))
+        self.assertLess(ids.index("repin"), ids.index("app-token"))
+        step = steps[ids.index("repin")]
+        self.assertNotIn("env", step)
+        self.assertIn("scripts/repin_drifted_fixtures.py", step["run"])
+        self.assertIn("--apply", step["run"])
+        self.assertIn("--results-tree eval-results-branch", step["run"])
+        self.assertIn("$RUNNER_TEMP/repin.out", step["run"])
+        for name in ("app-token",):
+            self.assertIn("steps.repin.outputs.count != '0'", steps[ids.index(name)]["if"])
+        opener = next(s for s in steps if "app_gh pr merge" in s.get("run", ""))
+        self.assertIn("steps.repin.outputs.count != '0'", opener["if"])
+        self.assertEqual(opener["env"]["REPINNED"], "${{ steps.repin.outputs.count }}")
+        self.assertEqual(opener["env"]["REPINNED_FIXTURES"], "${{ steps.repin.outputs.fixtures }}")
+        self.assertIn("COUNT=$((PROMOTED + CONTEXTUALIZED + REPINNED))", opener["run"])
+
+    def test_repin_has_the_trees_it_reads(self):
+        steps = self.jobs["promote"]["steps"]
+        results = next(s for s in steps if s.get("with", {}).get("path") == "eval-results-branch")
+        self.assertEqual(sorted(results["with"]["sparse-checkout"].split()),
+                         ["batches", "coverage", "results", "routine-results"])
+        settings = next(s for s in steps if s.get("with", {}).get("path") == "ctx/repo-settings")
+        self.assertEqual(settings["with"]["repository"], "Adam-S-Daniel/repo-settings")
+        self.assertEqual(settings["with"]["fetch-depth"], 0)
+        self.assertIs(settings["with"]["persist-credentials"], False)
+        repin = next(s for s in steps if s.get("id") == "repin")
+        self.assertIn("repo-settings", repin["run"])
+
+    def test_over_budget_fixtures_get_one_issue_with_the_job_token(self):
+        steps = self.jobs["promote"]["steps"]
+        step = next(s for s in steps if "gh issue create" in s.get("run", ""))
+        self.assertEqual(step["if"], "steps.repin.outputs.over_budget != ''")
+        self.assertEqual(step["env"]["GH_TOKEN"], "${{ github.token }}")
+        self.assertEqual(step["env"]["OVER_BUDGET"], "${{ steps.repin.outputs.over_budget }}")
+        self.assertNotIn("APP_TOKEN", json.dumps(step))
+        block = step["run"]
+        for needle in ("Re-pin needs a budget raise: ${path}", "--label agent-ready",
+                       "--label agent-authored", "gh issue list", "--state open",
+                       "<sub>🤖 Written by skills-evals routine-fixture-supply.yml</sub>"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, block)
 
     def test_promotion_pushes_only_what_promote_writes_and_arms_that_sha(self):
         step = self.step("promote", "app_gh pr merge")

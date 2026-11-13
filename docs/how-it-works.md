@@ -1238,6 +1238,23 @@ and the same job still contextualizes drafted fixtures.
    adds it to `evals/scheduled.yml` with a readiness note starting
    "Promoted automatically", and the App opens that change as one
    auto-merging pull request; an open one holds the slot.
+4. **Re-pin (context drift, #545).** An in-place fixture whose context
+   repository's other skills moved more than 7 days ago would alert as
+   `context-drift`, but a re-pin changes the fixture's `fixture_digest`, so
+   every ingested run at the old pin stops pooling. Owner policy
+   (2026-11-13): a pin holds while its evidence is in use, and is re-pinned
+   automatically only when the evidence would restart anyway.
+   `explorer_data.drift_evidence` calls a drifted fixture *held* when it has
+   runs at its current pin newer than the re-check age (8 weeks, 4 for a
+   high-stakes skill), its skill is in the open batch, or its digest cannot
+   be measured; a held fixture raises no alert and is counted in the
+   document's `context_drift_held`. Otherwise it is *free*: it alerts, and
+   the same daily job's `scripts/repin_drifted_fixtures.py` points its
+   `context.revision` and `guidance_revision` at the context repository's
+   HEAD, in the same pull request. The committed budget stays; a fixture the
+   re-measured context no longer fits is left alone, and the job opens one
+   `Re-pin needs a budget raise` issue for it. `explorer_data.py
+   context-drift-report` shows each fixture's `evidence`.
 
 Known gaps: no workflow runs a draft's agent arms (`--allow-draft`), and a
 real-work fixture needs a subject (`--skill`) that the fire's eval mode does
